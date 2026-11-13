@@ -43,6 +43,13 @@ on Android and on the Linux development host alike (see "Backends").
   `-DSTORM_BGFX_BUILD_TESTS=ON` (`storm_texture_tests`, `storm_texture_bench`).
 - `patches/` — fixes applied to the pinned bgfx in each build directory's patched view of its shared source copy
   (`bgfx_pin.cmake`, `storm_patched_view`); the configure fails when a patch does not apply or changes nothing.
+  `bgfx-gl-msaa-render-to-texture.patch`: offscreen multisampled colour (scene, processed picture, UI layers) is
+  attached through EXT_multisampled_render_to_texture where the driver has it, so a tile GPU keeps the colour samples
+  on chip and writes only resolved pixels, with no resolve blit. Depth/stencil stay multisample renderbuffers: the 3D
+  drawn after the post chain is depth-tested against the scene depth and the UI layers share one stencil, which an
+  implicitly resolved depth/stencil would lose when its framebuffer is left. Used when the extension, its entry point
+  and that mixed framebuffer (probed at 2x / 4x) are there; logged at start ("BGFX offscreen MSAA: ...").
+  Upstream uses the extension only for the back buffer.
   `bgfx-anisotropy-level.patch`: the GL backend applies one anisotropy level to every sampler, the device
   maximum; the patch caps it with `bgfx::gl::g_stormMaxAnisotropy` so the presets get 4x / 8x (set by
   `src/effects`). Upstream bgfx has no per-level API; keep it until it does.
@@ -105,7 +112,7 @@ What differs between the two, all inside the shim:
 | GPU timers | `EXT_disjoint_timer_query` (`bgfx-gles-timer-queries.patch`) | bgfx's timestamp queries |
 | A sampler a draw sets no texture for | samples black | gets a black texture of its kind (`bgfx-vk-unbound-samplers.patch`) |
 | `D3DTADDRESS_BORDER` | with a border-clamp extension | always; colours other than transparent / opaque black and opaque white need `VK_EXT_custom_border_color` (`bgfx-vk-builtin-border-colors.patch`; reported when one is used) |
-| Multisampled targets | resolved when left; the samples are discarded after it (`bgfx-gl-framebuffer-discard.patch`) | resolved by bgfx after the render pass from the stored samples: no discard of what it reads (`Device::scene_complete`, the UI's layers) |
+| Multisampled targets | colour resolved on chip (`bgfx-gl-msaa-render-to-texture.patch`; without the extension resolved when left and the samples discarded after it, `bgfx-gl-framebuffer-discard.patch`); depth/stencil kept in memory | resolved by bgfx after the render pass from the stored samples: no discard of what it reads (`Device::scene_complete`, the UI's layers) |
 | Uniforms | only changed ones uploaded (`bgfx-gl-uniform-commit.patch`, `gl_uniforms`) | one uniform block per draw; the counters are 0 |
 | Anisotropy level | `bgfx::gl::g_stormMaxAnisotropy` | `bgfx::vk::g_stormMaxAnisotropy` (both `bgfx-anisotropy-level.patch`) |
 

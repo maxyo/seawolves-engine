@@ -639,11 +639,13 @@ void Device::scene_complete()
     back_depth->store->sync();
     // The multisampled scene colour is resolved when bgfx leaves it for the chain's first view and nothing reads
     // its multisampled colour afterwards in this frame: invalidating it after the resolve spares a tile GPU writing it
-    // back to memory (patches/bgfx-gl-framebuffer-discard.patch). The depth and stencil are kept: the 3D the game
-    // draws after the scene boundary (ship foam, particles, coronas, the ship pointer) is drawn on the processed
-    // picture, which is multisampled as the scene is, depth-tested against that same scene depth. Discarded, that
-    // depth was undefined and those draws were cut into blocks (the bow foam). Single-sample targets are the textures
-    // the chain reads: never discarded.
+    // back to memory (patches/bgfx-gl-framebuffer-discard.patch; with EXT_multisampled_render_to_texture the colour is
+    // resolved on chip and the discard is dropped, patches/bgfx-gl-msaa-render-to-texture.patch). The depth and
+    // stencil are kept: the 3D the game draws after the scene boundary (ship foam, particles, coronas, the ship
+    // pointer) is drawn on the processed picture, which is multisampled as the scene is, depth-tested against that
+    // same scene depth. Discarded, that depth was undefined and those draws were cut into blocks (the bow foam); for
+    // the same reason the depth is never implicitly resolved (MSRTT). Single-sample targets are the textures the chain
+    // reads: never discarded.
     // Vulkan: bgfx resolves a multisampled texture after its render pass, from the stored attachment, so the colour
     // discard would leave nothing to resolve: nothing is discarded there.
     if (view_color == scene && (scene->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && !probe_placed &&

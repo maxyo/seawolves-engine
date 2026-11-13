@@ -1,0 +1,224 @@
+Offscreen multisampled colour through EXT_multisampled_render_to_texture (MSRTT) where the driver has it.
+bgfx used the extension only for the multisampled back buffer; an offscreen MSAA colour target (the scene, the processed
+picture, the UI layers) was a multisample renderbuffer in memory plus a glBlitFramebuffer resolve into the texture: a
+tile GPU wrote every sample to memory and read it back for the blit, at every framebuffer change. With MSRTT the texture
+itself is attached with glFramebufferTexture2DMultisampleEXT: the samples stay in tile memory and only resolved pixels
+are written.
+- Colour only: a sampled, single-level 2D multisampled colour target is attached with MSRTT in every framebuffer it is
+  used in. Depth/stencil keep bgfx's multisample renderbuffer (and its blit when sampled): an implicitly resolved depth
+  is undefined once its framebuffer is left, and the renderer draws into the scene depth again after the post chain
+  (ship foam, particles: the processed picture takes the scene depth) and the UI layers share one stencil.
+- Caps-driven: the extension and its entry point, and a framebuffer of an MSRTT colour texture with a multisample
+  D24S8 renderbuffer complete at 2x and 4x (the extension allows the mix when the sample counts agree; probed once at
+  init). Otherwise renderbuffers and the blit as upstream. The path is logged once ("BGFX offscreen MSAA: ...").
+- Discarding an MSRTT colour attachment would invalidate the resolved texture: only depth/stencil are discarded.
+diff --git a/src/renderer_gl.cpp b/src/renderer_gl.cpp
+index 61748254e..a85b7feed 100644
+--- a/src/renderer_gl.cpp
++++ b/src/renderer_gl.cpp
+@@ -2299,6 +2299,7 @@ namespace bgfx { namespace gl
+ 			, m_vaoSupport(false)
+ 			, m_samplerObjectSupport(false)
+ 			, m_srgbWriteControlSupport(BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGL) )
++			, m_msrttSupport(false)
+ 			, m_srgbDecodeSupport(false)
+ 			, m_borderColorSupport(BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGL) )
+ 			, m_programBinarySupport(false)
+@@ -3106,6 +3107,41 @@ namespace bgfx { namespace gl
+ 
+ 				m_srgbDecodeSupport = s_extension[Extension::EXT_texture_sRGB_decode].m_supported;
+ 
++				// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): offscreen multisampled colour without
++				// multisample memory traffic. With EXT_multisampled_render_to_texture a tile GPU keeps the colour
++				// samples on chip and writes only the resolved pixels; without it they go to a renderbuffer in memory,
++				// resolved by a blit. Depth/stencil keep their multisample renderbuffers either way: the renderer draws
++				// into the scene depth again after leaving it (the 3D after the post chain) and the UI layers share one
++				// stencil, and an implicitly resolved depth/stencil would be undefined by then. Such framebuffers mix
++				// the two kinds of multisample storage, which the extension allows when the sample counts agree; a
++				// driver that rejects the mix keeps the blit path. The path is logged once, whichever it is.
++				m_msrttSupport = true
++					&& BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGLES)
++					&& s_extension[Extension::EXT_multisampled_render_to_texture].m_supported
++					&& NULL != glFramebufferTexture2DMultisampleEXT
++					;
++				if (m_msrttSupport)
++				{
++					for (int32_t samples = 2; samples <= bx::min<int32_t>(m_maxMsaa, 4) && m_msrttSupport; samples *= 2)
++					{
++						const GLenum status = msrttMixedFramebufferStatus(samples);
++						if (GL_FRAMEBUFFER_COMPLETE != status)
++						{
++							trace(__FILE__, __LINE__, "BGFX offscreen MSAA: EXT_multisampled_render_to_texture colour with a "
++								"%dx multisample depth/stencil renderbuffer is incomplete here (0x%04x): renderbuffers "
++								"resolved by a blit\n", samples, status);
++							m_msrttSupport = false;
++						}
++					}
++				}
++				trace(__FILE__, __LINE__, "BGFX offscreen MSAA: %s\n", m_msrttSupport
++					? "colour through EXT_multisampled_render_to_texture (samples stay on chip, implicit resolve), "
++					  "depth/stencil in multisample renderbuffers"
++					: s_extension[Extension::EXT_multisampled_render_to_texture].m_supported && BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGLES)
++					? "renderbuffers resolved by a blit (EXT_multisampled_render_to_texture not usable, see above)"
++					: "renderbuffers resolved by a blit (no EXT_multisampled_render_to_texture)"
++					);
++
+ 				if (s_extension[Extension::OES_read_format].m_supported
+ 				&& (s_extension[Extension::IMG_read_format].m_supported	|| s_extension[Extension::EXT_read_format_bgra].m_supported) )
+ 				{
+@@ -4408,6 +4444,38 @@ namespace bgfx { namespace gl
+ 			return 1;
+ 		}
+ 
++		// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): the framebuffer status of an offscreen target as
++		// the renderer makes it, an RGBA8 texture attached with EXT_multisampled_render_to_texture and a D24S8 multisample
++		// renderbuffer of the same sample count.
++		GLenum msrttMixedFramebufferStatus(int32_t _samples)
++		{
++			for (uint32_t ii = 0; ii < 8 && GL_NO_ERROR != glGetError(); ++ii) {}
++
++			GLuint texture = 0, rbo = 0, fbo = 0;
++			glGenTextures(1, &texture);
++			glBindTexture(GL_TEXTURE_2D, texture);
++			glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, 16, 16);
++			glBindTexture(GL_TEXTURE_2D, 0);
++			glGenRenderbuffers(1, &rbo);
++			glBindRenderbuffer(GL_RENDERBUFFER, rbo);
++			glRenderbufferStorageMultisample(GL_RENDERBUFFER, _samples, GL_DEPTH24_STENCIL8, 16, 16);
++			glBindRenderbuffer(GL_RENDERBUFFER, 0);
++			glGenFramebuffers(1, &fbo);
++			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
++			glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0, _samples);
++			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
++			const GLenum status = GL_NO_ERROR == glGetError()
++				? glCheckFramebufferStatus(GL_FRAMEBUFFER)
++				: GL_INVALID_OPERATION
++				;
++			glBindFramebuffer(GL_FRAMEBUFFER, 0);
++			glDeleteFramebuffers(1, &fbo);
++			glDeleteRenderbuffers(1, &rbo);
++			glDeleteTextures(1, &texture);
++			for (uint32_t ii = 0; ii < 8 && GL_NO_ERROR != glGetError(); ++ii) {}
++			return status;
++		}
++
+ 		void createMsaaFbo(uint32_t _width, uint32_t _height, uint32_t _msaa)
+ 		{
+ 			if (0 == m_msaaBackBufferFbo // iOS
+@@ -5586,6 +5654,7 @@ namespace bgfx { namespace gl
+ 		bool m_vaoSupport;
+ 		bool m_samplerObjectSupport;
+ 		bool m_srgbWriteControlSupport;
++		bool m_msrttSupport; // Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch)
+ 		bool m_srgbDecodeSupport;
+ 		bool m_borderColorSupport;
+ 		bool m_programBinarySupport;
+@@ -6599,6 +6668,22 @@ namespace bgfx { namespace gl
+ 			const uint32_t msaaQuality = 1 == numSamples ? 0 : bx::min<uint32_t>(s_renderGL->m_maxMsaa, numSamples);
+ 			const bool msaaSample = 0 != (m_flags&BGFX_TEXTURE_MSAA_SAMPLE);
+ 
++			// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): a sampled 2D multisampled colour target is
++			// attached itself with EXT_multisampled_render_to_texture in every framebuffer: no renderbuffer, no blit.
++			// Depth/stencil keep their multisample renderbuffer (see m_msrttSupport).
++			if (s_renderGL->m_msrttSupport
++			&&  !msaaSample
++			&&  !writeOnly
++			&&  0 != msaaQuality
++			&&  !textureArray
++			&&  GL_TEXTURE_2D == _target
++			&&  1 == _numMips // the extension attaches level 0 only
++			&&  !bimg::isDepth(bimg::TextureFormat::Enum(m_textureFormat) ) )
++			{
++				m_msrttSamples = msaaQuality;
++				return true;
++			}
++
+ 			if (!msaaSample
+ 			&& (0 != msaaQuality || writeOnly)
+ 			&&  !textureArray)
+@@ -8058,6 +8143,15 @@ namespace bgfx { namespace gl
+ 
+ 			bool needResolve = false;
+ 
++			// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): a colour attachment made for
++			// EXT_multisampled_render_to_texture is the resolved texture itself (FrameBufferGL::discard).
++			m_msrtt = false;
++			for (uint32_t ii = 0; ii < m_numTh; ++ii)
++			{
++				const Attachment& at = m_attachment[ii];
++				m_msrtt |= isValid(at.handle) && 0 != s_renderGL->m_textures[at.handle.idx].m_msrttSamples;
++			}
++
+ 			GLenum buffers[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+ 
+ 			uint32_t colorIdx = 0;
+@@ -8130,6 +8224,17 @@ namespace bgfx { namespace gl
+ 									) );
+ 							}
+ 						}
++						else if (0 != texture.m_msrttSamples)
++						{
++							// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch).
++							GL_CHECK(glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER
++								, attachment
++								, GL_TEXTURE_2D
++								, texture.m_id
++								, at.mip
++								, texture.m_msrttSamples
++								) );
++						}
+ 						else
+ 						{
+ 							GLenum target = texture.isCubeMap()
+@@ -8654,6 +8759,13 @@ namespace bgfx { namespace gl
+ 		GLenum buffers[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS+2];
+ 		uint32_t idx = 0;
+ 
++		// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): with MSRTT a colour attachment is the resolved
++		// texture itself; its samples are dropped by the driver anyway. Invalidating it would lose the picture.
++		if (m_msrtt)
++		{
++			_flags &= ~BGFX_CLEAR_DISCARD_COLOR_MASK;
++		}
++
+ 		if (BGFX_CLEAR_NONE != (_flags & BGFX_CLEAR_DISCARD_COLOR_MASK) )
+ 		{
+ 			for (uint32_t ii = 0, num = m_num; ii < num; ++ii)
+diff --git a/src/renderer_gl.h b/src/renderer_gl.h
+index 367fe797f..173a5ad83 100644
+--- a/src/renderer_gl.h
++++ b/src/renderer_gl.h
+@@ -1491,6 +1491,7 @@ namespace bgfx { namespace gl
+ 			: m_id(0)
+ 			, m_rbo(0)
+ 			, m_idResolve(0)
++			, m_msrttSamples(0)
+ 			, m_target(GL_TEXTURE_2D)
+ 			, m_fmt(GL_ZERO)
+ 			, m_type(GL_ZERO)
+@@ -1542,6 +1543,9 @@ namespace bgfx { namespace gl
+ 		GLuint m_id;
+ 		GLuint m_rbo;
+ 		GLuint m_idResolve;
++		// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): the sample count of a multisampled colour target
++		// attached with EXT_multisampled_render_to_texture (no renderbuffer, implicit resolve); 0 for every other.
++		uint32_t m_msrttSamples;
+ 		GLenum m_target;
+ 		GLenum m_fmt;
+ 		GLenum m_type;
+@@ -1589,6 +1593,7 @@ namespace bgfx { namespace gl
+ 			, m_denseIdx(UINT16_MAX)
+ 			, m_num(0)
+ 			, m_needPresent(false)
++			, m_msrtt(false)
+ 		{
+ 			bx::memSet(m_fbo, 0, sizeof(m_fbo) );
+ 		}
+@@ -1625,6 +1630,7 @@ namespace bgfx { namespace gl
+ 		uint8_t  m_num;
+ 		uint8_t  m_numTh;
+ 		bool     m_needPresent;
++		bool     m_msrtt; // Storm Engine patch: has colour attached with EXT_multisampled_render_to_texture
+ 		Attachment m_attachment[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+ 	};
+ 
