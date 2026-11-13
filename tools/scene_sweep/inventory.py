@@ -166,7 +166,7 @@ def first_of_each_category(scenes):
 
 def build(game):
     """Every scene of the game: all locations, the sea around every island, and the
-    special scenes (night, land combat, underwater surface, sea at sunset, sea battle, boarding, world map, storm)."""
+    special scenes (night, land combat, underwater surface, sea at sunset, sunrise and midnight, sea battle, boarding, world map, storm)."""
     land = locations(game)
     scenes = list(land)
     sea = islands(game)
@@ -195,6 +195,7 @@ def build(game):
     weather = tree_fingerprint(game, 'PROGRAM/weather')
     scenes.append(Scene('dusk:open', 'sea at sunset', weather))
     scenes.append(Scene('dawn:open', 'sea at sunrise', weather))
+    scenes.append(Scene('moon:open', 'sea at midnight', weather))
     scenes.append(Scene('ship:night', 'ship at night', weather + tree_fingerprint(game, 'PROGRAM/sea_ai')))
     scenes.append(Scene('storm:world', 'storm', worldmap + tree_fingerprint(game, 'PROGRAM/weather')))
     return scenes

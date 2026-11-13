@@ -17,6 +17,7 @@
 //   sea:<island>   sea around <island> ("sea:" is open sea)
 //   dusk:open      the open sea at sunset (19:00, the "19 Hour" weather: its sunset sky), heading towards the sun
 //   dawn:open      the open sea at sunrise (7:00, the "7 Hour" weather), heading into the low sun (in view)
+//   moon:open      the open sea at 23:45 of the 14th (the "0 Hours" weather), heading into the rising moon (in view)
 //   ship:night     the open sea at 0:00 (the "0 Hours" weather), the ship camera close and looking down at the hero's
 //                  ship: rigging against the water, the bow wave and the hull at the waterline
 //   battle:<island> sea around <island> with an attacking enemy ship, captured once it has fired
@@ -386,6 +387,7 @@ void SceneSweep_Start()
 	case "sea":		SceneSweep_StartSea(false);		break;
 	case "dusk":	SceneSweep_StartSea(false);		break;
 	case "dawn":	SceneSweep_StartSea(false);		break;
+	case "moon":	SceneSweep_StartSea(false);		break;
 	case "ship":	SceneSweep_StartSea(false);		break;
 	case "battle":	SceneSweep_StartSea(true);		break;
 	case "boarding":
@@ -414,7 +416,7 @@ void SceneSweep_Start()
 		}
 		break;
 	}
-	if(ssKind != "loc" && ssKind != "combat" && ssKind != "night" && ssKind != "surface" && ssKind != "sea" && ssKind != "dusk" && ssKind != "dawn" && ssKind != "ship" &&
+	if(ssKind != "loc" && ssKind != "combat" && ssKind != "night" && ssKind != "surface" && ssKind != "sea" && ssKind != "dusk" && ssKind != "dawn" && ssKind != "moon" && ssKind != "ship" &&
 		ssKind != "battle" && ssKind != "boarding" && ssKind != "map" && ssKind != "storm")
 	{
 		SceneSweep_Fail("unknown scene kind");
@@ -466,6 +468,7 @@ bool SceneSweep_Loaded()
 	case "sea":		return SceneSweep_AtSea();	break;
 	case "dusk":	return SceneSweep_AtSea();	break;
 	case "dawn":	return SceneSweep_AtSea();	break;
+	case "moon":	return SceneSweep_AtSea();	break;
 	case "ship":
 		if(!SceneSweep_AtSea()) return false;
 		if(ssStep == 0)
@@ -643,18 +646,30 @@ void SceneSweep_StartSea(bool withEnemy)
 		SetCurrentTime(0, 0);
 		SetNextWeather("0 Hours");
 	}
-	if(ssKind != "dusk" && ssKind != "dawn" && ssKind != "ship")
+	// The moon of the 14th (WhrSun.c: Moon03, nearly full; the 1st has the new moon, a black disc), a quarter of an
+	// hour after it rises (23:30): about 11 degrees up, in view.
+	if(ssKind == "moon")
+	{
+		Environment.date.day = 14;
+		worldMap.date.day = 14;
+		SetCurrentTime(23, 45);
+		SetNextWeather("0 Hours");
+	}
+	if(ssKind != "dusk" && ssKind != "dawn" && ssKind != "moon" && ssKind != "ship")
 	{
 		SetCurrentTime(12, 0);
 		SetNextWeather("12 Hour");
 	}
 	string island = ssId;
-	if(ssKind == "map" || ssKind == "storm" || ssKind == "dusk" || ssKind == "dawn" || ssKind == "ship") island = "";
+	if(ssKind == "map" || ssKind == "storm" || ssKind == "dusk" || ssKind == "dawn" || ssKind == "moon" || ssKind == "ship") island = "";
 	DeleteAttribute(&questToSeaLoginer, "");
 	QuestToSeaLogin_Prepare(0.0, 0.0, island);
 	// The open sea, the ship (and its camera) heading into the sun: sun glare, shafts, the sun road.
 	if(ssKind == "dusk") questToSeaLoginer.PlayerGroup.ay = SceneSweep_SunHeading(19.0, 0.3);	// the sunset sky ahead
 	if(ssKind == "dawn") questToSeaLoginer.PlayerGroup.ay = SceneSweep_SunHeading(7.0, 0.45);
+	// WEATHER moves the moon from azimuth PI/2 (23:30) to -PI/2 (4:30): at 23:45 it stands at 0.45 PI, where the sun
+	// stands at 13:06.
+	if(ssKind == "moon") questToSeaLoginer.PlayerGroup.ay = SceneSweep_SunHeading(13.1, 0.3);
 	if(island != "")
 	{
 		if(FindIsland(island) < 0)
