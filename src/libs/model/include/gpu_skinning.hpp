@@ -46,7 +46,8 @@ class GpuSkinning
 
   public:
     // AVERTEX0 copies in the layout above: the skin weight and the torso weight of each vertex, 0..255, from its two
-    // bones and its blend weight (as the shader blends the bones); 0 everywhere without skin bones.
+    // bones and its blend weight (as the shader blends the bones). Missing/invalid bone classifications suppress
+    // character relief through full skin weight; an unsupported skeleton must never make bare skin fail open.
     static void writeSkinWeights(uint8_t *vertices, uint32_t count, const std::vector<uint8_t> &skin)
     {
         for (uint32_t i = 0; i < count; ++i)
@@ -55,7 +56,11 @@ class GpuSkinning
             float weight;
             std::memcpy(&weight, vertex + kSkinnedWeightOffset, sizeof(weight));
             const uint8_t *bones = vertex + kSkinnedBonesOffset;
-            const auto flag = [&skin](uint8_t bone, uint8_t kind) { return bone < skin.size() && skin[bone] == kind ? 1.0f : 0.0f; };
+            const auto flag = [&skin](uint8_t bone, uint8_t kind) {
+                if (bone >= skin.size())
+                    return kind == 1 ? 1.0f : 0.0f; // unknown anatomy: conservative skin, never unmasked clothing
+                return skin[bone] == kind ? 1.0f : 0.0f;
+            };
             const float w = std::clamp(weight, 0.0f, 1.0f);
             const float value = flag(bones[0], 1) * w + flag(bones[1], 1) * (1.0f - w);
             const float torso = flag(bones[0], 2) * w + flag(bones[1], 2) * (1.0f - w);

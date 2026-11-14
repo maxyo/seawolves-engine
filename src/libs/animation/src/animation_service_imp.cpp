@@ -564,7 +564,7 @@ bool AnimationServiceImp::LoadAN(const char *fname, AnimationInfo *info)
             storm::animation::SkinBones skin = storm::animation::FindSkinBones(
                 std::span<const int32_t>(prntIndeces, header.nJoints), std::span<const glm::vec3>(vrt, header.nJoints));
             if (skin.skin.empty())
-                core.Trace("Animation %s: no skin bones (%s): its characters' relief covers the whole body", fname,
+                core.Trace("Animation %s: no validated skin bones (%s): its characters' relief is conservatively suppressed", fname,
                            skin.failure.c_str());
             // Per bone: 1 skin, 2 torso (skin_bones.hpp), 0 neither.
             std::vector<uint8_t> classes(skin.skin.size(), 0);
