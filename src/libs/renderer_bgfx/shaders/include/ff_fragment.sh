@@ -539,20 +539,21 @@ void main()
     // When in doubt the relief goes (the owner's choice): half a bone's share of skin (a collar, a cuff at the wrist)
     // already takes all of it.
     float ffSkin = clamp(2.0 * v_normal.w, 0.0, 1.0);
-#ifdef FX_LIGHT_NORMALMAP
-    // The relief follows the coordinates of its stage (u_fxFf.y); with the parallax that stage's texture is then read
-    // where the relief's map is (ffReliefUv, with the derivatives of the unshifted coordinates).
-    vec2 ffReliefUv = u_fxFf.y > 0.5 ? v_texcoord1.xy : v_texcoord0.xy;
     // A character's torso and arms: skin where the atlas there has the character's own skin colour (fx/skin_tone.hpp,
     // u_fxSkinTone; read at about 64 texels across, so the grain of leather and dark cloth averages into its own colour).
+    // This also protects generated gloss in specular-only variants, before normal maps become ready.
     float ffTorso = clamp(v_position.w, 0.0, 1.0);
     if (ffTorso > 0.004)
     {
         if (u_fxSkinTone[0].x < 0.0)
             ffSkin = max(ffSkin, clamp(2.0 * ffTorso, 0.0, 1.0));
         else if (u_fxSkinTone[0].x > 0.0)
-            ffSkin = max(ffSkin, clamp(2.0 * ffTorso * ffSkinLikeness(texture2DLod(s_tex0, ffReliefUv, u_fxSkinTone[1].w).rgb), 0.0, 1.0));
+            ffSkin = max(ffSkin, clamp(2.0 * ffTorso * ffSkinLikeness(texture2DLod(s_tex0, v_texcoord0.xy, u_fxSkinTone[1].w).rgb), 0.0, 1.0));
     }
+#ifdef FX_LIGHT_NORMALMAP
+    // The relief follows the coordinates of its stage (u_fxFf.y); with the parallax that stage's texture is then read
+    // where the relief's map is (ffReliefUv, with the derivatives of the unshifted coordinates).
+    vec2 ffReliefUv = u_fxFf.y > 0.5 ? v_texcoord1.xy : v_texcoord0.xy;
     vec2 ffReliefDx = dFdx(ffReliefUv);
     vec2 ffReliefDy = dFdy(ffReliefUv);
     vec3 reliefGu;

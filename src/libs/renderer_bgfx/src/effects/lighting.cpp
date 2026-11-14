@@ -495,8 +495,10 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         u[5][1] = 0.0f;
     u[5][0] *= relief_fade * (character ? settings_.character_relief_strength : 1.0f);
     const bool has_relief = bgfx::isValid(normal_map) && u[5][0] > 0.0f;
-    // A character's torso: its skin colour, read once per atlas from the texels under its face (fx/skin_tone.hpp).
-    if (has_relief && character && layout.skinned && relief_stage == 0 && settings_.character_skin_colour)
+    // Generated gloss can remain ready while the normal map is pending or its strength is zero. Protect torso skin
+    // in that specular-only variant too; its colour always comes from the stage-0 albedo, independently of relief UVs.
+    if ((has_relief || bgfx::isValid(gloss_map.handle)) && character && layout.skinned && stage0 &&
+        settings_.character_skin_colour)
         draw.skin_tone = skin_tone(*shim::store_of(device.s.textures[0]), sphere_source);
     draw.ff = {two_sided && u[2][3] > 0.0f ? 1.0f : 0.0f, has_relief ? static_cast<float>(relief_stage) : 0.0f, 0.0f, 0.0f};
     int relief = 0; // the variant: 1 the normal map, 2 with the parallax

@@ -57,3 +57,5 @@ int main(int argc,char **argv) {
 subprocess.run([os.environ.get('PYTHON','python3'),str(Path(__file__).with_name('cache_run.py'))],check=True)
 subprocess.run([os.environ.get('PYTHON','python3'),str(Path(__file__).with_name('binding_run.py'))],check=True)
 subprocess.run([os.environ.get('PYTHON','python3'),str(Path(__file__).with_name('anatomy_run.py'))],check=True)
+
+subprocess.run([os.environ.get('PYTHON','python3'),str(Path(__file__).with_name('gloss_run.py'))],check=True)
