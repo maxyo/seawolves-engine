@@ -7,6 +7,7 @@
 // Positions are those of the sea's vertices (a_position: world minus the sea's own camera offset, small numbers).
 #ifndef SEA_WAVES_SH
 #define SEA_WAVES_SH
+#include "fx_waves_surface_storage.sh"
 
 SAMPLER2D(s_seaWaves, 15); // unit of fx::kShadowMapStage: never bound on a Sea2 draw
 // [0] xy: field uv at the sea's vertex origin, z: 1 / metres the field covers (uv = pos.xz * z + xy), w: lift (0 off)
@@ -31,7 +32,8 @@ float seaWavesInside(vec2 uv)
 vec4 seaWavesDecode(vec4 s)
 {
     if (u_seaWaves[2].y > 0.5)
-        return vec4(s.r - 128.0 / 255.0, (s.gb - 128.0 / 255.0) * 2.0, s.a);
+        // Fragment consumers use only the linear slopes/foam; height is decoded separately in seaWavesLift.
+        return vec4(0.0, (s.gb - 128.0 / 255.0) * 2.0, s.a);
     return s;
 }
 
@@ -42,7 +44,24 @@ float seaWavesLift(vec2 pos)
     if (u_seaWaves[0].w <= 0.0)
         return 0.0;
     vec2 uv = seaWavesUv(pos);
-    return seaWavesDecode(texture2DLod(s_seaWaves, uv, 0.0)).x * seaWavesInside(uv) * u_seaWaves[0].w;
+    float height;
+    if (u_seaWaves[2].y > 0.5)
+    {
+        // The fallback's companded height cannot be filtered in encoded space. Sample its four texel centres;
+        // slopes and foam in the pixel shaders remain linear and retain the existing four-tap cubic filter.
+        float size = u_seaWaves[2].w;
+        vec2 st = uv * size - 0.5;
+        vec2 base = (floor(st) + 0.5) / size;
+        vec2 f = fract(st);
+        float a = fxWavesDecodeSurfaceHeight(texture2DLod(s_seaWaves, base, 0.0).r);
+        float b = fxWavesDecodeSurfaceHeight(texture2DLod(s_seaWaves, base + vec2(1.0 / size, 0.0), 0.0).r);
+        float c = fxWavesDecodeSurfaceHeight(texture2DLod(s_seaWaves, base + vec2(0.0, 1.0 / size), 0.0).r);
+        float d = fxWavesDecodeSurfaceHeight(texture2DLod(s_seaWaves, base + vec2_splat(1.0 / size), 0.0).r);
+        height = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
+    else
+        height = texture2DLod(s_seaWaves, uv, 0.0).r;
+    return height * seaWavesInside(uv) * u_seaWaves[0].w;
 }
 #endif
 

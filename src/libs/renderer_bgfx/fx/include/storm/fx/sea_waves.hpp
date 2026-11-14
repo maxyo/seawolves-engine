@@ -16,8 +16,9 @@
 // Support::sea_waves_float selects RG32F state; sea_waves_surface_float independently selects RGBA16F surface.
 // Each unsupported format falls back independently: RGBA8 stores a signed 16-bit height and a 16-bit
 // reference-step displacement (logarithmically encoded for precision near still water), both exactly zeroable.
-// Keeping displacement separately avoids persistent velocity from height rounding. An RGBA8 surface stores height
-// +-kSurfaceHeight and slopes +-kSurfaceSlope around 128/255, whose 8-bit steps (0.008 of slope) show as faint terraces
+// Keeping displacement separately avoids persistent velocity from height rounding. An RGBA8 surface stores signed
+// square-root height +-kSurfaceHeight (decode before bilinear vertex filtering), and linear slopes +-kSurfaceSlope
+// around 128/255, whose 8-bit steps (0.008 of slope) show as faint terraces
 // in the reflection.
 #pragma once
 

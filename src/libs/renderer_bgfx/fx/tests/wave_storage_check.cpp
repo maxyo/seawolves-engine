@@ -12,9 +12,11 @@ using std::clamp;
 using std::exp2;
 using std::floor;
 using std::log2;
+using std::sqrt;
 float sign(float x) { return x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f; }
 #include "../shaders/include/fx_waves_storage.sh"
 #include "../shaders/include/fx_waves_flux.sh"
+#include "../shaders/include/fx_waves_surface_storage.sh"
 }
 
 namespace
@@ -128,6 +130,23 @@ int main()
         CHECK(old_h > 10.0f * h);
         std::printf("source flux %s x%d height=%.6f expected=.08 old=%.6f\n", packed ? "packed" : "float", scale, h, old_h);
     }
+    const auto surface = [](float h) {
+        const float code = std::floor(storage::fxWavesEncodeSurfaceHeight(h) * 255.0f + .5f);
+        return storage::fxWavesDecodeSurfaceHeight(code / 255.0f);
+    };
+    CHECK(surface(0) == 0 && surface(-.5f) == -.5f && surface(.5f) == .5f);
+    CHECK(std::abs(surface(.001f) - .001f) < .0002f);
+    for (int q = 1; q <= 255; ++q)
+    {
+        const float channel = q / 255.0f;
+        const float value = storage::fxWavesDecodeSurfaceHeight(channel);
+        CHECK(std::floor(storage::fxWavesEncodeSurfaceHeight(value) * 255.0f + .5f) == q);
+    }
+    // Decoding the linear-filtered encoded channel biases geometry; the vertex path decodes each corner first.
+    const float correct_midpoint = (surface(0) + surface(.08f)) * .5f;
+    const float wrong_midpoint = storage::fxWavesDecodeSurfaceHeight(
+        (storage::fxWavesEncodeSurfaceHeight(0) + storage::fxWavesEncodeSurfaceHeight(.08f)) * .5f);
+    CHECK(std::abs(correct_midpoint - .04f) < .001f && wrong_midpoint < .021f);
     CHECK(QuantizeHeight(0) == 0 && QuantizeVelocity(0) == 0);
     CHECK(QuantizeHeight(-2) == -2 && QuantizeHeight(2) == 2);
     CHECK(QuantizeVelocity(-4) == -4 && QuantizeVelocity(4) == 4);

@@ -13,7 +13,7 @@ SAMPLER2D(s_wavesState, 0);
 //     w: velocity kept over this step times dt / dt_last (the steps are unequal: WaveClock)
 // [1] x: 1 / size, y: metres per texel, z: dt, w: sources
 // [2] x: time (s), y: 1 = write still water, z: 1 = packed RGBA8 state, w: metres the field covers
-// [3] x: reserved (0)
+// [3] x: body momentum forcing integrated over this and the preceding step
 //     y: step pass: stored-state retention; surface pass: 1 = RGBA8 surface
 //     z: velocity kept times dt / reference_dt; w: reference_dt / dt (packed state only)
 uniform vec4 u_wavesStep[4];
