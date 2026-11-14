@@ -13,6 +13,8 @@ namespace {
 int cpu_runs=0,gpu_runs=0,cpu_released=0;
 bool slow_gpu=false, fail_gpu_load=false, start_gpu=false, fail_cpu_height=false, fail_cpu_open=false;
 int live_cpu_models=0;
+bool gpu_open=false;
+std::string gpu_marker;
 void expect(bool v,const char*s) {if(!v){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);}std::printf("ok: %s\n",s);}
 class Model final: public storm::relief::Network {
  bool gpu_;int scale_;
@@ -42,13 +44,16 @@ void write_tx(const std::filesystem::path &p) {
 }
 namespace storm::relief {
 std::unique_ptr<CpuRuntime> CpuRuntime::Open(int,std::string &error,int) {if(fail_cpu_open){error="synthetic CPU runtime allocation failure";return nullptr;}return std::make_unique<Runtime>();}
-const GpuDevice &Gpu(){static GpuDevice gpu{true,"deterministic","1",{}};return gpu;}
-bool ReleaseGpu(){return false;}
+const GpuDevice &Gpu(){
+ if(!gpu_open){expect(gpu_marker==kGpuOpening,"lazy GPU reopening has opening-Vulkan crash guard");gpu_open=true;}
+ static GpuDevice gpu{true,"deterministic","1",{}};return gpu;
+}
+bool ReleaseGpu(){const bool was=gpu_open;gpu_open=false;return was;}
 std::unique_ptr<Network> LoadGpuNetwork(std::span<const uint8_t>,std::span<const uint8_t>,int,int scale,std::string &error) {if(fail_gpu_load){error="synthetic controlled GPU initialization failure";return nullptr;}return std::make_unique<Model>(true,scale);}
 const char *DeviceName(Device d){return d==Device::Gpu?"GPU":"CPU";}
-Device ChooseDevice(const std::filesystem::path&,std::span<const uint8_t>,std::span<const uint8_t>,std::span<const uint8_t>,int,int,double &cost){cost=1.;return start_gpu?Device::Gpu:Device::Cpu;}
-void MarkGpuRunning(const std::filesystem::path&,const std::string&){}
-void ClearGpuRunning(const std::filesystem::path&){}
+Device ChooseDevice(const std::filesystem::path&,std::span<const uint8_t>,std::span<const uint8_t>,std::span<const uint8_t>,int,int,double &cost){MarkGpuRunning({},kGpuOpening);Gpu();ClearGpuRunning({});cost=1.;return start_gpu?Device::Gpu:Device::Cpu;}
+void MarkGpuRunning(const std::filesystem::path&,const std::string &what){gpu_marker=what;}
+void ClearGpuRunning(const std::filesystem::path&){gpu_marker.clear();}
 std::string GpuCrash(const std::filesystem::path&){return {};}
 std::string GpuLabel(const GpuDevice&){return "deterministic";}
 // Kept so the same negative-control fixture links against the pre-situational production implementation.
@@ -64,7 +69,7 @@ int main(int argc,char**argv) {
  for(int i=0;i<8;++i)expect(run(*session,i,"fast")==Outcome::Prepared,"real CPU x2 prepared and stored");
  expect(cpu_runs==8 && gpu_runs==0,"eight x2-only requests ran on CPU");
  expect(!session->WaitsForGpu(),"eight CPU completions open background admission");
- session->ReleaseIdleModels();
+ session->ReleaseIdleModels();ReleaseGpu();
  expect(!session->WaitsForGpu(),"releasing idle inference objects preserves eight-completion retry");
  expect(run(*session,8,"fast")==Outcome::Prepared,"ninth x2-only request succeeds on retry");
  expect(gpu_runs==1 && session->stats().gpu,"x2-only workload actually returns to GPU");

@@ -416,8 +416,11 @@ struct Session::Impl
             return true;
         std::lock_guard lock(networks_mutex);
         // The networks' pipelines are made on the GPU now: the crash guard's marker stays until its first texture.
-        MarkGpuRunning(cache, GpuLabel(Gpu()));
+        // Idle/trim may have closed Vulkan while keeping this Session's retry state. Guard the lazy
+        // instance creation itself before evaluating Gpu(), just as the initial ChooseDevice path does.
+        MarkGpuRunning(cache, kGpuOpening);
         gpu_unproven = true;
+        MarkGpuRunning(cache, GpuLabel(Gpu()));
         gpu[0] = LoadGpuNetwork(models.normal_param, models.normal_bin, fx::kReliefModelPad, 1, error);
         if (gpu[0])
             gpu[1] = LoadGpuNetwork(models.height_param, models.height_bin, fx::kReliefModelPad, 1, error);
