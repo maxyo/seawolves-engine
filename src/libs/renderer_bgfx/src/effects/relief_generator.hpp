@@ -18,6 +18,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -72,6 +73,11 @@ class ReliefGenerator
     void set_display(bool on, std::filesystem::path directory, bool bc);
     // Stops the worker (the texture in progress is abandoned: onnxruntime stops its inference).
     void shutdown();
+    // Game thread, every frame: how many of its draws were the 3D scene's (lit and baked). A few frames without a scene
+    // (a loading or an interface screen), or no frame for a second (the game in the background), leave the GPU free:
+    // relief::Session tries the GPU again and the rest of the game goes on it.
+    void frame(uint32_t scene_draws);
+    bool gpu_free() const;
     // Any thread (the system is low on memory: render::TrimRelief): the models are released after the texture in
     // progress, and the GPU instance closed; they load again when work comes. Logged.
     void trim();
@@ -113,6 +119,11 @@ class ReliefGenerator
     std::condition_variable wake_;
     std::thread worker_;
     bool stopping_ = false;
+    std::atomic<int64_t> last_frame_us_{0};
+    std::atomic<bool> scene_quiet_{false};
+    uint32_t scene_draws_[30] = {};
+    uint32_t scene_frame_ = 0;
+    bool waiting_logged_ = false;
     bool trim_ = false;
     bool active_ = false;
     ReliefSetup setup_;

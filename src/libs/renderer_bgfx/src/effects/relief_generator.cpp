@@ -240,10 +240,20 @@ void ReliefGenerator::run()
                     release_models("the system is low on memory");
                 }
                 const Clock::time_point now = Clock::now();
-                const bool rest = active_ && !rest_done_ && !model_failed_;
+                if (session_)
+                    session_->SetGpuFree(gpu_free());
+                // The rest of the game waits while the GPU is busy with the game and the work went to the CPU.
+                const bool blocked = session_ && session_->WaitsForGpu();
+                if (blocked != waiting_logged_)
+                {
+                    shim::logf(blocked ? "effects: relief generation: the rest of the game waits for the GPU (the game's "
+                                         "rendering keeps it busy; what is on screen is made on the CPU)"
+                                       : "effects: relief generation: the rest of the game goes on");
+                    waiting_logged_ = blocked;
+                }
+                const bool rest = active_ && !rest_done_ && !model_failed_ && !blocked;
                 reconcile_upscales();
-                // Reselect from fresh 500 ms player-distance observations before every job. In-flight work is
-                // never restarted. Alternate only within the same proximity band; background work remains last.
+                // Reselect from fresh player-distance observations before every job; keep lane fairness.
                 request = next_request();
                 upscale = next_upscale();
                 if (request && upscale)
@@ -272,6 +282,8 @@ void ReliefGenerator::run()
                 // Nothing due: a request wakes the worker; the rest waits for a quiet spell; with no work left at
                 // all the model goes after kIdleRelease.
                 Clock::time_point until = rest ? last_request_ + kRestQuiet : Clock::time_point::max();
+                if (blocked)
+                    until = std::min(until, now + std::chrono::seconds(1)); // looks again whether the GPU is free
                 if (session_ && !rest)
                 {
                     if (now - idle_since_ >= kIdleRelease)
@@ -328,7 +340,7 @@ void ReliefGenerator::run()
             // (its environment, the three sessions) is not held between them. (On the GPU the networks stay: making
             // their pipelines again would cost more than the texture.)
             std::lock_guard lock(mutex_);
-            if (session_ && !session_->stats().gpu)
+            if (session_ && !session_->stats().gpu && !session_->stats().gpu_possible)
             {
                 running_ = nullptr;
                 session_.reset();
@@ -419,7 +431,7 @@ void ReliefGenerator::prepare_request(const Request &request)
     const double ms = Ms(start);
     {
         std::lock_guard lock(mutex_);
-        stats_.device = session_->stats().provider; // the GPU may have handed over to the CPU (relief::DemoteGpu)
+        stats_.device = session_->stats().provider; // the device of the last texture (relief::Session, per texture)
         if (stopping_)
         {
             entry->state = NormalMapEntry::Missing;
@@ -449,6 +461,29 @@ void ReliefGenerator::prepare_request(const Request &request)
                    request.file.string().c_str(),
                    outcome == relief::Outcome::Skipped ? "gets no prepared map" : "has a map under another key");
     entry->state = NormalMapEntry::Failed;
+}
+
+void ReliefGenerator::frame(uint32_t scene_draws)
+{
+    last_frame_us_ = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
+    scene_draws_[scene_frame_++ % std::size(scene_draws_)] = scene_draws;
+    uint32_t most = 0;
+    for (const uint32_t n : scene_draws_)
+        most = std::max(most, n);
+    const bool quiet = most < 8; // a loading or interface screen draws no scene (a menu over the scene still does)
+    if (quiet != scene_quiet_)
+        shim::logf(quiet ? "effects: relief generation: the game draws no scene (a loading or interface screen): the GPU "
+                           "is free for the relief"
+                         : "effects: relief generation: the game draws its scene again (%u draws): the GPU is the game's",
+                   scene_draws);
+    scene_quiet_ = quiet;
+}
+
+bool ReliefGenerator::gpu_free() const
+{
+    const int64_t last = last_frame_us_;
+    const int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
+    return scene_quiet_ || (last != 0 && now - last > 1000000);
 }
 
 void ReliefGenerator::trim()

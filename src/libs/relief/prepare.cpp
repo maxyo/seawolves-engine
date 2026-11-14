@@ -15,6 +15,7 @@
 #include "storm/fx/cutout.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
@@ -372,29 +373,97 @@ bool WriteDisplay(const UpscaleOutput &display, uint64_t key, const std::vector<
 
 } // namespace
 
+// Which device a texture runs on, decided per texture (the owner: the GPU is the device, the CPU stands in while the
+// game's own rendering keeps the GPU busy, and the GPU is tried again):
+//   * on the GPU, a texture whose networks took 1.5 times the CPU's estimate for its texels (the probe's cost per
+//     texel), twice in a row while the game draws its scene, moves the work to the CPU;
+//   * on the CPU, the GPU is tried again for the next texture as soon as the game leaves the GPU free (a loading or an
+//     interface screen, the game in the background: SetGpuFree) or after kRetrySeconds / kRetryTextures; fast enough
+//     and the work goes back to the GPU;
+//   * on the CPU, only the textures that cannot wait are made (the ones on screen); the rest of the game waits for the
+//     GPU (WaitsForGpu).
+// Every switch is logged with its reason and numbers. Nothing of it is kept across sessions (the crash record is:
+// backend.hpp MarkGpuRunning).
+constexpr double kSlowFactor = 1.5;
+constexpr int kSlowInARow = 2, kRetryTextures = 8;
+constexpr auto kRetrySeconds = std::chrono::seconds(60);
+
 struct Session::Impl
 {
-    std::unique_ptr<CpuRuntime> runtime;                // before the networks: released after them
-    std::unique_ptr<Network> normal, height, roughness; // PBRify's three networks, on the chosen device
-    std::unique_ptr<Upscaler> upscaler;                 // its 4x upscaler (fx/upscale.hpp), on the same device
-    std::filesystem::path cache;
-    bool gpu_unproven = false; // on the GPU, before its first texture: the crash guard's marker is written around it
-    // The GPU held against the CPU on the real textures (DemoteGpu): the models (owned by the caller, alive with the
-    // session), the CPU's probe cost per texel, the textures in a row the GPU was slower than that.
-    Models models;
+    Models models; // owned by the caller, alive with the session
     int threads = 1;
-    double cpu_ms_per_texel = 0.0;
-    int gpu_slow = 0;
-    std::mutex networks_mutex; // the networks swapped (OpenCpu) against Cancel from another thread
-    bool OpenCpu(std::string &error);
+    std::filesystem::path cache;
+    bool gpu_possible = false;   // a GPU, its graphs, no crash recorded for it
+    double cpu_ms_per_texel = 0.0; // the probe's
+    bool on_gpu = false;
+    int gpu_slow = 0;            // GPU textures in a row slower than the CPU's estimate
+    Clock::time_point cpu_since{};
+    int cpu_textures = 0;
+    std::atomic<bool> gpu_free{false};
+    bool gpu_unproven = false; // the GPU's first texture: the crash guard's marker is written around it
+    std::unique_ptr<CpuRuntime> runtime; // before the networks: released after them
+    std::array<std::unique_ptr<Network>, 3> gpu, cpu; // normal, height, roughness
+    std::unique_ptr<Upscaler> gpu_upscaler, cpu_upscaler; // the 4x upscaler (fx/upscale.hpp), on each device
+    std::mutex networks_mutex;   // swaps against Cancel from another thread
     Stats stats;
+    std::atomic<bool> cancelled{false};
+
+    std::array<std::unique_ptr<Network>, 3> &Active() { return on_gpu ? gpu : cpu; }
+    bool EnsureGpu(std::string &error)
+    {
+        if (gpu_upscaler)
+            return true;
+        std::lock_guard lock(networks_mutex);
+        // The networks' pipelines are made on the GPU now: the crash guard's marker stays until its first texture.
+        MarkGpuRunning(cache, GpuLabel(Gpu()));
+        gpu_unproven = true;
+        gpu[0] = LoadGpuNetwork(models.normal_param, models.normal_bin, fx::kReliefModelPad, 1, error);
+        if (gpu[0])
+            gpu[1] = LoadGpuNetwork(models.height_param, models.height_bin, fx::kReliefModelPad, 1, error);
+        if (gpu[1])
+            gpu[2] = LoadGpuNetwork(models.roughness_param, models.roughness_bin, fx::kReliefModelPad, 1, error);
+        // The upscaler on the same device (its tiles padded by fx::kUpscalePad, beyond its reach).
+        if (gpu[2])
+            if (std::unique_ptr<Network> upscale = LoadGpuNetwork(models.upscale_param, models.upscale_bin, fx::kUpscalePad, 4, error))
+                gpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
+        return gpu_upscaler != nullptr;
+    }
+    bool EnsureCpu(std::string &error)
+    {
+        if (cpu_upscaler)
+            return true;
+        std::lock_guard lock(networks_mutex);
+        runtime = CpuRuntime::Open(threads, error);
+        if (runtime)
+            cpu[0] = runtime->Load(models.normal, fx::kReliefModelPad, 1, error);
+        if (cpu[0])
+            cpu[1] = runtime->Load(models.height, fx::kReliefModelPad, 1, error);
+        if (cpu[1])
+            cpu[2] = runtime->Load(models.roughness, fx::kReliefModelPad, 1, error);
+        if (cpu[2])
+            if (std::unique_ptr<Network> upscale = runtime->Load(models.upscale, fx::kUpscalePad, 4, error))
+                cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
+        return cpu_upscaler != nullptr;
+    }
+    // Back on the GPU: onnxruntime's memory goes.
+    void ReleaseCpu()
+    {
+        std::lock_guard lock(networks_mutex);
+        cpu_upscaler.reset();
+        cpu = {};
+        runtime.reset();
+    }
+    void Describe()
+    {
+        stats.gpu = on_gpu;
+        stats.provider = Active()[0] ? Active()[0]->Describe() : "-";
+    }
     ~Impl()
     {
         // Closed before the GPU's first texture (no work came): nothing crashed.
         if (gpu_unproven)
             ClearGpuRunning(cache);
     }
-    std::atomic<bool> cancelled{false};
 };
 
 Session::Session(std::unique_ptr<Impl> impl) : impl_(std::move(impl))
@@ -407,79 +476,54 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
 {
     auto impl = std::make_unique<Impl>();
     threads = threads > 0 ? threads : static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
-    // The device first (backend.hpp ChooseDevice: kept from before, or measured now with the normal network): on the
-    // GPU onnxruntime is never opened (its environment and arena were most of the relief's memory).
+    impl->models = models;
+    impl->threads = threads;
+    impl->cache = cache;
+    // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
     const bool gpu_models = !models.normal_param.empty() && !models.height_param.empty() && !models.roughness_param.empty() &&
                             !models.upscale_param.empty();
     const Device device = gpu_models ? ChooseDevice(cache, models.normal, models.normal_param, models.normal_bin,
                                                     fx::kReliefModelPad, threads, impl->cpu_ms_per_texel)
                                      : Device::Cpu;
-    impl->models = models;
-    impl->threads = threads;
     if (!gpu_models)
         Log("relief device: CPU (no ncnn graphs given)");
-    impl->cache = cache;
-    impl->gpu_unproven = device == Device::Gpu;
-    if (device == Device::Gpu)
-    {
-        // The networks' pipelines are made on the GPU now: the crash guard's marker stays until the first texture.
-        MarkGpuRunning(cache, GpuLabel(Gpu()));
-        impl->normal = LoadGpuNetwork(models.normal_param, models.normal_bin, fx::kReliefModelPad, 1, error);
-        if (impl->normal)
-            impl->height = LoadGpuNetwork(models.height_param, models.height_bin, fx::kReliefModelPad, 1, error);
-        if (impl->height)
-            impl->roughness = LoadGpuNetwork(models.roughness_param, models.roughness_bin, fx::kReliefModelPad, 1, error);
-        // The upscaler on the same device (its tiles padded by fx::kUpscalePad, beyond its reach).
-        if (impl->roughness)
-            if (std::unique_ptr<Network> upscale =
-                    LoadGpuNetwork(models.upscale_param, models.upscale_bin, fx::kUpscalePad, 4, error))
-                impl->upscaler = std::make_unique<Upscaler>(std::move(upscale));
-    }
-    else
-        impl->OpenCpu(error);
-    if (!impl->normal || !impl->height || !impl->roughness || !impl->upscaler)
+    impl->stats.gpu_crash = GpuCrash(cache);
+    impl->gpu_possible = gpu_models && impl->stats.gpu_crash.empty() && Gpu().available;
+    impl->stats.gpu_possible = impl->gpu_possible;
+    impl->on_gpu = device == Device::Gpu;
+    impl->cpu_since = Clock::now();
+    if (!(impl->on_gpu ? impl->EnsureGpu(error) : impl->EnsureCpu(error)))
     {
         Log("ERROR: %s", error.c_str());
         return nullptr;
     }
-    impl->stats.provider = impl->normal->Describe();
-    impl->stats.gpu = device == Device::Gpu;
-    impl->stats.gpu_crash = GpuCrash(cache);
+    if (!impl->on_gpu && !impl->gpu_possible)
+        ReleaseGpu(); // opened to learn the GPU, never used
+    impl->Describe();
     return std::unique_ptr<Session>(new Session(std::move(impl)));
 }
 
-bool Session::Impl::OpenCpu(std::string &error)
+void Session::SetGpuFree(bool free)
 {
-    std::lock_guard lock(networks_mutex);
-    normal.reset();
-    height.reset();
-    roughness.reset();
-    upscaler.reset();
-    ReleaseGpu(); // opened to learn the GPU, or used until now
-    runtime = CpuRuntime::Open(threads, error);
-    if (runtime)
-        normal = runtime->Load(models.normal, fx::kReliefModelPad, 1, error);
-    if (normal)
-        height = runtime->Load(models.height, fx::kReliefModelPad, 1, error);
-    if (height)
-        roughness = runtime->Load(models.roughness, fx::kReliefModelPad, 1, error);
-    if (roughness)
-        if (std::unique_ptr<Network> upscale = runtime->Load(models.upscale, fx::kUpscalePad, 4, error))
-            upscaler = std::make_unique<Upscaler>(std::move(upscale));
-    stats.gpu = false;
-    stats.provider = normal ? normal->Describe() : "-";
-    return upscaler != nullptr;
+    impl_->gpu_free = free;
+}
+
+bool Session::WaitsForGpu() const
+{
+    return impl_->gpu_possible && !impl_->on_gpu && !impl_->gpu_free;
 }
 
 void Session::Cancel()
 {
     impl_->cancelled = true;
     std::lock_guard lock(impl_->networks_mutex);
-    for (Network *network : {impl_->normal.get(), impl_->height.get(), impl_->roughness.get()})
-        if (network)
-            network->Cancel();
-    if (impl_->upscaler)
-        impl_->upscaler->Cancel();
+    for (auto *set : {&impl_->gpu, &impl_->cpu})
+        for (const std::unique_ptr<Network> &network : *set)
+            if (network)
+                network->Cancel();
+    for (Upscaler *upscaler : {impl_->gpu_upscaler.get(), impl_->cpu_upscaler.get()})
+        if (upscaler)
+            upscaler->Cancel();
 }
 
 const Session::Stats &Session::stats() const
@@ -540,6 +584,22 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         return Outcome::Failed;
     }
     const double decode_ms = lap();
+    // The device of this texture: the GPU tried again from the CPU when the game leaves it free, or after a while.
+    const bool retry = !impl_->on_gpu && impl_->gpu_possible &&
+                       (impl_->gpu_free || Clock::now() - impl_->cpu_since >= kRetrySeconds ||
+                        impl_->cpu_textures >= kRetryTextures);
+    const bool use_gpu = impl_->on_gpu || retry;
+    {
+        std::string error;
+        if (use_gpu ? !impl_->EnsureGpu(error) : !impl_->EnsureCpu(error))
+        {
+            failure = error;
+            Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
+            return Outcome::Failed;
+        }
+    }
+    std::array<std::unique_ptr<Network>, 3> &nets = use_gpu ? impl_->gpu : impl_->cpu;
+    Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
     // A texture up to the map's size: its ×2 first (fx::ReliefMapsFromUpscale), the models run on it at up to twice the
     // map's size and are box-filtered to the map (the ×2 is kept for the game's display too, `display`).
     double upscale_ms = 0.0;
@@ -549,9 +609,9 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         std::vector<uint8_t> x2;
         const fx::UpscaleTarget target = fx::ClassifyUpscale(candidate->name, relief, false);
         // The crash guard around the GPU's first texture (backend.hpp MarkGpuRunning): the ×2 is its first network.
-        if (impl_->gpu_unproven)
+        if (use_gpu && impl_->gpu_unproven)
             MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-        if (!impl_->upscaler->Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure))
+        if (!upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure))
         {
             if (impl_->cancelled)
                 failure = "cancelled";
@@ -591,13 +651,13 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
             infer_texels += static_cast<double>(pw) * ph;
             char part[64];
             std::snprintf(part, sizeof(part), "%s%s %dx%d %.0f ms", per_model.empty() ? "" : ", ",
-                          &model == impl_->normal.get() ? "normal" : &model == impl_->height.get() ? "height" : "roughness", pw, ph, ms);
+                          &model == nets[0].get() ? "normal" : &model == nets[1].get() ? "height" : "roughness", pw, ph, ms);
             per_model += part;
             return ok;
         });
     };
     // The crash guard around the GPU's first texture (backend.hpp MarkGpuRunning).
-    if (impl_->gpu_unproven)
+    if (use_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
     const bool height_class = key && fx::ReliefHasHeight(relief);
     const bool gloss_wanted = candidate->gloss != fx::GlossClass::None && (height_class || gloss_key);
@@ -606,18 +666,18 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
     if (key)
     {
         const std::vector<float> input = fx::ReliefModelInput(rgba, width, height, mw, mh);
-        normal_planes = run(*impl_->normal, input, mw, mh);
+        normal_planes = run(*nets[0], input, mw, mh);
         failed |= normal_planes.empty();
         if (height_class && !failed)
         {
-            height_planes = run(*impl_->height, input, mw, mh);
+            height_planes = run(*nets[1], input, mw, mh);
             failed |= height_planes.empty();
         }
     }
     if (gloss_wanted && !failed)
     {
         const std::vector<float> input = fx::ReliefModelInput(rgba, width, height, gw, gh);
-        roughness_planes = run(*impl_->roughness, input, gw, gh);
+        roughness_planes = run(*nets[2], input, gw, gh);
         failed |= roughness_planes.empty();
         // The gloss's grooves read the height at its own size: the map's halved, or the height network at the gloss's
         // size when the texture has no relief height.
@@ -625,33 +685,57 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
             gloss_height = HalveTo(fx::ReliefModelHeight(height_planes, mw, mh), mw, mh, gw, gh);
         else if (!failed)
         {
-            const std::vector<float> planes = run(*impl_->height, input, gw, gh);
+            const std::vector<float> planes = run(*nets[1], input, gw, gh);
             failed |= planes.empty();
             if (!failed)
                 gloss_height = fx::ReliefModelHeight(planes, gw, gh);
         }
     }
     impl_->stats.infer_seconds += infer_ms / 1000.0;
-    // The GPU on the game's real textures against the CPU's probe cost: twice in a row 1.5 times slower (the game's own
-    // rendering on the same GPU, which the probe did not see) and the rest goes to the CPU, kept and logged.
-    if (impl_->stats.gpu && !failed && !impl_->cancelled && impl_->cpu_ms_per_texel > 0.0)
+    // The GPU held against the CPU's estimate for the same texels (the device's own probe).
+    if (!failed && !impl_->cancelled)
     {
         const double cpu_ms = impl_->cpu_ms_per_texel * infer_texels;
-        impl_->gpu_slow = infer_ms > 1.5 * cpu_ms ? impl_->gpu_slow + 1 : 0;
-        if (impl_->gpu_slow >= 2)
+        const bool slow = impl_->cpu_ms_per_texel > 0.0 && infer_ms > kSlowFactor * cpu_ms;
+        const char *why = impl_->gpu_free ? "the game leaves the GPU free" : "a while on the CPU";
+        if (use_gpu && impl_->on_gpu)
         {
-            char why[256];
-            std::snprintf(why, sizeof(why),
-                          "the GPU took %.0f ms for the networks of %s against %.0f ms estimated on the CPU, twice in a row",
-                          infer_ms, candidate->name.c_str(), cpu_ms);
-            Log("relief device: CPU from now on (%s)", why);
-            DemoteGpu(impl_->cache, why);
-            std::string error;
-            if (!impl_->OpenCpu(error))
-                Log("ERROR: relief device: the CPU could not take over: %s", error.c_str());
+            impl_->gpu_slow = slow && !impl_->gpu_free ? impl_->gpu_slow + 1 : 0;
+            if (impl_->gpu_slow >= kSlowInARow)
+            {
+                Log("relief device: CPU for now, only what is on screen (the game's rendering keeps the GPU busy: %s's "
+                    "networks took %.0f ms on the GPU against %.0f ms estimated on the CPU, %d in a row)",
+                    candidate->name.c_str(), infer_ms, cpu_ms, kSlowInARow);
+                impl_->on_gpu = false;
+                impl_->gpu_slow = 0;
+                impl_->cpu_since = Clock::now();
+                impl_->cpu_textures = 0;
+            }
         }
+        else if (use_gpu)
+        {
+            if (!slow)
+            {
+                Log("relief device: GPU again (%s: %s's networks took %.0f ms on the GPU against %.0f ms estimated on "
+                    "the CPU)",
+                    why, candidate->name.c_str(), infer_ms, cpu_ms);
+                impl_->on_gpu = true;
+                impl_->ReleaseCpu();
+            }
+            else
+            {
+                Log("relief device: CPU still (tried the GPU, %s: %s's networks took %.0f ms against %.0f ms "
+                    "estimated on the CPU)",
+                    why, candidate->name.c_str(), infer_ms, cpu_ms);
+                impl_->cpu_since = Clock::now();
+                impl_->cpu_textures = 0;
+            }
+        }
+        else
+            ++impl_->cpu_textures;
+        impl_->Describe();
     }
-    if (impl_->gpu_unproven && !failed)
+    if (use_gpu && impl_->gpu_unproven && !failed)
     {
         ClearGpuRunning(impl_->cache);
         impl_->gpu_unproven = false;
@@ -800,21 +884,25 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
         return Outcome::Failed;
     }
     const double decode_ms = Seconds(start) * 1000.0;
-    if (impl_->gpu_unproven)
+    // The device the relief networks are on now (the ×2 alone is not measured against the CPU).
+    if (impl_->on_gpu ? !impl_->EnsureGpu(failure) : !impl_->EnsureCpu(failure))
+        return Outcome::Failed;
+    Upscaler &upscaler = impl_->on_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
+    if (impl_->on_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-    if (!impl_->upscaler->Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2,
+    if (!upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2,
                               failure))
     {
         if (impl_->cancelled)
             failure = "cancelled";
         return Outcome::Failed;
     }
-    if (impl_->gpu_unproven)
+    if (impl_->on_gpu && impl_->gpu_unproven)
     {
         ClearGpuRunning(impl_->cache);
         impl_->gpu_unproven = false;
     }
-    const double infer_ms = impl_->upscaler->infer_ms();
+    const double infer_ms = upscaler.infer_ms();
     if (!WriteDisplay(display, *key, x2, static_cast<int>(lw) * 2, static_cast<int>(lh) * 2, name))
     {
         failure = "cannot write its file";

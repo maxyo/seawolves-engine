@@ -74,8 +74,14 @@ made. The build makes that directory (below); its path is in `<build>/relief_mod
   `third_party/licenses/onnxruntime-*`), the int8 models on its CPU provider (MLAS), waiting threads sleeping. The
   device is measured once per game: a probe tile on both (`ChooseDevice`), the faster taken, logged with both numbers
   (`relief device: GPU (measured now on <GPU>, driver <v>: ... GPU x ms ..., CPU y ms ...)`) and kept in the relief
-  directory's `relief-device.txt` for that GPU, driver, model and thread count; «Очистить кэш» measures again. Without
-  a Vulkan compute device the CPU is taken and the reason logged. On the GPU the image runs in tiles with the networks'
+  directory's `relief-device.txt` for that GPU, driver, model and thread count; «Очистить кэш» measures again. That is
+  the starting device; then each texture is placed (`relief.hpp` Session): on the GPU, two textures in a row 1.5 times
+  slower than the CPU's estimate while the game draws its scene move the work to the CPU, which then makes only what is
+  on screen (the rest of the game waits for the GPU); the GPU is tried again as soon as the game leaves it free (a
+  loading or an interface screen, the game in the background: no scene drawn for 30 frames or no frame for a second)
+  or after 60 s / 8 textures. Every switch is logged (`relief device: CPU for now ...`, `GPU again ...`, `CPU still
+  ...`) and none is kept across sessions. Without a Vulkan compute device, or after a crash in its driver
+  (`relief-gpu-crashed.txt`), the CPU alone, with the reason logged. On the GPU the image runs in tiles with the networks'
   24-texel reach around each (no seams), each tile one GPU submission of at most 6 ms of GPU work, so the game's frames
   do not wait on a long one: the tile size is calibrated per network graph on the device (a submission's wall time is
   a fixed part, ~2.5–5 ms of recording, transfers and fence, plus the GPU's work per texel; logged as `relief GPU

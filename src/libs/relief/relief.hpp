@@ -69,7 +69,8 @@ class Session
         int prepared = 0;
         double infer_seconds = 0.0, max_texture_ms = 0.0;
         std::string provider;
-        bool gpu = false;      // the networks run on the GPU (else onnxruntime on the CPU)
+        bool gpu = false;      // the networks run on the GPU now (else onnxruntime on the CPU)
+        bool gpu_possible = false; // a GPU the session may use (its graphs, no crash recorded)
         std::string gpu_crash; // the GPU (and driver) whose inference crashed a previous run, so the CPU is used; else empty
     };
     // `threads`: the CPU's inference threads; 0 = every core. `cache`: where the device choice is kept (the cache
@@ -90,6 +91,11 @@ class Session
                     int source_size, std::string &failure);
     // Any thread (the game's shutdown): the texture being prepared fails at once, and every later one.
     void Cancel();
+    // Any thread: whether the game leaves the GPU free now (a loading or an interface screen, the game in the
+    // background): the GPU is tried again from the CPU (prepare.cpp, the device per texture).
+    void SetGpuFree(bool free);
+    // The work moved to the CPU while the game keeps the GPU busy: the rest of the game waits for the GPU.
+    bool WaitsForGpu() const;
     const Stats &stats() const;
 
   private:

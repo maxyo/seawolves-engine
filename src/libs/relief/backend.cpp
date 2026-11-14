@@ -560,22 +560,6 @@ std::string GpuCrash(const std::filesystem::path &cache)
     return line;
 }
 
-void DemoteGpu(const std::filesystem::path &cache, const std::string &why)
-{
-    const std::filesystem::path file = cache / "relief-device.txt";
-    std::string key, choice, numbers, per_texel;
-    {
-        std::ifstream in(file);
-        std::getline(in, key);
-        std::getline(in, choice);
-        std::getline(in, numbers);
-        std::getline(in, per_texel);
-    }
-    if (key.empty())
-        return;
-    std::ofstream(file, std::ios::trunc) << key << "\nCPU\n" << numbers << "; then " << why << "\n" << per_texel << "\n";
-}
-
 Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> cpu_onnx, std::span<const uint8_t> gpu_param,
                     std::span<const uint8_t> gpu_bin, int halo, int threads, double &cpu_ms_per_texel)
 {
