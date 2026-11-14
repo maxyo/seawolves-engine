@@ -356,7 +356,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         }
         hud_ = std::make_unique<hud::Hud>(*this);
         router_ = std::make_unique<screens::Router>(*this);
-        router_->AttachHud(hud_.get());
+        if (config_.game_hud)
+            router_->AttachHud(hud_.get());
         overlay_path_ = pack.value("overlay", std::string());
         if (!overlay_path_.empty())
         {
@@ -688,7 +689,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 component->Tick(now);
         ExpireToasts(now);
         const bool images = GameImagesChanged();
-        const double routing = std::min(router_->Tick(), hud_->Tick());
+        const double routing = config_.game_hud ? std::min(router_->Tick(), hud_->Tick()) : router_->Tick();
 
         UpdateContext();
         if (RevealInventorySelection())

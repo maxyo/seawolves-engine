@@ -90,6 +90,9 @@ struct Config
     // Debug hosts: data and pack errors (malformed model, missing screen, unmapped event,
     // rejected ported screen) are also shown as a toast, not only logged.
     bool show_errors = false;
+    // Only the engine host presents gameplay HUDs and sends their ownership declarations.
+    // Standalone application screens (launcher, downloads, gallery) disable this.
+    bool game_hud = true;
     // Checks every prediction of Prepare: a frame it called unchanged that draws other
     // commands than the frame shown is an error (host checks and captures turn this on).
     bool verify_unchanged = false;

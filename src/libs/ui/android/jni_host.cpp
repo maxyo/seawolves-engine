@@ -189,6 +189,7 @@ JNIEXPORT jlong JNICALL Java_org_stormengine_port_StormUi_nativeCreate(JNIEnv *e
     config.height = height;
     config.density = density;
     config.game_root = Text(env, game_root);
+    config.game_hud = false; // This host runs application screens without the game engine.
     Session *raw = session.get();
     config.on_action = [raw](const storm::ui::Action &action) { raw->actions.push_back(action); };
     config.on_text_request = [raw](const storm::ui::TextRequest &request) { raw->text_requests.push_back(request); };
