@@ -230,47 +230,57 @@ std::vector<std::pair<uint32_t, uint32_t>> tiePairs(const std::vector<Plane> &pl
                 }
             continue;
         }
-        // A grid over the bin's triangles seen along one axis: a pair is tested in the cell holding the lower corner of
-        // the overlap of their boxes.
-        const int axis = dominantAxis(planes[members.front()].normal);
-        const int i = (axis + 1) % 3, j = (axis + 2) % 3;
-        boxes.resize(members.size());
-        extents.resize(members.size());
-        for (size_t m = 0; m < members.size(); ++m)
+        // The broad phase must use the exact overlap test's projection. A bin can straddle a dominant-axis
+        // boundary (e.g. a 45-degree wall); projecting every pair along the bin's first member's axis can miss overlaps
+        // that tie() sees along another axis. Use each represented axis, testing only pairs whose earlier
+        // triangle selects it. Usually a bin has just one axis. A pair is tested in the cell holding the lower
+        // corner of the overlap of its boxes.
+        std::array<bool, 3> axes{};
+        for (const uint32_t member : members)
+            axes[dominantAxis(planes[member].normal)] = true;
+        for (int axis = 0; axis < 3; ++axis)
         {
-            const Plane &p = planes[members[m]];
-            boxes[m] = {{std::min({p.corners[0][i], p.corners[1][i], p.corners[2][i]}),
-                         std::min({p.corners[0][j], p.corners[1][j], p.corners[2][j]})},
-                        {std::max({p.corners[0][i], p.corners[1][i], p.corners[2][i]}),
-                         std::max({p.corners[0][j], p.corners[1][j], p.corners[2][j]})}};
-            extents[m] = std::max(boxes[m].hi[0] - boxes[m].lo[0], boxes[m].hi[1] - boxes[m].lo[1]);
+            if (!axes[axis])
+                continue;
+            const int i = (axis + 1) % 3, j = (axis + 2) % 3;
+            boxes.resize(members.size());
+            extents.resize(members.size());
+            for (size_t m = 0; m < members.size(); ++m)
+            {
+                const Plane &p = planes[members[m]];
+                boxes[m] = {{std::min({p.corners[0][i], p.corners[1][i], p.corners[2][i]}),
+                             std::min({p.corners[0][j], p.corners[1][j], p.corners[2][j]})},
+                            {std::max({p.corners[0][i], p.corners[1][i], p.corners[2][i]}),
+                             std::max({p.corners[0][j], p.corners[1][j], p.corners[2][j]})}};
+                extents[m] = std::max(boxes[m].hi[0] - boxes[m].lo[0], boxes[m].hi[1] - boxes[m].lo[1]);
+            }
+            // The median size, not the mean: a few huge triangles (the sea floor's) in a bin of small ones would make one
+            // cell of everything and the test quadratic.
+            std::nth_element(extents.begin(), extents.begin() + extents.size() / 2, extents.end());
+            const double cell = std::max(extents[extents.size() / 2], 1e-3);
+            grid.clear();
+            for (uint32_t m = 0; m < members.size(); ++m)
+                for (auto x = static_cast<int64_t>(std::floor(boxes[m].lo[0] / cell));
+                     x <= static_cast<int64_t>(std::floor(boxes[m].hi[0] / cell)); ++x)
+                    for (auto y = static_cast<int64_t>(std::floor(boxes[m].lo[1] / cell));
+                         y <= static_cast<int64_t>(std::floor(boxes[m].hi[1] / cell)); ++y)
+                        grid[{x, y, 0, 0}].push_back(m);
+            for (const auto &[at, inside] : grid)
+                for (size_t a = 0; a < inside.size(); ++a)
+                    for (size_t b = a + 1; b < inside.size(); ++b)
+                    {
+                        const Box &p = boxes[inside[a]], &q = boxes[inside[b]];
+                        const double x = std::max(p.lo[0], q.lo[0]), y = std::max(p.lo[1], q.lo[1]);
+                        if (x > std::min(p.hi[0], q.hi[0]) || y > std::min(p.hi[1], q.hi[1]))
+                            continue;
+                        if (static_cast<int64_t>(std::floor(x / cell)) != at[0] ||
+                            static_cast<int64_t>(std::floor(y / cell)) != at[1])
+                            continue;
+                        const uint32_t s = members[inside[a]], t = members[inside[b]];
+                        if (s != t && dominantAxis(planes[s].normal) == axis && tie(planes[s], planes[t]))
+                            pairs.emplace_back(std::min(s, t), std::max(s, t));
+                    }
         }
-        // The median size, not the mean: a few huge triangles (the sea floor's) in a bin of small ones would make one
-        // cell of everything and the test quadratic.
-        std::nth_element(extents.begin(), extents.begin() + extents.size() / 2, extents.end());
-        const double cell = std::max(extents[extents.size() / 2], 1e-3);
-        grid.clear();
-        for (uint32_t m = 0; m < members.size(); ++m)
-            for (auto x = static_cast<int64_t>(std::floor(boxes[m].lo[0] / cell));
-                 x <= static_cast<int64_t>(std::floor(boxes[m].hi[0] / cell)); ++x)
-                for (auto y = static_cast<int64_t>(std::floor(boxes[m].lo[1] / cell));
-                     y <= static_cast<int64_t>(std::floor(boxes[m].hi[1] / cell)); ++y)
-                    grid[{x, y, 0, 0}].push_back(m);
-        for (const auto &[at, inside] : grid)
-            for (size_t a = 0; a < inside.size(); ++a)
-                for (size_t b = a + 1; b < inside.size(); ++b)
-                {
-                    const Box &p = boxes[inside[a]], &q = boxes[inside[b]];
-                    const double x = std::max(p.lo[0], q.lo[0]), y = std::max(p.lo[1], q.lo[1]);
-                    if (x > std::min(p.hi[0], q.hi[0]) || y > std::min(p.hi[1], q.hi[1]))
-                        continue;
-                    if (static_cast<int64_t>(std::floor(x / cell)) != at[0] ||
-                        static_cast<int64_t>(std::floor(y / cell)) != at[1])
-                        continue;
-                    const uint32_t s = members[inside[a]], t = members[inside[b]];
-                    if (s != t && tie(planes[s], planes[t]))
-                        pairs.emplace_back(std::min(s, t), std::max(s, t));
-                }
     }
     std::ranges::sort(pairs);
     pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());

@@ -19,7 +19,7 @@ namespace storm::geometry::far_lod
 {
 
 // Bump when Build changes its result or Encode its format (the cache keeps them).
-inline constexpr uint32_t kVersion = 2;
+inline constexpr uint32_t kVersion = 3;
 
 // Level 0 is the object's own triangles; levels 1.. are simplified within kLevelError metres (model units) each.
 inline constexpr int kLevels = 6;

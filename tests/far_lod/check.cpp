@@ -114,6 +114,62 @@ struct Builder
     }
 };
 
+// A near-coplanar pair can overlap in the exact test's projection but not along another normal's dominant axis.
+// Unrelated triangles in the same normal/distance bin must not change whether that pair is protected.
+void depthTieProjection()
+{
+    for (int rotation = 0; rotation < 3; ++rotation)
+    {
+        Builder b;
+        const auto vertex = [&](float x, float y, float z) {
+            const float p[3] = {x, y, z};
+            b.vertex(p[rotation], p[(rotation + 1) % 3], p[(rotation + 2) % 3], 0, 0);
+        };
+        // More than 32 candidates select the grid broad phase; these have dominant Z, while the target pair
+        // has dominant X (before rotation). They share its plane bins, but sit far away along Y.
+        for (int t = 0; t < 40; ++t)
+        {
+            const float y = 10.f + 3.f * t;
+            vertex(0, y, 0), vertex(1.0009765625f, y, 1), vertex(0, y + 1, 0);
+            const auto first = static_cast<uint16_t>(3 * t);
+            b.model.triangles.insert(b.model.triangles.end(), {first, uint16_t(first + 1), uint16_t(first + 2)});
+        }
+        b.model.objects.push_back({0, 0, 120, 0, 40});
+        vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 2, 0);
+        vertex(-0.00390625f, 0.5f, 0.00390625f), vertex(-1.00390625f, 0.5f, -0.99609375f),
+            vertex(-0.00390625f, 0.6f, 0.00390625f);
+        b.model.triangles.insert(b.model.triangles.end(), {0, 1, 2, 3, 4, 5});
+        b.model.objects.push_back({0, 120, 6, 40, 2});
+        const Model model = b.done();
+        const auto views = model.views();
+        const auto local = far_lod::DepthTiePairs(model.objects[1], views[0], model.triangles);
+        const auto global = far_lod::ModelDepthTies(model.objects, views, model.triangles);
+        // Rotation can change which equal-magnitude normal component wins, so use the small-bin exact result
+        // as the oracle. At least the unrotated case must contain the deliberately overlapping pair.
+        if (rotation == 0 && local != std::vector<std::pair<uint32_t, uint32_t>>{{0, 1}})
+            fail("depth-tie projection fixture does not overlap");
+        std::vector<std::pair<uint32_t, uint32_t>> own;
+        for (const auto &[a, c] : global)
+            if (a.object == 1 && c.object == 1)
+                own.emplace_back(a.triangle, c.triangle);
+        if (own != local)
+            fail("unrelated model triangles changed a depth tie across a projection-axis boundary");
+        check(model);
+        // The same triangles in one object must also agree with the two-triangle exact result.
+        Model merged = model;
+        for (size_t i = 120; i < merged.triangles.size(); ++i)
+            merged.triangles[i] += 120;
+        merged.objects = {{0, 0, 126, 0, 42}};
+        std::vector<std::pair<uint32_t, uint32_t>> expected;
+        for (const auto &[a, c] : local)
+            expected.emplace_back(a + 40, c + 40);
+        if (far_lod::DepthTiePairs(merged.objects[0], merged.views()[0], merged.triangles) != expected)
+            fail("unrelated object triangles changed a depth tie across a projection-axis boundary");
+        check(merged);
+    }
+    std::printf("depth-tie projection consistency: passed\n");
+}
+
 void synthetic()
 {
     if (!far_lod::Wanted("islands/Martinique.gm", 1.f, false) ||
@@ -179,6 +235,7 @@ int main()
     try
     {
         jobLifetime();
+        depthTieProjection();
         synthetic();
         return 0;
     }
