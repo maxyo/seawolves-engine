@@ -20,7 +20,10 @@ namespace {
 std::atomic<int> status{2};
 std::atomic<float> forecast{0.95f};
 std::atomic<bool> hot{true}, block_job{false}, cancelled{false}, slow_open{false};
-std::atomic<int> opened{0}, started{0}, pause_after{0};
+std::atomic<int> opened{0}, started{0}, pause_after{0}, idle_releases{0};
+std::atomic<bool> cpu_detour{false};
+std::atomic<int64_t> clock_offset{0};
+
 std::atomic<bool> background_enabled{false}, background_complete{false};
 std::mutex events_mutex;
 std::vector<std::string> events;
@@ -60,6 +63,7 @@ void configure(effects::ReliefGenerator &g) {
     g.set_display(true,cache,false);
 }
 }
+std::chrono::steady_clock::time_point test_now() { return std::chrono::steady_clock::now()+std::chrono::seconds(clock_offset.load()); }
 namespace storm::shim { void logf(const char*,...) {} }
 namespace storm::effects {
 NormalMapEntry::~NormalMapEntry()=default;
@@ -74,19 +78,20 @@ bool HasReliefMap(const std::filesystem::path&,uint64_t) { return true; }
 bool HasGlossMap(const std::filesystem::path&,uint64_t) { return true; }
 }
 namespace storm::relief {
-struct Session::Impl { Stats stats; };
+struct Session::Impl { Stats stats; std::chrono::steady_clock::time_point since=test_now(); bool free=false; };
 Session::Session(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 Session::~Session()=default;
 std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::path&,std::string&) {
     ++opened; if (slow_open) std::this_thread::sleep_for(150ms);
-    return std::unique_ptr<Session>(new Session(std::make_unique<Impl>()));
+    auto impl=std::make_unique<Impl>();impl->stats.gpu_possible=cpu_detour;return std::unique_ptr<Session>(new Session(std::move(impl)));
 }
 const Session::Stats &Session::stats() const { return impl_->stats; }
 void Session::Cancel() { cancelled=true; }
-void Session::SetGpuFree(bool) {}
-bool Session::WaitsForGpu() const { return false; }
+void Session::SetGpuFree(bool value) {impl_->free=value;}
+void Session::ReleaseIdleModels() {++idle_releases;}
+bool Session::WaitsForGpu() const { return cpu_detour && !impl_->stats.gpu && !impl_->free && test_now()-impl_->since<std::chrono::seconds(60); }
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,
-    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { return infer(file,"N:"); }
+    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { if(cpu_detour && !WaitsForGpu()) impl_->stats.gpu=true; return infer(file,"N:"); }
 Outcome Session::Upscale(const std::filesystem::path&,const std::filesystem::path &file,
     const UpscaleOutput&,int,std::string&) { return infer(file,"U:"); }
 bool ReleaseGpu() { return false; }
@@ -114,6 +119,26 @@ int main(int argc,char **argv) {
     g.shutdown();configure(g);
     expect(!g.gpu_free(),"reconfigure clears stale scene-free state");
     g.shutdown();
+    // Full production worker lifecycle with deterministic time: inference objects are released at 10s,
+    // but background admission must retain the same CPU detour until its 60s GPU retry is due.
+    reset();status=0;forecast=0.5f;hot=false;cpu_detour=true;idle_releases=0;configure(g);
+    auto anchor=normal("retry-anchor",91);g.request(anchor,"retry-anchor");
+    until([&]{return g.stats().made==1;},"CPU-detour anchor completes");
+    background_enabled=true;g.set_active(true);
+    auto advance=[&](int seconds) {
+        std::lock_guard lock(g.mutex_);clock_offset+=seconds;g.wake_.notify_all();
+    };
+    advance(11);
+    until([&]{std::lock_guard lock(g.mutex_);return idle_releases>0 || !g.session_ || opened>1 || started>1;},"10-second idle deadline processed");
+    expect(idle_releases==1 && opened==1 && started==1,"idle releases inference objects without reopening or CPU background work");
+    advance(48);
+    {std::lock_guard lock(g.mutex_);g.wake_.notify_all();}
+    std::this_thread::sleep_for(30ms);
+    expect(opened==1 && started==1 && !background_complete,"59-second blocked detour still admits no background job");
+    advance(2);
+    until([&]{return background_complete.load();},"61-second retry admits background and completes");
+    expect(opened==1 && started==2 && g.session_->stats().gpu,"same policy session retries GPU without re-admitting CPU background");
+    g.shutdown();cpu_detour=false;clock_offset=0;
     // The file is already prepared by a preceding normal job, but thermal protection now forbids inference.
     reset();configure(g);
     auto ready=upscale("ready",101), wrong_key=upscale("not-ready",102);

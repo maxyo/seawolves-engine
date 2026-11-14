@@ -6,6 +6,13 @@ root=Path(__file__).resolve().parents[2]
 check=Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
     output=Path(directory)/"check"
+    source=Path(os.environ.get('STORM_RELIEF_GENERATOR_SOURCE',str(root/'src/libs/renderer_bgfx/src/effects/relief_generator.cpp')))
+    worker=Path(directory)/'worker.cpp'
+    text=source.read_text()
+    assert text.count('using Clock = std::chrono::steady_clock;')==1, 'worker clock declaration changed'
+    text=text.replace('using Clock = std::chrono::steady_clock;',
+        'struct Clock : std::chrono::steady_clock { static time_point now() { return test_now(); } };')
+    worker.write_text('#include <chrono>\nstd::chrono::steady_clock::time_point test_now();\n'+text)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-pthread','-Wall','-Wextra','-Werror',
         '-fno-access-control', # fixture backdates the quiet deadline under the real queue mutex; no production hook
         '-ffunction-sections','-fdata-sections','-Wl,--gc-sections',
@@ -13,6 +20,6 @@ with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
         '-I'+str(check/'stubs'),'-I'+str(root/'src/libs/renderer_bgfx/src'),
         '-I'+str(root/'src/libs/renderer_bgfx/include'),'-I'+str(root/'src/libs/renderer_bgfx/fx/include'),
         '-I'+str(root/'src/libs/relief'),str(check/'check.cpp'),
-        os.environ.get('STORM_RELIEF_GENERATOR_SOURCE',str(root/'src/libs/renderer_bgfx/src/effects/relief_generator.cpp')),
+        str(worker),
         str(root/'src/libs/renderer_bgfx/fx/src/upscale.cpp'),'-o',str(output)],check=True)
     subprocess.run([str(output),directory],check=True,timeout=50)

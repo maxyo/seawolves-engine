@@ -11,11 +11,13 @@
 #include <unistd.h>
 namespace {
 int cpu_runs=0,gpu_runs=0,cpu_released=0;
-bool slow_gpu=false, fail_gpu_load=false, start_gpu=false;
+bool slow_gpu=false, fail_gpu_load=false, start_gpu=false, fail_cpu_height=false, fail_cpu_open=false;
+int live_cpu_models=0;
 void expect(bool v,const char*s) {if(!v){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);}std::printf("ok: %s\n",s);}
 class Model final: public storm::relief::Network {
  bool gpu_;int scale_;
- public:Model(bool gpu,int scale):gpu_(gpu),scale_(scale){}
+ public:Model(bool gpu,int scale):gpu_(gpu),scale_(scale){if(!gpu_)++live_cpu_models;}
+ ~Model() override {if(!gpu_)--live_cpu_models;}
  bool Infer(const float*,int w,int h,float*out,std::string&) override {
   if(gpu_){++gpu_runs;if(slow_gpu)std::this_thread::sleep_for(std::chrono::milliseconds(25));}
   else {++cpu_runs;std::this_thread::sleep_for(std::chrono::milliseconds(3));}
@@ -25,8 +27,12 @@ class Model final: public storm::relief::Network {
  std::string Describe() const override {return gpu_?"GPU deterministic":"CPU deterministic";}
 };
 class Runtime final: public storm::relief::CpuRuntime {
- public:~Runtime() override {++cpu_released;}
- std::unique_ptr<storm::relief::Network> Load(std::span<const uint8_t>,int,int scale,std::string&) override {return std::make_unique<Model>(false,scale);}
+  int loads_=0;
+ public:~Runtime() override {expect(live_cpu_models==0,"CPU runtime outlives every network");++cpu_released;}
+ std::unique_ptr<storm::relief::Network> Load(std::span<const uint8_t>,int,int scale,std::string &error) override {
+  if(++loads_==2 && fail_cpu_height){error="synthetic partial CPU height load failure";return nullptr;}
+  return std::make_unique<Model>(false,scale);
+ }
 };
 void write_tx(const std::filesystem::path &p) {
  constexpr int size=64;const int32_t head[]={0,size,size,7,21,size*size*4};
@@ -35,7 +41,7 @@ void write_tx(const std::filesystem::path &p) {
 }
 }
 namespace storm::relief {
-std::unique_ptr<CpuRuntime> CpuRuntime::Open(int,std::string&,int) {return std::make_unique<Runtime>();}
+std::unique_ptr<CpuRuntime> CpuRuntime::Open(int,std::string &error,int) {if(fail_cpu_open){error="synthetic CPU runtime allocation failure";return nullptr;}return std::make_unique<Runtime>();}
 const GpuDevice &Gpu(){static GpuDevice gpu{true,"deterministic","1",{}};return gpu;}
 bool ReleaseGpu(){return false;}
 std::unique_ptr<Network> LoadGpuNetwork(std::span<const uint8_t>,std::span<const uint8_t>,int,int scale,std::string &error) {if(fail_gpu_load){error="synthetic controlled GPU initialization failure";return nullptr;}return std::make_unique<Model>(true,scale);}
@@ -58,6 +64,8 @@ int main(int argc,char**argv) {
  for(int i=0;i<8;++i)expect(run(*session,i,"fast")==Outcome::Prepared,"real CPU x2 prepared and stored");
  expect(cpu_runs==8 && gpu_runs==0,"eight x2-only requests ran on CPU");
  expect(!session->WaitsForGpu(),"eight CPU completions open background admission");
+ session->ReleaseIdleModels();
+ expect(!session->WaitsForGpu(),"releasing idle inference objects preserves eight-completion retry");
  expect(run(*session,8,"fast")==Outcome::Prepared,"ninth x2-only request succeeds on retry");
  expect(gpu_runs==1 && session->stats().gpu,"x2-only workload actually returns to GPU");
  expect(cpu_released==1,"returning GPU releases CPU runtime");
@@ -70,6 +78,20 @@ int main(int argc,char**argv) {
  expect(run(*session,9,"slow")==Outcome::Prepared,"CPU continues after rejected GPU retry");
  session->SetGpuFree(true);slow_gpu=false;
  expect(run(*session,10,"slow")==Outcome::Prepared && session->stats().gpu,"quiet renderer retries and returns to GPU immediately");
+ // After a successful x2-only GPU return, two slow busy-GPU textures must demote again.
+ session->SetGpuFree(false);slow_gpu=true;
+ expect(run(*session,11,"slow")==Outcome::Prepared && session->stats().gpu,"first slow x2-only GPU job stays GPU");
+ expect(run(*session,12,"slow")==Outcome::Prepared && !session->stats().gpu,"second slow x2-only GPU job returns to CPU");
+ expect(session->WaitsForGpu(),"sustained x2 demotion restarts CPU cooldown");
+ // No CPU models survive the successful GPU return. First reload fails after the normal graph, then
+ // the runtime itself fails: both failures must leave this retained Session retryable, never dangling.
+ fail_cpu_height=true;
+ expect(run(*session,13,"partial")==Outcome::Failed,"partial CPU graph load reports failure");
+ expect(live_cpu_models==0,"failed CPU graph set is fully discarded");
+ fail_cpu_open=true;
+ expect(run(*session,14,"partial")==Outcome::Failed,"subsequent CPU runtime allocation failure is safe");
+ fail_cpu_open=false;fail_cpu_height=false;
+ expect(run(*session,15,"partial")==Outcome::Prepared,"same Session recovers after both transient CPU load failures");
  session.reset();fail_gpu_load=true;start_gpu=true;
  session=Session::Open(models,1,root,error);
  expect(bool(session) && !session->stats().gpu && !session->stats().gpu_possible,"controlled first GPU model error opens CPU session");

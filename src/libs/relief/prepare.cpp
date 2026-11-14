@@ -434,16 +434,28 @@ struct Session::Impl
         if (cpu_upscaler)
             return true;
         std::lock_guard lock(networks_mutex);
-        runtime = CpuRuntime::Open(threads, error);
-        if (runtime)
-            cpu[0] = runtime->Load(models.normal, fx::kReliefModelPad, 1, error);
-        if (cpu[0])
-            cpu[1] = runtime->Load(models.height, fx::kReliefModelPad, 1, error);
-        if (cpu[1])
-            cpu[2] = runtime->Load(models.roughness, fx::kReliefModelPad, 1, error);
-        if (cpu[2])
-            if (std::unique_ptr<Network> upscale = runtime->Load(models.upscale, fx::kUpscalePad, 4, error))
-                cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
+        // A failed load must leave no partial sessions. Their runtime must outlive them, including when
+        // the next Open fails (transient allocation/model errors can be retried on this Session).
+        auto next_runtime = CpuRuntime::Open(threads, error);
+        if (!next_runtime)
+            return false;
+        std::array<std::unique_ptr<Network>, 3> next_cpu;
+        next_cpu[0] = next_runtime->Load(models.normal, fx::kReliefModelPad, 1, error);
+        if (next_cpu[0])
+            next_cpu[1] = next_runtime->Load(models.height, fx::kReliefModelPad, 1, error);
+        if (next_cpu[1])
+            next_cpu[2] = next_runtime->Load(models.roughness, fx::kReliefModelPad, 1, error);
+        if (!next_cpu[2])
+            return false;
+        auto upscale = next_runtime->Load(models.upscale, fx::kUpscalePad, 4, error);
+        if (!upscale)
+            return false;
+        // Publish only a complete set, destroying any old sessions before replacing their runtime.
+        cpu_upscaler.reset();
+        cpu = {};
+        runtime = std::move(next_runtime);
+        cpu = std::move(next_cpu);
+        cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
         return cpu_upscaler != nullptr;
     }
     bool EnsureDevice(bool &use_gpu, std::string &error)
@@ -528,6 +540,19 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
         ReleaseGpu(); // opened to learn the GPU, never used
     impl->Describe();
     return std::unique_ptr<Session>(new Session(std::move(impl)));
+}
+
+void Session::ReleaseIdleModels()
+{
+    impl_->ReleaseCpu();
+    {
+        std::lock_guard lock(impl_->networks_mutex);
+        impl_->gpu_upscaler.reset();
+        impl_->gpu = {};
+    }
+    if (impl_->gpu_unproven)
+        ClearGpuRunning(impl_->cache);
+    impl_->gpu_unproven = false;
 }
 
 void Session::SetGpuFree(bool free)
@@ -940,6 +965,21 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
         {
             impl_->upscale_cpu_ms_per_texel = infer_ms / (static_cast<double>(lw) * lh);
             ++impl_->cpu_textures;
+        }
+        else if (impl_->on_gpu)
+        {
+            const double cpu_ms = impl_->upscale_cpu_ms_per_texel * lw * lh;
+            const bool slow = cpu_ms > 0.0 && infer_ms > kSlowFactor * cpu_ms;
+            impl_->gpu_slow = slow && !impl_->gpu_free ? impl_->gpu_slow + 1 : 0;
+            if (impl_->gpu_slow >= kSlowInARow)
+            {
+                Log("relief device: CPU for now (standalone x2 networks %.0f ms, CPU estimate %.0f ms, %d in a row)",
+                    infer_ms, cpu_ms, kSlowInARow);
+                impl_->on_gpu = false;
+                impl_->gpu_slow = 0;
+                impl_->cpu_since = Clock::now();
+                impl_->cpu_textures = 0;
+            }
         }
         else if (!impl_->on_gpu)
         {

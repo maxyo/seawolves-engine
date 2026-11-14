@@ -294,6 +294,7 @@ void ReliefGenerator::run()
                     if (now - idle_since_ >= kIdleRelease)
                     {
                         release_models("idle");
+                        idle_since_ = now; // a retained device-policy shell must not spin on the elapsed deadline
                         continue;
                     }
                     until = std::min(until, idle_since_ + kIdleRelease);
@@ -499,13 +500,23 @@ void ReliefGenerator::trim()
 void ReliefGenerator::release_models(const char *why)
 {
     const bool had = session_ != nullptr;
-    running_ = nullptr;
-    session_.reset();
-    for (std::vector<uint8_t> &bytes : models_)
-        bytes = {};
+    // Releasing a blocked CPU detour must not reset its 60-second epoch or let a new session admit
+    // background CPU work. Keep its small policy shell and borrowed serialized model spans; drop inference
+    // objects (including the CPU runtime/arenas). Shutdown/reconfigure still destroys the whole session.
+    const bool kept_policy = session_ && session_->stats().gpu_possible && !session_->stats().gpu;
+    if (kept_policy)
+        session_->ReleaseIdleModels();
+    else
+    {
+        running_ = nullptr;
+        session_.reset();
+        for (std::vector<uint8_t> &bytes : models_)
+            bytes = {};
+    }
     const bool gpu = relief::ReleaseGpu();
     if (had || gpu)
-        shim::logf("effects: relief generation (%s): the relief models are released%s", why,
+        shim::logf("effects: relief generation (%s): inference objects released%s%s", why,
+                   kept_policy ? "; retry state and serialized model data kept" : "",
                    gpu ? ", the GPU's Vulkan instance closed" : "");
 }
 

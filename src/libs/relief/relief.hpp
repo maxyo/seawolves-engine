@@ -94,6 +94,8 @@ class Session
     // Any thread: whether the game leaves the GPU free now (a loading or an interface screen, the game in the
     // background): the GPU is tried again from the CPU (prepare.cpp, the device per texture).
     void SetGpuFree(bool free);
+    // Worker idle/trim: release inference objects, preserving CPU retry timing/count and model spans.
+    void ReleaseIdleModels();
     // Background work waits during a CPU detour until the GPU is free or its bounded retry is due.
     bool WaitsForGpu() const;
     const Stats &stats() const;
