@@ -3,6 +3,7 @@
 #include "renderer.h"
 #include "sea_base.h"
 #include "ship_base.h"
+#include "track_sampling.hpp"
 #include <vector>
 
 class ShipTracks : public Entity
@@ -69,7 +70,7 @@ class ShipTracks : public Entity
             float fTime;
             float fTV;
             float fAlpha, fInitialAlpha;
-            float fWidth;
+            float fWidth, fInitialWidth;
             float fSpeed;
         };
 
@@ -83,6 +84,7 @@ class ShipTracks : public Entity
         bool bFirstExecute;
 
         float fCurTV;
+        storm::ship::TrackSpacing trackSpacing;
         glm::vec3 vLastPos, vLastAng;
 
         std::vector<Track> aTrack1, aTrack2;

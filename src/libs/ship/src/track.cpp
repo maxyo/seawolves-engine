@@ -162,6 +162,7 @@ bool ShipTracks::ShipTrack::Update(SHIP_BASE *pShip)
 
     aTrack1.clear();
     aTrack2.clear();
+    trackSpacing.Reset();
 
     return true;
 }
@@ -270,6 +271,7 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
         vLastAng = pShip->GetAng();
         fCurTV = 0.0f;
         bFirstExecute = false;
+        trackSpacing.Reset();
     }
 
     float fFov;
@@ -293,43 +295,44 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
 
         aTrack1.clear();
         aTrack2.clear();
+        trackSpacing.Reset();
     }
-    if (fCurrentDistance > fTrackDistance)
+    if (fCurrentDistance > 0.0f)
     {
-        const auto fSpeed = Min(1.0f, pShip->GetCurrentSpeed() / 20.0f);
-        for (int32_t i = 0; i < static_cast<int32_t>(fCurrentDistance / fTrackDistance); i++)
-        {
-            const auto fDistance = (i + 1) * fTrackDistance;
+        const auto fSpeed = Clamp(pShip->GetCurrentSpeed() / 20.0f);
+        auto vDir = vCurPos - vLastPos;
+        vDir.y = 0.0f;
+        vDir = storm::math::normalizeOrZero(vDir);
+        // Keep the unspent distance, and stamp each strip at its own pose/time along this frame's path.
+        trackSpacing.Advance(fCurrentDistance, fTrackDistance, vLastAng.y, vCurAng.y,
+            [&](float fDistance, float fraction, float yaw) {
+                const glm::vec3 forward(sinf(yaw), 0.0f, cosf(yaw));
 
-            // ~!~ optimize?
-            aTrack1.insert(aTrack1.begin(), Track{});
-            auto vDir = (vCurPos - vLastPos);
-            vDir.y = 0.0f;
-            vDir = storm::math::normalizeOrZero(vDir);
-            aTrack1[0].vPos = vLastPos + vDir * (vBoxSize.z * fZStart1 + fDistance);
-            aTrack1[0].fCos = cosf(vCurAng.y);
-            aTrack1[0].fSin = sinf(vCurAng.y);
-            aTrack1[0].fTime = 0.0f;
-            aTrack1[0].fTV = fCurTV;
-            aTrack1[0].fWidth = RRnd(fWidth11, fWidth12);          // 3.0f;
-            aTrack1[0].fSpeed = fSpeed * RRnd(fSpeed11, fSpeed12); // 4.5f + (FRAND(1.0f) - 0.5f);
-            aTrack1[0].fInitialAlpha = fSpeed;
+                aTrack1.insert(aTrack1.begin(), Track{});
+                aTrack1[0].vPos = vLastPos + vDir * fDistance + forward * (vBoxSize.z * fZStart1);
+                aTrack1[0].fCos = cosf(yaw);
+                aTrack1[0].fSin = sinf(yaw);
+                aTrack1[0].fTime = -fraction * fDeltaTime;
+                aTrack1[0].fTV = fCurTV;
+                aTrack1[0].fWidth = aTrack1[0].fInitialWidth = RRnd(fWidth11, fWidth12);          // 3.0f;
+                aTrack1[0].fSpeed = fSpeed * RRnd(fSpeed11, fSpeed12); // 4.5f + (FRAND(1.0f) - 0.5f);
+                aTrack1[0].fInitialAlpha = fSpeed;
 
-            aTrack2.insert(aTrack2.begin(), Track{});
-            aTrack2[0].vPos = vLastPos + vDir * (vBoxSize.z * fZStart2 + fDistance);
-            aTrack2[0].fCos = cosf(vCurAng.y);
-            aTrack2[0].fSin = sinf(vCurAng.y);
-            aTrack2[0].fTime = 0.0f;
-            aTrack2[0].fTV = fCurTV;
-            aTrack2[0].fWidth = RRnd(fWidth21, fWidth22);          // 12.0f;
-            aTrack2[0].fSpeed = fSpeed * RRnd(fSpeed21, fSpeed22); // 1.5f + (FRAND(0.4f) - 0.2f);
-            aTrack2[0].fInitialAlpha = fSpeed;
+                aTrack2.insert(aTrack2.begin(), Track{});
+                aTrack2[0].vPos = vLastPos + vDir * fDistance + forward * (vBoxSize.z * fZStart2);
+                aTrack2[0].fCos = cosf(yaw);
+                aTrack2[0].fSin = sinf(yaw);
+                aTrack2[0].fTime = -fraction * fDeltaTime;
+                aTrack2[0].fTV = fCurTV;
+                aTrack2[0].fWidth = aTrack2[0].fInitialWidth = RRnd(fWidth21, fWidth22);          // 12.0f;
+                aTrack2[0].fSpeed = fSpeed * RRnd(fSpeed21, fSpeed22); // 1.5f + (FRAND(0.4f) - 0.2f);
+                aTrack2[0].fInitialAlpha = fSpeed;
 
-            fCurTV += 0.05f;
-        }
-        vLastPos = vCurPos;
-        vLastAng = vCurAng;
+                fCurTV += 0.05f;
+            });
     }
+    vLastPos = vCurPos;
+    vLastAng = vCurAng;
 
     for (int32_t i = 0; i < aTrack1.size(); i++)
     {
@@ -337,7 +340,7 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
 
         T.fTime += fDeltaTime;
         T.fAlpha = T.fInitialAlpha * Clamp(1.0f - T.fTime / fLifeTime1); // 22.0f);
-        T.fWidth += fDeltaTime * (T.fSpeed * (1.0f - T.fTime / fLifeTime1));
+        T.fWidth = storm::ship::TrackWidth(T.fInitialWidth, T.fSpeed, T.fTime, fLifeTime1);
 
         if (T.fTime >= fLifeTime1)
         {
@@ -379,7 +382,7 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
 
         T.fTime += fDeltaTime;
         T.fAlpha = T.fInitialAlpha * Clamp(1.0f - T.fTime / fLifeTime2); // 10.0f);
-        T.fWidth -= fDeltaTime * (T.fSpeed * (1.0f - T.fTime / fLifeTime2));
+        T.fWidth = storm::ship::TrackWidth(T.fInitialWidth, -T.fSpeed, T.fTime, fLifeTime2);
 
         if (T.fTime >= fLifeTime2)
         {
@@ -419,6 +422,7 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
 void ShipTracks::ShipTrack::Reset()
 {
     bFirstExecute = true;
+    trackSpacing.Reset();
 
     aTrack1.clear();
     aTrack2.clear();

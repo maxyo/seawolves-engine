@@ -547,9 +547,9 @@ void SEAFOAM::Execute(uint32_t dTime)
         else
             speedA = shipSpeed / START_FADE_SPEED;
 
-        foamInfo->carcass[0]->SetSpeed(U_SPEED_K * shipSpeed / shipFoamInfo->hullInfo.boxsize.z, V_SPEED_K * shipSpeed,
+        foamInfo->carcass[0]->SetSpeed(U_SPEED_K * shipSpeed / foamInfo->hullInfo.boxsize.z, V_SPEED_K * shipSpeed,
                                        speedA);
-        foamInfo->carcass[1]->SetSpeed(U_SPEED_K * shipSpeed / shipFoamInfo->hullInfo.boxsize.z, V_SPEED_K * shipSpeed,
+        foamInfo->carcass[1]->SetSpeed(U_SPEED_K * shipSpeed / foamInfo->hullInfo.boxsize.z, V_SPEED_K * shipSpeed,
                                        speedA);
     }
 
