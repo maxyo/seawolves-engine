@@ -9,8 +9,9 @@ namespace storage
 {
 using std::abs;
 using std::clamp;
+using std::exp2;
 using std::floor;
-using std::sqrt;
+using std::log2;
 float sign(float x) { return x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f; }
 #include "../shaders/include/fx_waves_storage.sh"
 #include "../shaders/include/fx_waves_flux.sh"
@@ -25,13 +26,13 @@ constexpr float reference = storm::fx::WaveClock::kStep;
 enum class Mode { Float, OldPacked, Packed };
 float QuantizeHeight(float h)
 {
-    return storage::fxWavesDecode(storage::fxWavesEncode(h, 2.0f), 2.0f);
+    return storage::fxWavesDecodeHeight(storage::fxWavesEncodeHeight(h, 2.0f), 2.0f);
 }
 float QuantizeVelocity(float v)
 {
     return storage::fxWavesDecodeVelocity(storage::fxWavesEncodeVelocity(v));
 }
-std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source = true)
+std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source = true, bool flux = false)
 {
     std::vector<float> height(size * size, mode == Mode::OldPacked ? 2.0f / 65535.0f : 0.0f);
     std::vector<float> history = height, next(height.size()), next_history(height.size()), rate(height.size());
@@ -64,18 +65,20 @@ std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source 
                                   (y ? height[i-size] : 0) + (y+1<size ? height[i+size] : 0) - 4*h;
                 const float displacement = mode == Mode::Packed ? history[i] * keep * dt / reference :
                                             (h - history[i]) * keep * dt / last;
-                const float value = std::clamp(h + displacement + lap_factor * lap +
-                                              rate[i] * dt * (dt + last) / (2 * reference), -1.9f, 1.9f);
+                const float input = flux ? storage::fxWavesSourceDisplacement(rate[i], dt) :
+                                           rate[i] * dt * (dt + last) / (2 * reference);
+                const float value = std::clamp(h + displacement + lap_factor * lap + input, -1.9f, 1.9f);
+                const float base = flux ? storage::fxWavesHistoryBase(h, input, 1.0f) : h;
                 if (mode == Mode::Packed)
                 {
                     next[i] = QuantizeHeight(value);
-                    next_history[i] = QuantizeVelocity((value - h) * reference / dt);
+                    next_history[i] = QuantizeVelocity((value - base) * reference / dt);
                 }
                 else
                 {
                     next[i] = mode == Mode::Float ? value :
                         std::floor((value * 0.25f + 0.5f) * 65535.0f + 0.5f) / 65535.0f * 4.0f - 2.0f;
-                    next_history[i] = h;
+                    next_history[i] = base;
                 }
             }
             height.swap(next); history.swap(next_history); last = dt;
@@ -118,8 +121,8 @@ int main()
                 old_history = old_h; old_h = old_next; last = dt;
             }
         }
-        // Packed height has <= half an LSB rounding per injection, accumulated over the on interval.
-        const float tolerance = packed ? (120 / scale * std::min(scale*2, 3)) * (1.0f / 32767.0f) : 1e-5f;
+        // The accumulated packed result must stay within one millimetre of the supplied displacement.
+        const float tolerance = packed ? 0.001f : 1e-5f;
         CHECK(std::abs(h - 0.08f) <= tolerance);
         CHECK(std::abs(packed ? history : h-history) < 1e-6f);
         CHECK(old_h > 10.0f * h);
@@ -137,6 +140,7 @@ int main()
         CHECK(recovered == code);
         CHECK(storage::fxWavesEncode(storage::fxWavesDecode(code, 2.0f), 2.0f) == code);
         CHECK(storage::fxWavesEncodeVelocity(storage::fxWavesDecodeVelocity(code)) == code);
+        CHECK(storage::fxWavesEncodeHeight(storage::fxWavesDecodeHeight(code, 2.0f), 2.0f) == code);
     }
     const auto quiet = Run(Mode::Packed, 4, true, false);
     CHECK(std::all_of(quiet.begin(), quiet.end(), [](float x) { return x == 0; }));
@@ -154,5 +158,17 @@ int main()
     const float switching = Error(Run(Mode::Float, 1, true), Run(Mode::Packed, 1, true));
     std::printf("changing-step packed versus float L2=%.6f\n", switching);
     CHECK(switching < 0.03f);
+    const auto flux_base = Run(Mode::Packed, 1, false, true, true);
+    for (int scale : {1, 2, 4})
+    {
+        const auto packed = Run(Mode::Packed, scale, false, true, true);
+        const auto full = Run(Mode::Float, scale, false, true, true);
+        const float scale_error = Error(flux_base, packed), storage_error = Error(full, packed);
+        std::printf("flux packed x%d scale L2=%.6f versus float L2=%.6f\n", scale, scale_error, storage_error);
+        CHECK(scale_error < 0.03f && storage_error < 0.03f);
+    }
+    const float flux_switching = Error(Run(Mode::Float, 1, true, true, true), Run(Mode::Packed, 1, true, true, true));
+    std::printf("flux changing-step packed versus float L2=%.6f\n", flux_switching);
+    CHECK(flux_switching < 0.03f);
     return failures ? 1 : 0;
 }

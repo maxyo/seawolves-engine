@@ -34,7 +34,7 @@ vec2 fxWavesState(vec2 uv)
 {
     vec4 t = texture2D(s_wavesState, uv);
     vec2 h = u_wavesStep[2].z > 0.5 ?
-        vec2(fxWavesDecode(fxWavesCode(t.rg), kWavesRange), fxWavesDecodeVelocity(fxWavesCode(t.ba))) : t.rg;
+        vec2(fxWavesDecodeHeight(fxWavesCode(t.rg), kWavesRange), fxWavesDecodeVelocity(fxWavesCode(t.ba))) : t.rg;
     vec2 inside = step(vec2_splat(0.0), uv) * step(uv, vec2_splat(1.0));
     return h * (inside.x * inside.y);
 }
@@ -42,6 +42,6 @@ vec2 fxWavesState(vec2 uv)
 vec4 fxWavesOut(vec2 h)
 {
     return u_wavesStep[2].z > 0.5 ?
-        vec4(fxWavesBytes(fxWavesEncode(h.x, kWavesRange)), fxWavesBytes(fxWavesEncodeVelocity(h.y))) : vec4(h, 0.0, 1.0);
+        vec4(fxWavesBytes(fxWavesEncodeHeight(h.x, kWavesRange)), fxWavesBytes(fxWavesEncodeVelocity(h.y))) : vec4(h, 0.0, 1.0);
 }
 #endif
