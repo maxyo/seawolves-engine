@@ -5,7 +5,7 @@
 // The field: kSize x kSize texels over kExtent metres, centred on the camera in whole texels (the content is shifted
 // by whole texels as the centre moves, so the water does not swim under the camera), stepped in game time
 // (WaveClock: 60 Hz steps, longer ones up to kMaxStep when a frame holds more game time, at most kMaxSteps a frame).
-// Each step is one screen pass that reads the previous state (height now and one step ago) and writes the next one:
+// Each step is one screen pass that reads the previous state and writes the next one:
 // the discrete 2D wave equation (Hugo Elias' ripple scheme, the explicit leapfrog integration, its second
 // difference in time taken over unequal steps), with velocity damping per second, a sponge at the border and every source applied in the same pass. A hull
 // holds the water still inside its waterline (waves reflect off it) and pushes it around the waterline with its
@@ -14,9 +14,11 @@
 // as a cubic B-spline (four linear taps) in its pixel shaders: the normals are smooth across the 0.5 m texels.
 //
 // Support::sea_waves_float selects RG32F state; sea_waves_surface_float independently selects RGBA16F surface.
-// Each unsupported format falls back independently: heights use two RGBA8 channels as 16-bit fixed point
-// (exact under point sampling); an RGBA8 surface stores height +-kSurfaceHeight and slopes
-// +-kSurfaceSlope around 128/255, whose 8-bit steps (0.008 of slope) show as faint terraces in the reflection.
+// Each unsupported format falls back independently: RGBA8 stores a signed 16-bit height and a 16-bit
+// reference-step displacement (square-root encoded for precision near still water), both exactly zeroable.
+// Keeping displacement separately avoids persistent velocity from height rounding. An RGBA8 surface stores height
+// +-kSurfaceHeight and slopes +-kSurfaceSlope around 128/255, whose 8-bit steps (0.008 of slope) show as faint terraces
+// in the reflection.
 #pragma once
 
 #include "storm/fx/wave_clock.hpp"
