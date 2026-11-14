@@ -137,6 +137,7 @@ struct EffectsWaveSource
     // and its half beam there.
     static constexpr int kHullStations = 8;
     Kind kind = Kind::Body;
+    uint64_t identity = 0; // stable entity id for wave substep interpolation
     std::array<float, 3> position{};          // absolute world; a hull: the ship's origin
     std::array<float, 2> forward{0.0f, 1.0f}; // unit heading in x, z
     float half_length = 0.4f;                 // metres (a body: its radius; a hull: half its waterline length)

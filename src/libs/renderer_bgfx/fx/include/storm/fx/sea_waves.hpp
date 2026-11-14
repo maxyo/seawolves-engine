@@ -22,6 +22,7 @@
 #pragma once
 
 #include "storm/fx/wave_clock.hpp"
+#include "storm/fx/wave_source_history.hpp"
 
 #include <bgfx/bgfx.h>
 
@@ -31,30 +32,6 @@
 
 namespace storm::fx
 {
-
-struct WaveSource
-{
-    enum class Kind : uint8_t
-    {
-        Body, // a swimmer or wader: a round disturbance that moves and (swimming) strokes
-        Hull, // a boat or ship: its waterline (stern, stem, stations) holds the water inside, pushes it around
-    };
-    Kind kind = Kind::Body;
-    std::array<double, 2> position{}; // absolute world x, z (metres)
-    std::array<float, 2> forward{0.0f, 1.0f}; // unit heading in x, z
-    float half_length = 0.5f; // metres along `forward` (a body: its radius; a hull: half its waterline length)
-    float half_width = 0.5f;  // a hull: its largest half beam at the waterline
-    // A hull's waterline (render::EffectsWaveSource): kHullStations stations evenly spaced from `stern` to `stem`
-    // (metres along `forward` from `position`), each with the waterline's centre offset to the side (towards
-    // (-forward z, forward x)) and its half beam there.
-    static constexpr int kHullStations = 8;
-    float stern = -0.5f, stem = 0.5f;
-    std::array<float, kHullStations> station_side{};
-    std::array<float, kHullStations> station_half{};
-    float speed = 0.0f;  // m/s along `forward`
-    float heave = 0.0f;  // m/s up (a hull bobbing in the swell sends rings out)
-    float stroke = 0.0f; // a body: 0 wading .. 1 swimming hard (an oscillating push)
-};
 
 class SeaWaves
 {
@@ -82,6 +59,7 @@ class SeaWaves
     int StepsDue(float dt);
     // Runs `views.size() - 1` steps, centred on `camera` (absolute world x, z), with this frame's `sources` (the
     // first kMaxSources: the caller sorts them by importance), then the surface pass in the last view.
+    // Consecutive poses with the same identity are sampled at each hull substep midpoint.
     // `float_state`: Support::sea_waves_float; `float_surface`: Support::sea_waves_surface_float.
     // `retention`: source-free idle fade applied to both stored components over this frame (normally 1).
     void Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera, std::span<const WaveSource> sources,
@@ -115,6 +93,8 @@ class SeaWaves
     std::array<int64_t, 2> cell_{}; // the centre in whole texels
     std::array<double, 2> centre_{};
     WaveClock clock_;
+    WaveSourceHistory source_history_;
+    bool source_discontinuous_ = false;
     float step_seconds_ = WaveClock::kStep; // seconds of each step of the next Advance
     float last_step_ = WaveClock::kStep;    // ... of the step that wrote the latest state
     bool dropped_logged_ = false;

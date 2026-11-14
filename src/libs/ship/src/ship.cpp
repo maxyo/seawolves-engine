@@ -1148,6 +1148,7 @@ void SHIP::AddWaveSource(float fDeltaTime)
     fWaveSpeed += k * ((vDelta.x * vForward.x + vDelta.z * vForward.y) / fDeltaTime - fWaveSpeed);
     fWaveHeave += k * (vDelta.y / fDeltaTime - fWaveHeave);
     storm::render::EffectsWaveSource source;
+    source.identity = GetId();
     source.kind = storm::render::EffectsWaveSource::Kind::Hull;
     source.position = {vWorld.x, vWorld.y, vWorld.z};
     source.forward = {vForward.x, vForward.y};

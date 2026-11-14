@@ -2334,6 +2334,7 @@ void Character::Move(float dltTime)
         // Waves from objects: a body in the water every frame, swimming or wading as decided above; swimming strokes,
         // wading only pushes.
         storm::render::EffectsWaveSource source;
+        source.identity = GetId();
         source.position = {curPos.x, surface, curPos.z};
         source.forward = {sinf(ay), cosf(ay)};
         source.half_length = source.half_width = isSwim ? 0.5f : 0.35f;

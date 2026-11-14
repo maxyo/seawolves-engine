@@ -201,6 +201,7 @@ void Host::advance_sea_waves(shim::Device &device)
         if (distance(s) > 0.5f * fx::SeaWaves::kExtent)
             continue;
         fx::WaveSource w;
+        w.identity = s.identity;
         w.kind = s.kind == render::EffectsWaveSource::Kind::Hull ? fx::WaveSource::Kind::Hull : fx::WaveSource::Kind::Body;
         w.position = {s.position[0], s.position[2]};
         w.forward = s.forward;
