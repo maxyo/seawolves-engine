@@ -153,7 +153,7 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
             i == 0 ? shift[0] : 0.0f, i == 0 ? shift[1] : 0.0f, courant * courant * 0.5f * (1.0f + 1.0f / ratio),
             keep * ratio, 1.0f / kSize, kCell, step_seconds_, static_cast<float>(count),
             static_cast<float>(std::fmod(time_, 1000.0)), reset_ ? 1.0f : 0.0f, float_state_ ? 0.0f : 1.0f, kExtent,
-            WaveClock::ForcingStep(step_seconds_, reset_ ? step_seconds_ : last_step_), step_retention,
+            0.0f, step_retention,
             keep * step_seconds_ / kStep, kStep / step_seconds_,
         };
         bgfx::setUniform(u_step_, step, 4);

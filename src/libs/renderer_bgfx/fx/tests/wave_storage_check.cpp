@@ -13,6 +13,7 @@ using std::floor;
 using std::sqrt;
 float sign(float x) { return x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f; }
 #include "../shaders/include/fx_waves_storage.sh"
+#include "../shaders/include/fx_waves_flux.sh"
 }
 
 namespace
@@ -64,7 +65,7 @@ std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source 
                 const float displacement = mode == Mode::Packed ? history[i] * keep * dt / reference :
                                             (h - history[i]) * keep * dt / last;
                 const float value = std::clamp(h + displacement + lap_factor * lap +
-                                              rate[i] * storm::fx::WaveClock::ForcingStep(dt, last), -1.9f, 1.9f);
+                                              rate[i] * dt * (dt + last) / (2 * reference), -1.9f, 1.9f);
                 if (mode == Mode::Packed)
                 {
                     next[i] = QuantizeHeight(value);
@@ -92,6 +93,38 @@ float Error(const std::vector<float> &a, const std::vector<float> &b)
 
 int main()
 {
+    // Analytic source-on/off control, without spatial acceleration: a 0.02 m/s source for 4 s supplies
+    // exactly 0.08 m, then leaves zero velocity. The old recurrence keeps accelerating after each input.
+    // Test production source/history arithmetic, both storage paths, and unequal game-time steps.
+    for (bool packed : {false, true}) for (int scale : {1, 2, 4})
+    {
+        storm::fx::WaveClock clock;
+        float h = 0, history = 0, last = reference, old_h = 0, old_history = 0;
+        for (int frame = 0; frame < 240 / scale; ++frame)
+        {
+            float dt = 0; bool dropped = false;
+            const int steps = clock.Due(scale / 30.0f, dt, dropped);
+            CHECK(!dropped);
+            for (int j = 0; j < steps; ++j)
+            {
+                const float rate = frame < 120 / scale ? 0.02f : 0.0f;
+                const float source = storage::fxWavesSourceDisplacement(rate, dt);
+                const float keep = std::pow(0.9985f, dt / reference);
+                const float next = h + (packed ? history * dt / reference : (h-history) * dt / last) * keep + source;
+                const float base = storage::fxWavesHistoryBase(h, source, 1.0f);
+                history = packed ? QuantizeVelocity((next-base) * reference / dt) : base;
+                h = packed ? QuantizeHeight(next) : next;
+                const float old_next = old_h + (old_h-old_history) * dt / last * keep + rate * dt * (dt+last) / (2*reference);
+                old_history = old_h; old_h = old_next; last = dt;
+            }
+        }
+        // Packed height has <= half an LSB rounding per injection, accumulated over the on interval.
+        const float tolerance = packed ? (120 / scale * std::min(scale*2, 3)) * (1.0f / 32767.0f) : 1e-5f;
+        CHECK(std::abs(h - 0.08f) <= tolerance);
+        CHECK(std::abs(packed ? history : h-history) < 1e-6f);
+        CHECK(old_h > 10.0f * h);
+        std::printf("source flux %s x%d height=%.6f expected=.08 old=%.6f\n", packed ? "packed" : "float", scale, h, old_h);
+    }
     CHECK(QuantizeHeight(0) == 0 && QuantizeVelocity(0) == 0);
     CHECK(QuantizeHeight(-2) == -2 && QuantizeHeight(2) == 2);
     CHECK(QuantizeVelocity(-4) == -4 && QuantizeVelocity(4) == 4);

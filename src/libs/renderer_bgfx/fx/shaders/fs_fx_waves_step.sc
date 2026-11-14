@@ -43,8 +43,8 @@ void main()
     float displacement = u_wavesStep[2].z > 0.5 ? c.y * u_wavesStep[3].z : (c.x - c.y) * u_wavesStep[0].w;
     float h = c.x + displacement + u_wavesStep[0].z * lap;
 
-    // Sources: displacement rates calibrated at 60 Hz, and the still water inside the hulls. The source term
-    // uses the same second-order time integration as the Laplacian, scaled to retain that reference calibration.
+    // Sources prescribe vertical displacement rates (m/s), and still water inside the hulls. Integrate the
+    // supplied height once; only the wave equation's own velocity belongs in the recurrence history.
     vec2 p = (v_uv - 0.5) * u_wavesStep[2].w;
     float rate = 0.0;
     float hold = 1.0;
@@ -94,14 +94,16 @@ void main()
             rate += ring * (abs(b.z) * make * (0.09 * bow * bow * bow - 0.018) - 0.03 * clamp(b.w, -1.0, 1.0));
         }
     }
-    h += rate * u_wavesStep[3].x;
+    float source = fxWavesSourceDisplacement(rate, dt);
+    h += source;
     h *= hold;
     // Sponge: the outer 8 % of the field absorbs what reaches it.
     vec2 edge = min(v_uv, 1.0 - v_uv);
     h *= mix(pow(0.94, dt * 60.0), 1.0, smoothstep(0.0, 0.08, min(edge.x, edge.y)));
     h = clamp(h, -0.95 * kWavesRange, 0.95 * kWavesRange);
     // Preserve hold/sponge/clamp effects in the velocity, before height storage rounds it.
-    float history = u_wavesStep[2].z > 0.5 ? (h - c.x * hold) * u_wavesStep[3].w : c.x * hold;
+    float base = fxWavesHistoryBase(c.x, source, hold);
+    float history = u_wavesStep[2].z > 0.5 ? (h - base) * u_wavesStep[3].w : base;
     // Idle fade scales position AND velocity/history: no artificial impulse and no hidden state on reentry.
     gl_FragColor = fxWavesOut(vec2(h, history) * u_wavesStep[3].y);
 }

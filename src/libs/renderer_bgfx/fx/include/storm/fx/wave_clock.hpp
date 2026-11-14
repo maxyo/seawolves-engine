@@ -32,12 +32,6 @@ struct WaveClock
         return steps;
     }
 
-    // A source feeds the second-order height recurrence, just like the Laplacian. Keep its 60 Hz calibration
-    // while integrating acceleration over unequal intervals; rate * step alone makes it weaker at x2 / x4.
-    static float ForcingStep(float step, float previous_step)
-    {
-        return step * (step + previous_step) * (0.5f / kStep);
-    }
 };
 
 } // namespace storm::fx

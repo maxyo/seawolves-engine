@@ -2321,8 +2321,8 @@ void CheckSeaWaves()
           std::fabs(step - WaveClock::kMaxStep) < 1e-5f);
     CHECK(clock.Due(1.0f / 120.0f, step, dropped) == 0); // the dropped time is not made up later
 
-    // Uniform field (laplacian 0), same constant source and ten game seconds at x1 / x2 / x4. Checking only
-    // elapsed time missed that rate * dt in the second-order recurrence weakened the x4 source by about 62%.
+    // Uniform field (laplacian 0): a constant displacement rate supplies rate * elapsed height, at every
+    // time scale. The external flux must not persist as free-wave velocity in the second-order recurrence.
     float reference = 0.0f;
     for (const int scale : {1, 2, 4})
     {
@@ -2336,8 +2336,8 @@ void CheckSeaWaves()
             {
                 const float next = height + (height - previous) * (step / last_step) *
                                                 std::pow(0.9985f, step / WaveClock::kStep) +
-                                   1e-5f * WaveClock::ForcingStep(step, last_step);
-                previous = height;
+                                   1e-5f * step;
+                previous = height + 1e-5f * step;
                 height = next;
                 last_step = step;
             }
@@ -2345,6 +2345,7 @@ void CheckSeaWaves()
         if (scale == 1)
             reference = height;
         CHECK(reference > 0.0f && std::fabs(height / reference - 1.0f) < 0.01f);
+        CHECK(std::fabs(height - 1e-4f) < 1e-7f);
     }
 }
 
