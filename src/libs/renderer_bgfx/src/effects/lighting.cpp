@@ -850,8 +850,9 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
 {
     if (!atlas.skin_pixels)
         return fx::PackSkinTone({}); // unreadable reference: never turn unknown torso skin into generated relief
-    if (!atlas.skin_tone_read)
+    if (!atlas.skin_tone || !atlas.skin_tone->valid)
     {
+        const bool first_read = !atlas.skin_tone_read;
         atlas.skin_tone_read = true;
         // The texels under the vertices the head, neck and hand bones carry (the skin weight in the third byte of the
         // bone indices) that face forward in the bind pose (+z: the face, not the hair, a hat or the back of the
@@ -859,9 +860,14 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
         const DrawVertices vertices = draw_source.vertices();
         const fx::BounceTexture &pixels = *atlas.skin_pixels;
         std::vector<uint8_t> samples;
-        if (vertices.data && vertices.stride == render::kSkinnedSourceStride)
-            for (uint32_t i = 0; i < vertices.count; ++i)
+        // A material can first be drawn by a torso-only range. Retry later ranges until a real reference arrives;
+        // cap each draw's work and rotate across large ranges rather than freezing the first empty result forever.
+        constexpr uint32_t kVertexBudget = 1024;
+        const uint32_t count = std::min(vertices.count, kVertexBudget);
+        if (vertices.data && vertices.stride == render::kSkinnedSourceStride && vertices.count)
+            for (uint32_t j = 0; j < count; ++j)
             {
+                const uint32_t i = (atlas.skin_vertex_cursor + j) % vertices.count;
                 const uint8_t *v = vertices.data + static_cast<size_t>(i) * vertices.stride;
                 if (v[render::kSkinnedBonesOffset + render::kSkinWeightByte] < 230)
                     continue;
@@ -881,15 +887,30 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
                         samples.insert(samples.end(), t, t + 3);
                     }
             }
-        const fx::SkinTone tone = fx::MakeSkinTone(samples);
+        if (vertices.count)
+            atlas.skin_vertex_cursor = (atlas.skin_vertex_cursor + count) % vertices.count;
+        if (samples.empty() && !first_read)
+            return fx::PackSkinTone({});
+        // Small face/hand ranges can contribute fewer than the minimum reference texels. Accumulate only a bounded
+        // tail; later actual skin must be able to replace an earlier unusable hat/cloth reference.
+        constexpr size_t kSampleBytes = 4096 * 3;
+        if (samples.size() > kSampleBytes)
+            samples.erase(samples.begin(), samples.end() - kSampleBytes);
+        const size_t overflow = atlas.skin_samples.size() + samples.size() > kSampleBytes
+                                    ? atlas.skin_samples.size() + samples.size() - kSampleBytes : 0;
+        atlas.skin_samples.erase(atlas.skin_samples.begin(), atlas.skin_samples.begin() + overflow);
+        atlas.skin_samples.insert(atlas.skin_samples.end(), samples.begin(), samples.end());
+        const fx::SkinTone tone = fx::MakeSkinTone(atlas.skin_samples);
         if (tone.valid)
             shim::logf("effects: skin colour of %s: %d texels, chromaticity %.3f %.3f, luminance %.2f..%.2f", atlas.name.c_str(),
                        tone.samples, static_cast<double>(tone.r), static_cast<double>(tone.g), static_cast<double>(tone.lum_lo),
                        static_cast<double>(tone.lum_hi));
-        else
+        else if (first_read)
             shim::logf("effects: skin colour of %s: none (%d warm face texels%s): its torso relief is masked", atlas.name.c_str(),
                        tone.samples, vertices.data ? "" : ", its vertices unreadable");
         atlas.skin_tone = std::make_shared<const fx::SkinTone>(tone);
+        if (tone.valid)
+            std::vector<uint8_t>().swap(atlas.skin_samples);
     }
     if (!atlas.skin_tone || !atlas.skin_tone->valid)
         return fx::PackSkinTone({});

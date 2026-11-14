@@ -236,7 +236,7 @@ class Lighting
     // After the draw was submitted with its buffers kept (BGFX_DISCARD_NONE for buffers): the depth-only copy.
     // The lamp faces first (buffers kept), then the sun view, which ends the draw (all bindings discarded).
     void submit_caster(shim::Device &device, const D3DMATRIX &world, bool skinned);
-    // u_fxSkinTone of a character atlas (FfDraw::skin_tone); its reference is made at its first skinned draw from the
+    // u_fxSkinTone of a character atlas (FfDraw::skin_tone); bounded partial draws accumulate its reference from the
     // vertices of that draw (the GPU copies of GEOS::AVERTEX0, model gpu_skinning.hpp).
     std::array<float, 8> skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source);
     LampShadows &lamp_shadows() { return lamps_; }

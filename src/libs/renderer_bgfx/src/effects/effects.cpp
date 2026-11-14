@@ -1031,7 +1031,13 @@ void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path
         store->name = fx::NormalizeTexturePath(path ? path : "");
         store->cutout = effects::texture_cutout(*store);
         store->albedo = effects::texture_albedo(*store);
-        // A character's atlas: its colours for its skin colour (read at its first skinned draw, effects/lighting.cpp).
+        // A new material source invalidates every part of its previous skin reference, including non-character reuse.
+        store->skin_pixels.reset();
+        store->skin_tone.reset();
+        store->skin_tone_read = false;
+        store->skin_vertex_cursor = 0;
+        store->skin_samples.clear();
+        // A character's atlas: its colours for the reference collected from its drawn face/hand ranges.
         if (store->name.rfind("characters/", 0) == 0)
             store->skin_pixels = effects::texture_level(*store, fx::kSkinToneLevel);
         effects::Host::instance().lighting().normal_maps().on_texture_loaded(*store, path, file);

@@ -53,3 +53,5 @@ int main(int argc,char **argv) {
         '-I'+str(fx/'include'),str(source),os.environ.get('STORM_CHARACTER_HEIGHT_SOURCE',str(fx/'src/height_map.cpp')),
         str(fx/'src/parallax_exclusions.cpp'),'-o',str(binary)],check=True)
     subprocess.run([str(binary),str(directory)],check=True)
+
+subprocess.run([os.environ.get('PYTHON','python3'),str(Path(__file__).with_name('cache_run.py'))],check=True)

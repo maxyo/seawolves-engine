@@ -126,10 +126,12 @@ struct TexStore
     std::shared_ptr<const fx::BounceTexture> albedo;
     // Effects: a character atlas's colours at its level of at most 128 texels across (effects/texture_pixels.hpp
     // texture_level), made when it is loaded; null for other textures. Its skin colour (fx/skin_tone.hpp), read at the
-    // first skinned draw of it (effects/lighting.cpp): `skin_tone_read` then, null `skin_tone` when it has none.
+    // skinned draws (effects/lighting.cpp): only a valid reference is final; missing parts keep the torso masked.
     std::shared_ptr<const fx::BounceTexture> skin_pixels;
     std::shared_ptr<const fx::SkinTone> skin_tone;
-    bool skin_tone_read = false;
+    bool skin_tone_read = false; // an attempt has been logged (an invalid attempt may be retried)
+    uint32_t skin_vertex_cursor = 0; // bounded walks of large draw ranges
+    std::vector<uint8_t> skin_samples; // bounded partial-reference accumulator, released once valid
     // Effects: the normal map derived from this height texture (src/effects/normal_maps.hpp), null for others.
     std::shared_ptr<effects::NormalMapEntry> normal_map;
     // Effects: the game file's normalized path (fx::NormalizeTexturePath), for the parallax census; empty for textures
