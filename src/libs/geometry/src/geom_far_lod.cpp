@@ -145,12 +145,12 @@ void GeomFarLod::post()
     auto guard = std::make_shared<DropGuard>(DropGuard{job_});
     ticket_ = storm::fx::PostBake("far LOD " + name_, [guard](storm::fx::BakeStage stage) {
         Job &job = *guard->job;
-        if (!job.key)
-            job.key = cacheKey(job.source);
         if (stage == storm::fx::BakeStage::Load)
         {
             try
             {
+                if (!job.key)
+                    job.key = cacheKey(job.source);
                 if (!readCache(job))
                     return false;
             }
@@ -163,15 +163,17 @@ void GeomFarLod::post()
             finish(job, 1);
             return true;
         }
-        // Another copy of the same model (ships of one class) may have made them since this one looked.
-        if (readCache(job))
-        {
-            finish(job, 1);
-            return true;
-        }
         const auto started = std::chrono::steady_clock::now();
         try
         {
+            if (!job.key)
+                job.key = cacheKey(job.source);
+            // Another copy of the same model (ships of one class) may have made them since this one looked.
+            if (readCache(job))
+            {
+                finish(job, 1);
+                return true;
+            }
             const auto buffers = views(job.source);
             job.lods = far_lod::Build(job.source.objects, buffers, job.source.triangles,
                                       [](size_t count, const std::function<void(size_t, size_t)> &work) {
