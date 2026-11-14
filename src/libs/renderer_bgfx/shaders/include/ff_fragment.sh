@@ -46,7 +46,7 @@ uniform vec4 u_fxFf;
 
 // A character's own skin colour (fx/skin_tone.hpp, the same test as SkinLikeness: keep both in step): [0] its mean
 // chromaticity r, g, its luminance's median and 95th percentile; [1] the inverse covariance of the chromaticity rr, rg,
-// gg, w the lod the test reads. [0].x 0: no test.
+// gg, w the lod the test reads. [0].x 0: explicitly disabled; -1: unknown colour, conservatively mask the torso.
 uniform vec4 u_fxSkinTone[2];
 float ffSmooth(float a, float b, float x)
 {
@@ -546,8 +546,13 @@ void main()
     // A character's torso and arms: skin where the atlas there has the character's own skin colour (fx/skin_tone.hpp,
     // u_fxSkinTone; read at about 64 texels across, so the grain of leather and dark cloth averages into its own colour).
     float ffTorso = clamp(v_position.w, 0.0, 1.0);
-    if (u_fxSkinTone[0].x > 0.0 && ffTorso > 0.004)
-        ffSkin = max(ffSkin, clamp(2.0 * ffTorso * ffSkinLikeness(texture2DLod(s_tex0, ffReliefUv, u_fxSkinTone[1].w).rgb), 0.0, 1.0));
+    if (ffTorso > 0.004)
+    {
+        if (u_fxSkinTone[0].x < 0.0)
+            ffSkin = max(ffSkin, clamp(2.0 * ffTorso, 0.0, 1.0));
+        else if (u_fxSkinTone[0].x > 0.0)
+            ffSkin = max(ffSkin, clamp(2.0 * ffTorso * ffSkinLikeness(texture2DLod(s_tex0, ffReliefUv, u_fxSkinTone[1].w).rgb), 0.0, 1.0));
+    }
     vec2 ffReliefDx = dFdx(ffReliefUv);
     vec2 ffReliefDy = dFdy(ffReliefUv);
     vec3 reliefGu;

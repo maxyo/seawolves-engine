@@ -148,8 +148,14 @@ float SkinLikeness(const SkinTone &tone, float r, float g, float b)
 std::array<float, 8> PackSkinTone(const SkinTone &tone)
 {
     if (!tone.valid)
-        return {};
+        return {-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     return {tone.r, tone.g, tone.lum_lo, tone.lum_hi, tone.inv_rr, tone.inv_rg, tone.inv_gg, 1.0f};
+}
+
+float TorsoSkinMask(const SkinTone &tone, float torso_weight, float r, float g, float b)
+{
+    return std::clamp(2.0f * std::clamp(torso_weight, 0.0f, 1.0f) * (tone.valid ? SkinLikeness(tone, r, g, b) : 1.0f),
+                      0.0f, 1.0f);
 }
 
 } // namespace storm::fx

@@ -194,6 +194,14 @@ of the height; not indoors): the lit draws' sun term, half of the baked colours.
 The same height gives the relief's cavity on Высокая and Средняя (fxReliefCavity: the height against itself two and a
 half levels coarser, one more tap): joints, gaps and recesses take ambient and bounce in full, half of the direct light,
 three quarters of the baked colours; it also draws where the parallax is off or clamped.
+Character relief is separate from masonry: Medium uses normals, High adds shallow 2-texel parallax with eight steps
+and no self-shadow, at half normal strength. Head, neck and hand bone weights suppress relief on skin and hair;
+torso and arm texels use their own atlas's face/hand skin reference (`skin_tone.hpp`). With no usable reference,
+those torso/arm weights conservatively suppress relief too, including on separate clothing atlases. Debuggable
+builds expose `fx_character_relief` (0/1/2), `fx_character_relief_strength` (0..100),
+`fx_character_parallax_depth` (0..1000; 100 is the default two texels), `fx_character_skin_colour` (1 by default)
+and `fx_gloss_debug=5` (red skin mask, green relief). Character maps are generated on demand for loaded textures;
+fresh player distance leads the queue, with projected size (characters weighted threefold) breaking equal distances.
 Where the height cannot be trusted (windows, glass: `parallax_trust.hpp`) the relief generation puts it at the top, by a
 per-texel mask, so the parallax shifts nothing there; normals and, where the height is trusted, the cavity stay. A texture
 with fewer trusted texels than `kParallaxMinCoverage` (35 %), or one on the shipped list (`src/parallax_exclusions.inc`,

@@ -492,8 +492,8 @@ int main(int argc, char **argv)
                     continue;
                 ++row.torso;
                 const uint8_t *t = &coarse.rgb[i * 3];
-                // As the shader fades: twice the torso weight times the likeness, here counted where it is past half.
-                if (2.0f * storm::fx::SkinLikeness(tone, t[0] / 255.0f, t[1] / 255.0f, t[2] / 255.0f) * torso[i] > 0.5f)
+                // Same conservative invalid-reference fallback and partial torso weights as the runtime shader.
+                if (storm::fx::TorsoSkinMask(tone, torso[i], t[0] / 255.0f, t[1] / 255.0f, t[2] / 255.0f) > 0.5f)
                     ++row.masked;
             }
             if (!dump.empty())
@@ -511,7 +511,7 @@ int main(int argc, char **argv)
                         if (torso[i] >= 0.5f)
                         {
                             const uint8_t *t = &coarse.rgb[i * 3];
-                            const bool m = storm::fx::SkinLikeness(tone, t[0] / 255.0f, t[1] / 255.0f, t[2] / 255.0f) * torso[i] > 0.5f;
+                            const bool m = storm::fx::TorsoSkinMask(tone, torso[i], t[0] / 255.0f, t[1] / 255.0f, t[2] / 255.0f) > 0.5f;
                             o[0] = m ? 255 : 30;
                             o[1] = m ? 255 : 40;
                             o[2] = m ? 255 : 110;
@@ -581,7 +581,7 @@ int main(int argc, char **argv)
                         r.samples / 9, r.r, r.g, r.torso, 100.0 * r.share(), out ? "  FLAG" : "");
     }
     std::printf("%zu model atlases with torso texels: median %.1f%% masked, MAD %.1f%%; %d flagged above %.1f%%; %d without a "
-                "skin reference (nothing masked on their torso), %d atlases unreadable, %d models without a skeleton\n",
+                "skin reference (conservative torso mask), %d atlases unreadable, %d models without a skeleton\n",
                 rows.size(), 100 * median, 100 * mad, flagged, 100 * flag, no_reference, unreadable, no_skeleton);
     return 0;
 }

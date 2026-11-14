@@ -4,7 +4,7 @@
 // (animation skin_bones.hpp); the spine, chest and arm bones carry shirts and coats as often as bare skin, so there the
 // texel's colour decides: a texel whose colour is the skin colour of the same atlas (read where the head and hand bones
 // are, the face and the hands) counts as skin. Dark and light skin alike: the reference is the character's own. An atlas
-// without face or hand texels (a separate armour texture) has no reference and masks nothing on the torso.
+// without a usable face or hand reference conservatively loses relief on its torso and arms as well.
 //
 // The colour is compared in chromaticity (r, g of rgb / (r + g + b): the hue and saturation without the brightness, so
 // the shading painted into the texture does not count) against the reference's mean and spread (Mahalanobis distance),
@@ -51,7 +51,11 @@ inline constexpr float kSkinToneNear = 2.25f, kSkinToneFar = 6.25f; // 1.5 and 2
 SkinTone MakeSkinTone(std::span<const uint8_t> rgb);
 // 0..1: how much a texel (0..1 channels) is this skin.
 float SkinLikeness(const SkinTone &tone, float r, float g, float b);
+// The torso's final skin mask (the shader's ffSkin): unknown skin colour fails closed. A separate clothes atlas can
+// therefore lose its torso relief; unverified bare skin must never acquire generated bumps. Non-torso texels stay 0.
+float TorsoSkinMask(const SkinTone &tone, float torso_weight, float r, float g, float b);
 // The two vec4 of u_fxSkinTone: [0] mean r, mean g, lum_lo, lum_hi; [1] inv_rr, inv_rg, inv_gg, 1 (0: no reference).
+// An invalid reference packs -1 in [0].x to request the conservative torso mask; all zero means explicitly disabled.
 std::array<float, 8> PackSkinTone(const SkinTone &tone);
 
 } // namespace storm::fx

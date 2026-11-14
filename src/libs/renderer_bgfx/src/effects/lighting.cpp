@@ -849,7 +849,7 @@ void Lighting::submit(const FfDraw &draw)
 std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source)
 {
     if (!atlas.skin_pixels)
-        return {};
+        return fx::PackSkinTone({}); // unreadable reference: never turn unknown torso skin into generated relief
     if (!atlas.skin_tone_read)
     {
         atlas.skin_tone_read = true;
@@ -887,12 +887,12 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
                        tone.samples, static_cast<double>(tone.r), static_cast<double>(tone.g), static_cast<double>(tone.lum_lo),
                        static_cast<double>(tone.lum_hi));
         else
-            shim::logf("effects: skin colour of %s: none (%d warm face texels%s): its torso keeps its relief", atlas.name.c_str(),
+            shim::logf("effects: skin colour of %s: none (%d warm face texels%s): its torso relief is masked", atlas.name.c_str(),
                        tone.samples, vertices.data ? "" : ", its vertices unreadable");
         atlas.skin_tone = std::make_shared<const fx::SkinTone>(tone);
     }
     if (!atlas.skin_tone || !atlas.skin_tone->valid)
-        return {};
+        return fx::PackSkinTone({});
     std::array<float, 8> packed = fx::PackSkinTone(*atlas.skin_tone);
     // The lod of the level about kSkinTestTexels across (the atlas's top level is level 0 of the sampler).
     const float top = static_cast<float>(std::max(atlas.width, atlas.height));

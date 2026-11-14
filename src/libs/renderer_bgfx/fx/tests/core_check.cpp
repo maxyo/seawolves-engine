@@ -614,7 +614,12 @@ void CheckSupport()
         CHECK(tone.valid && SkinLikeness(tone, 190 / 255.0f, 130 / 255.0f, 100 / 255.0f) > 0.9f &&
               SkinLikeness(tone, 60 / 255.0f, 80 / 255.0f, 150 / 255.0f) == 0.0f &&
               SkinLikeness(tone, 120 / 255.0f, 120 / 255.0f, 125 / 255.0f) == 0.0f && SkinLikeness(tone, 0.0f, 0.0f, 0.0f) == 0.0f);
-        CHECK(PackSkinTone(tone)[7] == 1.0f && PackSkinTone(SkinTone{})[0] == 0.0f);
+        CHECK(PackSkinTone(tone)[7] == 1.0f && PackSkinTone(SkinTone{})[0] == -1.0f);
+        CHECK(TorsoSkinMask(SkinTone{}, 1.0f, 0.7f, 0.5f, 0.3f) == 1.0f &&
+              TorsoSkinMask(SkinTone{}, 0.25f, 0.7f, 0.5f, 0.3f) == 0.5f &&
+              TorsoSkinMask(SkinTone{}, 0.0f, 0.7f, 0.5f, 0.3f) == 0.0f &&
+              TorsoSkinMask(tone, 1.0f, 190 / 255.0f, 130 / 255.0f, 100 / 255.0f) > 0.9f &&
+              TorsoSkinMask(tone, 1.0f, 60 / 255.0f, 80 / 255.0f, 150 / 255.0f) == 0.0f);
         std::vector<uint8_t> grey;
         for (int i = 0; i < 100; ++i)
         {
@@ -627,7 +632,7 @@ void CheckSupport()
             red_paint.insert(red_paint.end(), {255, 20, 0});
         const SkinTone paint = MakeSkinTone(red_paint);
         CHECK((!paint.valid && std::isfinite(paint.r) && std::isfinite(paint.g) &&
-               std::isfinite(paint.inv_rr) && PackSkinTone(paint) == std::array<float, 8>{}));
+               std::isfinite(paint.inv_rr) && PackSkinTone(paint)[0] == -1.0f));
     }
     CHECK(ClassifyTextureName("characters/blaze").relief == ReliefClass::Character && ReliefHasHeight(ReliefClass::Character) &&
           ReliefDepthTexels(ReliefClass::Character) == 2.0f);
