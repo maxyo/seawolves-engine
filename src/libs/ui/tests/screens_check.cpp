@@ -2222,6 +2222,49 @@ static void Items(const std::string &models)
     router.OnEvent({"header-subjects", "dismiss", ""});
     Expect(!surface.props["subject"].contains("open"), "a tap beside the list closes it");
 
+    // A selected but unavailable item is an answer from ThisItemCanBeEquip, not an unanswered step.
+    {
+        FakeSurface refused_surface;
+        Router refused(refused_surface);
+        InterfaceModel denied = Load(models, "items.json");
+        refused.SetInterface(denied);
+        refused.OnEvent({"slot-blade", "click", ""});
+        refused.OnEvent({"items", "row", "1"});
+        const size_t sent = refused_surface.commands.size();
+        for (Widget &widget : denied.widgets)
+            if (widget.node == "TABLE_ITEMS")
+                widget.value = widget.index == 1 ? "1" : "0";
+            else if (widget.node == "EQUIP_BUTTON")
+            {
+                widget.enabled = false;
+                widget.actions.clear();
+                widget.row_id.clear(); // InventoryEquipCapability publishes no token for a disabled button.
+                widget.unavailable_reason = "Needs a weapon perk";
+            }
+        denied.revision += 1;
+        refused.SetInterface(denied);
+        Expect(refused_surface.commands.size() == sent && refused_surface.props["detail"]["action"]["disabled"] == true,
+               "a refused equip leaves the selected item and its unavailable action visible");
+        Expect(refused_surface.toasts == std::vector<std::string>{"Needs a weapon perk"}, "the refused implicit equip explains why immediately");
+        refused_surface.now = 4.0;
+        denied.revision += 1; // another publication (for example the description or weight).
+        refused.SetInterface(denied);
+        refused.Tick();
+        Expect(refused_surface.errors.empty() && refused_surface.commands.size() == sent,
+               "a disabled equip answer completes the intent without a false engine timeout or later press");
+    }
+    {
+        FakeSurface waiting_surface;
+        Router waiting(waiting_surface);
+        waiting.SetInterface(Load(models, "items.json"));
+        waiting.OnEvent({"slot-blade", "click", ""});
+        waiting.OnEvent({"items", "row", "1"});
+        waiting_surface.now = 4.0;
+        waiting.Tick();
+        Expect(waiting_surface.errors.size() == 1 && waiting_surface.errors[0].find("the engine did not answer a step") != std::string::npos,
+               "an actual missing selection response still reports the timeout");
+    }
+
     // The game's map window.
     model.revision += 1;
     model.widgets.push_back(Make("MAP_CAPTION", "text", "Treasure map"));

@@ -399,6 +399,19 @@ class ItemsScreen final : public Screen
             intent_ = {};
             return;
         }
+        if (equip && !equip->Offers("press"))
+        {
+            // Selection was acknowledged. The script's ThisItemCanBeEquip can refuse a weapon
+            // (missing perk, location or character restriction) or a full/incompatible amulet slot.
+            // A disabled button carries no equip capability: waiting for one invents a timeout.
+            const Widget *fact = nullptr;
+            for (const Widget *candidate : a_->All("ANDROID_ITEMS"))
+                if (std::atoi(candidate->row_id.c_str() + 2) - 1 == row->index)
+                    fact = candidate;
+            bindings.Toast(UnavailableReason(bindings, *equip, fact));
+            intent_ = {};
+            return;
+        }
         if (equip && equip->Offers("press") && equip->row_id == row->row_id && Step(bindings, equip, "press", equip->row_id))
             intent_ = {};
     }
@@ -505,6 +518,14 @@ class ItemsScreen final : public Screen
         return detail;
     }
 
+    std::string UnavailableReason(Bindings &bindings, const Widget &equip, const Widget *fact) const
+    {
+        if (!equip.unavailable_reason.empty())
+            return equip.unavailable_reason;
+        const std::string block = Field(fact, "block");
+        return bindings.Text(block == "slots" ? "items.block_slots" : block == "kind" ? "items.block_kind" : "items.unavailable");
+    }
+
     // The game's EQUIP_BUTTON for the selected row, by what it does with the item (the adapter's `action`,
     // items.c EquipPress): put on / take off with the game's own words; use, open a map, load ammunition with
     // ours (the game writes «Взять» on all of them); nothing for an item the game has no use for (a jewel, a
@@ -544,12 +565,7 @@ class ItemsScreen final : public Screen
             return nullptr;
         const bool ready = equip->Offers("press") && equip->row_id == row.row_id;
         // The stock screen gives no reason; the adapter knows why an artefact cannot go on.
-        std::string reason = equip->unavailable_reason;
-        if (reason.empty())
-        {
-            const std::string block = Field(fact, "block");
-            reason = bindings.Text(block == "slots" ? "items.block_slots" : block == "kind" ? "items.block_kind" : "items.unavailable");
-        }
+        const std::string reason = UnavailableReason(bindings, *equip, fact);
         Json action{{"id", "item-equip"}, {"label", label}, {"variant", destroys ? "danger" : "primary"}, {"hold", destroys},
                     {"disabled", !ready}, {"reason", reason}, {"busy", bindings.Pending("item-equip")}};
         const Widget *target = equip;
