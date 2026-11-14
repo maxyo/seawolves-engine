@@ -425,6 +425,9 @@ void Hud::Refresh()
         if (scene_)
         {
             scene_->Released(states_);
+            // Removing held controls emits their cancel/up/change events. Keep the old scene
+            // and bindings alive until those pointers end; ShowHud below installs another map.
+            mount_.HideHud();
             scene_->Suspended(states_);
         }
         scene_.reset();
