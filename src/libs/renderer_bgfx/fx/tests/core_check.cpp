@@ -2671,7 +2671,8 @@ void CheckParallaxTrust()
     CHECK(lists.Of("signboardsa") == ParallaxExclusions::Verdict::Excluded && lists.Of("locations/wall") == ParallaxExclusions::Verdict::Included &&
           lists.Of("tavern2") == ParallaxExclusions::Verdict::Default);
     // Masonry takes the parallax by default, nothing else does.
-    CHECK(ReliefTakesParallax(ReliefClass::Stone) && ReliefTakesParallax(ReliefClass::Building) && !ReliefTakesParallax(ReliefClass::Wood) &&
+    CHECK(ReliefTakesParallax(ReliefClass::Stone) && ReliefTakesParallax(ReliefClass::Building) &&
+          ReliefTakesParallax(ReliefClass::Character) && !ReliefTakesParallax(ReliefClass::Wood) &&
           !ReliefTakesParallax(ReliefClass::Prop) && !ReliefTakesParallax(ReliefClass::Plaster) && !ReliefTakesParallax(ReliefClass::Metal) &&
           !ReliefTakesParallax(ReliefClass::HeightMap) && !ReliefTakesParallax(ReliefClass::None));
     CHECK(lists.SetUser("signboardsa", true) && lists.SetUser("tavern2", false) &&

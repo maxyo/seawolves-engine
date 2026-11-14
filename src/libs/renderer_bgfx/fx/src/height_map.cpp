@@ -64,7 +64,7 @@ void RefreshReliefDepth(NormalMap &map, ReliefClass relief)
 
 bool ReliefTakesParallax(ReliefClass relief)
 {
-    return relief == ReliefClass::Stone || relief == ReliefClass::Building;
+    return relief == ReliefClass::Stone || relief == ReliefClass::Building || relief == ReliefClass::Character;
 }
 
 bool AddReliefMaterial(NormalMap &map, ReliefClass relief, std::span<const float> height, std::span<const uint8_t> gloss,
