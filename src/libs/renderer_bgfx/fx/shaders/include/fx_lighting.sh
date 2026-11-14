@@ -67,17 +67,19 @@
 // [2] xyz: world up in VIEW space, w: translucency 0..1
 // [3] rgb: ambient from the sky, w: wrap 0..1 (softens the terminator)
 // [4] rgb: ambient from the ground / sea
-// [5] x: normal map strength for this material (0 = flat), y: rim light strength
+// [5] x: normal map strength for this material (0 = flat), y: rim light strength, z: light desaturation (0 = unchanged)
 uniform vec4 u_fxLight[6];
 
 // Light colour as the sums below expect it.
 vec3 fxLightColor(vec3 c)
 {
 #ifdef FX_LIGHT_LINEAR
-    return c * c;
-#else
-    return c;
+    c *= c;
 #endif
+    // Tone down the light, not the painted texture. The preset's zero keeps Low/Medium's exact old path.
+    if (u_fxLight[5].z > 0.0)
+        c = mix(c, vec3_splat(dot(c, vec3(0.2126, 0.7152, 0.0722))), u_fxLight[5].z);
+    return c;
 }
 
 // Lit colour from the per-vertex part and the per-pixel diffuse and ambient sums.

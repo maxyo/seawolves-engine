@@ -61,7 +61,8 @@ LightingUniforms ComputeLighting(const LightingInput &input, const LightingMater
         u.u_fxLight[4][i] = input.ambient[i] * (1.0f - kContrast) * (2.0f - hue[i]);
     }
     u.u_fxLight[3][3] = material.wrap;
-    u.u_fxLight[5] = {material.relief * std::clamp(settings.normal_map_strength, 0.0f, 1.0f), material.rim, 0.0f, 0.0f};
+    u.u_fxLight[5] = {material.relief * std::clamp(settings.normal_map_strength, 0.0f, 1.0f), material.rim,
+                      1.0f - std::clamp(settings.light_saturation, 0.0f, 1.0f), 0.0f};
     return u;
 }
 

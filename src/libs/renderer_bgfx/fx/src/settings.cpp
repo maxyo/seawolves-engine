@@ -42,6 +42,10 @@ Settings Settings::FromPreset(QualityPreset preset)
     // full «Карибы» grade: no visible saturation boost).
     s.grade = GradePreset::Caribbean;
     s.grade_strength = 0.35f;
+    // Medium and High: softer mapped relief and highlights, with slightly less colourful added light.
+    s.normal_map_strength = 0.75f;
+    s.gloss_strength = 0.70f;
+    s.light_saturation = 0.90f;
     // MSAA (and SMAA where it replaces it) antialiases the internal picture before EASU.
 
     if (preset == QualityPreset::Medium)

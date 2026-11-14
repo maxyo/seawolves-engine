@@ -116,7 +116,7 @@ void CheckSettings()
     // Gloss maps on «Высокая» only for now (their cost on «Средняя» waits for phone numbers).
     CHECK((medium.lighting_flags & kLightingPerPixel) && !(medium.lighting_flags & kLightingSpecular) && !medium.gloss &&
           high.gloss && !original.gloss && medium.gloss_map_size == 128 && high.gloss_map_size == 256 &&
-          high.gloss_strength == 1.0f);
+          original.gloss_strength == 1.0f && medium.gloss_strength == 0.70f && high.gloss_strength == 0.70f);
     CHECK(medium.shadows == ShadowQuality::Low && high.shadows == ShadowQuality::Soft && original.shadows == ShadowQuality::Off);
     CHECK(!medium.ssao && high.ssao && !original.ssao);
     CHECK(original.ao_volume == 0 && medium.ao_volume == 2 && high.ao_volume == 2); // Низкая: no shadows, as the original
@@ -333,6 +333,15 @@ void CheckLighting()
     CHECK(Near(ComputeLighting(input, LightingMaterial::Stone(), nullptr, half).u_fxLight[5][0], 0.5f, 1e-6f));
     CHECK(LightingMaterial::Stone().relief == LightingMaterial::Hull().relief && LightingMaterial::Hull().relief > LightingMaterial::Sail().relief);
     CHECK(tinted.u_fxLight[5][0] == 0.0f);
+    // Actual uniform boundary: Medium/High tuning reaches the shaders; Low carries zero desaturation.
+    for (QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
+    {
+        const Settings profile = Settings::FromPreset(preset);
+        const auto light = ComputeLighting(input, LightingMaterial::Stone(), nullptr, profile);
+        CHECK(Near(light.u_fxLight[5][0], preset == QualityPreset::Low ? 1.0f : 0.75f, 1e-6f));
+        CHECK(Near(light.u_fxLight[5][2], preset == QualityPreset::Low ? 0.0f : 0.10f, 1e-6f));
+        CHECK(light.u_fxLight[1][0] == input.sun_diffuse[0]); // never change exposure on the CPU
+    }
     CHECK(tinted.u_fxLight[3][2] > tinted.u_fxLight[3][0]);
     CHECK(tinted.u_fxLight[4][0] > tinted.u_fxLight[4][2]);
 
@@ -578,9 +587,11 @@ void CheckSupport()
           ReliefDepthTexels(ReliefClass::Wood) > ReliefDepthTexels(ReliefClass::Prop) &&
           ReliefDepthTexels(ReliefClass::Prop) > ReliefDepthTexels(ReliefClass::Metal) &&
           ReliefDepthTexels(ReliefClass::Metal) > 0.0f && ReliefDepthTexels(ReliefClass::HeightMap) > 0.0f);
-    // One relief strength for both presets: the models' maps at full strength (the owner's choice).
-    CHECK(Settings::FromPreset(QualityPreset::Medium).normal_map_strength == high.normal_map_strength &&
-          high.normal_map_strength == 1.0f);
+    // Medium and High soften generated normals and added light; Low retains the legacy strengths and colour.
+    CHECK(Settings::FromPreset(QualityPreset::Low).normal_map_strength == 1.0f &&
+          Settings::FromPreset(QualityPreset::Medium).normal_map_strength == 0.75f && high.normal_map_strength == 0.75f);
+    CHECK(Settings::FromPreset(QualityPreset::Low).light_saturation == 1.0f &&
+          Settings::FromPreset(QualityPreset::Medium).light_saturation == 0.90f && high.light_saturation == 0.90f);
 
     // Inconsistent requests are reported as well.
     Settings odd;

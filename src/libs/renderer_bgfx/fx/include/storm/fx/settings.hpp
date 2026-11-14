@@ -164,10 +164,11 @@ struct Settings
                                  // 2: the tilt the waves add to its normal (x red, z blue, none grey)
     uint32_t lighting_flags = kLightingNone;
     uint8_t point_lights = 4;      // per draw call with kLightingPoint: 4 or 8
-    // With kLightingNormalMap: the one strength of all relief (lit models and baked surfaces alike; the texture classes
-    // keep their ratios), the same on Средняя and Высокая. 1.0: the owner's choice, PBRify's maps as the model gives them
-    // and the height maps' own derivation (relief_store.hpp).
+    // With kLightingNormalMap: strength of all relief (lit models and baked surfaces alike; texture classes keep
+    // their ratios). 1.0 keeps the generated normals, while Medium and High soften their lighting contrast.
     float normal_map_strength = 1.0f;
+    // Saturation of added per-pixel light, preserving luminance; albedo and baked colours stay untouched.
+    float light_saturation = 1.0f;
     // With kLightingTranslucent: strength of the sunlight through sails and flags (scales LightingMaterial::translucency).
     float sail_light = 1.0f;
     uint16_t normal_map_size = 512;   // with kLightingNormalMap: larger side of the resident normal maps (EAC RG11 + mips)
