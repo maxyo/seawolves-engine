@@ -1141,6 +1141,17 @@ void CheckReliefMaterial()
           ReliefHasHeight(ReliefClass::Metal) && ReliefHasHeight(ReliefClass::Prop));
     CHECK(ReliefDepthTexels(ReliefClass::Metal) > 0.0f && ReliefDepthTexels(ReliefClass::Metal) < ReliefDepthTexels(ReliefClass::Prop) &&
           ReliefDepthTexels(ReliefClass::None) == 0.0f);
+    // The stronger masonry depth must survive both shader limits and old on-device cache metadata. Explicitly
+    // included decks/piers and every other non-masonry class keep their old depth and cap.
+    CHECK(ReliefParallaxMaxDepth(ReliefClass::Stone) == 0.05f &&
+          ReliefParallaxMaxDepth(ReliefClass::Building) == 0.05f);
+    for (const auto &[relief, depth] : std::vector<std::pair<ReliefClass, float>>{
+             {ReliefClass::HeightMap, 1.5f}, {ReliefClass::Plaster, 1.25f}, {ReliefClass::Wood, 1.0f},
+             {ReliefClass::Prop, 0.75f}, {ReliefClass::Metal, 0.375f}, {ReliefClass::None, 0.0f}})
+    {
+        CHECK(ReliefDepthTexels(relief) == depth);
+        CHECK(ReliefParallaxMaxDepth(relief) == 0.025f);
+    }
     // A grey height texture's heights at its map's size.
     {
         std::vector<uint8_t> grey(8 * 8 * 4, 0);
@@ -1180,6 +1191,17 @@ void CheckReliefMaterial()
     RefreshReliefDepth(reclassified, ReliefClass::Building);
     CHECK(reclassified.depth == ReliefDepthTexels(ReliefClass::Building) * static_cast<float>(n) / kReliefMapSize);
     CHECK(reclassified.rg == cached_normals && reclassified.material == cached_material);
+    // Even a 4 m Stone UV span was almost capped at 2.5 cm before. Its x2 target must remain x2 after the shader's
+    // world-depth clamp; 8 m spans were already capped, so they need the doubled cap as well.
+    for (const auto relief : {ReliefClass::Stone, ReliefClass::Building})
+        for (const float span : {1.0f, 4.0f, 8.0f})
+        {
+            const float old_texels = relief == ReliefClass::Stone ? 3.0f : 2.0f;
+            const float old_depth = std::clamp(old_texels / 512.0f * span, 0.005f, 0.025f);
+            const float new_depth = std::clamp(ReliefDepthTexels(relief) / 512.0f * span,
+                                               0.2f * ReliefParallaxMaxDepth(relief), ReliefParallaxMaxDepth(relief));
+            CHECK(Near(new_depth, 2.0f * old_depth, 1e-6f));
+        }
     const float reclassified_uv_depth = reclassified.depth / reclassified.width;
     DropTopMips(reclassified, n / 2);
     CHECK(reclassified.depth / reclassified.width == reclassified_uv_depth);
@@ -2569,6 +2591,13 @@ void CheckParallaxTrust()
     CHECK(AddReliefMaterial(map, ReliefClass::Stone, varied, {}, walled));
     CHECK(map.trust_coverage > 0.85f && map.trust.size() == static_cast<size_t>(TrustThumbnailSize(n)) * TrustThumbnailSize(n));
     CHECK(map.material[(128 * n + 120) * 2] > 250); // the pane: the top
+    const auto masked_material = map.material, masked_trust = map.trust;
+    const float coverage = map.trust_coverage;
+    // An existing cache keeps the zero-displacement window mask when the upload refreshes its masonry depth.
+    map.depth = 3.0f * static_cast<float>(n) / kReliefMapSize;
+    RefreshReliefDepth(map, ReliefClass::Stone);
+    CHECK(map.depth == 6.0f * static_cast<float>(n) / kReliefMapSize && map.material == masked_material &&
+          map.trust == masked_trust && map.trust_coverage == coverage);
     NormalMap dark = map;
     dark.material.clear();
     CHECK(AddReliefMaterial(dark, ReliefClass::Stone, varied, {}, glass));

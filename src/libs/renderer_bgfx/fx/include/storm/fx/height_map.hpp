@@ -34,11 +34,11 @@ bool ReliefHasHeight(ReliefClass relief);
 bool ReliefTakesParallax(ReliefClass relief);
 
 // The depth of a class's height in texels of the 512 map (Settings::parallax_strength scales them all): stone, brick and
-// cobbles 3, the buildings' atlases (stone, plaster and beams in one) 2, the grey height maps 1.5, plaster, ground and
-// cloth 1.25, wood 1, props 0.75, metal 0.375: a quarter of the first values (12, 8, 6, 5, 4, 3, 1.5): the owner found the
-// parallax far too strong, on walls and on everything else. A depth in texels is already proportional to the texel's size
+// cobbles 6, the buildings' atlases (stone, plaster and beams in one) 4, the grey height maps 1.5, plaster, ground and
+// cloth 1.25, wood 1, props 0.75, metal 0.375. Only masonry regained half the original depth (12, 8): the broad original
+// relief was too strong on furniture and other unsuitable surfaces. A depth in texels is proportional to the texel's size
 // in the world: a plank's texture, small on the object, gets a small depth, a wall's large one, between the limits of
-// kParallaxMaxDepth.
+// ReliefParallaxMaxDepth.
 float ReliefDepthTexels(ReliefClass relief);
 // Refresh class metadata when uploading an existing map: a reclassified building atlas may retain its former wood
 // depth in the cache. Its normal/height/trust bytes stay unchanged; no cache regeneration is needed for this depth.
@@ -48,6 +48,12 @@ void RefreshReliefDepth(NormalMap &map, ReliefClass relief);
 // its depth in texels is a lot of centimetres. The shallowest is a fifth of it (5 mm): the texture of a plank, a post
 // or a plank, its texel a fraction of a millimetre, would get a depth nobody sees.
 inline constexpr float kParallaxMaxDepth = 0.025f;
+// Masonry needs both its larger texel depth and its own world limit: raising texels alone leaves large wall atlases
+// capped at the old depth. Keep the old limit for every other class, including explicitly included wood decks/piers.
+inline constexpr float ReliefParallaxMaxDepth(ReliefClass relief)
+{
+    return relief == ReliefClass::Stone || relief == ReliefClass::Building ? 0.05f : kParallaxMaxDepth;
+}
 
 // How much of the sun's light the relief's own shadow takes where it falls (fx_lighting.sh fxParallaxShadow).
 inline constexpr float kParallaxShadow = 0.8f;

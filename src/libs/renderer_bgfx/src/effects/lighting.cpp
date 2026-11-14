@@ -504,7 +504,10 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         const bool clamped = u == BGFX_SAMPLER_U_CLAMP || u == BGFX_SAMPLER_U_BORDER || v == BGFX_SAMPLER_V_CLAMP ||
                              v == BGFX_SAMPLER_V_BORDER;
         // The cavity needs no shift: it also draws on a clamped stage 0 or with the parallax off.
-        const bool parallax = settings_.parallax != fx::ParallaxQuality::Off && !clamped && relief_map.parallax;
+        // Zero strength must disable the UV steps too: the shader's world-depth floor would otherwise turn a
+        // submitted zero depth back into visible parallax. The cavity can still use the unshifted material below.
+        const bool parallax = settings_.parallax != fx::ParallaxQuality::Off && settings_.parallax_strength > 0.0f &&
+                              !clamped && relief_map.parallax;
         if (bgfx::isValid(relief_map.material) && relief_map.depth > 0.0f && (parallax || settings_.relief_cavity) &&
             !(device.s.tss[relief_stage][D3DTSS_TEXTURETRANSFORMFLAGS] & D3DTTFF_PROJECTED))
         {
@@ -522,7 +525,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                              !parallax ? 0.0f : occlusion ? static_cast<float>(fx::kParallaxSteps) : 1.0f,
                              std::log2(static_cast<float>(std::max(relief_map.width, relief_map.height_texels))),
                              self_shadow ? fx::kParallaxShadow : 0.0f, settings_.parallax_debug ? 1.0f : 0.0f,
-                             settings_.relief_cavity ? fx::kReliefCavity : 0.0f, fx::kParallaxMaxDepth};
+                             settings_.relief_cavity ? fx::kReliefCavity : 0.0f,
+                             fx::ReliefParallaxMaxDepth(draw.relief_entry ? draw.relief_entry->relief : fx::ReliefClass::None)};
             if (draw.has_parallax())
                 ++frame_.parallax;
         }

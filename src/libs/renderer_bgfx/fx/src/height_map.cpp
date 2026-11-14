@@ -34,9 +34,9 @@ float ReliefDepthTexels(ReliefClass relief)
     switch (relief)
     {
     case ReliefClass::Stone:
-        return 3.0f;
+        return 6.0f;
     case ReliefClass::Building:
-        return 2.0f;
+        return 4.0f;
     case ReliefClass::HeightMap: // the game's own detail heights, tiled small over their surface
         return 1.5f;
     case ReliefClass::Plaster:

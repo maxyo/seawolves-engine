@@ -180,9 +180,11 @@ at stage 7 (`kMaterialStage`, `s_fxMaterial`, the unit the gloss reads), the rel
 stage 1's grey height texture with its own heights; stage 0's gloss then yields unit 7, counted) and the normal map read
 where the eye's ray meets the relief (`fx_lighting.sh` fxParallax), fading out between 10 and 15 m.
 The height is normalised per atlas region (`height_map.hpp`), each class has its
-own depth (`ReliefDepthTexels`: stone 3 texels of the 512 map, building atlases 2, the grey height maps 1.5, plaster 1.25,
-wood 1, props 0.75, metal 0.375: a quarter of the first values; a depth in texels is already proportional to the texel's
-size in the world, so small objects get little and walls more, kept between 5 mm and `kParallaxMaxDepth` 2.5 cm). Only
+own depth (`ReliefDepthTexels`: stone 6 texels of the 512 map, building atlases 4, the grey height maps 1.5, plaster 1.25,
+wood 1, props 0.75, metal 0.375; a depth in texels is proportional to the texel's
+size in the world). `ReliefParallaxMaxDepth` keeps stone and building atlases between 1 and 5 cm; other classes keep
+the previous 5 mm to `kParallaxMaxDepth` 2.5 cm range. Raising the masonry texel depth alone would leave large wall
+atlases at the old cap. Only
 masonry takes the parallax by default (`ReliefTakesParallax`: stone and the house atlases); wood, furniture, props,
 plaster ground and metal keep normals and cavity only, the shipped list names the exceptions. The depth fades out towards
 grazing views (N.V 0.08..0.35) and
