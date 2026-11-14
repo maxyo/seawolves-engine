@@ -143,8 +143,10 @@ std::string Support::Describe() const
     text += word(ao_volume);
     text += ", vertex texture fetch (sea wave lift): ";
     text += word(sea_waves_vertex);
-    text += ", RG16F + RGBA16F targets (sea wave heights and surface; else packed RGBA8 + 8-bit surface): ";
+    text += ", RG32F sea wave state (else packed RGBA8): ";
     text += word(sea_waves_float);
+    text += ", RGBA16F sea wave surface (else RGBA8): ";
+    text += word(sea_waves_surface_float);
     return text;
 }
 
@@ -356,10 +358,10 @@ Support RestrictSupport(const Support &device, CapsProfile profile)
     switch (profile)
     {
     case CapsProfile::Gles30Minimal: // R8/RG8 textures are core GLES 3.0: SMAA stays; vertex texture fetch is core
-        // RG16F / RGBA16F render only with EXT_color_buffer_half_float: the wave heights take the packed RGBA8 path
+        // RG32F / RGBA16F render targets are optional: this ES3 profile takes the packed RGBA8 state path
         // and the ripple surface RGBA8
         s.msaa_samples = 1;
-        s.msaa_depth = s.anisotropy = s.sea_waves_float = false;
+        s.msaa_depth = s.anisotropy = s.sea_waves_float = s.sea_waves_surface_float = false;
         break;
     case CapsProfile::MaliG5x:
     case CapsProfile::Adreno6xx:

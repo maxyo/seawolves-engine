@@ -1,4 +1,4 @@
-// The ripple state of fx::SeaWaves: height now (x) and one step ago (y), RG16F or packed into RGBA8 (16-bit fixed
+// The ripple state of fx::SeaWaves: height now (x) and one step ago (y), RG32F or packed into RGBA8 (16-bit fixed
 // point per height, +-kWavesRange metres). Read with point sampling at texel centres only.
 #ifndef FX_WAVES_SH
 #define FX_WAVES_SH
@@ -7,10 +7,12 @@
 #define kWavesRange 2.0
 
 SAMPLER2D(s_wavesState, 0);
-// [0] xy: uv offset of the previous state (the centre moved), z: (c dt / dx)^2, w: velocity kept per step
+// [0] xy: uv offset of the previous state (the centre moved), z: (c dt / dx)^2 (dt + dt_last) / (2 dt),
+//     w: velocity kept over this step times dt / dt_last (the steps are unequal: WaveClock)
 // [1] x: 1 / size, y: metres per texel, z: dt, w: sources
 // [2] x: time (s), y: 1 = write still water, z: 1 = packed RGBA8 state, w: metres the field covers
-uniform vec4 u_wavesStep[3];
+// [3] x: source integration factor dt * (dt + dt_last) / (2 * reference_dt); y: 1 = RGBA8 surface, zw unused
+uniform vec4 u_wavesStep[4];
 
 float fxWavesUnpack(vec2 hl)
 {

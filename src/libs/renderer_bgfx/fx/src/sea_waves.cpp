@@ -14,8 +14,8 @@ namespace
 {
 // The water: waves of 2 m and more (4 texels) travel at about the speed deep water gives them, and lose half
 // their energy in a few seconds; a hull or a swimmer is felt some tens of metres away.
-constexpr float kWaveSpeed = 2.5f;      // m/s
-constexpr float kVelocityKeep = 0.997f; // per step
+constexpr float kWaveSpeed = 2.5f;       // m/s
+constexpr float kVelocityKeep = 0.997f; // accepted damping per 1/60 s
 } // namespace
 
 SeaWaves::~SeaWaves()
@@ -37,23 +37,36 @@ bool SeaWaves::Prepare(int &budget)
     return true;
 }
 
-void SeaWaves::Create(bool float_state)
+void SeaWaves::Create(bool float_state, bool float_surface)
 {
     Destroy(state_[0]);
     Destroy(state_[1]);
     Destroy(surface_);
-    const bgfx::TextureFormat::Enum format = float_state ? bgfx::TextureFormat::RG16F : bgfx::TextureFormat::RGBA8;
+    const bgfx::TextureFormat::Enum format = float_state ? bgfx::TextureFormat::RG32F : bgfx::TextureFormat::RGBA8;
     for (auto &state : state_)
         state = bgfx::createFrameBuffer(kSize, kSize, format, BGFX_TEXTURE_RT | kClampPoint);
-    surface_ = bgfx::createFrameBuffer(kSize, kSize, float_state ? bgfx::TextureFormat::RGBA16F : bgfx::TextureFormat::RGBA8,
+    surface_ = bgfx::createFrameBuffer(kSize, kSize, float_surface ? bgfx::TextureFormat::RGBA16F : bgfx::TextureFormat::RGBA8,
                                        BGFX_TEXTURE_RT | kClampLinear);
-    if (!float_state)
-        Log(LogLevel::Info, "sea waves: no RG16F / RGBA16F render targets on this device: the wave heights are packed "
-                            "into RGBA8 (16-bit fixed point per height) and the ripple surface is RGBA8 (8-bit slopes: "
-                            "faint steps in the reflection)");
+    Log(LogLevel::Info, "sea waves: state %s, surface %s",
+        float_state ? "RG32F" : "packed RGBA8", float_surface ? "RGBA16F" : "RGBA8");
     float_state_ = float_state;
+    float_surface_ = float_surface;
     reset_ = true;
     surface_ready_ = false;
+}
+
+int SeaWaves::StepsDue(float dt)
+{
+    bool dropped = false;
+    const int steps = clock_.Due(dt, step_seconds_, dropped);
+    if (dropped && !dropped_logged_)
+    {
+        Log(LogLevel::Info, "sea waves: a frame held %.2f s of game time, more than the simulation steps at once "
+                            "(%d x %.2f s): the water slows down in such frames (logged once)",
+            static_cast<double>(dt), WaveClock::kMaxSteps, static_cast<double>(WaveClock::kMaxStep));
+        dropped_logged_ = true;
+    }
+    return steps;
 }
 
 void SeaWaves::Reset()
@@ -64,12 +77,12 @@ void SeaWaves::Reset()
 }
 
 void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera,
-                       std::span<const WaveSource> sources, bool float_state)
+                       std::span<const WaveSource> sources, bool float_state, bool float_surface)
 {
     if (views.size() < 2)
         return;
-    if (!bgfx::isValid(state_[0]) || float_state_ != float_state)
-        Create(float_state);
+    if (!bgfx::isValid(state_[0]) || float_state_ != float_state || float_surface_ != float_surface)
+        Create(float_state, float_surface);
     if (!bgfx::isValid(step_))
         step_ = LoadProgram("vs_fx_screen", "fs_fx_waves_step");
     if (!bgfx::isValid(derive_))
@@ -77,7 +90,7 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
     if (!bgfx::isValid(s_state_))
     {
         s_state_ = bgfx::createUniform("s_wavesState", bgfx::UniformType::Sampler);
-        u_step_ = bgfx::createUniform("u_wavesStep", bgfx::UniformType::Vec4, 3);
+        u_step_ = bgfx::createUniform("u_wavesStep", bgfx::UniformType::Vec4, 4);
         u_sources_ = bgfx::createUniform("u_wavesSrc", bgfx::UniformType::Vec4, kMaxSources * kSourceVectors);
     }
 
@@ -124,35 +137,41 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
         }
     }
 
-    const float courant = kWaveSpeed * kStep / kCell;
+    // Unequal steps: (u+ - u) / h - (u - u-) / h_last = (h + h_last) / 2 * c^2 lap / dx^2.
+    const float courant = kWaveSpeed * step_seconds_ / kCell;
+    const float keep = std::pow(kVelocityKeep, step_seconds_ / kStep);
     const size_t steps = views.size() - 1;
     for (size_t i = 0; i < steps; ++i)
     {
-        time_ += kStep;
+        const float ratio = reset_ ? 1.0f : step_seconds_ / last_step_;
+        time_ += step_seconds_;
         const int next = 1 - current_;
         SetupView(views[i], "fx sea waves step", state_[next], kSize, kSize);
         // The first step of the frame moves with the centre; the others are already centred.
-        const float step[12] = {
-            i == 0 ? shift[0] : 0.0f, i == 0 ? shift[1] : 0.0f, courant * courant, kVelocityKeep,
-            1.0f / kSize, kCell, kStep, static_cast<float>(count),
+        const float step[16] = {
+            i == 0 ? shift[0] : 0.0f, i == 0 ? shift[1] : 0.0f, courant * courant * 0.5f * (1.0f + 1.0f / ratio),
+            keep * ratio, 1.0f / kSize, kCell, step_seconds_, static_cast<float>(count),
             static_cast<float>(std::fmod(time_, 1000.0)), reset_ ? 1.0f : 0.0f, float_state_ ? 0.0f : 1.0f, kExtent,
+            WaveClock::ForcingStep(step_seconds_, reset_ ? step_seconds_ : last_step_), 0.0f, 0.0f, 0.0f,
         };
-        bgfx::setUniform(u_step_, step, 3);
+        bgfx::setUniform(u_step_, step, 4);
         bgfx::setUniform(u_sources_, packed.data(), kMaxSources * kSourceVectors);
         bgfx::setTexture(0, s_state_, bgfx::getTexture(state_[current_]), kClampPoint);
         SubmitScreenTriangle(views[i], step_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
         current_ = next;
         reset_ = false;
+        last_step_ = step_seconds_;
     }
 
     const bgfx::ViewId view = views[steps];
     SetupView(view, "fx sea waves surface", surface_, kSize, kSize);
-    const float surface[12] = {
+    const float surface[16] = {
         0.0f, 0.0f, 0.0f, 0.0f,
         1.0f / kSize, kCell, 0.0f, 0.0f,
         0.0f, 0.0f, float_state_ ? 0.0f : 1.0f, kExtent,
+        0.0f, float_surface_ ? 0.0f : 1.0f, 0.0f, 0.0f,
     };
-    bgfx::setUniform(u_step_, surface, 3);
+    bgfx::setUniform(u_step_, surface, 4);
     bgfx::setTexture(0, s_state_, bgfx::getTexture(state_[current_]), kClampPoint);
     SubmitScreenTriangle(view, derive_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
     surface_ready_ = true;

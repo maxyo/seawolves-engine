@@ -227,7 +227,7 @@ void Host::advance_sea_waves(shim::Device &device)
         views[i] = device.effects_view(true);
     const auto &focus = sea_frame_.focus;
     sea_waves_.Advance(std::span(views.data(), static_cast<size_t>(steps) + 1), {focus[0], focus[2]}, sea_wave_sources_,
-                       support_.sea_waves_float);
+                       support_.sea_waves_float, support_.sea_waves_surface_float);
     device.effects_view(true); // the sea goes on in a view of its own on its target
 }
 

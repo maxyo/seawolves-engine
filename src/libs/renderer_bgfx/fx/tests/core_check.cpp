@@ -358,7 +358,7 @@ void CheckSupport()
     Support all;
     all.lut_3d = all.shadow_map = all.scene_depth = all.normal_map = true;
     all.msaa_samples = 4;
-    all.msaa_depth = all.anisotropy = all.ao_volume = all.smaa = all.sea_waves_vertex = all.sea_waves_float = true;
+    all.msaa_depth = all.anisotropy = all.ao_volume = all.smaa = all.sea_waves_vertex = all.sea_waves_float = all.sea_waves_surface_float = true;
     for (QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
     {
         const Settings settings = Settings::FromPreset(preset);
@@ -1356,7 +1356,7 @@ void CheckCapsProfiles()
     Support all;
     all.lut_3d = all.shadow_map = all.scene_depth = all.normal_map = true;
     all.msaa_samples = 4;
-    all.msaa_depth = all.anisotropy = all.smaa = all.sea_waves_vertex = all.sea_waves_float = true;
+    all.msaa_depth = all.anisotropy = all.smaa = all.sea_waves_vertex = all.sea_waves_float = all.sea_waves_surface_float = true;
     for (int p = 0; p < static_cast<int>(CapsProfile::Count); ++p)
     {
         const auto profile = static_cast<CapsProfile>(p);
@@ -1378,6 +1378,23 @@ void CheckCapsProfiles()
                 CHECK(constrained.smaa == (support.msaa_samples < 2));
         }
     }
+    // State precision and surface filtering have independent capability fallbacks.
+    // A device with packed state must retain its floating surface when it supports it.
+    for (const bool state : {false, true})
+        for (const bool surface : {false, true})
+        {
+            Support device;
+            device.sea_waves_float = state;
+            device.sea_waves_surface_float = surface;
+            for (int p = 0; p < static_cast<int>(CapsProfile::Count); ++p)
+            {
+                const auto profile = static_cast<CapsProfile>(p);
+                const Support restricted = RestrictSupport(device, profile);
+                const bool minimal = profile == CapsProfile::Gles30Minimal;
+                CHECK(restricted.sea_waves_float == (state && !minimal));
+                CHECK(restricted.sea_waves_surface_float == (surface && !minimal));
+            }
+        }
     // A profile only removes.
     CHECK(RestrictSupport(Support{}, CapsProfile::Xclipse).msaa_samples == 1);
 }
@@ -2278,18 +2295,58 @@ void CheckBounce()
     CHECK(lit_block[wall_cell + 1] > block[wall_cell + 1] && lit_vis[wall_cell] == vis[wall_cell]); // R / G of block 1 kept
 }
 
-// fx::SeaWaves' fixed steps (WaveClock): a 60 Hz frame takes one, a slow frame at most kMaxSteps, the rest is dropped.
+// fx::SeaWaves' steps (WaveClock): game time, all of it while a frame holds at most kMaxSteps * kMaxStep; 60 Hz
+// steps while the frames are short, longer ones (never past kMaxStep) when accelerated time packs more into a frame.
 void CheckSeaWaves()
 {
     WaveClock clock;
-    CHECK(clock.Due(1.0f / 60.0f) == 1);
-    CHECK(clock.Due(0.0f) == 0);
-    int total = 0;
-    for (int i = 0; i < 120; ++i)
-        total += clock.Due(1.0f / 30.0f);
-    CHECK(total >= 238 && total <= 241); // two per 30 Hz frame
-    CHECK(clock.Due(1.0f) == WaveClock::kMaxSteps);
-    CHECK(clock.Due(1.0f / 120.0f) <= 1); // the dropped time is not made up later
+    float step = 0.0f;
+    bool dropped = false;
+    CHECK(clock.Due(1.0f / 60.0f, step, dropped) == 1 && std::fabs(step - WaveClock::kStep) < 1e-5f && !dropped);
+    CHECK(clock.Due(0.0f, step, dropped) == 0);
+    // 30 Hz at x1, x2 and x4: every game second is stepped, in steps no longer than kMaxStep.
+    for (const float scale : {1.0f, 2.0f, 4.0f})
+    {
+        WaveClock c;
+        float stepped = 0.0f;
+        for (int i = 0; i < 300; ++i)
+        {
+            const int n = c.Due(scale / 30.0f, step, dropped);
+            CHECK(!dropped && n <= WaveClock::kMaxSteps && step <= WaveClock::kMaxStep + 1e-6f);
+            stepped += static_cast<float>(n) * step;
+        }
+        CHECK(std::fabs(stepped - scale * 10.0f) < 0.05f);
+    }
+    // A frame longer than the simulation keeps up with: kMaxSteps steps of kMaxStep, the rest dropped and said so.
+    CHECK(clock.Due(1.0f, step, dropped) == WaveClock::kMaxSteps && dropped &&
+          std::fabs(step - WaveClock::kMaxStep) < 1e-5f);
+    CHECK(clock.Due(1.0f / 120.0f, step, dropped) == 0); // the dropped time is not made up later
+
+    // Uniform field (laplacian 0), same constant source and ten game seconds at x1 / x2 / x4. Checking only
+    // elapsed time missed that rate * dt in the second-order recurrence weakened the x4 source by about 62%.
+    float reference = 0.0f;
+    for (const int scale : {1, 2, 4})
+    {
+        WaveClock c;
+        float height = 0.0f, previous = 0.0f, last_step = WaveClock::kStep;
+        for (int frame = 0; frame < 300 / scale; ++frame)
+        {
+            const int n = c.Due(static_cast<float>(scale) / 30.0f, step, dropped);
+            CHECK(!dropped);
+            for (int i = 0; i < n; ++i)
+            {
+                const float next = height + (height - previous) * (step / last_step) *
+                                                std::pow(0.997f, step / WaveClock::kStep) +
+                                   1e-5f * WaveClock::ForcingStep(step, last_step);
+                previous = height;
+                height = next;
+                last_step = step;
+            }
+        }
+        if (scale == 1)
+            reference = height;
+        CHECK(reference > 0.0f && std::fabs(height / reference - 1.0f) < 0.01f);
+    }
 }
 
 // Gloss maps (gloss_map.hpp): the class table on TEHO's names, the class order on one texture, the texel cues.

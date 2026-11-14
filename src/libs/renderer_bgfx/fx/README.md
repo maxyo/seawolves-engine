@@ -45,8 +45,8 @@ never showed on this port.
   waders and hulls (`SeaWaves`) in the sea's normals, Fresnel, crest foam and vertices, and a Kelvin wake behind every
   ship under way (`shaders/include/sea_waves.sh`); the foam is the game's own foam texture (pena.tga) thresholded by
   the foam amount. The lift needs vertex texture fetch (GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS; switched off loudly
-  without it); the heights are RG16F and the surface RGBA16F where those render, packed RGBA8 and an 8-bit surface
-  otherwise (logged). `fx_sea_waves_debug=1` shows the ripple slope red, the wake slope green, foam blue; `=2` the
+  without it); the state uses RG32F where supported, otherwise packed RGBA8 (never RG16F: small height
+  differences lose precision). The surface independently uses RGBA16F where supported, otherwise RGBA8 (logged). `fx_sea_waves_debug=1` shows the ripple slope red, the wake slope green, foam blue; `=2` the
   tilt the waves add to the sea's normal (x red, z blue, flat = grey); wet surfaces in the rain (outdoors: darker,
   glossier, reflecting the sky and the lamps, dry under roofs; `fx_wet_surfaces`).
 - **Высокая**: as Средняя with anisotropy 8, soft sea edges, specular, 8 point

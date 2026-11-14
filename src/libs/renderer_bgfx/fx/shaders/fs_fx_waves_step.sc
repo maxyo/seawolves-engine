@@ -41,7 +41,8 @@ void main()
                 fxWavesState(uv - vec2(0.0, texel)).x + fxWavesState(uv + vec2(0.0, texel)).x - 4.0 * c.x;
     float h = c.x + (c.x - c.y) * u_wavesStep[0].w + u_wavesStep[0].z * lap;
 
-    // Sources: a displacement rate (m/s) each, and the still water inside the hulls.
+    // Sources: displacement rates calibrated at 60 Hz, and the still water inside the hulls. The source term
+    // uses the same second-order time integration as the Laplacian, scaled to retain that reference calibration.
     vec2 p = (v_uv - 0.5) * u_wavesStep[2].w;
     float rate = 0.0;
     float hold = 1.0;
@@ -86,11 +87,11 @@ void main()
             rate += ring * (abs(b.z) * (0.2 * bow * bow * bow - 0.04) - 0.06 * clamp(b.w, -1.0, 1.0));
         }
     }
-    h += rate * dt;
+    h += rate * u_wavesStep[3].x;
     h *= hold;
     // Sponge: the outer 8 % of the field absorbs what reaches it.
     vec2 edge = min(v_uv, 1.0 - v_uv);
-    h *= mix(0.94, 1.0, smoothstep(0.0, 0.08, min(edge.x, edge.y)));
+    h *= mix(pow(0.94, dt * 60.0), 1.0, smoothstep(0.0, 0.08, min(edge.x, edge.y)));
     h = clamp(h, -0.95 * kWavesRange, 0.95 * kWavesRange);
     gl_FragColor = fxWavesOut(vec2(h, c.x * hold));
 }

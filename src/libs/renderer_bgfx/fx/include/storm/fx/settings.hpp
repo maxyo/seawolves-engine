@@ -269,11 +269,11 @@ struct Support
     bool anisotropy = false;    // anisotropic texture filtering
     bool ao_volume = false;     // RGBA8 3D textures with linear filtering: Settings::ao_volume
     bool sea_waves_vertex = false; // RGBA8 textures can be sampled in a vertex shader: Settings::sea_waves_lift
-    // RG16F and RGBA16F render targets: the ripple simulation keeps its heights in half floats and its surface (height,
-    // slopes, foam) in RGBA16F; without them it packs each height into two RGBA8 channels (16-bit fixed point) and the
-    // surface into RGBA8 (8-bit slopes: their steps show in the reflection), logged when the simulation starts.
-    // Not a requirement.
+    // RG32F render targets: two successive heights need full precision for their small difference.
+    // Otherwise use packed RGBA8 (16-bit fixed point per height), never RG16F.
     bool sea_waves_float = false;
+    // Independent RGBA16F surface (height, slopes, foam); otherwise RGBA8 with 8-bit slopes.
+    bool sea_waves_surface_float = false;
 
     std::string Describe() const;
 };
