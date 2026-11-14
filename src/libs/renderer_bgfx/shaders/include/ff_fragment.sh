@@ -377,7 +377,7 @@ vec3 ffRoomLight(vec3 Pw, vec3 Nw)
 #endif
 
 // per stage i: [3i] colour op, arg1, arg2, arg0   [3i+1] alpha op, arg1, arg2, arg0
-//              [3i+2] x: result goes to TEMP  y: projected  z: texture bound
+//              [3i+2] x: result goes to TEMP  y: projected  z: texture bound  w: point sprite
 uniform vec4 u_ffStage[15];
 SAMPLER2D(s_tex0, 0);
 SAMPLER2D(s_tex1, 1);
@@ -463,7 +463,11 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
 #define FF_KEEP_TEX(i, tex)
 #endif
 
-#define FF_UV(tc, ms) ((ms).y > 0.5 ? (tc).xy / (tc).w : (tc).xy)
+// ms.w: point-sprite draw (D3DRS_POINTSPRITEENABLE on a point list only). The vertex shader supplies the
+// window-space centre and pixel size for every stage. Reconstruct the generated coordinates because bgfx's
+// SPIR-V/HLSL profile does not expose gl_PointCoord. The centre includes inset/scaled viewport placement.
+#define FF_POINT_UV(tc) ((gl_FragCoord.xy - (tc).xy) / max((tc).z, 1e-6) + vec2_splat(0.5))
+#define FF_UV(tc, ms) ((ms).w > 0.5 ? FF_POINT_UV(tc) : (ms).y > 0.5 ? (tc).xy / (tc).w : (tc).xy)
 
 #ifdef FX_LIGHT_PARALLAX
 // The parallax variant is only chosen for a relief stage without projected coordinates (effects/lighting.cpp): that

@@ -15,7 +15,10 @@ uniform mat4 u_ffProj; // projection (or screen matrix for XYZRHW) with the D3D-
 // [1] x: normalize normals  y: light count  z: range fog  w: has normal
 // [2] x: diffuse source  y: ambient source  z: emissive source  w: specular source (0 material, 1 color0, 2 color1)
 // [3] x: specular enable  y: material power  z: fog passthrough (0 = eye depth)  w: point size
-uniform vec4 u_ffVs[4];
+// [4] x: point sprite  y: clip-to-window Y sign  zw: raster viewport origin in store pixels
+// [5] xy: raster viewport size in store pixels (rounded like Device::new_view)  zw: min/max point pixels
+// [6] xyz: point attenuation A/B/C  w: game viewport height when distance scaling enabled (0 otherwise)
+uniform vec4 u_ffVs[7];
 uniform vec4 u_ffClipPlane;   // view-space plane, all zero when disabled
 uniform vec4 u_fxAerialUp;     // world up in view space: v_fog.w = height above the eye (effects' aerial fog, mode 5)
 #ifndef FF_UNLIT
@@ -161,5 +164,26 @@ void main()
     v_texcoord2 = stageCoord(2, a_texcoord0, a_texcoord1, a_texcoord2, a_texcoord3, P, N);
     v_texcoord3 = stageCoord(3, a_texcoord0, a_texcoord1, a_texcoord2, a_texcoord3, P, N);
     v_texcoord4 = stageCoord(4, a_texcoord0, a_texcoord1, a_texcoord2, a_texcoord3, P, N);
-    gl_PointSize = u_ffVs[3].w;
+    // D3D9 point sizes: constant pixels, or viewport height * camera-space size / sqrt(A+B*d+C*d*d).
+    // The input and limits already include the store/display scale, so viewport height here is the game's.
+    float pointSize = u_ffVs[3].w;
+    if (u_ffVs[6].w > 0.0)
+    {
+        float distance = length(P);
+        pointSize *= u_ffVs[6].w * inversesqrt(max(dot(u_ffVs[6].xyz, vec3(1.0, distance, distance * distance)), 1e-12));
+    }
+    pointSize = clamp(pointSize, u_ffVs[5].z, max(u_ffVs[5].w, u_ffVs[5].z));
+    gl_PointSize = pointSize;
+    // Carry the actual window-space point centre, including an inset/scaled viewport. Vulkan's compiler
+    // inverts clip Y on export; GL's render-target projection already includes its corresponding flip.
+    if (u_ffVs[4].x > 0.5)
+    {
+        vec2 centre = u_ffVs[4].zw + (gl_Position.xy / gl_Position.w * vec2(1.0, u_ffVs[4].y) * 0.5 + 0.5) * u_ffVs[5].xy;
+        vec4 pointCoord = vec4(centre, pointSize, 1.0);
+        v_texcoord0 = pointCoord;
+        v_texcoord1 = pointCoord;
+        v_texcoord2 = pointCoord;
+        v_texcoord3 = pointCoord;
+        v_texcoord4 = pointCoord;
+    }
 }

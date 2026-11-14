@@ -57,8 +57,12 @@ on Android and on the Linux development host alike (see "Backends").
   present hook; keep it until it does.
   `bgfx-render-thread-hooks.patch`: `bgfx::setRenderFrameDone` reports each frame the render thread has
   finished (rendered and presented), which bgfx has no API for; see "Threads" below.
-  `bgfx-shaderc-point-size.patch` (shaderc only): `gl_PointSize` in the SPIR-V build of a vertex shader;
-  Vulkan leaves a point's size undefined without it (the stars are a point list).
+  `bgfx-shaderc-point-size.patch` (shaderc only): exports `gl_PointSize` as the SPIR-V `PointSize` built-in;
+  bare HLSL `PSIZE` becomes a user output with the pinned compiler. The stars are a point list. The FF shaders
+  generate point-sprite UVs across the point, including inset/scaled viewports, and honor the D3D9 distance
+  attenuation and min/max render states ([point size specification](https://learn.microsoft.com/en-us/windows/win32/direct3d9/point-sprites)).
+  `tests/renderer_bgfx/point_size_spirv_check.py` checks the production compiler without a GPU;
+  `point_sprite_check` checks asymmetric texture pixels, viewport placement, attenuation and state controls on GLES/Vulkan.
   `bgfx-vk-present-hook.patch`, `bgfx-vk-unbound-samplers.patch`, `bgfx-vk-builtin-border-colors.patch`,
   `bgfx-vulkan-pipeline-cache.patch`: the Vulkan backend, see "Backends".
 

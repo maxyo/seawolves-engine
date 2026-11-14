@@ -47,7 +47,7 @@ for source in sorted((shim / 'shaders/ports').glob('vs_port_*.sc')):
 subprocess.run(configure, check=True, stdout=subprocess.DEVNULL)
 warmth = here.parents[1] / 'tools/ccache/warmth'
 subprocess.run([str(warmth), 'begin', str(build)], check=True)
-subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'perf_check', 'skinning_check', 'uniform_commit_check',
+subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'perf_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
                 'preset_switch_check', 'sea_edge_check', 'program_cache_check', 'render_thread_check',
                 'storm_fx_core_check', 'storm_fx_wave_storage_check', 'storm_fx_wave_idle_check', 'storm_fx_wave_source_check', 'ao_volume_check',
                 'storm_relief_check', 'storm_relief_device_retry_check', 'grass_vertex_check', 'cutout_caster_check', 'lamp_lifetime_check', 'relief_switch_check', 'texture_format_check', 'upscale_swap_check', 'backend_select_check',
@@ -65,7 +65,7 @@ plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 's
          [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text()],
          [str(build / 'relief' / 'storm_relief_device_retry_check'), str(build / 'device-retry-fixture')]]
 # The checks that draw, on OpenGL ES.
-gpu_checks = ['skinning_check', 'uniform_commit_check', 'preset_switch_check', 'sea_edge_check', 'program_cache_check',
+gpu_checks = ['skinning_check', 'uniform_commit_check', 'point_sprite_check', 'preset_switch_check', 'sea_edge_check', 'program_cache_check',
               'render_thread_check', 'ao_volume_check', 'grass_vertex_check', 'cutout_caster_check', 'texture_format_check', 'upscale_swap_check', 'buffer_pool_check',
               'thumbnail_check', 'pipeline_prewarm_check', 'wet_surfaces_check']
 # The same checks on Vulkan (STORM_CHECK_BACKEND, check_backend.hpp), where the host has a Vulkan device (CI: Mesa's

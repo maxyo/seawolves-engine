@@ -369,11 +369,12 @@ float material_source(DWORD source, bool color_vertex, const LayoutInfo &layout)
 }
 } // namespace
 
-void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_port, const effects::FfDraw &fx)
+void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_port, const effects::FfDraw &fx, bool point_draw)
 {
     const bgfx::Caps *caps = Context::instance().caps();
     const bool flip = Context::instance().flip_y();
     const DWORD *rs = s.rs;
+    const bool point_sprite = point_draw && rs[D3DRS_POINTSPRITEENABLE];
     const float vw = static_cast<float>(std::max<DWORD>(1, s.viewport.Width));
     const float vh = static_cast<float>(std::max<DWORD>(1, s.viewport.Height));
     // Pre-transformed vertices are in the pixels the game addresses; the half-pixel shift of D3D9 is a half pixel
@@ -517,7 +518,7 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
                 color_to_float(rs[D3DRS_AMBIENT], ambient);
             set_uniform(U_AMBIENT, ambient, 1);
         }
-        const float vs[4][4] = {
+        const float vs[7][4] = {
             {layout.rhw ? 1.0f : 0.0f, lighting ? 1.0f : 0.0f, layout.has_color0 ? 1.0f : 0.0f,
              layout.has_color1 ? 1.0f : 0.0f},
             {rs[D3DRS_NORMALIZENORMALS] ? 1.0f : 0.0f, static_cast<float>(light_count),
@@ -528,8 +529,17 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
              material_source(rs[D3DRS_SPECULARMATERIALSOURCE], color_vertex, layout)},
             {rs[D3DRS_SPECULARENABLE] ? 1.0f : 0.0f, s.material.Power, fog_from_specular ? 1.0f : 0.0f,
              as_float(rs[D3DRS_POINTSIZE]) * scale[1]},
+            {point_sprite ? 1.0f : 0.0f, caps->originBottomLeft ? 1.0f : -1.0f,
+             static_cast<float>(std::lround(s.viewport.X * scale[0])),
+             static_cast<float>(std::lround(s.viewport.Y * scale[1]))},
+            {static_cast<float>(std::lround((s.viewport.X + s.viewport.Width) * scale[0]) - std::lround(s.viewport.X * scale[0])),
+             static_cast<float>(std::lround((s.viewport.Y + s.viewport.Height) * scale[1]) - std::lround(s.viewport.Y * scale[1])),
+             std::max(0.0f, as_float(rs[D3DRS_POINTSIZE_MIN])) * scale[1],
+             std::min(64.0f, as_float(rs[D3DRS_POINTSIZE_MAX])) * scale[1]},
+            {as_float(rs[D3DRS_POINTSCALE_A]), as_float(rs[D3DRS_POINTSCALE_B]), as_float(rs[D3DRS_POINTSCALE_C]),
+             point_draw && rs[D3DRS_POINTSCALEENABLE] && !layout.rhw ? vh : 0.0f},
         };
-        set_uniform(U_VS, &vs[0][0], 4);
+        set_uniform(U_VS, &vs[0][0], 7);
 
         float clip[4] = {};
         if (rs[D3DRS_CLIPPLANEENABLE] & 1)
@@ -602,6 +612,7 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
             m[0] = (t[D3DTSS_RESULTARG] & D3DTA_SELECTMASK) == D3DTA_TEMP ? 1.0f : 0.0f;
             m[1] = (t[D3DTSS_TEXTURETRANSFORMFLAGS] & D3DTTFF_PROJECTED) && !layout.rhw ? 1.0f : 0.0f;
             m[2] = bound ? 1.0f : 0.0f;
+            m[3] = point_sprite ? 1.0f : 0.0f; // the stars (weather/stars.cpp) are point sprites
             stage_count = stage + 1;
         }
         set_uniform(U_STAGE, &stage_data[0][0], kFfStages * 3);
@@ -1538,7 +1549,7 @@ HRESULT Device::draw(const DrawCall &call)
         ++perf().texture_binds;
     }
 
-    apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw);
+    apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
     if (fx_draw.active)
         fx_lighting.submit(fx_draw);
 
@@ -1602,7 +1613,7 @@ HRESULT Device::draw(const DrawCall &call)
         // The probe view runs elsewhere in the frame: every uniform of the program is set again for the copy (the
         // shim sends only the changed ones, which the draws between would have changed).
         invalidate_uniforms();
-        apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw);
+        apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
         if (fx_draw.active)
             fx_lighting.submit(fx_draw);
         constexpr uint64_t kKept = BGFX_STATE_PT_MASK | BGFX_STATE_CULL_MASK | BGFX_STATE_MSAA | BGFX_STATE_BLEND_ALPHA_TO_COVERAGE;

@@ -122,7 +122,7 @@ Device::Device(SDL_Window *sdl_window, const D3DPRESENT_PARAMETERS &present) : w
         uint16_t count;
     } table[] = {
         {U_PROJ, "u_ffProj", bgfx::UniformType::Mat4, 1},
-        {U_VS, "u_ffVs", bgfx::UniformType::Vec4, 4},
+        {U_VS, "u_ffVs", bgfx::UniformType::Vec4, 7},
         {U_CLIP, "u_ffClipPlane", bgfx::UniformType::Vec4, 1},
         {U_MATERIAL, "u_ffMaterial", bgfx::UniformType::Vec4, 4},
         {U_AMBIENT, "u_ffAmbient", bgfx::UniformType::Vec4, 1},
