@@ -118,6 +118,10 @@ class Behavior
     virtual void Tick(ComponentElement &, double /*now*/)
     {
     }
+    // The component layout or dp ratio changed; keep pixel measurements local to this layout.
+    virtual void LayoutChanged(ComponentElement &)
+    {
+    }
     virtual void Rebuilt(ComponentElement &)
     {
     }
@@ -197,6 +201,7 @@ class ComponentElement final : public Rml::Element
     void OnAttributeChange(const Rml::ElementAttributes &changed) override;
     void OnUpdate() override;
     void OnLayout() override;
+    void OnDpRatioChange() override;
 
   private:
     void ApplyClasses();

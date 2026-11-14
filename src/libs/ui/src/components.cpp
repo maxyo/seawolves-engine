@@ -896,6 +896,15 @@ void ComponentElement::OnLayout()
 {
     Rml::Element::OnLayout();
     ++services_.Counters().laid_out;
+    for (const auto &behavior : behaviors_)
+        behavior->LayoutChanged(*this);
+}
+
+void ComponentElement::OnDpRatioChange()
+{
+    Rml::Element::OnDpRatioChange();
+    for (const auto &behavior : behaviors_)
+        behavior->LayoutChanged(*this);
 }
 
 void ComponentElement::RebuildNow()

@@ -1151,10 +1151,38 @@ class ColumnsBehavior final : public Behavior
         self.Host().RequestTicks(self, true);
     }
 
+    void LayoutChanged(ComponentElement &self) override
+    {
+        const Rml::Vector2f size(self.GetClientWidth(), self.GetClientHeight());
+        const float density = self.Host().Density();
+        if (size == size_ && density == density_)
+            return;
+        size_ = size;
+        density_ = density;
+        // These are our measured pixel overrides, not the stylesheet's dp minima.
+        // Drop them before measuring again so a smaller density can shrink columns.
+        if (Rml::Element *head = self.QuerySelector("[data-columns-head]"))
+            head->RemoveProperty(Rml::PropertyId::Width);
+        Rml::ElementList cells;
+        self.QuerySelectorAll(cells, "[data-col]");
+        for (Rml::Element *cell : cells)
+            cell->RemoveProperty(Rml::PropertyId::MinWidth);
+        attempts_ = 4;
+        wait_for_layout_ = true;
+        self.Host().RequestTicks(self, true);
+    }
+
     void Tick(ComponentElement &self, double) override
     {
         if (attempts_ <= 0)
             return;
+        // A dp-ratio notification can precede the context update. Let typography
+        // and media queries settle before reading natural child widths.
+        if (wait_for_layout_)
+        {
+            wait_for_layout_ = false;
+            return;
+        }
         // A vertical scrollbar narrows only the body. Match the header's layout width
         // to that viewport so its columns retain the same horizontal positions.
         Rml::Element *head = self.QuerySelector("[data-columns-head]");
@@ -1198,6 +1226,9 @@ class ColumnsBehavior final : public Behavior
 
   private:
     int attempts_ = 0;
+    Rml::Vector2f size_ = {-1.0f, -1.0f};
+    float density_ = -1.0f;
+    bool wait_for_layout_ = false;
 };
 
 // A part that opens is brought into view: a key of data-reveal that was not in the previous

@@ -292,6 +292,59 @@ int main(int argc, char **argv)
                    "icon columns retain 56dp minimum and aligned numeric cells");
         }
     }
+    // Resize the same mounted component: pixel measurements must not survive a
+    // viewport/density change, and shrinking must release the old larger minima.
+    {
+        Rml::Context *context = Rml::GetContext("storm-ui");
+        Rml::Element *table = nullptr;
+        for (int i = 0; context && i < context->GetNumDocuments(); ++i)
+            if (Rml::Element *found = context->GetDocument(i)->GetElementById("columns"))
+                table = found;
+        Expect(table != nullptr, "resize keeps the mounted columns fixture");
+        if (table)
+        {
+            table->SetProperty("width", "60%");
+            Rml::Element *original_head = table->QuerySelector("#h0");
+            const auto check = [&](int width, int height, float density) {
+                host->Resize(width, height, density);
+                frames(0.2);
+                Expect(table->QuerySelector("#h0") == original_head, "resize preserves column element identity");
+                Rml::Element *head = table->QuerySelector("[data-columns-head]");
+                Rml::Element *body = table->QuerySelector("[data-columns-body]");
+                Expect(head && body && std::abs(head->GetClientWidth() - body->GetClientWidth()) < 0.01f,
+                       "resized header matches current scrolling body viewport");
+                for (const auto &[h_id, v_id] : {std::pair{"h0", "v0"}, std::pair{"h1", "v1"}})
+                {
+                    Rml::Element *h = table->QuerySelector(std::string("#") + h_id);
+                    Rml::Element *v = table->QuerySelector(std::string("#") + v_id);
+                    Expect(h && v && std::abs(h->GetBox().GetSize(Rml::BoxArea::Border).x - 56.f * density) < 0.01f &&
+                               std::abs(h->GetAbsoluteLeft() - v->GetAbsoluteLeft()) < 0.01f,
+                           "live resize remeasures 56dp columns and keeps header/body alignment");
+                }
+            };
+            check(1280, 720, 1.5f);
+            check(780, 360, 1.f);
+            check(1280, 720, 1.5f);
+            check(1280, 720, 1.f); // density-only, unchanged pixel viewport
+            // Natural text can exceed the minimum too: a density-only shrink must
+            // not measure the previous frame's larger glyphs and retain that width.
+            Rml::Element *value = table->QuerySelector("#v0");
+            value->GetChild(0)->SetInnerRML("123456789012345");
+            for (float density : {1.5f, 1.f})
+            {
+                host->Resize(1280, 720, density);
+                frames(0.2);
+                const float natural = value->GetChild(0)->GetBox().GetSize(Rml::BoxArea::Border).x;
+                Expect(natural > 56.f * density &&
+                           std::abs(value->GetBox().GetSize(Rml::BoxArea::Border).x - std::ceil(natural)) < 0.01f,
+                       "density-only resize remeasures current natural glyph width");
+            }
+            value->GetChild(0)->SetInnerRML("1");
+            host->Resize(800, 400, 1.f);
+            table->SetProperty("width", "160dp");
+            frames(0.2);
+        }
+    }
     hold(124);
     Expect(clicks.empty(), "a long press on a cut title opens its tooltip and sends nothing");
     hold(24);
