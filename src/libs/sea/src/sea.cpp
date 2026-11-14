@@ -1428,7 +1428,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
 
     if (iVStart && iTStart)
     {
-        // Waves from objects (renderer: fx::SeaWaves, Kelvin wakes): this frame's sources and the sea's vertex origin.
+        // Waves from objects (renderer: fx::SeaWaves): this frame's sources and the sea's vertex origin.
         storm::render::EffectsSeaFrame waves;
         waves.vertex_origin = {vWorldOffset.x, vWorldOffset.y, vWorldOffset.z};
         waves.camera = {vCamPos.x, vCamPos.y, vCamPos.z};

@@ -1,7 +1,7 @@
 // The waterline of a ship's hull for the waves from objects (storm::render::EffectsWaveSource): the hull's half beam
 // on each side as a function of the height and the position along it, traced once per hull model through its
 // collision BSP and shared by every ship of that model; then, each frame, the waterline where that hull meets the
-// sea (its draft, heel and pitch included) as the stations the wave field and the Kelvin wake take.
+// sea (its draft, heel and pitch included) as the stations the wave field takes.
 #pragma once
 
 #include "storm/render/effects.hpp"

@@ -96,8 +96,7 @@ const Option kOptions[] = {
     {"fx_sea_waves", "0 off, 1 on: ripples from swimmers, boats and hulls", [](fx::Settings &s, int v) { s.sea_waves = on(v); }},
     {"fx_sea_waves_lift", "0 off, 1 on: the ripples also raise the sea surface",
      [](fx::Settings &s, int v) { s.sea_waves_lift = on(v); }},
-    {"fx_sea_wakes", "0 off, 1 on: Kelvin wakes behind ships", [](fx::Settings &s, int v) { s.sea_wakes = on(v); }},
-    {"fx_sea_waves_debug", "0 off, 1 ripple slope red, wake slope green, foam blue, 2 the tilt of the sea's normal",
+    {"fx_sea_waves_debug", "0 off, 1 ripple slope red, crest foam blue, 2 the tilt of the sea's normal",
      [](fx::Settings &s, int v) { s.sea_waves_debug = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
     {"fx_lamp_shadows", "lamps that relight a location with their shadows, 0, 8 or 16",
      [](fx::Settings &s, int v) { s.lamp_shadows = static_cast<uint8_t>(std::clamp(v, 0, 16)); }},
@@ -208,13 +207,13 @@ std::string describe(const fx::Settings &s)
     char text[512];
     snprintf(text, sizeof(text),
              "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) ssao=%d dither=%d flare=%d scene_grading=%d "
-             "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d waves=%d%d%d shadows=%d "
+             "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d waves=%d%d shadows=%d "
              "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) contact=%d wet=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
              static_cast<double>(s.sharpness), s.ssao, s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
              s.alpha_to_coverage, s.anisotropy, s.sea_band_limit, s.sea_soft_edges, s.sea_specular,
-             s.sea_waves, s.sea_waves_lift, s.sea_wakes, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
+             s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
              static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity, s.contact_shadows, s.wet_surfaces);
     return text;
 }
@@ -264,7 +263,7 @@ void Host::on_device_lost()
     u_sea_fx_ = s_sea_depth_ = BGFX_INVALID_HANDLE;
     sea_depth_frame_ = UINT32_MAX;
     sea_waves_.OnDeviceLost();
-    u_sea_waves_ = u_sea_wakes_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
+    u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
     sea_waves_frame_ = UINT32_MAX;
     contact_.OnDeviceLost();
     ao_.on_device_lost();
@@ -285,7 +284,7 @@ void Host::shutdown()
     depth_copy_.Shutdown();
     sea_waves_.Shutdown();
     sea_waves_frame_ = UINT32_MAX;
-    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &u_sea_waves_, &u_sea_wakes_, &s_sea_waves_})
+    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &u_sea_waves_, &s_sea_waves_})
         if (bgfx::isValid(*uniform))
         {
             bgfx::destroy(*uniform);

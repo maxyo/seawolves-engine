@@ -157,12 +157,10 @@ struct Settings
     float sea_specular_strength = 0.6f;
     // Waves from objects (sea_waves.hpp): ripples of a wave-equation height field around the camera, stirred by
     // swimmers, waders, boats and ship hulls, in the normals and crest foam of the sea; `sea_waves_lift` also raises
-    // the sea's vertices by them (vertex texture fetch). `sea_wakes`: a Kelvin wake (transverse and divergent waves
-    // in the 19.5-degree V) behind every ship under way, in the sea's normals.
+    // the sea's vertices by them (vertex texture fetch). A ship's wake is what its hull leaves in the field.
     bool sea_waves = false;
     bool sea_waves_lift = false;
-    bool sea_wakes = false;
-    uint8_t sea_waves_debug = 0; // 1: the sea shows the ripple slope (red), the wake slope (green), foam (blue);
+    uint8_t sea_waves_debug = 0; // 1: the sea shows the ripple slope (red), crest foam (blue);
                                  // 2: the tilt the waves add to its normal (x red, z blue, none grey)
     uint32_t lighting_flags = kLightingNone;
     uint8_t point_lights = 4;      // per draw call with kLightingPoint: 4 or 8

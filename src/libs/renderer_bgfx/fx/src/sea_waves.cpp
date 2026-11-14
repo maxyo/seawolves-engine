@@ -15,7 +15,7 @@ namespace
 // The water: waves of 2 m and more (4 texels) travel at about the speed deep water gives them, and lose half
 // their energy in a few seconds; a hull or a swimmer is felt some tens of metres away.
 constexpr float kWaveSpeed = 2.5f;       // m/s
-constexpr float kVelocityKeep = 0.997f; // accepted damping per 1/60 s
+constexpr float kVelocityKeep = 0.9985f; // per 1/60 s: half the energy in about 4 s
 } // namespace
 
 SeaWaves::~SeaWaves()

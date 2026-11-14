@@ -100,15 +100,14 @@ void CheckSettings()
     CHECK(medium.sea_band_limit && !medium.sea_soft_edges && high.sea_band_limit && high.sea_soft_edges);
     CHECK(!medium.sea_specular && !high.sea_specular);
     // Waves from objects: Средняя and Высокая, never Низкая; without vertex fetch only the lift goes, loudly.
-    CHECK(medium.sea_waves && medium.sea_waves_lift && medium.sea_wakes && high.sea_waves && high.sea_waves_lift &&
-          high.sea_wakes);
-    CHECK(!original.sea_waves && !original.sea_waves_lift && !original.sea_wakes);
+    CHECK(medium.sea_waves && medium.sea_waves_lift && high.sea_waves && high.sea_waves_lift);
+    CHECK(!original.sea_waves && !original.sea_waves_lift);
     {
         Support no_vtf;
         no_vtf.sea_waves_vertex = false;
         std::vector<std::string> changes;
         const Settings constrained = ConstrainSettings(high, no_vtf, changes);
-        CHECK(constrained.sea_waves && !constrained.sea_waves_lift && constrained.sea_wakes);
+        CHECK(constrained.sea_waves && !constrained.sea_waves_lift);
         bool reported = false;
         for (const std::string &line : changes)
             reported |= line.find("wave lift") != std::string::npos;
@@ -2336,7 +2335,7 @@ void CheckSeaWaves()
             for (int i = 0; i < n; ++i)
             {
                 const float next = height + (height - previous) * (step / last_step) *
-                                                std::pow(0.997f, step / WaveClock::kStep) +
+                                                std::pow(0.9985f, step / WaveClock::kStep) +
                                    1e-5f * WaveClock::ForcingStep(step, last_step);
                 previous = height;
                 height = next;

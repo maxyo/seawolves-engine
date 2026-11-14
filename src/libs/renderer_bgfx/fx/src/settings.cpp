@@ -51,7 +51,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.bloom_downscale = 4;
         s.bloom_levels = 3;
         s.sea_band_limit = true;
-        s.sea_waves = s.sea_waves_lift = s.sea_wakes = true;
+        s.sea_waves = s.sea_waves_lift = true;
         s.anisotropy = 4;
         s.lighting_flags = kLightingPerPixel | kLightingTranslucent | kLightingPoint | kLightingNormalMap | kLightingRim |
                            kLightingAerial;
@@ -81,7 +81,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.sun_shafts = true;
     s.sea_band_limit = true;
     s.sea_soft_edges = true;
-    s.sea_waves = s.sea_waves_lift = s.sea_wakes = true;
+    s.sea_waves = s.sea_waves_lift = true;
     // Wind sway is not in the presets: the game already sways sails, flags and grass itself, and the static
     // location models carry no anchor weights for foliage (option fx_wind, reported as not wired).
     s.lighting_flags = kLightingPerPixel | kLightingSpecular | kLightingTranslucent | kLightingPoint | kLightingNormalMap |

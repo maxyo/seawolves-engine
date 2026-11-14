@@ -406,7 +406,7 @@ static void Settings(const std::string &models)
                                 "render_backend", "render_thread", "render_overlap", "fx_bounce", "fx_bounce_debug",
                                 "fx_town_walls", "fx_gloss", "fx_gloss_strength",
                                 "fx_gloss_debug", "fx_sea_waves", "fx_sea_waves_lift",
-                                "fx_sea_wakes", "fx_sea_waves_debug", "fx_pom_probe",
+                                "fx_sea_waves_debug", "fx_pom_probe",
                                 "fx_pom_toggle", "fx_upscale", "fx_far_lod", "fx_light_reach", "fx_light_core",
                                 "fx_light_level"}) // GraphicsSettings.DEBUG_KEYS, -1 = the preset's
             reported[key] = -1;
@@ -447,7 +447,7 @@ static void Settings(const std::string &models)
         Expect(row("app-fx_gloss").is_object() && row("app-fx_gloss_strength").is_object() &&
                    row("app-fx_gloss_debug")["options"].size() == 6,
                "effects debug: gloss maps: " + rows.dump());
-        Expect(row("app-fx_sea_waves").is_object() && row("app-fx_sea_wakes").is_object() &&
+        Expect(row("app-fx_sea_waves").is_object() &&
                    row("app-fx_sea_waves_debug")["options"].size() == 4,
                "effects debug: waves from objects: " + rows.dump());
         Expect(row("app-fx_upscale")["options"] == Json::array({"пресет", "выкл", "вкл"}) &&

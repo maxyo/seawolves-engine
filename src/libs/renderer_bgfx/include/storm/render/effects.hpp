@@ -124,7 +124,7 @@ void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *
 void ClearEffectsPlayerPosition(const void *owner);
 
 // The legacy sea (Sea2), every frame it draws, before its draws: what makes waves on it this frame
-// (Settings::sea_waves: ripples around the camera; Settings::sea_wakes: Kelvin wakes behind the hulls under way).
+// (Settings::sea_waves: ripples around the camera, the hulls' wakes among them).
 struct EffectsWaveSource
 {
     enum class Kind : uint8_t
