@@ -9,7 +9,9 @@ float fxWavesEncodeSurfaceHeight(float height)
 
 float fxWavesDecodeSurfaceHeight(float channel)
 {
-    float value = (channel * 255.0f - 128.0f) / 127.0f;
+    // Inputs are point samples. Recover the exact byte before subtraction: UNORM conversion and fused
+    // multiply-add must not turn the zero code into a nonzero height.
+    float value = (floor(channel * 255.0f + 0.5f) - 128.0f) / 127.0f;
     return value * abs(value) * 0.5f;
 }
 #endif
