@@ -336,7 +336,7 @@ def read_frame(path, size):
 # at sea, the compass at the top right (gold ring). Boxes in fractions of the frame; calibrated on 1280x720 sweeps
 # (local-testing/gpu-sweep/calib): a drawn element has 6-8 % gold pixels in its box, a missing one none.
 NO_HUD_KINDS = ('menu', 'newgame')
-SEA_HUD_KINDS = ('sea', 'battle', 'dusk', 'dawn', 'ship', 'storm')
+SEA_HUD_KINDS = ('sea', 'battle', 'dusk', 'dawn', 'moon', 'skynight', 'skyday', 'ship', 'storm')
 PORTRAIT_BOX = (0.0, 0.0, 0.08, 0.14)
 COMPASS_BOX = (0.86, 0.0, 1.0, 0.22)
 HUD_GOLD_MIN = 0.02

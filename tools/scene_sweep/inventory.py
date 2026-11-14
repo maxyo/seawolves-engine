@@ -195,6 +195,8 @@ def build(game):
     weather = tree_fingerprint(game, 'PROGRAM/weather')
     scenes.append(Scene('dusk:open', 'sea at sunset', weather))
     scenes.append(Scene('dawn:open', 'sea at sunrise', weather))
+    scenes.append(Scene('skynight:open', 'sky at night', weather))
+    scenes.append(Scene('skyday:open', 'sky at noon', weather))
     scenes.append(Scene('moon:open', 'sea at midnight', weather))
     scenes.append(Scene('ship:night', 'ship at night', weather + tree_fingerprint(game, 'PROGRAM/sea_ai')))
     scenes.append(Scene('storm:world', 'storm', worldmap + tree_fingerprint(game, 'PROGRAM/weather')))
