@@ -66,7 +66,7 @@ std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source 
                 const float displacement = mode == Mode::Packed ? history[i] * keep * dt / reference :
                                             (h - history[i]) * keep * dt / last;
                 const float input = flux ? storage::fxWavesSourceDisplacement(rate[i], dt) :
-                                           rate[i] * dt * (dt + last) / (2 * reference);
+                                           rate[i] * storm::fx::WaveClock::ForcingStep(dt, last);
                 const float value = std::clamp(h + displacement + lap_factor * lap + input, -1.9f, 1.9f);
                 const float base = flux ? storage::fxWavesHistoryBase(h, input, 1.0f) : h;
                 if (mode == Mode::Packed)

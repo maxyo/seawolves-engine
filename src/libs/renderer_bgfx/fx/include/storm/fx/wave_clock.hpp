@@ -32,6 +32,11 @@ struct WaveClock
         return steps;
     }
 
+    // Body momentum forcing keeps its established reference-step calibration over unequal steps.
+    static float ForcingStep(float step, float previous_step)
+    {
+        return step * (step + previous_step) * (0.5f / kStep);
+    }
 };
 
 } // namespace storm::fx

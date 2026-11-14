@@ -43,10 +43,11 @@ void main()
     float displacement = u_wavesStep[2].z > 0.5 ? c.y * u_wavesStep[3].z : (c.x - c.y) * u_wavesStep[0].w;
     float h = c.x + displacement + u_wavesStep[0].z * lap;
 
-    // Sources prescribe vertical displacement rates (m/s), and still water inside the hulls. Integrate the
-    // supplied height once; only the wave equation's own velocity belongs in the recurrence history.
+    // Hulls prescribe displaced water (m/s); bodies retain their calibrated momentum forcing.
+    // Only hull displacement is excluded from the free-wave velocity history.
     vec2 p = (v_uv - 0.5) * u_wavesStep[2].w;
     float rate = 0.0;
+    float body_force = 0.0;
     float hold = 1.0;
     float time = u_wavesStep[2].x;
     for (int i = 0; i < kWavesSources; ++i)
@@ -67,7 +68,7 @@ void main()
             if (e > 4.0)
                 continue;
             float g = exp(-2.5 * e);
-            rate -= g * (0.10 * abs(b.z) + 0.30 * k.y * sin(5.65 * time + k.z));
+            body_force -= g * (0.10 * abs(b.z) + 0.30 * k.y * sin(5.65 * time + k.z));
         }
         else
         {
@@ -95,7 +96,7 @@ void main()
         }
     }
     float source = fxWavesSourceDisplacement(rate, dt);
-    h += source;
+    h += source + body_force * u_wavesStep[3].x;
     h *= hold;
     // Sponge: the outer 8 % of the field absorbs what reaches it.
     vec2 edge = min(v_uv, 1.0 - v_uv);
