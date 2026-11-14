@@ -1,6 +1,7 @@
 #include "device.hpp"
 #include "effects/effects.hpp"
 #include "effects/upscale.hpp"
+#include "storm/fx/skin_tone.hpp"
 #include "perf.hpp"
 #include "ports.hpp"
 #include "util.hpp"
@@ -1547,13 +1548,24 @@ HRESULT Device::draw(const DrawCall &call)
         }
         const uint32_t flags = sampler_flags(stage, *store);
         bgfx::TextureHandle handle = store->handle;
+        uint32_t skin_width = store->width, skin_height = store->height;
+        uint32_t skin_levels = store->full_chain ? 0 : store->levels;
         if (store->lightmap) // a town's lightmap: ours for the hour's sun in its place (effects/town_light.hpp)
             if (const bgfx::TextureHandle ours = fx_lighting.town_light().replacement(store); bgfx::isValid(ours))
                 handle = ours;
         if (store->upscale && upscales.active())
             if (const float distance = draw_distance(); distance >= 0.0f)
                 if (const bgfx::TextureHandle ours = upscales.replacement(*store, distance); bgfx::isValid(ours))
+                {
                     handle = ours;
+                    skin_width = store->upscale->width * 2;
+                    skin_height = store->upscale->height * 2;
+                    skin_levels = 0; // every resident upscale has its complete rebuilt chain
+                }
+        // The character reference was prepared before replacement selection. Match its coarse colour test to the
+        // actual stage-0 albedo, including source -> x2 -> source changes and partial native mip chains.
+        if (stage == 0)
+            fx::SetSkinToneSampling(fx_draw.skin_tone, skin_width, skin_height, skin_levels);
         bgfx::setTexture(static_cast<uint8_t>(unit), Context::instance().sampler(unit), handle, flags);
         ++perf().texture_binds;
         if (last_draw.texture[unit] != handle.idx || last_draw.sampler[unit] != flags)

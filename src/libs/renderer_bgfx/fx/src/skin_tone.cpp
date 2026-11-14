@@ -158,4 +158,19 @@ float TorsoSkinMask(const SkinTone &tone, float torso_weight, float r, float g, 
                       0.0f, 1.0f);
 }
 
+void SetSkinToneSampling(std::array<float, 8> &packed, uint32_t width, uint32_t height, uint32_t levels)
+{
+    if (packed[0] <= 0.0f)
+        return; // preserve unknown/disabled masks
+    const float top = static_cast<float>(std::max(width, height));
+    const float lod = std::max(0.0f, std::log2(std::max(1.0f, top) / static_cast<float>(kSkinTestTexels)));
+    if (levels && std::ceil(lod) >= static_cast<float>(levels))
+    {
+        packed[0] = -1.0f;
+        packed[7] = 0.0f;
+        return;
+    }
+    packed[7] = lod;
+}
+
 } // namespace storm::fx

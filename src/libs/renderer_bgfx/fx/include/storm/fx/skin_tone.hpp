@@ -57,5 +57,8 @@ float TorsoSkinMask(const SkinTone &tone, float torso_weight, float r, float g, 
 // The two vec4 of u_fxSkinTone: [0] mean r, mean g, lum_lo, lum_hi; [1] inv_rr, inv_rg, inv_gg, 1 (0: no reference).
 // An invalid reference packs -1 in [0].x to request the conservative torso mask; all zero means explicitly disabled.
 std::array<float, 8> PackSkinTone(const SkinTone &tone);
+// Set the skin test LOD for the albedo texture actually bound. levels==0 means a complete mip chain. A partial chain
+// without the coarse colour level fails closed on torso skin instead of silently sampling its original fine grain.
+void SetSkinToneSampling(std::array<float, 8> &packed, uint32_t width, uint32_t height, uint32_t levels);
 
 } // namespace storm::fx
