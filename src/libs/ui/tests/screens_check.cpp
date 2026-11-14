@@ -1963,6 +1963,41 @@ static void Hero(const std::string &models)
            "free points: ‹ › on the skills, ‹ only for points added in this visit");
     Expect(view["subject"]["sub"] == "1 <common.of> 2" && view["subject"]["prev"] == false && view["subject"]["next"] == true,
            "the captain and one officer in the switch");
+    {
+        // The stock game has RPGDescribe help for all three tables. Opening it is presentation-only: tapping a
+        // skill must not select a different engine row, spend a free point or leak through to an underlying action.
+        FakeSurface help_surface;
+        Router help(help_surface);
+        InterfaceModel with_help = model;
+        const char *tables[] = {"TABLE_SPECIAL", "TABLE_SKILL_1", "TABLE_SKILL_2"};
+        const char *ids[] = {"special", "personal", "ship"};
+        for (const char *table : tables)
+        {
+            const Widget *row = Row(with_help, table, 0);
+            Widget fact = Make("ANDROID_SKILLHELP", "fact", "");
+            fact.row_id = std::string(table) + "_tr1";
+            fact.context = {{"node", table}, {"skill", row->row_id}, {"text", "Game description.\r\n~\r\nEffects from RPGDescribe."}};
+            with_help.widgets.push_back(std::move(fact));
+        }
+        help.SetInterface(with_help);
+        for (int i = 0; i < 3; ++i)
+        {
+            help.OnEvent({ids[i], "row", "0"});
+            Expect(help_surface.props["dialog"]["kind"] == "message" &&
+                       help_surface.props["dialog"]["title"] == Row(with_help, tables[i], 0)->CellText(1) &&
+                       help_surface.props["dialog"]["text"] == "Game description.\n\nEffects from RPGDescribe.",
+                   std::string("a tap shows stock description for ") + tables[i]);
+            Expect(help.WantsBack(), "Back belongs to the skill help modal");
+            help.Back();
+            Expect(help_surface.props["dialog"].is_null(), "Back closes skill help and retains the character screen");
+        }
+        help.OnEvent({"personal", "row", "1"}); // no game-provided text for this fixture's second row
+        Expect(help_surface.props["dialog"].is_null() && help_surface.commands.empty() && help_surface.errors.empty(),
+               "missing skill text is not invented and row taps never send gameplay commands");
+        help.OnEvent({"personal", "row", "0"});
+        help.OnEvent({"skill-help-close", "click", ""});
+        Expect(help_surface.props["dialog"].is_null(), "the explicit close action closes skill help");
+    }
     // The subject list: a tap on the name lists the captain and the officers; a picked row is the same select as ›.
     Expect(view["subject"]["list"] == true && !view["subject"].contains("open"), "two subjects offer the list, closed");
     router.OnEvent({"header", "subject-list", ""});
@@ -2444,6 +2479,42 @@ static void ItemCategories(const std::string &models)
         router.OnEvent({"slot-slot1", "click", ""});
         Expect(surface.props["detail"]["title"] == "Rapier" && surface.props["detail"]["action"]["hold"] == true,
                "the occupied amulet slot exposes only its own held action");
+    }
+    {
+        // Slot names are script attribute names too: their first interned case is not a different equipment slot.
+        // All three occupied slots must retain only their own item and its guarded removal, never a neighbour's.
+        FakeSurface surface;
+        Router router(surface);
+        InterfaceModel model = Load(models, "items.json");
+        const char *slot_names[] = {"SLOT1", "Slot2", "slot3"};
+        for (Widget &widget : model.widgets)
+        {
+            if (widget.node == "ANDROID_ITEMS")
+                widget.context = {{"slot", "amulet"}, {"worn", "1"}, {"action", "amulet"}, {"days", "70"},
+                                  {"itemid", "amulet-" + std::to_string(widget.index)}};
+            if (widget.node == "TABLE_ITEMS")
+                widget.value = widget.index == 1 ? "1" : "0";
+            if (widget.node == "EQUIP_BUTTON")
+                widget.row_id = "inventory:9:character:1:role:0";
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            Widget slot = Make("ANDROID_SLOTS", "fact");
+            slot.label = "Amulet " + std::to_string(i);
+            slot.row_id = slot_names[i];
+            slot.context["itemid"] = "amulet-" + std::to_string(i);
+            model.widgets.push_back(std::move(slot));
+        }
+        router.SetInterface(model);
+        router.OnEvent({"slot-slot2", "click", ""});
+        Expect(surface.props["slots"][7]["name"] == "Amulet 0" && surface.props["slots"][8]["name"] == "Amulet 1" &&
+                   surface.props["slots"][9]["name"] == "Amulet 2" && surface.props["rows"].size() == 1 &&
+                   !surface.props["detail"].is_null() && surface.props["detail"]["title"] == Row(model, "TABLE_ITEMS", 1)->CellText(0) &&
+                   surface.props["detail"]["action"]["hold"] == true,
+               "mixed-case occupied amulet slots retain the correct selected removal action");
+        router.OnEvent({"item-equip", "click", ""});
+        ExpectEqual(surface.Last(), "widget:items\tEQUIP_BUTTON\t-1\tpress@5:inventory:9:character:1:role:0",
+                    "the second amulet slot removes only the second slot's selected item");
     }
     {
         FakeSurface surface;

@@ -133,7 +133,7 @@ class ItemsScreen final : public Screen
             facts[std::atoi(fact->row_id.c_str() + 2) - 1] = fact;
         std::map<std::string, const Widget *> worn;
         for (const Widget *fact : admitted.All("ANDROID_SLOTS"))
-            worn[fact->row_id] = fact;
+            worn[LowerText(fact->row_id)] = fact; // script attribute names keep their first interned case
 
         // The slots.
         Json slots = Json::array();

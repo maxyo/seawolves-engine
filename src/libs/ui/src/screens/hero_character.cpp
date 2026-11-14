@@ -39,6 +39,7 @@ constexpr NodeRule kNodes[] = {
     {"ANDROID_PASSENGERS", "fact"},
     {"ANDROID_CANDIDATES", "fact"},
     {"ANDROID_PERKS", "fact"},
+    {"ANDROID_SKILLHELP", "fact"}, // stock RPGDescribe text, keyed by table and skill ID
     {"TITLE", "heading"},
     {"CHARACTER_BIG_PICTURE", "image"},
     {"CHARACTER_NATION_PICTURE", "image"},
@@ -247,6 +248,7 @@ class HeroScreen final : public Screen
                 return;
             tab_ = next;
             learn_open_ = false;
+            skill_help_ = nullptr;
             sent_revision_ = 0; // a player action: its first step may go at once
             if (window_ != Window::None && window_ != Window::Message)
                 CloseWindow(bindings);
@@ -277,7 +279,12 @@ class HeroScreen final : public Screen
 
         bindings.On("header-back", "", [this, &bindings](const Event &) {
             sent_revision_ = 0; // a player action: its first step may go at once
-            if (window_ != Window::None)
+            if (!skill_help_.is_null())
+            {
+                skill_help_ = nullptr;
+                bindings.Rebuild();
+            }
+            else if (window_ != Window::None)
                 CloseWindow(bindings);
             else
                 bindings.Back(nullptr);
@@ -289,10 +296,15 @@ class HeroScreen final : public Screen
     // those shown as a dialog; a window of the game is open a moment before its dialog is).
     bool OwnsBack() const override
     {
-        return learn_open_ || window_ != Window::None;
+        return !skill_help_.is_null() || learn_open_ || window_ != Window::None;
     }
     void Back(Bindings &bindings) override
     {
+        if (!skill_help_.is_null())
+        {
+            skill_help_ = nullptr;
+            return bindings.Rebuild();
+        }
         if (learn_open_)
         {
             learn_open_ = false;
@@ -340,6 +352,7 @@ class HeroScreen final : public Screen
     std::string perk_;                  // the perk in the detail panel
     int perk_filter_ = 0;               // 0 all, 1 open to learn, 2 learned
     bool learn_open_ = false;           // the parchment card that confirms learning perk_
+    Json skill_help_ = nullptr;         // presentation-only stock skill description, never a game selection
     int wanted_ship_ = -1;              // the perk group the player asked for until the game shows it (0 personal, 1 ship)
     std::map<std::string, int> added_;  // points the player put into a skill during this visit
 
@@ -678,7 +691,31 @@ class HeroScreen final : public Screen
         };
         bindings.On(id, "inc", [arrow](const Event &event) { arrow(event, "up"); });
         bindings.On(id, "dec", [arrow](const Event &event) { arrow(event, "down"); });
-        bindings.Ignore(id, "row");
+        bindings.On(id, "row", [this, &bindings, node, source](const Event &event) {
+            const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
+            if (index >= source.size())
+                return;
+            for (const Widget *fact : a_->All("ANDROID_SKILLHELP"))
+                if (Field(fact, "node") == node && Field(fact, "skill") == source[index]->row_id)
+                {
+                    std::string text = Trim(Field(fact, "text"));
+                    if (text.empty())
+                        return;
+                    std::erase(text, '\r');
+                    // RPGDescribe separates paragraphs with a standalone '~' line, as the stock tooltip does.
+                    for (size_t at = 0; at < text.size();)
+                    {
+                        const size_t end = text.find('\n', at);
+                        const size_t size = (end == std::string::npos ? text.size() : end) - at;
+                        if (Trim(text.substr(at, size)) == "~")
+                            text.erase(at, size);
+                        at = end == std::string::npos ? text.size() : text.find('\n', at) + 1;
+                    }
+                    skill_help_ = Json{{"title", Trim(source[index]->CellText(1))}, {"text", text}};
+                    bindings.Rebuild();
+                    return;
+                }
+        });
         return Json{{"columns", columns}, {"rows", rows}};
     }
 
@@ -861,6 +898,18 @@ class HeroScreen final : public Screen
 
     Json DialogView(Bindings &bindings)
     {
+        if (!skill_help_.is_null() && window_ == Window::None && tab_ == Tab::Skills)
+        {
+            const auto close = [this, &bindings](const Event &) {
+                skill_help_ = nullptr;
+                bindings.Rebuild();
+            };
+            bindings.Modal("dialog", close);
+            bindings.On("dialog-close", "", close);
+            bindings.On("skill-help-close", "", close);
+            return Json{{"kind", "message"}, {"title", skill_help_["title"]}, {"text", skill_help_["text"]},
+                        {"actions", Json::array({Json{{"id", "skill-help-close"}, {"label", bindings.Text("common.close")}, {"variant", "primary"}}})}};
+        }
         const Widget *slot = Selected("CHARACTERS_SCROLL");
         const Widget *post = nullptr;
         for (const Widget *p : a_->All("ANDROID_POSTS"))
