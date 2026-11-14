@@ -2147,6 +2147,29 @@ static void Items(const std::string &models)
                view["detail"]["action"]["disabled"] == false,
            "the selected item with the game's own action");
     {
+        // UI31-01: the real Android model exports itemid (the shared script codec's spelling), not itemId as in
+        // this fixture. Selecting the occupied blade slot must retain its selected worn item's details and action.
+        for (const std::string spelling : {"itemid", "ITEMID"})
+        {
+            FakeSurface occupied_surface;
+            Router occupied(occupied_surface);
+            InterfaceModel live_spelling = model;
+            for (Widget &widget : live_spelling.widgets)
+                if (auto identity = widget.context.extract("itemId"); !identity.empty())
+                {
+                    identity.key() = spelling;
+                    widget.context.insert(std::move(identity));
+                }
+            occupied.SetInterface(live_spelling);
+            occupied.OnEvent({"slot-blade", "click", ""});
+            const Json &shown = occupied_surface.props;
+            Expect(shown["slots"][0]["selected"] == true && !shown["detail"].is_null() &&
+                       shown["detail"]["title"] == "Rapier" && shown["detail"]["text"] == "A light blade." &&
+                       shown["detail"]["action"]["label"] == "Take off" && !shown["detail"]["action"]["disabled"],
+                   "UI31-01: occupied slot preserves details/actions with script attribute casing " + spelling);
+        }
+    }
+    {
         // The description in parts: the worn rapier's own figures (nothing to compare with), its kind, then the text.
         const Json &facts = view["detail"]["facts"];
         Expect(facts.size() == 4 && facts[0] == Json({{"k", "<items.attack>"}, {"v", "60.0"}}) && facts[2]["k"] == "<items.weight>" &&

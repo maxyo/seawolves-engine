@@ -68,7 +68,16 @@ std::string Field(const Widget *fact, const char *key)
     if (!fact)
         return {};
     const auto it = fact->context.find(key);
-    return it == fact->context.end() ? std::string() : it->second;
+    if (it != fact->context.end())
+        return it->second;
+    // Script attributes are case-insensitive and their shared string codec keeps whichever spelling was interned
+    // first. Real AndroidFacts can therefore export itemid although the adapter wrote itemId. Keep that same lookup
+    // rule here: losing the identity makes a selected worn item look unrelated to its slot and hides its parchment.
+    const std::string folded = LowerText(key);
+    for (const auto &[name, value] : fact->context)
+        if (LowerText(name) == folded)
+            return value;
+    return {};
 }
 
 std::string Decimal(const std::string &text, const std::string &language)
