@@ -83,8 +83,9 @@ class SeaWaves
     // Runs `views.size() - 1` steps, centred on `camera` (absolute world x, z), with this frame's `sources` (the
     // first kMaxSources: the caller sorts them by importance), then the surface pass in the last view.
     // `float_state`: Support::sea_waves_float; `float_surface`: Support::sea_waves_surface_float.
+    // `retention`: source-free idle fade applied to both stored components over this frame (normally 1).
     void Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera, std::span<const WaveSource> sources,
-                 bool float_state, bool float_surface);
+                 bool float_state, bool float_surface, float retention = 1.0f);
     // Drops the water's state (a new scene, a teleport): the next Advance starts from still water.
     void Reset();
     // The surface of the last Advance (R height, GB gradient in x / z, A crest foam; RGBA16F as they are, or RGBA8

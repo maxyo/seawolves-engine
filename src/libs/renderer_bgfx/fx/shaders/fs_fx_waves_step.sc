@@ -102,5 +102,6 @@ void main()
     h = clamp(h, -0.95 * kWavesRange, 0.95 * kWavesRange);
     // Preserve hold/sponge/clamp effects in the velocity, before height storage rounds it.
     float history = u_wavesStep[2].z > 0.5 ? (h - c.x * hold) * u_wavesStep[3].w : c.x * hold;
-    gl_FragColor = fxWavesOut(vec2(h, history));
+    // Idle fade scales position AND velocity/history: no artificial impulse and no hidden state on reentry.
+    gl_FragColor = fxWavesOut(vec2(h, history) * u_wavesStep[3].y);
 }

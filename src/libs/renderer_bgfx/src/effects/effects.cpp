@@ -263,6 +263,7 @@ void Host::on_device_lost()
     u_sea_fx_ = s_sea_depth_ = BGFX_INVALID_HANDLE;
     sea_depth_frame_ = UINT32_MAX;
     sea_waves_.OnDeviceLost();
+    sea_waves_idle_ = {};
     u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
     sea_waves_frame_ = UINT32_MAX;
     contact_.OnDeviceLost();
@@ -283,6 +284,7 @@ void Host::shutdown()
     sea_depth_.Shutdown();
     depth_copy_.Shutdown();
     sea_waves_.Shutdown();
+    sea_waves_idle_ = {};
     sea_waves_frame_ = UINT32_MAX;
     for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &u_sea_waves_, &s_sea_waves_})
         if (bgfx::isValid(*uniform))

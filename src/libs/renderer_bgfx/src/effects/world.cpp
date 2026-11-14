@@ -15,7 +15,6 @@ namespace storm::effects
 
 namespace
 {
-constexpr float kWavesQuietSeconds = 12.0f;
 // The ripples' slope in the normal: the field's few-centimetre waves read at a phone's distance only stronger
 // (with the physical per-pixel Fresnel of fs_port_sea2 they need more tilt than the old facing term gave them).
 constexpr float kRippleSlopeGain = 4.0f;
@@ -178,11 +177,16 @@ void Host::advance_sea_waves(shim::Device &device)
     if (!device_ready_ || !settings_.sea_waves || sea_frame_set_ != frame || sea_waves_frame_ == frame)
         return;
     sea_waves_frame_ = frame;
-    // Nothing on the water for a while: the waves have died away (half their energy goes in a few seconds), and the
-    // field stops stepping until something stirs it again.
-    sea_waves_quiet_ = sea_sources_.empty() ? sea_waves_quiet_ + sea_frame_.dt : 0.0f;
+    // A stopped hull remains a source. Only after ALL sources leave: natural decay, then a smooth state fade
+    // during the final four seconds of the existing idle budget. Never keep rendering a frozen residual field.
+    sea_waves_idle_.Tick(sea_frame_.dt, !sea_sources_.empty());
+    if (sea_waves_idle_.Sleeping())
+    {
+        sea_waves_.Reset();
+        return;
+    }
     const int steps = sea_waves_.StepsDue(sea_frame_.dt);
-    if (steps == 0 || sea_waves_quiet_ > kWavesQuietSeconds)
+    if (steps == 0)
         return;
     // The sources nearest the field's centre first: the simulation takes the first fx::SeaWaves::kMaxSources.
     const auto &camera = sea_frame_.focus;
@@ -223,7 +227,7 @@ void Host::advance_sea_waves(shim::Device &device)
         views[i] = device.effects_view(true);
     const auto &focus = sea_frame_.focus;
     sea_waves_.Advance(std::span(views.data(), static_cast<size_t>(steps) + 1), {focus[0], focus[2]}, sea_wave_sources_,
-                       support_.sea_waves_float, support_.sea_waves_surface_float);
+                       support_.sea_waves_float, support_.sea_waves_surface_float, sea_waves_idle_.TakeRetention());
     device.effects_view(true); // the sea goes on in a view of its own on its target
 }
 

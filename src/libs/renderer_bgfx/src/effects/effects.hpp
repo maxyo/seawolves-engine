@@ -17,6 +17,7 @@
 #include "storm/fx/depth_copy.hpp"
 #include "storm/fx/sea_depth.hpp"
 #include "storm/fx/sea_waves.hpp"
+#include "storm/fx/wave_idle.hpp"
 #include "storm/fx/wetness.hpp"
 #include "storm/render/effects.hpp"
 #include "storm/render/program_cache.hpp"
@@ -228,7 +229,7 @@ class Host
     std::vector<fx::WaveSource> sea_wave_sources_;
     uint32_t sea_frame_set_ = UINT32_MAX;   // submitted frame of the last set_sea_frame
     uint32_t sea_waves_frame_ = UINT32_MAX; // ... of the last simulation run
-    float sea_waves_quiet_ = 0.0f;          // game seconds without a source
+    fx::WaveIdle sea_waves_idle_;         // game-time state fade after every source has left
     std::array<float, 16> sea_waves_uniform_{};
     bgfx::UniformHandle u_sea_waves_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_sea_waves_ = BGFX_INVALID_HANDLE;
