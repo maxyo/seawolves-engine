@@ -522,6 +522,10 @@ class ItemsScreen final : public Screen
     {
         if (!equip.unavailable_reason.empty())
             return equip.unavailable_reason;
+        // items.c ThisItemCanBeEquip forbids removing an already worn blade.
+        // Keep an explicit game reason and an allowed action authoritative.
+        if (!equip.Offers("press") && Field(fact, "action") == "equip" && Field(fact, "slot") == "blade" && Field(fact, "worn") == "1")
+            return bindings.Text("items.block_blade_remove");
         const std::string block = Field(fact, "block");
         return bindings.Text(block == "slots" ? "items.block_slots" : block == "kind" ? "items.block_kind" : "items.unavailable");
     }

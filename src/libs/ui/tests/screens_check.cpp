@@ -2353,11 +2353,20 @@ static void ItemCategories(const std::string &models)
         bool ready;                              // the game lets the button be pressed
         Json action;                             // the expected detail action fields (null: no action)
         bool error = false;                      // the screen reports the row
+        const char *reason = "";                 // an explicit reason from the game has priority
     };
     const Json none = nullptr;
     const std::vector<Case> cases = {
         {"a worn weapon: the game's own words", {{"slot", "blade"}, {"worn", "1"}, {"action", "equip"}}, "Take off", true,
-         {{"label", "Take off"}, {"variant", "primary"}, {"hold", false}, {"disabled", false}}},
+         {{"label", "Take off"}, {"variant", "primary"}, {"hold", false}, {"disabled", false}, {"reason", "<items.unavailable>"}}},
+        {"the stock game forbids removing a worn blade", {{"slot", "blade"}, {"worn", "1"}, {"action", "equip"}}, "Take off", false,
+         {{"label", "Take off"}, {"disabled", true}, {"reason", "<items.block_blade_remove>"}}},
+        {"a supplied blade refusal takes precedence", {{"slot", "blade"}, {"worn", "1"}, {"action", "equip"}}, "Take off", false,
+         {{"disabled", true}, {"reason", "The character keeps this blade"}}, false, "The character keeps this blade"},
+        {"an unworn blade refusal is not a removal restriction", {{"slot", "blade"}, {"worn", "0"}, {"action", "equip"}}, "Equip", false,
+         {{"disabled", true}, {"reason", "<items.unavailable>"}}},
+        {"another worn weapon has its own restrictions", {{"slot", "gun"}, {"worn", "1"}, {"action", "equip"}}, "Take off", false,
+         {{"disabled", true}, {"reason", "<items.unavailable>"}}},
         {"a weapon in the bag", {{"slot", "blade"}, {"worn", "0"}, {"action", "equip"}}, "Equip", true,
          {{"label", "Equip"}, {"variant", "primary"}, {"hold", false}, {"disabled", false}}},
         {"a worn timed artefact: taking it off uses it up, held to confirm", {{"slot", "amulet"}, {"worn", "1"}, {"action", "amulet"}, {"days", "70"}, {"remain", "64"}},
@@ -2394,6 +2403,8 @@ static void ItemCategories(const std::string &models)
             if (widget.node == "EQUIP_BUTTON")
             {
                 widget.label = c.game_label;
+                widget.unavailable_reason = c.reason;
+                widget.enabled = c.ready;
                 if (!c.ready)
                     widget.actions.clear(), widget.row_id.clear();
             }
