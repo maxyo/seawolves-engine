@@ -76,6 +76,7 @@ void CheckSettings()
     CHECK(original.lighting_flags == kLightingNone);
     const Settings medium = Settings::FromPreset(QualityPreset::Medium);
     const Settings high = Settings::FromPreset(QualityPreset::High);
+    CHECK(original.far_lod_pixels == 2.f && medium.far_lod_pixels == 1.5f && high.far_lod_pixels == 1.f);
     CHECK(!medium.PostIsIdentity() && !high.PostIsIdentity());
     CHECK(medium.bloom_downscale == 4 && high.bloom_downscale == 2);
     // FSR 1 on every preset, by an internal scene height; «Низкая» otherwise the original look.

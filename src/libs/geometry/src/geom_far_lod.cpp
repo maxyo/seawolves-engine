@@ -1,4 +1,5 @@
 #include "geom_far_lod.hpp"
+#include "geom_far_lod_job.hpp"
 
 #include <storm/render/far_lod.hpp>
 #include <storm/render/perf_stats.hpp>
@@ -84,17 +85,6 @@ struct GeomFarLod::Job
 
 namespace
 {
-// Marks the job dropped when the bake queue lets go of its step without the job having finished.
-struct DropGuard
-{
-    std::shared_ptr<GeomFarLod::Job> job;
-    ~DropGuard()
-    {
-        int running = 0;
-        job->state.compare_exchange_strong(running, 3);
-    }
-};
-
 // The LODs from the cache, or nothing. A damaged entry is logged (and made again).
 bool readCache(GeomFarLod::Job &job)
 {
@@ -142,7 +132,7 @@ void GeomFarLod::post()
 {
     posted_ = true;
     ++render_lod::pending;
-    auto guard = std::make_shared<DropGuard>(DropGuard{job_});
+    auto guard = std::make_shared<GeomFarLodJobGuard<Job>>(job_);
     ticket_ = storm::fx::PostBake("far LOD " + name_, [guard](storm::fx::BakeStage stage) {
         Job &job = *guard->job;
         if (stage == storm::fx::BakeStage::Load)
@@ -179,6 +169,12 @@ void GeomFarLod::post()
                                       [](size_t count, const std::function<void(size_t, size_t)> &work) {
                                           storm::fx::ParallelRanges(count, storm::fx::BakeThreads(), work, 1);
                                       });
+            job.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+            const std::vector<uint8_t> encoded = far_lod::Encode(*job.lods);
+            if (!storm::render::DerivedDataCacheEnabled())
+                spdlog::error("far LOD: no cache directory: the LODs of {} are made again on every load", job.source.name);
+            else if (!storm::render::WriteDerivedData(*job.key, cacheShape(job.source), encoded))
+                spdlog::error("far LOD: cannot write the LODs of {} into the cache", job.source.name);
         }
         catch (const storm::fx::BakeCancelled &)
         {
@@ -190,12 +186,6 @@ void GeomFarLod::post()
             finish(job, 2);
             return true;
         }
-        job.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-        const std::vector<uint8_t> encoded = far_lod::Encode(*job.lods);
-        if (!storm::render::DerivedDataCacheEnabled())
-            spdlog::error("far LOD: no cache directory: the LODs of {} are made again on every load", job.source.name);
-        else if (!storm::render::WriteDerivedData(*job.key, cacheShape(job.source), encoded))
-            spdlog::error("far LOD: cannot write the LODs of {} into the cache", job.source.name);
         finish(job, 1);
         return true;
     });

@@ -1,10 +1,43 @@
 // Far LOD host check (run.py): the levels of synthetic models (verify.hpp says what is checked), the result
 // independent of the threads, and a broken layout refused. The game's models: tools/game_checks/far_lod.
 #include "verify.hpp"
+#include "../../src/libs/geometry/src/geom_far_lod_job.hpp"
+#include <atomic>
+#include <type_traits>
 
 namespace
 {
 using namespace far_lod_check;
+
+void jobLifetime()
+{
+    struct Job { std::atomic<int> state{0}; };
+    using Guard = GeomFarLodJobGuard<Job>;
+    static_assert(!std::is_copy_constructible_v<Guard>);
+    static_assert(!std::is_move_constructible_v<Guard>);
+    for (const int finished : {0, 1, 2})
+    {
+        auto job = std::make_shared<Job>();
+        auto guard = std::make_shared<Guard>(job);
+        if (job->state != 0) fail("posting marked a live far LOD job dropped");
+        auto loadStage = [guard] {};
+        auto bakeStage = loadStage;
+        guard.reset();
+        if (job->state != 0) fail("handing off a far LOD job marked it dropped");
+        job->state = finished;
+        {
+            auto lastStage = std::move(bakeStage);
+        }
+        if (job->state != finished) fail("a remaining stage lost its far LOD job");
+        // loadStage is the final owner. Completed and failed jobs must keep
+        // their result; an unfinished job is dropped only after the last stage.
+        std::function<void()> finalStage = std::move(loadStage);
+        finalStage = {};
+        if (job->state != (finished == 0 ? 3 : finished))
+            fail("far LOD job completion/drop state did not survive queue release");
+    }
+    std::printf("far LOD job lifecycle: passed\n");
+}
 
 struct Builder
 {
@@ -83,6 +116,14 @@ struct Builder
 
 void synthetic()
 {
+    if (!far_lod::Wanted("islands/Martinique.gm", 1.f, false) ||
+        !far_lod::Wanted("SHIPS\\frigate.gm", 1.f, false) ||
+        !far_lod::Wanted("locations/town.gm", 50.f, false) ||
+        far_lod::Wanted("locations/cabin.gm", 49.f, false) ||
+        far_lod::Wanted("ships/frigate.gm", 100.f, true) ||
+        far_lod::Wanted("characters/man.gm", 100.f, false) ||
+        far_lod::Wanted("ships_extra/frigate.gm", 100.f, false))
+        fail("far LOD model eligibility crossed its folder, radius or animation boundary");
     {
         // Two neighbouring bumpy grids (two objects meeting along x = 100, copies of the same positions), one large
         // enough for several clusters, and a decal pair.
@@ -137,6 +178,7 @@ int main()
 {
     try
     {
+        jobLifetime();
         synthetic();
         return 0;
     }
