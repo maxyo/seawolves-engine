@@ -6,6 +6,7 @@
 
 #include "effects/casters.hpp"
 #include "effects/texture_pixels.hpp"
+#include "storm/fx/skin_tone.hpp"
 #include "shim/device.hpp"
 #include "storm/fx/bakes.hpp"
 #include "storm/fx/capabilities.hpp"
@@ -160,8 +161,8 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.upscale_budget_mb = static_cast<uint16_t>(std::clamp(v, 0, 4096)); }},
     {"fx_gloss_strength", "10..300 % of the gloss maps' highlights",
      [](fx::Settings &s, int v) { s.gloss_strength = static_cast<float>(std::clamp(v, 10, 300)) / 100.0f; }},
-    {"fx_gloss_debug", "0 off, 1 the gloss (magenta: no map), 2 the relief normals, 3 the sun the bake shows, 4 the metal mask",
-     [](fx::Settings &s, int v) { s.gloss_debug = static_cast<uint8_t>(std::clamp(v, 0, 4)); }},
+    {"fx_gloss_debug", "0 off, 1 the gloss (magenta: no map), 2 the relief normals, 3 the sun the bake shows, 4 the metal mask, 5 the characters' skin weight (red skin, green relief)",
+     [](fx::Settings &s, int v) { s.gloss_debug = static_cast<uint8_t>(std::clamp(v, 0, 5)); }},
     {"fx_parallax", "0 off, 1 offset mapping (one tap), 2 parallax occlusion mapping",
      [](fx::Settings &s, int v) { s.parallax = static_cast<fx::ParallaxQuality>(std::clamp(v, 0, 2)); }},
     {"fx_parallax_shadow", "0 off, 1 the relief's own shadow towards the sun (with fx_parallax 2)",
@@ -170,6 +171,14 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.parallax_strength = static_cast<float>(std::clamp(v, 0, 300)) / 100.0f; }},
     {"fx_relief_cavity", "0 off, 1 the relief's cavity darkens joints and gaps (from its height)",
      [](fx::Settings &s, int v) { s.relief_cavity = on(v); }},
+    {"fx_character_relief", "0 off, 1 the characters' normal maps, 2 and their shallow parallax (faded out on skin)",
+     [](fx::Settings &s, int v) { s.character_relief = static_cast<fx::CharacterRelief>(std::clamp(v, 0, 2)); }},
+    {"fx_character_relief_strength", "0..100 % of the relief strength on the characters",
+     [](fx::Settings &s, int v) { s.character_relief_strength = static_cast<float>(std::clamp(v, 0, 100)) / 100.0f; }},
+    {"fx_character_parallax_depth", "0..1000 % of the characters' parallax depth (2 texels of the 512 map at 100 %)",
+     [](fx::Settings &s, int v) { s.character_parallax_depth = static_cast<float>(std::clamp(v, 0, 1000)) / 100.0f; }},
+    {"fx_character_skin_colour", "0 off, 1 the characters' torso and arms lose their relief where they have their skin colour",
+     [](fx::Settings &s, int v) { s.character_skin_colour = on(v); }},
     {"fx_parallax_debug", "0 off, 1 parallax draws show their uv shift (red, full at 8 texels) and height (green)",
      [](fx::Settings &s, int v) { s.parallax_debug = on(v); }},
     {"fx_light_rim", "0 off, 1 on", [](fx::Settings &s, int v) { set_flag(s, fx::kLightingRim, v); }},
@@ -208,13 +217,15 @@ std::string describe(const fx::Settings &s)
     snprintf(text, sizeof(text),
              "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) ssao=%d dither=%d flare=%d scene_grading=%d "
              "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d waves=%d%d shadows=%d "
-             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) contact=%d wet=%u",
+             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) contact=%d wet=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
              static_cast<double>(s.sharpness), s.ssao, s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
              s.alpha_to_coverage, s.anisotropy, s.sea_band_limit, s.sea_soft_edges, s.sea_specular,
              s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
-             static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity, s.contact_shadows, s.wet_surfaces);
+             static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity,
+             static_cast<int>(s.character_relief), static_cast<double>(s.character_relief_strength),
+             s.contact_shadows, s.wet_surfaces);
     return text;
 }
 } // namespace
@@ -1020,6 +1031,9 @@ void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path
         store->name = fx::NormalizeTexturePath(path ? path : "");
         store->cutout = effects::texture_cutout(*store);
         store->albedo = effects::texture_albedo(*store);
+        // A character's atlas: its colours for its skin colour (read at its first skinned draw, effects/lighting.cpp).
+        if (store->name.rfind("characters/", 0) == 0)
+            store->skin_pixels = effects::texture_level(*store, fx::kSkinToneLevel);
         effects::Host::instance().lighting().normal_maps().on_texture_loaded(*store, path, file);
         effects::upscales().on_texture_loaded(*store, store->name, file);
         std::string lower(path ? path : "");

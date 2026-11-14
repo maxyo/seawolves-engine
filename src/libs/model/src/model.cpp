@@ -61,7 +61,11 @@ storm::render::VertexBufferId MODELR::VBTransform(void *context, const void *vb,
         throw std::invalid_argument("Invalid animated draw range");
     if(gpuSkinning) {
         static_assert(sizeof(GEOS::AVERTEX0)==storm::model::kSkinnedSourceStride);
-        const auto id=model.gpuSkinning_.vertexBuffer(vb,lifetime,uint32_t(totVerts));
+        static_assert(offsetof(GEOS::AVERTEX0,weight)==storm::model::kSkinnedWeightOffset);
+        static_assert(offsetof(GEOS::AVERTEX0,boneid)==storm::model::kSkinnedBonesOffset);
+        static_assert(offsetof(GEOS::AVERTEX0,nrm)==storm::render::kSkinnedNormalOffset);
+        static_assert(offsetof(GEOS::AVERTEX0,tu0)==storm::render::kSkinnedUvOffset);
+        const auto id=model.gpuSkinning_.vertexBuffer(vb,lifetime,uint32_t(totVerts),model.ani->GetSkinBones());
         model.gpuSkinning_.bind(&model.ani->GetAnimationMatrix(0),uint32_t(model.ani->GetNumBones()));
         return {id};
     }

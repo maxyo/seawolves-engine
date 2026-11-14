@@ -93,6 +93,7 @@ struct NormalMapEntry
         Failed,
     };
     GenerationPriority priority; // nearest player distance across observed instances
+    GenerationScreenSize screen; // projected size ×3 on characters; only breaks equal fresh distance ranks
     uint16_t queued_scene = 0;
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
     std::atomic<int> state{Unqueued};

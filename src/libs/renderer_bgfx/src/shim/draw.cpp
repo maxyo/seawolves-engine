@@ -915,6 +915,38 @@ bgfx::ProgramHandle Device::program(uint32_t vs_id, uint32_t fs_id)
 
 // ---------------------------------------------------------------------------
 // draws
+bool Device::draw_vertices(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, const uint8_t *&out,
+                           uint32_t &out_stride, uint32_t &out_count)
+{
+    const bgfx::VertexLayout &vl = layout.layout[0];
+    uint32_t first = call.indexed ? static_cast<uint32_t>(call.base_vertex) + call.min_index : call.start_vertex;
+    const uint32_t count = call.indexed ? call.index_vertex_count : element_count;
+    const uint8_t *data;
+    size_t available;
+    if (call.up_vertices)
+    {
+        data = call.up_vertices;
+        if (call.indexed)
+            first = call.min_index;
+        available = (static_cast<size_t>(first) + count) * call.up_stride;
+    }
+    else
+    {
+        const VertexBuffer *vb = s.stream[0];
+        if (!vb || s.stream_offset[0] > vb->shadow.size())
+            return false;
+        data = vb->shadow.data() + s.stream_offset[0];
+        available = vb->shadow.size() - s.stream_offset[0];
+    }
+    const uint32_t stride = vl.getStride();
+    if (count == 0 || stride == 0 || (static_cast<size_t>(first) + count) * stride > available)
+        return false;
+    out = data + static_cast<size_t>(first) * stride;
+    out_stride = stride;
+    out_count = count;
+    return true;
+}
+
 bool Device::draw_bounds(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, float center[3],
                          float &radius)
 {
@@ -1190,7 +1222,14 @@ HRESULT Device::draw(const DrawCall &call)
             }
             return result;
         },
-        &sphere_context);
+        &sphere_context,
+        [](const void *context) {
+            const auto &c = *static_cast<const SphereContext *>(context);
+            effects::DrawVertices result;
+            if (!c.device->draw_vertices(*c.call, *c.layout, c.element_count, result.data, result.stride, result.count))
+                result = {};
+            return result;
+        });
     if (!vs_port && !ps_port && fs_variant != 4 && !fx_lighting.idle())
         fx_lighting.prepare(*this, *layout, fs_variant, sphere, fx_draw);
     fx_lighting.census(*this, *layout, vs_port || ps_port, fs_variant == 4, fs_variant, fx_draw);
@@ -1428,6 +1467,7 @@ HRESULT Device::draw(const DrawCall &call)
     // (effects/upscale.hpp): computed at the first such texture.
     effects::Upscales &upscales = effects::upscales();
     float upscale_distance = -2.0f, player_distance = -1.0f;
+    float generation_radius = 0.0f, generation_camera_distance = -1.0f;
     const auto draw_distance = [&] {
         if (upscale_distance > -2.0f)
             return upscale_distance;
@@ -1448,7 +1488,9 @@ HRESULT Device::draw(const DrawCall &call)
                 const float eye = -(v.m[3][0] * v.m[k][0] + v.m[3][1] * v.m[k][1] + v.m[3][2] * v.m[k][2]);
                 d2 += (world - eye) * (world - eye);
             }
-            upscale_distance = std::max(0.0f, std::sqrt(d2) - radius * scale);
+            generation_radius = radius * scale;
+            generation_camera_distance = std::sqrt(d2);
+            upscale_distance = std::max(0.0f, generation_camera_distance - generation_radius);
             player_distance = effects::generation_focus().distance(device_center, radius * scale);
         }
         return upscale_distance;
@@ -1492,8 +1534,15 @@ HRESULT Device::draw(const DrawCall &call)
         {
             draw_distance(); // reuse cached vertex-buffer bounds, only while generation is pending
             const auto generation_at = effects::generation_focus().snapshot();
-            if (pending_normal) store->normal_map->priority.observe(player_distance, generation_at);
-            if (pending_gloss) store->gloss_map->priority.observe(player_distance, generation_at);
+            const auto observe_normal = [&](const std::shared_ptr<effects::NormalMapEntry> &entry) {
+                entry->priority.observe(player_distance, generation_at);
+                if (player_distance >= 0.0f) // no camera substitute when the controlled-player anchor is absent
+                    entry->screen.observe(generation_radius, generation_camera_distance,
+                        entry->relief == fx::ReliefClass::Character || entry->gloss == fx::GlossClass::Character,
+                        generation_at);
+            };
+            if (pending_normal) observe_normal(store->normal_map);
+            if (pending_gloss) observe_normal(store->gloss_map);
             if (pending_upscale) store->upscale->priority.observe(player_distance, generation_at);
         }
         const uint32_t flags = sampler_flags(stage, *store);

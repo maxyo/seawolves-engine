@@ -182,6 +182,11 @@ std::optional<ReliefGenerator::Request> ReliefGenerator::next_request()
         const auto ra = rank(ea, at, admitted_), rb = rank(eb, at, admitted_);
         if (ra != rb) return ra < rb;
         if (ra.second < 0.0f) return a.order < b.order; // oldest admitted-waiter first
+        if (std::isfinite(ra.second)) // unseen/stale work gains no screen priority
+        {
+            const auto sa = ea->screen.score(at), sb = eb->screen.score(at);
+            if (sa != sb) return sa > sb;
+        }
         const uint32_t da = ea ? ea->drawn.load() : 0, db = eb ? eb->drawn.load() : 0;
         return da != db ? da > db : a.order < b.order;
     });

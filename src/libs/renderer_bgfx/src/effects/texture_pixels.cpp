@@ -34,13 +34,18 @@ std::shared_ptr<const fx::AlphaMask> texture_cutout(shim::TexStore &store)
 
 std::shared_ptr<const fx::BounceTexture> texture_albedo(shim::TexStore &store)
 {
+    return texture_level(store, 16);
+}
+
+std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &store, uint32_t size)
+{
     if (store.kind != shim::TexKind::Tex2D || store.subs.empty())
         return nullptr;
     const texture::D3dFormat format = texture::d3d_format(static_cast<uint32_t>(store.format));
     if (format.format == bimg::TextureFormat::Unknown || format.format == bimg::TextureFormat::RGBA32F)
         return nullptr;
     uint32_t level = 0;
-    while (level + 1 < store.levels && std::max(store.level_width(level), store.level_height(level)) > 16)
+    while (level + 1 < store.levels && std::max(store.level_width(level), store.level_height(level)) > size)
         ++level;
     const std::vector<uint8_t> &data = store.sub(0, level).data;
     if (data.empty())

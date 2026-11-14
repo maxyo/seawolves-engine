@@ -20,7 +20,7 @@
 namespace storm::relief
 {
 
-// The relief textures of a game (its RESOURCE/Textures), by name. Only names are read (a scan of the models for the
+// The relief textures of a game (its RESOURCE/Textures), by name, without the characters' atlases (made only on request). Only names are read (a scan of the models for the
 // most used ones took minutes on a phone's storage, in the way of the textures on screen).
 std::vector<std::filesystem::path> List(const std::filesystem::path &textures);
 

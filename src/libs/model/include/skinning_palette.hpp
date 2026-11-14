@@ -5,6 +5,7 @@
 // of the bone matrix in memory order, texel 0 negated (the CPU kernel, skinning.hpp, negates
 // elements 0, 4, 8 and 12 of the blended matrix; the blend is linear, so each bone is negated).
 #include "storm_render_types.h"
+#include "storm/render/skinned_vertex.hpp"
 
 #include <cstdint>
 
@@ -13,7 +14,11 @@ namespace storm::model
 
 inline constexpr uint32_t kSkinnedSourceFvf =
     D3DFVF_XYZB2 | D3DFVF_LASTBETA_UBYTE4 | D3DFVF_NORMAL | D3DFVF_DIFFUSE | D3DFVF_TEX1;
-inline constexpr uint32_t kSkinnedSourceStride = 44; // sizeof(GEOS::AVERTEX0)
+using render::kSkinnedSourceStride; // sizeof(GEOS::AVERTEX0); the layout: storm/render/skinned_vertex.hpp
+using render::kSkinnedWeightOffset;
+using render::kSkinnedBonesOffset;
+using render::kSkinWeightByte;
+using render::kTorsoWeightByte;
 inline constexpr uint32_t kPaletteTexelsPerBone = 3;
 
 // Writes one bone (16 floats) into a palette row (3 RGBA32F texels).

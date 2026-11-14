@@ -15,6 +15,9 @@
 #include "storm_glm.h"
 #include "service.h"
 
+#include <cstdint>
+#include <vector>
+
 //============================================================================================
 
 class AnimationPlayer;        // Action player
@@ -189,6 +192,9 @@ class Animation
     // A character far from the camera: its bone matrices are rebuilt on every second step only (a request in
     // between gets the pose of the step before). Time and events keep running on every step.
     virtual void SetDistantPose(bool distant) = 0;
+    // Per bone 1 where its skin shows (head with neck and hair, hands: skin_bones.hpp), 2 the torso and arms (skin or
+    // clothes, the colour decides), else 0; empty: the skeleton has none (animals)
+    virtual const std::vector<uint8_t> &GetSkinBones() const = 0;
     // miscellanea
     // Get custom data for animation
     virtual const char *GetData(const char *dataName) const = 0;

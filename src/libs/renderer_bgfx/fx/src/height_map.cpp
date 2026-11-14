@@ -22,6 +22,7 @@ bool ReliefHasHeight(ReliefClass relief)
     case ReliefClass::Metal:
     case ReliefClass::Prop:
     case ReliefClass::HeightMap:
+    case ReliefClass::Character:
         return true;
     case ReliefClass::None:
         return false;
@@ -43,6 +44,8 @@ float ReliefDepthTexels(ReliefClass relief)
         return 1.25f;
     case ReliefClass::Wood:
         return 1.0f;
+    case ReliefClass::Character: // the owner's shallow character depth
+        return 2.0f;
     case ReliefClass::Prop:
         return 0.75f;
     case ReliefClass::Metal: // cannons, fittings: curved small parts, a shallow relief

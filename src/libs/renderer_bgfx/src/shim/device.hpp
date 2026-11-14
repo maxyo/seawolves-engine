@@ -407,6 +407,10 @@ struct Device final : Object
         uint32_t up_vertex_count = 0;
     };
     HRESULT draw(const DrawCall &call);
+    // The vertices the draw reaches (D3D's MinVertexIndex / NumVertices for indexed draws) in its vertex buffer's CPU
+    // copy or its user pointer: false when they cannot be read.
+    bool draw_vertices(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, const uint8_t *&data,
+                       uint32_t &stride, uint32_t &count);
     // Object-space bounding sphere of the vertices a draw reaches (stream 0 positions); false when unknown.
     bool draw_bounds(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, float center[3],
                      float &radius);

@@ -61,6 +61,15 @@ class AnimationInfo final
     std::unordered_map<std::string, std::string> &GetUserData();
     // Get animation speed
     float GetFPS();
+    // Per bone: 1 skin, 2 torso, 0 neither (skin_bones.hpp, Animation::GetSkinBones); empty: none found
+    void SetSkinBones(std::vector<uint8_t> skin)
+    {
+        skinBones = std::move(skin);
+    }
+    const std::vector<uint8_t> &GetSkinBones() const
+    {
+        return skinBones;
+    }
 
     // --------------------------------------------------------------------------------------------
     // Encapsulation
@@ -75,6 +84,7 @@ class AnimationInfo final
     int32_t numBones; // The number of bones in the skeleton
 
     std::vector<ActionInfo> actions; // Actions
+    std::vector<uint8_t> skinBones;  // SetSkinBones
 
     int32_t refCounter; // Reference counter for this animation
     int32_t downtime;   // Downtime

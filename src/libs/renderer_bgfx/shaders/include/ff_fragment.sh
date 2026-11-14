@@ -44,6 +44,29 @@
 // y: FX_LIGHT_NORMALMAP: the texture stage (0 or 1) whose coordinates the normal map follows
 uniform vec4 u_fxFf;
 
+// A character's own skin colour (fx/skin_tone.hpp, the same test as SkinLikeness: keep both in step): [0] its mean
+// chromaticity r, g, its luminance's median and 95th percentile; [1] the inverse covariance of the chromaticity rr, rg,
+// gg, w the lod the test reads. [0].x 0: no test.
+uniform vec4 u_fxSkinTone[2];
+float ffSmooth(float a, float b, float x)
+{
+    float t = clamp((x - a) / (b - a), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+float ffSkinLikeness(vec3 c)
+{
+    float sum = max(c.r + c.g + c.b, 1e-4);
+    vec2 d = c.rg / sum - u_fxSkinTone[0].xy;
+    float d2 = d.x * d.x * u_fxSkinTone[1].x + 2.0 * d.x * d.y * u_fxSkinTone[1].y + d.y * d.y * u_fxSkinTone[1].z;
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    float inRange = ffSmooth(u_fxSkinTone[0].z * 0.45, u_fxSkinTone[0].z * 0.65, lum) *
+                    (1.0 - ffSmooth(u_fxSkinTone[0].w * 1.1, u_fxSkinTone[0].w * 1.3 + 0.02, lum));
+    float satTone = length(u_fxSkinTone[0].xy - vec2_splat(1.0 / 3.0));
+    float sat = length(c.rg / sum - vec2_splat(1.0 / 3.0));
+    float saturated = ffSmooth(0.55, 0.8, sat / max(satTone, 1e-3));
+    return (1.0 - ffSmooth(2.25, 6.25, d2)) * inRange * saturated;
+}
+
 #ifdef FX_LIGHT_SPECULAR
 uniform vec4 u_fxGloss; // the gloss of the material texture (s_fxMaterial, fx_lighting.sh)
 #endif
@@ -510,10 +533,21 @@ void main()
     }
 #endif
     vec3 Ng = N;
+    // The skin weight of a character's pixel (ff_vertex.sh: the share of the head, neck and hand bones; 0 on every draw
+    // that is not skinned): its relief, parallax, cavity and gloss fade out on faces, hands and hair, whose painted
+    // shading the relief's models read as bumps.
+    // When in doubt the relief goes (the owner's choice): half a bone's share of skin (a collar, a cuff at the wrist)
+    // already takes all of it.
+    float ffSkin = clamp(2.0 * v_normal.w, 0.0, 1.0);
 #ifdef FX_LIGHT_NORMALMAP
     // The relief follows the coordinates of its stage (u_fxFf.y); with the parallax that stage's texture is then read
     // where the relief's map is (ffReliefUv, with the derivatives of the unshifted coordinates).
     vec2 ffReliefUv = u_fxFf.y > 0.5 ? v_texcoord1.xy : v_texcoord0.xy;
+    // A character's torso and arms: skin where the atlas there has the character's own skin colour (fx/skin_tone.hpp,
+    // u_fxSkinTone; read at about 64 texels across, so the grain of leather and dark cloth averages into its own colour).
+    float ffTorso = clamp(v_position.w, 0.0, 1.0);
+    if (u_fxSkinTone[0].x > 0.0 && ffTorso > 0.004)
+        ffSkin = max(ffSkin, clamp(2.0 * ffTorso * ffSkinLikeness(texture2DLod(s_tex0, ffReliefUv, u_fxSkinTone[1].w).rgb), 0.0, 1.0));
     vec2 ffReliefDx = dFdx(ffReliefUv);
     vec2 ffReliefDy = dFdy(ffReliefUv);
     vec3 reliefGu;
@@ -522,11 +556,15 @@ void main()
 #ifdef FX_LIGHT_PARALLAX
     vec3 ffPomFound;
     vec2 ffReliefUv0 = ffReliefUv;
-    ffReliefUv = fxParallax(ffReliefUv, ffReliefDx, ffReliefDy, reliefGu, reliefGv, Ng, V, length(P), ffPomFound);
+    ffPomFound = vec3_splat(0.0);
+    if (ffSkin < 0.999)
+        ffReliefUv = mix(fxParallax(ffReliefUv, ffReliefDx, ffReliefDy, reliefGu, reliefGv, Ng, V, length(P), ffPomFound),
+                         ffReliefUv0, ffSkin);
     N = fxPerturbNormal(Ng, reliefGu, reliefGv, texture2DGrad(s_fxNormalMap, ffReliefUv, ffReliefDx, ffReliefDy).rg);
 #else
     N = fxPerturbNormal(Ng, reliefGu, reliefGv, texture2D(s_fxNormalMap, ffReliefUv).rg);
 #endif
+    N = normalize(mix(N, Ng, ffSkin));
 #endif
     // The highlight of this pixel: its gloss texel (stage 0's coordinates; the G of the material texture) or the
     // material's. ffGloss -1: no gloss map (ff_wet.sh may read it).
@@ -543,9 +581,10 @@ void main()
         // < 0 on metal: its polished texels by their gloss, which the metal mask floored at 0.5).
         vec2 ffMaterial = texture2D(s_fxMaterial, v_texcoord0.xy).rg;
         ffGloss = ffMaterial.g;
-        ffMetal = (u_fxGloss.y > 0.0 ? u_fxGloss.y * ffMaterial.r : -u_fxGloss.y * smoothstep(0.4, 0.55, ffGloss)) * u_fxGloss.x;
+        float glossShare = u_fxGloss.x * (1.0 - ffSkin); // skin keeps the material's highlight
+        ffMetal = (u_fxGloss.y > 0.0 ? u_fxGloss.y * ffMaterial.r : -u_fxGloss.y * smoothstep(0.4, 0.55, ffGloss)) * glossShare;
         // Metal reflects several times what lacquer or glazing do.
-        ffSpec = mix(ffSpec, fxGlossSpec(ffGloss) * vec2(1.0, (1.0 + 2.5 * ffMetal) * u_fxGloss.w), u_fxGloss.x);
+        ffSpec = mix(ffSpec, fxGlossSpec(ffGloss) * vec2(1.0, (1.0 + 2.5 * ffMetal) * u_fxGloss.w), glossShare);
     }
 #endif
     vec3 ffSpecV = normalize(mul(u_fxLampView, vec4(V, 0.0)).xyz);
@@ -589,7 +628,7 @@ void main()
     // in full, half of the direct light); a puddle's water fills it.
     float cavity = 1.0;
 #ifdef FX_LIGHT_PARALLAX
-    cavity = mix(fxReliefCavity(ffReliefUv, ffPomFound), 1.0, ffWet.y);
+    cavity = mix(fxReliefCavity(ffReliefUv, ffPomFound), 1.0, max(ffWet.y, ffSkin));
 #endif
     float cavityDirect = mix(1.0, cavity, 0.5);
 #ifdef FX_FF_LIT
@@ -597,7 +636,7 @@ void main()
     // pixel); the per-pixel sun and the lamps keep their own visibility.
     float sunShadow = fxSunShadow(P, Ng) * skySeen.y * cavityDirect;
 #ifdef FX_LIGHT_PARALLAX
-    sunShadow *= fxParallaxShadow(ffReliefUv, ffPomFound, reliefGu, reliefGv, Ng, u_fxLight[0].xyz);
+    sunShadow *= mix(fxParallaxShadow(ffReliefUv, ffPomFound, reliefGu, reliefGv, Ng, u_fxLight[0].xyz), 1.0, ffSkin);
 #endif
     vec3 ambient = fxAmbient(N);
     float lampSeen = dot(lamps.rgb, vec3(0.299, 0.587, 0.114));
@@ -749,6 +788,8 @@ void main()
             current.rgb = ffGloss >= 0.0 ? vec3_splat(ffGloss) : vec3(0.6, 0.0, 0.6);
         else if (u_fxGloss.z < 2.5)
             current.rgb = clamp(vec3_splat(0.5) + 2.5 * (N - Ng), 0.0, 1.0);
+        else if (u_fxGloss.z > 4.5)
+            current.rgb = mix(vec3(0.2, 0.6, 0.2), vec3(0.9, 0.2, 0.2), ffSkin) * (0.4 + 0.6 * dot(current.rgb, vec3(0.299, 0.587, 0.114))); // the skin weight: red skin, green relief
         else if (u_fxGloss.z > 3.5)
             current.rgb = mix(vec3_splat(0.15), vec3(0.2, 0.85, 1.0), ffMetal); // the metal mask
         else

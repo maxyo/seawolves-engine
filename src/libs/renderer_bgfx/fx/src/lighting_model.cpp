@@ -23,9 +23,10 @@ LightingMaterial LightingMaterial::Sail()
 
 LightingMaterial LightingMaterial::Character()
 {
-    // Matte like the original fixed-function characters: no highlight (a white sheen on skin and cloth read as glaze
-    // in the sun), a faint rim.
-    return {20.0f, 0.0f, 0.0f, 0.2f, 0.0f, 0.2f};
+    // Matte like the original fixed-function characters: no highlight of the material (a white sheen on skin and cloth
+    // read as glaze in the sun; their gloss maps' capped one stays off skin), a faint rim. The relief at full scale: its
+    // strength on characters is Settings::character_relief_strength (effects lighting.cpp), faded out on skin.
+    return {20.0f, 0.0f, 0.0f, 0.2f, 1.0f, 0.2f};
 }
 
 LightingUniforms ComputeLighting(const LightingInput &input, const LightingMaterial &material, const SkyState *sky,

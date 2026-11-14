@@ -38,7 +38,7 @@ bool ReliefTakesParallax(ReliefClass relief);
 // cloth 1.25, wood 1, props 0.75, metal 0.375. Only masonry regained half the original depth (12, 8): the broad original
 // relief was too strong on furniture and other unsuitable surfaces. A depth in texels is proportional to the texel's size
 // in the world: a plank's texture, small on the object, gets a small depth, a wall's large one, between the limits of
-// ReliefParallaxMaxDepth.
+// ReliefParallaxMaxDepth. Characters stay at the owner's explicit 2-texel depth.
 float ReliefDepthTexels(ReliefClass relief);
 // Refresh class metadata when uploading an existing map: a reclassified building atlas may retain its former wood
 // depth in the cache. Its normal/height/trust bytes stay unchanged; no cache regeneration is needed for this depth.

@@ -55,6 +55,10 @@ class AnimationImp final : public Animation
     {
         distantPose_ = distant;
     }
+    const std::vector<uint8_t> &GetSkinBones() const override
+    {
+        return aniInfo->GetSkinBones();
+    }
     // misc
     // Get custom data for animation
     const char *GetData(const char *dataName) const override;

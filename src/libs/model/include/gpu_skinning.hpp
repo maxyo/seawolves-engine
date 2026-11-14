@@ -12,11 +12,13 @@
 #include "skinning_palette.hpp"
 #include "vertex_source_lifetime.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 namespace storm::model
 {
@@ -43,6 +45,25 @@ class GpuSkinning
     std::unordered_map<const void *, std::shared_ptr<Source>> sources_;
 
   public:
+    // AVERTEX0 copies in the layout above: the skin weight and the torso weight of each vertex, 0..255, from its two
+    // bones and its blend weight (as the shader blends the bones); 0 everywhere without skin bones.
+    static void writeSkinWeights(uint8_t *vertices, uint32_t count, const std::vector<uint8_t> &skin)
+    {
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            uint8_t *vertex = vertices + size_t(i) * kSkinnedSourceStride;
+            float weight;
+            std::memcpy(&weight, vertex + kSkinnedWeightOffset, sizeof(weight));
+            const uint8_t *bones = vertex + kSkinnedBonesOffset;
+            const auto flag = [&skin](uint8_t bone, uint8_t kind) { return bone < skin.size() && skin[bone] == kind ? 1.0f : 0.0f; };
+            const float w = std::clamp(weight, 0.0f, 1.0f);
+            const float value = flag(bones[0], 1) * w + flag(bones[1], 1) * (1.0f - w);
+            const float torso = flag(bones[0], 2) * w + flag(bones[1], 2) * (1.0f - w);
+            vertex[kSkinnedBonesOffset + kSkinWeightByte] = static_cast<uint8_t>(value * 255.0f + 0.5f);
+            vertex[kSkinnedBonesOffset + kTorsoWeightByte] = static_cast<uint8_t>(torso * 255.0f + 0.5f);
+        }
+    }
+
     explicit GpuSkinning(VRenderer *rs = nullptr) : rs_(rs) {}
     GpuSkinning(const GpuSkinning &) = delete;
     GpuSkinning &operator=(const GpuSkinning &) = delete;
@@ -68,9 +89,12 @@ class GpuSkinning
         std::erase_if(sources_, [](const auto &item) { return item.second->vb < 0; });
     }
 
-    // The static vertex buffer of a source, created and filled on first use.
+    // The static vertex buffer of a source, created and filled on first use. `skin`: per bone 1 where its skin shows
+    // (Animation::GetSkinBones, empty: none); each vertex's blend of it goes into the third byte of its bone indices
+    // (kSkinWeightByte) and its torso weight into the fourth (kTorsoWeightByte), which the CPU kernel never reads: the
+    // characters' relief fades out by them (ff_fragment.sh; on the torso where the colour is the character's skin).
     int32_t vertexBuffer(const void *source, const std::shared_ptr<render::VertexSourceLifetime> &lifetime,
-                         uint32_t count)
+                         uint32_t count, const std::vector<uint8_t> &skin)
     {
         if (!source || !lifetime || !lifetime->valid() || !count)
             throw std::invalid_argument("Invalid skinning source");
@@ -86,6 +110,7 @@ class GpuSkinning
         if (!data)
             throw std::runtime_error("Skinned source vertex buffer allocation failed");
         std::memcpy(data, source, bytes);
+        writeSkinWeights(static_cast<uint8_t *>(data), count, skin);
         rs_->UnLockVertexBuffer(slot->vb);
         return slot->vb;
     }

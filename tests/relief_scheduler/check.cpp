@@ -106,6 +106,49 @@ int main(int argc,char **argv) {
     expect(argc==2,"isolated cache supplied");cache=std::filesystem::path(argv[1])/"cache";
     std::filesystem::create_directories(cache);
     auto &g=effects::ReliefGenerator::instance();
+    // Actual normal-request comparator: projected-size weighting cannot displace physical distance or aged work.
+    {
+        auto at=effects::generation_focus().snapshot();
+        effects::GenerationScreenSize screen;
+        screen.observe(1.0f,10.0f,true,at);
+        expect(screen.score(at)==19661,"character projected radius/distance is literally weighted three times");
+        screen.observe(0.1f,10.0f,true,at);
+        expect(screen.score(at)==19661,"shared texture retains its largest screen size in this window");
+        auto later=at;later.window=(later.window+1)&effects::kGenerationWindowMask;
+        screen.observe(0.1f,10.0f,true,later);
+        expect(screen.score(later)==1966,"new window replaces an old large screen observation");
+        auto expired=later;expired.window=(expired.window+4)&effects::kGenerationWindowMask;
+        auto other=later;++other.scene;
+        expect(screen.score(expired)==0 && screen.score(other)==0,"stale and other-scene screen priority expires");
+        effects::GenerationScreenSize invalid;
+        invalid.observe(-1,1,true,at);invalid.observe(1,-1,true,at);
+        invalid.observe(std::numeric_limits<float>::infinity(),1,true,at);
+        expect(invalid.score(at)==0,"invalid size and camera observations create no priority");
+        auto person=normal("priority-character",2051),prop=normal("priority-prop",2052);
+        person->relief=fx::ReliefClass::Character;
+        auto choose=[&] {
+            g.requests_.clear();g.admitted_=0;
+            g.requests_.push_back({prop,"priority-prop",0});g.requests_.push_back({person,"priority-character",1});
+            auto picked=g.next_request();g.requests_.clear();return picked->entry.lock();
+        };
+        person->priority.observe(9.0f,at);prop->priority.observe(2.0f,at);
+        person->screen.observe(100,1,true,at);
+        expect(choose()==prop,"closer physical player distance dominates any character screen boost");
+        // New snapshot clears the minimum of the old window without waiting on wall time.
+        effects::generation_focus().set_scene("equal-character-priority");at=effects::generation_focus().snapshot();
+        person->priority.observe(5,at);prop->priority.observe(5,at);
+        person->screen.observe(1,10,true,at);prop->screen.observe(2,10,false,at);
+        expect(choose()==person,"equal distance: character .1 times three outranks prop .2");
+        prop->screen.observe(3.1f,10,false,at);
+        expect(choose()==prop,"equal distance: larger prop .31 outranks character weighted .3");
+        auto unseen=normal("unseen-character",2053);unseen->screen.observe(100,1,true,at);
+        g.requests_.push_back({unseen,"unseen-character",0});g.requests_.push_back({prop,"priority-prop",1});
+        expect(g.next_request()->entry.lock()==prop,"screen size gives no camera fallback to an unseen player-distance request");g.requests_.clear();
+        // Age is admission based, not time based, and always beats projected size.
+        person->queued_after=16;prop->queued_after=0;g.admitted_=16;
+        g.requests_.push_back({person,"priority-character",0});g.requests_.push_back({prop,"priority-prop",1});
+        expect(g.next_request()->entry.lock()==prop,"sixteen-admission aging outranks screen-size tie break");g.requests_.clear();
+    }
     // Real renderer scene presence, independent of lit/baked counts or preset.
     reset();configure(g);
     expect(!g.gpu_free(),"unobserved renderer is not assumed idle");
@@ -149,6 +192,40 @@ int main(int argc,char **argv) {
     expect(wrong_key->state==effects::UpscaleEntry::Waiting,"different key stays pending while hot");
     expect(opened==0 && started==0,"cache completion starts no model or inference under thermal hold");
     g.shutdown();expect(wrong_key->state==effects::UpscaleEntry::Missing,"shutdown releases queued request for later request");
+    // Recovered character class uses the real worker, admission/idle policy, cache publication and queue drain.
+    // Queue far first: the controlled-player observations, not load order or the camera, must make near first.
+    reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);
+    auto character_anchor=normal("character-anchor",2100,1);g.request(character_anchor,"character-anchor");
+    until([&]{return started==1;},"CPU anchor in flight while character requests arrive");
+    effects::generation_focus().set_scene("character-queue");
+    const auto character_at=effects::generation_focus().snapshot();
+    auto far_character=normal("characters/far",2101,1);
+    auto near_character=normal("characters/near",2102,1);
+    auto middle_character=normal("characters/middle",2103,1);
+    auto prop_small=normal("prop-small",2104,1),prop_large=normal("prop-large",2105,1);
+    prop_small->relief=prop_large->relief=fx::ReliefClass::Stone;
+    prop_small->priority.observe(15.0f,character_at);prop_large->priority.observe(15.0f,character_at);
+    prop_small->screen.observe(2.0f,10.0f,false,character_at);prop_large->screen.observe(3.1f,10.0f,false,character_at);
+    middle_character->screen.observe(1.0f,10.0f,true,character_at);
+    far_character->screen.observe(100.0f,1.0f,true,character_at);
+
+    for (const auto &entry : {far_character,near_character,middle_character}) entry->relief=fx::ReliefClass::Character;
+    far_character->priority.observe(70.0f,character_at);
+    near_character->priority.observe(1.0f,character_at);
+    middle_character->priority.observe(15.0f,character_at);
+    g.request(far_character,"characters/far");g.request(near_character,"characters/near");g.request(middle_character,"characters/middle");
+    g.request(prop_small,"prop-small");g.request(prop_large,"prop-large");
+    block_job=false;
+    until([&]{return g.stats().made==6 && g.stats().requested==0;},"all requested character maps complete and real queue drains");
+    {
+        std::lock_guard lock(events_mutex);
+        for (const auto &event:events) std::printf("character event: %s\n",event.c_str());
+        expect(events==std::vector<std::string>{"N:character-anchor","N:characters/near","N:prop-large","N:characters/middle","N:prop-small","N:characters/far"},
+               "real worker: near first, then weighted same-distance ties, far last despite its enormous screen size");
+    }
+    expect(near_character->state==effects::NormalMapEntry::Stored && middle_character->state==effects::NormalMapEntry::Stored &&
+           far_character->state==effects::NormalMapEntry::Stored,"each character completion publishes for renderer upload");
+    g.shutdown();
     // Both live lanes remain populated. Expired entries and cached completions must not consume turns.
     reset();configure(g);
     std::vector<std::shared_ptr<effects::NormalMapEntry>> normals;

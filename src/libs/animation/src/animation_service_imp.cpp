@@ -9,6 +9,7 @@
 // ============================================================================================
 
 #include "animation_service_imp.h"
+#include "skin_bones.hpp"
 
 #include "core.h"
 
@@ -543,12 +544,12 @@ bool AnimationServiceImp::LoadAN(const char *fname, AnimationInfo *info)
             Assert(prntIndeces[i] != i);
             info->GetBone(i).SetParent(&info->GetBone(prntIndeces[i]));
         }
-        delete[] prntIndeces;
         // Starting positions of bones
         auto *vrt = new glm::vec3[header.nJoints];
         if (!fio->_ReadFile(fileS, vrt, header.nJoints * sizeof(glm::vec3)))
         {
             core.Trace("Incorrect start joints position block block in animation file: %s", fname);
+            delete[] prntIndeces;
             delete[] vrt;
             fio->_CloseFile(fileS);
             return false;
@@ -557,6 +558,21 @@ bool AnimationServiceImp::LoadAN(const char *fname, AnimationInfo *info)
         {
             info->GetBone(i).SetNumFrames(header.nFrames, vrt[i], i == 0);
         }
+        // The bones whose skin shows (the characters' relief fades out on them), from the rest pose.
+        prntIndeces[0] = -1;
+        {
+            storm::animation::SkinBones skin = storm::animation::FindSkinBones(
+                std::span<const int32_t>(prntIndeces, header.nJoints), std::span<const glm::vec3>(vrt, header.nJoints));
+            if (skin.skin.empty())
+                core.Trace("Animation %s: no skin bones (%s): its characters' relief covers the whole body", fname,
+                           skin.failure.c_str());
+            // Per bone: 1 skin, 2 torso (skin_bones.hpp), 0 neither.
+            std::vector<uint8_t> classes(skin.skin.size(), 0);
+            for (size_t i = 0; i < classes.size(); ++i)
+                classes[i] = skin.skin[i] ? 1 : skin.torso[i] ? 2 : 0;
+            info->SetSkinBones(std::move(classes));
+        }
+        delete[] prntIndeces;
         delete[] vrt;
 
         // Root bone positions

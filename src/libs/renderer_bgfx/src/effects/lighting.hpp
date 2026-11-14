@@ -20,7 +20,9 @@
 //   * relief (kLightingNormalMap): a lit or baked draw whose stage 1 texture (a grey height map), or else stage 0
 //     texture (stone, wood, plaster, ground), has a derived normal map (effects/normal_maps.hpp) uses the
 //     FX_LIGHT_NORMALMAP variant with the map at stage 14, that stage's sampler flags and texture coordinates
-//     (u_fxFf.y); lit draws perturb the normal, baked ones scale their colour by fxBakedRelief. Characters have none.
+//     (u_fxFf.y); lit draws perturb the normal, baked ones scale their colour by fxBakedRelief. Characters (their atlases:
+//     fx::ReliefClass::Character) take it with Settings::character_relief at its strength, faded out on skin and hair by
+//     the vertices' skin weight (ff_fragment.sh ffSkin); their parallax is shallow and has no self-shadow.
 //   * parallax (Settings::parallax): a relief draw whose map follows stage 0 (not projected) and has a height takes the
 //     FX_LIGHT_PARALLAX variant with the height at stage 7 (stage 0's sampler flags) and u_fxParallax.
 //   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture cast (the shim submits
@@ -82,11 +84,24 @@ struct DrawSphere
 
 // A draw's sphere computed when prepare() first needs it (perf audit finding 9: walking the vertices of every dynamic
 // lit draw cost 12-14 % of the engine's CPU at sea, where most draws choose no point lights).
+// The vertices a draw reaches, in its vertex buffer's CPU copy (shim::Device::draw_vertices): `count` vertices of
+// `stride` bytes from `data`; empty when they cannot be read.
+struct DrawVertices
+{
+    const uint8_t *data = nullptr;
+    uint32_t stride = 0, count = 0;
+};
+
 class DrawSphereSource
 {
   public:
     using Compute = DrawSphere (*)(const void *context);
-    DrawSphereSource(Compute compute, const void *context) : compute_(compute), context_(context) {}
+    using Vertices = DrawVertices (*)(const void *context);
+    DrawSphereSource(Compute compute, const void *context, Vertices vertices = nullptr)
+        : compute_(compute), context_(context), vertices_(vertices)
+    {
+    }
+    DrawVertices vertices() const { return vertices_ ? vertices_(context_) : DrawVertices{}; }
     const DrawSphere &get() const
     {
         if (!computed_)
@@ -100,6 +115,7 @@ class DrawSphereSource
   private:
     Compute compute_;
     const void *context_;
+    Vertices vertices_;
     mutable DrawSphere sphere_;
     mutable bool computed_ = false;
 };
@@ -128,6 +144,9 @@ struct FfDraw
     uint32_t material_flags = 0;
     std::array<float, 4> gloss{};
     std::array<float, 8> parallax{};
+    // u_fxSkinTone (ff_fragment.sh ffSkinLikeness): a character's skin colour for the torso test (fx/skin_tone.hpp
+    // PackSkinTone, [1].w the lod the test reads); zero: no test (not a character, no reference).
+    std::array<float, 8> skin_tone{};
     bool parallax_variant = false; // the FX_LIGHT_PARALLAX variant: u_fxParallax is set
     // The parallax variant also carries cavity-only draws. Count UV displacement only when it is enabled.
     bool has_parallax() const { return parallax_variant && parallax[2] > 0.0f && parallax[0] > 0.0f && parallax[1] > 0.0f; }
@@ -217,6 +236,9 @@ class Lighting
     // After the draw was submitted with its buffers kept (BGFX_DISCARD_NONE for buffers): the depth-only copy.
     // The lamp faces first (buffers kept), then the sun view, which ends the draw (all bindings discarded).
     void submit_caster(shim::Device &device, const D3DMATRIX &world, bool skinned);
+    // u_fxSkinTone of a character atlas (FfDraw::skin_tone); its reference is made at its first skinned draw from the
+    // vertices of that draw (the GPU copies of GEOS::AVERTEX0, model gpu_skinning.hpp).
+    std::array<float, 8> skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source);
     LampShadows &lamp_shadows() { return lamps_; }
     const LampShadows &lamp_shadows() const { return lamps_; }
     void end_frame();
@@ -279,6 +301,7 @@ class Lighting
     bool lighting_ = false; // per-pixel sun or point lights
     bool gloss_ = false;    // gloss maps on (Settings::gloss with per-pixel specular)
     bgfx::UniformHandle u_gloss_ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_skin_tone_ = BGFX_INVALID_HANDLE;
     bool coverage_ = false;
     int budget_ = 0;
     Material material_ = Material::Hull;

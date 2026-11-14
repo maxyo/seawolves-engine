@@ -24,6 +24,7 @@
 #include "storm/fx/relief_store.hpp"
 #include "storm/fx/upscale.hpp"
 #include "storm/fx/settings.hpp"
+#include "storm/fx/skin_tone.hpp"
 #include "storm/fx/wave_clock.hpp"
 #include "storm/fx/shadow_model.hpp"
 #include "storm/fx/sky_model.hpp"
@@ -327,12 +328,13 @@ void CheckLighting()
     SkyState sky;
     sky.dome = {0.2f, 0.4f, 0.8f};
     const LightingUniforms tinted = ComputeLighting(input, LightingMaterial::Character(), &sky, Settings{});
-    // Relief scale: per material (the texture class sets the strength), scaled by the preset; none on characters.
+    // Relief scale: per material (the texture class sets the strength), scaled by the preset; characters at full scale
+    // (their own strength, Settings::character_relief_strength, is applied per draw) and no material highlight.
     Settings half;
     half.normal_map_strength = 0.5f;
     CHECK(Near(ComputeLighting(input, LightingMaterial::Stone(), nullptr, half).u_fxLight[5][0], 0.5f, 1e-6f));
     CHECK(LightingMaterial::Stone().relief == LightingMaterial::Hull().relief && LightingMaterial::Hull().relief > LightingMaterial::Sail().relief);
-    CHECK(tinted.u_fxLight[5][0] == 0.0f);
+    CHECK(tinted.u_fxLight[5][0] == 1.0f && LightingMaterial::Character().specular_strength == 0.0f);
     // Actual uniform boundary: Medium/High tuning reaches the shaders; Low carries zero desaturation.
     for (QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
     {
@@ -440,6 +442,7 @@ void CheckSupport()
     unlit.parallax_shadow = false;
     unlit.relief_cavity = false;
     unlit.wet_surfaces = 0;
+    unlit.character_relief = CharacterRelief::Off;
     changes.clear();
     CHECK(ConstrainSettings(unlit, all, changes).ao_volume == 0 && changes.size() == 1);
     // Gloss without per-pixel highlights has nothing to shape: switched off, said.
@@ -474,6 +477,7 @@ void CheckSupport()
     flat_town.parallax_shadow = false;
     flat_town.relief_cavity = false;
     flat_town.wet_surfaces = 0;
+    flat_town.character_relief = CharacterRelief::Off;
     changes.clear();
     CHECK(!ConstrainSettings(flat_town, all, changes).town_light && changes.size() == 1);
     // So does the bounce.
@@ -572,13 +576,61 @@ void CheckSupport()
     changes.clear();
     constrained = ConstrainSettings(high, no_rg, changes);
     // Gloss, the parallax, its self-shadow and the cavity go with them.
-    CHECK(changes.size() == 5 && !constrained.gloss && !constrained.parallax_shadow && !constrained.relief_cavity &&
+    CHECK(changes.size() == 6 && !constrained.gloss && !constrained.parallax_shadow && !constrained.relief_cavity &&
+          constrained.character_relief == CharacterRelief::Off &&
           !(constrained.lighting_flags & kLightingNormalMap) && constrained.parallax == ParallaxQuality::Off);
     CHECK(LightingDefines(constrained).find("NORMALMAP") == std::string::npos);
     CHECK(high.parallax == ParallaxQuality::Occlusion && Settings::FromPreset(QualityPreset::Medium).parallax == ParallaxQuality::Offset &&
           Settings::FromPreset(QualityPreset::Low).parallax == ParallaxQuality::Off);
     // The self-shadow on Высокая only (it needs occlusion mapping); the classes' depths: stone deepest, wood shallowest.
     CHECK(high.parallax_shadow && !Settings::FromPreset(QualityPreset::Medium).parallax_shadow);
+    // The characters' relief: with their parallax on Высокая, their normal maps alone on Средняя, none on Низкая; at half
+    // the relief strength. Without the parallax their normal maps stay.
+    CHECK(high.character_relief == CharacterRelief::Parallax &&
+          Settings::FromPreset(QualityPreset::Medium).character_relief == CharacterRelief::Normals &&
+          Settings::FromPreset(QualityPreset::Low).character_relief == CharacterRelief::Off &&
+          high.character_relief_strength == 0.5f);
+    {
+        Settings flat = high;
+        flat.parallax = ParallaxQuality::Off;
+        flat.parallax_shadow = false;
+        changes.clear();
+        CHECK(ConstrainSettings(flat, all, changes).character_relief == CharacterRelief::Normals && changes.size() == 1);
+    }
+    {
+        // The characters' skin colour (skin_tone.hpp): a face of warm texels around one colour, with brown hair beside it;
+        // its own skin passes, blue cloth, grey steel and black do not, and a grey face is no reference.
+        std::vector<uint8_t> face;
+        for (int i = 0; i < 200; ++i)
+        {
+            const int d = (i * 7) % 21 - 10;
+            const uint8_t skin[3] = {static_cast<uint8_t>(190 + d), static_cast<uint8_t>(130 + d / 2), static_cast<uint8_t>(100 + d / 3)};
+            const uint8_t hair[3] = {70, 45, 25};
+            face.insert(face.end(), skin, skin + 3);
+            if (i % 3 == 0)
+                face.insert(face.end(), hair, hair + 3);
+        }
+        const SkinTone tone = MakeSkinTone(face);
+        CHECK(tone.valid && SkinLikeness(tone, 190 / 255.0f, 130 / 255.0f, 100 / 255.0f) > 0.9f &&
+              SkinLikeness(tone, 60 / 255.0f, 80 / 255.0f, 150 / 255.0f) == 0.0f &&
+              SkinLikeness(tone, 120 / 255.0f, 120 / 255.0f, 125 / 255.0f) == 0.0f && SkinLikeness(tone, 0.0f, 0.0f, 0.0f) == 0.0f);
+        CHECK(PackSkinTone(tone)[7] == 1.0f && PackSkinTone(SkinTone{})[0] == 0.0f);
+        std::vector<uint8_t> grey;
+        for (int i = 0; i < 100; ++i)
+        {
+            const uint8_t g[3] = {static_cast<uint8_t>(130 + i % 5), static_cast<uint8_t>(128 + i % 5), static_cast<uint8_t>(126 + i % 5)};
+            grey.insert(grey.end(), g, g + 3);
+        }
+        CHECK(!MakeSkinTone(grey).valid && !MakeSkinTone(std::span<const uint8_t>(face.data(), 30)).valid);
+        std::vector<uint8_t> red_paint;
+        for (int i = 0; i < 100; ++i)
+            red_paint.insert(red_paint.end(), {255, 20, 0});
+        const SkinTone paint = MakeSkinTone(red_paint);
+        CHECK((!paint.valid && std::isfinite(paint.r) && std::isfinite(paint.g) &&
+               std::isfinite(paint.inv_rr) && PackSkinTone(paint) == std::array<float, 8>{}));
+    }
+    CHECK(ClassifyTextureName("characters/blaze").relief == ReliefClass::Character && ReliefHasHeight(ReliefClass::Character) &&
+          ReliefDepthTexels(ReliefClass::Character) == 2.0f);
     CHECK(high.relief_cavity && Settings::FromPreset(QualityPreset::Medium).relief_cavity &&
           !Settings::FromPreset(QualityPreset::Low).relief_cavity);
     CHECK(ReliefDepthTexels(ReliefClass::Stone) > ReliefDepthTexels(ReliefClass::Building) &&
@@ -1342,7 +1394,7 @@ void CheckReliefRules()
         {"Celling", P}, {"floorU3", P}, {"groundK2", P}, {"1sand1", P}, {"shoreU5", P},
         {"dirtK3", P}, {"tropa256", P}, {"jungleU5", P}, {"1grass1", P}, {"grassgreen1", P},
         // no relief: characters, UI, sky, water, glass, foliage cards, cloth and sails, decals, light, lightmaps
-        {"Characters\\Lo_Man_1", N}, {"INTERFACES\\PORTRAITS\\128\\face_1", N}, {"BATTLE_INTERFACE\\cannons", N},
+        {"Characters\\Lo_Man_1", ReliefClass::Character}, {"INTERFACES\\PORTRAITS\\128\\face_1", N}, {"BATTLE_INTERFACE\\cannons", N},
         {"WEATHER\\SKIES\\day", N}, {"lighting\\day1\\Fort_lm", N}, {"Ships\\parus_common", N},
         {"Ships\\Mayfang1\\Hull1\\mayfang1_alpha", N}, {"Ships\\trailShip", N}, {"sky_up", N}, {"water1", N},
         {"sea_1", N}, {"GlassWindow", N}, {"windBigHouse01", N}, {"res_win", N}, {"occlTempleU1", N}, {"reflChurchU2", N},
@@ -2401,7 +2453,7 @@ void CheckGlossMaps()
     CHECK(gloss("Resource\\Textures\\bag2.tga.tx") == GlossClass::Leather);
     CHECK(gloss("Resource\\Textures\\063pierres.tga.tx") == GlossClass::Stone);
     CHECK(gloss("Resource\\Textures\\Barn2_bump.tga.tx") == GlossClass::None);
-    CHECK(gloss("Resource\\Textures\\Characters\\blaze.tga.tx") == GlossClass::None);
+    CHECK(gloss("Resource\\Textures\\Characters\\blaze.tga.tx") == GlossClass::Character);
     CHECK(gloss("Resource\\Textures\\antigua.tga.tx") == GlossClass::None);
 
     // The roughness network's output corrected (no model here: fields made up): GGX's roughness as the highlight's power,

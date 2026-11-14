@@ -16,7 +16,7 @@ using namespace img;
 using rules::Match;
 
 const char *const kClassNames[] = {"none",     "matte",    "dry wood", "painted wood", "lacquered wood", "stone",
-                                   "wet stone", "building", "interior", "tile",     "leather",      "metal",          "glass"};
+                                   "wet stone", "building", "interior", "tile",     "leather",      "metal",          "glass", "character"};
 
 struct Rule
 {
@@ -30,16 +30,19 @@ struct Rule
 constexpr GlossClass N = GlossClass::None, M = GlossClass::Matte, D = GlossClass::DryWood, H = GlossClass::PaintedWood,
                      L = GlossClass::Lacquered, S = GlossClass::Stone, Q = GlossClass::WetStone, B = GlossClass::Building,
                      I = GlossClass::Interior,
-                     T = GlossClass::Tile, K = GlossClass::Leather, X = GlossClass::Metal, G = GlossClass::Glass;
+                     T = GlossClass::Tile, K = GlossClass::Leather, X = GlossClass::Metal, G = GlossClass::Glass,
+                     C = GlossClass::Character;
 #define STORM_GLOSS(folder, match, pattern, gloss) {folder, Match::match, pattern, gloss, folder pattern}
 // TEHO's RESOURCE/Textures, first match wins (the relief table's folders and names, normal_map.cpp, with the glossy
 // materials the relief leaves out). A texture no rule names gets no gloss map.
 const Rule kRules[] = {
     // Grey "bump" textures are heights (the relief's), not colour.
     STORM_GLOSS("", Contains, "bump", N),
-    // Folders without highlights of their own: characters (matte like the original, the owner's choice), UI, sky
-    // and weather, light maps, effects, foliage, flags, the islands seen from the sea.
-    STORM_GLOSS("characters/", Folder, "", N),
+    // The characters' atlases: a low highlight on their buttons, buckles, leather and armour (capped: matte like the
+    // original, the owner's choice).
+    STORM_GLOSS("characters/", Folder, "", C),
+    // Folders without highlights of their own: UI, sky and weather, light maps, effects, foliage, flags, the islands
+    // seen from the sea.
     STORM_GLOSS("interfaces/", Folder, "", N),
     STORM_GLOSS("battle_interface/", Folder, "", N),
     STORM_GLOSS("mainmenu/", Folder, "", N),
@@ -285,6 +288,7 @@ float ClassCap(GlossClass gloss)
     {
     case GlossClass::Matte: return 0.1f;
     case GlossClass::Stone: return 0.35f;
+    case GlossClass::Character: return 0.3f; // fxGlossSpec(0.3): a faint, broad sheen, a fifth of lacquer's
     default: return 1.0f;
     }
 }

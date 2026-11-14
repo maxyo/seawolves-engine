@@ -66,6 +66,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.gloss_map_size = 128;
         s.parallax = ParallaxQuality::Offset; // one tap: nearly free
         s.relief_cavity = true;
+        s.character_relief = CharacterRelief::Normals;
         s.shadows = ShadowQuality::Low;
         s.town_light = true;
         s.town_walls = true;
@@ -97,6 +98,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.parallax = ParallaxQuality::Occlusion;
     s.parallax_shadow = true;
     s.relief_cavity = true;
+    s.character_relief = CharacterRelief::Parallax;
     s.shadows = ShadowQuality::Soft;
     s.town_light = true;
     s.town_walls = true;
@@ -259,6 +261,15 @@ constexpr Rule kRules[] = {
          return s.parallax != ParallaxQuality::Off && !(s.lighting_flags & kLightingNormalMap);
      },
      [](Settings &s) { s.parallax = ParallaxQuality::Off; }, "the parallax needs the normal maps: switched off"},
+    {[](const Settings &s, const Support &) {
+         return s.character_relief != CharacterRelief::Off && !(s.lighting_flags & kLightingNormalMap);
+     },
+     [](Settings &s) { s.character_relief = CharacterRelief::Off; }, "the characters' relief needs the normal maps: switched off"},
+    {[](const Settings &s, const Support &) {
+         return s.character_relief == CharacterRelief::Parallax && s.parallax == ParallaxQuality::Off;
+     },
+     [](Settings &s) { s.character_relief = CharacterRelief::Normals; },
+     "the characters' parallax needs the parallax: their normal maps only"},
     {[](const Settings &s, const Support &) { return s.relief_cavity && !(s.lighting_flags & kLightingNormalMap); },
      [](Settings &s) { s.relief_cavity = false; }, "the relief's cavity needs the normal maps: switched off"},
     {[](const Settings &s, const Support &) { return s.parallax_shadow && s.parallax != ParallaxQuality::Occlusion; },

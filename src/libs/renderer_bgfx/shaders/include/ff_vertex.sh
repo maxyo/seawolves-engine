@@ -5,7 +5,8 @@
 // FF_UNLIT (vs_ff_unlit.sc, draws without D3DRS_LIGHTING) leaves the lights and the material out of the
 // program, so bgfx's GL backend does not re-upload them (53 vec4) with every uniform change of an unlit draw.
 // FF_SKIN (vs_ff*_skin.sc) skins GEOS::AVERTEX0 vertices (one blend weight, two bone indices) with the bone
-// palette in s_bones exactly like the former CPU kernel (src/libs/model/src/skinning.hpp), before world*view.
+// palette in s_bones exactly like the former CPU kernel (src/libs/model/src/skinning.hpp), before world*view; with
+// FX_FF_LIT v_normal.w carries the vertex's skin weight (0 for draws that are not skinned).
 #include "storm_common.sh"
 
 // World * view comes through bgfx's per-draw transform (u_model[0], bgfx::setTransform): changing it
@@ -69,7 +70,14 @@ void main()
     vec4 r2 = blendedRow(i_data0.xy, 2, a_indices.x, a_indices.y, a_weight.x);
     vec3 modelPos = skinPoint(r0, r1, r2, a_position.xyz);
     vec3 modelNormal = skinPoint(r0, r1, r2, a_normal);
+    // How much of the vertex the bones whose skin shows move (head, neck, hands: model gpu_skinning.hpp writes it
+    // into the third bone index byte); the characters' relief fades out by it (ff_fragment.sh).
+    float skinWeight = float(a_indices.z) / 255.0;
+    // And how much the torso and arm bones move it (skin or clothes: the atlas's colour decides, ff_fragment.sh).
+    float torsoWeight = float(a_indices.w) / 255.0;
 #else
+    float skinWeight = 0.0;
+    float torsoWeight = 0.0;
     vec3 modelPos = a_position.xyz;
     vec3 modelNormal = a_normal;
 #endif
@@ -106,8 +114,8 @@ void main()
         if (dot(u_ffClipPlane, u_ffClipPlane) == 0.0) clipDist = 1.0;
         v_fog = vec4(fogDepth, clipDist, 0.0, dot(P, u_fxAerialUp.xyz));
 #ifdef FX_FF_LIT
-        v_normal = vec4(N, 0.0);
-        v_position = vec4(P, 1.0);
+        v_normal = vec4(N, skinWeight); // w: the skin weight (ff_fragment.sh ffSkin)
+        v_position = vec4(P, torsoWeight); // w: the torso weight (ff_fragment.sh)
         v_matDiffuse = vec4_splat(0.0);
         v_matAmbient = vec4_splat(0.0);
 #endif

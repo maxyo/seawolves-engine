@@ -11,3 +11,5 @@ game data in CI, `tools/ci/run_host_tests.py`). Run them before a release, like 
 - `far_lod/run.py <game directory>`: the far LODs (`src/libs/geometry/far_lod`) of every model that gets them
   (islands, ships, outdoor locations) are built and checked: no cracks at seams, depth ties kept, cache round trip.
   Prints the triangles kept per level and the build time by folder (about 10 minutes).
+
+- `skin_bones/run.py <game directory>`: checks character skeleton skin masks; head/neck/hands included, animals excluded.

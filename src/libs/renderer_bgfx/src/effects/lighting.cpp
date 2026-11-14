@@ -1,4 +1,6 @@
 #include "effects/lighting.hpp"
+#include "storm/render/skinned_vertex.hpp"
+#include "storm/fx/skin_tone.hpp"
 
 #include "shim/device.hpp"
 #include "storm/fx/height_map.hpp"
@@ -149,8 +151,11 @@ bool Lighting::prepare_programs(shim::Device &device, const fx::Settings &settin
             {
                 if (!device.prepare_program(vs_lit_, fs_lit_[specular][n][linear][h], budget))
                     return false;
-                // Characters (the skinned draws) have no relief.
-                if (n == 0 && !device.prepare_program(vs_lit_skin_, fs_lit_[specular][0][linear][h], budget))
+                // Characters (the skinned draws): their relief variants with their relief (Settings::character_relief).
+                const int character = settings.character_relief == fx::CharacterRelief::Off ? 0
+                                      : settings.character_relief == fx::CharacterRelief::Normals ? std::min(relief, 1)
+                                                                                                  : relief;
+                if (n <= character && !device.prepare_program(vs_lit_skin_, fs_lit_[specular][n][linear][h], budget))
                     return false;
             }
             // The town's walls take the shadowed twin (settings.town_light); baked draws with a gloss map (or every one
@@ -256,8 +261,11 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     float relief_fade = 0.0f; // a map just uploaded fades in (effects::kReliefFade)
     int relief_stage = -1;
     NormalMaps::Relief relief_map;
+    // Characters: with Settings::character_relief, faded out on skin and hair per vertex (ff_fragment.sh ffSkin).
+    const bool character = lit && material_ == Material::Character;
+    const bool character_relief = settings_.character_relief != fx::CharacterRelief::Off;
     if ((flags_ & fx::kLightingNormalMap) && lighting_ && layout.has_normal && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE &&
-        !(lit && material_ == Material::Character))
+        (!character || character_relief))
     {
         const auto enabled_store = [&](int stage) {
             return device.s.tss[stage][D3DTSS_COLOROP] != D3DTOP_DISABLE ? shim::store_of(device.s.textures[stage]) : nullptr;
@@ -271,13 +279,13 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     }
     baked |= !lit_state && bgfx::isValid(normal_map);
     // Gloss: stage 0's colour texture's: the G of its relief's material texture when its relief class has a height
-    // (relief_store.hpp), else its own gloss map (characters stay matte: no map, their material has no highlight).
+    // (relief_store.hpp), else its own gloss map (characters: only with their relief, faded out on skin).
     NormalMaps::Relief gloss_map;
     fx::GlossClass gloss_class = fx::GlossClass::None;
     bool metal_mask = false; // the material's R is a metal mask (a gloss map's), not a relief's height
     shim::TexStore *gloss_store = shim::store_of(device.s.textures[0]);
     if (gloss_ && layout.has_normal && gloss_store && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE &&
-        !(lit && material_ == Material::Character))
+        (!character || character_relief))
     {
         if (gloss_store->normal_map && gloss_store->normal_map->material_gloss != fx::GlossClass::None)
         {
@@ -485,8 +493,11 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         u[2][3] = 0.0f;
     if (!per_pixel || !(flags_ & fx::kLightingRim))
         u[5][1] = 0.0f;
-    u[5][0] *= relief_fade;
+    u[5][0] *= relief_fade * (character ? settings_.character_relief_strength : 1.0f);
     const bool has_relief = bgfx::isValid(normal_map) && u[5][0] > 0.0f;
+    // A character's torso: its skin colour, read once per atlas from the texels under its face (fx/skin_tone.hpp).
+    if (has_relief && character && layout.skinned && relief_stage == 0 && settings_.character_skin_colour)
+        draw.skin_tone = skin_tone(*shim::store_of(device.s.textures[0]), sphere_source);
     draw.ff = {two_sided && u[2][3] > 0.0f ? 1.0f : 0.0f, has_relief ? static_cast<float>(relief_stage) : 0.0f, 0.0f, 0.0f};
     int relief = 0; // the variant: 1 the normal map, 2 with the parallax
     if (has_relief)
@@ -507,8 +518,11 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         // Zero strength must disable the UV steps too: the shader's world-depth floor would otherwise turn a
         // submitted zero depth back into visible parallax. The cavity can still use the unshifted material below.
         const bool parallax = settings_.parallax != fx::ParallaxQuality::Off && settings_.parallax_strength > 0.0f &&
-                              !clamped && relief_map.parallax;
-        if (bgfx::isValid(relief_map.material) && relief_map.depth > 0.0f && (parallax || settings_.relief_cavity) &&
+                              !clamped && relief_map.parallax &&
+                              (!character || (settings_.character_relief == fx::CharacterRelief::Parallax &&
+                                              settings_.character_parallax_depth > 0.0f));
+        const bool cavity = settings_.relief_cavity && (!character || settings_.character_relief == fx::CharacterRelief::Parallax);
+        if (bgfx::isValid(relief_map.material) && relief_map.depth > 0.0f && (parallax || cavity) &&
             !(device.s.tss[relief_stage][D3DTSS_TEXTURETRANSFORMFLAGS] & D3DTTFF_PROJECTED))
         {
             relief = 2;
@@ -517,15 +531,18 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
             draw.material = relief_map.material;
             draw.material_flags = draw.normal_map_flags;
             // The class's own depth (stored with the height, fx::ReliefDepthTexels), the player's strength, the fade-in.
-            const float depth = relief_map.depth * std::clamp(settings_.parallax_strength, 0.0f, 3.0f) * relief_fade;
+            const float depth = relief_map.depth * std::clamp(settings_.parallax_strength, 0.0f, 3.0f) * relief_fade *
+                                (character ? std::clamp(settings_.character_parallax_depth, 0.0f, 10.0f) : 1.0f);
             const bool occlusion = parallax && settings_.parallax == fx::ParallaxQuality::Occlusion;
             // The relief's own shadow towards the sun: occlusion mapping only, not indoors (no sun shines there).
-            const bool self_shadow = occlusion && settings_.parallax_shadow && !lamps_.interior();
+            // Not on characters: their parallax is shallow, a shadow inside it would only crawl as they move.
+            const bool self_shadow = occlusion && settings_.parallax_shadow && !lamps_.interior() && !character;
             draw.parallax = {depth / static_cast<float>(relief_map.width), depth / static_cast<float>(relief_map.height_texels),
-                             !parallax ? 0.0f : occlusion ? static_cast<float>(fx::kParallaxSteps) : 1.0f,
+                             // Characters: 8 steps at every angle (their relief is two texels deep).
+                             !parallax ? 0.0f : occlusion ? (character ? 8.0f : static_cast<float>(fx::kParallaxSteps)) : 1.0f,
                              std::log2(static_cast<float>(std::max(relief_map.width, relief_map.height_texels))),
                              self_shadow ? fx::kParallaxShadow : 0.0f, settings_.parallax_debug ? 1.0f : 0.0f,
-                             settings_.relief_cavity ? fx::kReliefCavity : 0.0f,
+                             cavity ? fx::kReliefCavity : 0.0f,
                              fx::ReliefParallaxMaxDepth(draw.relief_entry ? draw.relief_entry->relief : fx::ReliefClass::None)};
             if (draw.has_parallax())
                 ++frame_.parallax;
@@ -672,7 +689,8 @@ void Lighting::census(const shim::Device &device, const shim::LayoutInfo &layout
         miss = ParallaxMiss::NoNormals;
     else if (cube_variant != 0)
         miss = ParallaxMiss::Cube;
-    else if (device.s.rs[D3DRS_LIGHTING] && material_ == Material::Character)
+    else if (device.s.rs[D3DRS_LIGHTING] && material_ == Material::Character &&
+             settings_.character_relief != fx::CharacterRelief::Parallax)
         miss = ParallaxMiss::Character;
     else if (!lighting_ || !(flags_ & fx::kLightingNormalMap) ||
              (settings_.parallax == fx::ParallaxQuality::Off || settings_.parallax_strength <= 0.0f))
@@ -737,7 +755,7 @@ void Lighting::log_coverage()
         uint32_t with = 0, without = 0;
         std::vector<std::pair<std::string, uint32_t>> reasons;
     };
-    std::array<Row, static_cast<size_t>(fx::ReliefClass::Prop) + 1> rows{};
+    std::array<Row, static_cast<size_t>(fx::ReliefClass::Character) + 1> rows{};
     for (auto it = parallax_coverage_.begin(); it != parallax_coverage_.end();)
     {
         Coverage &c = it->second;
@@ -812,6 +830,9 @@ void Lighting::submit(const FfDraw &draw)
         fx_.BindNormalMap(draw.normal_map, draw.normal_map_flags);
     if (!bgfx::isValid(u_gloss_))
         u_gloss_ = bgfx::createUniform("u_fxGloss", bgfx::UniformType::Vec4);
+    if (!bgfx::isValid(u_skin_tone_))
+        u_skin_tone_ = bgfx::createUniform("u_fxSkinTone", bgfx::UniformType::Vec4, 2);
+    bgfx::setUniform(u_skin_tone_, draw.skin_tone.data(), 2);
     bgfx::setUniform(u_gloss_, draw.gloss.data());
     if (bgfx::isValid(draw.material))
         fx_.BindMaterial(draw.material, draw.material_flags);
@@ -823,6 +844,60 @@ void Lighting::submit(const FfDraw &draw)
     bind_visibility(draw);
     bind_town_wall(draw);
     lamps_.bind(draw.lamps, draw.world_view, draw.room_light);
+}
+
+std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source)
+{
+    if (!atlas.skin_pixels)
+        return {};
+    if (!atlas.skin_tone_read)
+    {
+        atlas.skin_tone_read = true;
+        // The texels under the vertices the head, neck and hand bones carry (the skin weight in the third byte of the
+        // bone indices) that face forward in the bind pose (+z: the face, not the hair, a hat or the back of the
+        // head), 3 x 3 texels each.
+        const DrawVertices vertices = draw_source.vertices();
+        const fx::BounceTexture &pixels = *atlas.skin_pixels;
+        std::vector<uint8_t> samples;
+        if (vertices.data && vertices.stride == render::kSkinnedSourceStride)
+            for (uint32_t i = 0; i < vertices.count; ++i)
+            {
+                const uint8_t *v = vertices.data + static_cast<size_t>(i) * vertices.stride;
+                if (v[render::kSkinnedBonesOffset + render::kSkinWeightByte] < 230)
+                    continue;
+                float n[3], uv[2];
+                std::memcpy(n, v + render::kSkinnedNormalOffset, sizeof(n));
+                std::memcpy(uv, v + render::kSkinnedUvOffset, sizeof(uv));
+                if (n[2] <= 0.5f * std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]))
+                    continue;
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                    {
+                        const float u = uv[0] + static_cast<float>(dx) / static_cast<float>(pixels.width);
+                        const float w = uv[1] + static_cast<float>(dy) / static_cast<float>(pixels.height);
+                        const int x = static_cast<int>((u - std::floor(u)) * static_cast<float>(pixels.width)) % pixels.width;
+                        const int y = static_cast<int>((w - std::floor(w)) * static_cast<float>(pixels.height)) % pixels.height;
+                        const uint8_t *t = &pixels.srgb[(static_cast<size_t>(y) * pixels.width + x) * 3];
+                        samples.insert(samples.end(), t, t + 3);
+                    }
+            }
+        const fx::SkinTone tone = fx::MakeSkinTone(samples);
+        if (tone.valid)
+            shim::logf("effects: skin colour of %s: %d texels, chromaticity %.3f %.3f, luminance %.2f..%.2f", atlas.name.c_str(),
+                       tone.samples, static_cast<double>(tone.r), static_cast<double>(tone.g), static_cast<double>(tone.lum_lo),
+                       static_cast<double>(tone.lum_hi));
+        else
+            shim::logf("effects: skin colour of %s: none (%d warm face texels%s): its torso keeps its relief", atlas.name.c_str(),
+                       tone.samples, vertices.data ? "" : ", its vertices unreadable");
+        atlas.skin_tone = std::make_shared<const fx::SkinTone>(tone);
+    }
+    if (!atlas.skin_tone || !atlas.skin_tone->valid)
+        return {};
+    std::array<float, 8> packed = fx::PackSkinTone(*atlas.skin_tone);
+    // The lod of the level about kSkinTestTexels across (the atlas's top level is level 0 of the sampler).
+    const float top = static_cast<float>(std::max(atlas.width, atlas.height));
+    packed[7] = std::max(0.0f, std::log2(top / static_cast<float>(fx::kSkinTestTexels)));
+    return packed;
 }
 
 void Lighting::submit_caster(shim::Device &device, const D3DMATRIX &world, bool skinned)
@@ -1027,7 +1102,7 @@ void Lighting::shutdown()
         bgfx::destroy(visibility_open_);
     visibility_open_ = BGFX_INVALID_HANDLE;
     ao_open_ = BGFX_INVALID_HANDLE;
-    for (bgfx::UniformHandle *u : {&u_coverage_, &u_ff_, &u_wet_, &u_gloss_, &u_aerial_up_, &s_ao_volume_, &u_ao_matrix_, &u_ao_params_, &s_visibility_,
+    for (bgfx::UniformHandle *u : {&u_coverage_, &u_ff_, &u_wet_, &u_gloss_, &u_skin_tone_, &u_aerial_up_, &s_ao_volume_, &u_ao_matrix_, &u_ao_params_, &s_visibility_,
                                    &u_visibility_matrix_, &u_visibility_params_, &u_town_wall_})
     {
         if (bgfx::isValid(*u))
@@ -1044,7 +1119,7 @@ void Lighting::on_device_lost()
     town_light_.on_device_lost();
     lamps_.on_device_lost();
     casters_.on_device_lost();
-    u_coverage_ = u_ff_ = u_wet_ = u_gloss_ = u_aerial_up_ = s_ao_volume_ = u_ao_matrix_ = u_ao_params_ = BGFX_INVALID_HANDLE;
+    u_coverage_ = u_ff_ = u_wet_ = u_gloss_ = u_skin_tone_ = u_aerial_up_ = s_ao_volume_ = u_ao_matrix_ = u_ao_params_ = BGFX_INVALID_HANDLE;
     s_visibility_ = u_visibility_matrix_ = u_visibility_params_ = u_town_wall_ = BGFX_INVALID_HANDLE;
     ao_view_ = {};
     ao_open_ = visibility_open_ = BGFX_INVALID_HANDLE;

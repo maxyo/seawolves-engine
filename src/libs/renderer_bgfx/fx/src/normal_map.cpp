@@ -15,7 +15,7 @@ namespace
 {
 using namespace img;
 
-const char *const kClassNames[] = {"none", "height map", "stone", "wood", "building", "plaster", "metal", "prop"};
+const char *const kClassNames[] = {"none", "height map", "stone", "wood", "building", "plaster", "metal", "prop", "character"};
 
 using rules::Match;
 
@@ -34,12 +34,14 @@ struct Rule
 // it cannot work on or would be wrong for (their text is the reason in the logs and the census). A texture no rule
 // names is a prop (the last rule).
 constexpr ReliefClass N = ReliefClass::None, S = ReliefClass::Stone, W = ReliefClass::Wood, B = ReliefClass::Building,
-                      P = ReliefClass::Plaster, M = ReliefClass::Metal, O = ReliefClass::Prop;
+                      P = ReliefClass::Plaster, M = ReliefClass::Metal, O = ReliefClass::Prop,
+                      C = ReliefClass::Character;
 #define STORM_RULE(folder, match, pattern, relief) {folder, Match::match, pattern, relief, folder pattern}
 const Rule kRules[] = {
-    // Folders of things without relief: characters (their own path), UI, sky and weather, light maps, effects, the
+    // The characters' atlases (one per model: clothes, armour, skin and hair, the skin faded out per vertex).
+    STORM_RULE("characters/", Folder, "", C),
+    // Folders of things without relief: UI, sky and weather, light maps, effects, the
     // grass cards, animals, flags.
-    STORM_RULE("characters/", Folder, "", N),
     STORM_RULE("interfaces/", Folder, "", N),
     STORM_RULE("battle_interface/", Folder, "", N),
     STORM_RULE("mainmenu/", Folder, "", N),

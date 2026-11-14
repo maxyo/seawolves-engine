@@ -77,6 +77,15 @@ enum class ParallaxQuality : uint8_t
 };
 inline constexpr int kParallaxSteps = 24;
 
+// The relief of the characters (Settings::character_relief): their clothes, armour and gear, faded out on skin and hair
+// by the skin weight of the vertices (the head, neck and hand bones: animation skin_bones.hpp).
+enum class CharacterRelief : uint8_t
+{
+    Off,
+    Normals,  // the normal maps only
+    Parallax, // and a shallow parallax (Settings::parallax's quality, no self-shadow)
+};
+
 enum class ShadowQuality : uint8_t
 {
     Off,
@@ -184,7 +193,8 @@ struct Settings
     uint16_t gloss_map_size = 256; // with gloss: larger side of the resident gloss maps (EAC RG11 + mips)
     // 0 off; 1 the gloss of every lit or baked pixel as grey (magenta: no gloss map, the material's own highlight);
     // 2 the relief: the shading normal of the pixels whose relief is on, grey elsewhere; 3 the share of the open sun the
-    // bake shows (its highlight's mask on baked surfaces); 4 the metal mask.
+    // bake shows (its highlight's mask on baked surfaces); 4 the metal mask; 5 the characters' skin weight (red skin,
+    // green relief: ff_fragment.sh ffSkin).
     uint8_t gloss_debug = 0;
     // With kLightingNormalMap: parallax from the relief's height (R of the material texture, at the normal map's size) on
     // stone, wood, plaster, ground and the buildings' atlases, fading out between 10 and 15 m.
@@ -197,6 +207,15 @@ struct Settings
     // the same height, under the lighting like an occlusion; with or without the parallax.
     bool relief_cavity = false;
     bool parallax_debug = false; // parallax draws show their uv shift (red) and height (green) instead of their colour
+    // With kLightingNormalMap: relief on the characters (CharacterRelief), at character_relief_strength of the relief
+    // strength (their textures are painted: PBRify's bumps read stronger on them than on stone or wood).
+    CharacterRelief character_relief = CharacterRelief::Off;
+    float character_relief_strength = 0.5f;
+    // With CharacterRelief::Parallax: the characters' parallax depth against their class's (ReliefDepthTexels), 0..10.
+    float character_parallax_depth = 1.0f;
+    // With character_relief: on the torso and arm bones the texels in the character's own skin colour count as skin
+    // (fx/skin_tone.hpp: bare chests and arms lose their relief as faces do).
+    bool character_skin_colour = true;
     ShadowQuality shadows = ShadowQuality::Off; // sun shadows on per-pixel lit surfaces (needs kLightingPerPixel)
     // Towns light their lightmapped surfaces with our own bake for the live sun instead of the game's lightmaps
     // (needs kLightingPerPixel; src/effects/town_light.hpp).

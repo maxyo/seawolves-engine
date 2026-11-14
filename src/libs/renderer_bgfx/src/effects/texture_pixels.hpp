@@ -25,4 +25,8 @@ std::shared_ptr<const fx::AlphaMask> texture_cutout(shim::TexStore &store);
 // bounce takes a surface's colour from. Null for formats that cannot be read and when the level's CPU copy is gone.
 std::shared_ptr<const fx::BounceTexture> texture_albedo(shim::TexStore &store);
 
+// The texture's colours at its level of at most `size` texels across (a character atlas's, for its skin colour,
+// fx/skin_tone.hpp). Null as texture_albedo.
+std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &store, uint32_t size);
+
 } // namespace storm::effects

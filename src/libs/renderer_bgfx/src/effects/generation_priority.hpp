@@ -55,6 +55,35 @@ class GenerationPriority
     std::atomic<uint64_t> sample_{UINT64_MAX};
 };
 
+// A literal projected sphere size, used only to break equal fresh player-distance ranks of normal-map requests.
+// One atomic scene/window/score snapshot; shared texture instances keep the largest in the same 500 ms window.
+class GenerationScreenSize
+{
+  public:
+    void observe(float radius, float camera_distance, bool character, GenerationSnapshot at) // game thread only
+    {
+        if (!std::isfinite(radius) || radius < 0.0f || !std::isfinite(camera_distance) || camera_distance < 0.0f)
+            return;
+        const double ratio = double(radius) / std::max(double(camera_distance), 0.5) * (character ? 3.0 : 1.0);
+        const auto score = static_cast<uint32_t>(std::round(std::min(ratio * 65536.0, double(kGenerationWindowMask - 1))));
+        const uint64_t prefix = (uint64_t(at.scene) << 48) | (uint64_t(at.window) << 24);
+        const uint64_t old = sample_.load(std::memory_order_relaxed);
+        if ((old & ~uint64_t(kGenerationWindowMask)) != prefix || score > (old & kGenerationWindowMask))
+            sample_.store(prefix | score, std::memory_order_relaxed);
+    }
+    uint32_t score(GenerationSnapshot at) const
+    {
+        const uint64_t sample = sample_.load(std::memory_order_relaxed);
+        const uint32_t window = static_cast<uint32_t>(sample >> 24) & kGenerationWindowMask;
+        if (sample == UINT64_MAX || uint16_t(sample >> 48) != at.scene ||
+            ((at.window - window) & kGenerationWindowMask) >= 4)
+            return 0;
+        return static_cast<uint32_t>(sample) & kGenerationWindowMask;
+    }
+  private:
+    std::atomic<uint64_t> sample_{UINT64_MAX};
+};
+
 // Fairness applies within 10 m bands, so a distant upscale never wins merely because it is that lane's turn.
 // After 16 other admitted jobs, still-observed live work gets an oldest-first turn; thermal waiting does not age it.
 inline std::pair<uint32_t, float> generation_rank(const GenerationPriority &priority, GenerationSnapshot at,

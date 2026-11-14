@@ -47,7 +47,10 @@ models of which inference, mips, material (depth), encode, write)`).
 `storm_relief_cli <RESOURCE/Textures> <relief dir> <model dir> [map size] [threads]` makes a whole game at once:
 host renders with every map in place (engine.ini `relief_dir = <relief dir>`). A host engine makes maps itself only
 with engine.ini `relief_models = <the directory with the three model files>`; without it, it logs that no maps are
-made. The build makes that directory (below); its path is in `<build>/relief_models_path.txt` of a host build.
+made. The build makes that directory (below); its path is in `<build>/relief_models_path.txt` of a host build. The
+whole-game pass leaves the characters' atlases out (the game makes those only for the characters a location loads);
+`storm_relief_cli <RESOURCE/Textures> <relief dir> <model dir> --files <texture>...` makes the named textures, of any
+class, before a host render that shows them.
 
 ## Models and runtime
 

@@ -136,6 +136,9 @@ struct Candidate
     std::string name; // normalized texture path
     fx::ReliefClass relief = fx::ReliefClass::None;
     fx::GlossClass gloss = fx::GlossClass::None;
+    // Made by the background pass (List). The characters' atlases (956 in TEHO, ~0.7 MB of maps each) are made only
+    // for the characters a location loads, on request.
+    bool background = true;
 };
 
 std::string Lower(std::string text)
@@ -159,7 +162,7 @@ std::optional<Candidate> Classify(const std::filesystem::path &textures, const s
     const fx::GlossClass gloss = fx::ClassifyGlossName(name).gloss;
     if (verdict.relief == fx::ReliefClass::None && !bump && gloss == fx::GlossClass::None)
         return std::nullopt;
-    return Candidate{file, name, verdict.relief, gloss};
+    return Candidate{file, name, verdict.relief, gloss, verdict.relief != fx::ReliefClass::Character};
 }
 
 std::vector<Candidate> Candidates(const std::filesystem::path &textures)
@@ -341,6 +344,7 @@ bool ReadTextureLevel(const std::filesystem::path &file, int max_size, std::vect
 std::vector<std::filesystem::path> List(const std::filesystem::path &textures)
 {
     std::vector<Candidate> candidates = Candidates(textures);
+    std::erase_if(candidates, [](const Candidate &candidate) { return !candidate.background; });
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) { return a.name < b.name; });
     std::vector<std::filesystem::path> files;
     for (const Candidate &candidate : candidates)
@@ -1103,7 +1107,7 @@ std::string CompleteMark(size_t candidates, int map_size)
     uint64_t methods = 0;
     for (const fx::ReliefClass relief : {fx::ReliefClass::Stone, fx::ReliefClass::Wood, fx::ReliefClass::Building,
                                          fx::ReliefClass::Plaster, fx::ReliefClass::Metal, fx::ReliefClass::Prop,
-                                         fx::ReliefClass::HeightMap})
+                                         fx::ReliefClass::Character, fx::ReliefClass::HeightMap})
         methods = (methods ^ fx::ReliefMethod(relief)) * 0x100000001b3ull;
     for (int gloss = 1; gloss <= static_cast<int>(fx::kLastGlossClass); ++gloss)
         methods = (methods ^ fx::GlossMethod(static_cast<fx::GlossClass>(gloss))) * 0x100000001b3ull;

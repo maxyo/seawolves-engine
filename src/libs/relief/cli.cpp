@@ -50,6 +50,25 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "cannot read the models in %s\n", model_dir);
         return 2;
     }
+    if (!x2 && argc > 4 && std::strcmp(argv[4], "--files") == 0)
+    {
+        if (argc < 6) { std::fprintf(stderr, "--files needs at least one texture\n"); return 1; }
+        const Models models{files[0], files[1], files[2], files[3], files[4], files[5],
+                            files[6], files[7], files[8], files[9], files[10], files[11]};
+        std::string error;
+        const auto session = Session::Open(models, 0, argv[2], error);
+        if (!session) { std::fprintf(stderr, "%s\n", error.c_str()); return 1; }
+        int failed = 0;
+        for (int i = 5; i < argc; ++i)
+        {
+            std::string failure;
+            const Outcome outcome = session->PrepareFile(argv[1], argv[i], argv[2], storm::fx::kReliefMapSize, failure);
+            static const char *const names[] = {"prepared", "existing", "skipped", "failed"};
+            std::printf("%s %s%s%s\n", names[static_cast<int>(outcome)], argv[i], failure.empty() ? "" : ": ", failure.c_str());
+            failed += outcome == Outcome::Failed;
+        }
+        return failed ? 1 : 0;
+    }
     if (x2)
     {
         std::string error;

@@ -270,8 +270,16 @@ class SettingsScreen final : public Screen
                     DebugSegment(bindings, debug, "fx_gloss", "Блеск", {-1, 0, 1}, onOff);
                     DebugSegment(bindings, debug, "fx_gloss_strength", "Сила блеска", {-1, 50, 100, 200, 300},
                                  {"пресет", "50%", "100%", "200%", "300%"});
-                    DebugSegment(bindings, debug, "fx_gloss_debug", "Блеск: отладка", {-1, 0, 1, 2, 3, 4},
-                                 {"пресет", "выкл", "блеск", "нормали", "солнце", "металл"});
+                    DebugSegment(bindings, debug, "fx_gloss_debug", "Блеск: отладка", {-1, 0, 1, 2, 3, 4, 5},
+                                 {"пресет", "выкл", "блеск", "нормали", "солнце", "металл", "кожа"});
+                }
+                // The characters' relief (feat/char-relief): off, normal maps, with the parallax; its strength.
+                if (Known("fx_character_relief"))
+                {
+                    DebugSegment(bindings, debug, "fx_character_relief", "Рельеф персонажей", {-1, 0, 1, 2},
+                                 {"пресет", "выкл", "нормали", "параллакс"});
+                    DebugSegment(bindings, debug, "fx_character_relief_strength", "Сила рельефа персонажей",
+                                 {-1, 25, 50, 75, 100}, {"пресет", "25%", "50%", "75%", "100%"});
                 }
                 // Waves from objects (49b75861): ripples, their lift of the surface, their views.
                 if (Known("fx_sea_waves"))

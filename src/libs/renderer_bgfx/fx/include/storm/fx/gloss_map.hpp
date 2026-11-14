@@ -30,7 +30,7 @@ namespace storm::fx
 
 enum class GlossClass : uint8_t
 {
-    None,        // no gloss map: characters, UI, sky and weather, effects, foliage, water, light maps, unknown
+    None,        // no gloss map: UI, sky and weather, effects, foliage, water, light maps, unknown
     Matte,       // cloth, sails, ropes, ground, sand, grass ground, plaster
     DryWood,     // planks, decks, beams, barrels, crates, roofs
     PaintedWood, // ship hulls
@@ -43,8 +43,10 @@ enum class GlossClass : uint8_t
     Leather,     // bags, belts, books
     Metal,       // cannons, guns, iron, chains, gold, lanterns
     Glass,       // windows, bottles
+    Character,   // the characters' atlases: capped low (matte like the original, the owner's choice); skin and hair
+                 // keep the material's highlight (ff_fragment.sh ffSkin)
 };
-inline constexpr GlossClass kLastGlossClass = GlossClass::Glass; // keep it the last one
+inline constexpr GlossClass kLastGlossClass = GlossClass::Character; // keep it the last one
 const char *GlossClassName(GlossClass gloss);
 
 struct GlossVerdict

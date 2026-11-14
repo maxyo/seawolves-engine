@@ -413,7 +413,7 @@ static void Settings(const std::string &models)
                                 "fx_gloss_debug", "fx_sea_waves", "fx_sea_waves_lift",
                                 "fx_sea_waves_debug", "fx_pom_probe",
                                 "fx_pom_toggle", "fx_upscale", "fx_far_lod", "fx_light_reach", "fx_light_core",
-                                "fx_light_level"}) // GraphicsSettings.DEBUG_KEYS, -1 = the preset's
+                                "fx_light_level", "fx_character_relief", "fx_character_relief_strength"}) // GraphicsSettings.DEBUG_KEYS, -1 = the preset's
             reported[key] = -1;
         debug.SetState("appSettings", reported);
         debug.SetInterface(Load(models, "settings.json"));
@@ -450,8 +450,11 @@ static void Settings(const std::string &models)
                    row("app-fx_town_walls")["options"] == Json::array({"пресет", "игра", "наши"}),
                "effects debug: bounce and town walls: " + rows.dump());
         Expect(row("app-fx_gloss").is_object() && row("app-fx_gloss_strength").is_object() &&
-                   row("app-fx_gloss_debug")["options"].size() == 6,
+                   row("app-fx_gloss_debug")["options"].size() == 7,
                "effects debug: gloss maps: " + rows.dump());
+        Expect(row("app-fx_character_relief")["options"] == Json::array({"пресет", "выкл", "нормали", "параллакс"}) &&
+                   row("app-fx_character_relief_strength")["options"].size() == 5,
+               "effects debug: the characters' relief and its strength: " + rows.dump());
         Expect(row("app-fx_sea_waves").is_object() &&
                    row("app-fx_sea_waves_debug")["options"].size() == 4,
                "effects debug: waves from objects: " + rows.dump());
