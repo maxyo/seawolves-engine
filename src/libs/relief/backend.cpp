@@ -509,9 +509,15 @@ std::unique_ptr<Network> LoadGpuNetwork(std::span<const uint8_t> param, std::spa
         error = Gpu().why;
         return nullptr;
     }
+    const Clock::time_point start = Clock::now();
+    Log("relief GPU model: opening/calibrating scale %d, halo %d (pipelines precede the first texture)", scale, halo);
     auto network = std::make_unique<GpuNetwork>(halo, scale, Gpu().name);
     if (!network->Open(param, bin, error))
+    {
+        Log("ERROR: relief GPU model: scale %d failed after %.0f ms: %s", scale, Ms(start), error.c_str());
         return nullptr;
+    }
+    Log("relief GPU model: scale %d ready after %.0f ms", scale, Ms(start));
     return network;
 }
 

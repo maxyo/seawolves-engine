@@ -54,6 +54,11 @@ void ReliefGenerator::configure(ReliefSetup setup)
     stopping_ = false;
     stats_ = {};
     model_failed_ = false;
+    std::fill(std::begin(scene_draws_), std::end(scene_draws_), false);
+    scene_frame_ = 0;
+    scene_quiet_ = false;
+    last_frame_us_ = 0;
+    waiting_logged_ = false;
     next_upscale_ = false;
     admitted_ = 0;
     rest_.clear();
@@ -463,19 +468,15 @@ void ReliefGenerator::prepare_request(const Request &request)
     entry->state = NormalMapEntry::Failed;
 }
 
-void ReliefGenerator::frame(uint32_t scene_draws)
+void ReliefGenerator::frame(bool scene_drawn)
 {
     last_frame_us_ = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
-    scene_draws_[scene_frame_++ % std::size(scene_draws_)] = scene_draws;
-    uint32_t most = 0;
-    for (const uint32_t n : scene_draws_)
-        most = std::max(most, n);
-    const bool quiet = most < 8; // a loading or interface screen draws no scene (a menu over the scene still does)
+    scene_draws_[scene_frame_++ % std::size(scene_draws_)] = scene_drawn;
+    const bool quiet = std::none_of(std::begin(scene_draws_), std::end(scene_draws_), [](bool drawn) { return drawn; }); // a loading or interface screen draws no scene (a menu over the scene still does)
     if (quiet != scene_quiet_)
         shim::logf(quiet ? "effects: relief generation: the game draws no scene (a loading or interface screen): the GPU "
                            "is free for the relief"
-                         : "effects: relief generation: the game draws its scene again (%u draws): the GPU is the game's",
-                   scene_draws);
+                         : "effects: relief generation: the game draws its scene again: the GPU is the game's");
     scene_quiet_ = quiet;
 }
 
@@ -597,6 +598,7 @@ void ReliefGenerator::prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry
                                                       static_cast<int>(std::max(entry->width, entry->height)), failure);
     const double ms = Ms(start);
     std::lock_guard lock(mutex_);
+    stats_.device = session_->stats().provider;
     if (stopping_)
     {
         entry->state = UpscaleEntry::Missing;

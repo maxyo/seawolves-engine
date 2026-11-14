@@ -83,6 +83,8 @@ std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::
 }
 const Session::Stats &Session::stats() const { return impl_->stats; }
 void Session::Cancel() { cancelled=true; }
+void Session::SetGpuFree(bool) {}
+bool Session::WaitsForGpu() const { return false; }
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,
     const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { return infer(file,"N:"); }
 Outcome Session::Upscale(const std::filesystem::path&,const std::filesystem::path &file,
@@ -99,6 +101,19 @@ int main(int argc,char **argv) {
     expect(argc==2,"isolated cache supplied");cache=std::filesystem::path(argv[1])/"cache";
     std::filesystem::create_directories(cache);
     auto &g=effects::ReliefGenerator::instance();
+    // Real renderer scene presence, independent of lit/baked counts or preset.
+    reset();configure(g);
+    expect(!g.gpu_free(),"unobserved renderer is not assumed idle");
+    g.frame(true);
+    for (int i=0;i<29;++i) g.frame(false);
+    expect(!g.gpu_free(),"one scene frame keeps the 30-frame window busy");
+    g.frame(false);
+    expect(g.gpu_free(),"thirty scene-free frames permit GPU retry");
+    g.frame(true);
+    expect(!g.gpu_free(),"a new perspective scene becomes busy immediately");
+    g.shutdown();configure(g);
+    expect(!g.gpu_free(),"reconfigure clears stale scene-free state");
+    g.shutdown();
     // The file is already prepared by a preceding normal job, but thermal protection now forbids inference.
     reset();configure(g);
     auto ready=upscale("ready",101), wrong_key=upscale("not-ready",102);

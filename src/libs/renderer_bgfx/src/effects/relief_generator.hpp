@@ -73,10 +73,10 @@ class ReliefGenerator
     void set_display(bool on, std::filesystem::path directory, bool bc);
     // Stops the worker (the texture in progress is abandoned: onnxruntime stops its inference).
     void shutdown();
-    // Game thread, every frame: how many of its draws were the 3D scene's (lit and baked). A few frames without a scene
+    // Game thread, every frame: whether a perspective 3D scene was drawn. A few frames without a scene
     // (a loading or an interface screen), or no frame for a second (the game in the background), leave the GPU free:
     // relief::Session tries the GPU again and the rest of the game goes on it.
-    void frame(uint32_t scene_draws);
+    void frame(bool scene_drawn);
     bool gpu_free() const;
     // Any thread (the system is low on memory: render::TrimRelief): the models are released after the texture in
     // progress, and the GPU instance closed; they load again when work comes. Logged.
@@ -121,7 +121,7 @@ class ReliefGenerator
     bool stopping_ = false;
     std::atomic<int64_t> last_frame_us_{0};
     std::atomic<bool> scene_quiet_{false};
-    uint32_t scene_draws_[30] = {};
+    bool scene_draws_[30] = {};
     uint32_t scene_frame_ = 0;
     bool waiting_logged_ = false;
     bool trim_ = false;

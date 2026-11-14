@@ -1,6 +1,7 @@
 #include "relief.hpp"
 
 #include "backend.hpp"
+#include "device_retry.hpp"
 
 #include "formats.hpp"
 #include "storm/fx/relief_model.hpp"
@@ -378,15 +379,14 @@ bool WriteDisplay(const UpscaleOutput &display, uint64_t key, const std::vector<
 //   * on the GPU, a texture whose networks took 1.5 times the CPU's estimate for its texels (the probe's cost per
 //     texel), twice in a row while the game draws its scene, moves the work to the CPU;
 //   * on the CPU, the GPU is tried again for the next texture as soon as the game leaves the GPU free (a loading or an
-//     interface screen, the game in the background: SetGpuFree) or after kRetrySeconds / kRetryTextures; fast enough
+//     interface screen, the game in the background: SetGpuFree) or after kGpuRetrySeconds / kGpuRetryTextures; fast enough
 //     and the work goes back to the GPU;
 //   * on the CPU, only the textures that cannot wait are made (the ones on screen); the rest of the game waits for the
 //     GPU (WaitsForGpu).
 // Every switch is logged with its reason and numbers. Nothing of it is kept across sessions (the crash record is:
 // backend.hpp MarkGpuRunning).
 constexpr double kSlowFactor = 1.5;
-constexpr int kSlowInARow = 2, kRetryTextures = 8;
-constexpr auto kRetrySeconds = std::chrono::seconds(60);
+constexpr int kSlowInARow = 2;
 
 struct Session::Impl
 {
@@ -395,6 +395,7 @@ struct Session::Impl
     std::filesystem::path cache;
     bool gpu_possible = false;   // a GPU, its graphs, no crash recorded for it
     double cpu_ms_per_texel = 0.0; // the probe's
+    double upscale_cpu_ms_per_texel = 0.0; // measured x4 cost, distinct from the normal-network probe
     bool on_gpu = false;
     int gpu_slow = 0;            // GPU textures in a row slower than the CPU's estimate
     Clock::time_point cpu_since{};
@@ -445,6 +446,32 @@ struct Session::Impl
                 cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
         return cpu_upscaler != nullptr;
     }
+    bool EnsureDevice(bool &use_gpu, std::string &error)
+    {
+        if (!use_gpu)
+            return EnsureCpu(error);
+        if (EnsureGpu(error))
+            return true;
+        if (cancelled)
+            return false;
+        // A controlled model-load/calibration error is not a driver crash. Preserve this texture on the CPU;
+        // avoid repeating the same failed GPU initialization for every request in this session.
+        Log("ERROR: relief GPU model initialization failed (%s); this session continues on the CPU", error.c_str());
+        {
+            std::lock_guard lock(networks_mutex);
+            gpu_upscaler.reset();
+            gpu = {};
+        }
+        ClearGpuRunning(cache);
+        gpu_unproven = false;
+        ReleaseGpu();
+        gpu_possible = stats.gpu_possible = false;
+        on_gpu = use_gpu = false;
+        error.clear();
+        const bool opened = EnsureCpu(error);
+        Describe();
+        return opened;
+    }
     // Back on the GPU: onnxruntime's memory goes.
     void ReleaseCpu()
     {
@@ -492,7 +519,7 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     impl->stats.gpu_possible = impl->gpu_possible;
     impl->on_gpu = device == Device::Gpu;
     impl->cpu_since = Clock::now();
-    if (!(impl->on_gpu ? impl->EnsureGpu(error) : impl->EnsureCpu(error)))
+    if (!impl->EnsureDevice(impl->on_gpu, error))
     {
         Log("ERROR: %s", error.c_str());
         return nullptr;
@@ -510,7 +537,8 @@ void Session::SetGpuFree(bool free)
 
 bool Session::WaitsForGpu() const
 {
-    return impl_->gpu_possible && !impl_->on_gpu && !impl_->gpu_free;
+    return WaitForGpuRetry(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
+                           std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(), impl_->cpu_textures);
 }
 
 void Session::Cancel()
@@ -585,13 +613,12 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
     }
     const double decode_ms = lap();
     // The device of this texture: the GPU tried again from the CPU when the game leaves it free, or after a while.
-    const bool retry = !impl_->on_gpu && impl_->gpu_possible &&
-                       (impl_->gpu_free || Clock::now() - impl_->cpu_since >= kRetrySeconds ||
-                        impl_->cpu_textures >= kRetryTextures);
-    const bool use_gpu = impl_->on_gpu || retry;
+    bool use_gpu = UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
+                                         std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
+                                     impl_->cpu_textures);
     {
         std::string error;
-        if (use_gpu ? !impl_->EnsureGpu(error) : !impl_->EnsureCpu(error))
+        if (!impl_->EnsureDevice(use_gpu, error))
         {
             failure = error;
             Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
@@ -884,11 +911,15 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
         return Outcome::Failed;
     }
     const double decode_ms = Seconds(start) * 1000.0;
-    // The device the relief networks are on now (the ×2 alone is not measured against the CPU).
-    if (impl_->on_gpu ? !impl_->EnsureGpu(failure) : !impl_->EnsureCpu(failure))
+    // Standalone x2 participates in the same retry cadence as relief textures. Its CPU cost is measured
+    // separately: the normal-network probe is not a valid estimate of the x4 graph.
+    bool use_gpu = UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
+                                         std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
+                                     impl_->cpu_textures);
+    if (!impl_->EnsureDevice(use_gpu, failure))
         return Outcome::Failed;
-    Upscaler &upscaler = impl_->on_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
-    if (impl_->on_gpu && impl_->gpu_unproven)
+    Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
+    if (use_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
     if (!upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2,
                               failure))
@@ -897,12 +928,39 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
             failure = "cancelled";
         return Outcome::Failed;
     }
-    if (impl_->on_gpu && impl_->gpu_unproven)
+    if (use_gpu && impl_->gpu_unproven)
     {
         ClearGpuRunning(impl_->cache);
         impl_->gpu_unproven = false;
     }
     const double infer_ms = upscaler.infer_ms();
+    if (!impl_->cancelled)
+    {
+        if (!use_gpu)
+        {
+            impl_->upscale_cpu_ms_per_texel = infer_ms / (static_cast<double>(lw) * lh);
+            ++impl_->cpu_textures;
+        }
+        else if (!impl_->on_gpu)
+        {
+            const double cpu_ms = impl_->upscale_cpu_ms_per_texel * lw * lh;
+            // An unmeasured x4 graph is accepted only while the GPU is free; otherwise measure the CPU first.
+            const bool faster = cpu_ms > 0.0 ? infer_ms <= kSlowFactor * cpu_ms : impl_->gpu_free.load();
+            Log("relief device: %s after standalone x2 GPU retry (%s: GPU %.0f ms, CPU estimate %.0f ms)",
+                faster ? "GPU again" : "CPU still", name.c_str(), infer_ms, cpu_ms);
+            if (faster)
+            {
+                impl_->on_gpu = true;
+                impl_->ReleaseCpu();
+            }
+            else
+            {
+                impl_->cpu_since = Clock::now();
+                impl_->cpu_textures = 0;
+            }
+        }
+        impl_->Describe();
+    }
     if (!WriteDisplay(display, *key, x2, static_cast<int>(lw) * 2, static_cast<int>(lh) * 2, name))
     {
         failure = "cannot write its file";

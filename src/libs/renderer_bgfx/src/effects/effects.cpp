@@ -622,6 +622,8 @@ void Host::advance_switch()
 
 void Host::end_frame(bool scene_frame, uint32_t frame)
 {
+    // The renderer sees every perspective scene draw, including unlit/low-preset geometry and the sea.
+    ReliefGenerator::instance().frame(scene_frame);
     if (self_test_.Running())
     {
         const fx::SelfTest::Result result = self_test_.Poll(frame);

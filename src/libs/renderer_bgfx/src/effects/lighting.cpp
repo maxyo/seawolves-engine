@@ -1,6 +1,5 @@
 #include "effects/lighting.hpp"
 
-#include "effects/relief_generator.hpp"
 #include "shim/device.hpp"
 #include "storm/fx/height_map.hpp"
 
@@ -976,8 +975,6 @@ void Lighting::end_frame()
 {
     last_frame_ = frame_;
     frame_ = {};
-    // The relief's device: whether the game draws a scene on the GPU (relief_generator.hpp frame).
-    ReliefGenerator::instance().frame(last_frame_.lit + last_frame_.baked);
     // Every 30 frames, when it changed: the parallax census of the last frame.
     if (++census_frames_ >= 30)
     {

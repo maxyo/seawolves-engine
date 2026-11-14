@@ -168,6 +168,8 @@ target_link_libraries(storm_relief_cli PRIVATE storm_relief_core)
 if(NOT ANDROID)
     set_target_properties(storm_relief_cli PROPERTIES BUILD_RPATH "${storm_onnxruntime_SOURCE_DIR}/lib")
     # tests/renderer_bgfx/run.py: the preparation with the real models on a small synthetic game.
+    add_executable(storm_relief_device_retry_check tests/device_retry_check.cpp)
+    target_link_libraries(storm_relief_device_retry_check PRIVATE storm_relief_core)
     add_executable(storm_relief_check tests/relief_check.cpp)
     target_link_libraries(storm_relief_check PRIVATE storm_relief_core)
     set_target_properties(storm_relief_check PROPERTIES BUILD_RPATH "${storm_onnxruntime_SOURCE_DIR}/lib")
