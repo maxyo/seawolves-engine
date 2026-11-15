@@ -1,4 +1,4 @@
-// run.py supplies the actual production fragments. Only bgfx submission is recorded, never executed.
+// fuse.py supplies the actual production fragments. Only bgfx submission is recorded, never executed.
 #include "storm/fx/lamp_shadows.hpp"
 #include <bx/math.h>
 #include <algorithm>

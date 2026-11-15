@@ -105,6 +105,7 @@ OPTION = r'''add_argument\(\s*['"](--[a-z-]+)['"]'''
 
 
 def command_for(script):
+    """The check's command line, or the reason the host cannot run it (a FAIL of that check)."""
     name = script.parent.name
     command = [sys.executable, str(script)]
     text = script.read_text()
@@ -113,10 +114,10 @@ def command_for(script):
             command += [option, str(work / 'build' / name)]
         elif option in values:
             command += [option, str(values[option])]
-    for option in re.findall(OPTION + r'[^)]*required\s*=\s*True', text):
-        if option not in command:
-            sys.exit(f'{script.relative_to(root)}: no host value for required option {option}')
-    return command
+    missing = [option for option in re.findall(OPTION + r'[^)]*required\s*=\s*True', text) if option not in command]
+    if missing:
+        return None, f'{script.relative_to(root)}: no host value for required option {", ".join(missing)}'
+    return command, None
 
 
 # Checks that run the compiler themselves compile through the Storm ccache launcher
@@ -126,21 +127,30 @@ direct_environment = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'),
 
 
 def run(script):
+    """(name, exit code, output, seconds). Never raises: whatever stops a check is that check's FAIL."""
     started = time.monotonic()
-    environment = None if (script.parent / 'CMakeLists.txt').exists() else direct_environment
-    result = subprocess.run(command_for(script), cwd=root, env=environment,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    return script.parent.name, result, time.monotonic() - started
+    try:
+        command, problem = command_for(script)
+        if problem:
+            returncode, output = 1, problem + '\n'
+        else:
+            environment = None if (script.parent / 'CMakeLists.txt').exists() else direct_environment
+            result = subprocess.run(command, cwd=root, env=environment,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            returncode, output = result.returncode, result.stdout
+    except Exception as error:  # reported as this check's FAIL; the other checks keep running
+        returncode, output = 1, f'{script.relative_to(root)}: the runner could not run it: {error!r}\n'
+    return script.parent.name, returncode, output, time.monotonic() - started
 
 
 failed = []
 with concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
     for future in concurrent.futures.as_completed([pool.submit(run, check) for check in checks]):
-        name, result, elapsed = future.result()
+        name, returncode, output, elapsed = future.result()
         durations[name] = round(elapsed, 1)
-        print(f'{"PASS" if result.returncode == 0 else "FAIL"} {name} ({elapsed:.1f}s)', flush=True)
-        if result.returncode:
-            print(result.stdout[-20000:], flush=True)
+        print(f'{"PASS" if returncode == 0 else "FAIL"} {name} ({elapsed:.1f}s)', flush=True)
+        if returncode:
+            print(output[-20000:], flush=True)
             failed.append(name)
 work.mkdir(parents=True, exist_ok=True)
 durations_file.write_text(json.dumps(dict(sorted(durations.items())), indent=0))

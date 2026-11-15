@@ -50,8 +50,8 @@ jobs:
           path: |
             ~/.cache/storm-deps
             ~/.cache/ccache-storm
-          key: host-storm-${{ hashFiles('src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/patches/*', 'src/libs/renderer_bgfx/host-tools/CMakeLists.txt', 'cmake/glm.cmake') }}-${{ github.sha }}
-          restore-keys: host-storm-${{ hashFiles('src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/patches/*', 'src/libs/renderer_bgfx/host-tools/CMakeLists.txt', 'cmake/glm.cmake') }}-
+          key: host-storm-${{ hashFiles('src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/cmake/bx_pin.cmake', 'src/libs/renderer_bgfx/patches/*', 'src/libs/renderer_bgfx/host-tools/CMakeLists.txt', 'cmake/glm.cmake') }}-${{ github.sha }}
+          restore-keys: host-storm-${{ hashFiles('src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/cmake/bx_pin.cmake', 'src/libs/renderer_bgfx/patches/*', 'src/libs/renderer_bgfx/host-tools/CMakeLists.txt', 'cmake/glm.cmake') }}-
       - name: Cache the FFmpeg build (tools/ffmpeg/build.py)
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
@@ -89,8 +89,8 @@ jobs:
           path: |
             ~/.cache/storm-deps
             ~/.cache/ccache-storm
-          key: ui-host-${{ hashFiles('src/libs/ui/CMakeLists.txt', 'src/libs/renderer_bgfx/cmake/bgfx_pin.cmake') }}-${{ github.sha }}
-          restore-keys: ui-host-${{ hashFiles('src/libs/ui/CMakeLists.txt', 'src/libs/renderer_bgfx/cmake/bgfx_pin.cmake') }}-
+          key: ui-host-${{ hashFiles('src/libs/ui/CMakeLists.txt', 'src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/cmake/bx_pin.cmake') }}-${{ github.sha }}
+          restore-keys: ui-host-${{ hashFiles('src/libs/ui/CMakeLists.txt', 'src/libs/renderer_bgfx/cmake/bgfx_pin.cmake', 'src/libs/renderer_bgfx/cmake/bx_pin.cmake') }}-
       - name: Build and test
         run: |
           cmake -S src/libs/ui -B build/ui-host -G Ninja -DCMAKE_BUILD_TYPE=Release

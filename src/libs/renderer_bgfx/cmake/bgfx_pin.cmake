@@ -21,10 +21,7 @@ storm_fetch_declare(storm_bgfx
     GIT_TAG eebf5686a8c5f1c77e1af2dad17b5746ba17da8f
     STORM_POPULATE_ONLY
     STORM_PATCHES . ${storm_bgfx_patches})
-storm_fetch_declare(storm_bx
-    GIT_REPOSITORY https://github.com/bkaradzic/bx.git
-    GIT_TAG 57548da89a07771c5b0f8a6711149be70e08a329
-    STORM_POPULATE_ONLY)
+include("${CMAKE_CURRENT_LIST_DIR}/bx_pin.cmake")
 storm_fetch_declare(storm_bimg
     GIT_REPOSITORY https://github.com/bkaradzic/bimg.git
     GIT_TAG 22177183239e18d7af603e6915156371cc38d18d

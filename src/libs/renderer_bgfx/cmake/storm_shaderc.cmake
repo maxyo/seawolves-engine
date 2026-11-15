@@ -1,7 +1,7 @@
 # Host shader compiler for the embedded shaders (host and cross builds alike): built from
 # host-tools/ once per machine into ${STORM_DEPS_CACHE}/shaderc-<key>, under a lock so concurrent
 # builds of any worktree share one build. -DSTORM_SHADERC=<binary> overrides it explicitly.
-# The key covers the pin (bgfx_pin.cmake), host-tools/CMakeLists.txt and only the bgfx patches that
+# The key covers the pin (bgfx_pin.cmake, bx_pin.cmake), host-tools/CMakeLists.txt and only the bgfx patches that
 # change shaderc: a patch counts when it changes a file that a shaderc build of this pin compiled or
 # included (${STORM_DEPS_CACHE}/shaderc-inputs-<pin key>.txt, recorded from Ninja's dependency log
 # after every shaderc build), when it creates a file, or when no build of the pin has been recorded
@@ -14,7 +14,8 @@ if(STORM_SHADERC)
     set(storm_shaderc "${STORM_SHADERC}")
 else()
     set(storm_shaderc_pin_key "")
-    foreach(input "${CMAKE_CURRENT_LIST_DIR}/bgfx_pin.cmake" "${CMAKE_CURRENT_LIST_DIR}/../host-tools/CMakeLists.txt")
+    foreach(input "${CMAKE_CURRENT_LIST_DIR}/bgfx_pin.cmake" "${CMAKE_CURRENT_LIST_DIR}/bx_pin.cmake"
+            "${CMAKE_CURRENT_LIST_DIR}/../host-tools/CMakeLists.txt")
         file(SHA256 "${input}" digest)
         string(APPEND storm_shaderc_pin_key "${digest}")
     endforeach()
