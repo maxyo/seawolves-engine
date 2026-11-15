@@ -4381,6 +4381,17 @@ void Character::UpdateAnimation()
                 {
                     weapon_id = pdat->GetString();
                 }
+                else
+                {
+                    // The scripts own the weapon kind; without their handler every fighter fights as a blade and
+                    // the axe's chopping attacks and blocks are never chosen.
+                    static bool reported = false;
+                    if (!reported)
+                    {
+                        reported = true;
+                        core.Trace("ERROR: Character fight: no eGetWeaponID handler; weapons are treated as \"blade\"");
+                    }
+                }
                 VDATA *vd = nullptr;
                 float recoilDist;
 

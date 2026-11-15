@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile the production eGetWeaponID result branch; exercise no handler, blade, axe and owned lifetime."""
+"""Compile the production eGetWeaponID result branch; exercise no handler (blade, reported once), blade, axe and owned lifetime."""
 import argparse
 import os
 from pathlib import Path
@@ -29,6 +29,8 @@ struct VDATA { std::string text; const char *GetString() { return text.c_str(); 
 struct Core {
     VDATA data;
     bool present = false;
+    int errors = 0;
+    void Trace(const char *format) { assert(std::string(format).rfind("ERROR: ", 0) == 0); ++errors; }
     VDATA *Event(const char *event, const char *format, const char *id) {
         assert(std::string(event) == "eGetWeaponID" && std::string(format) == "s" && std::string(id) == "hero");
         return present ? &data : nullptr;
@@ -49,11 +51,12 @@ BRANCH
     return result;
 }
 int main() {
-    assert(weapon(false, "unused") == "blade");
+    assert(weapon(false, "unused") == "blade" && core.errors == 1);
+    assert(weapon(false, "unused") == "blade" && core.errors == 1);
     assert(weapon(true, "blade") == "blade");
     assert(weapon(true, "topor") == "topor");
     assert(weapon(true, "topor", true) == "topor");
-    puts("PASS production eGetWeaponID: absent handler defaults to blade, blade/axe results and owned event string");
+    puts("PASS production eGetWeaponID: absent handler defaults to blade with one ERROR, blade/axe results and owned event string");
 }
 '''.replace('BRANCH', branch).replace('CONDITION', conditions[0]).replace('NAME', name)
 with tempfile.TemporaryDirectory(prefix='weapon-id-default-') as d:
