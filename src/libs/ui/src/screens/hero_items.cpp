@@ -1,6 +1,6 @@
 // Hero section «Предметы» (interface items; mockups V2-Hero-Items, V2-Extra-TreasureMap). Fills
 // the pack screen <s-items>: the equipment slots on the left (a tap filters the list to what
-// fits; a tap on a row of the filtered list puts the item on), the item list with the game's
+// fits; a tap on a row only selects its description), the item list with the game's
 // four tabs, the selected item's description on parchment with the game's own action
 // (EQUIP_BUTTON: put on, take off, use, open a map, load ammunition; taking off a timed artefact
 // destroys it and is held to confirm), and the game's map window drawn as the map sheet.
@@ -44,7 +44,9 @@ constexpr NodeRule kNodes[] = {
     {"ITEM_*", "image"},             // what each slot holds: ANDROID_SLOTS has it with names
     {"SLOT_ITEM_*", "image"},
     {"SLOT_PIC_*", "image"},
-    {"SLOT*_TEXT", "text"},
+    {"SLOT1_TEXT", "text"}, // stock remaining/total days; the detail facts show labelled units
+    {"SLOT2_TEXT", "text"},
+    {"SLOT3_TEXT", "text"},
     {"INFO_PIC", "image"},
     {"INFO_TEXT", "text"},
     {"Weight_PIC", "image"},
@@ -241,9 +243,8 @@ class ItemsScreen final : public Screen
             const Widget *row = shown[index];
             Intent intent;
             intent.row = row->row_id;
-            // In a slot's list a tap puts the item on (R19); otherwise it shows the item.
-            intent.equip = !filter_.empty() && !Worn(*row);
-            if (row->value == "1" && !intent.equip)
+            // Selection never changes equipment. Only the explicit guarded action does.
+            if (row->value == "1")
                 return;
             Start(bindings, intent);
         });
@@ -309,7 +310,6 @@ class ItemsScreen final : public Screen
     struct Intent
     {
         std::string row; // TABLE_ITEMS row id; empty: none
-        bool equip = false;
         double since = 0.0;
     };
 
@@ -345,14 +345,6 @@ class ItemsScreen final : public Screen
         return nullptr;
     }
 
-    bool Worn(const Widget &row) const
-    {
-        for (const Widget *fact : a_->All("ANDROID_ITEMS"))
-            if (std::atoi(fact->row_id.c_str() + 2) - 1 == row.index)
-                return Field(fact, "worn") == "1";
-        return false;
-    }
-
     void CloseMap(Bindings &bindings)
     {
         if (const Widget *close = a_->One("MAP_EXIT_BTN"); close && close->Offers("press"))
@@ -368,7 +360,7 @@ class ItemsScreen final : public Screen
         bindings.RebuildAfter(kStepTimeout);
     }
 
-    // Select the row, then (equip) press the game's EQUIP_BUTTON once it carries that row.
+    // Wait only for the selection acknowledgement; equipment needs a separate player action.
     void Walk(Bindings &bindings)
     {
         if (intent_.row.empty())
@@ -393,27 +385,7 @@ class ItemsScreen final : public Screen
             Step(bindings, row, "select", row->row_id);
             return;
         }
-        const Widget *equip = a_->One("EQUIP_BUTTON");
-        if (!intent_.equip)
-        {
-            intent_ = {};
-            return;
-        }
-        if (equip && !equip->Offers("press"))
-        {
-            // Selection was acknowledged. The script's ThisItemCanBeEquip can refuse a weapon
-            // (missing perk, location or character restriction) or a full/incompatible amulet slot.
-            // A disabled button carries no equip capability: waiting for one invents a timeout.
-            const Widget *fact = nullptr;
-            for (const Widget *candidate : a_->All("ANDROID_ITEMS"))
-                if (std::atoi(candidate->row_id.c_str() + 2) - 1 == row->index)
-                    fact = candidate;
-            bindings.Toast(UnavailableReason(bindings, *equip, fact));
-            intent_ = {};
-            return;
-        }
-        if (equip && equip->Offers("press") && equip->row_id == row->row_id && Step(bindings, equip, "press", equip->row_id))
-            intent_ = {};
+        intent_ = {};
     }
 
     // A weapon's figures from the adapter (android_hero.c AndroidItemStats), each with its difference
@@ -534,7 +506,7 @@ class ItemsScreen final : public Screen
     // items.c EquipPress): put on / take off with the game's own words; use, open a map, load ammunition with
     // ours (the game writes «Взять» on all of them); nothing for an item the game has no use for (a jewel, a
     // potion drunk in the field). Taking off a timed artefact uses it up (RemoveCharacterArtefactEquip): the
-    // game's «Удалить», held to confirm. Quest items keep their action: a letter is read, a quest map opened.
+    // game's removal, with an explicit consumption warning and held to confirm. Quest items keep their action: a letter is read, a quest map opened.
     Json Action(Bindings &bindings, const Widget &row, const Widget *fact, bool worn)
     {
         const Widget *equip = a_->One("EQUIP_BUTTON");
@@ -572,6 +544,8 @@ class ItemsScreen final : public Screen
         const std::string reason = UnavailableReason(bindings, *equip, fact);
         Json action{{"id", "item-equip"}, {"label", label}, {"variant", destroys ? "danger" : "primary"}, {"hold", destroys},
                     {"disabled", !ready}, {"reason", reason}, {"busy", bindings.Pending("item-equip")}};
+        if (destroys)
+            action["sub"] = bindings.Text("items.remove_consumes");
         const Widget *target = equip;
         bindings.On("item-equip", "", [this, &bindings, target, ready](const Event &) {
             sent_revision_ = 0;
