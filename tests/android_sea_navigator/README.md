@@ -12,16 +12,16 @@ Matching-aspect internal render scales use a measured uniform conversion. The ma
 binds that layout to gameplay revision, HUD/Activity revision and native
 island/resource generation; it lasts until that owner changes or Android clears it
 (no lease: the UI says it once per owner and place, however slow its frames).
-Hidden/detached Android views clear it. While a UI that declared itself the sea HUD
-presenter has not prepared or cleared the current owner, the native compass stays
-off. A zoom request requires the same current layout and uses the original
+Hidden/detached Android views clear it. The native compass is never compiled on
+Android; a missing aperture cannot bring it back. A zoom request requires the same current layout and uses the original
 native scale bounds. A new viewport must match the measured render size.
 
 Native keeps the actual island render target, ship list and ship-relative world
 projection. Four side attributes come from `Cannons.Borts.cannonf/r/b/l`;
 `ChargeRatio` is a fraction of the undamaged part, so the ready arc is
 `charge * (1 - damage)`. Missing sides draw unknown tracks, not ready cannons.
-Unsupported wind display states retain the original functional renderer.
+Unsupported wind display states make the touch navigator unavailable; they never
+restore the desktop compass.
 
 The `cannon-loadball-v1` powder adapter implements the verified stock
 `AICannon::Cannon_LoadBall` reload prerequisite: `GetCargoGoods(GOOD_POWDER)>0`.
@@ -33,8 +33,8 @@ signals and are deliberately never exported. Ammo warning retains its original
 battle interface's refreshable `Ammo` text.
 
 Enable `log.tag.StormInput=DEBUG` to trace native navigator source readiness,
-resource generation and whether the new draw was selected. A functional old
-fallback is a failed visual acceptance, even though controls/data remain usable.
+resource generation and touch radar readiness. Any visible legacy compass is a
+failed visual acceptance.
 Host checks and compilation cannot establish visual acceptance: test the exact
 APK at both logical sizes, warning/ordnance states, contacts, zoom guards,
 scene/menu/Activity transitions and inspect actual screenshots independently.

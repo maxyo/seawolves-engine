@@ -435,7 +435,7 @@ void WdmWindUI::LRender(VRenderer *rs)
     // UI presents the world-map HUD the instruments are its own, also under a game interface over
     // the map (the encounter signal), when no frame is available.
     const bool answered = storm::android::worldMapHud.covered(storm::android::MapInstruments, wdmObjects->wm->GetId(),SDL_GetTicks());
-    if (storm::android::legacyDrawRefused("world map instruments", storm::android::hudPresenters.worldMap) || answered) return;
+    if (storm::android::legacyDrawRefused("world map instruments") || answered) return;
 #endif
     // Buffer for drawing
     Vertex buf[(3 * 2) * 2];

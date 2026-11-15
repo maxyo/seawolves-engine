@@ -38,7 +38,6 @@ class SeaQuickActionState
     inline static std::atomic<uint64_t> nextActivity_{0};
     SeaQuickActionFrame frame_;
     uint64_t activity_ = nextActivity_.fetch_add(1, std::memory_order_relaxed) + 1, revision_ = 1;
-    uint64_t answered_ = 0; // the last revision the UI answered
     uint32_t pendingAt_ = 0;
     bool covered_ = false, pending_ = false;
     std::string pendingAction_;
@@ -88,8 +87,6 @@ public:
         {
             if (fields[4] != "0" && fields[4] != "1") return false;
             covered_ = fields[4] == "1" && valid();
-            answered_ = revision_;
-            hudPresenters.answered("sea");
             if (!covered_) pending_ = false;
             return fields[4] == "0" || covered_;
         }
@@ -107,8 +104,6 @@ public:
     {
         return valid() && frame_.host == host && (covered_ || hudPresenters.sea);
     }
-    // A valid offer the UI has not answered yet (for HudPresenters::watch).
-    bool awaiting() const { return valid() && answered_ != revision_; }
     std::optional<std::string> consume(uint32_t tick)
     {
         if (!pending_) return {};

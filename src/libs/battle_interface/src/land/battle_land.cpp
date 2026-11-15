@@ -65,7 +65,7 @@ void BATTLE_LAND_INTERFACE::Realize(uint32_t delta_time)
 #ifdef __ANDROID__
         // One coverage rule (android_hud_presenter.hpp): the land interface's images and texts are
         // the touch HUD's (its location line from publishWorldInfo below).
-        const bool legacy = !storm::android::legacyDrawRefused("land interface", storm::android::hudPresenters.land);
+        const bool legacy = !storm::android::legacyDrawRefused("land interface");
         if (legacy)
 #endif
         m_Images.Draw();

@@ -248,7 +248,6 @@ class ShipTelemetryState
 {
     ShipTelemetryFrame frame_;
     uint64_t revision_ = 0, sequence_ = 0, hudRevision_ = 0;
-    uint64_t answered_ = 0; // the last HUD revision the UI answered with its mask
     uint32_t lastPublishedTick_ = 0;
     bool published_ = false, forcePublish_ = true;
     std::string lastPublished_;
@@ -328,8 +327,6 @@ public:
     // (android_hud_presenter.hpp: one deterministic rule, no answer timing); otherwise none is
     // replaced (no UI acknowledges anything then).
     uint32_t mask() const { return hudPresenters.sea ? ShipAll : 0u; }
-    // A valid revision the UI has not answered yet (its silence watchdog, HudPresenters::watch).
-    bool awaiting() const { return frame_.valid && answered_ != hudRevision_; }
     void resetActivity()
     {
         ++hudRevision_;
@@ -347,8 +344,6 @@ public:
         const auto generation = std::from_chars(request.data() + lastTab + 1, request.data() + request.size(), hudRevision);
         if (!parsed || generation.ec != std::errc() || generation.ptr != request.data() + request.size() ||
             hudRevision != hudRevision_ || parsed->first != revision_ || parsed->second > ShipAll || !frame_.valid) return false;
-        answered_ = hudRevision_;
-        hudPresenters.answered("sea");
         return true;
     }
     bool offerSails(std::string_view request, uint32_t tick)

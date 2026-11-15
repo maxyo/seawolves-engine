@@ -59,11 +59,8 @@ void BIShipIcon::Draw()
             core.Event("evntBISelectShip", "ll", -1, true);
     }
 
-#ifdef __ANDROID__
-    // One coverage rule (android_hud_presenter.hpp): while the touch HUD presents the sea HUD the
-    // legacy ship cards, crews, names and command list never draw.
-    if (storm::android::legacyDrawRefused("sea ship cards", storm::android::hudPresenters.sea)) return;
-#endif
+#ifndef __ANDROID__
+    // Android uses the touch HUD ship cards and command sheet exclusively.
     FillVertexBuffer();
 
     if (m_nVBufID != -1 && m_nIBufID != -1)
@@ -130,6 +127,7 @@ void BIShipIcon::Draw()
 
     if (m_pCommandList)
         m_pCommandList->Draw();
+#endif
 }
 
 void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)

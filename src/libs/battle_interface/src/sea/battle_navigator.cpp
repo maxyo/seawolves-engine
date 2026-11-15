@@ -51,7 +51,6 @@ void BATTLE_NAVIGATOR::Draw() const
 {
     if (rs == nullptr)
         return;
-    int n;
 #ifdef __ANDROID__
     m_androidDrawn = DrawAndroid();
     // Opt-in exact owner/readiness trace for APK acceptance, not a fake data source.
@@ -62,17 +61,11 @@ void BATTLE_NAVIGATOR::Draw() const
             " ship="+std::to_string(m_speedShipId)+" generation="+std::to_string(m_navigatorGeneration)+
             " scale="+std::to_string(m_fCurScale)+" windState="+std::to_string(m_curWindPic));}
 
-#endif
-
-    // set world matrix
+#else
+    // Desktop compass and readouts are not compiled on Android.
+    int n;
     const glm::mat4 matw;
     rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(matw));
-#ifdef __ANDROID__
-    // One coverage rule (android_hud_presenter.hpp): while the touch HUD presents the sea HUD the
-    // native compass and its readouts never draw; the engine only draws its radar into the HUD's
-    // own disc (DrawAndroid, above).
-    if (storm::android::legacyDrawRefused("sea navigator", storm::android::hudPresenters.sea) || m_androidDrawn) return;
-#endif
 
     // gradient background
     // rs->DrawPrimitive(D3DPT_TRIANGLEFAN,m_idGradBackVBuf,sizeof(BI_COLORONLY_VERTEX),0,1,"battle_only_color");
@@ -196,6 +189,7 @@ void BATTLE_NAVIGATOR::Draw() const
         rs->TextureSet(0, m_idSailTexture);
         rs->DrawPrimitive(D3DPT_TRIANGLESTRIP, m_idCurChargeVBuf, sizeof(BI_ONETEXTURE_VERTEX), 8, 2, "battle_rectangle");
     }
+#endif
 }
 
 void BATTLE_NAVIGATOR::Update()

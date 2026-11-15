@@ -146,14 +146,9 @@ int main(){
     assert(ownership.offer(layout,4,8,2));ownership.didDraw(9);
     assert(ownership.offer("4\t8\t2\tvisible\t9",4,8,2));
     assert(ownership.presented(4,8,2,9));
-    // A UI presenting the sea HUD: an owner it has not prepared or cleared is pending (its silence
-    // watchdog; the native compass is off whenever the UI presents the sea HUD); either answer ends that.
-    assert(!ownership.pending(4,8,2)); // no presenter declared: native drawing is unaffected
-    hudPresenters.sea=true;
-    assert(!ownership.pending(4,8,2)&&ownership.pending(4,9,2)&&ownership.pending(5,8,2)&&ownership.pending(4,8,3));
-    assert(ownership.offer("4\t9\t2\tclear",4,9,2)&&!ownership.pending(4,9,2)&&!ownership.layout(4,9,2));
-    assert(ownership.offer("5\t8\t2\tprepare\t11\t1280\t720\t1124\t228\t132\t2000\t1",5,8,2)&&!ownership.pending(5,8,2));
-    hudPresenters.sea=false;
+    // Clear and re-prepare change the aperture without a fallback to the native compass.
+    assert(ownership.offer("4\t9\t2\tclear",4,9,2) && !ownership.layout(4,9,2));
+    assert(ownership.offer("5\t8\t2\tprepare\t11\t1280\t720\t1124\t228\t132\t2000\t1",5,8,2));
     // Reproduce runtime 2015 -> 991/1951 caption ACK churn while the same
     // complete navigator remains visible. Freshness is not ownership.
     ShipTelemetryFrame live;live.valid=true;live.ship.entityId=42;
@@ -207,5 +202,5 @@ int main(){
         assert(spitSegments==0);
         assert(landField(land,n+1).empty());
     }
-    std::cout<<"PASS minimap land field and closed coast, production vector ink minima at 96dp across viewport/density/heading transforms, presentation and geometry kept per owner without a lease, presenter pending, native-draw proof and structural invalidation, navigator owner/source/viewport, malformed/oversize requests, zoom cancel/guards, native projection and bort damage composition, absent versus false warning\n";
+    std::cout<<"PASS minimap land field and closed coast, production vector ink minima at 96dp across viewport/density/heading transforms, presentation and geometry kept per owner without a lease, native-draw proof and structural invalidation, navigator owner/source/viewport, malformed/oversize requests, zoom cancel/guards, native projection and bort damage composition, absent versus false warning\n";
 }

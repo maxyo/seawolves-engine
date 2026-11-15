@@ -1,10 +1,8 @@
 #pragma once
-// The spyglass (ISPYGLASS) for the portable UI: what the telescope shows about its target
-// as the `spyglass` state channel, and the UI's coverage answer that lets the engine hide
-// its own info icons and texts while the UI draws them: "<generation>\t1" once its overlay
-// is drawn for this raise, "<generation>\t0" when it is not (any more). The word lasts until
-// the next raise; while the presenting UI has not answered a raise the native info stays
-// off (android_hud_presenter.hpp, no lease).
+// The spyglass (ISPYGLASS) publishes its target through the `spyglass` channel.
+// The UI reports "<generation>\t1" once its overlay is drawn for this raise,
+// or "<generation>\t0" without it. Receipts diagnose a missing touch card;
+// Android never enables the legacy information icons or text.
 #include "android_gameplay.hpp"
 #include "android_hud_presenter.hpp"
 #include "android_ship_telemetry.hpp"
@@ -116,15 +114,14 @@ class SpyglassState
         if (text.empty() || !end || *end != '\0' || generation != generation_ || !on_ || (word != "0" && word != "1"))
             return false;
         answered_ = generation_;
-        hudPresenters.answered("spyglass");
         covering_ = word == "1";
         return true;
     }
     bool awaiting() const { return on_ && answered_ != generation_; }
     bool covered() const
     {
-        // One coverage rule (android_hud_presenter.hpp): the UI presents the spyglass info.
-        return on_ && (hudPresenters.spyglass || (answered_ == generation_ && covering_));
+        // Actual touch card receipt, for diagnostics only; never enables legacy drawing.
+        return on_ && answered_ == generation_ && covering_;
     }
 
     std::string json() const

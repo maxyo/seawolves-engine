@@ -226,12 +226,12 @@ int main()
         hudPresenters.worldMap=true;
         WorldMapHud p;p.update(complete(),10);p.resetActivity();
         auto word=[&](std::string mask){return std::to_string(p.revision())+"\t1\tack\t"+mask;};
-        assert(p.covered(7,19)&&!p.covered(7,20)&&p.awaiting());
-        assert(p.offer(word("2"),60000)&&p.covered(7,19)&&!p.awaiting());
-        auto next=complete();next.instruments.flag.reset();p.update(next,60001);assert(p.covered(7,19)&&p.awaiting());
+        assert(p.covered(7,19)&&!p.covered(7,20));
+        assert(p.offer(word("2"),60000)&&p.covered(7,19));
+        auto next=complete();next.instruments.flag.reset();p.update(next,60001);assert(p.covered(7,19));
         assert(p.offer(word("0"),60002)&&p.covered(7,19));
         hudPresenters.worldMap=false;
         assert(!p.covered(1,19)); // no presenting UI: its last word (nothing) stands
     }
-    std::cout<<"PASS map coverage without a lease, presenter pending, command identity, one-shot dispatch, quest lock, release, activity and tick rollover\n";
+    std::cout<<"PASS map coverage without a lease, command identity, one-shot dispatch, quest lock, release, activity and tick rollover\n";
 }

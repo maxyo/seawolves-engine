@@ -401,8 +401,8 @@ struct SceneEntry
     const char *name;
     std::span<const char *const> modes; // gameplay modes it draws
     std::unique_ptr<Scene> (*create)(Hud &);
-    // The engine's name for this HUD in "hudowner:<name>", said once when the HUD starts: the
-    // engine then keeps that HUD's legacy rendering off (android_hud_presenter.hpp).
+    // The engine's name for this HUD in "hudowner:<name>", declared at startup and after
+    // a long gap between UI ticks so the engine knows which presenters are available.
     const char *presents = nullptr;
 };
 // The migration switch of the HUD (scenes.cpp): gameplay modes whose HUD is drawn here.
@@ -620,6 +620,7 @@ class Hud
     double unseen_since_ = -1.0;   // the game in a dialogue with no screen mounted since, -1 = not
     bool unseen_ended_ = false;    // the watchdog ended that dialogue (once per episode)
     bool declared_ = false; // the "hudowner" declarations were sent
+    double last_tick_ = -1.0; // mount clock of the previous UI tick; -1 = not started
 };
 
 // The spyglass overlay (spyglass.cpp): its channel's consumer and the props of its part.

@@ -169,7 +169,6 @@ class ISPYGLASS : public Entity
 
     bool m_bIsOn;
     bool m_bIsPresentShipInfo;
-    bool m_bAndroidCovered = false; // the portable UI draws the info (Android): ours stays transparent
     uint32_t m_dwAndroidShownSince = 0;      // when the current target appeared (0: none shown)
     uint64_t m_nAndroidWarnedGeneration = 0; // the raise already reported for a missing card
     int32_t m_nInfoCharacterIndex;
@@ -189,7 +188,9 @@ class ISPYGLASS : public Entity
     ATTRIBUTES *GetAttr(const char *pcAttrName) const;
     void TurnOnTelescope(bool bTurnOn);
     void SetShipInfo(int32_t nCharIndex);
+#ifndef __ANDROID__
     void ApplyInfoColors();
+#endif
     void FindNewTargetShip();
     void TurnOnSpyGlassCamera();
     void ChangeTelescopeType(const char *pcTextureName, float fZoomScale, float fActivateTime, float fUpdateTime);

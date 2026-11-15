@@ -112,6 +112,8 @@ bool ISPYGLASS::Init()
 
     m_Lens.LoadFromAttr(m_pImgRender, GetAttr("lens"), "battle_interface\\spyglass\\eye_badTub.tga", 0, 0, 1024, 768,
                         8000);
+#ifndef __ANDROID__
+    // Only the lens belongs to the native Android telescope; the touch HUD owns all info.
     m_ShipImage.LoadFromAttr(m_pImgRender, GetAttr("shipsign.ship"), "battle_interface\\ship_icons1.tga", 80, 600, 144,
                              664, 9000);
     m_ShipBack.LoadFromAttr(m_pImgRender, GetAttr("shipsign.back"), "battle_interface\\shipbackicon.tga", 80, 600, 208,
@@ -148,6 +150,7 @@ bool ISPYGLASS::Init()
     m_ImgCaptainBoarding.LoadFromAttr(m_pImgRender, GetAttr("captain.boarding"), "interfaces\\skills.tga", 168, 600,
                                       232, 664, 10000);
 
+#endif
     // captain text data
     m_TextCaptainName.LoadFromAttr(rs, GetAttr("captext.capname"), "?", 210, 640);
     m_TextCaptainFencing.LoadFromAttr(rs, GetAttr("captext.fencing"), "", 210, 640); // replaced "?" with empty
@@ -184,24 +187,18 @@ void ISPYGLASS::Execute(uint32_t delta_time)
         core.Event("MSG_TELESCOPE_REQUEST", "l", 0);
 
 #ifdef __ANDROID__
-    if (const bool covered = storm::android::spyglass.covered(); covered != m_bAndroidCovered)
-    {
-        m_bAndroidCovered = covered;
-        ApplyInfoColors();
-    }
-    // A target shown without the UI's card is no quiet fallback: once per raise of the
-    // telescope it is said aloud that the engine's own info stays on the screen.
+    // A missing touch card is an error; the legacy information stays disabled.
     const uint32_t now = SDL_GetTicks();
     if (!storm::android::spyglass.shows())
         m_dwAndroidShownSince = 0;
     else if (m_dwAndroidShownSince == 0)
         m_dwAndroidShownSince = now ? now : 1;
-    else if (!m_bAndroidCovered && now - m_dwAndroidShownSince >= kAndroidCardWaitMs &&
+    else if (!storm::android::spyglass.covered() && now - m_dwAndroidShownSince >= kAndroidCardWaitMs &&
              m_nAndroidWarnedGeneration != storm::android::spyglass.generation())
     {
         m_nAndroidWarnedGeneration = storm::android::spyglass.generation();
-        spdlog::warn("Spyglass: a target has been shown for {} ms but the portable UI drew no card for it ({}); the "
-                     "engine's own info stays on the screen",
+        spdlog::error("Spyglass: a target has been shown for {} ms but the portable UI drew no card for it ({}); the "
+                     "touch HUD recovery required; legacy info remains disabled",
                      kAndroidCardWaitMs, storm::android::spyglass.awaiting() ? "no answer on the spyglass channel" : "it answered without the overlay");
     }
 #endif
@@ -233,7 +230,8 @@ void ISPYGLASS::Realize(uint32_t delta_time) const
         if (m_pImgRender)
             m_pImgRender->Render();
 
-        if (m_bIsPresentShipInfo && !m_bAndroidCovered)
+#ifndef __ANDROID__
+        if (m_bIsPresentShipInfo)
         {
             m_txtShipType.Print();
             m_txtShipName.Print();
@@ -249,6 +247,7 @@ void ISPYGLASS::Realize(uint32_t delta_time) const
             m_TextCaptainNavigation.Print();
             m_TextCaptainBoarding.Print();
         }
+#endif
     }
 }
 
@@ -314,7 +313,9 @@ uint64_t ISPYGLASS::ProcessMessage(MESSAGE &message)
         frUV.top = message.Float();
         frUV.right = message.Float();
         frUV.bottom = message.Float();
+#ifndef __ANDROID__
         m_ShipImage.ChangeIcon(m_pImgRender, texturename.c_str(), frUV);
+#endif
     }
     break;
     case MSG_ISG_SET_CHARICON: // "sffff"
@@ -325,7 +326,9 @@ uint64_t ISPYGLASS::ProcessMessage(MESSAGE &message)
         frUV.top = message.Float();
         frUV.right = message.Float();
         frUV.bottom = message.Float();
+#ifndef __ANDROID__
         m_CaptainBack.ChangeIcon(m_pImgRender, captexturename.c_str(), frUV);
+#endif
     }
     break;
     }
@@ -433,18 +436,19 @@ void ISPYGLASS::SetShipInfo(int32_t nCharIndex)
         storm::android::publishSpyglass();
     }
 #endif
+#ifndef __ANDROID__
     ApplyInfoColors();
+#endif
 }
 
-// The info icons: lit while a target is shown, transparent otherwise and while the portable
-// UI draws the same information (its acknowledgement is fresh, see android_spyglass.hpp).
+#ifndef __ANDROID__
+// Desktop target information keeps its original colors; Android only draws the touch card.
 void ISPYGLASS::ApplyInfoColors()
 {
-    const bool lit = m_bIsPresentShipInfo && !m_bAndroidCovered;
-    const bool hidden = m_bAndroidCovered;
-    const auto paint = [lit, hidden](ImageParam &image, uint32_t shown) {
+    const bool lit = m_bIsPresentShipInfo;
+    const auto paint = [lit](ImageParam &image, uint32_t shown) {
         if (image.pImage)
-            image.pImage->SetColor(hidden ? 0u : lit ? shown : shown & 0xFFFFFF);
+            image.pImage->SetColor(lit ? shown : shown & 0xFFFFFF);
     };
     for (ImageParam *image : {&m_ShipImage, &m_ShipBack, &m_ShipHP, &m_ShipSP, &m_Class, &m_Nation, &m_Cannon, &m_Sail,
                               &m_Charge, &m_SailTo})
@@ -454,6 +458,7 @@ void ISPYGLASS::ApplyInfoColors()
                               &m_ImgCaptainNavigation, &m_ImgCaptainBoarding})
         paint(*image, lit ? image->dwColor : 0xFFFFFF);
 }
+#endif
 
 void ISPYGLASS::FindNewTargetShip()
 {

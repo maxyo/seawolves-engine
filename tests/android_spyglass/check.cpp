@@ -32,20 +32,17 @@ int main()
     // telescope drops.
     assert(!s.acknowledge("0\t1") && !s.acknowledge("x\t1") && !s.acknowledge("1") && !s.acknowledge("1\t2") && !s.covered());
     assert(s.acknowledge("1\t1") && s.covered() && !s.awaiting());
-    assert(s.acknowledge("1\t0") && !s.covered()); // the overlay went away: native info back
+    assert(s.acknowledge("1\t0") && !s.covered()); // the overlay went away: diagnostics must report a missing card
     s.turn(false);
     assert(!s.covered() && s.json().find("\"on\":false") != std::string::npos);
     s.turn(true);
     assert(s.generation() == 3 && !s.covered() && s.awaiting() && !s.acknowledge("1\t1"));
-    // A presenting UI: an unanswered raise keeps the native info off; a silent UI is withdrawn
-    // loudly after HudPresenters::kSilentMs of frame time and the native info comes back.
-    assert(hudPresenters.declare("spyglass") && s.covered());
-    uint32_t tick = 500;
-    for (uint32_t i = 0; i < HudPresenters::kSilentMs / 50; ++i, tick += 50) assert(!hudPresenters.watch("spyglass", s.awaiting(), tick));
-    const auto line = hudPresenters.watch("spyglass", s.awaiting(), tick);
-    assert(line && line->find("HUD presenter spyglass withdrawn") != std::string::npos && !s.covered());
-    assert(s.acknowledge("3\t1") && s.covered()); // a late answer still covers
-    assert(hudPresenters.watch("spyglass", s.awaiting(), tick + 16) && hudPresenters.spyglass); // and brings the presenter back
+    // Runtime failure leaves the native overlay disabled; a late touch HUD answer works.
+    assert(hudPresenters.declare("spyglass") && !s.covered());
+    assert(!hudPresenters.lost().empty() && !s.covered());
+    assert(hudPresenters.declare("spyglass"));
+    assert(s.acknowledge("3\t1") && s.covered());
+    assert(s.acknowledge("3\t0") && !s.covered() && !s.awaiting());
     s.clear();
     t.fort = true;
     s.target(t);

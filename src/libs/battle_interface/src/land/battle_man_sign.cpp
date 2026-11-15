@@ -158,7 +158,7 @@ void BIManSign::Draw()
     if (m_pCommandList
 #ifdef __ANDROID__
         // One coverage rule (android_hud_presenter.hpp): the touch HUD's action sheet replaces it.
-        && !storm::android::legacyDrawRefused("land command list", storm::android::hudPresenters.land)
+        && !storm::android::legacyDrawRefused("land command list")
 #endif
     ) m_pCommandList->Draw();
 }

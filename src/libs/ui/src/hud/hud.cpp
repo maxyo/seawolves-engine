@@ -623,6 +623,14 @@ void Hud::Conceal()
 
 double Hud::Tick()
 {
+    const double now = mount_.Now();
+    if (last_tick_ >= 0.0 && now - last_tick_ > 10.0)
+    {
+        mount_.Log("HUD: resuming after a UI tick gap over 10 s; redeclaring presenters and refreshing current view");
+        declared_ = false;
+        changed_ = true;
+    }
+    last_tick_ = now;
     if (!declared_)
     {
         declared_ = true;
@@ -631,7 +639,6 @@ double Hud::Tick()
                 Send("hudowner", entry.presents);
         Send("hudowner", "spyglass"); // the Hud lays the spyglass overlay over any scene
     }
-    const double now = mount_.Now();
     const bool interface = mount_.InterfaceActive();
     if (interface != interface_)
     {

@@ -36,7 +36,7 @@ int main()
     assert(!state.offer(tap, 706) && !state.covered(19)); // the tap's echo is stale; the control must be drawn again
     assert(state.offer(request(state, "ack", "1"), 707) && state.offer(request(state, "activate", "Map"), 708));
 
-    // another target under the same name: the queued tap must not fire, the native icon returns
+    // another target under the same name: the queued tap must not fire, the old tap authority expires
     state.update(frame("Map", "another target"));
     assert(!state.consume(709) && !state.covered(19));
     assert(!state.offer(tap, 710));
@@ -86,36 +86,18 @@ int main()
     assert(state.offer(request(state, "ack", "1"), 60000) && state.covered(19) && state.offer(request(state, "activate", "Board"), 60001));
     hudPresenters.sea = false;
 
-    // The UI never answers (a hung or broken runtime): the native icon must not stay hidden
-    // forever. The engine loop watches the unanswered revision and withdraws the presenter
-    // loudly; answers that still come keep working.
+    // Runtime failure cannot restore the native icon or authorize an undrawn action.
     {
         SeaQuickActionState silent;
         assert(hudPresenters.declare("sea"));
         silent.update(frame("Moor"));
-        assert(silent.awaiting() && silent.covered(19));
-        // Frames of 10 ms: the watch counts frame time, so kSilentMs takes kSilentMs / 10 frames.
-        uint32_t tick = 1000;
-        for (uint32_t i = 0; i < HudPresenters::kSilentMs / 10; ++i, tick += 10)
-            assert(!hudPresenters.watch("sea", silent.awaiting(), tick) && silent.covered(19));
-        const auto line = hudPresenters.watch("sea", silent.awaiting(), tick);
-        assert(line && line->find("HUD presenter sea withdrawn") != std::string::npos && line->find("legacy HUD is back") != std::string::npos);
-        assert(!hudPresenters.sea && !silent.covered(19)); // native back
-        assert(!hudPresenters.watch("sea", silent.awaiting(), 60000)); // said once
-        assert(silent.offer(request(silent, "ack", "1"), 60001) && silent.covered(19)); // a late answer still covers
-        // The UI answers again: the presenter comes back at the next watched frame, loudly.
-        const auto back = hudPresenters.watch("sea", silent.awaiting(), 60002);
-        assert(back && back->find("HUD presenter sea back") != std::string::npos && hudPresenters.sea);
-
-        // Answers in time reset the watch; a UI runtime failure reported by the host withdraws at once.
+        assert(silent.covered(19));
+        assert(!hudPresenters.lost().empty() && hudPresenters.sea && silent.covered(19));
+        assert(!silent.offer(request(silent, "activate", "Moor"), 60000));
         assert(hudPresenters.declare("sea"));
-        silent.update(frame("Board"));
-        tick = 100;
-        for (uint32_t i = 0; i < HudPresenters::kSilentMs / 20; ++i, tick += 10) assert(!hudPresenters.watch("sea", true, tick));
-        assert(!hudPresenters.watch("sea", false, tick)); // answered: the silence starts again
-        for (uint32_t i = 0; i < HudPresenters::kSilentMs / 10; ++i, tick += 10) assert(!hudPresenters.watch("sea", true, tick));
-        assert(hudPresenters.lost().find("UI runtime failed") != std::string::npos && !hudPresenters.sea && silent.awaiting() && !silent.covered(19));
-        assert(hudPresenters.lost().empty()); // nothing left to lose: no second line
+        assert(silent.offer(request(silent, "ack", "1"), 60001));
+        assert(silent.offer(request(silent, "activate", "Moor"), 60002));
+        hudPresenters = {};
     }
 
     for (const auto *id : {"Map", "Moor", "Board", "LandTroops", "Reload"})
@@ -143,5 +125,5 @@ int main()
     SeaQuickActionState wrap; // SDL ticks wrap around
     wrap.update(frame());
     assert(wrap.offer(request(wrap, "ack", "1"), UINT32_MAX - 300) && wrap.offer(request(wrap, "activate", "Map"), 100) && wrap.consume(200) == "Map");
-    std::cout << "sea quick action: coverage until answered otherwise, presenter pending, silent UI withdrawn loudly (native back), host-reported UI loss, exact single activation, stale target and tap, activity, unknown actions PASS\n";
+    std::cout << "sea quick action: coverage until answered otherwise, runtime failure keeps native HUD disabled, touch HUD recovery, exact single activation, stale target and tap, activity, unknown actions PASS\n";
 }

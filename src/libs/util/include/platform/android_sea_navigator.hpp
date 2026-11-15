@@ -1,5 +1,4 @@
 #pragma once
-#include "android_hud_presenter.hpp"
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -22,8 +21,6 @@ struct SeaNavigatorLayout {
 };
 class SeaNavigatorBridge {
     uint64_t revision_{}, hud_{}, source_{};
-    struct Owner { uint64_t revision{}, hud{}, source{}; bool operator==(const Owner &) const = default; };
-    Owner answered_; // the last owner the UI prepared or cleared
     uint64_t nativeDrawnId_{}, presentedId_{};
     std::optional<SeaNavigatorLayout> layout_;
     int zoom_{};
@@ -44,7 +41,7 @@ public:
         auto a=number(parts[0]),b=number(parts[1]),c=number(parts[2]);
         if(!a||!b||!c)return reject("owner-format");
         if(*a!=revision||*b!=hud||*c!=source)return reject("owner-generation");
-        if(parts[3]=="clear"&&n==4){clear();answered_={revision,hud,source};hudPresenters.answered("sea");result_="cleared";return true;}
+        if(parts[3]=="clear"&&n==4){clear();result_="cleared";return true;}
         if(parts[3]=="visible") {
             const auto id=n==5?number(parts[4]):std::nullopt;
             const auto *current=layout(revision,hud,source);
@@ -63,16 +60,11 @@ public:
         const bool sameOwner=revision_==revision&&hud_==hud&&source_==source;
         if(sameOwner&&layout_&&layout_->id==*id&&*layout_!=next)return reject("layout-id-reused");
         if(!layout(revision,hud,source)||layout_->id!=*id)nativeDrawnId_=presentedId_=0;
-        revision_=revision;hud_=hud;source_=source;answered_={revision,hud,source};hudPresenters.answered("sea");
+        revision_=revision;hud_=hud;source_=source;
         layout_=next;result_="prepared";return true;
     }
     const SeaNavigatorLayout *layout(uint64_t revision,uint64_t hud,uint64_t source)const {
         return layout_&&revision==revision_&&hud==hud_&&source==source_?&*layout_:nullptr;
-    }
-    // The presenting UI has not answered this owner yet (for its silence watchdog only: the
-    // native compass is off whenever the UI presents the sea HUD, android_hud_presenter.hpp).
-    bool pending(uint64_t revision,uint64_t hud,uint64_t source)const {
-        return hudPresenters.sea&&!(answered_==Owner{revision,hud,source});
     }
     void didDraw(uint64_t id) { nativeDrawnId_=layout_&&layout_->id==id?id:0; }
     bool presented(uint64_t revision,uint64_t hud,uint64_t source,uint64_t id) const {

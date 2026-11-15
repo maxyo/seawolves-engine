@@ -790,7 +790,8 @@ class SeaScene final : public Scene
         hud_.Send("shiphud", word, "shiphud");
     }
 
-    // Nothing of the HUD is on the screen (any more): every native indicator comes back.
+    // Nothing of the HUD is on the screen (any more): the coverage answers say so (the legacy
+    // indicators stay off on Android regardless, android_hud_presenter.hpp).
     void Uncover(const States &states)
     {
         CoverShip(states, nullptr, View());

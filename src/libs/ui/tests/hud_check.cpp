@@ -425,6 +425,49 @@ static void CheckLayout()
            "layout: props must be an object");
 }
 
+static void CheckTickRecovery()
+{
+    FakeMount mount;
+    Hud hud(mount);
+    hud.Edit().presentation.known = true;
+    hud.Edit().presentation.live = true;
+    mount.now = 100.0;
+    hud.Tick();
+    const std::vector<std::string> declarations = {"hudowner:land", "hudowner:sea", "hudowner:worldmap", "hudowner:spyglass"};
+    const auto owners = [&] {
+        std::vector<std::string> result;
+        for (const auto &command : mount.commands)
+            if (command.starts_with("hudowner:"))
+                result.push_back(command);
+        return result;
+    };
+    Expect(owners() == declarations && mount.errors.empty() && mount.logs.empty(), "first UI tick declares every presenter without a false gap");
+    const int initial_shows = mount.shows;
+    mount.now += 0.016;
+    hud.Tick();
+    Expect(owners() == declarations && mount.shows == initial_shows && mount.errors.empty() && mount.logs.empty(),
+           "steady UI ticks neither redeclare nor rebuild");
+    mount.now += 10.0;
+    hud.Tick();
+    Expect(owners() == declarations && mount.errors.empty() && mount.logs.empty(), "a gap of exactly 10 seconds does not recover");
+    mount.now += 10.1;
+    hud.Tick();
+    auto recovered = declarations;
+    recovered.insert(recovered.end(), declarations.begin(), declarations.end());
+    Expect(owners() == recovered && mount.shows == initial_shows + 1 && mount.visible,
+           "a UI tick gap redeclares all presenters and mounts the current view again");
+    Expect(mount.errors.empty() && mount.logs.size() == 1 && mount.logs.back().find("redeclaring presenters") != std::string::npos,
+           "a normal idle or background resume is logged without a runtime error");
+    mount.now += 0.016;
+    hud.Tick();
+    Expect(owners() == recovered && mount.shows == initial_shows + 1 && mount.errors.empty() && mount.logs.size() == 1,
+           "recovery is bounded to one declaration batch and rebuild per gap");
+    mount.now += 3600.0; // the normal idle scheduling delay is also a resume, not a runtime failure
+    hud.Tick();
+    Expect(mount.errors.empty() && mount.logs.size() == 2 && owners().size() == declarations.size() * 3 && mount.shows == initial_shows + 2,
+           "a full idle scheduling delay refreshes presenters and logs again without an error");
+}
+
 static void CheckScenes()
 {
     calls.clear();
@@ -634,6 +677,7 @@ int main(int argc, char **argv)
     states_directory = argc > 1 ? argv[1] : "tests/states";
     CheckConsumers();
     CheckLayout();
+    CheckTickRecovery();
     CheckScenes();
     if (failures)
         std::fprintf(stderr, "%d HUD check(s) failed\n", failures);

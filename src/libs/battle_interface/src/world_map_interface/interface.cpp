@@ -49,7 +49,7 @@ void WM_INTERFACE::Realize(uint32_t delta_time)
             // the UI presents the world-map HUD the fleet is its own, also under a game interface
             // over the map (the encounter signal), when no frame is available.
             const bool answered = storm::android::worldMapHud.covered(storm::android::MapShips,core.GetEntityId("WorldMap"),SDL_GetTicks());
-            if (!storm::android::legacyDrawRefused("world map fleet", storm::android::hudPresenters.worldMap) && !answered)
+            if (!storm::android::legacyDrawRefused("world map fleet") && !answered)
 #endif
                 m_pShipIcon->Draw();
         }

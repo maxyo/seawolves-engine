@@ -175,31 +175,23 @@ void BATTLE_INTERFACE::Realize(uint32_t delta_time)
         if (m_bVisible)
         {
             rs->MakePostProcess();
-#ifdef __ANDROID__
-            // One coverage rule (android_hud_presenter.hpp): while the touch HUD presents the sea
-            // HUD, none of the legacy sea interface's panels draws: info images, perk/state icons, the
-            // command icons, readout texts, lines and the battle border. Only the navigator runs,
-            // which draws the radar into the touch HUD's own disc and never the native compass.
-            const bool legacy = !storm::android::legacyDrawRefused("sea interface", storm::android::hudPresenters.sea);
-#else
-            constexpr bool legacy = true;
-#endif
-
             // The bars and relation icons over ships and forts are drawn in the scene: the touch HUD
             // has nothing in their place, so they show under it (a world-space layer).
 #ifdef __ANDROID__
-            const bool shipBars = !storm::android::legacyDrawRefused("ship bars", storm::android::hudPresenters.sea);
+            const bool shipBars = !storm::android::legacyDrawRefused("ship bars");
 #else
             constexpr bool shipBars = true;
 #endif
             if (shipBars && m_bShowBattleNavigator && m_pShipInfoImages)
                 m_pShipInfoImages->Draw();
 
-            if (legacy && m_bShowBattleNavigator)
+#ifndef __ANDROID__
+            if (m_bShowBattleNavigator)
                 m_ImagesInfo.Draw();
 
-            if (legacy && m_bShowCommandMenu)
+            if (m_bShowCommandMenu)
                 m_pShipIcon->Draw();
+#endif
 #ifdef __ANDROID__
             // The touch orders panel covers the open command menu: the native navigator and its
             // readouts step aside with the menu (the panel brings its own ship list and bars).
@@ -216,13 +208,15 @@ void BATTLE_INTERFACE::Realize(uint32_t delta_time)
             }
             // if( m_pMessageIcons ) m_pMessageIcons->Draw();
 
-            if (legacy && navigatorShown)
+#ifndef __ANDROID__
+            if (navigatorShown)
             {
                 BIUtils::PrintTextInfoArray(m_TextArray);
                 m_LinesInfo.Draw();
                 if (m_bShowBattleBorder)
                     m_BattleBorder.Draw();
             }
+#endif
         }
     }
     else

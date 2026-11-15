@@ -151,29 +151,29 @@ int main()
     assert(!state.acknowledge(request(63))); // legacy unversioned coverage ACK must fail closed
     assert(state.mask() == 0); // telemetry delivery alone never hides native UI
     assert(state.acknowledge(ack(63)));
-    assert(state.mask() == 0 && !state.awaiting()); // no presenting UI: nothing replaced; the answer proves the UI alive
+    assert(state.mask() == 0); // no presenting UI: nothing replaced; the answer proves the UI alive
     assert(!state.acknowledge(ack(2048)));
     assert(!state.acknowledge("0\t63"));
     assert(!state.acknowledge(ack(1) + "junk"));
     {
         // One coverage rule: while the UI presents the sea HUD every legacy indicator is replaced,
         // deterministically, whatever the UI answered or has not answered yet (after a load, a
-        // new fleet, a telescope going down); the answers only prove it alive (awaiting).
+        // new fleet, a telescope going down); the answers only prove it alive.
         hudPresenters.sea = true;
         ShipTelemetryState presented;
         presented.update(epoch, frame);
-        assert(presented.mask() == ShipAll && presented.awaiting());
+        assert(presented.mask() == ShipAll);
         assert(presented.acknowledge(std::to_string(epoch) + "\t0\t" + std::to_string(presented.hudRevision())));
-        assert(presented.mask() == ShipAll && !presented.awaiting());
+        assert(presented.mask() == ShipAll);
         presented.resetActivity();
-        assert(presented.mask() == ShipAll && presented.awaiting());
+        assert(presented.mask() == ShipAll);
         // Every legacy HUD layer asks the same switch at its source: refused while the UI presents
-        // (any of) its HUD, allowed otherwise; withdrawal gives the legacy HUD back.
-        assert(legacyDrawRefused("sea interface", hudPresenters.sea) && legacyDrawRefused("active perk icons"));
+        // (any of) its HUD; runtime failure never restores legacy drawing.
+        assert(legacyDrawRefused("land interface") && legacyDrawRefused("active perk icons"));
         hudPresenters.sea = false;
         assert(presented.mask() == 0);
-        assert(!legacyDrawRefused("sea interface", hudPresenters.sea) && !legacyDrawRefused("active perk icons"));
-        assert(hudPresenters.declare("land") && legacyDrawRefused("timer bar") && !hudPresenters.lost().empty() && !legacyDrawRefused("timer bar"));
+        assert(legacyDrawRefused("land interface") && legacyDrawRefused("active perk icons"));
+        assert(hudPresenters.declare("land") && legacyDrawRefused("timer bar") && !hudPresenters.lost().empty() && legacyDrawRefused("timer bar"));
     }
     const auto first = state.publication(0);
     assert(first && first->find("\"ammoCount\":0") != std::string::npos);
@@ -200,7 +200,7 @@ int main()
     state.update(epoch, frame);
     assert(!(state.mask() & ShipAmmo)); // reappearing field needs a new rendered ACK
     assert(state.acknowledge(ack(63)));
-    assert(!state.awaiting());
+
     frame.fleet.front().sails = shipMetric(70, 100);
     state.update(epoch, frame);
     assert(state.acknowledge(ack(63)));
@@ -252,7 +252,7 @@ int main()
     assert((captions.frame().availableMask() & ShipCaptions) == ShipCaptions);
     assert(captions.mask() == 0);
     assert(captions.acknowledge(captionAck(ShipSpeed)));
-    assert(!captions.awaiting());
+
     assert(captions.acknowledge(captionAck(ShipCaptions)));
     assert(captions.mask() == 0);
     const auto allCaptions = captions.publication(0);
@@ -271,7 +271,7 @@ int main()
     frame.locationText = "Порт Сан-Хуан";
     captions.update(epoch, frame);
     assert(captions.hudRevision() == captionRevision && captions.revision() == epoch);
-    assert(!captions.awaiting());
+
     assert(!captions.publication(99) && captions.publication(100));
     const auto staleCaptionAck = captionAck(ShipCaptions);
     frame.captionsVisible = false;
@@ -301,7 +301,7 @@ int main()
         captions.update(epoch, frame);
         assert(!(captions.mask() & bit));
         assert(captions.acknowledge(captionAck(ShipCaptions)));
-        assert(!captions.awaiting());
+
     }
     captions.resetActivity();
     assert(captions.mask() == 0);

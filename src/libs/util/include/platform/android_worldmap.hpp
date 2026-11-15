@@ -111,9 +111,8 @@ class WorldMapHud
     WorldMapFrame frame_;
     uint64_t revision_ = 0, activity_ = 0;
     // Coverage of the instruments, fleet and command icon: said once per revision, kept until
-    // the revision changes (android_hud_presenter.hpp); answered_ is the revision it answers.
+    // the revision changes (android_hud_presenter.hpp).
     uint32_t covered_ = 0, tick_ = 0;
-    uint64_t answered_ = 0;
     std::string pending_;
     uint32_t pendingAt_ = 0;
     uint64_t ackProof_=0;
@@ -132,7 +131,7 @@ public:
         const auto proof=modal.resumeAck();
         if(!proof.proof||proof.owner!=owner()||!frame_.available||(proof.mask&frame_.availableMask())!=proof.mask)return;
         if(proof.proof>=ackProof_ && tick-proof.at<=1000){
-            ackProof_=proof.proof;covered_=proof.mask;answered_=revision_;hudPresenters.answered("worldmap");
+            ackProof_=proof.proof;covered_=proof.mask;
         }
         if(ackProof_>=proof.proof&&covered(proof.mask,frame_.owner))modal.resumed(owner(),ackProof_);
     }
@@ -156,9 +155,8 @@ public:
         if (!frame_.available) { covered_ = 0; pending_.clear(); }
         modal.owner(frame_.available?owner():WorldMapModal::Owner{});
     }
-    void resetActivity() { ++activity_; covered_ = 0; answered_ = 0; pending_.clear();ackProof_=0;modal.owner(owner()); } // revision_ >= 1 once available
+    void resetActivity() { ++activity_; covered_ = 0; pending_.clear();ackProof_=0;modal.owner(owner()); } // revision_ >= 1 once available
     const WorldMapFrame &frame() const { return frame_; }
-    bool awaiting() const { return frame_.available && answered_ != revision_; }
     uint64_t revision() const { return revision_; }
     // Last drawn UI compass box, including date/days, in its display's pixels.
     // A changed owner or a hidden HUD cannot reserve space for an obsolete compass.
@@ -216,7 +214,7 @@ public:
             if(proof&&proof<ackProof_)return false;
             mask&=frame_.availableMask();
             if(!modal.ack(owner(),static_cast<uint32_t>(mask),proof,tick))return false;
-            covered_=static_cast<uint32_t>(mask);answered_=revision_;hudPresenters.answered("worldmap");if(proof)ackProof_=proof;return true;
+            covered_=static_cast<uint32_t>(mask);if(proof)ackProof_=proof;return true;
         }
         if(fields[2]=="prepare")
         {
