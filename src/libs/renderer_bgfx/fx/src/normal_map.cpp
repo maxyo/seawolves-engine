@@ -26,7 +26,20 @@ struct Rule
     const char *pattern;
     ReliefClass relief;
     const char *text; // the rule as logged
+    bool (*accept)(std::string_view) = nullptr; // optional additional name constraint
 };
+
+bool ResidenceInterior(std::string_view path)
+{
+    const size_t slash = path.rfind('/');
+    std::string_view name = slash == std::string_view::npos ? path : path.substr(slash + 1);
+    if (!name.starts_with("residence"))
+        return false;
+    name.remove_prefix(9);
+    while (!name.empty() && ((name.front() >= '0' && name.front() <= '9') || name.front() == '_'))
+        name.remove_prefix(1);
+    return name == "ins" || name == "inside" || name == "tex";
+}
 
 // TEHO's RESOURCE/Textures, first match wins. Location textures lie in the root folder under descriptive names
 // (English, Russian transliterations, a few French); ships in Ships/<type>/Hull<n>/. Written from the texture list of
@@ -166,6 +179,19 @@ const Rule kRules[] = {
     STORM_RULE("", Contains, "seagull", N),
     STORM_RULE("", Contains, "fish", N),
 
+    // Floors and woven surfaces stay shallow, including compound building/stone names.
+    // Exclusions above still win (UI, alpha cards, paintings, foliage and effects).
+    STORM_RULE("", Contains, "floor", P),
+    STORM_RULE("", Contains, "parquet", P),
+    STORM_RULE("", Contains, "cloth", P),
+    STORM_RULE("", Contains, "carpet", P),
+    STORM_RULE("", Contains, "fabric", P),
+    // These stock interior atlases mix floors/rugs with furniture and wall patches.
+    // Classify the whole atlas shallow; exterior Residence* masonry remains Building.
+    {"", Match::Prefix, "residence", P, "residence + interior suffix", ResidenceInterior},
+    STORM_RULE("", Exact, "smallresidence", P),
+    STORM_RULE("", Exact, "pirate_residence", P),
+
     // Weapons and tools (before the wood: "rapier" holds "pier").
     STORM_RULE("", Contains, "pistol", M),
     STORM_RULE("", Contains, "blade", M),
@@ -262,7 +288,6 @@ const Rule kRules[] = {
     // Plaster and ground.
     STORM_RULE("", Contains, "celling", P), // ceilings
     STORM_RULE("", Contains, "potolok", P), // ceiling
-    STORM_RULE("", Contains, "floor", P),
     STORM_RULE("", Contains, "ground", P),
     STORM_RULE("", Contains, "grnd", P),
     STORM_RULE("", Contains, "land", P),
@@ -274,10 +299,6 @@ const Rule kRules[] = {
     STORM_RULE("", Contains, "path", P),
     STORM_RULE("", Contains, "tropa", P), // path
     STORM_RULE("", Contains, "jungle", P),
-    // Cloth on furniture, carpets: woven, shallow (sails and flags have none, above).
-    STORM_RULE("", Contains, "cloth", P),
-    STORM_RULE("", Contains, "carpet", P),
-    STORM_RULE("", Contains, "fabric", P),
     // Everything else: props of the locations and the ships, items, island textures.
     {"", Match::Prefix, "", O, "(no other rule: a prop)"},
 
@@ -463,7 +484,7 @@ bool IsGrayscale(std::span<const uint8_t> rgba)
 ReliefVerdict ClassifyTextureName(std::string_view path)
 {
     for (const Rule &rule : kRules)
-        if (rules::Matches(path, rule.folder, rule.match, rule.pattern))
+        if (rules::Matches(path, rule.folder, rule.match, rule.pattern) && (!rule.accept || rule.accept(path)))
             return {rule.relief, rule.text, rule.match == Match::Folder};
     return {};
 }

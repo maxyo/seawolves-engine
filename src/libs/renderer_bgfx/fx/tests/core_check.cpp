@@ -1456,6 +1456,17 @@ void CheckReliefRules()
         {"hut1", B}, {"hut2", B}, {"hut3", B}, {"hut4", B}, {"barn2", B},
         {"Hut1_walls", B}, {"Hut2_walls", B}, {"Hut3_walls", B}, {"Hut4_walls", B}, {"barn2_wall", B},
         {"windmill_walls", B}, {"FlH03", B}, {"SpH4_walls", B}, {"Shipyard1", B}, {"objects_tex2", W},
+        // Actual mixed residence interiors and compound floor names stay shallow (no POM).
+        {"residence1ins.tga.tx", P}, {"residence4ins.tga.tx", P}, {"residence2_tex.tga.tx", P},
+        {"residence3_tex.tga.tx", P}, {"Residence_5_inside.tga.tx", P}, {"SmallResidence.tga.tx", P},
+        {"Pirate_residence.tga.tx", P}, {"TwoFloorHouse.tga.tx", P}, {"estateFloorU1.tga.tx", P},
+        {"parquetU1.tga.tx", P}, {"floortile.tga.tx", P},
+        {"stone_floor", P}, {"residence_carpet", P}, {"house_cloth", P}, {"stone_fabric", P},
+        {"residence6_inside", P}, {"residence7ins", P}, {"residence8_tex", P},
+        {"residence_ins_wall", B}, {"fort_inside_wall", S}, {"stone_wall", S},
+        {"painting_floor", N}, {"leaf_residence_inside", N}, {"loading/residence6_inside", N},
+        {"Residence1.tga.tx", B}, {"Residence2.tga.tx", B}, {"Residence3.tga.tx", B},
+        {"Residence4.tga.tx", B}, {"Residence4a.tga.tx", B},
         // plaster, ground
         {"Celling", P}, {"floorU3", P}, {"groundK2", P}, {"1sand1", P}, {"shoreU5", P},
         {"dirtK3", P}, {"tropa256", P}, {"jungleU5", P}, {"1grass1", P}, {"grassgreen1", P},
