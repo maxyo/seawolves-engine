@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -25,8 +26,16 @@ namespace storm::fx
 // nice 10 (Linux, Android): the game's main and render threads go first. Between pieces every thread waits while the
 // gate says so (SetBakeGate: the device is hot, the renderer holds the work), the pause and the resume logged. On the bake thread a cancelled bake takes no
 // further piece and throws BakeCancelled once the pieces already running are done.
+// Optional cumulative attribution. These are sums of elapsed times on participating threads, NOT CPU time
+// and NOT wall-time components that may be subtracted from one another (threads overlap/deschedule).
+struct ParallelRangeStats
+{
+    std::atomic<uint64_t> gate_ns{0}, work_ns{0}, pieces{0}, calls{0};
+};
 void ParallelRanges(size_t count, unsigned threads, const std::function<void(size_t, size_t)> &work,
                     size_t min_piece = 256);
+void ParallelRanges(size_t count, unsigned threads, const std::function<void(size_t, size_t)> &work,
+                    size_t min_piece, ParallelRangeStats *stats);
 // Why ParallelRanges must wait now (null: it may run; asked between pieces, so cheap); a null gate never pauses.
 // While it says wait it is asked again every `pause_ms`; a cancelled bake leaves the pause at once.
 void SetBakeGate(const char *(*wait_reason)(), int pause_ms = 5000);

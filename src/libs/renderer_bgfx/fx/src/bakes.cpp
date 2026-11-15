@@ -265,6 +265,13 @@ void SetBakeGate(const char *(*wait_reason)(), int pause_ms)
 
 void ParallelRanges(size_t count, unsigned threads, const std::function<void(size_t, size_t)> &work, size_t min_piece)
 {
+    ParallelRanges(count, threads, work, min_piece, nullptr);
+}
+
+void ParallelRanges(size_t count, unsigned threads, const std::function<void(size_t, size_t)> &work, size_t min_piece, ParallelRangeStats *stats)
+{
+    if (stats)
+        stats->calls.fetch_add(1, std::memory_order_relaxed);
     const detail::BakeState *bake = t_bake;
     min_piece = std::max<size_t>(1, min_piece);
     threads = std::max(1u, std::min<unsigned>(threads, static_cast<unsigned>(std::max<size_t>(1, count / min_piece))));
@@ -279,10 +286,36 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
             const size_t first = next.fetch_add(piece);
             if (first >= count)
                 return;
-            BakeGate(bake);
-            if (Cancelled(bake))
-                return;
-            work(first, std::min(count, first + piece));
+            if (!stats)
+            {
+                BakeGate(bake);
+                if (Cancelled(bake))
+                    return;
+                work(first, std::min(count, first + piece));
+            }
+            else
+            {
+                // RAII also attributes a piece interrupted by an exception; ownership/cancellation is unchanged.
+                struct Elapsed
+                {
+                    std::atomic<uint64_t> &sum;
+                    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+                    ~Elapsed()
+                    {
+                        sum.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                          std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed);
+                    }
+                };
+                {
+                    Elapsed timing{stats->gate_ns};
+                    BakeGate(bake);
+                }
+                if (Cancelled(bake))
+                    return;
+                Elapsed timing{stats->work_ns};
+                stats->pieces.fetch_add(1, std::memory_order_relaxed);
+                work(first, std::min(count, first + piece));
+            }
         }
     };
     // The first exception of any thread (`work` failing, or a nested ParallelRanges of a cancelled bake) stops the

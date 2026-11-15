@@ -33,6 +33,7 @@
 
 namespace storm::fx
 {
+struct ParallelRangeStats;
 
 // Bump on any change of the scene bake that changes its output (the disk cache is keyed by it).
 inline constexpr uint32_t kBounceBakeVersion = 2;
@@ -136,6 +137,17 @@ struct BounceField
 // mean; then one [1 2 1] blur along each axis (32 rays leave noise). Both only between linked neighbours: no light
 // passes through a wall into the next room.
 BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, unsigned threads);
+
+// Independent initial white-sun and lamp fields using one shared ParallelRanges budget.
+// No-sun returns an empty sun object, as the effects consumer expects; lamps may be an all-zero field.
+// Large inputs fall back to sequential execution to cap extra scratch; outputs/quality are unchanged.
+struct BounceFields
+{
+    BounceField sun, lamps;
+};
+BounceFields GatherBounceLights(const Occluders &occluders, const BounceScene &scene, const Vec3 &sun,
+                               std::span<const Lamp> lamps, std::span<const float> holder,
+                               std::span<const std::vector<uint32_t>> fixture, unsigned threads, ParallelRangeStats *stats = nullptr);
 
 // The two blocks' bytes of every cell of `grid`: `visibility` (RGBA8, its R and G kept) gets v.x / v.z in B / A,
 // `bounce` (RGBA8, resized) sqrt(c / kBounceRange) and v.y. `scale`: c and m of `field` times it per channel

@@ -1,6 +1,7 @@
 #include "effects/bounce.hpp"
 
 #include "effects/occluder_log.hpp"
+#include "storm/fx/log.hpp"
 
 #include "effects/casters.hpp"
 #include "effects/visibility.hpp"
@@ -240,8 +241,8 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
         shim::logf("effects: bounce of %s: field %u written (sun %s, lamps %s, lamp share %.2f, light mean %.3f p99 %.3f, "
                    "written in %.0f ms)",
                    name_.c_str(), generation_,
-                   job.sun ? (std::to_string(std::lround(job.sun_ms)) + " ms").c_str() : "kept",
-                   job.lamps ? (std::to_string(std::lround(job.lamps_ms)) + " ms").c_str() : "kept", job.lamp_share,
+                   job.sun ? (job.sun_ms < 0.0 ? "combined" : (std::to_string(std::lround(job.sun_ms)) + " ms").c_str()) : "kept",
+                   job.lamps ? (job.lamps_ms < 0.0 ? "combined" : (std::to_string(std::lround(job.lamps_ms)) + " ms").c_str()) : "kept", job.lamp_share,
                    job.mean, job.p99, job.write_ms);
         light_job_.reset();
     }
@@ -283,7 +284,25 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
         const unsigned threads = Threads();
         const fx::BounceScene &s = scene->scene;
         std::shared_ptr<const fx::BounceField> sun_now = sun_field, lamps_now = lamp_field;
-        if (bake_sun)
+        const bool combined = bake_sun && new_lamps;
+        if (combined)
+        {
+            const auto t = std::chrono::steady_clock::now();
+            fx::ParallelRangeStats stats;
+            fx::BounceFields fields = fx::GatherBounceLights(*scene->occluders, s, sun, lamps, holders, fixtures,
+                                                             threads, &stats);
+            job->sun = std::make_shared<const fx::BounceField>(std::move(fields.sun));
+            job->lamps = std::make_shared<const fx::BounceField>(std::move(fields.lamps));
+            sun_now = job->sun;
+            lamps_now = job->lamps;
+            job->sun_ms = job->lamps_ms = -1.0; // elapsed attribution is for the shared job, not separate stages
+            fx::Log(fx::LogLevel::Info,
+                    "bounce: combined initial fields wall %.1f ms; worker elapsed sums work %.1f ms gate %.1f ms, "
+                    "%llu pieces, budget %u (thread sums, not CPU time; separate-stage times not applicable)",
+                    Since(t), stats.work_ns.load() / 1e6, stats.gate_ns.load() / 1e6,
+                    static_cast<unsigned long long>(stats.pieces.load()), threads);
+        }
+        if (bake_sun && !combined)
         {
             const auto t = std::chrono::steady_clock::now();
             const fx::Vec3 dir{sun[0], sun[1], sun[2]};
@@ -294,9 +313,9 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
             job->sun_ms = Since(t);
             sun_now = job->sun;
         }
-        else if (sun_field != nullptr)
+        else if (!combined && sun_field != nullptr)
             job->sun = sun_field; // the town light's, taken in
-        if (new_lamps)
+        if (new_lamps && !combined)
         {
             const auto t = std::chrono::steady_clock::now();
             job->lamps = std::make_shared<const fx::BounceField>(

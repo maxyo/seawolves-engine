@@ -353,110 +353,134 @@ std::optional<BounceScene> DecodeBounceScene(std::span<const uint8_t> bytes, uin
     return s;
 }
 
+namespace
+{
+void SunRange(const Occluders &occluders, const BounceScene &scene, const Vec3 &sun, const Rgb &color,
+          SurfelLight &light, size_t begin, size_t end)
+{
+    Occluders::Scratch scratch;
+    for (size_t s = begin; s < end; ++s)
+    {
+        const float d = Dot(scene.normal[s], sun);
+        if (std::fabs(d) <= 0.02f)
+            continue;
+        // The side that faces the sun, two rays across the surfel (soft edges at its size).
+        const float side = d > 0.0f ? 1.0f : -1.0f;
+        const Vec3 n{scene.normal[s][0] * side, scene.normal[s][1] * side, scene.normal[s][2] * side};
+        const Vec3 t = Tangent(n);
+        int lit = 0;
+        for (int k = 0; k < 2; ++k)
+        {
+            const float j = (k ? 0.25f : -0.25f) * 0.5f;
+            const Vec3 o{scene.position[s][0] + n[0] * kSurfaceOffset + t[0] * j,
+                         scene.position[s][1] + n[1] * kSurfaceOffset + t[1] * j,
+                         scene.position[s][2] + n[2] * kSurfaceOffset + t[2] * j};
+            lit += occluders.Occluded(o, sun, kSunRayReach, scratch) ? 0 : 1;
+        }
+        const float e = std::fabs(d) * 0.5f * static_cast<float>(lit);
+        light[s * 2 + (d > 0.0f ? 1 : 0)] = {color[0] * e, color[1] * e, color[2] * e};
+    }
+}
+
+void LampRange(const Occluders &occluders, const BounceScene &scene, std::span<const Lamp> lamps,
+           std::span<const float> holder, std::span<const std::vector<uint32_t>> fixture,
+           SurfelLight &light, size_t begin, size_t end)
+{
+    Occluders::Scratch scratch;
+    for (size_t s = begin; s < end; ++s)
+        for (size_t i = 0; i < lamps.size(); ++i)
+        {
+            const Lamp &lamp = lamps[i];
+            if (const auto *group=lamp.aggregate.get(); group && group->count>1)
+            {
+                // The bounce consumes the same compound: original member irradiance, one center visibility.
+                const Vec3 delta=Sub(group->center,scene.position[s]);
+                const float center_reach=Length(delta);
+                if (center_reach>=group->support) continue;
+                if (center_reach>=1e-4f)
+                {
+                    const Vec3 toward{delta[0]/center_reach,delta[1]/center_reach,delta[2]/center_reach};
+                    const float side=Dot(scene.normal[s],toward)>0.0f ? 1.0f : -1.0f;
+                    const Vec3 origin{scene.position[s][0]+scene.normal[s][0]*side*kSurfaceOffset,
+                                      scene.position[s][1]+scene.normal[s][1]*side*kSurfaceOffset,
+                                      scene.position[s][2]+scene.normal[s][2]*side*kSurfaceOffset};
+                    if (occluders.Occluded(origin,toward,center_reach,scratch,
+                        i<fixture.size()?std::span<const uint32_t>(fixture[i]):std::span<const uint32_t>{})) continue;
+                }
+                for (uint32_t m=0;m<group->count;++m)
+                {
+                    const auto &member=lamp.aggregate.snapshot->members[group->first+m];
+                    const Vec3 l=Sub(member.position,scene.position[s]);
+                    const float reach=Length(l);
+                    if (reach>=group->shape.range || reach<1e-4f) continue;
+                    const Vec3 dir{l[0]/reach,l[1]/reach,l[2]/reach};
+                    const float d=Dot(scene.normal[s],dir);
+                    if (std::fabs(d)<=0.02f) continue; // original singleton bake law
+                    const float e=std::fabs(d)*LightFalloffGammaAt(group->shape,reach);
+                    Rgb &out=light[s*2+(d>0.0f?1:0)];
+                    for (int k=0;k<3;++k) out[k]+=member.color[k]*e;
+                }
+                continue;
+            }
+            const Vec3 l = Sub(lamp.position, scene.position[s]);
+            const float reach = Length(l);
+            if (reach >= lamp.range || reach < 1e-4f)
+                continue;
+            const Vec3 dir{l[0] / reach, l[1] / reach, l[2] / reach};
+            const float d = Dot(scene.normal[s], dir);
+            if (std::fabs(d) <= 0.02f)
+                continue;
+            // ffLampAdd's falloff of a lamp of the place.
+            const float falloff = LightFalloffGammaAt(ShapeOf(lamp), reach);
+            const float size = i < holder.size() ? holder[i] : 0.0f;
+            const float side = d > 0.0f ? 1.0f : -1.0f;
+            const Vec3 o{scene.position[s][0] + scene.normal[s][0] * side * kSurfaceOffset,
+                         scene.position[s][1] + scene.normal[s][1] * side * kSurfaceOffset,
+                         scene.position[s][2] + scene.normal[s][2] * side * kSurfaceOffset};
+            // The lamp's own fixture does not shadow it.
+            if (occluders.Occluded(o, dir, std::max(0.01f, reach - size), scratch,
+                                   i < fixture.size() ? std::span<const uint32_t>(fixture[i]) : std::span<const uint32_t>{}))
+                continue;
+            const float e = std::fabs(d) * falloff;
+            Rgb &out = light[s * 2 + (d > 0.0f ? 1 : 0)];
+            for (int k = 0; k < 3; ++k)
+                out[k] += lamp.color[k] * e;
+        }
+}
+} // namespace
+
+SurfelLight SunOnSurfels(const Occluders &occluders, const BounceScene &scene, const Vec3 &sun, const Rgb &color,
+                         unsigned threads, ParallelRangeStats *stats)
+{
+    SurfelLight light(scene.position.size() * 2, Rgb{});
+    if (sun[1] > 0.0f)
+        ParallelRanges(scene.position.size(), threads, [&](size_t begin, size_t end) {
+            SunRange(occluders, scene, sun, color, light, begin, end);
+        }, 256, stats);
+    return light;
+}
+
+SurfelLight LampsOnSurfels(const Occluders &occluders, const BounceScene &scene, std::span<const Lamp> lamps,
+                           std::span<const float> holder, std::span<const std::vector<uint32_t>> fixture, unsigned threads, ParallelRangeStats *stats)
+{
+    SurfelLight light(scene.position.size() * 2, Rgb{});
+    if (!lamps.empty())
+        ParallelRanges(scene.position.size(), threads, [&](size_t begin, size_t end) {
+            LampRange(occluders, scene, lamps, holder, fixture, light, begin, end);
+        }, 256, stats);
+    return light;
+}
+
 SurfelLight SunOnSurfels(const Occluders &occluders, const BounceScene &scene, const Vec3 &sun, const Rgb &color,
                          unsigned threads)
 {
-    const size_t surfels = scene.position.size();
-    SurfelLight light(surfels * 2, Rgb{0.0f, 0.0f, 0.0f});
-    if (sun[1] <= 0.0f)
-        return light; // below the horizon
-    ParallelRanges(surfels, threads, [&](size_t begin, size_t end) {
-        Occluders::Scratch scratch;
-        for (size_t s = begin; s < end; ++s)
-        {
-            const float d = Dot(scene.normal[s], sun);
-            if (std::fabs(d) <= 0.02f)
-                continue;
-            // The side that faces the sun, two rays across the surfel (soft edges at its size).
-            const float side = d > 0.0f ? 1.0f : -1.0f;
-            const Vec3 n{scene.normal[s][0] * side, scene.normal[s][1] * side, scene.normal[s][2] * side};
-            const Vec3 t = Tangent(n);
-            int lit = 0;
-            for (int k = 0; k < 2; ++k)
-            {
-                const float j = (k ? 0.25f : -0.25f) * 0.5f;
-                const Vec3 o{scene.position[s][0] + n[0] * kSurfaceOffset + t[0] * j,
-                             scene.position[s][1] + n[1] * kSurfaceOffset + t[1] * j,
-                             scene.position[s][2] + n[2] * kSurfaceOffset + t[2] * j};
-                lit += occluders.Occluded(o, sun, kSunRayReach, scratch) ? 0 : 1;
-            }
-            const float e = std::fabs(d) * 0.5f * static_cast<float>(lit);
-            light[s * 2 + (d > 0.0f ? 1 : 0)] = {color[0] * e, color[1] * e, color[2] * e};
-        }
-    });
-    return light;
+    return SunOnSurfels(occluders, scene, sun, color, threads, nullptr);
 }
 
 SurfelLight LampsOnSurfels(const Occluders &occluders, const BounceScene &scene, std::span<const Lamp> lamps,
                            std::span<const float> holder, std::span<const std::vector<uint32_t>> fixture, unsigned threads)
 {
-    const size_t surfels = scene.position.size();
-    SurfelLight light(surfels * 2, Rgb{0.0f, 0.0f, 0.0f});
-    if (lamps.empty())
-        return light;
-    ParallelRanges(surfels, threads, [&](size_t begin, size_t end) {
-        Occluders::Scratch scratch;
-        for (size_t s = begin; s < end; ++s)
-            for (size_t i = 0; i < lamps.size(); ++i)
-            {
-                const Lamp &lamp = lamps[i];
-                if (const auto *group=lamp.aggregate.get(); group && group->count>1)
-                {
-                    // The bounce consumes the same compound: original member irradiance, one center visibility.
-                    const Vec3 delta=Sub(group->center,scene.position[s]);
-                    const float center_reach=Length(delta);
-                    if (center_reach>=group->support) continue;
-                    if (center_reach>=1e-4f)
-                    {
-                        const Vec3 toward{delta[0]/center_reach,delta[1]/center_reach,delta[2]/center_reach};
-                        const float side=Dot(scene.normal[s],toward)>0.0f ? 1.0f : -1.0f;
-                        const Vec3 origin{scene.position[s][0]+scene.normal[s][0]*side*kSurfaceOffset,
-                                          scene.position[s][1]+scene.normal[s][1]*side*kSurfaceOffset,
-                                          scene.position[s][2]+scene.normal[s][2]*side*kSurfaceOffset};
-                        if (occluders.Occluded(origin,toward,center_reach,scratch,
-                            i<fixture.size()?std::span<const uint32_t>(fixture[i]):std::span<const uint32_t>{})) continue;
-                    }
-                    for (uint32_t m=0;m<group->count;++m)
-                    {
-                        const auto &member=lamp.aggregate.snapshot->members[group->first+m];
-                        const Vec3 l=Sub(member.position,scene.position[s]);
-                        const float reach=Length(l);
-                        if (reach>=group->shape.range || reach<1e-4f) continue;
-                        const Vec3 dir{l[0]/reach,l[1]/reach,l[2]/reach};
-                        const float d=Dot(scene.normal[s],dir);
-                        if (std::fabs(d)<=0.02f) continue; // original singleton bake law
-                        const float e=std::fabs(d)*LightFalloffGammaAt(group->shape,reach);
-                        Rgb &out=light[s*2+(d>0.0f?1:0)];
-                        for (int k=0;k<3;++k) out[k]+=member.color[k]*e;
-                    }
-                    continue;
-                }
-                const Vec3 l = Sub(lamp.position, scene.position[s]);
-                const float reach = Length(l);
-                if (reach >= lamp.range || reach < 1e-4f)
-                    continue;
-                const Vec3 dir{l[0] / reach, l[1] / reach, l[2] / reach};
-                const float d = Dot(scene.normal[s], dir);
-                if (std::fabs(d) <= 0.02f)
-                    continue;
-                // ffLampAdd's falloff of a lamp of the place.
-                const float falloff = LightFalloffGammaAt(ShapeOf(lamp), reach);
-                const float size = i < holder.size() ? holder[i] : 0.0f;
-                const float side = d > 0.0f ? 1.0f : -1.0f;
-                const Vec3 o{scene.position[s][0] + scene.normal[s][0] * side * kSurfaceOffset,
-                             scene.position[s][1] + scene.normal[s][1] * side * kSurfaceOffset,
-                             scene.position[s][2] + scene.normal[s][2] * side * kSurfaceOffset};
-                // The lamp's own fixture does not shadow it.
-                if (occluders.Occluded(o, dir, std::max(0.01f, reach - size), scratch,
-                                       i < fixture.size() ? std::span<const uint32_t>(fixture[i]) : std::span<const uint32_t>{}))
-                    continue;
-                const float e = std::fabs(d) * falloff;
-                Rgb &out = light[s * 2 + (d > 0.0f ? 1 : 0)];
-                for (int k = 0; k < 3; ++k)
-                    out[k] += lamp.color[k] * e;
-            }
-    });
-    return light;
+    return LampsOnSurfels(occluders, scene, lamps, holder, fixture, threads, nullptr);
 }
 
 Rgb BounceField::Irradiance(const Vec3 &world, const Vec3 &n) const
@@ -486,7 +510,9 @@ double BounceField::Energy() const
     return sum;
 }
 
-BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, unsigned threads)
+namespace
+{
+BounceField NewField(const BounceScene &scene, const SurfelLight &light)
 {
     BounceField field;
     if (scene.Empty() || light.size() != scene.position.size() * 2)
@@ -496,39 +522,47 @@ BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, uns
     for (int k = 0; k < 3; ++k)
         field.origin[k] = scene.grid.origin[k] + 0.5f * scene.grid.cell;
     const size_t points = scene.Points();
-    const int rays = scene.rays;
     field.moments.assign(points * 12, 0.0f);
-    ParallelRanges(points, threads, [&](size_t begin, size_t end) {
-        for (size_t p = begin; p < end; ++p)
+    return field;
+}
+
+void GatherRange(const BounceScene &scene, const SurfelLight &light, BounceField &field, size_t begin, size_t end)
+{
+    const int rays = scene.rays;
+    for (size_t p = begin; p < end; ++p)
+    {
+        if (scene.inside[p])
+            continue;
+        const float rotation = static_cast<float>((p * 2654435761u) % 1000) * 0.0062831853f; // as the bake
+        float *m = &field.moments[p * 12];
+        for (int r = 0; r < rays; ++r)
         {
-            if (scene.inside[p])
+            const uint32_t h = scene.hit[p * rays + r];
+            if (h == BounceScene::kMiss)
                 continue;
-            const float rotation = static_cast<float>((p * 2654435761u) % 1000) * 0.0062831853f; // as the bake
-            float *m = &field.moments[p * 12];
-            for (int r = 0; r < rays; ++r)
+            const Rgb &e = light[h];
+            const Rgb &a = scene.albedo[h / 2];
+            const float L[3] = {a[0] * e[0], a[1] * e[1], a[2] * e[2]};
+            if (L[0] + L[1] + L[2] <= 0.0f)
+                continue;
+            const float y = 1.0f - (2.0f * static_cast<float>(r) + 1.0f) / static_cast<float>(rays);
+            const float radius = std::sqrt(std::max(0.0f, 1.0f - y * y)), phi = 2.3999632f * static_cast<float>(r) + rotation;
+            const float d[3] = {radius * std::cos(phi), y, radius * std::sin(phi)};
+            for (int ch = 0; ch < 3; ++ch)
             {
-                const uint32_t h = scene.hit[p * rays + r];
-                if (h == BounceScene::kMiss)
-                    continue;
-                const Rgb &e = light[h];
-                const Rgb &a = scene.albedo[h / 2];
-                const float L[3] = {a[0] * e[0], a[1] * e[1], a[2] * e[2]};
-                if (L[0] + L[1] + L[2] <= 0.0f)
-                    continue;
-                const float y = 1.0f - (2.0f * static_cast<float>(r) + 1.0f) / static_cast<float>(rays);
-                const float radius = std::sqrt(std::max(0.0f, 1.0f - y * y)), phi = 2.3999632f * static_cast<float>(r) + rotation;
-                const float d[3] = {radius * std::cos(phi), y, radius * std::sin(phi)};
-                for (int ch = 0; ch < 3; ++ch)
-                {
-                    m[ch] += L[ch];
-                    for (int k = 0; k < 3; ++k)
-                        m[3 + 3 * k + ch] += L[ch] * d[k];
-                }
+                m[ch] += L[ch];
+                for (int k = 0; k < 3; ++k)
+                    m[3 + 3 * k + ch] += L[ch] * d[k];
             }
-            for (int k = 0; k < 12; ++k)
-                m[k] /= static_cast<float>(rays);
         }
-    });
+        for (int k = 0; k < 12; ++k)
+            m[k] /= static_cast<float>(rays);
+    }
+}
+
+void FinishField(const BounceScene &scene, BounceField &field)
+{
+    const size_t points = scene.Points();
     // Points inside the geometry: the mean of their open neighbours (grown a few steps in from the surface).
     const int step[3] = {1, scene.points[0], scene.points[0] * scene.points[1]};
     std::vector<uint8_t> known(points);
@@ -580,7 +614,59 @@ BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, uns
         }
         field.moments.swap(blurred);
     }
+}
+} // namespace
+
+BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, unsigned threads, ParallelRangeStats *stats)
+{
+    BounceField field = NewField(scene, light);
+    if (field.Empty())
+        return field;
+    ParallelRanges(scene.Points(), threads, [&](size_t begin, size_t end) {
+        GatherRange(scene, light, field, begin, end);
+    }, 256, stats);
+    FinishField(scene, field);
     return field;
+}
+
+BounceField GatherBounce(const BounceScene &scene, const SurfelLight &light, unsigned threads)
+{
+    return GatherBounce(scene, light, threads, nullptr);
+}
+
+BounceFields GatherBounceLights(const Occluders &occluders, const BounceScene &scene, const Vec3 &sun,
+                               std::span<const Lamp> lamps, std::span<const float> holder,
+                               std::span<const std::vector<uint32_t>> fixture, unsigned threads, ParallelRangeStats *stats)
+{
+    BounceFields result;
+    // Keep at most 16 MiB of additional surfel-light scratch compared with sequential gathering.
+    // Larger scenes retain the exact sequential path, not reduced lighting quality.
+    constexpr size_t kExtraScratchLimit = 16u << 20;
+    if (sun[1] <= 0.0f || lamps.empty() || scene.Empty() ||
+        scene.position.size() > kExtraScratchLimit / (2 * sizeof(Rgb)))
+    {
+        if (sun[1] > 0.0f)
+            result.sun = GatherBounce(scene, SunOnSurfels(occluders, scene, sun, {1, 1, 1}, threads, stats), threads, stats);
+        result.lamps = GatherBounce(scene, LampsOnSurfels(occluders, scene, lamps, holder, fixture, threads, stats), threads, stats);
+        return result;
+    }
+    SurfelLight sun_light(scene.position.size() * 2, Rgb{}), lamp_light(sun_light.size(), Rgb{});
+    // Even tags are sun, odd tags lamps. A piece can cross either boundary; each surfel is written once per field.
+    // These are range kernels, never nested ParallelRanges: one existing worker budget and cancellation scope.
+    ParallelRanges(scene.position.size() * 2, threads, [&](size_t begin, size_t end) {
+        SunRange(occluders, scene, sun, {1, 1, 1}, sun_light, (begin + 1) / 2, (end + 1) / 2);
+        LampRange(occluders, scene, lamps, holder, fixture, lamp_light, begin / 2, end / 2);
+    }, 256, stats);
+    result.sun = NewField(scene, sun_light);
+    result.lamps = NewField(scene, lamp_light);
+    ParallelRanges(scene.Points() * 2, threads, [&](size_t begin, size_t end) {
+        GatherRange(scene, sun_light, result.sun, (begin + 1) / 2, (end + 1) / 2);
+        GatherRange(scene, lamp_light, result.lamps, begin / 2, end / 2);
+    }, 256, stats);
+    // Neighbour fill/blur retain their original ordering and only one temporary blur buffer at a time.
+    FinishField(scene, result.sun);
+    FinishField(scene, result.lamps);
+    return result;
 }
 
 void EncodeBounceBlocks(const BounceGrid &grid, const BounceField &field, const Rgb &scale, const BounceField *add,

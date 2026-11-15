@@ -39,6 +39,7 @@
 #include <cstdio>
 #include <optional>
 #include <map>
+#include <mutex>
 #include <thread>
 #include <set>
 #include <string_view>
@@ -2471,6 +2472,119 @@ void CheckBounce()
     CHECK(lit_block[wall_cell + 1] > block[wall_cell + 1] && lit_vis[wall_cell] == vis[wall_cell]); // R / G of block 1 kept
 }
 
+// Observe the actual range scheduler without inserting a callback into a lighting kernel.
+ParallelRangeStats *g_bounce_stats = nullptr;
+std::mutex g_bounce_observe;
+std::set<std::thread::id> g_bounce_threads[2];
+std::atomic<bool> g_bounce_paused{false};
+int g_bounce_pause_stage = 0;
+const char *ObserveBounceRanges()
+{
+    const auto stage = g_bounce_stats->calls.load();
+    if (g_bounce_pause_stage != 0 && stage == static_cast<uint64_t>(g_bounce_pause_stage))
+    {
+        g_bounce_paused = true;
+        return "check: bounce stage held";
+    }
+    if (stage > 0 && stage <= 2)
+    {
+        std::lock_guard lock(g_bounce_observe);
+        g_bounce_threads[stage - 1].insert(std::this_thread::get_id());
+    }
+    return nullptr;
+}
+
+void CheckBounceCombined()
+{
+    std::vector<Vec3> walls;
+    std::vector<uint32_t> triangles;
+    AddBox(walls, triangles, {0.4f, -1.0f, -3.0f}, {0.6f, 3.0f, 3.0f});
+    const Occluders occluders(walls, triangles);
+    BounceScene scene;
+    scene.grid = {{9, 7, 5}, {-2.0f, -1.0f, -1.0f}, 0.5f};
+    scene.points = scene.grid.size;
+    scene.rays = 32;
+    for (size_t i = 0; i < 513; ++i) // odd count, piece boundaries and two-sided surfels
+    {
+        scene.position.push_back({static_cast<float>(i % 19) * 0.2f - 1.0f, 0.1f,
+                                  static_cast<float>(i % 13) * 0.2f - 1.0f});
+        scene.normal.push_back(i % 2 ? Vec3{0, 1, 0} : Vec3{1, 0, 0});
+        scene.albedo.push_back({0.6f, 0.2f, 0.1f});
+    }
+    scene.inside.resize(scene.Points());
+    scene.link.resize(scene.Points(), 7);
+    for (size_t i = 0; i < scene.Points(); ++i)
+        scene.inside[i] = i % 17 == 0;
+    for (size_t i = 0; i < scene.Points() * scene.rays; ++i)
+        scene.hit.push_back(i % 11 ? static_cast<uint32_t>(i % (scene.position.size() * 2)) : BounceScene::kMiss);
+    const Vec3 sun{0.6f, 0.8f, 0};
+    const Lamp lamp{{1.1f, 2.0f, 0}, {2, 1.5f, 0.8f}, 6, 1, 0.4f};
+    const float holders[] = {0.2f};
+    const std::vector<uint32_t> fixtures[] = {{0, 1}};
+    const auto serial_sun = GatherBounce(scene, SunOnSurfels(occluders, scene, sun, {1, 1, 1}, 1), 1);
+    const auto serial_lamps = GatherBounce(scene, LampsOnSurfels(occluders, scene, std::span(&lamp, 1), holders, fixtures, 1), 1);
+    const auto same = [](const BounceField &a, const BounceField &b) {
+        return a.points == b.points && a.origin == b.origin && a.spacing == b.spacing && a.moments == b.moments;
+    };
+    ParallelRangeStats stats;
+    g_bounce_stats = &stats;
+    for (auto &threads : g_bounce_threads) threads.clear();
+    g_bounce_pause_stage = 0;
+    SetBakeGate(&ObserveBounceRanges);
+    const auto both = GatherBounceLights(occluders, scene, sun, std::span(&lamp, 1), holders, fixtures, 2, &stats);
+    SetBakeGate(nullptr);
+    CHECK(same(both.sun, serial_sun) && same(both.lamps, serial_lamps));
+    CHECK(stats.calls == 2 && stats.work_ns > 0 && stats.pieces > 2);
+    CHECK(!g_bounce_threads[0].empty() && g_bounce_threads[0].size() <= 2);
+    CHECK(!g_bounce_threads[1].empty() && g_bounce_threads[1].size() <= 2);
+    std::vector<uint8_t> old_vis(scene.Points() * 4, 91), new_vis = old_vis, old_block, new_block;
+    EncodeBounceBlocks(scene.grid, serial_sun, {0.3f, 0.5f, 0.8f}, &serial_lamps, old_vis, old_block, 1);
+    EncodeBounceBlocks(scene.grid, both.sun, {0.3f, 0.5f, 0.8f}, &both.lamps, new_vis, new_block, 2);
+    CHECK(old_vis == new_vis && old_block == new_block);
+    const auto night = GatherBounceLights(occluders, scene, {0, -1, 0}, std::span(&lamp, 1), holders, fixtures, 2);
+    CHECK(night.sun.Empty() && same(night.lamps, serial_lamps));
+    const auto no_lamps = GatherBounceLights(occluders, scene, sun, {}, {}, {}, 2);
+    CHECK(same(no_lamps.sun, serial_sun) && no_lamps.lamps.Energy() == 0.0);
+    const auto empty = GatherBounceLights(occluders, {}, sun, {}, {}, {}, 2);
+    CHECK(empty.sun.Empty() && empty.lamps.Empty());
+    // Exact memory fallback: >16 MiB extra SurfelLight scratch would be needed; no quality reduction.
+    BounceScene large = scene;
+    const size_t n = (16u << 20) / (2 * sizeof(Rgb)) + 1;
+    large.position.assign(n, {0, 0, 0});
+    large.normal.assign(n, {0, 0, 0}); // no ray work; exercise allocation/admission, not a slow geometry bake
+    large.albedo.assign(n, {0.6f, 0.2f, 0.1f});
+    ParallelRangeStats fallback;
+    const auto bounded = GatherBounceLights(occluders, large, sun, std::span(&lamp, 1), holders, fixtures, 2, &fallback);
+    CHECK(fallback.calls == 4 && bounded.sun.Energy() == 0.0 && bounded.lamps.Energy() == 0.0);
+    large = {};
+    // Cancel during either actual production phase. No partial field/old-generation publication after owner drop.
+    for (const int stage : {1, 2})
+    {
+        ParallelRangeStats cancelled;
+        g_bounce_stats = &cancelled;
+        g_bounce_pause_stage = stage;
+        g_bounce_paused = false;
+        std::atomic<bool> published{false}, next_done{false};
+        SetBakeGate(&ObserveBounceRanges, 60000);
+        auto job = PostBake("check: combined bounce cancellation", [&] {
+            const auto fields = GatherBounceLights(occluders, scene, sun, std::span(&lamp, 1), holders, fixtures, 2, &cancelled);
+            (void)fields;
+            published = true;
+        });
+        CHECK(WaitFor([] { return g_bounce_paused.load(); }));
+        job.reset();
+        auto next = PostBake("check: after combined bounce cancellation", [&] { next_done = true; });
+        CHECK(WaitFor([&] { return next_done.load(); }));
+        ShutdownBakes();
+        SetBakeGate(nullptr);
+        CHECK(!published && cancelled.calls == static_cast<uint64_t>(stage) && cancelled.gate_ns > 0);
+        CHECK(stage != 1 || cancelled.work_ns == 0);
+    }
+    g_bounce_stats = nullptr;
+    g_bounce_pause_stage = 0;
+    std::printf("combined bounce: exact fields/encoded bytes, one budget, fallback and two cancellation phases checked\n");
+}
+
 // fx::SeaWaves' steps (WaveClock): game time, all of it while a frame holds at most kMaxSteps * kMaxStep; 60 Hz
 // steps while the frames are short, longer ones (never past kMaxStep) when accelerated time packs more into a frame.
 void CheckSeaWaves()
@@ -2863,6 +2977,11 @@ void CheckWetness()
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && std::string_view(argv[1]) == "--bounce-combined-only")
+    {
+        CheckBounceCombined();
+        return failures ? 1 : 0;
+    }
     CheckParallaxGeometry();
     if (argc == 2 && std::string_view(argv[1]) == "--parallax-geometry-only")
     {
@@ -2900,6 +3019,7 @@ int main(int argc, char **argv)
     CheckOccluderLargeTown();
     CheckOccluderBackdrop();
     CheckBounce();
+    CheckBounceCombined();
     CheckParallaxTrust();
     CheckParallaxProbe();
     CheckSeaWaves();
