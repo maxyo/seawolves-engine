@@ -497,7 +497,9 @@ void SAILONE::FillVertex(SAILVERTEX *pv)
     else
     {
         dStart = (ss.hardPoints[1] - pStart) * tmpCol;
-        dnorm = ss.boundSphere.c - sgeo.cv.dnormL * ss.boundSphere.r;
+        // dnormL is the normal's row increment (zero for planar anchors), not a surface normal.
+        // Keep the same smooth sphere-based normals as triangular and trapezoidal sails.
+        dnorm = ss.boundSphere.c - sgeo.cv.normL * ss.boundSphere.r;
         if (ss.eSailType == SAIL_TRAPECIDAL)
             dnorm = ss.boundSphere.c - sgeo.cv.normL * ss.boundSphere.r;
         // enumeration of sections along the sail and looping through them
