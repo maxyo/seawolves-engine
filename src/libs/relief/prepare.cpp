@@ -1,3 +1,4 @@
+#include "loading_retry.hpp"
 #include "relief.hpp"
 
 #include "backend.hpp"
@@ -435,6 +436,14 @@ struct Session::Impl
     Clock::time_point cpu_since{};
     int cpu_textures = 0;
     std::atomic<bool> gpu_free{false};
+    std::shared_ptr<LoadingRetry> loading_retry;
+    uint64_t loading_retry_at = 0;
+    bool TakeLoadingRetry(double cpu_cost) {
+        const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+        if (!loading_retry || !loading_retry->take(now, gpu_possible, on_gpu, cpu_cost, loading_retry_at)) return false;
+        loading_retry_at = now;
+        return true;
+    }
     bool gpu_unproven = false; // the GPU's first texture: the crash guard's marker is written around it
     std::unique_ptr<CpuRuntime> runtime; // before the networks: released after them
     std::array<std::unique_ptr<Network>, 3> gpu, cpu; // normal, height, roughness
@@ -600,6 +609,8 @@ void Session::SetGpuFree(bool free)
     impl_->gpu_free = free;
 }
 
+void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry) { impl_->loading_retry = std::move(retry); }
+
 bool Session::WaitsForGpu() const
 {
     return WaitForGpuRetry(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
@@ -678,7 +689,8 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
     }
     const double decode_ms = lap();
     // The device of this texture: the GPU tried again from the CPU when the game leaves it free, or after a while.
-    bool use_gpu = UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
+    const bool loading_probe = impl_->TakeLoadingRetry(impl_->cpu_ms_per_texel);
+    bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
                                          std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
                                      impl_->cpu_textures);
     {
@@ -789,7 +801,7 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
     {
         const double cpu_ms = impl_->cpu_ms_per_texel * infer_texels;
         const bool slow = impl_->cpu_ms_per_texel > 0.0 && infer_ms > kSlowFactor * cpu_ms;
-        const char *why = impl_->gpu_free ? "the game leaves the GPU free" : "a while on the CPU";
+        const char *why = loading_probe ? "one measured loading-window retry" : impl_->gpu_free ? "the game leaves the GPU free" : "a while on the CPU";
         if (use_gpu && impl_->on_gpu)
         {
             impl_->gpu_slow = slow && !impl_->gpu_free ? impl_->gpu_slow + 1 : 0;
@@ -1016,7 +1028,8 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
     const double decode_ms = Seconds(start) * 1000.0;
     // Standalone x2 participates in the same retry cadence as relief textures. Its CPU cost is measured
     // separately: the normal-network probe is not a valid estimate of the x4 graph.
-    bool use_gpu = UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
+    const bool loading_probe = impl_->TakeLoadingRetry(impl_->upscale_cpu_ms_per_texel);
+    bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
                                          std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
                                      impl_->cpu_textures);
     if (!impl_->EnsureDevice(use_gpu, failure))

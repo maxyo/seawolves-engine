@@ -1,3 +1,4 @@
+#include "storm/render/loading_budget.hpp"
 #include "effects/scene_readiness.hpp"
 #include "storm/render/pipelines.hpp"
 #include "texture/core/service.hpp"
@@ -54,6 +55,13 @@ struct LocationLoad {
     uint32_t logged_pending = UINT32_MAX;
     uint64_t phase_polled_at = 0;
     bool cooling = false;
+    render::LoadingOpaque opaque;
+    uint64_t timing_at = 0;
+    double loading_gpu_ms = 0;
+    int64_t timing_end = 0;
+    uint64_t window_deadline = 0, window_generation = 0;
+    std::vector<std::shared_ptr<NormalMapEntry>> loading_normal;
+    std::vector<std::shared_ptr<UpscaleEntry>> loading_upscale;
 };
 LocationLoad &location_load() { static LocationLoad load; return load; }
 uint64_t load_milliseconds() {
@@ -63,6 +71,10 @@ uint64_t load_milliseconds() {
 void BeginSceneResources(const char *scene)
 {
     auto &load = location_load();
+    render::SetSceneLoadingWindow(0, 0);
+    load.opaque.invalidate();
+    load.timing_at = 0;
+    load.loading_normal.clear(); load.loading_upscale.clear();
     load.textures.clear(); load.failed_textures.clear(); load.detail.clear(); load.scene = scene ? scene : "";
     load.sealed = load.scene.rfind("location/", 0) != 0;
     load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
@@ -101,6 +113,11 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     // unchanged. Neither render frames nor polling count constitute producer progress.
     uint64_t progress = resources.failed;
     bool inference_pending = false;
+    load.loading_normal.clear(); load.loading_upscale.clear();
+    const auto &loading_settings = host.settings();
+    const auto lf = loading_settings.lighting_flags;
+    const bool loading_normals = (lf & (fx::kLightingPerPixel | fx::kLightingPoint)) && (lf & fx::kLightingNormalMap);
+    const bool loading_gloss = (lf & fx::kLightingPerPixel) && (lf & fx::kLightingSpecular) && loading_settings.gloss;
     const auto mix = [](uint64_t x) { x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
         x ^= x >> 27; x *= 0x94d049bb133111ebULL; return x ^ (x >> 31); };
     load.detail.clear();
@@ -135,6 +152,16 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
             if (relief == 2) ++load.failures.retryable; else ++load.failures.reload_required;
             name("normal/gloss failed: " + store->name);
         }
+        // Match NormalMaps::prepare_scene's actual consumers; old disabled Waiting entries get no token.
+        if (relief == 1 && relief_inference) {
+            if (store->normal_map && store->normal_map->state == NormalMapEntry::Waiting &&
+                (loading_normals || (loading_gloss && store->normal_map->material_gloss != fx::GlossClass::None)))
+                load.loading_normal.push_back(store->normal_map);
+            if (loading_gloss && store->gloss_map && store->gloss_map->state == NormalMapEntry::Waiting)
+                load.loading_normal.push_back(store->gloss_map);
+        }
+        if (upscale == 1 && store->upscale && store->upscale->state == UpscaleEntry::Waiting)
+            load.loading_upscale.push_back(store->upscale);
         uint64_t stage = static_cast<uint64_t>(bgfx::isValid(store->handle)) |
             (uint64_t(store->fallback_bytes != 0) << 1) | (uint64_t(bool(store->transcode_job)) << 2) |
             (uint64_t(store->any_dirty) << 3) | (uint64_t(store->full_chain) << 4);
@@ -435,6 +462,9 @@ void Host::on_device_created()
 
 void Host::on_device_lost()
 {
+    render::SetSceneLoadingWindow(0, 0);
+    location_load().opaque.invalidate();
+    location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
     post_.OnDeviceLost();
     self_test_.OnDeviceLost();
@@ -488,6 +518,9 @@ void Host::shutdown()
 
 render::EffectsReport Host::configure(int preset, const std::vector<render::EffectsOption> &options)
 {
+    render::SetSceneLoadingWindow(0, 0);
+    location_load().opaque.invalidate();
+    location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
     preset_ = std::clamp(preset, 0, 2);
     options_ = options;
@@ -906,6 +939,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        kVisibilityStates[static_cast<int>(visibility_.state())]);
         }
     }
+    // Opacity is committed by Device::Present only after frame advancement and stable surface.
+    auto &load_budget = location_load();
+    load_budget.timing_at = 0; load_budget.loading_gpu_ms = 0;
+    // Do not enable profiling for loading. Missing backend queries retain ordinary scheduling.
+    if (const auto *timing = bgfx::getStats(); timing && timing->gpuTimerFreq > 0 && timing->gpuTimeEnd > timing->gpuTimeBegin && timing->gpuTimeEnd != load_budget.timing_end) {
+        load_budget.timing_end = timing->gpuTimeEnd;
+        load_budget.loading_gpu_ms = double(timing->gpuTimeEnd - timing->gpuTimeBegin) * 1000.0 / timing->gpuTimerFreq;
+        load_budget.timing_at = load_milliseconds();
+    }
     // All next-frame producers have now pumped. Shadow preparation was captured before end_frame reset it.
     SampleSceneResources(scene_frame, frame, true, &draw_shadows);
     transform_view_ = UINT16_MAX; // the shim's views start again next frame
@@ -1238,6 +1280,37 @@ SceneLoadStatus GetSceneLoadStatus()
             load.sealed ? "inactive" : error ? "error" : load.gate.state() == effects::SceneReadiness::State::Ready ? "ready" : "preparing",
             r.textures, r.relief, r.shadows, r.failed, load.detail, load.cooling ? "cooling" : "generating"};
 }
+void ArmSceneOpaqueDraw(bool full_screen, bool solid, uint8_t alpha) {
+    auto &load = effects::location_load();
+    load.opaque.arm(load.sealed ? 0 : load.gate.generation(), full_screen, solid, alpha);
+}
+void SceneOpaqueDrawSubmitted(bool full_coverage, bool additive_blend) {
+    auto &load = effects::location_load();
+    load.opaque.submitted(load.sealed ? 0 : load.gate.generation(), full_coverage, additive_blend);
+}
+void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer) {
+    auto &load = effects::location_load();
+    load.opaque.frame(load.sealed ? 0 : load.gate.generation(), frame_advanced, stable_backbuffer);
+    if (!load.opaque.presented(load.gate.generation())) SetSceneLoadingWindow(0, 0);
+}
+SceneLoadingBudget GetSceneLoadingBudget() {
+    const auto &load = effects::location_load();
+    const auto state = GetSceneLoadStatus();
+    return {state.generation, load.timing_at, load.loading_gpu_ms,
+        state.active && state.state == "preparing" &&
+        load.opaque.presented(state.generation) && (!load.loading_normal.empty() || !load.loading_upscale.empty())};
+}
+void SetSceneLoadingWindow(uint64_t generation, uint64_t deadline_ms) {
+    auto &load = effects::location_load();
+    const auto budget = GetSceneLoadingBudget();
+    if (!budget.eligible || generation != budget.generation) deadline_ms = 0;
+    if (load.window_generation == generation && load.window_deadline == deadline_ms) return;
+    load.window_generation = generation; load.window_deadline = deadline_ms;
+    effects::ReliefGenerator::instance().loading_window(generation, deadline_ms,
+        deadline_ms ? load.loading_normal : std::vector<std::shared_ptr<effects::NormalMapEntry>>{},
+        deadline_ms ? load.loading_upscale : std::vector<std::shared_ptr<effects::UpscaleEntry>>{});
+}
+
 void RequireSceneTexture(shim::BaseTexture *texture)
 {
     auto store = shim::shared_store_of(texture);

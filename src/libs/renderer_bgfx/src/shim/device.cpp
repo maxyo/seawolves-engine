@@ -1,3 +1,4 @@
+#include "storm/render/pipelines.hpp"
 #include "device.hpp"
 #include "effects/effects.hpp"
 #include "perf.hpp"
@@ -539,6 +540,7 @@ HRESULT Device::Present()
     const bool stable = context.Surface().generation == frame_surface_generation && !backbuffer_recreated;
     if (context.hold_requested() && !paused_picture && scene_frame && stable && context.last_frame() != presented)
         keep_paused_picture();
+    render::SceneOpaquePresented(context.last_frame() != presented, stable && !paused_picture);
     frame_surface_generation = context.Surface().generation;
     backbuffer_recreated = false;
     effects.end_frame(scene_frame, context.last_frame());

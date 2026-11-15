@@ -1,9 +1,20 @@
 #include "device_retry.hpp"
+#include "loading_retry.hpp"
 #include <cstdio>
 #include <cstdlib>
 using namespace storm::relief;
 void require(bool v,const char *s) { if(!v){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);} }
 int main() {
+    LoadingRetry lease(500);
+    require(!lease.take(100,true,false,0,0),"loading window cannot probe unmeasured x2");
+    require(lease.take(100,true,false,1,0),"measured loading job can retry without gpu_free");
+    require(!lease.take(101,true,false,1,0),"only one job consumes window");
+    LoadingRetry expired(100);require(!expired.take(100,true,false,1,0),"deadline refuses late decode");
+    LoadingRetry revoked(500);revoked.active=false;require(!revoked.take(100,true,false,1,0),"cancel/generation revoke before decode");
+    LoadingRetry cooldown(60500);require(!cooldown.take(60000,true,false,1,100),"failed loading retry retains 60s cooldown");
+    require(cooldown.take(60100,true,false,1,100),"cooldown opens once due");
+    LoadingRetry current(500);require(!current.take(100,true,true,1,0),"already GPU needs no retry token");
+    require(!current.take(100,false,false,1,0),"missing GPU cannot use token");
     // Background admission and either texture lane must agree on the same bounded retry.
     require(WaitForGpuRetry(true,false,false,59.9,7),"busy game defers background before deadline");
     require(!WaitForGpuRetry(true,false,false,60.,0),"background admission opens at60s without loaded requests");

@@ -35,6 +35,17 @@ struct SceneLoadStatus {
 };
 SceneLoadStatus GetSceneLoadStatus();
 void CompleteSceneReveal();
+// Fader arms only its full-screen solid opaque rectangle. The shim acknowledges a successful submit.
+void ArmSceneOpaqueDraw(bool full_screen, bool solid, uint8_t alpha);
+void SceneOpaqueDrawSubmitted(bool full_coverage, bool additive_blend);
+void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer);
+struct SceneLoadingBudget {
+    uint64_t generation = 0, measured_at_ms = 0;
+    double gpu_ms = 0;
+    bool eligible = false;
+};
+SceneLoadingBudget GetSceneLoadingBudget();
+void SetSceneLoadingWindow(uint64_t generation, uint64_t deadline_ms);
 // Successful world TextureCreate, including cache hits, registers demand. Only mandatory model material
 // failures use FailSceneTexture; optional probes and loading/interface pictures are excluded.
 void RequireSceneTexture(shim::BaseTexture *texture);

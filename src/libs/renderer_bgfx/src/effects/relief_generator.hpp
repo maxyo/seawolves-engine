@@ -35,6 +35,7 @@
 namespace storm::relief
 {
 class Session;
+struct LoadingRetry;
 }
 
 namespace storm::effects
@@ -77,6 +78,10 @@ class ReliefGenerator
     // (a loading or an interface screen), or no frame for a second (the game in the background), leave the GPU free:
     // relief::Session tries the GPU again and the rest of the game goes on it.
     void frame(bool scene_drawn);
+    // Game thread: exact scoped entries eligible for one bounded measured retry. Empty revokes.
+    void loading_window(uint64_t generation, uint64_t deadline_ms,
+                        std::vector<std::shared_ptr<NormalMapEntry>> normal,
+                        std::vector<std::shared_ptr<UpscaleEntry>> upscale);
     bool gpu_free() const;
     // Any thread (the system is low on memory: render::TrimRelief): the models are released after the texture in
     // progress, and the GPU instance closed; they load again when work comes. Logged.
@@ -124,6 +129,10 @@ class ReliefGenerator
     bool scene_draws_[30] = {};
     uint32_t scene_frame_ = 0;
     bool waiting_logged_ = false;
+    uint64_t loading_generation_ = 0;
+    std::shared_ptr<relief::LoadingRetry> loading_retry_;
+    std::vector<std::shared_ptr<NormalMapEntry>> loading_normal_;
+    std::vector<std::shared_ptr<UpscaleEntry>> loading_upscale_;
     bool trim_ = false;
     bool active_ = false;
     ReliefSetup setup_;

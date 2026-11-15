@@ -1,3 +1,4 @@
+#include "storm/render/loading_budget.hpp"
 #include "storm/render/scene_load_action.hpp"
 #include <chrono>
 #include <exception>
@@ -678,6 +679,9 @@ int main(int argc, char *argv[])
 #endif
     int exitCode = EXIT_SUCCESS;
     storm::platform::FrameWorkClock frameWork;
+    storm::render::LoadingBudget loadingBudget;
+    const auto loadingClock = [] { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count()); };
     isRunning = true;
     // Exceptions escaping an iteration (the frame, script events raised by HUD input, lifecycle
     // and window handlers, the Android adapters) are reported and end the session in order
@@ -993,8 +997,26 @@ int main(int argc, char *argv[])
             }
 #endif
             SDL_FlushEvents(0, SDL_LASTEVENT);
-            if (!isRunning)
+            if (!isRunning) {
+                storm::render::SetSceneLoadingWindow(0, 0);
                 break;
+            }
+            // All SDL/lifecycle and load actions were serviced above. Only real frames run the
+            // adapters below; waiting never fabricates frame/stability observations.
+            const auto loading = storm::render::GetSceneLoadingBudget();
+            const auto loadingNow = loadingClock();
+            bool canPaceLoading = bActive;
+#ifdef __ANDROID__
+            canPaceLoading = canPaceLoading && androidLifecycle.canRun() && !mapModalHold;
+#endif
+            const auto loadingUntil = loadingBudget.deadline(loadingNow, canPaceLoading && loading.eligible,
+                                                             loading.gpu_ms, loading.measured_at_ms);
+            if (loadingUntil > loadingNow) {
+                storm::render::SetSceneLoadingWindow(loading.generation, loadingUntil);
+                std::this_thread::sleep_for(std::chrono::milliseconds(std::min<uint64_t>(2, loadingUntil - loadingNow)));
+                continue;
+            }
+            storm::render::SetSceneLoadingWindow(0, 0);
 
             if ((bActive || run_in_background)
 #ifdef __ANDROID__
@@ -1071,6 +1093,7 @@ int main(int argc, char *argv[])
                     storm::android::worldMapHud.beginDraw(SDL_GetTicks());
 #endif
                     STORM_PROFILE_ZONE("frame: script, entities, render");
+                    loadingBudget.frame_started(loadingClock());
                     RunFrame();
                 }
                 RethrowCallbackError(); // from a handler SDL called during the frame

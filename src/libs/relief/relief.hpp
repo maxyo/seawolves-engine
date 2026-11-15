@@ -19,6 +19,7 @@
 
 namespace storm::relief
 {
+struct LoadingRetry;
 
 // The relief textures of a game (its RESOURCE/Textures), by name, without the characters' atlases (made only on request). Only names are read (a scan of the models for the
 // most used ones took minutes on a phone's storage, in the way of the textures on screen).
@@ -94,6 +95,8 @@ class Session
     // Any thread: whether the game leaves the GPU free now (a loading or an interface screen, the game in the
     // background): the GPU is tried again from the CPU (prepare.cpp, the device per texture).
     void SetGpuFree(bool free);
+    // Worker only: one scoped job; never changes GPU-free/demotion policy.
+    void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry);
     // Worker idle/trim: release inference objects, preserving CPU retry timing/count and model spans.
     void ReleaseIdleModels();
     // Background work waits during a CPU detour until the GPU is free or its bounded retry is due.

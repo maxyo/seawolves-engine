@@ -1,3 +1,4 @@
+#include "loading_retry.hpp"
 // Real Session::Upscale and the real x4-to-x2 pipeline/cache writer. Only device/model inference is deterministic.
 #include "relief.hpp"
 #include "backend.hpp"
@@ -65,6 +66,18 @@ int main(int argc,char**argv) {
  std::filesystem::create_directories(textures/"Characters");
  const uint8_t m[]={1};Models models{m,m,m,m,m,m,m,m,m,m,m,m};std::string error;
  auto run=[&](Session &session,int i,const char *group){auto p=textures/"Characters"/(std::string("Face-")+group+std::to_string(i)+".tga.tx");write_tx(p);return session.Upscale(textures,p,{root/group,true},64,error);};
+ // Actual Session consumption: no new provider stub or production test hook.
+ {
+  auto scoped=Session::Open(models,1,root,error);
+  auto deadline=[] {return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count())+10000;};
+  auto unmeasured=std::make_shared<LoadingRetry>(deadline()); scoped->SetLoadingRetry(unmeasured);
+  expect(run(*scoped,0,"loading")==Outcome::Prepared,"unmeasured loading x2 completes CPU baseline");
+  expect(cpu_runs==1&&gpu_runs==0&&!unmeasured->used,"permission never treats unmeasured x2 as GPU superior");
+  auto measured=std::make_shared<LoadingRetry>(deadline()); scoped->SetLoadingRetry(measured);
+  expect(run(*scoped,1,"loading")==Outcome::Prepared,"measured loading retry publishes map");
+  expect(gpu_runs==1&&measured->used&&scoped->stats().gpu,"one loading token retries before ordinary eight-job quota");
+ }
+ cpu_runs=gpu_runs=cpu_released=0;
  auto session=Session::Open(models,1,root,error);expect(bool(session),"real production Session opens CPU with GPU available");
  for(int i=0;i<8;++i)expect(run(*session,i,"fast")==Outcome::Prepared,"real CPU x2 prepared and stored");
  expect(cpu_runs==8 && gpu_runs==0,"eight x2-only requests ran on CPU");

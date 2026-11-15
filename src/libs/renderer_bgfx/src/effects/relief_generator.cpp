@@ -1,3 +1,4 @@
+#include "loading_retry.hpp"
 #include "effects/relief_generator.hpp"
 
 #include "effects/normal_maps.hpp"
@@ -73,6 +74,8 @@ void ReliefGenerator::shutdown()
     {
         std::lock_guard lock(mutex_);
         stopping_ = true;
+        if (loading_retry_) loading_retry_->active = false;
+        loading_retry_.reset(); loading_normal_.clear(); loading_upscale_.clear();
         if (running_)
             running_->Cancel();
         for (const Request &request : requests_)
@@ -238,6 +241,7 @@ void ReliefGenerator::run()
     {
         std::optional<Request> request;
         std::shared_ptr<UpscaleEntry> upscale;
+        std::shared_ptr<relief::LoadingRetry> loading_retry;
         {
             std::unique_lock lock(mutex_);
             for (;;)
@@ -323,6 +327,10 @@ void ReliefGenerator::run()
                 next_upscale_ = request.has_value(); // pauses and cache-only completion consume no turn
                 ++admitted_;
             }
+            // Only current-location loaded requests can claim this permission, never whole-corpus work.
+            if (loading_retry_ && ((request && std::find(loading_normal_.begin(), loading_normal_.end(), request->entry.lock()) != loading_normal_.end()) ||
+                (upscale && std::find(loading_upscale_.begin(), loading_upscale_.end(), upscale) != loading_upscale_.end())))
+                loading_retry = loading_retry_;
             stats_.working = true;
         }
         if (!open_session())
@@ -340,6 +348,7 @@ void ReliefGenerator::run()
             stats_.working = false;
             continue;
         }
+        session_->SetLoadingRetry(loading_retry);
         if (request)
             prepare_request(*request);
         else if (upscale)
@@ -472,6 +481,19 @@ void ReliefGenerator::prepare_request(const Request &request)
                    request.file.string().c_str(),
                    outcome == relief::Outcome::Skipped ? "gets no prepared map" : "has a map under another key");
     entry->state = NormalMapEntry::Failed;
+}
+
+void ReliefGenerator::loading_window(uint64_t generation, uint64_t deadline_ms,
+    std::vector<std::shared_ptr<NormalMapEntry>> normal, std::vector<std::shared_ptr<UpscaleEntry>> upscale)
+{
+    std::lock_guard lock(mutex_);
+    if (loading_retry_ && generation == loading_generation_ && deadline_ms == loading_retry_->deadline_ms) return;
+    if (loading_retry_) loading_retry_->active = false;
+    loading_retry_.reset(); loading_generation_ = generation;
+    loading_normal_ = std::move(normal); loading_upscale_ = std::move(upscale);
+    if (deadline_ms && (!loading_normal_.empty() || !loading_upscale_.empty()))
+        loading_retry_ = std::make_shared<relief::LoadingRetry>(deadline_ms);
+    wake_.notify_all();
 }
 
 void ReliefGenerator::frame(bool scene_drawn)

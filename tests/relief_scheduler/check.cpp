@@ -88,6 +88,7 @@ std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::
 const Session::Stats &Session::stats() const { return impl_->stats; }
 void Session::Cancel() { cancelled=true; }
 void Session::SetGpuFree(bool value) {impl_->free=value;}
+void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
 void Session::ReleaseIdleModels() {++idle_releases;}
 bool Session::WaitsForGpu() const { return cpu_detour && !impl_->stats.gpu && !impl_->free && test_now()-impl_->since<std::chrono::seconds(60); }
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,

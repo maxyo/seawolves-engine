@@ -1,9 +1,37 @@
 #include "effects/scene_readiness.hpp"
+#include "storm/render/loading_budget.hpp"
 #include <cassert>
 #include <cstdio>
 using storm::effects::SceneReadiness;
 using storm::effects::SceneResources;
 int main() {
+ storm::render::LoadingOpaque opaque;
+ opaque.arm(1,true,true,255);opaque.frame(1,true,true);assert(!opaque.presented(1)); // skipped/failed draw
+ opaque.arm(1,true,true,255);opaque.submitted(1);assert(!opaque.presented(1)); // submit not present yet
+ opaque.arm(1,false,false,0);opaque.frame(1,true,true);assert(opaque.presented(1)); // disarm keeps successful receipt
+ opaque.frame(1,true,true);assert(!opaque.presented(1)); // no stale receipt next frame
+ opaque.arm(1,true,true,255);opaque.submitted(2);opaque.frame(2,true,true);assert(!opaque.presented(2)); // stale arm
+ opaque.arm(1,true,true,255);opaque.submitted(1);opaque.frame(2,true,true);assert(!opaque.presented(2)); // stale submitted
+ opaque.arm(2,false,true,255);opaque.submitted(2);opaque.frame(2,true,true);assert(!opaque.presented(2)); // partial rectangle
+ opaque.arm(2,true,true,254);opaque.submitted(2);opaque.frame(2,true,true);assert(!opaque.presented(2)); // transparent
+ opaque.arm(2,true,false,255);opaque.submitted(2);opaque.frame(2,true,true);assert(!opaque.presented(2)); // texture alpha unknown
+ opaque.arm(2,true,true,255);opaque.submitted(2);opaque.invalidate();opaque.frame(2,true,true);assert(!opaque.presented(2));
+ opaque.arm(2,true,true,255);opaque.submitted(2);opaque.frame(2,false,true);assert(!opaque.presented(2)); // failed/no-advance Present
+ opaque.arm(2,true,true,255);opaque.submitted(2);opaque.frame(2,true,false);assert(!opaque.presented(2)); // replaced surface/backbuffer
+ opaque.arm(2,true,true,255);opaque.submitted(2,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // actual scissor/viewport partial
+ opaque.arm(2,true,true,255);opaque.submitted(2,true,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // MAX/MIN/SUBTRACT can retain destination despite alpha255
+ storm::render::LoadingBudget pacing;
+ assert(pacing.deadline(100,true,20,100)==100); // no prior real frame
+ pacing.frame_started(100);
+ assert(pacing.deadline(110,true,20,110)==140); // includes preceding frame CPU work
+ assert(pacing.deadline(145,true,20,145)==145); // late frame never adds new delay
+ assert(pacing.deadline(170,true,100,170)==180); // start-to-start <100, not +100 after work
+ assert(pacing.deadline(180,true,100,180)==180);
+ assert(pacing.deadline(110,false,20,110)==110); // Cancel/ready/error/no opaque
+ assert(pacing.deadline(110,true,20,0)==110); // unavailable timer
+ assert(pacing.deadline(500,true,20,100)==500); // stale measurement
+ assert(pacing.deadline(110,true,0,110)==110); // invalid timer
+
  assert(storm::effects::SceneCooling(true,false,storm::effects::kThermalWaitReason));
  assert(!storm::effects::SceneCooling(true,true,storm::effects::kThermalWaitReason)); // slow active job
  assert(!storm::effects::SceneCooling(false,false,storm::effects::kThermalWaitReason)); // unrelated background pause
