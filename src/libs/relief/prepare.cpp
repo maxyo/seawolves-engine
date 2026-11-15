@@ -1369,14 +1369,6 @@ int Prune(const std::filesystem::path &textures, const std::vector<std::filesyst
             current.push_back(fx::GlossFile(output, *gloss_key));
         if (const std::optional<uint64_t> key = PreparedKey(candidate, tx, map_size, relief))
             current.push_back(fx::ReliefFile(output, *key));
-        else if (GreyHeightMap(candidate, tx))
-        {
-            // The game's own map of a grey "bump" texture, under the height maps' method: kept while it is current.
-            Candidate height = candidate;
-            height.relief = fx::ReliefClass::HeightMap;
-            if (const std::optional<uint64_t> height_key = Key(height, tx, fx::kReliefMapSize))
-                current.push_back(fx::ReliefFile(output, *height_key));
-        }
     }
     std::sort(current.begin(), current.end());
     int removed = 0;

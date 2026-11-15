@@ -7,10 +7,9 @@
 //     in the game process (effects/relief_generator.hpp) the first time the texture is loaded without one, into the
 //     relief directory, and kept there. Until its map is ready the texture has no relief; the "effects relief:" line
 //     says how many wait.
-//   * grey height ("bump") textures: their values are heights. The game derives their maps itself (fx::DeriveNormalMap
-//     on a texture worker, the material texture of their own heights) into the same directory, once. This cache
-//     remains height data: its derived normal is never selected for shading, including while a colour map is pending.
-//     Original RGB normal textures remain available to the game's own shader bindings.
+//   * grey height ("bump") textures: their values are heights, and a normal derived from their brightness is not used
+//     for shading, so they get no entry and no map (a log line says so). Original RGB normal textures remain available
+//     to the game's own shader bindings.
 // Gloss maps (fx/gloss_map.hpp) follow the same path for the colour textures of a gloss class whose relief class has no
 // height (TexStore::gloss_map): an entry at the load, looked up while Settings::gloss is on (now or when it is switched
 // on), requested from the relief generator (PBRify's roughness network) when the relief directory has none, stored
@@ -21,7 +20,7 @@
 // R height, G gloss; the same mips, in the same file) is uploaded beside them. A texture whose relief class has a height
 // takes its gloss from that material, not from a gloss map of its own. The relief fades in over kReliefFade. Turning the option off releases them. Every texture of
 // a relief class gets its entry when it is loaded, relief on or off: one loaded while it is off is looked up (and
-// requested or derived) when it is switched on, like one loaded then.
+// requested) when it is switched on, like one loaded then.
 #pragma once
 
 #include "effects/generation_priority.hpp"
@@ -99,7 +98,6 @@ struct NormalMapEntry
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
     std::atomic<int> state{Unqueued};
     std::shared_ptr<texture::CacheTask> cache_task; // game thread; queued task retains its own ticket
-    std::chrono::steady_clock::time_point cache_ready{}; // worker, published before Derived/Read
     std::atomic<bool> wanted{false}; // a draw asked for it: the worker keeps the map in memory for the upload
     std::atomic<uint32_t> drawn{0};  // the frame a draw last asked for it (the generator makes those on screen first)
     std::string name;                // normalized texture path, for the logs
@@ -174,8 +172,6 @@ class NormalMaps
         uint32_t unqueued = 0;  // loaded while relief was off, not looked up yet
         uint32_t waiting = 0;   // loaded colour textures of a relief class whose map is being made
         uint32_t missing = 0;   // loaded colour textures of a relief class that get no map (generator unavailable)
-        uint32_t derived = 0;   // height maps derived since the start
-        double derive_ms = 0.0; // worker time spent deriving them
         uint32_t gloss_resident = 0, gloss_unqueued = 0, gloss_waiting = 0, gloss_missing = 0;
         size_t gloss_bytes = 0;
     };
@@ -195,8 +191,7 @@ class NormalMaps
     bool exclusions_loaded_ = false;
     void release(NormalMapEntry &entry);
     void read_stored(const std::shared_ptr<NormalMapEntry> &entry);
-    // On a texture worker: Stored when the directory has its map, else requested (colour textures) or derived (height
-    // maps, from the game file).
+    // On a texture worker: Stored when the directory has its map, else requested from the generator.
     void look_up(const std::shared_ptr<NormalMapEntry> &entry);
     // The same for a gloss map: Stored, or requested from the generator.
     void look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry);
@@ -221,12 +216,6 @@ class NormalMaps
     Stats logged_{};
     uint32_t logged_made_ = 0;
     std::string logged_device_;
-    struct Counters
-    {
-        std::atomic<uint32_t> derived{0};
-        std::atomic<uint64_t> derive_us{0};
-    };
-    std::shared_ptr<Counters> counters_ = std::make_shared<Counters>(); // shared with the worker tasks
 };
 
 } // namespace storm::effects

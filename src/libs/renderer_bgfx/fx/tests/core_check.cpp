@@ -1286,14 +1286,6 @@ void CheckReliefMaterial()
         CHECK(ReliefDepthTexels(relief) == depth);
         CHECK(ReliefParallaxMaxDepth(relief) == 0.025f);
     }
-    // A grey height texture's heights at its map's size.
-    {
-        std::vector<uint8_t> grey(8 * 8 * 4, 0);
-        for (int i = 0; i < 64; ++i)
-            grey[i * 4] = static_cast<uint8_t>(i % 8 < 4 ? 0 : 255);
-        const std::vector<float> h = GreyHeights(grey, 8, 8, 4, 4);
-        CHECK(h.size() == 16 && h[0] == 0.0f && h[3] == 1.0f && GreyHeights(grey, 8, 8, 3, 3).empty());
-    }
     CHECK(ReliefMethod(ReliefClass::Stone) != ReliefMethod(ReliefClass::HeightMap));
     const int n = 256;
     NormalMap map;

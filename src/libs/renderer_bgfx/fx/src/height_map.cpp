@@ -158,33 +158,4 @@ bool AddReliefMaterial(NormalMap &map, ReliefClass relief, std::span<const float
     return true;
 }
 
-std::vector<float> GreyHeights(std::span<const uint8_t> rgba, int width, int height, int map_width, int map_height)
-{
-    if (width <= 0 || height <= 0 || rgba.size() < static_cast<size_t>(width) * height * 4)
-        return {};
-    std::vector<float> v(static_cast<size_t>(width) * height);
-    for (size_t i = 0; i < v.size(); ++i)
-        v[i] = rgba[i * 4] / 255.0f;
-    int w = width, h = height;
-    while (w > map_width || h > map_height)
-    {
-        const int nw = w > map_width ? std::max(w / 2, 1) : w, nh = h > map_height ? std::max(h / 2, 1) : h;
-        const int sx = w / nw, sy = h / nh;
-        std::vector<float> out(static_cast<size_t>(nw) * nh);
-        for (int y = 0; y < nh; ++y)
-            for (int x = 0; x < nw; ++x)
-            {
-                float sum = 0.0f;
-                for (int dy = 0; dy < sy; ++dy)
-                    for (int dx = 0; dx < sx; ++dx)
-                        sum += v[static_cast<size_t>(y * sy + dy) * w + x * sx + dx];
-                out[static_cast<size_t>(y) * nw + x] = sum / static_cast<float>(sx * sy);
-            }
-        v = std::move(out);
-        w = nw;
-        h = nh;
-    }
-    return w == map_width && h == map_height ? v : std::vector<float>{};
-}
-
 } // namespace storm::fx

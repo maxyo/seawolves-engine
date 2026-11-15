@@ -72,8 +72,5 @@ inline constexpr float kHeightRegionTexels = 24.0f;
 bool AddReliefMaterial(NormalMap &map, ReliefClass relief, std::span<const float> height, std::span<const uint8_t> gloss,
                        std::span<const uint8_t> albedo = {});
 
-// The heights of a grey height ("bump") texture at the size of its map: its red channel (0..1), box-halved from
-// width x height to map_width x map_height (halvings, as NormalMapSize gives them).
-std::vector<float> GreyHeights(std::span<const uint8_t> rgba, int width, int height, int map_width, int map_height);
 
 } // namespace storm::fx

@@ -1,7 +1,7 @@
 // Relief and gloss switched on while textures are loaded (effects::NormalMaps): a texture of a relief class loaded while relief
 // is off (a location entered on «Низкая») is looked up when relief is switched on (the preset raised in the same
-// location), exactly like one loaded with relief on: a colour texture without a map is requested from the generator,
-// a grey height texture gets its map derived into the relief directory. Before the fix none was queued until the
+// location), exactly like one loaded with relief on: a colour texture without a map is requested from the generator;
+// a grey height texture gets no entry (brightness-derived normals are not used). Before the fix none was queued until the
 // location was loaded again. Gloss maps (Settings::gloss) the same: an entry at the load, requested from the
 // generator (PBRify's roughness) when gloss is switched on; a texture whose relief class has a height (stone) keeps its gloss
 // in its relief's material texture (fx::AddReliefMaterial) and has no gloss map of its own.
@@ -168,7 +168,7 @@ int main()
     expect(authored->sub(0, 0).data == rgb_normal[0], "authored RGB source remains intact for its original shader binding");
     const std::vector<shim::TexStore *> loaded{stone.get(), bump.get(), cannon.get(), glass.get()};
     effects::NormalMaps::Stats off = Settle(maps, loaded);
-    expect(stone->normal_map && bump->normal_map, "textures loaded while relief is off get their entries");
+    expect(stone->normal_map && !bump->normal_map, "textures loaded while relief is off get their entries, a grey bump none");
     expect(!stone->gloss_map && stone->normal_map->material_gloss != fx::GlossClass::None && !cannon->gloss_map &&
                cannon->normal_map && cannon->normal_map->material_gloss == fx::GlossClass::Metal &&
                cannon->normal_map->relief == fx::ReliefClass::Metal && !glass->normal_map && glass->gloss_map &&
@@ -176,13 +176,12 @@ int main()
            "a gloss class without relief (glass) gets a gloss entry, one with relief (stone, metal) its relief's material, "
            "height maps none");
     expect(off.gloss_unqueued == 1 && off.gloss_waiting + off.gloss_missing == 0, "no gloss map is looked up while gloss is off");
-    expect(off.unqueued == 3 && off.waiting == 0 && off.missing == 0 && off.derived == 0,
+    expect(off.unqueued == 2 && off.waiting == 0 && off.missing == 0,
            "nothing is looked up while relief is off");
 
     maps.configure(true, 512, true); // the preset raised in the same location
     const effects::NormalMaps::Stats on = Settle(maps, loaded);
-    std::printf("after the switch: unqueued %u, waiting %u, missing %u, derived %u\n", on.unqueued, on.waiting, on.missing,
-                on.derived);
+    std::printf("after the switch: unqueued %u, waiting %u, missing %u\n", on.unqueued, on.waiting, on.missing);
     expect(on.unqueued == 0, "switching relief on looks up every texture loaded while it was off");
     expect(on.waiting + on.missing == 2, "the colour textures are requested from the generator");
     expect(stone->normal_map->key != old_key && fx::HasReliefMap(relief, old_key),
@@ -195,8 +194,6 @@ int main()
         expect(fx::ReliefMethod(fx::ReliefClass::Stone) != fx::ReliefMethod(fx::ReliefClass::HeightMap),
                "authored height derivation and neural colour normals have separate cache provenance");
     }
-    expect(on.derived == 1 && fx::HasReliefMap(relief, bump->normal_map->key),
-           "the height texture's map is derived from its game file into the relief directory");
 
     maps.configure_gloss(true, 256);
     const effects::NormalMaps::Stats glossy = Settle(maps, loaded);
@@ -217,20 +214,8 @@ int main()
     maps.configure(false, 512, false);
     maps.configure(true, 512, true);
     const effects::NormalMaps::Stats again = Settle(maps, {stone.get(), bump.get(), brick.get()});
-    expect(again.unqueued == 0 && again.derived == 1, "off and on again derives nothing twice");
+    expect(again.unqueued == 0, "off and on again leaves nothing unqueued");
 
-    // A grey-height derivative is not a shading fallback; eviction must not trigger its regeneration from a draw.
-    {
-        fx::Lighting lighting;
-        const uint32_t derived_before = maps.stats().derived;
-        std::filesystem::remove(fx::ReliefFile(relief, bump->normal_map->key));
-        maps.handle(*bump, lighting); // excluded from normal shading, even if its cache entry says Stored
-        Settle(maps, {bump.get()});
-        maps.handle(*bump, lighting); // repeated draws still do not request the derived fallback
-        const effects::NormalMaps::Stats evicted = Settle(maps, {bump.get()});
-        expect(evicted.derived == derived_before && !fx::HasReliefMap(relief, bump->normal_map->key),
-               "shading does not regenerate an evicted brightness-derived fallback");
-    }
     // The stores of earlier builds go at start (the files directory's relief, the old "NormalMaps" cache).
     const std::filesystem::path files = root / "files", cache = root / "cache";
     std::filesystem::create_directories(cache / "NormalMaps" / "ab");
@@ -306,7 +291,7 @@ int main()
         base.state = effects::NormalMapEntry::Uploaded;
         base.handle = {123};
         detail.name = "bump_city";
-        detail.relief = fx::ReliefClass::HeightMap;
+        detail.relief = fx::ReliefClass::Stone; // a proper pipeline normal
         for (const auto state : {effects::NormalMapEntry::Pending, effects::NormalMapEntry::Waiting,
                                  effects::NormalMapEntry::Missing, effects::NormalMapEntry::Failed})
         {
@@ -317,17 +302,6 @@ int main()
         }
         detail.state = effects::NormalMapEntry::Uploaded;
         detail.handle = {124};
-        const auto height_ready = selection_maps.select(colour_store.get(), detail_store.get(), gpu_lighting);
-        expect(height_ready.stage == 0 && height_ready.entry == &base && height_ready.map.handle.idx == 123,
-               "ready Scharr greybump cannot override the proper colour normal");
-        base.state = effects::NormalMapEntry::Waiting;
-        const auto proper_pending = selection_maps.select(colour_store.get(), detail_store.get(), gpu_lighting);
-        expect(proper_pending.entry == &base && !bgfx::isValid(proper_pending.map.handle),
-               "ready Scharr greybump stays unbound while the proper colour normal is pending");
-        expect(!bgfx::isValid(selection_maps.handle(*detail_store, gpu_lighting).handle),
-               "direct material lookup cannot bind a cached derived greybump normal either");
-        base.state = effects::NormalMapEntry::Uploaded;
-        detail.relief = fx::ReliefClass::Stone; // a proper pipeline normal, not a greybump conversion
         const auto ready = selection_maps.select(colour_store.get(), detail_store.get(), gpu_lighting);
         expect(ready.stage == 1 && ready.entry == &detail && ready.map.handle.idx == 124,
                "proper ready detail retains its original priority");
