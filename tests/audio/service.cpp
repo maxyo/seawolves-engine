@@ -53,6 +53,43 @@ int main(int argc,char**argv) try {
     levels.pitch(0);auto frozen=levels.find(level)->cursor;render(levels,1024);
     require(levels.find(level)->cursor==frozen,"zero pitch freezes");
     levels.pitch(1);require(render(levels,1024)>1,"pitch resumes");
+    {   // A script's per-voice gain updates must not repeatedly steal physical
+        // voices within a frame. The final ranking is selected by update().
+        Mixer batch(true,2);Play fx;fx.loop=true;
+        auto first=batch.play(dir+"/tone.wav",fx);
+        fx.volume=.8f;auto second=batch.play(dir+"/tone.wav",fx);
+        fx.volume=.4f;fx.category=2;auto third=batch.play(dir+"/tone.wav",fx);
+        auto* firstSound=batch.find(first)->physical.get();
+        auto* secondSound=batch.find(second)->physical.get();
+        require(firstSound && secondSound && !batch.find(third)->physical,"initial gain ranking");
+        for(unsigned i=0;i<128;++i) {
+            batch.volume(first,i%2 ? .1f:1.f);
+            batch.volume(third,i%2 ? 1.f:.1f);
+            require(batch.find(first)->physical.get()==firstSound && batch.find(second)->physical.get()==secondSound &&
+                    !batch.find(third)->physical,"gain batch defers physical voice selection");
+        }
+        require(std::abs(ma_sound_get_volume(&firstSound->sound)-.05f)<.00001f,"physical gain changes immediately");
+        batch.update(false); // SoundService::RunStart: clocks/events, no selection.
+        require(batch.find(first)->physical.get()==firstSound && batch.find(second)->physical.get()==secondSound &&
+                !batch.find(third)->physical,"frame start leaves pending gain selection for frame end");
+        batch.volume(first,.05f); // A further adjustment during the same game frame.
+        batch.update(); // SoundService::RunEnd: final selection.
+        require(!batch.find(first)->physical && batch.find(second)->physical && batch.find(third)->physical,"frame update ranks final gains");
+        batch.categories(1,0,1);
+        require(batch.find(third)->physical && ma_sound_get_volume(&batch.find(third)->physical->sound)==0,"category mute is immediate without rebalancing");
+        batch.update(false);
+        require(!batch.find(first)->physical && batch.find(third)->physical,"frame start defers category promotion");
+        batch.update();
+        require(batch.find(first)->physical && batch.find(second)->physical && !batch.find(third)->physical,"category ranking updates at frame boundary");
+        batch.categories(1,1,1);batch.volume(first,0);
+        batch.stop(second);
+        require(!batch.playing(second) && batch.find(third)->physical,"stop promotes with pending gain changes immediately");
+        batch.stop(0);
+        fx={};fx.loop=true;fx.paused=true;auto paused=batch.play(dir+"/tone.wav",fx);
+        batch.volume(paused,.25f);batch.resume(paused);
+        require(batch.find(paused)->physical && ma_sound_get_volume(&batch.find(paused)->physical->sound)==.25f,"resume applies pending gain immediately");
+        require(render(batch,1024)>.01,"batched gain voices render PCM");
+    }
     for (std::string ext:{"wav","mp3","ogg"}) {
         Mixer rates(true,2);p={};p.stream=ext!="wav";p.loop=true;
         auto id=rates.play(dir+"/tone441."+ext,p);render(rates,4800);
@@ -139,5 +176,6 @@ int main(int argc,char**argv) try {
     }
     std::cout<<"service: PCM stream clock/underrun/pause/background PASS\n";
     std::cout<<"service: LRU cache/streamed long samples/background decode/ducking PASS\n";
+    std::cout<<"service: batched voice/category gains and immediate stop/resume PASS\n";
     std::cout<<"service: priority/virtualization/stale IDs/categories/lifecycle/cache/two streams/overflow PASS\n";
 } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

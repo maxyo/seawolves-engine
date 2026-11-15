@@ -97,6 +97,8 @@ public:
     std::unique_ptr<PcmStream> stream(unsigned capacityFrames=48000);
     void stop(uint32_t, float fade=0);
     void resume(uint32_t);
+    // Gains reach physical voices immediately; voice selection is coalesced in
+    // update() (or the next play/stop/resume/pitch operation).
     void volume(uint32_t,float);
     void categories(float,float,float);
     void pitch(float);
@@ -108,7 +110,9 @@ public:
     ma_result active(bool,float);
     // Device start/stop used by active(); tests inject failures.
     void deviceControl(DeviceControl control) {backend.device=control;}
-    void update();
+    // RunStart advances clocks, decodes, fades and ended events without selecting
+    // voices; RunEnd selects once after the frame's parameter changes.
+    void update(bool rebalanceVoices=true);
     void read(float*,unsigned);
     bool playing(uint32_t) const;
     Voice* find(uint32_t);

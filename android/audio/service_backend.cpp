@@ -137,7 +137,7 @@ void Mixer::evict(uint64_t targetBytes) {
     }
 }
 uint64_t Mixer::trim(uint64_t targetBytes) {
-    update();
+    update(false);
     uint64_t before=cacheBytes;evict(targetBytes);return before-cacheBytes;
 }
 std::vector<std::string> Mixer::takeFailures() {auto result=std::move(failures);failures.clear();return result;}
@@ -188,7 +188,7 @@ void Mixer::fade(Voice& v,float target,float duration,bool stopAfter) {
     if(!v.fadeFrames) {v.envelope=target; if(stopAfter)v.stopped=true;}
 }
 uint32_t Mixer::play(const std::string& path,const Play& input) {
-    update();
+    update(false);
     auto resource=load(path,input.stream); // Fail before replacing an existing music slot.
     unsigned index=capacity;
     if(input.stream) index=nextMusic;
@@ -263,7 +263,7 @@ void Mixer::rebalance() {
         apply(*v);
     }
 }
-void Mixer::update() {
+void Mixer::update(bool rebalanceVoices) {
     uint64_t now=ma_engine_get_time_in_pcm_frames(&backend.engine), delta=now-lastFrame;lastFrame=now;
     if(!decoding.empty()) collectDecodes();
     for(unsigned i=0;i<capacity;++i) {
@@ -292,18 +292,31 @@ void Mixer::update() {
             if(t>=1) {v.fadeFrames=0;if(v.stopAfterFade)v.stopped=true;}
         }
         if(v.stopped)finish(i);
+        else if(!rebalanceVoices && v.physical)ma_sound_set_volume(&v.physical->sound,gain(v));
     }
-    rebalance();
+    if(rebalanceVoices)rebalance();
     // Voices that ended above released their samples; keep the cache within budget.
     if(cacheBytes>limits.cacheBytes) evict(limits.cacheBytes);
 }
 void Mixer::stop(uint32_t id,float duration) {
-    update();for(auto& v:voices)if(v && (id==0 || v->id==id))fade(*v,0,duration,true);update();
+    update(false);for(auto& v:voices)if(v && (id==0 || v->id==id))fade(*v,0,duration,true);update(false);rebalance();
 }
 void Mixer::resume(uint32_t id) {for(auto& v:voices)if(v && (id==0 || v->id==id))v->parameters.paused=false;rebalance();}
-void Mixer::volume(uint32_t id,float value) {for(auto& v:voices)if(v && (id==0 || v->id==id))v->parameters.volume=nonnegative(value);rebalance();}
-void Mixer::categories(float a,float b,float c) {gains={std::clamp(nonnegative(a),0.f,1.f),std::clamp(nonnegative(b),0.f,1.f),std::clamp(nonnegative(c),0.f,1.f)};rebalance();}
-void Mixer::pitch(float p) {update();for(auto& v:voices)if(v)v->parameters.pitch=nonnegative(p);rebalance();}
+void Mixer::volume(uint32_t id,float value) {
+    value=nonnegative(value);
+    for(auto& v:voices)if(v && (id==0 || v->id==id)) {
+        v->parameters.volume=value;
+        if(v->physical)ma_sound_set_volume(&v->physical->sound,gain(*v));
+    }
+    // Scripts can adjust every voice in a frame. Keep gain changes immediate,
+    // but rank the final values together in update(), rather than sorting and
+    // creating/destroying physical sounds after each individual adjustment.
+}
+void Mixer::categories(float a,float b,float c) {
+    gains={std::clamp(nonnegative(a),0.f,1.f),std::clamp(nonnegative(b),0.f,1.f),std::clamp(nonnegative(c),0.f,1.f)};
+    for(auto& v:voices)if(v && v->physical)ma_sound_set_volume(&v->physical->sound,gain(*v));
+}
+void Mixer::pitch(float p) {update(false);for(auto& v:voices)if(v)v->parameters.pitch=nonnegative(p);rebalance();}
 void Mixer::spatial(uint32_t id,int message,const void* value) {
     auto v=find(id);if(!v || !value)return;
     if(message==1)v->parameters.maxDistance=std::max(v->parameters.minDistance+0.001f,nonnegative(*static_cast<const float*>(value)));
@@ -338,7 +351,7 @@ ma_result Mixer::active(bool enabled,float duration) {
         if(offline) {float pcm[512];backend.read(pcm,256);}
         else std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    update();
+    update(false);
     // The mixer is suspended either way: the master has faded out, so a device that did not
     // stop plays silence, and the next active(true) starts it (a no-op on a running device).
     suspended=true;

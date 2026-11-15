@@ -37,7 +37,7 @@ void SoundService::RunStart() {
     glm::mat4 view;rs->GetTransform(D3DTS_VIEW,storm::math::d3dMatrix(view));storm::math::invertRigid(view);
     SetCameraPosition(storm::math::pos(view));SetCameraOrientation(storm::math::vz(view),storm::math::vy(view));
     try {
-        audio->update();
+        audio->update(false); // RunEnd ranks the frame's final gains once.
         for(unsigned slot:audio->takeEnded())core.Event("SoundEnded","l",slot+2); // Preserve legacy event payload.
         for(const auto& path:audio->takeFailures())core.Trace("Audio decode failed '%s'",path.c_str());
         ProcessSoundSchemes();
