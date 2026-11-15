@@ -27,11 +27,14 @@ lists a game's ×2 targets, `--x2` makes them (host renders).
 ## Where the maps are made
 
 In the game process, lazily (renderer_bgfx `src/effects/relief_generator.hpp`): a texture loaded without its map is
-requested; one worker thread (nice 10, onnxruntime on all cores but two, paused by the Android thermal status from
-MODERATE up) makes the most recently drawn first, then the rest of the location, then, while relief is on and 30 s
-after the last request (not while a location loads), the other relief textures of the game by name (`List()`). A map
-that becomes ready is uploaded and its relief fades in over 0.3 s. A complete pass prunes stale maps (other games,
-older methods) and leaves `complete.txt` (`MarkComplete`): the next starts skip the pass while it matches. A map's key holds its method (`fx::ReliefMethod`: the method version, the
+requested; one worker thread (nice 10, onnxruntime on all cores but two, paused by explicit renderer holds;
+thermal status is telemetry) makes the most recently drawn first, then the other required loaded textures.
+Normal/gloss and ×2 maps required by scene loading are prepared before the readiness gate reveals the scene;
+textures loaded later still request their own missing maps. Automatic whole-game discovery, pruning and preparation
+never run in the game process, including idle/loading/gameplay. No whole-game completion mark is created there.
+Existing valid cached maps are still consumed; a newly made map is uploaded and its relief fades in over 0.3 s.
+Explicit standalone `storm_relief_cli` whole-game preparation/pruning/completion remains available below.
+A map's key holds its method (`fx::ReliefMethod`: the method version, the
 models' digests `fx::kReliefNormalModelDigest`, `fx::kReliefHeightModelDigest`, `fx::kReliefRoughnessModelDigest`, the height's and the gloss's versions, the class's options with the derivation's version, the map size), so a
 change never reuses a map made before it; a pass that starts without a matching mark first prunes the maps of other
 methods. The maps are a cache: on Android the relief directory is in the app's cache, so «Очистить кэш» (or the
@@ -82,8 +85,8 @@ class, before a host render that shows them.
   slower than the CPU's estimate while the game draws its scene move the work to the CPU, which then makes only what is
   on screen (the rest of the game waits for the GPU); the GPU is tried again as soon as the game leaves it free (a
   loading or an interface screen, the game in the background: no scene drawn for 30 frames or no frame for a second)
-  or after 60 s / 8 completed CPU textures (standalone ×2 included). Background admission opens for the same retry,
-  even when no new loaded-texture request arrives. The ×2 compares its GPU time against measured CPU x4 time, rather
+  or after 60 s / 8 completed CPU textures (standalone ×2 included), when the next required texture arrives; no
+  automatic whole-corpus work is admitted to trigger a retry. The ×2 compares its GPU time against measured CPU x4 time, rather
   than the unrelated normal-network probe. Scene presence comes from the renderer's perspective draws, including the
   low preset and sea; lighting-feature counters do not classify a scene as idle. Every switch is logged (`relief device: CPU for now ...`, `GPU again ...`, `CPU still
   ...`) and none is kept across sessions. Without a Vulkan compute device, or after a crash in its driver

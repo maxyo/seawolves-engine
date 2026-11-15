@@ -26,8 +26,6 @@ namespace
 using Clock = std::chrono::steady_clock;
 constexpr auto kIdleRelease = std::chrono::seconds(10);
 constexpr auto kWaitPause = std::chrono::seconds(5); // asked again this often while the work must wait
-// The rest of the game only after this long without a request (and after the start): not while a location loads.
-constexpr auto kRestQuiet = std::chrono::seconds(30);
 
 double Ms(Clock::time_point since)
 {
@@ -59,13 +57,10 @@ void ReliefGenerator::configure(ReliefSetup setup)
     scene_frame_ = 0;
     scene_quiet_ = false;
     last_frame_us_ = 0;
-    waiting_logged_ = false;
     next_upscale_ = false;
     admitted_ = 0;
-    rest_.clear();
-    rest_at_ = 0;
-    rest_listed_ = rest_done_ = false;
-    last_request_ = idle_since_ = Clock::now();
+    idle_since_ = Clock::now();
+    shim::logf("effects: relief generation: loaded textures only; automatic whole-corpus preparation disabled");
     worker_ = std::thread([this] { run(); });
 }
 
@@ -136,18 +131,6 @@ void ReliefGenerator::request(const std::shared_ptr<NormalMapEntry> &entry, std:
         entry->queued_after = admitted_;
         entry->queued_scene = generation_focus().snapshot().scene;
         requests_.push_back({entry, std::move(file), order_++});
-        last_request_ = Clock::now();
-    }
-    wake_.notify_all();
-}
-
-void ReliefGenerator::set_active(bool active)
-{
-    {
-        std::lock_guard lock(mutex_);
-        if (active == active_)
-            return;
-        active_ = active;
     }
     wake_.notify_all();
 }
@@ -256,16 +239,6 @@ void ReliefGenerator::run()
                 const Clock::time_point now = Clock::now();
                 if (session_)
                     session_->SetGpuFree(gpu_free());
-                // The rest of the game waits while the GPU is busy with the game and the work went to the CPU.
-                const bool blocked = session_ && session_->WaitsForGpu();
-                if (blocked != waiting_logged_)
-                {
-                    shim::logf(blocked ? "effects: relief generation: the rest of the game waits for the GPU (the game's "
-                                         "rendering keeps it busy; what is on screen is made on the CPU)"
-                                       : "effects: relief generation: the rest of the game goes on");
-                    waiting_logged_ = blocked;
-                }
-                const bool rest = active_ && !rest_done_ && !model_failed_ && !blocked;
                 reconcile_upscales();
                 // Reselect from fresh player-distance observations before every job; keep lane fairness.
                 request = next_request();
@@ -291,14 +264,11 @@ void ReliefGenerator::run()
                         upscale.reset();
                     }
                 }
-                if (request || upscale || (rest && now - last_request_ >= kRestQuiet))
+                if (request || upscale)
                     break;
-                // Nothing due: a request wakes the worker; the rest waits for a quiet spell; with no work left at
-                // all the model goes after kIdleRelease.
-                Clock::time_point until = rest ? last_request_ + kRestQuiet : Clock::time_point::max();
-                if (blocked)
-                    until = std::min(until, now + std::chrono::seconds(1)); // looks again whether the GPU is free
-                if (session_ && !rest)
+                // Only loaded requests can wake preparation. Idle/loading/gameplay never discover the corpus.
+                Clock::time_point until = Clock::time_point::max();
+                if (session_)
                 {
                     if (now - idle_since_ >= kIdleRelease)
                     {
@@ -353,19 +323,6 @@ void ReliefGenerator::run()
             prepare_request(*request);
         else if (upscale)
             prepare_upscale(upscale);
-        else
-        {
-            prepare_rest();
-            // On the CPU the rest of the game goes one texture per session while the game plays: onnxruntime's memory
-            // (its environment, the three sessions) is not held between them. (On the GPU the networks stay: making
-            // their pipelines again would cost more than the texture.)
-            std::lock_guard lock(mutex_);
-            if (session_ && !session_->stats().gpu && !session_->stats().gpu_possible)
-            {
-                running_ = nullptr;
-                session_.reset();
-            }
-        }
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
         stats_.working = false;
@@ -545,95 +502,6 @@ void ReliefGenerator::release_models(const char *why)
         shim::logf("effects: relief generation (%s): inference objects released%s%s", why,
                    kept_policy ? "; retry state and serialized model data kept" : "",
                    gpu ? ", the GPU's Vulkan instance closed" : "");
-}
-
-void ReliefGenerator::prepare_rest()
-{
-    const auto defer_prune = [this] {
-        shim::logf("effects: relief pruning deferred: source inventory or cache I/O failure; retry after quiet interval");
-        std::lock_guard lock(mutex_);
-        rest_listed_ = false;
-        rest_.clear();
-        rest_at_ = 0;
-        last_request_ = Clock::now(); // Existing kRestQuiet pacing; demand requests still take priority.
-    };
-    if (!rest_listed_)
-    {
-        rest_listed_ = true;
-        const Clock::time_point start = Clock::now();
-        // Background listing (names only) for the queue and mark. Pruning also inventories on-demand textures.
-        rest_ = relief::List(setup_.textures);
-        rest_at_ = 0;
-        const double list_ms = Ms(start);
-        int missing = 0;
-        if (relief::Complete(setup_.directory, fx::kReliefMapSize, rest_.size(), &missing))
-        {
-            shim::logf("effects: relief generation: the game's %zu relief and gloss textures have their maps (checked in "
-                       "%.0f ms)",
-                       rest_.size(), Ms(start));
-            rest_.clear();
-            std::lock_guard lock(mutex_);
-            rest_done_ = true;
-            stats_.rest = 0;
-            return;
-        }
-        if (missing > 0)
-            shim::logf("effects: relief generation: %d maps of the complete pass are missing (the cache was cleared or "
-                       "evicted by the system): made again",
-                       missing);
-        // Maps of another method (an older build, another model or options) are removed first: they never match a key
-        // again, and their room is the new maps'.
-        const Clock::time_point prune_start = Clock::now();
-        const int stale = relief::Prune(setup_.textures, rest_, setup_.directory, fx::kReliefMapSize);
-        if (stale < 0)
-        {
-            defer_prune();
-            return;
-        }
-        if (stale > 0)
-            shim::logf("effects: relief generation: %d maps of another method or game removed", stale);
-        shim::logf("effects: relief generation: %zu relief and gloss textures of the game to make in the background (listed in "
-                   "%.0f ms, pruned in %.0f ms)",
-                   rest_.size(), list_ms, Ms(prune_start));
-    }
-    if (rest_at_ >= rest_.size())
-    {
-        const int removed = relief::Prune(setup_.textures, rest_, setup_.directory, fx::kReliefMapSize);
-        if (removed < 0)
-        {
-            defer_prune();
-            return;
-        }
-        relief::MarkComplete(setup_.directory, fx::kReliefMapSize, rest_.size());
-        shim::logf("effects: relief generation: every relief texture of the game has its map (%d stale maps removed)",
-                   removed);
-        std::lock_guard lock(mutex_);
-        rest_done_ = true;
-        stats_.rest = 0;
-        rest_.clear();
-        return;
-    }
-    // The ×2 its small textures' maps are made from is kept too while the game shows them (cheap: the encode only).
-    std::optional<relief::UpscaleOutput> display;
-    {
-        std::lock_guard lock(mutex_);
-        if (display_)
-            display = relief::UpscaleOutput{display_directory_, display_bc_};
-    }
-    const Clock::time_point start = Clock::now();
-    std::string failure;
-    const relief::Outcome outcome = session_->PrepareFile(setup_.textures, rest_[rest_at_++], setup_.directory,
-                                                          fx::kReliefMapSize, failure, display ? &*display : nullptr);
-    const double ms = Ms(start);
-    std::lock_guard lock(mutex_);
-    stats_.rest = static_cast<int>(rest_.size() - rest_at_);
-    stats_.device = session_->stats().provider;
-    if (outcome == relief::Outcome::Prepared)
-    {
-        ++stats_.made;
-        stats_.made_ms += ms;
-        stats_.slowest_ms = std::max(stats_.slowest_ms, ms);
-    }
 }
 
 void ReliefGenerator::prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry)

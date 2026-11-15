@@ -66,7 +66,6 @@ void NormalMaps::configure(bool enabled, int max_size, bool material)
     enabled_ = enabled;
     max_size_ = max_size;
     material_ = material;
-    ReliefGenerator::instance().set_active(enabled);
     if (!changed)
         return;
     std::erase_if(entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
@@ -582,24 +581,22 @@ void NormalMaps::end_frame()
     frames_ = 0;
     const Stats now = stats();
     const ReliefGenerator::Stats generator = ReliefGenerator::instance().stats();
-    const uint32_t rest = generator.rest > 0 ? static_cast<uint32_t>(generator.rest) : 0;
     const bool gloss_same = now.gloss_resident == logged_.gloss_resident && now.gloss_bytes == logged_.gloss_bytes &&
                             now.gloss_unqueued == logged_.gloss_unqueued && now.gloss_waiting == logged_.gloss_waiting &&
                             now.gloss_missing == logged_.gloss_missing;
     if (gloss_same && now.resident == logged_.resident && now.materials == logged_.materials && now.bytes == logged_.bytes && now.waiting == logged_.waiting &&
-        now.missing == logged_.missing && now.unqueued == logged_.unqueued && now.derived == logged_.derived && rest == logged_rest_ &&
+        now.missing == logged_.missing && now.unqueued == logged_.unqueued && now.derived == logged_.derived &&
         generator.made == logged_made_ && generator.device == logged_device_)
         return;
     logged_ = now;
-    logged_rest_ = rest;
     logged_made_ = generator.made;
     logged_device_ = generator.device;
     shim::logf("effects relief: %u normal maps resident (%.1f MB, max %d px; %u with a material texture (height, gloss), %.1f MB of "
                "it); %u loaded textures waiting for their map, "
-               "%u more of the game to make in the background%s; %u maps made (%.0f ms, slowest %.0f ms); %u without "
+               "automatic whole-corpus preparation disabled (loaded demand only)%s; %u maps made (%.0f ms, slowest %.0f ms); %u without "
                "a map (generation unavailable); %u height maps derived (%.0f ms); %u loaded while relief was off; models on %s",
                now.resident, static_cast<double>(now.bytes) / 1048576.0, max_size_, now.materials,
-               static_cast<double>(now.material_bytes) / 1048576.0, now.waiting, rest,
+               static_cast<double>(now.material_bytes) / 1048576.0, now.waiting,
                generator.paused.empty() ? "" : (" (paused: " + generator.paused + ")").c_str(), generator.made, generator.made_ms,
                generator.slowest_ms, now.missing, now.derived, now.derive_ms, now.unqueued,
                generator.device.empty() ? "(not loaded)" : generator.device.c_str());

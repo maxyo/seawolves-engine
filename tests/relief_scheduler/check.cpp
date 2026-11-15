@@ -24,7 +24,7 @@ std::atomic<int> opened{0}, started{0}, pause_after{0}, idle_releases{0};
 std::atomic<bool> cpu_detour{false};
 std::atomic<int64_t> clock_offset{0};
 
-std::atomic<bool> background_enabled{false}, background_complete{false};
+std::atomic<int> list_calls{0}, prune_calls{0}, complete_calls{0}, marked_complete{0};
 std::mutex events_mutex;
 std::vector<std::string> events;
 std::filesystem::path cache;
@@ -38,7 +38,8 @@ template<class Predicate> void until(Predicate predicate, const char *message) {
     expect(predicate(),message);
 }
 void reset() {
-    status=2; forecast=0.95f; hot=true; block_job=false; cancelled=false; slow_open=false; opened=0; started=0; pause_after=0; background_enabled=false; background_complete=false;
+    status=2; forecast=0.95f; hot=true; block_job=false; cancelled=false; slow_open=false; opened=0; started=0; pause_after=0;
+    list_calls=0; prune_calls=0; complete_calls=0; marked_complete=0; clock_offset=0;
     std::lock_guard lock(events_mutex); events.clear();
 }
 relief::Outcome infer(const std::filesystem::path &file, const char *lane) {
@@ -92,21 +93,46 @@ void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
 void Session::ReleaseIdleModels() {++idle_releases;}
 bool Session::WaitsForGpu() const { return cpu_detour && !impl_->stats.gpu && !impl_->free && test_now()-impl_->since<std::chrono::seconds(60); }
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,
-    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { if(cpu_detour && !WaitsForGpu()) impl_->stats.gpu=true; return infer(file,"N:"); }
+    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { if(cpu_detour && !WaitsForGpu()) impl_->stats.gpu=true;
+    return infer(file,"N:"); }
 Outcome Session::Upscale(const std::filesystem::path&,const std::filesystem::path &file,
     const UpscaleOutput&,int,std::string&) { return infer(file,"U:"); }
 bool ReleaseGpu() { return false; }
-std::vector<std::filesystem::path> List(const std::filesystem::path&) {
-    return background_enabled ? std::vector<std::filesystem::path>{"background"} : std::vector<std::filesystem::path>{};
+// These sentinels make accidental whole-corpus discovery observable, not merely an inference count.
+std::vector<std::filesystem::path> List(const std::filesystem::path&) { ++list_calls; return {"background"}; }
+int Prune(const std::filesystem::path&,const std::vector<std::filesystem::path>&,const std::filesystem::path&,int) {
+    ++prune_calls; return 0;
 }
-int Prune(const std::filesystem::path&,const std::vector<std::filesystem::path>&,const std::filesystem::path&,int) { return 0; }
-void MarkComplete(const std::filesystem::path&,int,size_t) { background_complete=true; }
-bool Complete(const std::filesystem::path&,int,size_t,int*) { return !background_enabled || background_complete; }
+void MarkComplete(const std::filesystem::path&,int,size_t) { ++marked_complete; }
+bool Complete(const std::filesystem::path&,int,size_t,int*) { ++complete_calls; return false; }
+
 }
 int main(int argc,char **argv) {
     expect(argc==2,"isolated cache supplied");cache=std::filesystem::path(argv[1])/"cache";
     std::filesystem::create_directories(cache);
     auto &g=effects::ReliefGenerator::instance();
+    // Automatic corpus discovery/preparation is absent in every renderer state, even after long quiet periods.
+    // A legacy quality/diagnostic request must not turn it back on or block dynamically loaded requests.
+    for(bool paused : {false,true}) {
+        reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_active(true);g.pause_background(paused);
+        for(int state=0;state<3;++state) {
+            if(state==1) g.frame(true); // actual gameplay, independent of quality/provider
+            if(state==2) for(int i=0;i<30;++i) g.frame(false); // loading/interface, formerly corpus eligible
+            { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
+            std::this_thread::sleep_for(30ms);
+            expect(opened==0 && started==0 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
+                   "idle/missing frames, actual3D and no-scene loading never discover or prepare the corpus");
+        }
+        expect(g.background_pause_acknowledged()==paused,"legacy diagnostic ACK stays compatible without a corpus job");
+        // A texture can appear after loading/discovery. It still gets its own real demand preparation.
+        auto late=normal("late-loaded-normal",920);auto late_u=upscale("late-loaded-upscale",921);
+        g.request(late,late->file);expect(g.request_upscale(late_u),"late-loaded x2 request accepted");
+        until([&]{return late->state==effects::NormalMapEntry::Stored && late_u->state==effects::UpscaleEntry::Stored;},
+              "late-loaded normal and x2 complete for either legacy diagnostic value");
+        expect(started==2 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
+               "loaded demand performs no whole-game inventory/prune/completion and creates no false warm mark");
+        g.shutdown();
+    }
     // Actual normal-request comparator: projected-size weighting cannot displace physical distance or aged work.
     {
         auto at=effects::generation_focus().snapshot();
@@ -163,25 +189,24 @@ int main(int argc,char **argv) {
     g.shutdown();configure(g);
     expect(!g.gpu_free(),"reconfigure clears stale scene-free state");
     g.shutdown();
-    // Full production worker lifecycle with deterministic time: inference objects are released at 10s,
-    // but background admission must retain the same CPU detour until its 60s GPU retry is due.
-    reset();status=0;forecast=0.5f;hot=false;cpu_detour=true;idle_releases=0;configure(g);
+    // Full production worker lifecycle: release models at10s, preserve the CPU-detour session/retry state,
+    // then resume only for a newly loaded texture. Elapsed retry time must never create automatic corpus work.
+    reset();status=0;forecast=0.5f;hot=false;cpu_detour=true;idle_releases=0;configure(g);g.frame(true);
     auto anchor=normal("retry-anchor",91);g.request(anchor,"retry-anchor");
     until([&]{return g.stats().made==1;},"CPU-detour anchor completes");
-    background_enabled=true;g.set_active(true);
     auto advance=[&](int seconds) {
         std::lock_guard lock(g.mutex_);clock_offset+=seconds;g.wake_.notify_all();
     };
     advance(11);
     until([&]{std::lock_guard lock(g.mutex_);return idle_releases>0 || !g.session_ || opened>1 || started>1;},"10-second idle deadline processed");
-    expect(idle_releases==1 && opened==1 && started==1,"idle releases inference objects without reopening or CPU background work");
-    advance(48);
-    {std::lock_guard lock(g.mutex_);g.wake_.notify_all();}
+    expect(idle_releases==1 && opened==1 && started==1,"idle releases inference objects without reopening or unrelated work");
+    advance(50);g.frame(true);
     std::this_thread::sleep_for(30ms);
-    expect(opened==1 && started==1 && !background_complete,"59-second blocked detour still admits no background job");
-    advance(2);
-    until([&]{return background_complete.load();},"61-second retry admits background and completes");
-    expect(opened==1 && started==2 && g.session_->stats().gpu,"same policy session retries GPU without re-admitting CPU background");
+    expect(started==1 && list_calls==0 && prune_calls==0 && marked_complete==0,
+           "elapsed60-second provider retry never starts a corpus job");
+    auto retry=normal("retry-loaded-later",92);g.request(retry,retry->file);
+    until([&]{return retry->state==effects::NormalMapEntry::Stored;},"new loaded demand resumes after model idle release");
+    expect(opened==1 && started==2 && g.session_->stats().gpu,"same policy session retains GPU retry epoch for subsequent demand");
     g.shutdown();cpu_detour=false;clock_offset=0;
     // The file is already prepared by a preceding normal job, but thermal protection now forbids inference.
     reset();configure(g);
@@ -304,25 +329,22 @@ int main(int argc,char **argv) {
         expect(events.size()==22 && events[17]=="N:age-far","far live texture gets a turn after 16 other admissions");
     }
     g.shutdown();
-    // Make background work genuinely due while both foreground lanes wait. Backdate only the quiet deadline,
-    // under the worker's own mutex, to avoid a 30-second idle test. All selection and preparation paths are real.
+    // Both loaded lanes preserve their real admission order even when the old corpus quiet deadline is long past.
     reset();status=1;forecast=0.5f;block_job=true;configure(g);
-    active=normal("background-anchor",650,1);g.request(active,"background-anchor");
-    until([&]{return started==1;},"background test active job started");
+    active=normal("demand-anchor",650,1);g.request(active,"demand-anchor");
+    until([&]{return started==1;},"demand anchor starts");
     auto live=normal("foreground-normal",651,1);auto live_upscale=upscale("foreground-upscale",652);
-    g.request(live,"foreground-normal");expect(g.request_upscale(live_upscale),"both foreground lanes queued before background");
-    background_enabled=true;g.set_active(true);
-    {
-        std::lock_guard lock(g.mutex_);
-        g.last_request_=std::chrono::steady_clock::now()-31s;
-    }
+    g.request(live,"foreground-normal");expect(g.request_upscale(live_upscale),"both loaded lanes queued before idle gap");
+    g.set_active(true);{ std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
     block_job=false;
-    until([&]{return background_complete.load();},"due background work eventually completes");
+    until([&]{return live->state==effects::NormalMapEntry::Stored && live_upscale->state==effects::UpscaleEntry::Stored;},
+          "both loaded lanes finish after a long idle-clock gap");
     {
         std::lock_guard lock(events_mutex);
-        expect(events==std::vector<std::string>{"N:background-anchor","U:foreground-upscale","N:foreground-normal","N:background"},
-               "background begins only after both loaded foreground lanes drain");
+        expect(events==std::vector<std::string>{"N:demand-anchor","U:foreground-upscale","N:foreground-normal"},
+               "loaded lane fairness is unchanged and unrelated corpus never follows");
     }
+    expect(list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,"neither loaded lane triggers whole-game discovery or completion");
     g.shutdown();
     // A real inference failure is terminal for that entry and does not starve the other lane.
     reset();status=0;forecast=0.5f;hot=false;configure(g);
