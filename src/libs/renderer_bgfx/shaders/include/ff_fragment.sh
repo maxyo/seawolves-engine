@@ -560,11 +560,13 @@ void main()
     vec3 reliefGv;
     fxReliefFrame(Ng, P, ffReliefDx, ffReliefDy, reliefGu, reliefGv);
 #ifdef FX_LIGHT_PARALLAX
+    FxParallaxFrame ffPomFrame = fxParallaxFrame(dFdx(P), dFdy(P), ffReliefDx, ffReliefDy, V);
     vec3 ffPomFound;
     vec2 ffReliefUv0 = ffReliefUv;
     ffPomFound = vec3_splat(0.0);
     if (ffSkin < 0.999)
-        ffReliefUv = mix(fxParallax(ffReliefUv, ffReliefDx, ffReliefDy, reliefGu, reliefGv, Ng, V, length(P), ffPomFound),
+        ffReliefUv = mix(fxParallax(ffReliefUv, ffReliefDx, ffReliefDy, ffPomFrame.gu, ffPomFrame.gv,
+                                  ffPomFrame.normal, V, length(P), ffPomFound),
                          ffReliefUv0, ffSkin);
     N = fxPerturbNormal(Ng, reliefGu, reliefGv, texture2DGrad(s_fxNormalMap, ffReliefUv, ffReliefDx, ffReliefDy).rg);
 #else
@@ -642,7 +644,8 @@ void main()
     // pixel); the per-pixel sun and the lamps keep their own visibility.
     float sunShadow = fxSunShadow(P, Ng) * skySeen.y * cavityDirect;
 #ifdef FX_LIGHT_PARALLAX
-    sunShadow *= mix(fxParallaxShadow(ffReliefUv, ffPomFound, reliefGu, reliefGv, Ng, u_fxLight[0].xyz), 1.0, ffSkin);
+    sunShadow *= mix(fxParallaxShadow(ffReliefUv, ffPomFound, ffPomFrame.gu, ffPomFrame.gv,
+                                    ffPomFrame.normal, u_fxLight[0].xyz), 1.0, ffSkin);
 #endif
     vec3 ambient = fxAmbient(N);
     float lampSeen = dot(lamps.rgb, vec3(0.299, 0.587, 0.114));
@@ -724,7 +727,8 @@ void main()
     current.rgb *= fxBakedRelief(Ng, N, V);
 #ifdef FX_LIGHT_PARALLAX
     // The baked colour holds the sun and the sky: the relief's own shadow takes the sun's part (about half of it).
-    current.rgb *= 1.0 - 0.5 * (1.0 - fxParallaxShadow(ffReliefUv, ffPomFound, reliefGu, reliefGv, Ng, u_fxLight[0].xyz));
+    current.rgb *= 1.0 - 0.5 * (1.0 - fxParallaxShadow(ffReliefUv, ffPomFound, ffPomFrame.gu, ffPomFrame.gv,
+                                                     ffPomFrame.normal, u_fxLight[0].xyz));
 #endif
 #endif
     // The place's lamps relight the baked colour b: b * (b + G * lit) / (b + k * G * unshadowed). Where no lamp

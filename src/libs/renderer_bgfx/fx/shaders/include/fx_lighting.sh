@@ -219,6 +219,8 @@ vec3 fxPerturbNormal(vec3 N, vec3 gu, vec3 gv, vec2 rg)
 }
 
 #ifdef FX_LIGHT_PARALLAX
+#include "fx_parallax_geometry.sh"
+
 // [0] x, y: the depth of the height's 0..1 span in u and v (its depth in texels over the map's width and height, times
 //         the class's depth, the strength and the relief's fade-in); z: the most steps of the ray (1 = one-tap offset
 //         mapping); w: log2 of the map's larger side (the level the steps read).

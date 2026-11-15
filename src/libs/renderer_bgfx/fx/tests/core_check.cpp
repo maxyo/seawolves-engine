@@ -41,6 +41,7 @@
 #include <map>
 #include <thread>
 #include <set>
+#include <string_view>
 #include <vector>
 
 using namespace storm::fx;
@@ -62,6 +63,66 @@ int failures = 0;
 bool Near(float a, float b, float eps)
 {
     return std::fabs(a - b) <= eps;
+}
+
+// Execute the production shader helper on the CPU, with only the GLSL vector primitives adapted.
+namespace PomGeometry
+{
+using vec3 = std::array<float, 3>;
+using vec2 = std::array<float, 2>;
+vec3 operator+(vec3 a, vec3 b) { return {a[0] + b[0], a[1] + b[1], a[2] + b[2]}; }
+vec3 operator-(vec3 a, vec3 b) { return {a[0] - b[0], a[1] - b[1], a[2] - b[2]}; }
+vec3 operator-(vec3 a) { return {-a[0], -a[1], -a[2]}; }
+vec3 operator*(vec3 a, float b) { return {a[0] * b, a[1] * b, a[2] * b}; }
+vec3 &operator*=(vec3 &a, float b) { a = a * b; return a; }
+float dot(vec3 a, vec3 b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+vec3 cross(vec3 a, vec3 b)
+{
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
+}
+float inversesqrt(float x) { return 1.0f / std::sqrt(x); }
+vec3 vec3_splat(float x) { return {x, x, x}; }
+vec3 unit(vec3 x) { return x * inversesqrt(dot(x, x)); }
+#include "../shaders/include/fx_parallax_geometry.sh"
+}
+
+void CheckParallaxGeometry()
+{
+    using namespace PomGeometry;
+    // Actual Martinique Warehouse masonry triangle: its smooth corner normals face away at this visible joint.
+    // This used to set clamp(dot(Ng,V),0,1)=0 and suppress POM, although the geometric plane faces the eye.
+    const vec3 a{43.6957321f, 3.0451393f, 74.9864655f};
+    const vec3 b{43.6957321f, 3.5463767f, 74.9864655f};
+    const vec3 c{39.4454117f, 3.5463767f, 74.9864578f};
+    const vec3 V = unit(vec3{35.8f, 4.71787f, 76.35f} - vec3{43.3298306f, 3.4979782f, 74.9864648f});
+    const vec3 smooth = unit(vec3{0.29348446f, 0.0f, 0.95596385f});
+    const vec3 dx = b - a, dy = c - a;
+    const vec2 dux{-0.0466593206f, 0.0f}, duy{-0.0466592908f, 0.3765614331f};
+    CHECK(dot(smooth, V) < -0.11f); // Negative control: the old shader's geometric gate was exactly zero.
+    const auto f = fxParallaxFrame(dx, dy, dux, duy, V);
+    CHECK(dot(f.normal, V) > 0.17f && dot(f.normal, V) < 0.18f);
+    CHECK(Near(dot(f.gu, dx), dux[0], 1e-6f) && Near(dot(f.gu, dy), duy[0], 1e-6f));
+    CHECK(Near(dot(f.gv, dx), dux[1], 1e-6f) && Near(dot(f.gv, dy), duy[1], 1e-6f));
+    CHECK(std::fabs(dot(f.normal, f.gu)) < 1e-6f && std::fabs(dot(f.normal, f.gv)) < 1e-6f);
+    const auto reversed = fxParallaxFrame(dy, dx, duy, dux, V);
+    const auto back = fxParallaxFrame(dx, dy, dux, duy, -V);
+    const auto mirror = fxParallaxFrame(dx, dy, {-dux[0], dux[1]}, {-duy[0], duy[1]}, V);
+    for (int i = 0; i < 3; ++i)
+    {
+        CHECK(Near(reversed.normal[i], f.normal[i], 1e-6f) && Near(reversed.gu[i], f.gu[i], 1e-6f) &&
+              Near(reversed.gv[i], f.gv[i], 1e-6f));
+        CHECK(Near(back.normal[i], -f.normal[i], 1e-6f) && Near(back.gu[i], f.gu[i], 1e-6f) &&
+              Near(back.gv[i], f.gv[i], 1e-6f));
+        CHECK(Near(mirror.gu[i], -f.gu[i], 1e-6f) && Near(mirror.gv[i], f.gv[i], 1e-6f));
+    }
+    // Flat-normal control: the original orthogonal frame is unchanged. Collapsed/collinear derivatives disable POM.
+    const auto flat = fxParallaxFrame({2, 0, 0}, {0, 4, 0}, {1, 0}, {0, 1}, {0, 0, 1});
+    CHECK(flat.gu == (vec3{0.5f, 0, 0}) && flat.gv == (vec3{0, 0.25f, 0}) && flat.normal == (vec3{0, 0, 1}));
+    for (const auto d : {vec3{0, 0, 0}, dx})
+    {
+        const auto empty = fxParallaxFrame(dx, d, dux, duy, V);
+        CHECK(empty.gu == vec3_splat(0) && empty.gv == vec3_splat(0) && empty.normal == vec3_splat(0));
+    }
 }
 
 float Chroma(std::array<float, 3> c)
@@ -2774,8 +2835,14 @@ void CheckWetness()
     CHECK(w.Level() == 1.0f);
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    CheckParallaxGeometry();
+    if (argc == 2 && std::string_view(argv[1]) == "--parallax-geometry-only")
+    {
+        std::printf("POM geometry checks: %s\n", failures ? "FAILED" : "passed");
+        return failures ? 1 : 0;
+    }
     CheckSettings();
     CheckLut();
     CheckToneCurve();
