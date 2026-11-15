@@ -1148,20 +1148,30 @@ void SHIP::AddWaveSource(float fDeltaTime)
     const float k = Min(1.0f, fDeltaTime * 2.0f);
     fWaveSpeed += k * ((vDelta.x * vForward.x + vDelta.z * vForward.y) / fDeltaTime - fWaveSpeed);
     fWaveHeave += k * (vDelta.y / fDeltaTime - fWaveHeave);
-    storm::render::EffectsWaveSource source;
+    storm::render::EffectsWaveSource &source = waveSource_;
     source.identity = GetId();
     source.kind = storm::render::EffectsWaveSource::Kind::Hull;
     source.position = {vWorld.x, vWorld.y, vWorld.z};
     source.forward = {vForward.x, vForward.y};
-    // The waterline traced from the hull (draft, heel and pitch of this frame); without a profile (logged once per
-    // model by HullProfile::Get) the hull's bounding box, as an ellipse around the model's origin.
+    // The waterline traced from the hull (draft, heel and pitch), solved against the sea at 10 Hz of game time and
+    // kept between: it is relative to the ship (along, to the side), and the heel and the swell under the hull change
+    // it slowly. Without a profile (logged once per model by HullProfile::Get) the hull's bounding box, as an
+    // ellipse around the model's origin.
     MODEL *pModel = GetModel();
     NODE *pNode = pModel ? pModel->GetNode(0) : nullptr;
-    if (!hullProfile_ || !pNode ||
-        !storm::ship::HullWaterline(*hullProfile_, pNode->glob_mtx, vWorld, vForward, *pSea, source))
+    fWaterlineAge += fDeltaTime;
+    if (hullProfile_ && pNode && (fWaterlineAge >= 0.1f || !bWaterlineValid))
     {
-        if (hullProfile_ && pNode)
+        fWaterlineAge = 0.0f;
+        bWaterlineValid = storm::ship::HullWaterline(*hullProfile_, pNode->glob_mtx, vWorld, vForward, *pSea, source);
+    }
+    if (hullProfile_ && pNode)
+    {
+        if (!bWaterlineValid)
             return; // out of the water: no waterline, no waves
+    }
+    else
+    {
         source.half_length = 0.5f * State.vBoxSize.z;
         source.half_width = 0.5f * State.vBoxSize.x;
         source.stern = -source.half_length;

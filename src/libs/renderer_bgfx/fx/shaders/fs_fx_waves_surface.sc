@@ -16,7 +16,9 @@ void main()
     vec2 slope = vec2(r - l, u - d) / (2.0 * u_wavesStep[1].y);
     // Foam where a crest is high and sharp (it would break), from the curvature of the field.
     float curvature = (4.0 * h - l - r - d - u) / (u_wavesStep[1].y * u_wavesStep[1].y);
-    float foam = clamp((h - 0.12) * 8.0, 0.0, 1.0) * clamp(curvature * 1.5, 0.0, 1.0);
+    // Only a thin crest where the bow wave breaks: high and sharp, at half strength (the wake's foam is the ship's
+    // own trail behind the stern).
+    float foam = 0.5 * clamp((h - 0.15) * 6.0, 0.0, 1.0) * clamp(curvature, 0.0, 1.0);
     vec2 edge = min(v_uv, 1.0 - v_uv);
     float fade = smoothstep(0.02, 0.15, min(edge.x, edge.y));
     if (u_wavesStep[3].y > 0.5)

@@ -986,6 +986,9 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             for (uint16_t i = 0; i < stats->numViews; ++i)
             {
                 const bgfx::ViewStats &view = stats->viewStats[i];
+                // The pass names of fx::SeaWaves (SetupView).
+                if (std::strncmp(view.name, "fx sea waves", 12) == 0)
+                    times_.sea_waves_ms += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
                 if (last_post_views_ && view.view >= last_post_first_ && view.view < last_post_first_ + last_post_views_)
                 {
                     const double ms = static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
@@ -1005,18 +1008,20 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             profile_sum_smaa_ += times_.smaa_ms;
             profile_sum_easu_ += times_.easu_ms;
             profile_sum_rcas_ += times_.rcas_ms;
+            profile_sum_sea_waves_ += times_.sea_waves_ms;
             ++profile_gpu_frames_;
         }
         profile_sum_cpu_ += static_cast<double>(stats->cpuTimeFrame) * 1000.0 / static_cast<double>(stats->cpuTimerFreq);
         profile_draws_ += stats->numDraw;
         if (++profile_count_ == kProfileFrames)
         {
-            char gpu[192] = "gpu_frame_ms=n/a gpu_post_ms=n/a (no timer queries)";
+            char gpu[256] = "gpu_frame_ms=n/a gpu_post_ms=n/a (no timer queries)";
             if (profile_gpu_frames_ > 0)
-                snprintf(gpu, sizeof(gpu), "gpu_frame_ms=%.2f gpu_post_ms=%.2f gpu_smaa_ms=%.2f gpu_easu_ms=%.2f gpu_rcas_ms=%.2f",
+                snprintf(gpu, sizeof(gpu), "gpu_frame_ms=%.2f gpu_post_ms=%.2f gpu_smaa_ms=%.2f gpu_easu_ms=%.2f gpu_rcas_ms=%.2f "
+                         "gpu_sea_waves_ms=%.3f",
                          profile_sum_frame_ / profile_gpu_frames_, profile_sum_post_ / profile_gpu_frames_,
                          profile_sum_smaa_ / profile_gpu_frames_, profile_sum_easu_ / profile_gpu_frames_,
-                         profile_sum_rcas_ / profile_gpu_frames_);
+                         profile_sum_rcas_ / profile_gpu_frames_, profile_sum_sea_waves_ / profile_gpu_frames_);
             const Lighting::Counts counts = lighting_.last_frame();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
                        "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u casters=%u ao_draws=%u lamp_draws=%u lamp_casters=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u%s",
@@ -1028,7 +1033,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
-            profile_sum_smaa_ = profile_sum_easu_ = profile_sum_rcas_ = 0.0;
+            profile_sum_smaa_ = profile_sum_easu_ = profile_sum_rcas_ = profile_sum_sea_waves_ = 0.0;
             profile_draws_ = 0;
         }
     }

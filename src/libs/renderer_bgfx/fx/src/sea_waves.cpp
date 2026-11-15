@@ -14,8 +14,7 @@ namespace
 {
 // The water: waves of 2 m and more (4 texels) travel at about the speed deep water gives them, and lose half
 // their energy in a few seconds; a hull or a swimmer is felt some tens of metres away.
-constexpr float kWaveSpeed = 2.5f;       // m/s
-constexpr float kVelocityKeep = 0.9985f; // per 1/60 s: half the energy in about 4 s
+constexpr float kVelocityKeep = 0.996f; // per 1/60 s: half the energy in about 3 s
 } // namespace
 
 SeaWaves::~SeaWaves()
@@ -79,7 +78,8 @@ void SeaWaves::Reset()
 }
 
 void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera,
-                       std::span<const WaveSource> sources, bool float_state, bool float_surface, float retention)
+                       std::span<const WaveSource> sources, float wave_speed, bool float_state, bool float_surface,
+                       float retention)
 {
     if (views.size() < 2)
         return;
@@ -116,7 +116,7 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
     source_discontinuous_ = false;
 
     // Unequal steps: (u+ - u) / h - (u - u-) / h_last = (h + h_last) / 2 * c^2 lap / dx^2.
-    const float courant = kWaveSpeed * step_seconds_ / kCell;
+    const float courant = std::clamp(wave_speed, kMinWaveSpeed, kMaxWaveSpeed) * step_seconds_ / kCell;
     const float keep = std::pow(kVelocityKeep, step_seconds_ / kStep);
     const size_t steps = views.size() - 1;
     const float step_retention = std::pow(std::clamp(retention, 0.0f, 1.0f), 1.0f / static_cast<float>(steps));

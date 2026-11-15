@@ -242,8 +242,19 @@ void Host::advance_sea_waves(shim::Device &device)
     for (int i = 0; i <= steps; ++i)
         views[i] = device.effects_view(true);
     const auto &focus = sea_frame_.focus;
+    // The waves travel at a third of the speed of the hull nearest the field's centre (the ship the camera follows):
+    // its side waves then leave it at the Kelvin wedge's 19.5 degrees, whatever its speed. Eased over about 2 s.
+    float wave_speed = fx::SeaWaves::kMaxWaveSpeed;
+    for (const fx::WaveSource &s : sea_wave_sources_)
+        if (s.kind == fx::WaveSource::Kind::Hull)
+        {
+            wave_speed = std::clamp(std::fabs(s.speed) / 3.0f, fx::SeaWaves::kMinWaveSpeed, fx::SeaWaves::kMaxWaveSpeed);
+            break;
+        }
+    sea_wave_speed_ += (wave_speed - sea_wave_speed_) * std::min(sea_frame_.dt * 0.5f, 1.0f);
     sea_waves_.Advance(std::span(views.data(), static_cast<size_t>(steps) + 1), {focus[0], focus[2]}, sea_wave_sources_,
-                       support_.sea_waves_float, support_.sea_waves_surface_float, sea_waves_idle_.TakeRetention());
+                       sea_wave_speed_, support_.sea_waves_float, support_.sea_waves_surface_float,
+                       sea_waves_idle_.TakeRetention());
     device.effects_view(true); // the sea goes on in a view of its own on its target
 }
 

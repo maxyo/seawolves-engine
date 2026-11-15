@@ -129,6 +129,10 @@ class SHIP : public SHIP_BASE
     glm::vec3 vWaveLastPos{};
     bool bWaveLastPos = false;
     bool bWaterlineLogged = false; // the first waterline of this ship went to the log
+    // The hull on the water (AddWaveSource): its waterline is solved at 10 Hz of game time and kept between.
+    storm::render::EffectsWaveSource waveSource_;
+    float fWaterlineAge = 0.0f;
+    bool bWaterlineValid = false;
     float fWaveSpeed = 0.0f, fWaveHeave = 0.0f;
     std::shared_ptr<const storm::ship::HullProfile> hullProfile_; // the hull's waterline (shared per model)
     void AddWaveSource(float fDeltaTime);

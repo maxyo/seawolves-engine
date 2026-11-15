@@ -77,22 +77,32 @@ void main()
             // the stem and down along the run aft, and by its heave.
             if (abs(along) > b.x * 1.6 + 8.0 || abs(side) > b.y * 2.0 + 8.0)
                 continue;
-            float dist = fxWavesHull(i, along, side);
-            float skin = max(2.0 * u_wavesStep[1].y, 0.25 * b.y);
-            if (dist > 3.0 * skin)
-                continue;
-            hold *= smoothstep(-1.2 * skin, -0.2 * skin, dist);
-            float ring = exp(-(dist / skin) * (dist / skin));
             vec4 ends = u_wavesSrc[i * kWavesVectors + 3];
-            float bow = clamp((along - ends.x) / max(ends.y - ends.x, 0.1), 0.0, 1.0);
+            float hull_length = max(ends.y - ends.x, 1.0);
             // How much wave a hull makes for its speed grows with its Froude number U / sqrt(g L): a heavy ship
             // under sail (Fr about 0.2) pushes a modest bow wave, a light boat at the same speed (Fr 0.4 and more)
             // a full one.
-            float froude = abs(b.z) * inversesqrt(9.81 * max(2.0 * b.x, 1.0));
-            float make = clamp(2.5 * froude, 0.25, 1.0);
-            // Heave only from the hull's own bobbing beyond the swell's (a storm lifts every hull metres a second):
-            // a small push, clamped, or every hull rings like a bell.
-            rate += ring * (abs(b.z) * make * (0.09 * bow * bow * bow - 0.018) - 0.03 * clamp(b.w, -1.0, 1.0));
+            float speed = abs(b.z);
+            float make = clamp(2.5 * speed * inversesqrt(9.81 * hull_length), 0.25, 1.0);
+            float dist = fxWavesHull(i, along, side);
+            float skin = max(2.0 * u_wavesStep[1].y, 0.25 * b.y);
+            if (dist < 3.0 * skin)
+            {
+                hold *= smoothstep(-1.2 * skin, -0.2 * skin, dist);
+                float ring = exp(-(dist / skin) * (dist / skin));
+                float bow = clamp((along - ends.x) / hull_length, 0.0, 1.0);
+                // Up at the stem, drawn down along the run aft; the hull's heave beyond the swell's (a storm lifts
+                // every hull metres a second): a small push, clamped, or every hull rings like a bell.
+                rate += ring * (speed * make * (0.09 * bow * bow * bow - 0.035 * (1.0 - bow)) -
+                                0.03 * clamp(b.w, -1.0, 1.0));
+            }
+            // Behind the stern the water closes in on the hole the hull leaves: a trough just aft, as wide as the
+            // stern.
+            vec4 stern_half = u_wavesSrc[i * kWavesVectors + 4];
+            float stern_beam = max(max(stern_half.x, stern_half.y), 0.5);
+            float across = (side - u_wavesSrc[i * kWavesVectors + 6].x) / (1.1 * stern_beam);
+            float back = (ends.x - along - 0.1 * hull_length) / (0.12 * hull_length);
+            rate -= exp(-across * across - back * back) * speed * make * 0.05;
         }
     }
     float source = fxWavesSourceDisplacement(rate, dt);

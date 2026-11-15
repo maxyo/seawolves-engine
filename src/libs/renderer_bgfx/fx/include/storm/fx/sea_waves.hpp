@@ -63,8 +63,13 @@ class SeaWaves
     // Consecutive poses with the same identity are sampled at each hull substep midpoint.
     // `float_state`: Support::sea_waves_float; `float_surface`: Support::sea_waves_surface_float.
     // `retention`: source-free idle fade applied to both stored components over this frame (normally 1).
+    // `wave_speed` (m/s, clamped to kMinWaveSpeed..kMaxWaveSpeed): how fast the waves travel. A ship's side waves
+    // leave it at asin(wave_speed / its speed); the caller keeps that at the Kelvin wedge (19.5 degrees: a third of
+    // the speed of the ship the camera follows), so they do not fan out wider the slower the ship.
+    static constexpr float kMinWaveSpeed = 0.8f;
+    static constexpr float kMaxWaveSpeed = 2.5f;
     void Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera, std::span<const WaveSource> sources,
-                 bool float_state, bool float_surface, float retention = 1.0f);
+                 float wave_speed, bool float_state, bool float_surface, float retention = 1.0f);
     // Drops the water's state (a new scene, a teleport): the next Advance starts from still water.
     void Reset();
     // The surface of the last Advance (R height, GB gradient in x / z, A crest foam; RGBA16F as they are, or RGBA8

@@ -38,6 +38,7 @@ struct PassTimes
     double smaa_ms = 0.0; // the three SMAA passes
     double easu_ms = 0.0; // FSR 1 upscale
     double rcas_ms = 0.0; // FSR 1 sharpening
+    double sea_waves_ms = 0.0; // the ripple simulation's steps and surface (fx::SeaWaves)
     uint16_t post_views = 0;
 };
 
@@ -226,6 +227,7 @@ class Host
     // Waves from objects: the sea's frame (set_sea_frame) and the simulation.
     void advance_sea_waves(shim::Device &device);
     void set_sea_waves_uniforms();
+    float sea_wave_speed_ = fx::SeaWaves::kMaxWaveSpeed; // m/s the ripples travel at (advance_sea_waves)
     fx::SeaWaves sea_waves_;
     render::EffectsSeaFrame sea_frame_{};
     std::vector<render::EffectsWaveSource> sea_sources_;
@@ -247,7 +249,7 @@ class Host
     int profile_count_ = 0;
     int profile_gpu_frames_ = 0;
     double profile_sum_frame_ = 0.0, profile_sum_post_ = 0.0, profile_sum_cpu_ = 0.0;
-    double profile_sum_smaa_ = 0.0, profile_sum_easu_ = 0.0, profile_sum_rcas_ = 0.0;
+    double profile_sum_smaa_ = 0.0, profile_sum_easu_ = 0.0, profile_sum_rcas_ = 0.0, profile_sum_sea_waves_ = 0.0;
     std::array<uint16_t, 4> last_post_size_{}; // scene width, height, target width, height of the last post chain
     uint64_t profile_draws_ = 0;
 };
