@@ -62,7 +62,8 @@ class Visibility
     // Main thread, once per frame: starts the load or bake, uploads a finished one. The volume to bind, or nullptr
     // (also while it is disabled).
     const Bound *update();
-    State state() const { return state_; }
+    // None while disabled: nothing is baked, so a location's reveal waits for nothing here (scene readiness).
+    State state() const { return enabled_ ? state_ : State::None; }
     // The volume (CPU copy, its B / A the bounce's direction), null until it is ready.
     const fx::VisibilityVolume *volume() const { return state_ == State::Ready ? &volume_ : nullptr; }
     // Whether the texture carries the bounce's block (Bounce on for this place); changing it uploads it again.

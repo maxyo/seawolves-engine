@@ -457,8 +457,8 @@ int main()
                     frames.render();
                 return visibility.state();
             };
-            ok &= expect(frames_until_ready(std::chrono::milliseconds(1500)) == effects::Visibility::State::Building,
-                         "«Низкая»: the location's visibility is not baked (nothing reads it)");
+            ok &= expect(frames_until_ready(std::chrono::milliseconds(1500)) == effects::Visibility::State::None,
+                         "«Низкая»: the location's visibility is not baked (nothing reads it) and holds no reveal");
             render::ConfigureEffects(2, {});
             ok &= expect(frames_until_ready(std::chrono::seconds(20)) == effects::Visibility::State::Ready,
                          "«Высокая»: the location's visibility is baked");
