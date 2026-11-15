@@ -1191,7 +1191,8 @@ int main(int argc, char *argv[])
                     storm::android::mobileScreen.empty();
                 {
                     STORM_PROFILE_ZONE("HUD adapter: sea orders");
-                    storm::android::pollSeaOrders(storm::android::seaOrdersReady(gameplayReady), SDL_GetTicks());
+                    // Asks the scripts only while the menu is open or when the ship icons were told their list changed (SeaOrdersRefreshGate).
+                    storm::android::pollSeaOrders(storm::android::seaOrdersReady(gameplayReady));
                     // Detect Activity replacement before accepting any queued action.
                     storm::android::publishSeaOrders();
                     if (const auto request = storm::android::seaOrders.take(SDL_GetTicks()))

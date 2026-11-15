@@ -230,27 +230,34 @@ public:
 
 };
 inline SeaOrdersState seaOrders;
-// Closed menus need only a bounded refresh of companion names/availability. An
-// open menu keeps its live script filtering and cooldown sampling every frame.
+// When the touch HUD asks the scripts for the sea orders again (BIShipIcon::Recollect and the
+// command list). As in the original sea interface, a closed menu is not polled: its companions
+// and their names are re-read when BIShipIcon is told its list changed (BIShipIcon::SetUpdate from
+// BI_IN_CREATE_SHIP, BI_IN_DELETE_SHIP, BI_IN_DEAD_SHIP, BI_MSG_REFRESH, the menu opening or
+// closing, a command executed), when this presentation's own gating changes (readiness, the
+// battle interface entity, the flagship and its character, the interface showing its command
+// menu) and right before a tap acts (executeSeaOrder). An open menu keeps its live script
+// filtering, distances and cooldown sampling every loop.
 // Keep identities, never engine pointers, across frames.
 class SeaOrdersRefreshGate
 {
-    bool initialized_ = false, ready_ = false, active_ = false;
+    bool initialized_ = false, ready_ = false, active_ = false, shown_ = false;
     uint64_t battle_ = 0, ship_ = 0;
     int character_ = -1;
-    uint32_t last_ = 0;
 public:
-    bool due(bool ready, uint64_t battle, uint64_t ship, int character, bool active, uint32_t tick)
+    // invalidated: the ship icons' own "list changed" flag, taken this iteration. shown: the battle
+    // interface shows its command menu (all shown, visible, ShowCommands).
+    bool due(bool ready, uint64_t battle, uint64_t ship, int character, bool active, bool shown, bool invalidated)
     {
         const bool refresh = !initialized_ || ready != ready_ || battle != battle_ || ship != ship_ ||
-            character != character_ || active != active_ || (ready && (active || tick - last_ >= 100));
+            character != character_ || active != active_ || shown != shown_ || (ready && (active || invalidated));
         initialized_ = true;
         ready_ = ready;
         battle_ = battle;
         ship_ = ship;
         character_ = character;
         active_ = active;
-        if (refresh) last_ = tick;
+        shown_ = shown;
         return refresh;
     }
     void force() { initialized_ = false; }
@@ -258,7 +265,8 @@ public:
 inline SeaOrdersRefreshGate seaOrdersRefresh;
 // Defined by battle_interface. All entry points run on the game thread and
 // resolve the live entity on each call; no retained pointers cross a frame.
-void pollSeaOrders(bool ready, uint32_t tick);
+// The main loop's entry: refreshes when seaOrdersRefresh says so.
+void pollSeaOrders(bool ready);
 void refreshSeaOrders(bool ready);
 bool executeSeaOrder(const SeaOrdersRequest &request);
 void closeSeaOrders();

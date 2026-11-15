@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The touch HUD asks the scripts only on the original game's invalidation, never on a timer."""
+"""The touch HUD asks the scripts (land and sea menus) only on the original game's invalidation, never on a timer."""
 import os
 from pathlib import Path
 import re
@@ -62,6 +62,31 @@ assert 'tick' not in refresh and '250' not in refresh, refresh
 for removed in ('android_hud_refresh.hpp', 'HudRefreshPolicy'):
     for path in ('src/libs/util/include/platform/android_land_commands.hpp', 'src/apps/engine/src/main.cpp'):
         assert removed not in read(path), (removed, path)
+
+# Sea orders: the same invalidation through BIShipIcon::SetUpdate; no clock reaches the gate.
+battle = read('src/libs/battle_interface/src/sea/i_battle.cpp')
+ship_sign = read('src/libs/battle_interface/src/sea/battle_ship_sign.cpp')
+ship_sign_h = read('src/libs/battle_interface/src/sea/battle_ship_sign.h')
+sea_orders = read('src/libs/util/include/platform/android_sea_orders.hpp')
+process = member(battle, 'uint64_t BATTLE_INTERFACE::ProcessMessage(')
+for message in ('BI_IN_CREATE_SHIP', 'BI_IN_DELETE_SHIP', 'BI_IN_DEAD_SHIP', 'BI_MSG_REFRESH'):
+    case = process[process.index('case ' + message):]
+    assert 'SetUpdate()' in case[:case.index('break;')], message
+assert 'm_bAndroidChanged = true;' in member(ship_sign_h, 'void SetUpdate()')
+assert 'SetUpdate();' in member(ship_sign, 'void BIShipIcon::SetActive(')
+assert 'm_bAndroidChanged = true;' in member(ship_sign, 'void BIShipIcon::ExecuteCommand(')
+read_orders = member(ship_sign, 'void BIShipIcon::ReadAndroidOrders(')
+assert re.search(r'if \(m_bMakeUpdate\)\s*\{\s*Recollect\(\);', read_orders), read_orders
+assert read_orders.count('Recollect()') == 1, read_orders
+poll = member(battle, 'void storm::android::pollSeaOrders(')
+assert 'TakeAndroidOrdersChanged()' in poll and 'seaOrdersRefresh.due(' in poll and 'tick' not in poll, poll
+gate = member(sea_orders, 'class SeaOrdersRefreshGate')
+assert 'tick' not in gate and '100' not in gate, gate
+loop = main[main.index('STORM_PROFILE_ZONE("HUD adapter: sea orders")'):]
+loop = loop[:loop.index('STORM_PROFILE_ZONE("HUD adapter: land commands")')]
+assert re.search(r'pollSeaOrders\(storm::android::seaOrdersReady\(gameplayReady\)\);', loop), loop
+execute = member(battle, 'bool storm::android::executeSeaOrder(')
+assert execute.index('refreshSeaOrders(true)') < execute.index('ExecuteAndroidOrder('), execute
 
 with tempfile.TemporaryDirectory(prefix='storm-hud-invalidate-') as directory:
     binary = Path(directory) / 'check'

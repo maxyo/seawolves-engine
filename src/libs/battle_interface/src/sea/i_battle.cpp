@@ -447,9 +447,19 @@ void BATTLE_INTERFACE::EnableMessageIcons(VDATA *pvdat)
 }
 
 #ifdef __ANDROID__
+bool BATTLE_INTERFACE::AndroidOrdersShown() const
+{
+    return m_bYesShowAll && m_bVisible && m_bShowCommandMenu && m_pShipIcon;
+}
+
+bool BATTLE_INTERFACE::TakeAndroidOrdersChanged()
+{
+    return m_pShipIcon && m_pShipIcon->TakeAndroidChanged();
+}
+
 bool BATTLE_INTERFACE::ReadAndroidOrders(storm::android::SeaOrdersFrame &frame)
 {
-    if (!m_bYesShowAll || !m_bVisible || !m_bShowCommandMenu || !m_pShipIcon) return false;
+    if (!AndroidOrdersShown()) return false;
     m_pShipIcon->ReadAndroidOrders(frame);
     return frame.available;
 }
@@ -518,14 +528,15 @@ void storm::android::readShipCaptions(ShipTelemetryFrame &frame, uint64_t mainSh
 #endif
 
 #ifdef __ANDROID__
-void storm::android::pollSeaOrders(bool ready, uint32_t tick)
+void storm::android::pollSeaOrders(bool ready)
 {
     auto *battle = dynamic_cast<BATTLE_INTERFACE *>(core.GetEntityPointer(BIUtils::idBattleInterface));
     auto *main = g_ShipList.GetMainCharacterShip();
     const bool available = ready && battle && main && main->pShip && !main->isDead;
+    const bool changed = battle && battle->TakeAndroidOrdersChanged();
     if (seaOrdersRefresh.due(available, battle ? battle->GetId() : 0,
             main && main->pShip ? main->pShip->GetId() : 0, main ? main->characterIndex : -1,
-            battle && battle->AndroidCommandActive(), tick))
+            battle && battle->AndroidCommandActive(), battle && battle->AndroidOrdersShown(), changed))
         refreshSeaOrders(ready);
 }
 
@@ -558,7 +569,7 @@ bool storm::android::executeSeaOrder(const SeaOrdersRequest &request)
 {
     if (request.scene != seaOrders.sceneEpoch() || request.revision != seaOrders.revision() ||
         request.activity != seaOrders.activityGeneration() || !seaOrders.frame().available) return false;
-    // The closed-menu snapshot can be up to 100 ms old. Recollect recipients
+    // The closed-menu snapshot is read only on invalidation. Read recipients
     // and command predicates now; never dispatch against an obsolete identity.
     refreshSeaOrders(true);
     if (request.scene != seaOrders.sceneEpoch() || request.revision != seaOrders.revision() ||

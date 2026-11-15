@@ -27,6 +27,10 @@ class BATTLE_INTERFACE : public Entity
     bool AndroidCommandActive() const;
     bool AndroidCaptionsVisible() const;
     void ReadAndroidCaptions(storm::android::ShipTelemetryFrame &frame, uint64_t mainShipId) const;
+    // The interface shows its command menu (all shown, visible, ShowCommands): the orders exist.
+    bool AndroidOrdersShown() const;
+    // The ship icons were told their list changed since the last call (BIShipIcon::TakeAndroidChanged).
+    bool TakeAndroidOrdersChanged();
     bool ReadAndroidOrders(storm::android::SeaOrdersFrame &frame);
     bool ExecuteAndroidOrder(const storm::android::SeaOrdersRequest &request);
     void CloseAndroidOrders();

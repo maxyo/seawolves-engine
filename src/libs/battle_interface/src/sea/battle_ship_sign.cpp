@@ -302,7 +302,7 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
         }
     }
 
-    m_bMakeUpdate = true;
+    SetUpdate();
 }
 
 size_t BIShipIcon::AddTexture(const char *pcTextureName, int32_t nCols, int32_t nRows) const
@@ -333,7 +333,7 @@ void BIShipIcon::SetActive(bool bActive)
     if (bSameActive)
         return;
     m_nCommandMode = BI_COMMODE_COMMAND_SELECT;
-    m_bMakeUpdate = true;
+    SetUpdate();
 }
 
 void BIShipIcon::MakeControl()
@@ -367,6 +367,9 @@ void BIShipIcon::MakeControl()
 
 void BIShipIcon::ExecuteCommand(CommandType command)
 {
+#ifdef __ANDROID__
+    m_bAndroidChanged = true;
+#endif
     switch (command)
     {
     case Command_confirm:
@@ -810,8 +813,13 @@ void BIShipIcon::ReadAndroidOrders(storm::android::SeaOrdersFrame &frame)
     if (!m_pCommandList) return;
     const auto selected = m_nShipQuantity > 0 && m_nCurrentShipIndex < m_nShipQuantity ?
         m_Ship[m_nCurrentShipIndex].nCharacterIndex : -1;
-    Recollect();
-    m_bMakeUpdate = false;
+    // The companions are collected again only when the list was told it changed (SetUpdate);
+    // Draw may already have done it this frame. The recipients' liveness is checked below.
+    if (m_bMakeUpdate)
+    {
+        Recollect();
+        m_bMakeUpdate = false;
+    }
     frame.recipients.clear();
     int selectedIndex = -1;
     for (int i = 0; i < m_nShipQuantity; ++i)

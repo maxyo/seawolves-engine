@@ -19,37 +19,38 @@ SeaOrdersFrame fixture()
 int main()
 {
     SeaOrdersRefreshGate gate;
-    unsigned collections = 0;
-    // Matched one-second input: 1000 loop iterations, a closed orders menu,
-    // unchanged live battle/ship owner. Count real collection decisions.
-    for (uint32_t tick = 0; tick < 1000; ++tick)
-        collections += gate.due(true, 10, 20, 3, false, tick);
-    assert(collections == 10);
-    assert(!gate.due(true, 10, 20, 3, false, 999));
-    assert(gate.due(true, 11, 20, 3, false, 999)); // battle replacement
-    assert(gate.due(true, 11, 21, 3, false, 999)); // flagship replacement
-    assert(gate.due(true, 11, 21, 4, false, 999)); // character identity
-    assert(gate.due(false, 11, 21, 4, false, 999)); // forbidden state closes immediately
-    assert(!gate.due(false, 11, 21, 4, false, 2000)); // no repeated empty snapshots
-    assert(gate.due(true, 11, 21, 4, false, 2000)); // ready again
-    assert(gate.due(true, 11, 21, 4, true, 2001)); // native/script menu opened
-    for (uint32_t tick = 2002; tick < 2100; ++tick)
-        assert(gate.due(true, 11, 21, 4, true, tick)); // active predicates never delayed
-    assert(gate.due(true, 11, 21, 4, false, 2100)); // menu closed
-    assert(!gate.due(true, 11, 21, 4, false, 2101));
+    // ready, battle, ship, character, active, shown, invalidated
+    assert(gate.due(true, 10, 20, 3, false, true, false)); // nothing read yet
+    // A closed menu with nothing invalidated is never asked again, however many loops pass.
+    for (int i = 0; i < 10000; ++i)
+        assert(!gate.due(true, 10, 20, 3, false, true, false));
+    assert(gate.due(true, 10, 20, 3, false, true, true)); // SetUpdate: ships created, sunk, refreshed
+    assert(!gate.due(true, 10, 20, 3, false, true, false));
+    assert(gate.due(true, 11, 20, 3, false, true, false)); // battle replacement
+    assert(gate.due(true, 11, 21, 3, false, true, false)); // flagship replacement
+    assert(gate.due(true, 11, 21, 4, false, true, false)); // character identity
+    assert(gate.due(true, 11, 21, 4, false, false, false)); // the command menu hidden
+    assert(!gate.due(true, 11, 21, 4, false, false, false));
+    assert(gate.due(true, 11, 21, 4, false, true, false)); // and shown again
+    assert(gate.due(false, 11, 21, 4, false, true, false)); // forbidden state closes immediately
+    assert(!gate.due(false, 11, 21, 4, false, true, false)); // no repeated empty snapshots
+    assert(!gate.due(false, 11, 21, 4, false, true, true)); // an invalidation while not ready asks nothing
+    assert(gate.due(true, 11, 21, 4, false, true, false)); // ready again
+    assert(gate.due(true, 11, 21, 4, true, true, false)); // native/script menu opened
+    for (int i = 0; i < 100; ++i)
+        assert(gate.due(true, 11, 21, 4, true, true, false)); // active predicates never delayed
+    assert(gate.due(true, 11, 21, 4, false, true, false)); // menu closed
+    assert(!gate.due(true, 11, 21, 4, false, true, false));
     gate.force();
-    assert(gate.due(true, 11, 21, 4, false, 2101)); // native action or close
-    gate.force();
-    assert(gate.due(true, 11, 21, 4, false, 0xfffffff0u));
-    assert(!gate.due(true, 11, 21, 4, false, 0x10u));
-    assert(gate.due(true, 11, 21, 4, false, 0x54u)); // tick wrap, exactly 100 ms
+    assert(gate.due(true, 11, 21, 4, false, true, false)); // native action or close
+    assert(!gate.due(true, 11, 21, 4, false, true, false));
     SeaOrdersState s;
     s.resetActivity();
     auto f = fixture();
     s.update("battle1:ship11", f);
     assert(s.offer(request(s,"open"), 100));
     assert(s.take(101)->verb == "open");
-    // A recipient can be replaced between the periodic snapshot and a tap.
+    // A recipient can be replaced between the last snapshot and a tap.
     // The dispatch refresh must change the revision even when its visible name
     // and position did not change; the old request cannot be offered again.
     const auto staleRecipient = request(s, "open", "r12_3");
@@ -126,5 +127,5 @@ int main()
     assert(s.json().size() <= 65536 && !s.frame().complete && s.frame().active && s.frame().available);
     assert(s.offer(request(s,"back"),100)); assert(s.take(101)->verb == "back");
     assert(s.offer(request(s,"close"),100)); assert(s.take(101)->verb == "close");
-    std::cout << "PASS: sea order guards, live identities, cooldown, queue, ACK, duplicate rejection; closed-menu collections 10/1000 iterations in 1000 ms, active-menu refresh every iteration\n";
+    std::cout << "PASS: sea order guards, live identities, cooldown, queue, ACK, duplicate rejection; closed menu asked only on invalidation or a gating change, active menu every iteration\n";
 }

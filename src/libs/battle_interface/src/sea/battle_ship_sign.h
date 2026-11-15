@@ -3,6 +3,7 @@
 #include "bi_defines.h"
 #include "ships_list.h"
 #include <string>
+#include <utility>
 #include <vector>
 #ifdef __ANDROID__
 #include <platform/android_sea_orders.hpp>
@@ -44,6 +45,9 @@ class BIShipIcon
     void SetUpdate()
     {
         m_bMakeUpdate = true;
+#ifdef __ANDROID__
+        m_bAndroidChanged = true;
+#endif
     }
 
     bool IsActive() const;
@@ -52,6 +56,9 @@ class BIShipIcon
     void ExecuteCommand(CommandType command);
 #ifdef __ANDROID__
     void ReadAndroidOrders(storm::android::SeaOrdersFrame &frame);
+    // The list changed since the last call: the scripts' ship messages and refresh, the menu
+    // opened or closed or a command executed (the touch HUD asks the scripts only then).
+    bool TakeAndroidChanged() { return std::exchange(m_bAndroidChanged, false); }
     bool ExecuteAndroidOrder(const storm::android::SeaOrdersRequest &request);
     void CloseAndroidOrders();
     // The picture this ship sign draws for the character's ship (texture and atlas cell).
@@ -155,6 +162,9 @@ class BIShipIcon
     POINT m_ShipNameFontOffset;
 
     bool m_bMakeUpdate;
+#ifdef __ANDROID__
+    bool m_bAndroidChanged = true;
+#endif
 
     ATTRIBUTES *m_pARoot;
 
