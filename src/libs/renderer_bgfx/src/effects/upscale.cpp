@@ -119,11 +119,14 @@ bool Upscales::resolve()
 void Upscales::configure(bool enabled, uint16_t budget_mb)
 {
     wanted_ = enabled;
+    const bool budget_changed = wanted_budget_mb_ != budget_mb;
     wanted_budget_mb_ = budget_mb;
-    if (configured_ && budget_mb && static_cast<uint64_t>(budget_mb) << 20 != budget_)
+    if (configured_ && budget_changed)
     {
-        budget_ = static_cast<uint64_t>(budget_mb) << 20;
-        shim::logf("effects upscale: budget %u MB (fx_upscale_budget)", budget_mb);
+        // Zero restores the RAM policy too, without requiring an off/on cycle or renderer restart.
+        budget_ = budget_mb ? static_cast<uint64_t>(budget_mb) << 20 : fx::UpscaleBudgetBytes(DeviceRam());
+        shim::logf("effects upscale: budget %.0f MB (%s)", static_cast<double>(budget_) / 1048576.0,
+                   budget_mb ? "fx_upscale_budget" : "device RAM policy");
     }
     if (!resolve())
         return; // applied when the directory is known (the first texture)

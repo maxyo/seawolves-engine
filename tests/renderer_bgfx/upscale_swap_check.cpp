@@ -21,6 +21,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h>
+#endif
+
 using namespace storm;
 
 namespace
@@ -195,6 +199,29 @@ void stage_upload(effects::UpscaleEntry &entry, texture::GpuFormat format, uint3
 
 void run(shim::Device &device, bool noop)
 {
+    // Clearing a live override must restore the same RAM policy used on initial resolve,
+    // even when the on/off setting is unchanged (or disabled).
+    uint64_t ram = 0;
+#if defined(__linux__) || defined(__ANDROID__)
+    const long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGE_SIZE);
+    if (pages > 0 && page > 0)
+        ram = static_cast<uint64_t>(pages) * static_cast<uint64_t>(page);
+#endif
+    const uint64_t automatic = fx::UpscaleBudgetBytes(ram);
+    auto &budget = effects::upscales();
+    budget.configure(true, 64);
+    require(budget.stats().budget == uint64_t(64) << 20, "manual 64 MB upscale budget applied");
+    budget.configure(true, 0);
+    require(budget.stats().budget == automatic, "clearing manual budget restores RAM policy while enabled");
+    budget.configure(true, 128);
+    require(budget.stats().budget == uint64_t(128) << 20, "manual budget reapplied after automatic mode");
+    budget.configure(false, 0);
+    require(budget.stats().budget == automatic, "clearing manual budget restores RAM policy while disabling");
+    budget.configure(false, 64);
+    budget.configure(false, 0);
+    require(budget.stats().budget == automatic, "automatic budget also restored while already disabled");
+    std::printf("PASS: manual/automatic upscale budget transitions (RAM policy %llu MB)\n",
+                static_cast<unsigned long long>(automatic >> 20));
     Harness harness(device, noop);
     auto *base = make_texture(device, kSize, false);
     auto *reference = make_texture(device, kSize * 2, true);
