@@ -10,12 +10,14 @@ Import library main file
 #include "geom.h"
 #include <storm/config.hpp>
 #include <storm/render/far_lod.hpp>
+#include <storm/render/shadow_casters.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fmt/format.h>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -428,8 +430,16 @@ void GEOM::Draw(const PLANE *pl, int32_t np, MATERIAL_FUNC mtf) const
                 break;
             // if(dist<-object[o].radius)    break;
         }
+        // An object the camera rejects may still cast into the picture: the frame's shadow volumes decide, and it is
+        // drawn for them only.
+        std::optional<storm::render::ShadowCasterOnly> casts_only;
         if (cp < np)
-            continue;
+        {
+            if (!storm::render::ShadowCasterReachLocal({object[o].center.x, object[o].center.y, object[o].center.z},
+                                                       object[o].radius))
+                continue;
+            casts_only.emplace();
+        }
 
         auto *const vb = &vbuff[object[o].vertex_buff];
         srv.SetVertexBuffer(vb->stride, vb->dev_buff);

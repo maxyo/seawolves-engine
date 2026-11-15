@@ -314,7 +314,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         std::array<float, 3> eye{}; // absolute, like the lamps
         for (int j = 0; j < 3; ++j)
             eye[j] = origin_[j] - (v.m[3][0] * v.m[j][0] + v.m[3][1] * v.m[j][1] + v.m[3][2] * v.m[j][2]);
-        lamp_on = lamps_.prepare(const_cast<shim::Device &>(device), eye, casters_);
+        lamp_on = lamps_.prepare(const_cast<shim::Device &>(device), eye, casters_, shadow_casters_);
     }
     // Baked colours: dynamic lights only (the lighter tool put the location's own lights into the colours).
     fx::LightSelection baked_lights;
@@ -455,19 +455,6 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     {
         draw.lamps = true;
         ++frame_.lamp_lit;
-        // Lit draws are what is not in the still geometry (characters, props, a ship's hull, masts and sails): they
-        // cast into the faces of the lamps their sphere reaches.
-        if (lit && sphere_source.get().valid)
-        {
-            DrawSphere absolute = sphere_source.get(); // like the lamp faces
-            for (int k = 0; k < 3; ++k)
-                absolute.center[k] += origin_[k];
-            if (lamps_.reaches(absolute.center, absolute.radius))
-            {
-                draw.lamp_caster = draw.caster = true;
-                draw.sphere = absolute;
-            }
-        }
     }
     if (wet)
     {
@@ -723,22 +710,13 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         draw.points = fx::PackPointLights(selection, input.view);
         prepare_aggregates(draw, selection, sun_slot >= 0 ? static_cast<uint8_t>(1u<<sun_slot) : 0);
         // Sun shadows: lit draws into the game picture (the first one of a frame prepares the map with its camera).
-        // Surfaces under a location lightmap carry the sun's shadows already (ours: the same sun, TownLight) and the
-        // place's still geometry casts from its own tiles: they neither receive nor cast.
-        // (Where one walks under a roof no sun shadow map is made: the sun reaches a pixel there by its openness.)
+        // Surfaces under a location lightmap carry the sun's shadows already (ours: the same sun, TownLight): they
+        // do not receive. (Where one walks under a roof no sun shadow map is made: the sun reaches a pixel there by
+        // its openness.) The same draws are what the sun's dynamic layer takes as casters (sun_lit()).
         if (per_pixel && sun_slot >= 0 && target && target == picture && !lamps_.interior() && !lightmapped)
         {
             memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
-            draw.shadow = draw.sun_caster = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_);
-            draw.caster |= draw.sun_caster;
-        }
-        // How the draw's material casts (effects/casters.hpp): cut where the colour pass's alpha test discards,
-        // nothing for a blended material that writes no depth.
-        if (draw.caster)
-        {
-            draw.caster_material = caster_material(device, layout);
-            if (!draw.caster_material.casts)
-                draw.caster = draw.sun_caster = draw.lamp_caster = false;
+            draw.shadow = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_, shadow_casters_);
         }
         const int shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
         draw.fs_id = fs_lit_[specular][relief][linear][shadow];
@@ -767,7 +745,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
             if (settings_.shadows != fx::ShadowQuality::Off && sun_slot >= 0)
             {
                 memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
-                draw.shadow = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_);
+                draw.shadow = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_, shadow_casters_);
                 shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
             }
             if (draw.view == std::array<float, 16>{})
@@ -946,7 +924,6 @@ void Lighting::log_coverage()
 
 void Lighting::submit(const FfDraw &draw)
 {
-    caster_ = draw;
     if (!bgfx::isValid(u_coverage_))
     {
         u_coverage_ = bgfx::createUniform("u_fxCoverage", bgfx::UniformType::Vec4);
@@ -1065,26 +1042,47 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
     return packed;
 }
 
-void Lighting::submit_caster(shim::Device &device, const D3DMATRIX &world, bool skinned)
+bool Lighting::shadow_volumes(shim::Device &device)
 {
-    if (caster_.lamp_caster)
+    if (!lighting_)
+        return false;
+    const shim::TexStore *picture = device.back_color ? device.back_color->store.get() : nullptr;
+    const shim::TexStore *target = device.rt ? device.rt->store.get() : nullptr;
+    if (!target || target != picture)
+        return false;
+    // The traversal asks for every node and object the camera rejects: the lights are asked once a frame.
+    if (shadow_volumes_prepared_)
+        return shadow_casters_.volumes() != 0;
+    shadow_volumes_prepared_ = true;
+    // The same calls the first receiver of the frame makes (prepare()): whichever comes first prepares the maps.
+    if (lamps_.enabled())
     {
-        // The lamp faces are absolute; the draw's world matrix is camera-relative.
-        D3DMATRIX absolute = world;
-        absolute.m[3][0] += caster_.origin[0];
-        absolute.m[3][1] += caster_.origin[1];
-        absolute.m[3][2] += caster_.origin[2];
-        lamps_.submit_caster(device, &absolute.m[0][0], skinned, caster_.sphere.center, caster_.sphere.radius, casters_,
-                             caster_.caster_material);
-        ++frame_.lamp_casters;
+        const D3DMATRIX &v = device.s.view;
+        std::array<float, 3> eye{}; // absolute, like the lamps
+        for (int j = 0; j < 3; ++j)
+            eye[j] = origin_[j] - (v.m[3][0] * v.m[j][0] + v.m[3][1] * v.m[j][1] + v.m[3][2] * v.m[j][2]);
+        lamps_.prepare(device, eye, casters_, shadow_casters_);
     }
-    if (caster_.sun_caster)
+    if ((flags_ & fx::kLightingPerPixel) && shadows_.enabled() && !lamps_.interior())
     {
-        shadows_.submit_caster(device, &world.m[0][0], skinned, casters_, caster_.caster_material);
-        ++frame_.casters;
+        std::array<float, 16> view;
+        memcpy(view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
+        shadows_.prepare(device, view, origin_, casters_, shadow_casters_);
     }
-    else
-        bgfx::discard(BGFX_DISCARD_ALL);
+    return shadow_casters_.volumes() != 0;
+}
+
+bool Lighting::sun_lit(const shim::Device &device) const
+{
+    if (!device.s.rs[D3DRS_LIGHTING])
+        return false;
+    for (int stage = 0; stage < 4; ++stage)
+        if (device.s.tss[stage][D3DTSS_COLOROP] != D3DTOP_DISABLE)
+            if (const shim::TexStore *store = shim::store_of(device.s.textures[stage]); store && store->lightmap)
+                return false;
+    return std::any_of(device.lights.begin(), device.lights.end(), [](const auto &entry) {
+        return entry.enabled && entry.light.Type == D3DLIGHT_DIRECTIONAL;
+    });
 }
 
 void Lighting::bind_ao_volume(const FfDraw &draw)
@@ -1217,7 +1215,6 @@ bool Lighting::aerial_fog(const D3DMATRIX &view, bool vs_port, std::array<float,
 
 void Lighting::end_frame()
 {
-    caster_.aggregate.reset();
     // Uploads this frame did not draw with are released (bgfx queues the destroy after the frame's submissions);
     // the rest are reused by the next frame instead of being made again.
     std::erase_if(aggregate_cache_, [&](const auto &cached) { return cached->used_frame != aggregate_frame_; });
@@ -1253,6 +1250,8 @@ void Lighting::end_frame()
     shadows_.end_frame();
     normal_maps_.end_frame();
     lamps_.end_frame();
+    shadow_casters_.end_frame(); // after the lights: they read their volumes' counts in their own end_frame()
+    shadow_volumes_prepared_ = false;
     if (!dynamic_lights_this_frame_)
         dynamic_lights_.clear(); // no location reported them: none exist
     dynamic_lights_this_frame_ = false;
@@ -1260,7 +1259,6 @@ void Lighting::end_frame()
 
 void Lighting::shutdown()
 {
-    caster_.aggregate.reset();
     aggregate_cache_.clear();
     if (bgfx::isValid(aggregate_open_)) bgfx::destroy(aggregate_open_);
     if (bgfx::isValid(s_aggregate_)) bgfx::destroy(s_aggregate_);
@@ -1290,8 +1288,6 @@ void Lighting::shutdown()
 void Lighting::on_device_lost()
 {
     for (auto &upload : aggregate_cache_) upload->texture = BGFX_INVALID_HANDLE;
-    if (caster_.aggregate) const_cast<AggregateUpload *>(caster_.aggregate.get())->texture = BGFX_INVALID_HANDLE;
-    caster_.aggregate.reset();
     aggregate_cache_.clear();
     aggregate_open_ = BGFX_INVALID_HANDLE;
     s_aggregate_ = BGFX_INVALID_HANDLE;
@@ -1303,6 +1299,8 @@ void Lighting::on_device_lost()
     town_light_.on_device_lost();
     lamps_.on_device_lost();
     casters_.on_device_lost();
+    shadow_casters_.on_device_lost();
+    shadow_volumes_prepared_ = false;
     u_coverage_ = u_ff_ = u_wet_ = u_gloss_ = u_skin_tone_ = u_aerial_up_ = s_ao_volume_ = u_ao_matrix_ = u_ao_params_ = BGFX_INVALID_HANDLE;
     s_visibility_ = u_visibility_matrix_ = u_visibility_params_ = u_town_wall_ = BGFX_INVALID_HANDLE;
     ao_view_ = {};

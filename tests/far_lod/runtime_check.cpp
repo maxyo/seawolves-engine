@@ -3,6 +3,7 @@
 #include "geom.h"
 #include <storm/render/frame_owner.hpp>
 #include <storm/render/far_lod.hpp>
+#include <storm/render/shadow_casters.hpp>
 #include <storm/render/texture_cache.hpp>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/base_sink.h>
@@ -452,6 +453,10 @@ uint64_t DerivedDataHash(const void *data, size_t size, uint64_t seed)
     return seed;
 }
 bool DerivedDataCacheEnabled() { return true; }
+// No light publishes shadow volumes here: nothing the camera rejects is drawn for them.
+bool ShadowCasterReachLocal(const std::array<float, 3> &, float) { return false; }
+ShadowCasterOnly::ShadowCasterOnly() : previous_(false) {}
+ShadowCasterOnly::~ShadowCasterOnly() {}
 std::optional<std::vector<uint8_t>> ReadDerivedData(uint64_t, const DerivedDataShape &, size_t)
 {
     ++fixture::reads;

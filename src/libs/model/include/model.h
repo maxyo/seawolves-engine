@@ -30,6 +30,9 @@ class NODE
 
     GEOS *geo;
     GEOS::MATERIAL_FUNC geoMaterialFunc;
+    // The owner whose reported still geometry holds this node's (storm/render/shadow_casters.hpp: the location's
+    // nodes of SetEffectsLocationGeometry); 0: none. Its draws are inside a render::ShadowCasterStill of it.
+    uint64_t shadow_still = 0;
     // children, owned: a node frees its subtree. Unlink2Model hands a child to a model of its own.
     std::vector<std::unique_ptr<NODE>> next;
     // the node this one hangs from; nullptr for a model's root

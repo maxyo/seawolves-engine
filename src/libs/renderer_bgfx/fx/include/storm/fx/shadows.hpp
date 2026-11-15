@@ -49,6 +49,9 @@ class Shadows
     // different cameras). Required for every draw of a FX_LIGHT_SHADOW variant; calling it before the first Begin()
     // is an error.
     void Bind(const std::array<float, 16> &camera_view);
+    // After a Begin() that returned true: world -> the map's uv and 0..1 depth (row vectors). What lies outside the
+    // unit cube of it cannot reach the map.
+    const std::array<float, 16> &WorldToShadow() const { return world_to_shadow_; }
 
     void Shutdown();
     void OnDeviceLost();

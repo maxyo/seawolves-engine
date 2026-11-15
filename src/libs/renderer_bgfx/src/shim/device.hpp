@@ -406,7 +406,12 @@ struct Device final : Object
         bool up_index32 = false;
         uint32_t up_vertex_count = 0;
     };
-    HRESULT draw(const DrawCall &call);
+    // The D3D draw calls end here: the colour draw and the shadow volumes' caster entry (draw.cpp).
+    HRESULT issue(const DrawCall &call);
+    bool draw(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count);
+    void draw_caster(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, bool offscreen);
+    bool bind_geometry(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count);
+    bool bind_palette();
     // The vertices the draw reaches (D3D's MinVertexIndex / NumVertices for indexed draws) in its vertex buffer's CPU
     // copy or its user pointer: false when they cannot be read.
     bool draw_vertices(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, const uint8_t *&data,

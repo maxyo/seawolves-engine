@@ -65,11 +65,17 @@ std::array<float, 16> face_matrix(const fx::Lamp &lamp, int slot, int face, int 
     return out;
 }
 
-void scissor_tile(int slot, int face, int columns, int face_size)
+std::array<uint16_t, 4> tile_rect(int slot, int face, int columns, int face_size)
 {
     const int tile = slot * 6 + face;
-    bgfx::setScissor(static_cast<uint16_t>((tile % columns) * face_size), static_cast<uint16_t>((tile / columns) * face_size),
-                     static_cast<uint16_t>(face_size), static_cast<uint16_t>(face_size));
+    return {static_cast<uint16_t>((tile % columns) * face_size), static_cast<uint16_t>((tile / columns) * face_size),
+            static_cast<uint16_t>(face_size), static_cast<uint16_t>(face_size)};
+}
+
+void scissor_tile(int slot, int face, int columns, int face_size)
+{
+    const std::array<uint16_t, 4> rect = tile_rect(slot, face, columns, face_size);
+    bgfx::setScissor(rect[0], rect[1], rect[2], rect[3]);
 }
 } // namespace
 
@@ -728,7 +734,7 @@ void LampShadows::upload_room()
                          1.0f / (room_.cell[2] * static_cast<float>(room_.nz)), 0.0f};
 }
 
-bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye, Casters &casters)
+bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye, Casters &casters, ShadowCasters &volumes)
 {
     if (prepared_)
         return active_;
@@ -751,10 +757,6 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
     const bool all = layout_dirty_;
     choose_slots(eye);
     choose_moving(eye);
-    // Slots, ship-local lights and atlas layout have settled for this frame. Do not carry projections across
-    // frames: a moving lantern, a changed range/layout or a restored device must use the current projection.
-    for (Slot &slot : slot_)
-        slot.dynamic_faces_ready = 0;
     layout_dirty_ = false;
     draw_static(device, all, casters);
     int used = 0;
@@ -815,6 +817,51 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
     }
     grid_uniforms_[0][3] = static_cast<float>(debug_);
     grid_uniforms_[3][3] = soft_ ? 1.0f : 0.0f;
+    // The dynamic faces of the ready slots as shadow volumes (absolute world): a face's pyramid with its guard band
+    // within the lamp's range. The slot's static faces hold the still geometry of the location, or of the lantern's
+    // ship: those draws are left out.
+    volumes_ = &volumes;
+    for (int s = 0; s < slots_; ++s)
+    {
+        Slot &slot = slot_[s];
+        if (slot.lamp == -1 || !slot.ready)
+            continue;
+        const fx::Lamp &l = slot.at;
+        // The faces of a ship's lantern are in the ship's space.
+        fx::Lamp in_faces = l;
+        if (slot.ship)
+            in_faces.position = slot.local;
+        ShadowVolume volume;
+        volume.layer = ShadowLayer::Dynamic;
+        volume.still = slot.ship ? slot.ship : positions_.empty() ? 0 : render::kShadowStillLocation;
+        volume.pass = Casters::Pass::Lamp;
+        volume.view = kLampDynamicView;
+        volume.state = kCasterState;
+        volume.sphere = {l.position[0], l.position[1], l.position[2], l.range};
+        // A lamp's own model (a street lantern's, a ship lantern's) and the hand that carries a lantern cast no
+        // shadow of it.
+        volume.uniform = u_caster_;
+        // A light compound of several sources has no single holder: nothing inside it is left out.
+        const bool compound = l.aggregate.get() && l.aggregate.get()->count > 1;
+        volume.uniform_value = {static_cast<float>(dynamic_face_size_), 1.0f / l.range,
+                                compound ? 0.0f : std::max(slot.holder, kLanternHolder),
+                                fx::kLampFaceGuard};
+        for (int face = 0; face < 6; ++face)
+        {
+            std::array<float, 16> bounds = fx::LampFaceViewProj(in_faces.position, face, in_faces.range);
+            volume.transform = face_matrix(in_faces, s, face, columns_, rows_);
+            if (slot.ship)
+            {
+                const std::array<float, 16> local_bounds = bounds, local_transform = volume.transform;
+                bx::mtxMul(bounds.data(), slot.to_local.data(), local_bounds.data());
+                bx::mtxMul(volume.transform.data(), slot.to_local.data(), local_transform.data());
+            }
+            volume.set_clip_bounds(bounds, false);
+            volume.scissor = tile_rect(s, face, columns_, dynamic_face_size_);
+            slot.volume[face] = volumes.publish(volume);
+        }
+        slot.published = true;
+    }
     active_ = true;
     return true;
 }
@@ -1049,81 +1096,6 @@ void LampShadows::draw_static(shim::Device &device, bool all, Casters &casters)
     }
 }
 
-const std::array<float, 16> &LampShadows::dynamic_face_matrix(int index, int face, const fx::Lamp &in_faces)
-{
-    Slot &slot = slot_[index];
-    const uint8_t bit = static_cast<uint8_t>(1u << face);
-    if (!(slot.dynamic_faces_ready & bit))
-    {
-        slot.dynamic_faces[face] = face_matrix(in_faces, index, face, columns_, rows_);
-        slot.dynamic_faces_ready |= bit;
-    }
-    return slot.dynamic_faces[face];
-}
-
-void LampShadows::submit_caster(shim::Device &device, const float *world, bool skinned, const std::array<float, 3> &center,
-                                float radius, Casters &casters, const CasterMaterial &material)
-{
-    if (!active_)
-        return;
-    const bgfx::ProgramHandle program = casters.program(device, Casters::Pass::Lamp, skinned, material);
-    if (!bgfx::isValid(program))
-        return;
-    for (int s = 0; s < slots_; ++s)
-    {
-        Slot &slot = slot_[s];
-        const fx::Lamp &l = slot.at;
-        if (slot.lamp == -1 || !slot.ready || distance(l.position, {center[0], center[1], center[2]}) > l.range + radius)
-            continue;
-        // A ship's own still geometry is in the still faces of its lanterns.
-        if (slot.ship && slot.ship == drawn_ship_)
-            continue;
-        // The faces of a ship's lantern are in the ship's space.
-        fx::Lamp in_faces = l;
-        fx::Vec3 at{center[0], center[1], center[2]};
-        std::array<float, 16> to_faces{};
-        memcpy(to_faces.data(), world, sizeof(to_faces));
-        if (slot.ship)
-        {
-            in_faces.position = slot.local;
-            bx::mtxMul(to_faces.data(), world, slot.to_local.data());
-            const float *t = slot.to_local.data();
-            at = {center[0] * t[0] + center[1] * t[4] + center[2] * t[8] + t[12],
-                  center[0] * t[1] + center[1] * t[5] + center[2] * t[9] + t[13],
-                  center[0] * t[2] + center[1] * t[6] + center[2] * t[10] + t[14]};
-        }
-        ++slot.casters;
-        for (int face = 0; face < 6; ++face)
-        {
-            if (!fx::SphereInLampFace(in_faces.position, face, at, radius))
-                continue;
-            const std::array<float, 16> &m = dynamic_face_matrix(s, face, in_faces);
-            std::array<float, 16> wm{};
-            bx::mtxMul(wm.data(), to_faces.data(), m.data());
-            // A lamp's own model (a street lantern's, a ship lantern's) and the hand that carries a lantern cast no
-            // shadow of it.
-            const float caster[4] = {static_cast<float>(dynamic_face_size_), 1.0f / l.range, (slot.at.aggregate.get() && slot.at.aggregate.get()->count>1 ? 0.0f : std::max(slot.holder, kLanternHolder)),
-                                     fx::kLampFaceGuard};
-            scissor_tile(s, face, columns_, dynamic_face_size_);
-            bgfx::setUniform(u_caster_, caster);
-            bgfx::setStencil(BGFX_STENCIL_NONE);
-            bgfx::setTransform(wm.data());
-            bgfx::setState(kCasterState);
-            // The draw's buffers and bone palette stay for the next copy; Lighting::submit_caster discards at the end.
-            bgfx::submit(kLampDynamicView, program, 0, BGFX_DISCARD_NONE);
-        }
-    }
-}
-
-bool LampShadows::reaches(const std::array<float, 3> &center, float radius) const
-{
-    if (!active_)
-        return false;
-    return std::any_of(slot_.begin(), slot_.end(), [&](const Slot &s) {
-        return s.lamp != -1 && s.ready && distance(s.at.position, {center[0], center[1], center[2]}) <= s.at.range + radius;
-    });
-}
-
 void LampShadows::bind(bool active, const std::array<float, 16> &view, bool room,
                        const std::array<float, fx::kMaxShadowLamps> &aggregate,
                        const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides)
@@ -1166,9 +1138,16 @@ void LampShadows::end_frame()
     if (active_)
         for (Slot &slot : slot_)
         {
-            slot.last_casters = slot.casters;
-            slot.casters = 0;
+            // What the shim's caster entry drew into the slot's dynamic faces: the receivers of the next frame take
+            // the dynamic atlas only where there was something.
+            slot.last_casters = 0;
+            if (slot.published && volumes_)
+                for (const ShadowCasters::Id id : slot.volume)
+                    if (id < volumes_->volumes())
+                        slot.last_casters += volumes_->stats(id).draws;
+            slot.published = false;
         }
+    volumes_ = nullptr;
     last_static_faces_ = static_faces_;
     static_faces_ = 0;
     // Lights that move are reported every frame they exist.

@@ -25,6 +25,7 @@
 #pragma once
 
 #include "effects/casters.hpp"
+#include "storm/render/shadow_casters.hpp"
 
 #include <bgfx/bgfx.h>
 
@@ -140,7 +141,7 @@ class ShadowCasters
     };
     struct FrameCount
     {
-        uint32_t candidates = 0; // draws that could cast (lit or still, a material that casts), offered to the volumes
+        uint32_t candidates = 0; // draws that could cast (lit or still, a material that casts): offered to the volumes
         uint32_t casters = 0;    // ... that a volume took (each counted once)
         uint32_t offscreen = 0;  // of the casters: not drawn by the camera
         uint32_t skinned = 0;    // of the casters: with a bone palette
@@ -148,7 +149,7 @@ class ShadowCasters
         std::vector<ViewCount> views;
     };
     const FrameCount &last() const { return last_; }
-    // The shim: a candidate that no volume took.
+    // The shim, for every candidate it offers.
     void count_candidate() { ++frame_.candidates; }
 
   private:

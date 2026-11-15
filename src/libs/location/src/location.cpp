@@ -26,6 +26,7 @@
 
 #include "shared/messages.h"
 #include "storm/render/effects.hpp"
+#include "storm/render/shadow_casters.hpp"
 #include "storm/render/pipelines.hpp"
 #include "string_compare.hpp"
 
@@ -188,6 +189,9 @@ void Location::ReportGeometry()
             // The textures of the runs: where one cuts holes (foliage, nets, gratings) the shadow has them too.
             for (const GEOS::TextureRun &run : local_surface.runs)
                 surfaces.push_back({first_index + run.first_index, run.index_count, rs->GetTextureFromID(run.texture)});
+            // The node is in the still geometry the lights keep in their static layers: its own draws stay out of
+            // their dynamic ones.
+            node->shadow_still = storm::render::kShadowStillLocation;
         }
     }
     // An interior is what the place is: one walks under a roof (rooms, caves, dungeons, a ship's hold and cabins).

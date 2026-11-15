@@ -432,6 +432,18 @@ const Pending kPending[] = {
      "wind sway is not wired into the fixed-function emulator yet (needs per-technique vertex weights): switched off"},
 };
 
+// The shadow casters of the last frame for the profile line: per shadow view its caster draws and triangles, then
+// the frame's candidates and what the volumes took of them.
+std::string caster_counts(const ShadowCasters::FrameCount &count)
+{
+    std::string views;
+    for (const ShadowCasters::ViewCount &v : count.views)
+        views += (views.empty() ? "" : ",") + std::to_string(v.view) + ":" + std::to_string(v.draws) + "/" + std::to_string(v.triangles);
+    return "caster_views=" + (views.empty() ? "none" : views) + " caster_candidates=" + std::to_string(count.candidates) +
+           " casters=" + std::to_string(count.casters) + " casters_offscreen=" + std::to_string(count.offscreen) +
+           " casters_skinned=" + std::to_string(count.skinned) + " casters_unbounded=" + std::to_string(count.unbounded);
+}
+
 std::string describe(const fx::Settings &s)
 {
     char text[512];
@@ -1045,13 +1057,13 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                          profile_sum_rcas_ / profile_gpu_frames_, profile_sum_sea_waves_ / profile_gpu_frames_);
             const Lighting::Counts counts = lighting_.last_frame();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u casters=%u ao_draws=%u lamp_draws=%u lamp_casters=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
-                       last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.casters, counts.ao, counts.lamp_lit, counts.lamp_casters,
+                       last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        lighting_.shadows().last_static_casters()[0], lighting_.shadows().last_static_casters()[1], lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
-                       render::far_lod::Take(kProfileFrames).c_str());
+                       caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
             profile_sum_smaa_ = profile_sum_easu_ = profile_sum_rcas_ = profile_sum_sea_waves_ = 0.0;
@@ -1344,14 +1356,74 @@ void SetEffectsShipGeometry(uint64_t ship, uint64_t signature, const EffectsShip
     effects::Host::instance().lighting().lamp_shadows().set_ship_geometry(ship, signature, geometry);
 }
 
-EffectsShipDraw::EffectsShipDraw(uint64_t ship)
+namespace
 {
-    effects::Host::instance().lighting().lamp_shadows().set_drawn_ship(ship);
+// The frame's shadow volumes for the picture the device is drawing now; null: none.
+effects::ShadowCasters *FrameShadowVolumes()
+{
+    effects::Lighting &lighting = effects::Host::instance().lighting();
+    shim::Device *device = shim::Device::current;
+    if (!device || lighting.idle() || !lighting.shadow_volumes(*device))
+        return nullptr;
+    return &lighting.shadow_casters();
+}
+} // namespace
+
+ShadowCasterStill::ShadowCasterStill(uint64_t owner)
+    : previous_(effects::Host::instance().lighting().shadow_casters().still())
+{
+    effects::Host::instance().lighting().shadow_casters().set_still(owner);
 }
 
-EffectsShipDraw::~EffectsShipDraw()
+ShadowCasterStill::~ShadowCasterStill()
 {
-    effects::Host::instance().lighting().lamp_shadows().set_drawn_ship(0);
+    effects::Host::instance().lighting().shadow_casters().set_still(previous_);
+}
+
+ShadowCasterBounds::ShadowCasterBounds(const std::array<float, 3> &center, float radius)
+    : previous_(effects::Host::instance().lighting().shadow_casters().bounds())
+{
+    effects::Host::instance().lighting().shadow_casters().set_bounds({center[0], center[1], center[2], radius});
+}
+
+ShadowCasterBounds::~ShadowCasterBounds()
+{
+    effects::Host::instance().lighting().shadow_casters().set_bounds(previous_);
+}
+
+ShadowCasterOnly::ShadowCasterOnly() : previous_(effects::Host::instance().lighting().shadow_casters().only())
+{
+    effects::Host::instance().lighting().shadow_casters().set_only(true);
+}
+
+ShadowCasterOnly::~ShadowCasterOnly()
+{
+    effects::Host::instance().lighting().shadow_casters().set_only(previous_);
+}
+
+bool ShadowCasterReach(const std::array<float, 3> &center, float radius)
+{
+    const effects::ShadowCasters *casters = FrameShadowVolumes();
+    if (!casters)
+        return false;
+    const std::array<float, 3> &origin = effects::Host::instance().lighting().world_origin();
+    return casters->reach({center[0] - origin[0], center[1] - origin[1], center[2] - origin[2]}, radius, origin, casters->still());
+}
+
+bool ShadowCasterReachLocal(const std::array<float, 3> &center, float radius)
+{
+    const effects::ShadowCasters *casters = FrameShadowVolumes();
+    if (!casters)
+        return false;
+    const D3DMATRIX &w = shim::Device::current->s.world;
+    std::array<float, 3> world{};
+    float scale = 0.0f;
+    for (int k = 0; k < 3; ++k)
+    {
+        world[k] = center[0] * w.m[0][k] + center[1] * w.m[1][k] + center[2] * w.m[2][k] + w.m[3][k];
+        scale = std::max(scale, std::sqrt(w.m[k][0] * w.m[k][0] + w.m[k][1] * w.m[k][1] + w.m[k][2] * w.m[k][2]));
+    }
+    return casters->reach(world, radius * scale, effects::Host::instance().lighting().world_origin(), casters->still());
 }
 
 void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path, const std::filesystem::path &file)

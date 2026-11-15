@@ -14,6 +14,7 @@
 
 #include <SDL2/SDL.h>
 #include "storm/render/effects.hpp"
+#include "storm/render/shadow_casters.hpp"
 
 #include <array>
 #include <cmath>
@@ -143,8 +144,8 @@ class Harness
             }
         {
             // A ship's deck is already in its lantern's still atlas; it must not also cast into that lantern's
-            // dynamic atlas, just as SHIP::Realize marks its own model with EffectsShipDraw.
-            const render::EffectsShipDraw still(scene.ship);
+            // dynamic atlas, just as SHIP::Realize marks its own model with ShadowCasterStill.
+            const render::ShadowCasterStill still(scene.ship);
             check(d_.DrawPrimitiveUP(D3DPT_TRIANGLELIST, static_cast<UINT>(floor.size() / 3), floor.data(), sizeof(Vertex)),
                   "draw floor");
         }

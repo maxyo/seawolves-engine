@@ -8,8 +8,9 @@
 // post, chandelier) casts no shadow of it. The lamps nearest to the camera, up to Settings::lamp_shadows, take a slot:
 //   * a row of six cube faces in two depth atlases holding the distance to the lamp / its radius (linear, written
 //     by fs_ff_lamp_caster): `static` with the still geometry around the lamp, drawn once when the lamp takes the
-//     slot (a few slots per frame; all of them in the first frame of a location); `dynamic` with the characters (the
-//     skinned lit draws, submitted like the sun casters), redrawn every frame into the faces their sphere reaches;
+//     slot (a few slots per frame; all of them in the first frame of a location); `dynamic` with what moves (the
+//     characters and the other lit draws that reach a face, on screen or not: the faces are published as shadow
+//     volumes, effects/shadow_casters.hpp), redrawn every frame;
 //   * its number in the lamp grid (a small 3D texture: which slots reach which cell of the place).
 // A lamp fades in once its faces are drawn and fades out before its slot goes to another lamp.
 // The last Settings::lamp_moving slots are for the lights that move, the nearest to the camera; the receivers take
@@ -31,6 +32,7 @@
 #pragma once
 
 #include "effects/casters.hpp"
+#include "effects/shadow_casters.hpp"
 #include "storm/fx/lamp_shadows.hpp"
 #include "storm/fx/settings.hpp"
 #include "storm/render/effects.hpp"
@@ -62,9 +64,6 @@ class LampShadows
   public:
     void configure(const fx::Settings &settings);
     bool enabled() const { return slots_ > 0; }
-    // True when a lit draw whose bounding sphere is this may cast into a slot's dynamic faces (it reaches a lamp
-    // that has a slot).
-    bool reaches(const std::array<float, 3> &center, float radius) const;
     // An interior is loaded (its still geometry was reported): the weather's sun and ambient are not its light.
     bool interior() const { return interior_ && !positions_.empty(); }
     // Main thread, every frame the location draws: its lamps (empty when it has none).
@@ -99,13 +98,14 @@ class LampShadows
     // render::EffectsShipGeometryWanted / SetEffectsShipGeometry.
     bool ship_geometry_wanted(uint64_t ship, uint64_t signature) const;
     void set_ship_geometry(uint64_t ship, uint64_t signature, const render::EffectsShipGeometry &geometry);
-    // The draws that follow are the still geometry of this ship (0: of none).
-    void set_drawn_ship(uint64_t ship) { drawn_ship_ = ship; }
     // The still geometry of the location (render::EffectsLocationGeometry); an empty one: none (the sea).
     void set_geometry(const render::EffectsLocationGeometry &geometry);
     // The first receiver of a frame: gives the lamps around the camera at `eye` their slots, renders static faces
-    // that are due and opens the dynamic atlas. True when this frame's receivers take lamps or the room light.
-    bool prepare(shim::Device &device, const std::array<float, 3> &eye, Casters &casters);
+    // that are due, opens the dynamic atlas and publishes the dynamic faces of the ready slots to `volumes`
+    // (effects/shadow_casters.hpp): the shim's caster entry draws into them what moves and reaches them (a
+    // character, a prop, a ship's sails, another ship; not the still geometry the slot's static faces hold). True
+    // when this frame's receivers take lamps or the room light.
+    bool prepare(shim::Device &device, const std::array<float, 3> &eye, Casters &casters, ShadowCasters &volumes);
     // A point light at `position` is one of the place's lamps, or a moving light, that has a slot this frame: the
     // receivers light it per pixel with its shadow, so it leaves the draw's own light sums.
     bool relit(const fx::Vec3 &position) const;
@@ -113,11 +113,6 @@ class LampShadows
     std::array<fx::AggregateRef, fx::kMaxShadowLamps> aggregate_refs() const;
     // This frame's lit models take their ambient from the room light.
     bool room_light() const { return active_ && room_ready_; }
-    // A lit draw (a character, a prop, a ship's hull, mast or sail: whatever is not part of the still geometry; its
-    // buffers, textures and bone palette still bound): into the dynamic faces its sphere reaches; `material`: how it
-    // casts (effects/casters.hpp).
-    void submit_caster(shim::Device &device, const float *world, bool skinned, const std::array<float, 3> &center,
-                       float radius, Casters &casters, const CasterMaterial &material);
     // Receiver uniforms and textures for a draw with the camera `view` (row-vector absolute world -> view);
     // `active` false: the open textures and no lamps. `room`: the draw's ambient is the room light.
     void bind(bool active, const std::array<float, 16> &view, bool room,
@@ -160,10 +155,9 @@ class LampShadows
         float weight = 0.0f;    // 0..1, the fade
         bgfx::IndexBufferHandle triangles = BGFX_INVALID_HANDLE; // the solid still geometry within its radius
         std::vector<std::pair<std::shared_ptr<shim::TexStore>, bgfx::IndexBufferHandle>> cut; // ... and of each cut-out texture
-        uint32_t casters = 0, last_casters = 0;                  // character draws this / the last frame
-        // Only the settled slot's projection is shared; each caster still supplies its current world transform.
-        std::array<std::array<float, 16>, 6> dynamic_faces{};
-        uint8_t dynamic_faces_ready = 0; // reset by prepare, never reused across frames
+        uint32_t last_casters = 0;                               // caster draws in its dynamic faces in the last frame
+        std::array<ShadowCasters::Id, 6> volume{};               // this frame's dynamic faces (while `published`)
+        bool published = false;
     };
 
     void ensure_targets();
@@ -171,7 +165,6 @@ class LampShadows
     void free_slot(Slot &slot);
     void draw_static(shim::Device &device, bool all, Casters &casters);
     void choose_moving(const std::array<float, 3> &eye);
-    const std::array<float, 16> &dynamic_face_matrix(int slot, int face, const fx::Lamp &in_faces);
     // The six still faces of `slot` (its row cleared first) from `triangles` / `cut` index buffers.
     void draw_faces(shim::Device &device, Casters &casters, int slot);
     static constexpr int kMovingLamp = -2;
@@ -206,7 +199,7 @@ class LampShadows
     void ship_slot_triangles(Slot &slot, ShipGeometry &geometry);
     std::vector<ShipGeometry> ship_geometry_;
     void free_ship_geometry(ShipGeometry &geometry);
-    uint64_t drawn_ship_ = 0;
+    const ShadowCasters *volumes_ = nullptr; // where the slots' faces are published this frame
     bool moving_this_frame_ = false, ship_lights_this_frame_ = false; // reported since the last Present (else: none)
     std::vector<fx::Lamp> raw_;   // as reported this frame
     std::vector<int> raw_lamp_;   // per raw lamp: its merged lamp (index into lamps_), -1: none (no light)

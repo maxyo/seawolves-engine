@@ -1090,7 +1090,7 @@ HRESULT Device::DrawPrimitive(D3DPRIMITIVETYPE type, UINT start_vertex, UINT pri
     call.type = type;
     call.primitive_count = primitive_count;
     call.start_vertex = start_vertex;
-    return draw(call);
+    return issue(call);
 }
 
 HRESULT Device::DrawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base_vertex, UINT min_index, UINT vertex_count,
@@ -1104,7 +1104,7 @@ HRESULT Device::DrawIndexedPrimitive(D3DPRIMITIVETYPE type, INT base_vertex, UIN
     call.min_index = min_index;
     call.index_vertex_count = vertex_count;
     call.start_index = start_index;
-    return draw(call);
+    return issue(call);
 }
 
 HRESULT Device::DrawPrimitiveUP(D3DPRIMITIVETYPE type, UINT primitive_count, const void *data, UINT stride)
@@ -1114,7 +1114,7 @@ HRESULT Device::DrawPrimitiveUP(D3DPRIMITIVETYPE type, UINT primitive_count, con
     call.primitive_count = primitive_count;
     call.up_vertices = static_cast<const uint8_t *>(data);
     call.up_stride = stride;
-    return draw(call);
+    return issue(call);
 }
 
 HRESULT Device::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE type, UINT min_index, UINT vertex_count, UINT primitive_count,
@@ -1131,7 +1131,7 @@ HRESULT Device::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE type, UINT min_index, UI
     call.up_vertex_count = min_index + vertex_count;
     call.min_index = min_index;
     call.index_vertex_count = vertex_count;
-    return draw(call);
+    return issue(call);
 }
 
 namespace
@@ -1151,6 +1151,325 @@ uint32_t skinned_variant(uint32_t vs_id)
 }
 } // namespace
 
+// Sets the draw's vertex streams and indices on the encoder: buffers written this frame and user-pointer data as
+// transient copies, triangle fans as lists. False: the draw cannot be issued (skip_draw() said why).
+bool Device::bind_geometry(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count)
+{
+    const uint64_t frame = Context::instance().frame_index();
+    // ---- index source ----
+    const uint8_t *index_source = nullptr;
+    bool index32 = false;
+    IndexBuffer *ib = nullptr;
+    if (call.indexed)
+    {
+        if (call.up_indices)
+        {
+            index_source = static_cast<const uint8_t *>(call.up_indices);
+            index32 = call.up_index32;
+        }
+        else
+        {
+            ib = s.indices;
+            if (!ib)
+            {
+                skip_draw("no index buffer bound");
+                return false;
+            }
+            index32 = ib->index32;
+            const size_t offset = static_cast<size_t>(call.start_index) * (index32 ? 4 : 2);
+            if (offset + static_cast<size_t>(element_count) * (index32 ? 4 : 2) > ib->shadow.size())
+            {
+                skip_draw("index range outside the buffer");
+                return false;
+            }
+            index_source = ib->shadow.data() + offset;
+        }
+    }
+    const auto index_at = [&](uint32_t i) -> uint32_t {
+        return index32 ? reinterpret_cast<const uint32_t *>(index_source)[i]
+                       : reinterpret_cast<const uint16_t *>(index_source)[i];
+    };
+
+    // ---- vertex streams ----
+    bool transient_vertices = call.up_vertices != nullptr;
+    if (!call.up_vertices)
+        for (uint32_t i = 0; i < layout.stream_count; ++i)
+        {
+            VertexBuffer *vb = s.stream[i];
+            if (!vb)
+            {
+                skip_draw("no vertex buffer bound");
+                return false;
+            }
+            if (vb->write_frame == frame || (s.stream_offset[i] % layout.stride[i]) != 0)
+                transient_vertices = true;
+        }
+
+    uint32_t index_bias = 0;         // subtracted from every index
+    uint32_t first_vertex = 0;       // first vertex of the range, relative to the stream start
+    uint32_t vertex_count = element_count;
+    if (call.indexed)
+    {
+        if (transient_vertices)
+        {
+            uint32_t lo = UINT32_MAX, hi = 0;
+            for (uint32_t i = 0; i < element_count; ++i)
+            {
+                const uint32_t v = index_at(i);
+                lo = std::min(lo, v);
+                hi = std::max(hi, v);
+            }
+            index_bias = lo;
+            first_vertex = static_cast<uint32_t>(call.base_vertex) + lo;
+            vertex_count = hi - lo + 1;
+        }
+        else
+            first_vertex = static_cast<uint32_t>(call.base_vertex);
+    }
+    else
+        first_vertex = call.start_vertex;
+
+    if (transient_vertices)
+    {
+        for (uint32_t i = 0; i < layout.stream_count; ++i)
+        {
+            const uint32_t stride = layout.stride[i];
+            const uint8_t *source;
+            size_t available;
+            if (call.up_vertices)
+            {
+                source = call.up_vertices;
+                available = SIZE_MAX;
+            }
+            else
+            {
+                VertexBuffer *vb = s.stream[i];
+                source = vb->shadow.data() + s.stream_offset[i];
+                available = vb->shadow.size() - std::min<size_t>(vb->shadow.size(), s.stream_offset[i]);
+            }
+            const size_t begin = static_cast<size_t>(first_vertex) * stride;
+            const size_t bytes = static_cast<size_t>(vertex_count) * stride;
+            if (begin + bytes > available)
+            {
+                // The caller's indices or vertex range reach past the end of its vertex buffer.
+                skip_draw("vertex range outside the vertex buffer");
+                return false;
+            }
+            const VertexBuffer *vb = call.up_vertices ? nullptr : s.stream[i];
+            if (vb)
+            {
+                // The same range (passes over one dynamic buffer, several subsets) is copied once per frame.
+                const size_t shadow_begin = s.stream_offset[i] + begin;
+                const uint32_t bgfx_frame = Context::instance().submitted_frames();
+                const auto reuse = std::find_if(transient_ranges.begin(), transient_ranges.end(), [&](const TransientRange &r) {
+                    return r.bgfx_frame == bgfx_frame && r.vb == vb && r.serial == vb->write_serial && r.layout == layout.handle[i].idx &&
+                           r.stride == stride && r.begin <= shadow_begin && shadow_begin + bytes <= r.begin + r.bytes &&
+                           (shadow_begin - r.begin) % stride == 0;
+                });
+                if (reuse != transient_ranges.end())
+                {
+                    bgfx::setVertexBuffer(static_cast<uint8_t>(i), &reuse->tvb,
+                                          static_cast<uint32_t>((shadow_begin - reuse->begin) / stride), vertex_count);
+                    continue;
+                }
+            }
+            if (bgfx::getAvailTransientVertexBuffer(vertex_count, layout.layout[i]) < vertex_count)
+            {
+                skip_draw("transient vertex budget exhausted");
+                return false;
+            }
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, vertex_count, layout.layout[i]);
+            memcpy(tvb.data, source + begin, bytes);
+            perf().transient_vb_bytes += bytes;
+            if (vb)
+                transient_ranges.push_back({Context::instance().submitted_frames(), vb, vb->write_serial, layout.handle[i].idx, stride,
+                                            s.stream_offset[i] + begin, bytes, tvb});
+            bgfx::setVertexBuffer(static_cast<uint8_t>(i), &tvb, 0, vertex_count);
+        }
+    }
+    else
+    {
+        for (uint32_t i = 0; i < layout.stream_count; ++i)
+        {
+            VertexBuffer *vb = s.stream[i];
+            upload_buffer(*vb, layout.layout[i]);
+            const uint32_t start = s.stream_offset[i] / layout.stride[i] + first_vertex;
+            const uint32_t count = call.indexed ? UINT32_MAX : vertex_count;
+            bgfx::setVertexBuffer(static_cast<uint8_t>(i), vb->handle, start, count, layout.handle[i]);
+        }
+    }
+
+    // ---- indices ----
+    const bool fan = call.type == D3DPT_TRIANGLEFAN;
+    const bool transient_indices =
+        fan || (call.indexed && (call.up_indices || index_bias != 0 || (ib && ib->write_frame == frame)));
+    if (transient_indices)
+    {
+        const uint32_t out_count = fan ? call.primitive_count * 3 : element_count;
+        const bool out32 = call.indexed ? index32 : vertex_count > 65535;
+        if (bgfx::getAvailTransientIndexBuffer(out_count, out32) < out_count)
+        {
+            skip_draw("transient index budget exhausted");
+            return false;
+        }
+        bgfx::TransientIndexBuffer tib;
+        bgfx::allocTransientIndexBuffer(&tib, out_count, out32);
+        const auto put = [&](uint32_t i, uint32_t value) {
+            if (out32)
+                reinterpret_cast<uint32_t *>(tib.data)[i] = value;
+            else
+                reinterpret_cast<uint16_t *>(tib.data)[i] = static_cast<uint16_t>(value);
+        };
+        const auto source = [&](uint32_t i) -> uint32_t { return call.indexed ? index_at(i) - index_bias : i; };
+        if (fan)
+        {
+            for (uint32_t i = 0; i < call.primitive_count; ++i)
+            {
+                put(i * 3, source(0));
+                put(i * 3 + 1, source(i + 1));
+                put(i * 3 + 2, source(i + 2));
+            }
+        }
+        else if (call.indexed && index_bias == 0 && out32 == index32)
+            memcpy(tib.data, index_source, static_cast<size_t>(out_count) * (out32 ? 4 : 2)); // indices written this frame
+        else
+            for (uint32_t i = 0; i < out_count; ++i)
+                put(i, source(i));
+        bgfx::setIndexBuffer(&tib, 0, out_count);
+        perf().transient_ib_bytes += static_cast<uint64_t>(out_count) * (out32 ? 4 : 2);
+        perf().fan_draws += fan ? 1 : 0;
+    }
+    else if (call.indexed)
+    {
+        upload_buffer(*ib, index32);
+        bgfx::setIndexBuffer(ib->handle, call.start_index, element_count);
+    }
+    return true;
+}
+
+// Sets the bone palette of a skinned draw on the encoder. False: the draw cannot be issued (skip_draw() said why).
+bool Device::bind_palette()
+{
+    // The frame's palettes share one texture (bone_palettes.hpp): this palette's rows at an offset.
+    TexStore *palette = store_of(s.vertex_texture);
+    BonePalettes &palettes = Context::instance().bone_palettes();
+    const BonePalettes::Slot slot = palettes.place(*palette);
+    bgfx::TextureHandle texture = palettes.texture();
+    if (!slot.valid())
+    {
+        // The frame's atlas is full (logged once): the palette's own texture, uploaded as before.
+        palette->any_dirty = palette->sub(0, 0).dirty = true;
+        palette->sync();
+        texture = palette->handle;
+    }
+    // The first row and the column as instance data of one instance (ff_skin.sh i_data0): a uniform here
+    // re-committed the program's whole uniform block for every skinned draw (bgfx GL commits all of a program's
+    // uniforms on a change). The caster entry binds it the same way.
+    if (bgfx::getAvailInstanceDataBuffer(1, 16) < 1)
+    {
+        skip_draw("transient budget exhausted for a skinned draw's palette row");
+        return false;
+    }
+    bgfx::InstanceDataBuffer instance;
+    bgfx::allocInstanceDataBuffer(&instance, 1, 16);
+    const float base[4] = {slot.valid() ? static_cast<float>(slot.row) : 0.0f,
+                           slot.valid() ? static_cast<float>(slot.column * BonePalettes::kTexelsPerBone) : 0.0f, 0.0f,
+                           0.0f};
+    memcpy(instance.data, base, sizeof(base));
+    bgfx::setInstanceDataBuffer(&instance);
+    bgfx::setTexture(static_cast<uint8_t>(kBonePaletteUnit), Context::instance().sampler(kBonePaletteUnit), texture,
+                     BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+    ++perf().texture_binds;
+    return true;
+}
+
+// The caster entry (effects/shadow_casters.hpp): offers a fixed-function draw into the game picture to the frame's
+// shadow volumes, whether the camera drew it or not (`offscreen`: render::ShadowCasterOnly). What a volume takes is
+// bound again with what a depth pass needs and nothing else: its buffers, the textures whose alpha cuts it, its bone
+// palette. No colour program, no lighting variant, no relief or upscale demand.
+void Device::draw_caster(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, bool offscreen)
+{
+    if (s.vs || s.ps || layout.rhw || rt != back_color)
+        return;
+    uint64_t primitive = 0;
+    if (call.type == D3DPT_TRIANGLESTRIP)
+        primitive = BGFX_STATE_PT_TRISTRIP;
+    else if (call.type != D3DPT_TRIANGLELIST && call.type != D3DPT_TRIANGLEFAN)
+        return;
+    effects::Lighting &lighting = effects::Host::instance().lighting();
+    effects::ShadowCasters &casters = lighting.shadow_casters();
+    effects::ShadowCaster caster;
+    caster.still = casters.still();
+    caster.lit = s.rs[D3DRS_LIGHTING] != 0 && layout.has_normal;
+    if ((!caster.lit && caster.still == 0) || lighting.idle())
+        return;
+    // What has no lighting variant casts nothing: slope-biased decals (projected shadows) and cube-mapped draws.
+    if (as_float(s.rs[D3DRS_SLOPESCALEDEPTHBIAS]) != 0.0f)
+        return;
+    for (uint32_t stage = 0; stage < 3 && s.tss[stage][D3DTSS_COLOROP] != D3DTOP_DISABLE; ++stage)
+        if (const TexStore *store = store_of(s.textures[stage]); store && store->kind == TexKind::Cube)
+            return;
+    if (!lighting.shadow_volumes(*this))
+        return;
+    caster.material = effects::caster_material(*this, layout);
+    if (!caster.material.casts)
+        return;
+    caster.sun = caster.lit && lighting.sun_lit(*this);
+    caster.skinned = layout.skinned;
+    caster.offscreen = offscreen;
+    caster.primitive = primitive;
+    caster.triangles = call.primitive_count;
+    caster.world = &s.world.m[0][0];
+    caster.origin = lighting.world_origin();
+    if (layout.skinned)
+    {
+        // Skinned vertices are in the bind pose: the model node being drawn bounds them, whatever the pose.
+        if (const std::array<float, 4> &node = casters.bounds(); node[3] >= 0.0f)
+        {
+            caster.center = {node[0] - caster.origin[0], node[1] - caster.origin[1], node[2] - caster.origin[2]};
+            caster.radius = node[3];
+        }
+    }
+    else if (float center[3], radius = 0.0f; draw_bounds(call, layout, element_count, center, radius))
+    {
+        const D3DMATRIX &w = s.world;
+        float scale = 0.0f;
+        for (int k = 0; k < 3; ++k)
+        {
+            caster.center[k] = center[0] * w.m[0][k] + center[1] * w.m[1][k] + center[2] * w.m[2][k] + w.m[3][k];
+            scale = std::max(scale, std::sqrt(w.m[k][0] * w.m[k][0] + w.m[k][1] * w.m[k][1] + w.m[k][2] * w.m[k][2]));
+        }
+        caster.radius = radius * scale;
+    }
+    casters.count_candidate();
+    if (!casters.takes(caster))
+        return;
+    if (layout.skinned && !store_of(s.vertex_texture))
+    {
+        skip_draw("skinned caster without a bone palette in D3DVERTEXTEXTURESAMPLER0");
+        return;
+    }
+    if (!bind_geometry(call, layout, element_count))
+        return;
+    for (uint32_t stage = 0; stage < 3; ++stage)
+    {
+        if (caster.material.stage[stage] <= 0.5f)
+            continue;
+        TexStore *store = store_of(s.textures[stage]); // a 2D texture with holes: caster_material()
+        store->sync();
+        if (!bgfx::isValid(store->handle))
+        {
+            skip_draw("a caster's cut-out texture has no GPU texture");
+            return;
+        }
+        bgfx::setTexture(static_cast<uint8_t>(stage), Context::instance().sampler(stage), store->handle, sampler_flags(stage, *store));
+    }
+    if (layout.skinned && !bind_palette())
+        return;
+    casters.submit(*this, lighting.casters(), caster);
+}
+
 // A draw that cannot be issued is never dropped quietly: it is counted and its reason logged once.
 void Device::skip_draw(const char *reason)
 {
@@ -1159,7 +1478,9 @@ void Device::skip_draw(const char *reason)
     trap(reason);
 }
 
-HRESULT Device::draw(const DrawCall &call)
+// Every D3D draw call: the colour draw, and the caster entry for what may cast into the frame's shadow volumes. Inside
+// a render::ShadowCasterOnly (geometry the camera rejected) only the caster entry.
+HRESULT Device::issue(const DrawCall &call)
 {
     if (call.primitive_count == 0)
         return D3D_OK;
@@ -1167,14 +1488,6 @@ HRESULT Device::draw(const DrawCall &call)
     Context::instance().poll_surface();
     if (!Context::instance().ready())
         return D3D_OK;
-    // Before any state of this draw is set: clearing uses views of its own.
-    for (uint32_t stage = 0; stage < kFfStages; ++stage)
-        if (TexStore *store = store_of(s.textures[stage]); store && store->needs_clear)
-        {
-            store->sync();
-            clear_if_new(store);
-            view_dirty = true; // this draw goes into a view after the clear
-        }
     const uint32_t element_count = vertex_count_for(call.type, call.primitive_count);
     if (element_count == 0)
         return D3DERR_INVALIDCALL;
@@ -1200,6 +1513,24 @@ HRESULT Device::draw(const DrawCall &call)
         skip_draw("no vertex layout");
         return D3D_OK;
     }
+    const bool offscreen = effects::Host::instance().lighting().shadow_casters().only();
+    if (offscreen || draw(call, *layout, element_count))
+        draw_caster(call, *layout, element_count, offscreen);
+    return D3D_OK;
+}
+
+// The colour draw. False: it was not submitted (skip_draw() said why).
+bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t element_count)
+{
+    const LayoutInfo *layout = &draw_layout;
+    // Before any state of this draw is set: clearing uses views of its own.
+    for (uint32_t stage = 0; stage < kFfStages; ++stage)
+        if (TexStore *store = store_of(s.textures[stage]); store && store->needs_clear)
+        {
+            store->sync();
+            clear_if_new(store);
+            view_dirty = true; // this draw goes into a view after the clear
+        }
     // Effects: a perspective draw into the game picture makes this frame a 3D scene (Device::scene_complete).
     if (rt == back_color && !layout->rhw && s.proj.m[2][3] != 0.0f)
     {
@@ -1213,7 +1544,7 @@ HRESULT Device::draw(const DrawCall &call)
     if ((vs_port && !s.vs->port) || (ps_port && !s.ps->port))
     {
         skip_draw("shader without bgfx port");
-        return D3D_OK;
+        return false;
     }
     // [0] vertex lighting (D3DRS_LIGHTING), [1] unlit: the lights stay out of the program (ff_vertex.sh FF_UNLIT).
     static const uint32_t id_vs_ff[2] = {shader_id_by_name("vs_ff"), shader_id_by_name("vs_ff_unlit")};
@@ -1289,7 +1620,7 @@ HRESULT Device::draw(const DrawCall &call)
     {
         skip_draw(vs_port ? "skinned vertices with a vertex shader port"
                           : "skinned draw without a bone palette in D3DVERTEXTEXTURESAMPLER0");
-        return D3D_OK;
+        return false;
     }
     // Without lighting the unlit variant leaves the lights out of the program (see ff_vertex.sh).
     const bool lit = s.rs[D3DRS_LIGHTING] != 0 && !layout->rhw;
@@ -1300,7 +1631,7 @@ HRESULT Device::draw(const DrawCall &call)
         if (vs_id == UINT32_MAX)
         {
             skip_draw("skinned draw with a vertex shader that has no skinned variant");
-            return D3D_OK;
+            return false;
         }
     }
     uint32_t fs_id = ps_port ? s.ps->port->shader_id() : fx_draw.active ? fx_draw.fs_id : id_fs_ff[fs_variant];
@@ -1314,7 +1645,7 @@ HRESULT Device::draw(const DrawCall &call)
     if (!bgfx::isValid(handle))
     {
         skip_draw("program creation failed");
-        return D3D_OK;
+        return false;
     }
 
     // Effects: the Sea2 ports' improvements; the soft edges and the waves may capture the scene depth in a view of their own
@@ -1322,196 +1653,9 @@ HRESULT Device::draw(const DrawCall &call)
     if ((ps_port && s.ps->port->sea_fx) || (vs_port && s.vs->port->sea_fx))
         effects::Host::instance().prepare_sea(*this);
     const uint16_t view_id = ensure_view();
-    const uint64_t frame = Context::instance().frame_index();
-    // ---- index source ----
-    const uint8_t *index_source = nullptr;
-    bool index32 = false;
-    IndexBuffer *ib = nullptr;
-    if (call.indexed)
-    {
-        if (call.up_indices)
-        {
-            index_source = static_cast<const uint8_t *>(call.up_indices);
-            index32 = call.up_index32;
-        }
-        else
-        {
-            ib = s.indices;
-            if (!ib)
-            {
-                skip_draw("no index buffer bound");
-                return D3D_OK;
-            }
-            index32 = ib->index32;
-            const size_t offset = static_cast<size_t>(call.start_index) * (index32 ? 4 : 2);
-            if (offset + static_cast<size_t>(element_count) * (index32 ? 4 : 2) > ib->shadow.size())
-            {
-                skip_draw("index range outside the buffer");
-                return D3D_OK;
-            }
-            index_source = ib->shadow.data() + offset;
-        }
-    }
-    const auto index_at = [&](uint32_t i) -> uint32_t {
-        return index32 ? reinterpret_cast<const uint32_t *>(index_source)[i]
-                       : reinterpret_cast<const uint16_t *>(index_source)[i];
-    };
-
-    // ---- vertex streams ----
-    bool transient_vertices = call.up_vertices != nullptr;
-    if (!call.up_vertices)
-        for (uint32_t i = 0; i < layout->stream_count; ++i)
-        {
-            VertexBuffer *vb = s.stream[i];
-            if (!vb)
-            {
-                skip_draw("no vertex buffer bound");
-                return D3D_OK;
-            }
-            if (vb->write_frame == frame || (s.stream_offset[i] % layout->stride[i]) != 0)
-                transient_vertices = true;
-        }
-
-    uint32_t index_bias = 0;         // subtracted from every index
-    uint32_t first_vertex = 0;       // first vertex of the range, relative to the stream start
-    uint32_t vertex_count = element_count;
-    if (call.indexed)
-    {
-        if (transient_vertices)
-        {
-            uint32_t lo = UINT32_MAX, hi = 0;
-            for (uint32_t i = 0; i < element_count; ++i)
-            {
-                const uint32_t v = index_at(i);
-                lo = std::min(lo, v);
-                hi = std::max(hi, v);
-            }
-            index_bias = lo;
-            first_vertex = static_cast<uint32_t>(call.base_vertex) + lo;
-            vertex_count = hi - lo + 1;
-        }
-        else
-            first_vertex = static_cast<uint32_t>(call.base_vertex);
-    }
-    else
-        first_vertex = call.start_vertex;
-
-    if (transient_vertices)
-    {
-        for (uint32_t i = 0; i < layout->stream_count; ++i)
-        {
-            const uint32_t stride = layout->stride[i];
-            const uint8_t *source;
-            size_t available;
-            if (call.up_vertices)
-            {
-                source = call.up_vertices;
-                available = SIZE_MAX;
-            }
-            else
-            {
-                VertexBuffer *vb = s.stream[i];
-                source = vb->shadow.data() + s.stream_offset[i];
-                available = vb->shadow.size() - std::min<size_t>(vb->shadow.size(), s.stream_offset[i]);
-            }
-            const size_t begin = static_cast<size_t>(first_vertex) * stride;
-            const size_t bytes = static_cast<size_t>(vertex_count) * stride;
-            if (begin + bytes > available)
-            {
-                // The caller's indices or vertex range reach past the end of its vertex buffer.
-                skip_draw("vertex range outside the vertex buffer");
-                return D3D_OK;
-            }
-            const VertexBuffer *vb = call.up_vertices ? nullptr : s.stream[i];
-            if (vb)
-            {
-                // The same range (passes over one dynamic buffer, several subsets) is copied once per frame.
-                const size_t shadow_begin = s.stream_offset[i] + begin;
-                const uint32_t bgfx_frame = Context::instance().submitted_frames();
-                const auto reuse = std::find_if(transient_ranges.begin(), transient_ranges.end(), [&](const TransientRange &r) {
-                    return r.bgfx_frame == bgfx_frame && r.vb == vb && r.serial == vb->write_serial && r.layout == layout->handle[i].idx &&
-                           r.stride == stride && r.begin <= shadow_begin && shadow_begin + bytes <= r.begin + r.bytes &&
-                           (shadow_begin - r.begin) % stride == 0;
-                });
-                if (reuse != transient_ranges.end())
-                {
-                    bgfx::setVertexBuffer(static_cast<uint8_t>(i), &reuse->tvb,
-                                          static_cast<uint32_t>((shadow_begin - reuse->begin) / stride), vertex_count);
-                    continue;
-                }
-            }
-            if (bgfx::getAvailTransientVertexBuffer(vertex_count, layout->layout[i]) < vertex_count)
-            {
-                skip_draw("transient vertex budget exhausted");
-                return D3D_OK;
-            }
-            bgfx::TransientVertexBuffer tvb;
-            bgfx::allocTransientVertexBuffer(&tvb, vertex_count, layout->layout[i]);
-            memcpy(tvb.data, source + begin, bytes);
-            perf().transient_vb_bytes += bytes;
-            if (vb)
-                transient_ranges.push_back({Context::instance().submitted_frames(), vb, vb->write_serial, layout->handle[i].idx, stride,
-                                            s.stream_offset[i] + begin, bytes, tvb});
-            bgfx::setVertexBuffer(static_cast<uint8_t>(i), &tvb, 0, vertex_count);
-        }
-    }
-    else
-    {
-        for (uint32_t i = 0; i < layout->stream_count; ++i)
-        {
-            VertexBuffer *vb = s.stream[i];
-            upload_buffer(*vb, layout->layout[i]);
-            const uint32_t start = s.stream_offset[i] / layout->stride[i] + first_vertex;
-            const uint32_t count = call.indexed ? UINT32_MAX : vertex_count;
-            bgfx::setVertexBuffer(static_cast<uint8_t>(i), vb->handle, start, count, layout->handle[i]);
-        }
-    }
-
-    // ---- indices ----
+    if (!bind_geometry(call, *layout, element_count))
+        return false;
     const bool fan = call.type == D3DPT_TRIANGLEFAN;
-    const bool transient_indices =
-        fan || (call.indexed && (call.up_indices || index_bias != 0 || (ib && ib->write_frame == frame)));
-    if (transient_indices)
-    {
-        const uint32_t out_count = fan ? call.primitive_count * 3 : element_count;
-        const bool out32 = call.indexed ? index32 : vertex_count > 65535;
-        if (bgfx::getAvailTransientIndexBuffer(out_count, out32) < out_count)
-        {
-            skip_draw("transient index budget exhausted");
-            return D3D_OK;
-        }
-        bgfx::TransientIndexBuffer tib;
-        bgfx::allocTransientIndexBuffer(&tib, out_count, out32);
-        const auto put = [&](uint32_t i, uint32_t value) {
-            if (out32)
-                reinterpret_cast<uint32_t *>(tib.data)[i] = value;
-            else
-                reinterpret_cast<uint16_t *>(tib.data)[i] = static_cast<uint16_t>(value);
-        };
-        const auto source = [&](uint32_t i) -> uint32_t { return call.indexed ? index_at(i) - index_bias : i; };
-        if (fan)
-        {
-            for (uint32_t i = 0; i < call.primitive_count; ++i)
-            {
-                put(i * 3, source(0));
-                put(i * 3 + 1, source(i + 1));
-                put(i * 3 + 2, source(i + 2));
-            }
-        }
-        else if (call.indexed && index_bias == 0 && out32 == index32)
-            memcpy(tib.data, index_source, static_cast<size_t>(out_count) * (out32 ? 4 : 2)); // indices written this frame
-        else
-            for (uint32_t i = 0; i < out_count; ++i)
-                put(i, source(i));
-        bgfx::setIndexBuffer(&tib, 0, out_count);
-        perf().transient_ib_bytes += static_cast<uint64_t>(out_count) * (out32 ? 4 : 2);
-        perf().fan_draws += fan ? 1 : 0;
-    }
-    else if (call.indexed)
-    {
-        upload_buffer(*ib, index32);
-        bgfx::setIndexBuffer(ib->handle, call.start_index, element_count);
-    }
 
     // ---- textures ----
     const uint32_t stage_limit = ps_port ? s.ps->port->sampler_count : kFfStages;
@@ -1629,39 +1773,8 @@ HRESULT Device::draw(const DrawCall &call)
         }
     }
 
-    if (layout->skinned)
-    {
-        // The frame's palettes share one texture (bone_palettes.hpp): this palette's rows at an offset.
-        TexStore *palette = store_of(s.vertex_texture);
-        BonePalettes &palettes = Context::instance().bone_palettes();
-        const BonePalettes::Slot slot = palettes.place(*palette);
-        bgfx::TextureHandle texture = palettes.texture();
-        if (!slot.valid())
-        {
-            // The frame's atlas is full (logged once): the palette's own texture, uploaded as before.
-            palette->any_dirty = palette->sub(0, 0).dirty = true;
-            palette->sync();
-            texture = palette->handle;
-        }
-        // The first row and the column as instance data of one instance (ff_skin.sh i_data0): a uniform here
-        // re-committed the program's whole uniform block for every skinned draw (bgfx GL commits all of a program's
-        // uniforms on a change). Kept for the casters submitted after this draw (BGFX_DISCARD_NONE).
-        if (bgfx::getAvailInstanceDataBuffer(1, 16) < 1)
-        {
-            skip_draw("transient budget exhausted for a skinned draw's palette row");
-            return D3D_OK;
-        }
-        bgfx::InstanceDataBuffer instance;
-        bgfx::allocInstanceDataBuffer(&instance, 1, 16);
-        const float base[4] = {slot.valid() ? static_cast<float>(slot.row) : 0.0f,
-                               slot.valid() ? static_cast<float>(slot.column * BonePalettes::kTexelsPerBone) : 0.0f, 0.0f,
-                               0.0f};
-        memcpy(instance.data, base, sizeof(base));
-        bgfx::setInstanceDataBuffer(&instance);
-        bgfx::setTexture(static_cast<uint8_t>(kBonePaletteUnit), Context::instance().sampler(kBonePaletteUnit), texture,
-                         BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
-        ++perf().texture_binds;
-    }
+    if (layout->skinned && !bind_palette())
+        return false;
 
     apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
     if (fx_draw.active)
@@ -1725,11 +1838,11 @@ HRESULT Device::draw(const DrawCall &call)
         render::HideSceneBeauty(Context::instance().Surface().generation,
             held_color ? held_color->serial : back_color->store->serial);
     if (hiddenBeauty) {
-        if (fx_draw.caster) fx_lighting.submit_caster(*this, s.world, layout->skinned);
-        else bgfx::discard(BGFX_DISCARD_ALL);
-        // Discard/caster copies consume encoder state. No beauty counter or opaque-submit acknowledgement.
+        bgfx::discard(BGFX_DISCARD_ALL);
+        // The discard consumes encoder state. No beauty counter or opaque-submit acknowledgement; the caster entry
+        // (Device::issue) still offers the draw to the shadow volumes.
         invalidate_uniforms();
-        return D3D_OK;
+        return true;
     }
     // Effects: the parallax probe (effects/parallax_probe.hpp) tests a relief draw of the game picture that writes depth
     // and lies on the centre ray again after the scene, at the centre pixel, against the scene's final depth.
@@ -1743,9 +1856,8 @@ HRESULT Device::draw(const DrawCall &call)
             probe_query = probe.candidate(fx_draw.relief_entry, &s.view.m[0][0], &s.proj.m[0][0], center, bounds.radius,
                                           {view_framebuffer, view_rect, view_min_z, view_max_z});
         }
-    // Effects: a sun shadow caster keeps its buffers for the depth-only copy into the shadow view (effects/shadows.hpp),
-    // and so does a probe draw for its copy.
-    bgfx::submit(view_id, handle, 0, fx_draw.caster || bgfx::isValid(probe_query) ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+    // Effects: a probe draw keeps its buffers for its copy.
+    bgfx::submit(view_id, handle, 0, bgfx::isValid(probe_query) ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
     if (rt == back_color && !layout->rhw) render::SceneBeautySubmitted();
     render::SceneOpaqueDrawSubmitted(opaqueCoverage, !s.rs[D3DRS_ALPHABLENDENABLE] || s.rs[D3DRS_BLENDOP] == D3DBLENDOP_ADD);
     if (bgfx::isValid(probe_query))
@@ -1761,11 +1873,8 @@ HRESULT Device::draw(const DrawCall &call)
         bgfx::setStencil(BGFX_STENCIL_NONE); // the scene's stencil is not the one this draw saw
         const uint32_t width = rt->store->level_width(rt->level), height = rt->store->level_height(rt->level);
         bgfx::setScissor(static_cast<uint16_t>(width / 2), static_cast<uint16_t>(height / 2), 1, 1);
-        bgfx::submit(effects::ParallaxProbe::kView, handle, probe_query, 0,
-                     fx_draw.caster ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+        bgfx::submit(effects::ParallaxProbe::kView, handle, probe_query, 0, BGFX_DISCARD_ALL);
     }
-    if (fx_draw.caster)
-        fx_lighting.submit_caster(*this, s.world, layout->skinned);
     view_has_content = true;
     render::PerfCounters &counters = perf();
     ++counters.draws;
@@ -1780,7 +1889,7 @@ HRESULT Device::draw(const DrawCall &call)
     }
     counters.uniform_draws += uniforms_changed ? 1 : 0;
     uniforms_changed = false;
-    return D3D_OK;
+    return true;
 }
 
 } // namespace storm::shim

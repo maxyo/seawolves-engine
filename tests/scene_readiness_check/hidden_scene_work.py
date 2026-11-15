@@ -53,31 +53,27 @@ def run():
         fixture = r'''
 #include <cassert>
 int beauty=0, probe=0, caster=0, discarded=0, invalidated=0;
-constexpr int D3D_OK=0, BGFX_DISCARD_ALL=255;
+constexpr int BGFX_DISCARD_ALL=255;
 namespace bgfx { void discard(int) {++discarded;} }
 struct Device {
  void invalidate_uniforms() {++invalidated;}
- struct Draw {bool caster;} fx_draw;
- struct Lighting {void submit_caster(Device&,int,bool) {++caster; bgfx::discard(BGFX_DISCARD_ALL);}} fx_lighting;
- struct State {int world=0;} s;
- struct Layout {bool skinned=false;} layout_value, *layout=&layout_value;
- int draw(bool hiddenBeauty) {
+ // The colour draw: true when the caster entry (Device::issue -> draw_caster) still offers it to the shadow volumes.
+ bool draw(bool hiddenBeauty) {
  BRANCH
  // Continuation is reached only after the real suppression return; GPU calls are not simulated.
  ++beauty; ++probe;
- if(fx_draw.caster) fx_lighting.submit_caster(*this,s.world,layout->skinned);
- return D3D_OK;
+ return true;
  }
+ void issue(bool hiddenBeauty) { if (draw(hiddenBeauty)) ++caster; }
 };
 int main() {
- Device d; d.fx_draw.caster=false; d.draw(true);
- assert(beauty == 0); assert(probe == 0); assert(caster == 0);
+ Device d; d.issue(true);
+ assert(beauty == 0); assert(probe == 0);
+ assert(caster == 1); // a hidden draw still casts
  assert(discarded == 1 && invalidated == 1);
- d.fx_draw.caster=true; d.draw(true);
- assert(beauty == 0 && probe == 0 && caster == 1);
- assert(discarded == 2 && invalidated == 2);
- d.fx_draw.caster=false; d.draw(false);
- assert(beauty == 1 && probe == 1 && caster == 1);
+ d.issue(false);
+ assert(beauty == 1 && probe == 1 && caster == 2);
+ assert(discarded == 1 && invalidated == 1);
 }
 '''
         # Negative control: the same draw without the suppression branch must fail.

@@ -277,16 +277,8 @@ struct EffectsShipGeometry
     std::span<const EffectsLocationGeometry::Surface> surfaces;
 };
 void SetEffectsShipGeometry(uint64_t ship, uint64_t signature, const EffectsShipGeometry &geometry);
-// While one lives, the draws are the still geometry of this ship (what SetEffectsShipGeometry reports): they are in
-// the cached faces of the ship's own lanterns and cast every frame only for other lights.
-class EffectsShipDraw
-{
-  public:
-    explicit EffectsShipDraw(uint64_t ship);
-    ~EffectsShipDraw();
-    EffectsShipDraw(const EffectsShipDraw &) = delete;
-    EffectsShipDraw &operator=(const EffectsShipDraw &) = delete;
-};
+// The ship's model is drawn inside a render::ShadowCasterStill of its id (storm/render/shadow_casters.hpp): it is in
+// the cached faces of the ship's own lanterns and casts every frame only for other lights.
 
 
 // Location, once an outdoor location is loaded: its lightmapped triangles (the still models with a shadow.tga

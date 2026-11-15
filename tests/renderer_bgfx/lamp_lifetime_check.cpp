@@ -125,7 +125,8 @@ void component_shadows(shim::Device &device)
     flames = {{{0,3,0},0}, {{.4f,3,0},1}};
     report(effective, flames);
     expect(lamps.lamps().size() == 2, "authoritative separate .4m components are not merged again at legacy .5m radius");
-    lamps.prepare(device, {0,3,2}, casters);
+    effects::ShadowCasters volumes;
+    lamps.prepare(device, {0,3,2}, casters, volumes);
     expect(lamps.relit({0,3,0}) && lamps.relit({.4f,3,0}), "prepared component positions disable duplicate model point contributions");
     // Query in the interval BEFORE prepare/end_frame reconciles old slots. Shrink/clear must never index stale slots.
     effective.resize(1); flames.resize(1);
@@ -134,6 +135,7 @@ void component_shadows(shim::Device &device)
     report({}, {});
     expect(!lamps.relit({0,3,0}) && !lamps.relit({.4f,3,0}), "clear rejects stale relit before prepare/end_frame");
     lamps.end_frame();
+    volumes.end_frame();
     lamps.shutdown();
 }
 
@@ -237,8 +239,12 @@ int main()
         std::weak_ptr<shim::TexStore> in_slot = slotted->store;
         surface = {0, 6, slotted};
         lamps.set_ship_geometry(7, 4, {positions, uvs, indices, std::span(&surface, 1)});
-        lamps.prepare(*device, {0, 3, 0}, casters);
+        effects::ShadowCasters volumes;
+        lamps.prepare(*device, {0, 3, 0}, casters, volumes);
+        expect(volumes.volumes() == 6 && volumes.volume(0).still == ship.id,
+               "ship lantern published its six dynamic faces, apart from the ship's own still geometry");
         lamps.end_frame();
+        volumes.end_frame();
         expect(lamps.last_slots() > 0 && lamps.last_static_faces() == 6, "ship lantern submitted its six cached faces on Noop");
         slotted->Release();
         expect(!in_slot.expired(), "drawn ship storage survives its texture wrapper");

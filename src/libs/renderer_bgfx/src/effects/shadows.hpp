@@ -2,15 +2,16 @@
 //
 // One orthographic cascade around the camera's focus, rendered into the pre-game view kPreGameViewBegin (it runs before
 // every game view of the frame, so receivers of the same frame read it). The casters are the lit fixed-function draws
-// into the game picture (ships with their sails, characters, lit deck and location objects): the shim submits each of
-// them a second time into the shadow view with the depth-only caster program vs_ff_caster[_skin] / fs_ff_caster
-// (draw.cpp: submitted with BGFX_DISCARD_NONE, then submit_caster() reuses its buffers and bone palette). The map
-// sits at stage 15 (fx::kShadowMapStage): 13 is the bone palette of the skinned vertex shaders. The receivers are the same lit draws: they sample the map at stage 13 with their own camera.
+// (ships with their sails, characters, lit deck and location objects) that reach the cascade, on screen or not: the
+// cascade is published as a shadow volume (effects/shadow_casters.hpp) and the shim's caster entry submits what meets
+// it with the depth-only caster program vs_ff_caster[_skin] / fs_ff_caster. The map
+// sits at stage 15 (fx::kShadowMapStage): 13 is the bone palette of the skinned vertex shaders. The receivers are the lit draws: they sample the map with their own camera.
 // Baked location geometry (lighting off) and surfaces under a lightmap neither cast nor receive: their shading is in
 // their colours and lightmaps (outdoors our own: effects/town_light.hpp, for the same sun). Outdoors the place's still
 // geometry casts from tiles (set_casters) into the cascade along the hour's sun, so the houses, walls and palms shade
-// the characters and ships where the lightmaps shade the ground.
-// The map is prepared lazily by the first lit draw into the game picture of a frame (its camera is the scene camera);
+// the characters and ships where the lightmaps shade the ground; its own draws are left out of the volume
+// (ShadowVolume::still).
+// The map is prepared lazily by the first receiver or caster candidate of a frame (its camera is the scene camera);
 // a sun at or below the horizon gives no shadows (fx::Shadows fades them out by design).
 #pragma once
 
@@ -18,6 +19,7 @@
 #include "storm/fx/shadows.hpp"
 #include "storm/fx/shadow_model.hpp"
 #include "effects/casters.hpp"
+#include "effects/shadow_casters.hpp"
 #include "storm/render/effects.hpp"
 
 #include <bgfx/bgfx.h>
@@ -50,16 +52,14 @@ class SunShadows
     // The place's still, collidable geometry (render::SetEffectsLocationGeometry, outdoors): it casts into the
     // cascade in tiles, with the holes its textures' alpha cuts (effects/casters.hpp). Empty: none (indoors, at sea).
     void set_casters(const render::EffectsLocationGeometry &geometry);
-    // For a lit draw into the game picture with the camera `view` (D3D row-vector device world -> view; `origin`: the
+    // For a draw into the game picture with the camera `view` (D3D row-vector device world -> view; `origin`: the
     // device world's origin in absolute world, Lighting::set_world_origin): prepares this frame's map on the first
-    // call, with the place's still geometry near the camera as casters. True when the draw casts and receives shadows.
+    // call, with the place's still geometry near the camera as casters, and publishes the cascade to `volumes` for
+    // the casters that move. True when the frame has a map: lit draws receive it.
     bool prepare(shim::Device &device, const std::array<float, 16> &view, const std::array<float, 3> &origin,
-                 Casters &casters);
+                 Casters &casters, ShadowCasters &volumes);
     // Receiver: binds the map and its matrix for the draw's camera.
     void bind(const std::array<float, 16> &view) { shadows_.Bind(view); }
-    // Caster: the draw's buffers, textures and bone palette are still bound (submitted with BGFX_DISCARD_NONE);
-    // `world` is its world matrix, `material` how it casts (effects/casters.hpp).
-    void submit_caster(shim::Device &device, const float *world, bool skinned, Casters &casters, const CasterMaterial &material);
     int initial_state(bool applicable = true) const {
         if (!applicable || !enabled() || !sun_present_ || fx::SunShadowStrength(sun_dir_[1]) <= 0.0f) return 0;
         if (!prepared_) return 1;

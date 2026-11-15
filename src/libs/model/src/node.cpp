@@ -5,9 +5,11 @@
 #include "modelr.h"
 #include "clip_visit.hpp"
 #include <storm/render/far_lod.hpp>
+#include <storm/render/shadow_casters.hpp>
 #include "string_compare.hpp"
 
 #include <algorithm>
+#include <optional>
 
 VGEOMETRY *NODER::gs = nullptr;
 VRenderer *NODER::rs = nullptr;
@@ -326,6 +328,7 @@ void NODER::Draw()
         return;
 
     const auto cnt = storm::math::transformPoint(glob_mtx, center);
+    const std::array<float, 3> sphere_center{cnt.x, cnt.y, cnt.z};
 
     // visibility check
     int32_t p;
@@ -336,7 +339,11 @@ void NODER::Draw()
         if (dist > radius)
             break;
     }
-    if (p < 4)
+    // What the camera does not see may still cast into the picture: the lights decide (the frame's shadow volumes),
+    // and such a subtree is drawn for them only. (Asked for the still owner around the model; the node's own
+    // geometry is asked below.)
+    const bool in_camera = p == 4;
+    if (!in_camera && !storm::render::ShadowCasterReach(sphere_center, radius))
         return;
     if (max_view_dist > 0.f)
     {
@@ -386,8 +393,18 @@ void NODER::Draw()
             if (dist > geo_radius)
                 break;
         }
-        if (p == 4)
+        const bool geo_in_camera = in_camera && p == 4;
+        // This node's own geometry (not its children's) may be still geometry the lights hold in a static layer.
+        std::optional<storm::render::ShadowCasterStill> still;
+        if (shadow_still != 0)
+            still.emplace(shadow_still);
+        if (geo_in_camera || storm::render::ShadowCasterReach(sphere_center, geo_radius))
         {
+            // The node's sphere bounds its draws in any pose (skinned vertices have no other bounds).
+            const storm::render::ShadowCasterBounds bounds(sphere_center, geo_radius);
+            std::optional<storm::render::ShadowCasterOnly> casts_only;
+            if (!geo_in_camera)
+                casts_only.emplace();
             rs->SetTransform(D3DTS_WORLD, (D3DMATRIX *)&glob_mtx);
             gs->SetTechnique(&technique[0]);
             if (max_view_dist > 0.f && distance_blend > 0.f)

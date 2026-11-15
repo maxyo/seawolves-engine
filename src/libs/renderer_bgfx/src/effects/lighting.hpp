@@ -25,8 +25,9 @@
 //     the vertices' skin weight (ff_fragment.sh ffSkin); their parallax is shallow and has no self-shadow.
 //   * parallax (Settings::parallax): a relief draw whose map follows stage 0 (not projected) and has a height takes the
 //     FX_LIGHT_PARALLAX variant with the height at stage 7 (stage 0's sampler flags) and u_fxParallax.
-//   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture cast (the shim submits
-//     them again into the shadow view: FfDraw::caster) and receive (FX_LIGHT_SHADOW[_SOFT] variants).
+//   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture receive
+//     (FX_LIGHT_SHADOW[_SOFT] variants). What casts is not decided here: the lights publish their shadow volumes
+//     (shadow_volumes()) and the shim's caster entry offers every draw to them (effects/shadow_casters.hpp).
 //   * alpha to coverage (RendererState::alpha_to_coverage): alpha-tested (GREATER / GREATEREQUAL), non-blended draws
 //     into a multisampled target: BGFX_STATE_BLEND_ALPHA_TO_COVERAGE and fxCoverageAlpha() instead of the discard.
 //   * wet surfaces (Settings::wet_surfaces, fx/wetness.hpp): in the rain, lit and baked draws into the game picture
@@ -45,6 +46,7 @@
 #include "effects/ao_volume.hpp"
 #include "effects/visibility.hpp"
 #include "effects/casters.hpp"
+#include "effects/shadow_casters.hpp"
 #include "effects/lamp_shadows.hpp"
 #include "effects/normal_maps.hpp"
 #include "effects/parallax_probe.hpp"
@@ -178,8 +180,7 @@ struct FfDraw
     bool parallax_untrusted = false; // ... but the texture's mask or a list takes the parallax from it (the cavity still draws)
     const NormalMapEntry *relief_entry = nullptr; // the relief texture's entry (its map ready or not): the parallax probe
     bool shadow = false;           // FX_LIGHT_SHADOW variant: submit() binds the map for `view`
-    bool caster = false;           // the shim also submits this draw into the shadow view (submit_caster)
-    std::array<float, 16> view{};  // the draw's device world -> view (the sun cascade: casters and receivers alike)
+    std::array<float, 16> view{};  // the draw's device world -> view (the sun cascade's receivers)
     // Absolute world -> view: the device's world is camera-relative (the game's Renderer moves the camera translation
     // into every world matrix and light: set_world_origin); the effects' own world data (AO volume, lamps and their
     // atlases, the location's geometry) is absolute.
@@ -189,10 +190,6 @@ struct FfDraw
     bool lamps = false;            // lit by the place's lamps with their shadows (submit() binds them for `view`)
     bool room_light = false;       // its ambient is the room light of the interior
     bool town_wall = false;        // a town's wall relit by our sun, sky and bounce (u_fxTownWall)
-    bool sun_caster = false;       // caster: the sun shadow view
-    bool lamp_caster = false;      // caster: the lamp faces its sphere reaches (characters)
-    CasterMaterial caster_material{}; // caster: how its material casts (effects/casters.hpp)
-    DrawSphere sphere{};
     std::array<std::array<float, 4>, 2> wet{}; // u_fxWet (ff_wet.sh); x of the first = 0: the draw stays dry
 };
 
@@ -208,7 +205,6 @@ class Lighting
   public:
     void configure(const fx::Settings &settings, const fx::RendererState &state);
     bool aggregate_available() const;
-    const std::array<float,3> &world_origin() const { return origin_; }
     // Creates the fixed-function programs the draws of `settings` can pick (lit / baked variants with and without
     // relief and shadow, their skinned twins, coverage, shadow casters), at most `budget` of them (reduced by the
     // number created; each is a shader link on the GPU driver). True once all exist. A settings switch calls it
@@ -243,6 +239,7 @@ class Lighting
             device_lights_origin_valid_ = false;
         origin_ = origin;
     }
+    const std::array<float, 3> &world_origin() const { return origin_; }
     void set_sky(const fx::SkyState *sky) { sky_ = sky; }
     // The weather's sun (towards it, world; its colour; above the horizon): the highlight of glossy baked surfaces
     // outdoors, whose draws have the fixed-function lights off and so no sun of their own.
@@ -263,9 +260,15 @@ class Lighting
     ParallaxProbe &probe() { return probe_; }
     SunShadows &shadows() { return shadows_; }
     TownLight &town_light() { return town_light_; }
-    // After the draw was submitted with its buffers kept (BGFX_DISCARD_NONE for buffers): the depth-only copy.
-    // The lamp faces first (buffers kept), then the sun view, which ends the draw (all bindings discarded).
-    void submit_caster(shim::Device &device, const D3DMATRIX &world, bool skinned);
+    // The shadow volumes of the frame for the picture the device is drawing now: on the first call of a frame the
+    // lights prepare their maps for the device's camera and publish them (effects/shadow_casters.hpp). False: this
+    // is not the game picture, or no light has a shadow map this frame.
+    bool shadow_volumes(shim::Device &device);
+    ShadowCasters &shadow_casters() { return shadow_casters_; }
+    Casters &casters() { return casters_; }
+    // A draw under these states is lit by the frame's sun and carries no location lightmap: what the sun's dynamic
+    // layer takes (and what receives it).
+    bool sun_lit(const shim::Device &device) const;
     // u_fxSkinTone of a character atlas (FfDraw::skin_tone); bounded partial draws accumulate its reference from the
     // vertices of that draw (the GPU copies of GEOS::AVERTEX0, model gpu_skinning.hpp).
     std::array<float, 8> skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source);
@@ -305,8 +308,8 @@ class Lighting
     // Draws of the last presented frame that used a lit / baked / coverage variant (effects profile).
     struct Counts
     {
-        uint32_t lit = 0, baked = 0, coverage = 0, relief = 0, parallax = 0, glossy = 0, shadowed = 0, casters = 0, aerial = 0,
-                 ao = 0, lamp_lit = 0, lamp_casters = 0, town_walls = 0, wet = 0;
+        uint32_t lit = 0, baked = 0, coverage = 0, relief = 0, parallax = 0, glossy = 0, shadowed = 0, aerial = 0,
+                 ao = 0, lamp_lit = 0, town_walls = 0, wet = 0;
         // Textured draws that drew without the parallax, by the reason (ParallaxMiss), so a parallax that never
         // reaches the screen shows in the "effects parallax:" line.
         std::array<uint32_t, kParallaxMisses> parallax_miss{};
@@ -374,7 +377,8 @@ class Lighting
     TownLight town_light_;
     LampShadows lamps_;
     Casters casters_; // the caster programs and material rule of the sun cascade and the lamp atlases
-    FfDraw caster_{}; // the last submitted draw's caster flags (submit -> submit_caster)
+    ShadowCasters shadow_casters_; // the frame's shadow volumes and the casters collected into them
+    bool shadow_volumes_prepared_ = false; // shadow_volumes() asked the lights this frame
     bool cube_reported_ = false;
     bool bounds_reported_ = false;
     bool aerial_port_reported_ = false;

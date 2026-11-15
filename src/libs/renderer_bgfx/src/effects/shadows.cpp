@@ -72,7 +72,7 @@ void SunShadows::set_casters(const render::EffectsLocationGeometry &geometry)
 }
 
 bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view, const std::array<float, 3> &origin,
-                         Casters &casters)
+                         Casters &casters, ShadowCasters &volumes)
 {
     if (prepared_)
         return active_;
@@ -92,7 +92,24 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
     frame.radius = kRadius;
     frame.caster_reach = kCasterReach;
     active_ = shadows_.Begin(settings_, frame);
-    if (!active_ || caster_indices_.empty())
+    if (!active_)
+        return false;
+    // The cascade as a shadow volume, in the device's world: what moves and meets it is drawn into the map by the
+    // shim's caster entry. The place's still geometry is in the map from the tiles below.
+    ShadowVolume volume;
+    volume.layer = ShadowLayer::Dynamic;
+    volume.still = caster_indices_.empty() ? 0 : render::kShadowStillLocation;
+    volume.pass = Casters::Pass::Sun;
+    volume.view = kShadowView;
+    volume.origin = origin;
+    volume.state = fx::Shadows::kCasterState;
+    // uv 0..1 -> the clip square -1..1; the depth is 0..1 already.
+    const float to_clip[16] = {2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, -1.0f, 0.0f, 1.0f};
+    std::array<float, 16> world_to_clip;
+    bx::mtxMul(world_to_clip.data(), shadows_.WorldToShadow().data(), to_clip);
+    volume.set_clip_bounds(world_to_clip, false);
+    volumes.publish(volume);
+    if (caster_indices_.empty())
         return active_;
     if (tiles_dirty_)
         build_tiles();
@@ -246,21 +263,6 @@ void SunShadows::destroy_tiles()
     if (bgfx::isValid(tiles_vb_))
         bgfx::destroy(tiles_vb_);
     tiles_vb_ = BGFX_INVALID_HANDLE;
-}
-
-void SunShadows::submit_caster(shim::Device &device, const float *world, bool skinned, Casters &casters,
-                               const CasterMaterial &material)
-{
-    const bgfx::ProgramHandle program = casters.program(device, Casters::Pass::Sun, skinned, material);
-    // The receiver's scissor and stencil stay with the receiver.
-    bgfx::setScissor(UINT16_MAX);
-    bgfx::setStencil(BGFX_STENCIL_NONE);
-    bgfx::setTransform(world);
-    bgfx::setState(fx::Shadows::kCasterState);
-    if (bgfx::isValid(program))
-        bgfx::submit(kShadowView, program);
-    else
-        bgfx::discard();
 }
 
 void SunShadows::end_frame()

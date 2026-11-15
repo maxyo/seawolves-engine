@@ -120,6 +120,18 @@ target_compile_definitions(cutout_caster_check PRIVATE NOMINMAX)
 target_compile_options(cutout_caster_check PRIVATE -fsigned-char)
 target_link_libraries(cutout_caster_check PRIVATE storm_bgfx storm_check_sdl)
 
+# shadow_casters_check: the lights collect their casters (src/effects/shadow_casters.hpp): the rules of the shadow
+# volumes without a GPU, then through the shim: a caster off screen shadows a visible receiver, a caster is submitted
+# into a volume once and only when it reaches it, skinned casters are included, still geometry stays out of the
+# dynamic layer.
+add_executable(shadow_casters_check shadow_casters_check.cpp)
+target_include_directories(shadow_casters_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/model/src" "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/model/include")
+target_compile_definitions(shadow_casters_check PRIVATE NOMINMAX)
+target_compile_options(shadow_casters_check PRIVATE -fsigned-char)
+target_link_libraries(shadow_casters_check PRIVATE storm_bgfx storm_check_sdl)
+
 # Cached lamp geometry owns texture storage independently of the game's texture wrappers. No window/GPU.
 add_executable(lamp_lifetime_check lamp_lifetime_check.cpp)
 target_include_directories(lamp_lifetime_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
