@@ -199,6 +199,36 @@ int main(int argc, char **argv)
     job.models = {.normal = normal, .height = height, .roughness = roughness, .upscale = upscale};
     job.map_size = 128;
     job.threads = 2;
+    if (argc == 3 && std::strcmp(argv[2], "--bulk-only") == 0)
+    {
+        // Obstruct only the first write, then restore the directory before Prune.
+        // This is independent of uid/permissions and uses the real CPU Session/Prepare.
+        int visited = 0;
+        const auto failed = relief::Prepare(job, [&](const relief::Progress &state) {
+            if (state.done == 0)
+            {
+                std::filesystem::remove_all(output);
+                std::ofstream(output) << "temporary output obstruction";
+            }
+            else if (state.done == 1)
+            {
+                std::filesystem::remove(output);
+                std::filesystem::create_directory(output);
+            }
+            visited = state.done;
+            return false;
+        });
+        CHECK(failed.failed == 1 && failed.prepared == 1 && visited == 2);
+        CHECK(failed.status == 2 && !failed.error.empty());
+        CHECK(!std::filesystem::exists(output / "complete.txt"));
+        CHECK(!relief::Complete(output, job.map_size, 2));
+        const auto retry = relief::Prepare(job, {});
+        CHECK(retry.status == 0 && retry.failed == 0 && retry.prepared == 1 && retry.existing == 1);
+        CHECK(relief::Complete(output, job.map_size, 2));
+        std::filesystem::remove_all(root);
+        std::printf("bulk completion checks: %d failures\n", failures);
+        return failures ? 1 : 0;
+    }
     const size_t candidates = relief::List(textures).size();
     CHECK(candidates == 2 && !relief::Complete(output, job.map_size, candidates));
     int calls = 0;

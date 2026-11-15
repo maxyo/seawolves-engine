@@ -1250,6 +1250,13 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
         if (progress && progress(state))
             result.status = 1;
     }
+    // Keep processing after a failed texture, but never bless that partial pass as complete.
+    // A subsequent CLI invocation retries missing maps and reuses those already written.
+    if (result.status == 0 && result.failed > 0)
+    {
+        result.status = 2;
+        result.error = std::to_string(result.failed) + " texture(s) failed; rerun preparation to retry";
+    }
     if (result.status == 0)
     {
         result.removed = Prune(job.textures, files, job.output, job.map_size);
@@ -1270,7 +1277,7 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
     ReleaseGpu(); // closed here, not by ncnn's exit handler after the driver's own (a crash at exit)
     Log("relief preparation %s: %d textures, %d prepared, %d already there, %d without relief, %d failed, %d stale maps "
         "removed; %.1f s (%.1f s inference, slowest texture %.0f ms), peak RSS %lld MB",
-        result.status == 1 ? "cancelled" : "done", result.total, result.prepared, result.existing, result.skipped,
+        result.status == 1 ? "cancelled" : result.status == 2 ? "failed" : "done", result.total, result.prepared, result.existing, result.skipped,
         result.failed, result.removed, result.seconds, result.infer_seconds, result.max_texture_ms, result.peak_rss_kb / 1024);
     return result;
 }

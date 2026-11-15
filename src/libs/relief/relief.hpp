@@ -138,7 +138,7 @@ struct Progress
 };
 struct Result
 {
-    int status = 0; // 0 complete, 1 cancelled, 2 error (`error` says why); failed textures alone do not make an error
+    int status = 0; // 0 complete, 1 cancelled, 2 error (`error` says why), including a partial pass with failed textures
     std::string error;
     int total = 0, prepared = 0, existing = 0, failed = 0, skipped = 0, removed = 0;
     double seconds = 0.0, infer_seconds = 0.0, max_texture_ms = 0.0;
