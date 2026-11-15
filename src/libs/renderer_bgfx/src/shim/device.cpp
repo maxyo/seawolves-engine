@@ -682,7 +682,11 @@ void Device::scene_complete()
         leave_scaled_picture(false, true);
     }
     else
+    {
         std::swap(back_color->store, post_color);
+        render::ScenePostTarget(Context::instance().Surface().generation,
+                                post_color->serial, back_color->store->serial);
+    }
     view_dirty = true;
 }
 

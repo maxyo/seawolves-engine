@@ -22,6 +22,15 @@ public:
         // a mismatch revokes its entire readiness qualification and the next frame relatches.
         return begun_ && hidden_;
     }
+    // Only the renderer-owned post-chain swap transfers target ownership.
+    // Preserve prior revocation and reject unrelated target/surface/generation changes.
+    void post_target(uint64_t generation, uint64_t surface, uint64_t before, uint64_t after) {
+        if (!begun_ || generation_ != generation || surface_ != surface || target_ != before || !after) {
+            revoked_ = true;
+            return;
+        }
+        target_ = after;
+    }
     void presented(bool advanced, bool stable) { presented_ = advanced && stable; }
     bool complete(uint64_t generation, bool already_ready = false) const {
         return begun_ && generation_ == generation && (eligible_ || (already_ready && ordinary_)) && !hidden_ && !dirty_ && !revoked_ && beauty_ && presented_;

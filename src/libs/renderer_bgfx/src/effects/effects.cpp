@@ -1314,6 +1314,10 @@ void BeginSceneWork(uint64_t frame, uint64_t surface, uint64_t target, bool stab
     load.scene_work.begin(frame, load.gate.generation(), surface, target, !load.sealed,
         load.opaque.presented(load.gate.generation()), r.pending() || r.failed, stable_target);
 }
+void ScenePostTarget(uint64_t surface, uint64_t before, uint64_t after) {
+    auto &load = effects::location_load();
+    load.scene_work.post_target(load.gate.generation(), surface, before, after);
+}
 bool HideSceneBeauty(uint64_t surface, uint64_t target) {
     auto &load = effects::location_load();
     return !load.sealed && load.scene_work.hidden(load.gate.generation(), surface, target);

@@ -3,6 +3,7 @@
 # Configured by run.py next to this file.
 cmake_minimum_required(VERSION 3.21)
 project(storm_renderer_bgfx_check LANGUAGES C CXX)
+enable_testing()
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/StormBuildCache.cmake")
 set(CMAKE_CXX_STANDARD 20)
 set(STORM_SDL_INCLUDE "" CACHE PATH "directory that contains SDL2/SDL.h")
@@ -155,6 +156,15 @@ foreach(pair IN ITEMS "scene_readiness_check;check" "scene_resources_check;resou
     target_compile_options(${target} PRIVATE -UNDEBUG)
     target_link_libraries(${target} PRIVATE storm_bgfx storm_check_sdl)
 endforeach()
+
+# Actual post-target handoff followed by Present qualification. CPU-only extracted
+# production latch/bridge control; no GPU/window and no historical git dependency.
+add_test(NAME scene_post_handoff_check
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
+        "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/post_handoff.py")
+set_tests_properties(scene_post_handoff_check PROPERTIES
+    LABELS "scene_readiness;cpu" TIMEOUT 60)
 
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"

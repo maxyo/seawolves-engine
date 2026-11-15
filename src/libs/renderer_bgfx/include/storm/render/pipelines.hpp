@@ -33,6 +33,7 @@ void SceneOpaqueDrawSubmitted(bool full_coverage, bool additive_blend);
 void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer);
 void BeginSceneWork(uint64_t frame, uint64_t surface, uint64_t target, bool stable_target);
 bool HideSceneBeauty(uint64_t surface, uint64_t target);
+void ScenePostTarget(uint64_t surface, uint64_t before, uint64_t after);
 // A draw of the game picture was submitted (the loading frame qualifies only with one).
 void SceneBeautySubmitted();
 struct SceneLoadingBudget {
