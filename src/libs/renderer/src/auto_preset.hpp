@@ -24,8 +24,10 @@
 // The relief generation and the ray bakes are held while the measurement waits on the title and while it runs
 // (renderer.cpp; effects thermal.hpp): their threads take all cores but two. The measurement starts after
 // kAutoPresetTitleSeconds of the title screen with settled effects and no background work in progress (a relief map
-// already started finishes first). Each rung then settles kAutoPresetSettleSeconds (the switch rebuilds render
-// targets and links programs; those frames are not counted) and is measured kAutoPresetMeasureSeconds, at least
+// already started finishes first). Each rung then waits until its switch is active (EffectsReport::pending: programs
+// prepared and self-tested; a first switch to «Высокая» without a program cache prepared 60 programs in 67 s on the
+// host), at least kAutoPresetSettleSeconds (the switch rebuilds render targets; those frames are not counted; the
+// renderer logs when each rung's measurement starts) and is measured kAutoPresetMeasureSeconds, at least
 // kAutoPresetMinFrames frames. Leaving the title, the app going to the background (the lifecycle's own signal, not a
 // frame gap: a slow GPU may take a second per frame) or new settings from the player abort it; nothing is stored then
 // and the next start measures again.
@@ -192,6 +194,8 @@ class AutoPresetBenchmark
     struct Step
     {
         int apply_rung = -1;   // >= 0: switch the effects to this rung of kAutoPresetRungs now
+        bool measuring = false; // the rung became active this frame (its switch prepared and settled): measured now
+        double prepared_s = 0.0; // with `measuring`: seconds from asking for the rung until it was active and settled
         bool finished = false; // Done this frame: chosen() and report() are final
         bool aborted = false;  // Aborted this frame: reason()
     };
@@ -201,6 +205,7 @@ class AutoPresetBenchmark
     // Background work must wait: the measurement runs, or waits on the title to start.
     bool holds_background(bool title) const { return running() || (phase_ == Phase::WaitingForTitle && title); }
     int chosen() const { return chosen_; }
+    int rung() const { return rung_; } // the rung asked for last (measured while running)
     const std::vector<AutoPresetResult> &results() const { return results_; }
     const std::string &reason() const { return reason_; }
 
@@ -230,6 +235,8 @@ class AutoPresetBenchmark
             {
                 if (frame.effects_ready && frame.now_s - phase_since_ >= kAutoPresetSettleSeconds)
                 {
+                    step.measuring = true;
+                    step.prepared_s = frame.now_s - phase_since_;
                     phase_ = Phase::Measuring;
                     phase_since_ = frame.now_s;
                     intervals_.clear();

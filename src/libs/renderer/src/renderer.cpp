@@ -673,6 +673,9 @@ void AutoPresetFrame()
                      r.gpu_ms >= 0.0 ? fmt::format("{:.2f} ms", r.gpu_ms) : std::string("n/a (no timer queries)"),
                      r.passes ? "holds the target" : "misses the target", r.why);
     }
+    if (step.measuring)
+        spdlog::info("graphics auto preset: {} active after {:.1f} s (switch prepared and settled); measuring it",
+                     AutoPresetRungName(autoPreset->rung()), step.prepared_s);
     if (step.aborted)
     {
         StopAutoPresetMeasurement();

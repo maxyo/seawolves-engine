@@ -24,6 +24,13 @@ struct Run
     int pending_frames = 0;          // frames the switch stays pending
     std::vector<int> applied;        // every rung the machine asked for
     size_t frame_index = 0;
+    // When set: seconds a switch to the rung stays pending (programs prepared, self-test); the previous rung keeps
+    // drawing until then, as the effects host does (advance_switch).
+    std::function<double(int rung)> prepare_s;
+    double ready_at = 0.0;
+    int asked = kAutoPresetFirstRung;
+    std::vector<std::pair<int, double>> measuring; // (rung, prepared_s) of every Step::measuring
+    bool held_while_running = true;                // holds_background whenever the measurement ran
 
     // Frames until the machine ends or `limit` seconds pass; `title(now)` says whether the title is shown, `busy(now)`
     // whether held background work is still finishing.
@@ -40,7 +47,9 @@ struct Run
             AutoPresetBenchmark::Frame frame;
             frame.now_s = now;
             frame.title = title ? title(now) : true;
-            frame.effects_ready = pending_frames == 0;
+            if (prepare_s && rung != asked && now >= ready_at)
+                rung = asked; // the switch is active: the new rung draws from the next frame
+            frame.effects_ready = prepare_s ? rung == asked : pending_frames == 0;
             frame.background_busy = busy ? busy(now) : false;
             frame.intervals_ms = intervals;
             const double gpu_ms = gpu ? gpu(rung) : -1.0;
@@ -49,13 +58,25 @@ struct Run
             if (pending_frames > 0)
                 --pending_frames;
             step = benchmark.frame(frame);
+            if (step.measuring)
+                measuring.emplace_back(benchmark.rung(), step.prepared_s);
             if (step.apply_rung >= 0)
             {
                 applied.push_back(step.apply_rung);
-                if (step.apply_rung != rung)
-                    pending_frames = 5; // programs link over a few frames
-                rung = step.apply_rung;
+                if (prepare_s)
+                {
+                    asked = step.apply_rung;
+                    ready_at = now + prepare_s(asked);
+                }
+                else
+                {
+                    if (step.apply_rung != rung)
+                        pending_frames = 5; // programs link over a few frames
+                    rung = step.apply_rung;
+                }
             }
+            if (benchmark.running() && !benchmark.holds_background(frame.title))
+                held_while_running = false;
             if (step.finished || step.aborted)
                 return step;
         }
@@ -240,5 +261,66 @@ int main()
         const std::string low = lowest.benchmark.report();
         assert(low.find("\"chosen\":0,\"render_height\":720") != std::string::npos && low.find("\"gpu_ms\":null") != std::string::npos);
     }
-    std::cout << "PASS automatic graphics preset: Test Lab devices with headroom, the 720 rung, background hold, misses, slow rungs, title wait, aborts, report\n";
+    // Each rung is measured on its own frames once its switch is really active, however long the preparation takes
+    // (Test Lab 2026-11-15 reported preset 0's numbers again after "measuring preset 1": the test driver took the rung's
+    // result line for the outcome; this pins the engine side). Every rung draws a distinct stream; while a switch is
+    // pending the previous rung keeps drawing, and none of those frames may reach the next rung's result.
+    {
+        // Rungs 1, 2, 3 (Низкая, Средняя, Высокая) hold; «Высокая» prepares 67 s (60 programs, no program cache).
+        const std::vector<float> interval{20.0f, 16.0f, 24.0f, 30.0f};
+        const std::vector<double> gpu{3.0, 5.0, 9.0, 13.0};
+        Run run;
+        run.prepare_s = [](int rung) { return rung == 3 ? 67.0 : rung == 2 ? 12.0 : 0.5; };
+        const auto step = run.drive([&](int rung, size_t) { return interval[static_cast<size_t>(rung)]; }, 300.0, {},
+                                    Timers(gpu));
+        const auto &results = run.benchmark.results();
+        assert(step.finished && run.benchmark.chosen() == 3 && results.size() == 3);
+        for (size_t i = 0; i < results.size(); ++i)
+        {
+            const int rung = static_cast<int>(i) + kAutoPresetFirstRung;
+            const auto r = static_cast<size_t>(rung);
+            if (results[i].rung != rung || results[i].p50_ms != interval[r] || results[i].max_ms != interval[r] ||
+                std::abs(results[i].gpu_ms - gpu[r]) > 1e-9 || results[i].frames < kAutoPresetMinFrames)
+            {
+                std::cerr << "FAIL rung " << rung << " measured on other frames: " << run.benchmark.report() << "\n";
+                return 1;
+            }
+        }
+        assert(run.applied == (std::vector<int>{1, 2, 3, 3}));
+        // The measurement of each rung started only after its preparation, and said so.
+        assert(run.measuring.size() == 3 && run.measuring[0].first == 1 && run.measuring[1].first == 2 &&
+               run.measuring[2].first == 3);
+        assert(run.measuring[0].second >= kAutoPresetSettleSeconds && run.measuring[0].second < kAutoPresetSettleSeconds + 0.1);
+        assert(run.measuring[1].second >= 12.0 && run.measuring[1].second < 12.1);
+        assert(run.measuring[2].second >= 67.0 && run.measuring[2].second < 67.1);
+        // The relief generation and ray bakes stay held through every preparation and measurement.
+        assert(run.held_while_running && !run.benchmark.holds_background(true));
+    }
+    // The 720 rung: «Низкая» misses, the rung below it is measured on its own frames, not «Низкая»'s again.
+    {
+        const std::vector<float> interval{25.0f, 45.0f, 60.0f, 90.0f};
+        Run run;
+        run.prepare_s = [](int) { return 2.0; };
+        const auto step = run.drive([&](int rung, size_t) { return interval[static_cast<size_t>(rung)]; }, 300.0, {},
+                                    Timers({12.0, 19.0, 40.0, 60.0}));
+        const auto &results = run.benchmark.results();
+        assert(step.finished && run.benchmark.chosen() == 0 && results.size() == 2);
+        assert(results[0].rung == 1 && !results[0].passes && results[0].p50_ms == 45.0f && results[0].gpu_ms == 19.0);
+        assert(results[1].rung == 0 && results[1].passes && results[1].p50_ms == 25.0f && results[1].max_ms == 25.0f &&
+               results[1].gpu_ms == 12.0);
+        assert(run.applied == (std::vector<int>{1, 0, 0}) && run.measuring.size() == 2 && run.measuring[1].first == 0);
+        assert(run.benchmark.report().find("\"chosen\":0,\"render_height\":720") != std::string::npos);
+    }
+    // A switch that never becomes active keeps the measurement waiting on the title (still holding the background
+    // work) without a result; leaving the title then aborts it loudly with the reason.
+    {
+        Run run;
+        run.prepare_s = [](int rung) { return rung == 2 ? 1e9 : 0.5; };
+        run.drive(Device({8, 8, 8, 8}), 120.0, {}, Timers({4, 4, 4, 4}));
+        assert(run.benchmark.running() && run.benchmark.results().size() == 1 && run.measuring.size() == 1 &&
+               run.held_while_running);
+        const auto step = run.drive(Device({8, 8, 8, 8}), 10.0, [](double) { return false; });
+        assert(step.aborted && run.benchmark.reason() == "the title screen was left");
+    }
+    std::cout << "PASS automatic graphics preset: Test Lab devices with headroom, the 720 rung, background hold, misses, slow rungs, title wait, aborts, report, distinct frames per rung after long preparations\n";
 }
