@@ -617,16 +617,6 @@ void BeginScenePipelines(const char *scene)
     shim::PipelineSets::instance().begin_scene(scene);
 }
 
-void RegisterPipelineProgram(const char *vertex_shader, const char *fragment_shader, bgfx::ProgramHandle program)
-{
-    shim::PipelineSets::instance().register_program(vertex_shader, fragment_shader, program);
-}
-
-void UnregisterPipelineProgram(bgfx::ProgramHandle program)
-{
-    shim::PipelineSets::instance().unregister_program(program);
-}
-
 bool HoldSceneReveal()
 {
     const bool pipelines = shim::PipelineSets::instance().hold_reveal(GetSceneLoadStatus().active);

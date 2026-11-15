@@ -5,7 +5,6 @@
 // other backends.
 #pragma once
 
-#include <bgfx/bgfx.h>
 #include "scene_load_status.hpp"
 
 namespace storm::shim { struct BaseTexture; }
@@ -49,12 +48,5 @@ void RequireSceneTexture(shim::BaseTexture *texture);
 void FailSceneTexture(const char *name);
 // Explicit retry keeps the same required assets but starts a new generation. No automatic timer-based reveal.
 bool RetrySceneResources(uint64_t generation);
-
-
-// Game thread: a program made outside the shim (the interface's), by the names its shaders were created with
-// (storm::render::CreateShader). Pipelines recorded for it wait for it instead of being forgotten and are created
-// ahead once it is registered. Unregister it before bgfx::destroy.
-void RegisterPipelineProgram(const char *vertex_shader, const char *fragment_shader, bgfx::ProgramHandle program);
-void UnregisterPipelineProgram(bgfx::ProgramHandle program);
 
 } // namespace storm::render
