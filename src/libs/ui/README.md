@@ -106,11 +106,10 @@ The documented fallbacks: with no game root and no picture loader, game pictures
 "unavailable" (one info line) and keep their neutral placeholder. Code that throws is the
 exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, a handler, its
 `Back`, a text answer) that throws is an error line naming the screen, the interface, the call and
-the exception, the danger toast `ui.error.screen`, and the ported screen closes for the rest of the
-opening, the generic layout drawing the interface; the generic layout throwing closes the
-interface (the engine's back). A HUD scene or the spyglass overlay that throws is an error line, the
-toast `ui.error.hud`, and it is off for the rest of the session (its modes show the game-menu button
-only). A state consumer that throws drops that state with an error line. The game session goes on.
+the exception, the danger toast `ui.error.screen`, and the interface closes through the engine's
+back (no replacement layout is built; the generic layout throwing closes it the same way). A HUD
+scene or the spyglass overlay that throws is an error line, the toast `ui.error.hud`, and it is off
+for the rest of the session (its modes show the game-menu button only). A state consumer that throws drops that state with an error line. The game session goes on.
 
 Over the game the platform asks `Host::WantsTouch` at pointer-down and gives the UI only
 the pointers that land on it; everything else stays the game's. Inside the UI each pointer

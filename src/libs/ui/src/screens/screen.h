@@ -335,9 +335,8 @@ class Router
     // else thrown) is reported by Failed and false returned.
     template <class Call> bool Guarded(const std::string &where, Call &&call);
     // A screen threw: an error line naming the screen, the interface, the call and the exception,
-    // the player's danger toast (ui.error.screen), and the ported screen is closed for the rest
-    // of this opening: the generic layout draws the interface. The generic layout throwing too
-    // closes the interface (the engine's back). A logged, explicit fallback, never a quiet one.
+    // the player's danger toast (ui.error.screen), and the interface is closed through the
+    // engine's back. No replacement layout is built for a screen that threw.
     void Failed(const std::string &where, const std::string &what);
     // The boundary of state consumer code: a throw is an error line and the state is dropped
     // (the screen in use stays: a channel's data is not the screen's). False when it threw.
@@ -365,9 +364,6 @@ class Router
     // it appears, not again at every build while it stays.
     std::set<std::string> notices_shown_, notices_building_;
     std::string rejection_;
-    // The ported screen that threw in this opening (Failed): the generic layout draws the
-    // interface until it is opened again. Empty = none.
-    std::string failed_;
     // Shared «Прочее» sheet and reading sheet.
     bool extras_open_ = false;
     std::string reading_title_, reading_text_;
