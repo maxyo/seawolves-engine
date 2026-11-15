@@ -140,35 +140,19 @@ LightmapTexels RasterizeLightmap(std::span<const Vec3> positions, std::span<cons
     return out;
 }
 
-std::vector<uint8_t> SkyVisibility(const Occluders &occluders, const LightmapTexels &texels, float reach, int rays,
-                                   unsigned threads)
+std::vector<uint8_t> TexelSky(const LightmapTexels &texels, const VisibilityVolume &volume, const std::vector<uint8_t> &near_sky)
 {
     std::vector<uint8_t> out(texels.texel.size(), 255);
-    ParallelRanges(texels.texel.size(), threads, [&](size_t first, size_t last) {
-        Occluders::Scratch scratch;
-        for (size_t i = first; i < last; ++i)
-        {
-            const Vec3 &n = texels.normal[i];
-            Vec3 t, b;
-            Basis(n, t, b);
-            const Vec3 o{texels.position[i][0] + n[0] * kSurfaceOffset, texels.position[i][1] + n[1] * kSurfaceOffset,
-                         texels.position[i][2] + n[2] * kSurfaceOffset};
-            int open = 0;
-            const float rotation = static_cast<float>((i * 2654435761u) % 1000) * 0.0062831853f; // per texel: no banding
-            for (int r = 0; r < rays; ++r)
-            {
-                // Cosine-weighted directions over the hemisphere (a spiral).
-                const float u = (static_cast<float>(r) + 0.5f) / static_cast<float>(rays);
-                const float radius = std::sqrt(u), phi = 2.3999632f * static_cast<float>(r) + rotation;
-                const float up = std::sqrt(std::max(0.0f, 1.0f - u));
-                const Vec3 d{radius * std::cos(phi) * t[0] + radius * std::sin(phi) * b[0] + up * n[0],
-                             radius * std::cos(phi) * t[1] + radius * std::sin(phi) * b[1] + up * n[1],
-                             radius * std::cos(phi) * t[2] + radius * std::sin(phi) * b[2] + up * n[2]};
-                open += occluders.Occluded(o, d, reach, scratch) ? 0 : 1;
-            }
-            out[i] = static_cast<uint8_t>(std::lround(255.0f * static_cast<float>(open) / static_cast<float>(rays)));
-        }
-    });
+    if (volume.Empty() || near_sky.size() != volume.Cells())
+        return out;
+    for (size_t i = 0; i < out.size(); ++i)
+    {
+        // One cell off the surface, as the shader reads the volume: the texel's own cell may lie in the ground.
+        const Vec3 &p = texels.position[i], &n = texels.normal[i];
+        out[i] = static_cast<uint8_t>(std::lround(255.0f * SampleCells(volume, near_sky, {p[0] + n[0] * volume.cell,
+                                                                                         p[1] + n[1] * volume.cell,
+                                                                                         p[2] + n[2] * volume.cell})));
+    }
     return out;
 }
 
@@ -179,7 +163,6 @@ std::vector<uint8_t> SunVisibility(const Occluders &occluders, const LightmapTex
     Vec3 st, sb;
     Basis(sun, st, sb);
     ParallelRanges(texels.texel.size(), threads, [&](size_t first, size_t last) {
-        Occluders::Scratch scratch;
         for (size_t i = first; i < last; ++i)
         {
             const Vec3 &n = texels.normal[i];
@@ -199,7 +182,7 @@ std::vector<uint8_t> SunVisibility(const Occluders &occluders, const LightmapTex
                              texels.position[i][2] + n[2] * kSurfaceOffset + t[2] * jx + b[2] * jy};
                 const Vec3 d = Normalize({sun[0] + st[0] * dx + sb[0] * dy, sun[1] + st[1] * dx + sb[1] * dy,
                                           sun[2] + st[2] * dx + sb[2] * dy});
-                lit += occluders.Occluded(o, d, kSunRayReach, scratch) ? 0 : 1;
+                lit += occluders.Occluded(o, d, kSunRayReach) ? 0 : 1;
             }
             // The sun's direct light on the texel: the visible share times the cosine (a low sun lights the ground
             // less than a high one, the walls facing it more).
@@ -364,11 +347,14 @@ TownWallTone CalibrateTownWalls(std::span<const Vec3> positions, std::span<const
     std::vector<float> lum(positions.size(), -1.0f), sky(positions.size(), 0.0f);
     std::vector<uint8_t> shaded(positions.size(), 0);
     ParallelRanges(positions.size(), threads, [&](size_t first, size_t last) {
-        Occluders::Scratch scratch;
         for (size_t v = first; v < last; ++v)
         {
-            // Walls outside what the occluders cover (a backdrop island) are not the place's: left out.
-            if (!used[v] || !occluders.Covers(positions[v]))
+            // Walls beyond the sun rays' reach around the volume (a backdrop island) are not the place's: left out.
+            bool within = used[v] != 0;
+            for (int k = 0; k < 3 && within; ++k)
+                within = positions[v][k] >= volume.origin[k] - kSunRayReach &&
+                         positions[v][k] <= volume.origin[k] + volume.cell * static_cast<float>(volume.size[k]) + kSunRayReach;
+            if (!within)
                 continue;
             const float l = std::sqrt(Dot(normal[v], normal[v]));
             if (l < 1e-8f)
@@ -381,7 +367,7 @@ TownWallTone CalibrateTownWalls(std::span<const Vec3> positions, std::span<const
             // In the shade of the bake's sun: facing away, or its ray closed.
             const Vec3 o{positions[v][0] + n[0] * kSurfaceOffset, positions[v][1] + n[1] * kSurfaceOffset,
                          positions[v][2] + n[2] * kSurfaceOffset};
-            shaded[v] = Dot(n, bake) <= 0.05f || occluders.Occluded(o, bake, kSunRayReach, scratch) ? 1 : 0;
+            shaded[v] = Dot(n, bake) <= 0.05f || occluders.Occluded(o, bake, kSunRayReach) ? 1 : 0;
         }
     });
     double open_sum = 0.0, open_sky = 0.0, bin_sum[TownWallTone::kSkyBins] = {};
@@ -418,23 +404,6 @@ TownWallTone CalibrateTownWalls(std::span<const Vec3> positions, std::span<const
     }
     wall.valid = true;
     return wall;
-}
-
-std::vector<uint8_t> TexelBounce(const LightmapTexels &texels, const BounceField &field, float offset, unsigned threads)
-{
-    std::vector<uint8_t> out(texels.texel.size() * 3, 0);
-    if (field.Empty())
-        return out;
-    ParallelRanges(texels.texel.size(), threads, [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i)
-        {
-            const Vec3 &p = texels.position[i], &n = texels.normal[i];
-            const Rgb e = field.Irradiance({p[0] + n[0] * offset, p[1] + n[1] * offset, p[2] + n[2] * offset}, n);
-            for (int c = 0; c < 3; ++c)
-                out[i * 3 + c] = static_cast<uint8_t>(std::lround(255.0f * std::clamp(e[c], 0.0f, 1.0f)));
-        }
-    });
-    return out;
 }
 
 } // namespace storm::fx

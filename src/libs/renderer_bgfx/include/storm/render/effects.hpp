@@ -208,9 +208,9 @@ struct EffectsLampFlame
 void SetEffectsLamps(std::span<const EffectsPointLight> lamps, std::span<const EffectsLampFlame> flames);
 
 
-// Location, once it is loaded: its still geometry (world space, triangle list), for everything the effects cast or
-// bake from it: the lamps' shadows, the room light, and in an interior the ambient-occlusion volume (read from the
-// cache or baked on a worker while the settings ask for it: fx_ao_volume). When leaving: an empty one.
+// Location, once it is loaded: its still geometry as it is drawn (world space, triangle list), for everything the
+// effects cast or bake from it: the lamps' shadows, the room light, the place's probes (its visibility volume, in an
+// interior the ambient-occlusion volume; read from the cache or baked on the bake threads). When leaving: an empty one.
 struct EffectsLocationGeometry
 {
     std::string_view name; // names it in the log
@@ -231,14 +231,10 @@ struct EffectsLocationGeometry
     // What the place is: most of where one walks lies under a roof (measured by the location from its walk patch
     // and collision data; rooms, caves, a ship's hold and cabins, whatever the scripts say of its weather).
     // room_lo..room_hi is then the box one walks in, with room for the walls and the ceiling: the room light and the
-    // AO volume are built over it (the geometry may reach far beyond and only occludes there). What a pixel gets of
+    // place's probes are laid over it (the geometry may reach far beyond and only occludes there). What a pixel gets of
     // the sun, the sky and the room's occlusion is decided per pixel by the visibility volume, not by this.
     bool interior = false;
     std::array<float, 3> room_lo{}, room_hi{};
-    // The still models' collision data (world space): what the location traces against (Location::Trace), which may
-    // close where nothing is drawn (a ceiling only the camera collides with). The visibility volume's occluders.
-    std::span<const std::array<float, 3>> collision_positions;
-    std::span<const uint32_t> collision_indices;
     // Points on the floor where one walks (from the walk patch, a few hundred): the AO volume is measured against
     // what that floor sees, so a narrow place does not go dark as a whole.
     std::span<const std::array<float, 3>> walk;

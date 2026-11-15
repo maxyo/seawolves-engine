@@ -1,5 +1,5 @@
 // One falloff for every light of the per-pixel lighting: the location's lamps, torches and candles, the carried and the
-// ships' lanterns, the game's D3D point lights on the lit models, and the bakes of their light (the bounce). The game
+// ships' lanterns, the game's D3D point lights on the lit models. The game
 // describes a light by D3D9 attenuation constants and a range, tuned by eye in gamma space: in linear light most of
 // them burn white next to the flame and are gone a few metres away (a candle falls with the fourth power of the
 // distance). Each is turned once into a windowed inverse square with a soft core:
@@ -50,8 +50,8 @@ LightShape ShapeOfGameLight(float range, float att0, float att1, float att2, con
 
 // Linear light per unit colour² at `distance` (multiply by the colour squared); fxLightFalloff of the shaders.
 float LightFalloffAt(const LightShape &shape, float distance);
-// The same in the gamma space of the game's own colours (its square root): what the baked colours, the bounce and the
-// selection of lights compare with.
+// The same in the gamma space of the game's own colours (its square root): what the baked colours and the selection of
+// lights compare with.
 float LightFalloffGammaAt(const LightShape &shape, float distance);
 
 } // namespace storm::fx

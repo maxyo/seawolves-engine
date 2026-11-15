@@ -1,5 +1,5 @@
 #include "storm/fx/skin_tone.hpp"
-#include "storm/fx/bounce.hpp"
+#include "storm/fx/texture_pixels.hpp"
 #include "storm/render/skinned_vertex.hpp"
 #include <algorithm>
 #include <cmath>
@@ -15,7 +15,7 @@ void expect(bool value,const char *what) {if(!value){std::fprintf(stderr,"FAIL %
 namespace storm::shim {
 struct TexStore {
  uint32_t width=4,height=4;std::string name="characters/test";
- std::shared_ptr<const fx::BounceTexture> skin_pixels;
+ std::shared_ptr<const fx::TexturePixels> skin_pixels;
  std::shared_ptr<const fx::SkinTone> skin_tone;
  bool skin_tone_read=false;uint32_t skin_vertex_cursor=0;std::vector<uint8_t> skin_samples;
  std::shared_ptr<int> cutout,albedo;bool lightmap=false;
@@ -29,10 +29,9 @@ struct DrawSphereSource {DrawVertices value;mutable int reads=0;DrawVertices ver
 struct Lighting {std::array<float,8> skin_tone(shim::TexStore &,const DrawSphereSource &);};
 namespace storm::fx {std::string NormalizeTexturePath(const char *p){return p;}}
 namespace storm::effects {
-std::shared_ptr<const fx::BounceTexture> next_pixels;
+std::shared_ptr<const fx::TexturePixels> next_pixels;
 std::shared_ptr<int> texture_cutout(shim::TexStore &){return {};}
-std::shared_ptr<int> texture_albedo(shim::TexStore &){return {};}
-std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &,uint32_t){return next_pixels;}
+std::shared_ptr<const fx::TexturePixels> texture_level(shim::TexStore &,uint32_t){return next_pixels;}
 struct Maps {void on_texture_loaded(shim::TexStore &,const std::string_view,const std::filesystem::path &) {}};
 struct EngineLighting {Maps maps;Maps &normal_maps(){return maps;}};
 struct Host {EngineLighting value;static Host &instance(){static Host h;return h;}EngineLighting &lighting(){return value;}};
@@ -44,8 +43,8 @@ void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &){}
 // Production functions inserted by cache_run.py here.
 PRODUCTION_FUNCTIONS
 
-std::shared_ptr<const fx::BounceTexture> pixels(int r=180,int g=120,int b=80) {
- auto p=std::make_shared<fx::BounceTexture>();p->width=p->height=4;
+std::shared_ptr<const fx::TexturePixels> pixels(int r=180,int g=120,int b=80) {
+ auto p=std::make_shared<fx::TexturePixels>();p->width=p->height=4;
  for(int i=0;i<16;++i){p->srgb.push_back(r);p->srgb.push_back(g);p->srgb.push_back(b);}return p;
 }
 std::vector<uint8_t> vertices(uint32_t n,bool face) {

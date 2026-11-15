@@ -191,7 +191,7 @@ the rest of the shift is held to twice the depth, and clamp-addressed textures h
 reads would run off their edge). On Высокая the relief also shadows itself towards the sun (fxParallaxShadow, six taps
 of the height; not indoors): the lit draws' sun term, half of the baked colours.
 The same height gives the relief's cavity on Высокая and Средняя (fxReliefCavity: the height against itself two and a
-half levels coarser, one more tap): joints, gaps and recesses take ambient and bounce in full, half of the direct light,
+half levels coarser, one more tap): joints, gaps and recesses take the ambient in full, half of the direct light,
 three quarters of the baked colours; it also draws where the parallax is off or clamped.
 Character relief is separate from masonry: Medium uses normals, High adds shallow 2-texel parallax with eight steps
 and no self-shadow, at half normal strength. Head, neck and hand bone weights suppress relief on skin and hair;

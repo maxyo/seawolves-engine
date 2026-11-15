@@ -45,7 +45,6 @@ void SunRelight::EnsureResources()
     s_position_ = bgfx::createUniform("s_fxRelightPosition", bgfx::UniformType::Sampler);
     s_normal_ = bgfx::createUniform("s_fxRelightNormal", bgfx::UniformType::Sampler);
     s_baked_ = bgfx::createUniform("s_fxRelightBaked", bgfx::UniformType::Sampler);
-    s_bounce_ = bgfx::createUniform("s_fxRelightBounce", bgfx::UniformType::Sampler);
     s_game_ = bgfx::createUniform("s_fxRelightGame", bgfx::UniformType::Sampler);
     s_sun_ = bgfx::createUniform("s_fxRelightSun", bgfx::UniformType::Sampler);
     u_matrix_ = bgfx::createUniform("u_fxRelightMtx", bgfx::UniformType::Mat4);
@@ -89,27 +88,6 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels)
     return static_cast<Map>(maps_.size() - 1);
 }
 
-void SunRelight::SetBounce(Map map, std::span<const uint8_t> rgba)
-{
-    if (map >= maps_.size())
-        return;
-    MapData &m = maps_[map];
-    Destroy(m.bounce);
-    if (rgba.size() == static_cast<size_t>(m.width) * static_cast<size_t>(m.height) * 4)
-        m.bounce = Bytes(m.width, m.height, rgba);
-}
-
-void SunRelight::SetBakedBounce(Map map, std::span<const uint8_t> baked_rgba)
-{
-    if (map >= maps_.size())
-        return;
-    MapData &m = maps_[map];
-    if (baked_rgba.size() != static_cast<size_t>(m.width) * static_cast<size_t>(m.height) * 4)
-        return;
-    Destroy(m.baked);
-    m.baked = Bytes(m.width, m.height, baked_rgba);
-}
-
 bgfx::TextureHandle SunRelight::Texture(Map map) const
 {
     return map < maps_.size() && maps_[map].composed ? maps_[map].target_texture : bgfx::TextureHandle BGFX_INVALID_HANDLE;
@@ -124,7 +102,6 @@ void SunRelight::ClearMaps()
         Destroy(m.position);
         Destroy(m.normal_sky);
         Destroy(m.baked);
-        Destroy(m.bounce);
         Destroy(m.game);
     }
     maps_.clear();
@@ -171,7 +148,7 @@ void SunRelight::Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bo
         {place_.sun[0], place_.sun[1], place_.sun[2], sun ? 1.0f : 0.0f},
         {tone.game_sky[0], tone.game_sky[1], tone.game_sky[2], tone.game_sky[3]},
         {tone.game_sky[4], tone.game_sky[5], tone.game_sky[6], tone.game_sky[7]},
-        {footprint, std::max(kSurfaceOffset, 1.5f * texel), 1.5f * texel / depth, bgfx::isValid(m.bounce) ? 1.0f : 0.0f},
+        {footprint, std::max(kSurfaceOffset, 1.5f * texel), 1.5f * texel / depth, 0.0f},
         {1.0f / static_cast<float>(m.width), 1.0f / static_cast<float>(m.height), 0.0f, 0.0f},
     }};
     SetupView(view, "fx town lightmap", m.target, static_cast<uint16_t>(m.width), static_cast<uint16_t>(m.height), true);
@@ -180,7 +157,6 @@ void SunRelight::Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bo
     bgfx::setTexture(0, s_position_, m.position);
     bgfx::setTexture(1, s_normal_, m.normal_sky);
     bgfx::setTexture(2, s_baked_, m.baked);
-    bgfx::setTexture(3, s_bounce_, bgfx::isValid(m.bounce) ? m.bounce : m.baked);
     bgfx::setTexture(4, s_game_, m.game);
     bgfx::setTexture(5, s_sun_, place_map_);
     SubmitScreenTriangle(view, compose_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
@@ -193,7 +169,7 @@ void SunRelight::Shutdown()
     Destroy(place_target_); // owns the map
     place_map_ = BGFX_INVALID_HANDLE;
     Destroy(compose_);
-    for (bgfx::UniformHandle *u : {&s_position_, &s_normal_, &s_baked_, &s_bounce_, &s_game_, &s_sun_, &u_matrix_, &u_params_})
+    for (bgfx::UniformHandle *u : {&s_position_, &s_normal_, &s_baked_, &s_game_, &s_sun_, &u_matrix_, &u_params_})
         Destroy(*u);
     place_drawn_ = false;
 }
@@ -204,7 +180,7 @@ void SunRelight::OnDeviceLost()
     place_target_ = BGFX_INVALID_HANDLE;
     place_map_ = BGFX_INVALID_HANDLE;
     compose_ = BGFX_INVALID_HANDLE;
-    for (bgfx::UniformHandle *u : {&s_position_, &s_normal_, &s_baked_, &s_bounce_, &s_game_, &s_sun_, &u_matrix_, &u_params_})
+    for (bgfx::UniformHandle *u : {&s_position_, &s_normal_, &s_baked_, &s_game_, &s_sun_, &u_matrix_, &u_params_})
         *u = BGFX_INVALID_HANDLE;
     place_drawn_ = false;
 }

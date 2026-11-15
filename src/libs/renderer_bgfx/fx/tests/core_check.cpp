@@ -2,7 +2,9 @@
 // baked noise, the sky model, lighting and point-light selection, the shadow cascade and the
 // explicit handling of unsupported settings. No GPU is needed.
 #include "storm/fx/ao_volume.hpp"
-#include "storm/fx/bounce.hpp"
+#include "storm/fx/bakes.hpp"
+#include "storm/fx/cpu_admission.hpp"
+#include "storm/fx/place_probes.hpp"
 #include "storm/fx/cutout.hpp"
 #include "storm/fx/capabilities.hpp"
 #include "storm/fx/lamp_shadows.hpp"
@@ -512,7 +514,6 @@ void CheckSupport()
     unlit.lamp_shadows = 0;
     unlit.town_light = false;
     unlit.town_walls = false;
-    unlit.bounce = false;
     unlit.gloss = false;
     unlit.parallax = ParallaxQuality::Off;
     unlit.parallax_shadow = false;
@@ -546,7 +547,6 @@ void CheckSupport()
     flat_town.shadows = ShadowQuality::Off;
     flat_town.lamp_shadows = 0;
     flat_town.ao_volume = 0;
-    flat_town.bounce = false;
     flat_town.town_walls = false;
     flat_town.gloss = false;
     flat_town.parallax = ParallaxQuality::Off;
@@ -556,13 +556,6 @@ void CheckSupport()
     flat_town.character_relief = CharacterRelief::Off;
     changes.clear();
     CHECK(!ConstrainSettings(flat_town, all, changes).town_light && changes.size() == 1);
-    // So does the bounce.
-    Settings flat_bounce = flat_town;
-    flat_bounce.town_light = false;
-    flat_bounce.bounce = true;
-    changes.clear();
-    CHECK(!ConstrainSettings(flat_bounce, all, changes).bounce && changes.size() == 1);
-    CHECK(high.bounce && Settings::FromPreset(QualityPreset::Medium).bounce && !Settings::FromPreset(QualityPreset::Low).bounce);
 
     // «Низкая» makes nothing in the background but the far LODs (and even on a device that supports everything);
     // Высокая every product. What the gates of the renderer read (effects/), and its log line.
@@ -577,11 +570,11 @@ void CheckSupport()
         const BackgroundProducts top = BackgroundProductsFor(high);
         CHECK(top.far_lods && top.visibility && top.ao_volume && top.town_light && top.town_walls && top.lamp_shadows &&
               top.sun_shadows && top.relief && top.gloss && top.upscale);
-        // The bounce and the town walls ride on what they need: no visibility volume, no bounce.
+        // What needs the lit draws goes without them: no visibility volume.
         Settings unlit = high;
         unlit.lighting_flags = kLightingNone;
         const BackgroundProducts dark = BackgroundProductsFor(unlit);
-        CHECK(!dark.visibility && !dark.bounce && !dark.relief && !dark.gloss);
+        CHECK(!dark.visibility && !dark.relief && !dark.gloss);
     }
 
     // No 3D textures: the post chain is reduced to its plain copy; MSAA is the renderer's and stays.
@@ -2013,122 +2006,6 @@ void CheckLampShadows()
     }
 }
 
-void CheckAoVolume()
-{
-    // A 6 x 3 x 6 m room, a table (top at 0.8 m), a barrel 0.7 m from the +x wall.
-    std::vector<Vec3> p;
-    std::vector<uint32_t> idx;
-    AddBox(p, idx, {-3.0f, 0.0f, -3.0f}, {3.0f, 3.0f, 3.0f});
-    AddBox(p, idx, {-0.6f, 0.76f, -0.6f}, {0.6f, 0.8f, 0.6f});
-    AddBox(p, idx, {1.7f, 0.0f, -0.3f}, {2.3f, 0.9f, 0.3f});
-    for (float z = -2.5f; z <= 2.5f; z += 1.0f) // ceiling beams across the room, 0.4 m under the ceiling
-        AddBox(p, idx, {-3.0f, 2.6f, z - 0.1f}, {3.0f, 2.8f, z + 0.1f});
-    AoBakeParams params;
-    params.threads = 1;
-    const AoGeometry geometry{p, idx};
-    const auto start = std::chrono::steady_clock::now();
-    const AoVolume volume = BakeAoVolume(geometry, params);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    std::printf("ao volume: %dx%dx%d cells of %.2f m baked in %.1f ms (1 thread)\n", volume.size[0], volume.size[1],
-                volume.size[2], volume.cell, ms);
-    CHECK(!volume.Empty());
-    CHECK(Near(volume.cell, 0.2f, 1e-6f));
-    CHECK(volume.size[0] == 32 && volume.size[1] == 17 && volume.size[2] == 32);
-    // Receivers sample half a cell off the surface along the normal (as the shader does).
-    const Vec3 up{0.0f, 1.0f, 0.0f}, west{-1.0f, 0.0f, 0.0f};
-    const float open = volume.Sample({-1.5f, 0.1f, -1.5f}, up);
-    const float under_table = volume.Sample({0.0f, 0.1f, 0.0f}, up);
-    const float corner = volume.Sample({2.9f, 0.1f, 2.9f}, up);
-    const float behind_barrel = volume.Sample({2.65f, 0.1f, 0.0f}, up);
-    const float in_front_of_barrel = volume.Sample({1.0f, 0.1f, 0.0f}, up);
-    const float mid_air = volume.Sample({-1.5f, 1.6f, -1.5f}, up);
-    const float wall = volume.Sample({2.9f, 1.5f, -1.5f}, west);
-    const float wall_under_beams = volume.Sample({2.9f, 2.35f, -1.5f}, west);
-    std::printf("ao volume: open floor %.2f, under the table %.2f, corner %.2f, behind / in front of the barrel %.2f / "
-                "%.2f, wall %.2f, wall under the beams %.2f, mid-air %.2f\n",
-                open, under_table, corner, behind_barrel, in_front_of_barrel, wall, wall_under_beams, mid_air);
-    CHECK(Near(open, kAoOpenSurface, 0.04f) && Near(wall, kAoOpenSurface, 0.04f)); // the shader's reference
-    CHECK(under_table < 0.85f * open);         // the shader scales the contrast (fx strength)
-    CHECK(behind_barrel < 0.75f * open);       // ... and behind the barrels
-    CHECK(behind_barrel < in_front_of_barrel); // ... than in front of them
-    CHECK(corner < 0.85f * open);
-    CHECK(wall > corner && wall < mid_air);
-    CHECK(mid_air > 0.9f);
-    CHECK(wall_under_beams > 0.65f * wall); // beams 0.25 m above shade a wall less than a table top shades the floor
-    CHECK(volume.At({0.0f, 50.0f, 0.0f}, up) == 1.0f); // outside the grid: open
-    // Inside the table top the cells take their open neighbours' value, not 0.
-    CHECK(volume.At({0.0f, 0.78f, 0.0f}, up) > 0.2f);
-
-    // A cramped place, a corridor 1.2 m wide and 2 m high, with its walk points: its floor is as light as an open
-    // floor (its baked colours hold how light the place is), a shelf across it still darkens the floor under it.
-    {
-        std::vector<Vec3> cp;
-        std::vector<uint32_t> cidx;
-        AddBox(cp, cidx, {-0.6f, 0.0f, -4.0f}, {0.6f, 2.0f, 4.0f});
-        AddBox(cp, cidx, {-0.6f, 0.76f, 2.0f}, {0.6f, 0.8f, 3.0f});
-        AoBakeParams walked = params;
-        for (float z = -3.5f; z <= 3.5f; z += 0.5f) // one walks along its middle, under the shelf too
-            walked.walk.push_back({0.0f, 0.0f, z});
-        const AoVolume corridor = BakeAoVolume({cp, cidx}, walked);
-        CHECK(AoBakeKey({cp, cidx}, walked) != AoBakeKey({cp, cidx}, params));
-        const float floor = corridor.Sample({0.0f, 0.1f, -1.0f}, up);
-        const float under_shelf = corridor.Sample({0.0f, 0.1f, 2.5f}, up);
-        std::printf("ao volume, corridor: floor %.2f, under the shelf %.2f\n", floor, under_shelf);
-        CHECK(floor > 0.9f * kAoOpenSurface);
-        CHECK(under_shelf < 0.85f * floor);
-    }
-
-    // The thread count does not change a single cell; the key follows geometry and parameters.
-    params.threads = 4;
-    const AoVolume threaded = BakeAoVolume(geometry, params);
-    CHECK(threaded.visibility == volume.visibility);
-    const uint64_t key = AoBakeKey(geometry, params);
-    CHECK(key == AoBakeKey(geometry, AoBakeParams{}));    // threads are not part of the key
-    AoBakeParams wider = params;
-    wider.radius = 2.0f;
-    CHECK(key != AoBakeKey(geometry, wider));
-    std::vector<Vec3> moved = p;
-    moved[0][1] += 0.01f;
-    CHECK(key != AoBakeKey({moved, idx}, params));
-
-    // Disk cache round trip and explicit refusals.
-    const std::vector<uint8_t> bytes = EncodeAoVolume(volume, key);
-    std::string error;
-    const auto decoded = DecodeAoVolume(bytes, key, error);
-    CHECK(decoded && decoded->visibility == volume.visibility && decoded->size == volume.size &&
-          decoded->origin == volume.origin && decoded->cell == volume.cell);
-    CHECK(!DecodeAoVolume(bytes, key + 1, error) && error.find("other geometry") != std::string::npos);
-    CHECK(!DecodeAoVolume(std::span(bytes).first(bytes.size() - 1), key, error) && !error.empty());
-    CHECK(!DecodeAoVolume(std::span(bytes).first(10), key, error) && !error.empty());
-
-    // Bounds: a backdrop far outside the room does not grow the grid, yet still occludes inside it.
-    std::vector<Vec3> with_backdrop = p;
-    std::vector<uint32_t> backdrop_idx = idx;
-    AddBox(with_backdrop, backdrop_idx, {-200.0f, -5.0f, -150.0f}, {250.0f, 45.0f, 120.0f});
-    AoBakeParams bounded = params;
-    bounded.bounds_lo = {-3.5f, -0.5f, -3.5f};
-    bounded.bounds_hi = {3.5f, 3.5f, 3.5f};
-    const AoVolume clipped = BakeAoVolume({with_backdrop, backdrop_idx}, bounded);
-    CHECK(clipped.size[0] == 37 && clipped.size[1] == 22 && clipped.size[2] == 37 && clipped.cell == volume.cell);
-    std::printf("ao volume, bounded: under the table %.2f, open floor %.2f\n", clipped.Sample({0.0f, 0.1f, 0.0f}, up),
-                clipped.Sample({-1.5f, 0.1f, -1.5f}, up));
-    CHECK(Near(clipped.Sample({0.0f, 0.1f, 0.0f}, up), under_table, 0.08f) &&
-          Near(clipped.Sample({-1.5f, 0.1f, -1.5f}, up), open, 0.08f)); // another cell grid
-    CHECK(AoBakeKey({with_backdrop, backdrop_idx}, bounded) != AoBakeKey({with_backdrop, backdrop_idx}, params));
-
-    // Nothing to bake: an empty volume (the caller then has no AO for the location and says so).
-    CHECK(BakeAoVolume({}, params).Empty());
-    // A huge box grows the cell to stay within the cell budget.
-    std::vector<Vec3> big;
-    std::vector<uint32_t> big_idx;
-    AddBox(big, big_idx, {0.0f, 0.0f, 0.0f}, {300.0f, 40.0f, 300.0f});
-    AoBakeParams coarse;
-    coarse.max_cells = 64 * 64 * 64;
-    coarse.radius = 0.5f;
-    const AoVolume large = BakeAoVolume({big, big_idx}, coarse);
-    CHECK(static_cast<size_t>(large.size[0]) * large.size[1] * large.size[2] <= coarse.max_cells && large.cell > 0.2f);
-}
-
 // Materials whose texture alpha cuts holes (fx/cutout.hpp): the CPU passes cut what the colour pass's alpha test cuts.
 void CheckCutout()
 {
@@ -2145,61 +2022,6 @@ void CheckCutout()
     solid[3] = 0; // one transparent texel in 4096 is not a cut-out
     CHECK(!MakeAlphaMask(solid, n, n, reference, none));
     CHECK(mask.At(0.06f, 0.06f) == 1.0f && mask.At(0.19f, 0.06f) == 0.0f && mask.At(1.06f, -0.94f) == 1.0f); // wraps
-
-    // A 2 x 2 m quad with that texture, cut into pieces of 5 cm: about half of its area stays, every piece lies on an
-    // opaque square, none on a hole.
-    std::vector<Vec3> positions = {{0.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 0.0f}, {2.0f, 1.0f, 2.0f}, {0.0f, 1.0f, 2.0f}};
-    const std::vector<std::array<float, 2>> uvs = {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}};
-    const std::vector<uint32_t> quad = {0, 1, 2, 0, 2, 3};
-    std::vector<uint32_t> pieces;
-    AppendCutTriangles(positions, pieces, uvs, quad, mask, reference, 0.05f);
-    CHECK(!pieces.empty() && pieces.size() % 3 == 0);
-    float area = 0.0f;
-    bool on_opaque = true;
-    for (size_t t = 0; t < pieces.size(); t += 3)
-    {
-        const Vec3 &a = positions[pieces[t]], &b = positions[pieces[t + 1]], &c = positions[pieces[t + 2]];
-        area += 0.5f * std::fabs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]));
-        const float u = (a[0] + b[0] + c[0]) / 6.0f, v = (a[2] + b[2] + c[2]) / 6.0f; // the quad's uv = position / 2
-        on_opaque &= mask.At(u, v) > reference && Near(a[1], 1.0f, 1e-5f);
-    }
-    CHECK(on_opaque && Near(area, 2.0f, 0.1f));
-
-    // The AO bake under a grating (the cut pieces as points of the bake's cell size; its bars and holes are 25 cm)
-    // against under a solid plate of the same size, 0.6 m above a floor: the floor under the grating sees clearly more
-    // than under the plate, and less than an open floor.
-    const auto floor_visibility = [&](bool plate, bool grating) {
-        std::vector<Vec3> p;
-        std::vector<uint32_t> idx;
-        AddBox(p, idx, {-4.0f, -0.1f, -4.0f}, {6.0f, 0.0f, 6.0f});
-        if (plate)
-            AddBox(p, idx, {0.0f, 0.6f, 0.0f}, {2.0f, 0.62f, 2.0f});
-        if (grating)
-        {
-            const auto base = static_cast<uint32_t>(p.size());
-            for (const Vec3 &corner : {Vec3{0.0f, 0.6f, 0.0f}, Vec3{2.0f, 0.6f, 0.0f}, Vec3{2.0f, 0.6f, 2.0f}, Vec3{0.0f, 0.6f, 2.0f}})
-                p.push_back(corner);
-            std::vector<std::array<float, 2>> grating_uvs(p.size(), std::array<float, 2>{0.0f, 0.0f});
-            grating_uvs[base + 1] = {1.0f, 0.0f};
-            grating_uvs[base + 2] = {1.0f, 1.0f};
-            grating_uvs[base + 3] = {0.0f, 1.0f};
-            const std::vector<uint32_t> tris = {base, base + 1, base + 2, base, base + 2, base + 3};
-            AppendCutTriangles(p, idx, grating_uvs, tris, mask, reference, 0.1f, 0.02f);
-        }
-        AoBakeParams params;
-        params.threads = 1;
-        params.bounds_lo = {-2.0f, -0.1f, -2.0f};
-        params.bounds_hi = {4.0f, 2.0f, 4.0f};
-        const AoVolume volume = BakeAoVolume({p, idx}, params);
-        return volume.Sample({1.0f, 0.1f, 1.0f}, {0.0f, 1.0f, 0.0f});
-    };
-    const float open = floor_visibility(false, false), under_plate = floor_visibility(true, false),
-                under_grating = floor_visibility(false, true);
-    std::printf("cut-out: AO on the floor: open %.2f, under a grating %.2f, under a plate %.2f\n", open, under_grating,
-                under_plate);
-    // (The volume's rays cross the grating's one-cell layer obliquely and its cells are 0.2 m: it tells a 25 cm grating
-    // from a plate only by a few per cent. Finer holes are below what it resolves.)
-    CHECK(under_plate < open - 0.15f && under_grating > under_plate + 0.03f && under_grating < open - 0.03f);
 }
 
 void CheckSunFit()
@@ -2212,7 +2034,6 @@ void CheckSunFit()
     AddBox(p, idx, {4.0f, 0.0f, 3.0f}, {9.0f, 9.0f, 7.0f});
     AddBox(p, idx, {-3.0f, 0.0f, 8.0f}, {1.0f, 4.0f, 12.0f});
     const Occluders occluders(p, idx);
-    Occluders::Scratch scratch;
     const float az = 200.0f * 0.017453293f, el = 60.0f * 0.017453293f;
     const Vec3 baked{std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
     std::vector<SunFitSample> samples;
@@ -2221,7 +2042,7 @@ void CheckSunFit()
     for (int i = 0; i < 1500; ++i)
     {
         const Vec3 q{-20.0f + 40.0f * random(), 0.0f, -20.0f + 40.0f * random()};
-        const bool shade = occluders.Occluded({q[0], 0.05f, q[2]}, baked, 200.0f, scratch);
+        const bool shade = occluders.Occluded({q[0], 0.05f, q[2]}, baked, 200.0f);
         samples.push_back({q, (shade ? 0.25f : 0.7f) + 0.15f * (random() - 0.5f)});
     }
     const SunFit fit = FitBakedSun(occluders, samples, 200.0f, 4);
@@ -2247,7 +2068,20 @@ void CheckTownLight()
     const Occluders occluders(occ, occ_idx);
     const Vec3 sun{-0.7071f, 0.7071f, 0.0f};
     const std::vector<uint8_t> vis = SunVisibility(occluders, texels, sun, 20.0f / 64.0f, 4, 2);
-    const std::vector<uint8_t> sky = SkyVisibility(occluders, texels, 10.0f, 32, 2);
+    // The sky on the texels: read from the place's probes (their near sky), one cell off the ground.
+    std::vector<Vec3> place = p;
+    std::vector<uint32_t> place_idx = idx;
+    const uint32_t first_occluder = static_cast<uint32_t>(place.size());
+    place.insert(place.end(), occ.begin(), occ.end());
+    for (const uint32_t i : occ_idx)
+        place_idx.push_back(first_occluder + i);
+    ProbeParams probe_params;
+    probe_params.cell = 0.5f;
+    probe_params.near_sky = 10.0f;
+    probe_params.threads = 2;
+    const PlaceProbes probes = BakePlaceProbes(occluders, place, place_idx, probe_params);
+    const std::vector<uint8_t> sky = TexelSky(texels, probes.visibility, probes.near_sky);
+    CHECK(TexelSky(texels, {}, {}) == std::vector<uint8_t>(texels.texel.size(), 255)); // no probes: open
     auto at = [&](const std::vector<uint8_t> &v, float x, float z) {
         const int tx = static_cast<int>((x + 10.0f) / 20.0f * 64.0f), tz = static_cast<int>((z + 10.0f) / 20.0f * 64.0f);
         for (size_t i = 0; i < texels.texel.size(); ++i)
@@ -2278,46 +2112,6 @@ void CheckTownLight()
     const float depth = (tone.a + tone.c) / (tone.a + tone.c + tone.b * 0.7071f);
     CHECK(tone.valid && tone.edges >= 50 && std::fabs(depth - 0.12f / (0.12f + 0.28f * 0.7071f)) < 0.02f);
     // The relight itself runs on the GPU (fx/sun_relight.hpp): tests/renderer_bgfx/sun_relight_check.cpp.
-}
-
-void CheckVisibility()
-{
-    // A 40 x 40 m ground; a closed hall (10 x 10 m, its ceiling 12 m up); an awning 3 m over a 6 x 6 m patch.
-    std::vector<Vec3> p;
-    std::vector<uint32_t> idx;
-    AddBox(p, idx, {-20.0f, -0.5f, -20.0f}, {20.0f, 0.0f, 20.0f});
-    AddBox(p, idx, {5.0f, 0.0f, 5.0f}, {5.3f, 12.0f, 15.0f});
-    AddBox(p, idx, {14.7f, 0.0f, 5.0f}, {15.0f, 12.0f, 15.0f});
-    AddBox(p, idx, {5.0f, 0.0f, 5.0f}, {15.0f, 12.0f, 5.3f});
-    AddBox(p, idx, {5.0f, 0.0f, 14.7f}, {15.0f, 12.0f, 15.0f});
-    AddBox(p, idx, {5.0f, 12.0f, 5.0f}, {15.0f, 12.3f, 15.0f});
-    AddBox(p, idx, {-12.0f, 3.0f, -12.0f}, {-6.0f, 3.1f, -6.0f});
-    const Occluders occluders(p, idx);
-    VisibilityParams params;
-    params.cell = 1.0f;
-    params.threads = 1;
-    const VisibilityVolume one = BakeVisibility(occluders, p, idx, params);
-    params.threads = 4;
-    const VisibilityVolume four = BakeVisibility(occluders, p, idx, params);
-    const auto open = one.Sample({-15.0f, 1.0f, 12.0f}), hall = one.Sample({10.0f, 1.5f, 10.0f}),
-               awning = one.Sample({-9.0f, 1.0f, -9.0f});
-    std::printf("visibility: %dx%dx%d cells of %.2f m; open ground sky %.2f open %.2f, hall %.2f %.2f, awning %.2f %.2f\n",
-                one.size[0], one.size[1], one.size[2], one.cell, open[0], open[1], hall[0], hall[1], awning[0], awning[1]);
-    CHECK(!one.Empty() && one.rgba == four.rgba); // the thread count does not change it
-    CHECK(open[0] > 0.9f && open[1] > 0.9f);
-    CHECK(hall[0] < 0.05f && hall[1] < 0.05f);  // a ceiling 12 m up closes it
-    // A wall read one cell off it (as ffVisibility does) on either side: the hall's side closed, the street's open.
-    const float inside_wall = one.Sample({5.3f + one.cell, 1.5f, 10.0f})[0], outside_wall = one.Sample({5.0f - one.cell, 1.5f, 10.0f})[0];
-    std::printf("visibility: by the hall's wall inside %.2f, outside %.2f\n", inside_wall, outside_wall);
-    CHECK(inside_wall < 0.15f && outside_wall > 0.5f); // outside: the 12 m wall itself hides half the sky
-    CHECK(awning[1] < 0.5f && awning[0] < open[0] - 0.3f);
-    // The cache entry: back as baked; another key is refused.
-    const uint64_t key = VisibilityKey(p, idx, params);
-    std::string error;
-    const std::optional<VisibilityVolume> back = DecodeVisibility(EncodeVisibility(one, key), key, error);
-    CHECK(back && back->rgba == one.rgba && back->size == one.size && back->cell == one.cell);
-    CHECK(!DecodeVisibility(EncodeVisibility(one, key), key + 1, error) && !error.empty());
-    CHECK(VisibilityVolume{}.Sample({0.0f, 0.0f, 0.0f})[0] == 1.0f); // none: open
 }
 
 std::atomic<int> g_hot_calls{0};
@@ -2412,52 +2206,6 @@ void CheckBakeCancel()
     ShutdownBakes();
 }
 
-void CheckOccluderBackdrop()
-{
-    // Charles_town-like: a 60 x 60 m town with a 10 m wall, and a backdrop island 18.7 km across (Nevis#31) whose
-    // nearest edge is 1 km off. All of it: the cap coarsens the grid (logged as an error). Within the town's box grown
-    // by the sun's reach: the island is left out, the cells stay 2 m, and the wall's shadow is the same.
-    std::vector<Vec3> positions = {{0.0f, 0.0f, 0.0f},  {60.0f, 0.0f, 0.0f},  {60.0f, 0.0f, 60.0f}, {0.0f, 0.0f, 60.0f},
-                                   {30.0f, 0.0f, 10.0f}, {30.0f, 0.0f, 50.0f}, {30.0f, 10.0f, 50.0f}, {30.0f, 10.0f, 10.0f}};
-    std::vector<uint32_t> indices = {0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7};
-    const std::vector<Vec3> town(positions.begin(), positions.end());
-    constexpr int kSide = 40; // the island: a 40 x 40 vertex mesh, 18.7 km across, up to 600 m high
-    const uint32_t first = static_cast<uint32_t>(positions.size());
-    for (int z = 0; z < kSide; ++z)
-        for (int x = 0; x < kSide; ++x)
-        {
-            const float u = static_cast<float>(x) / (kSide - 1), v = static_cast<float>(z) / (kSide - 1);
-            const float height = 600.0f * std::sin(3.14159f * u) * std::sin(3.14159f * v);
-            positions.push_back({1060.0f + 18700.0f * u, height, -9000.0f + 18700.0f * v});
-        }
-    for (int z = 0; z + 1 < kSide; ++z)
-        for (int x = 0; x + 1 < kSide; ++x)
-        {
-            const uint32_t a = first + z * kSide + x;
-            indices.insert(indices.end(), {a, a + kSide, a + 1, a + 1, a + kSide, a + kSide + 1});
-        }
-    static int errors = 0;
-    errors = 0;
-    SetLogSink([](LogLevel level, const char *) { errors += level == LogLevel::Error ? 1 : 0; });
-    const Occluders all(positions, indices);
-    const int all_errors = errors;
-    errors = 0;
-    const Occluders town_only(positions, indices, BoundsOf(town, kSunRayReach));
-    const int town_errors = errors;
-    SetLogSink(nullptr);
-    Occluders::Scratch scratch;
-    const Vec3 sun{0.6f, 0.8f, 0.0f}; // from +x, 53° up: the wall at x = 30 shades the ground west of it
-    const bool shade_all = all.Occluded({25.0f, 0.05f, 30.0f}, sun, kSunRayReach, scratch);
-    const bool shade_town = town_only.Occluded({25.0f, 0.05f, 30.0f}, sun, kSunRayReach, scratch);
-    const bool open_town = town_only.Occluded({40.0f, 0.05f, 30.0f}, sun, kSunRayReach, scratch);
-    std::printf("occluder backdrop: all of it %d cap error(s); within the town's reach %d error(s), %zu of %zu triangles "
-                "left out (x %.0f..%.0f m); the wall's shade %d / %d, open ground %d\n",
-                all_errors, town_errors, town_only.Excluded(), town_only.Triangles(), town_only.ExcludedBounds().lo[0],
-                town_only.ExcludedBounds().hi[0], shade_all ? 1 : 0, shade_town ? 1 : 0, open_town ? 1 : 0);
-    CHECK(all_errors == 1 && town_errors == 0 && town_only.Excluded() == static_cast<size_t>((kSide - 1) * (kSide - 1) * 2) &&
-          shade_all && shade_town && !open_town);
-}
-
 void CheckBakeLoads()
 {
     // A result in the cache (a bake's load stage) does not wait behind a running bake: the same cache read posted as
@@ -2514,242 +2262,506 @@ void CheckBakeLoads()
     ShutdownBakes();
 }
 
-void CheckOccluderCap()
+// A closed solid with its triangles wound outwards (AddBox winds them inwards): the rays must not care which.
+void AddSolid(std::vector<Vec3> &p, std::vector<uint32_t> &i, Vec3 lo, Vec3 hi)
 {
-    // Two triangles 20 km apart (and 500 m up): 2 m cells would be 2.5e10; the grid is capped at kMaxOccluderCells
-    // with larger cells (logged), and the rays hit what they hit with the asked cells.
-    const std::vector<Vec3> positions = {{0.0f, 0.0f, 0.0f},         {0.0f, 0.0f, 1.0f},         {1.0f, 0.0f, 0.0f},
-                                         {20000.0f, 500.0f, 20000.0f}, {20000.0f, 500.0f, 20001.0f}, {20001.0f, 500.0f, 20000.0f}};
-    const std::vector<uint32_t> indices = {0, 1, 2, 3, 4, 5};
-    int errors = 0;
-    static int *g_errors = nullptr;
-    g_errors = &errors;
-    SetLogSink([](LogLevel level, const char *) { *g_errors += level == LogLevel::Error ? 1 : 0; });
-    const Occluders occluders(positions, indices);
-    SetLogSink(nullptr);
-    Occluders::Scratch scratch;
+    const size_t first = i.size();
+    AddBox(p, i, lo, hi);
+    for (size_t t = first; t + 2 < i.size(); t += 3)
+        std::swap(i[t + 1], i[t + 2]);
+}
+
+// The rays of the place's bakes (fx::Occluders over the bvh library) against a test of every triangle.
+void CheckOccluders()
+{
+    // A few hundred random triangles in a 20 m cube, a third of them with a checkerboard cut into them.
+    uint32_t seed = 11;
+    auto random = [&] { seed = seed * 1664525u + 1013904223u; return static_cast<float>(seed >> 8) / 16777216.0f; };
+    std::vector<Vec3> p;
+    std::vector<std::array<float, 2>> uv;
+    std::vector<uint32_t> idx;
+    const int n = 32;
+    AlphaMask checker;
+    checker.width = checker.height = n;
+    checker.alpha.resize(static_cast<size_t>(n) * n);
+    for (int y = 0; y < n; ++y)
+        for (int x = 0; x < n; ++x)
+            checker.alpha[static_cast<size_t>(y) * n + x] = ((x / 4 + y / 4) & 1) ? 0 : 255;
+    const auto mask = std::make_shared<const AlphaMask>(checker);
+    std::vector<Occluders::Cut> cut;
+    for (int t = 0; t < 400; ++t)
+    {
+        const Vec3 c{20.0f * random() - 10.0f, 20.0f * random() - 10.0f, 20.0f * random() - 10.0f};
+        for (int k = 0; k < 3; ++k)
+        {
+            p.push_back({c[0] + 3.0f * random() - 1.5f, c[1] + 3.0f * random() - 1.5f, c[2] + 3.0f * random() - 1.5f});
+            uv.push_back({random() * 2.0f, random() * 2.0f});
+            idx.push_back(static_cast<uint32_t>(p.size() - 1));
+        }
+        cut.push_back(t % 3 == 0 ? Occluders::Cut{mask, 0.5f} : Occluders::Cut{});
+    }
+    idx.insert(idx.end(), {0, 0, 1}); // a triangle without an area: hit by nothing, the numbers of the others stay
+    cut.push_back({});
+    const Occluders occluders(p, idx, uv, cut);
+    CHECK(!occluders.Empty() && occluders.Triangles() == 401 && occluders.Bytes() > 0);
+    // Every triangle by Möller-Trumbore, as the uniform grid it replaces tested them.
+    auto brute = [&](const Vec3 &o, const Vec3 &d, float reach, std::span<const uint32_t> ignore) {
+        std::optional<Occluders::Hit> best;
+        for (uint32_t t = 0; t < 400; ++t)
+        {
+            const Vec3 &a = p[idx[3 * t]], &b = p[idx[3 * t + 1]], &c = p[idx[3 * t + 2]];
+            const Vec3 e1{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, e2{c[0] - a[0], c[1] - a[1], c[2] - a[2]};
+            const Vec3 pv{d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]};
+            const float det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2];
+            if (std::fabs(det) < 1e-9f)
+                continue;
+            const Vec3 s{o[0] - a[0], o[1] - a[1], o[2] - a[2]};
+            const float u = (s[0] * pv[0] + s[1] * pv[1] + s[2] * pv[2]) / det;
+            const Vec3 q{s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]};
+            const float v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) / det;
+            const float dist = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) / det;
+            if (u < 0.0f || v < 0.0f || u + v > 1.0f || dist <= 1e-3f || dist >= reach || (best && dist >= best->t))
+                continue;
+            if (cut[t].mask)
+            {
+                const float w = 1.0f - u - v;
+                if (cut[t].mask->At(w * uv[idx[3 * t]][0] + u * uv[idx[3 * t + 1]][0] + v * uv[idx[3 * t + 2]][0],
+                                    w * uv[idx[3 * t]][1] + u * uv[idx[3 * t + 1]][1] + v * uv[idx[3 * t + 2]][1]) <= 0.5f)
+                    continue;
+            }
+            if (std::binary_search(ignore.begin(), ignore.end(), t))
+                continue;
+            best = Occluders::Hit{dist, t, u, v};
+        }
+        return best;
+    };
+    int rays = 0, hits = 0, wrong = 0, wrong_any = 0, through_holes = 0;
+    for (int r = 0; r < 4000; ++r)
+    {
+        const Vec3 o{24.0f * random() - 12.0f, 24.0f * random() - 12.0f, 24.0f * random() - 12.0f};
+        Vec3 d{random() - 0.5f, random() - 0.5f, random() - 0.5f};
+        const float l = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        if (l < 0.05f)
+            continue;
+        for (float &x : d)
+            x /= l;
+        const float reach = 5.0f + 25.0f * random();
+        const std::optional<Occluders::Hit> expected = brute(o, d, reach, {}), found = occluders.Closest(o, d, reach);
+        ++rays;
+        hits += expected ? 1 : 0;
+        // (A ray through a shared edge or a hair from a hole's rim may differ: none of these triangles share edges,
+        // and the count below allows a few rim cases.)
+        if (expected.has_value() != found.has_value() ||
+            (expected && (expected->triangle != found->triangle || !Near(expected->t, found->t, 1e-3f) ||
+                          !Near(expected->u, found->u, 1e-3f) || !Near(expected->v, found->v, 1e-3f))))
+            ++wrong;
+        if (occluders.Occluded(o, d, reach) != expected.has_value())
+            ++wrong_any;
+        if (expected)
+        {
+            // The same ray without its nearest triangle: the next one, or nothing.
+            const uint32_t ignore[1] = {expected->triangle};
+            if (occluders.Occluded(o, d, reach, ignore) != brute(o, d, reach, ignore).has_value())
+                ++wrong_any;
+        }
+    }
+    // What a solid version of the same triangles stops and this one lets through its holes.
+    const Occluders solid(p, idx);
+    for (int r = 0; r < 500; ++r)
+    {
+        const Vec3 o{20.0f * random() - 10.0f, 12.0f, 20.0f * random() - 10.0f}, down{0.0f, -1.0f, 0.0f};
+        const auto with_holes = occluders.Closest(o, down, 30.0f), without = solid.Closest(o, down, 30.0f);
+        through_holes += without && (!with_holes || with_holes->triangle != without->triangle) ? 1 : 0;
+    }
+    std::printf("occluders: %d rays over 400 triangles, %d hit; %d nearest hits and %d any-hits differ from the test of "
+                "every triangle; %d of 500 rays pass a hole a solid triangle would stop\n",
+                rays, hits, wrong, wrong_any, through_holes);
+    CHECK(hits > rays / 10 && wrong <= 2 && wrong_any <= 2 && through_holes > 20);
+    CHECK(Occluders({}, {}).Empty() && !Occluders({}, {}).Occluded({0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, 10.0f));
+    // Two triangles 20 km apart, a backdrop island beside a town: no grid to cap, both are hit, nothing between.
+    const std::vector<Vec3> far = {{0.0f, 0.0f, 0.0f},           {0.0f, 0.0f, 1.0f},           {1.0f, 0.0f, 0.0f},
+                                   {20000.0f, 500.0f, 20000.0f}, {20000.0f, 500.0f, 20001.0f}, {20001.0f, 500.0f, 20000.0f}};
+    const std::vector<uint32_t> far_idx = {0, 1, 2, 3, 4, 5};
+    const Occluders apart(far, far_idx);
     const Vec3 down{0.0f, -1.0f, 0.0f};
-    const bool near_hit = occluders.Occluded({0.2f, 5.0f, 0.2f}, down, 10.0f, scratch);
-    const bool far_hit = occluders.Occluded({20000.2f, 505.0f, 20000.2f}, down, 10.0f, scratch);
-    const bool between = occluders.Occluded({5000.0f, 505.0f, 5000.0f}, down, 600.0f, scratch);
-    std::printf("occluder cap: %d error line(s), hits %d %d, between %d\n", errors, near_hit ? 1 : 0, far_hit ? 1 : 0,
-                between ? 1 : 0);
-    CHECK(errors == 1 && near_hit && far_hit && !between);
+    CHECK(apart.Occluded({0.2f, 5.0f, 0.2f}, down, 10.0f) && apart.Occluded({20000.2f, 505.0f, 20000.2f}, down, 10.0f) &&
+          !apart.Occluded({5000.0f, 505.0f, 5000.0f}, down, 600.0f));
 }
 
-void CheckOccluderLargeTown()
+// The place's probes (fx/place_probes.hpp): one set of rays for the visibility, the near sky and the occlusion lobes.
+void CheckPlaceProbes()
 {
-    // Charles_town's box with the sun's reach around it, 814 x 268 x 792 m: larger cells than 2 m (logged), no error.
-    const std::vector<Vec3> positions = {{0.0f, 0.0f, 0.0f},     {0.0f, 0.0f, 1.0f},     {1.0f, 0.0f, 0.0f},
-                                         {814.0f, 268.0f, 792.0f}, {813.0f, 268.0f, 792.0f}, {814.0f, 268.0f, 791.0f}};
-    const std::vector<uint32_t> indices = {0, 1, 2, 3, 4, 5};
-    static int errors = 0, infos = 0;
-    errors = infos = 0;
-    SetLogSink([](LogLevel level, const char *) { ++(level == LogLevel::Error ? errors : infos); });
-    const Occluders occluders(positions, indices);
-    SetLogSink(nullptr);
-    std::printf("occluder large town: %d error(s), %d info line(s)\n", errors, infos);
-    CHECK(errors == 0 && infos == 1);
-}
-
-void CheckBounce()
-{
-    // A 40 x 40 m red ground and a grey wall 10 m high along z at x 5..5.3; the sun 60° up from -x lights the ground
-    // and the wall's west face, the wall's east face and the ground east of it up to 5.8 m stand in its shadow.
-    // The game's winding (D3D: clockwise front faces, left-handed): the cross product of the edges faces out.
+    // Outdoors: a 40 x 40 m ground; a closed hall (10 x 10 m, its ceiling 12 m up); an awning 3 m over a 6 x 6 m patch.
     std::vector<Vec3> p;
     std::vector<uint32_t> idx;
-    AddBox(p, idx, {-20.0f, -0.5f, -20.0f}, {20.0f, 0.0f, 20.0f});
-    const size_t ground_triangles = idx.size() / 3;
-    AddBox(p, idx, {5.0f, 0.0f, -20.0f}, {5.3f, 10.0f, 20.0f});
-    for (size_t t = 0; t < idx.size(); t += 3)
-        std::swap(idx[t + 1], idx[t + 2]); // AddBox winds inwards
-    std::vector<uint32_t> texture(idx.size() / 3, 1);
-    std::fill(texture.begin(), texture.begin() + ground_triangles, 0u);
-    const BounceTexture red{1, 1, {153, 26, 26}}, grey{1, 1, {102, 102, 102}}; // 0.6, 0.1, 0.1 and 0.4
-    const std::vector<const BounceTexture *> textures = {&red, &grey};
-    const std::vector<std::array<float, 2>> uvs(p.size(), {0.0f, 0.0f});
+    AddSolid(p, idx, {-20.0f, -0.5f, -20.0f}, {20.0f, 0.0f, 20.0f});
+    AddSolid(p, idx, {5.0f, 0.0f, 5.0f}, {5.3f, 12.0f, 15.0f});
+    AddSolid(p, idx, {14.7f, 0.0f, 5.0f}, {15.0f, 12.0f, 15.0f});
+    AddSolid(p, idx, {5.0f, 0.0f, 5.0f}, {15.0f, 12.0f, 5.3f});
+    AddSolid(p, idx, {5.0f, 0.0f, 14.7f}, {15.0f, 12.0f, 15.0f});
+    AddSolid(p, idx, {5.0f, 12.0f, 5.0f}, {15.0f, 12.3f, 15.0f});
+    AddSolid(p, idx, {-12.0f, 3.0f, -12.0f}, {-6.0f, 3.1f, -6.0f});
     const Occluders occluders(p, idx);
-    BounceGeometry geometry{p, uvs, idx, texture, textures};
-    BounceGrid grid;
-    grid.cell = 1.0f;
-    grid.origin = {-10.0f, -1.0f, -6.0f};
-    grid.size = {30, 14, 12};
-    BounceParams params;
-    params.surfel = 1.0f;
-    params.rays = 64;
-    params.threads = 4;
-    const auto started = std::chrono::steady_clock::now();
-    const BounceScene scene = BuildBounceScene(occluders, geometry, grid, params);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-    CHECK(!scene.Empty() && scene.stride == 1 && scene.untextured == 0);
-    const float elevation = 60.0f * 0.017453293f;
-    const Vec3 sun{-std::cos(elevation), std::sin(elevation), 0.0f};
-    const SurfelLight light = SunOnSurfels(occluders, scene, sun, {1.0f, 1.0f, 1.0f}, 4);
-    const BounceField field = GatherBounce(scene, light, 4);
-    // Read one cell off the surface, as ffBounce does.
-    const Rgb shaded_wall = field.Irradiance({5.3f + 1.0f, 3.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
-    const Rgb lit_ground = field.Irradiance({14.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
-    const Rgb shaded_ground = field.Irradiance({7.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
-    const Rgb lit_wall = field.Irradiance({5.0f - 1.0f, 3.0f, 0.0f}, {-1.0f, 0.0f, 0.0f});
-    std::printf("bounce: %zu surfels, %zu points x %d rays in %.0f ms; shaded wall %.3f %.3f %.3f, lit ground %.3f, shaded "
-                "ground %.3f, lit wall %.3f\n",
-                scene.position.size(), scene.Points(), scene.rays, ms, shaded_wall[0], shaded_wall[1], shaded_wall[2],
-                lit_ground[0], shaded_ground[0], lit_wall[0]);
-    // The shaded wall takes the lit red ground's light, reddish: the lit ground (0.6 x sin 60°) fills a view factor of
-    // (sin 32° - sin 12.3°) / 2 = 0.16 of it, 0.08 (the L1 lobe gives a little less).
-    CHECK(shaded_wall[0] > 0.05f && shaded_wall[0] > 2.0f * shaded_wall[1]);
-    // A lit floor does not relight itself from the cell above it: far from the wall it gets almost nothing.
-    CHECK(lit_ground[0] < 0.25f * shaded_wall[0]);
-    // The shaded ground by the wall sees the lit ground beyond the shadow (and the wall above it is in shade too).
-    CHECK(shaded_ground[0] > lit_ground[0]);
-    // The lit wall faces the lit red ground too.
-    CHECK(lit_wall[0] > 0.08f && lit_wall[0] > 2.0f * lit_wall[2]);
-    // No sun, no bounce; the lamps light by their falloff and shadow: a lamp 1 m east of the wall lights the shaded
-    // side, its light comes back to the wall from the ground.
-    CHECK(GatherBounce(scene, SunOnSurfels(occluders, scene, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 1), 1).Energy() == 0.0);
-    const Lamp lamp{{6.3f, 2.0f, 0.0f}, {2.0f, 1.5f, 0.8f}, 6.0f, 1.0f, 0.4f};
-    const float holder[1] = {0.2f};
-    const std::vector<uint32_t> no_fixture[1];
-    const BounceField lamps = GatherBounce(scene, LampsOnSurfels(occluders, scene, std::span(&lamp, 1), holder, no_fixture, 4), 4);
-    const Rgb by_lamp = lamps.Irradiance({5.3f + 1.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
-    const Rgb behind_wall = lamps.Irradiance({5.0f - 1.0f, 1.0f, 0.0f}, {-1.0f, 0.0f, 0.0f});
-    std::printf("bounce: by the lamp %.3f %.3f %.3f, behind the wall %.4f\n", by_lamp[0], by_lamp[1], by_lamp[2], behind_wall[0]);
-    CHECK(by_lamp[0] > 0.02f && behind_wall[0] < 0.01f * by_lamp[0]);
-    // The threads do not change it; the cache entry comes back as baked, another key is refused.
+    ProbeParams params;
+    params.cell = 1.0f;
+    params.near_sky = 10.0f;
     params.threads = 1;
-    const BounceScene one = BuildBounceScene(occluders, geometry, grid, params);
-    CHECK(one.hit == scene.hit && one.inside == scene.inside && one.link == scene.link);
-    const uint64_t key = BounceKey(geometry, grid, params);
+    const PlaceProbes one = BakePlaceProbes(occluders, p, idx, params);
+    params.threads = 4;
+    const PlaceProbes four = BakePlaceProbes(occluders, p, idx, params);
+    const VisibilityVolume &v = one.visibility;
+    const auto open = v.Sample({-15.0f, 1.0f, 12.0f}), hall = v.Sample({10.0f, 1.5f, 10.0f}), awning = v.Sample({-9.0f, 1.0f, -9.0f});
+    std::printf("probes: %dx%dx%d cells of %.2f m, %.2f million rays; open ground sky %.2f open %.2f, hall %.2f %.2f, awning "
+                "%.2f %.2f\n",
+                v.size[0], v.size[1], v.size[2], v.cell, static_cast<double>(one.rays) * 1e-6, open[0], open[1], hall[0],
+                hall[1], awning[0], awning[1]);
+    // The thread count does not change a byte of it.
+    CHECK(!one.Empty() && v.sky_open == four.visibility.sky_open && one.near_sky == four.near_sky && one.ao.Empty());
+    CHECK(one.rays == static_cast<uint64_t>(v.Cells()) * kSkyRays); // outdoors: the sky's rays only
+    CHECK(open[0] > 0.9f && open[1] > 0.9f);
+    CHECK(hall[0] < 0.05f && hall[1] < 0.05f); // a ceiling 12 m up closes it
+    // A wall read one cell off it (as ffVisibility does) on either side: the hall's side closed, the street's open.
+    const float inside_wall = v.Sample({5.3f + v.cell, 1.5f, 10.0f})[0], outside_wall = v.Sample({5.0f - v.cell, 1.5f, 10.0f})[0];
+    std::printf("probes: by the hall's wall inside %.2f, outside %.2f\n", inside_wall, outside_wall);
+    CHECK(inside_wall < 0.15f && outside_wall > 0.4f); // outside: the 12 m wall itself hides half the sky
+    CHECK(awning[1] < 0.5f && awning[0] < open[0] - 0.3f);
+    // The near sky (10 m): the hall's 12 m ceiling is beyond it, its walls are not; the awning closes it as the far one.
+    const float near_hall = SampleCells(v, one.near_sky, {10.0f, 1.5f, 10.0f}), near_open = SampleCells(v, one.near_sky, {-15.0f, 1.0f, 12.0f}),
+                near_awning = SampleCells(v, one.near_sky, {-9.0f, 1.0f, -9.0f});
+    std::printf("probes: near sky in the hall %.2f, open ground %.2f, under the awning %.2f\n", near_hall, near_open, near_awning);
+    CHECK(near_hall > hall[0] + 0.2f && near_open > 0.9f && near_awning < near_open - 0.3f);
+    CHECK(VisibilityVolume{}.Sample({0.0f, 0.0f, 0.0f})[0] == 1.0f); // none: open
+    // The cells stay within the budget and a 3D texture's side.
+    ProbeParams coarse = params;
+    coarse.cell = 0.05f;
+    coarse.max_cells = 32 * 32 * 32;
+    const PlaceProbes few = BakePlaceProbes(occluders, p, idx, coarse);
+    CHECK(few.visibility.Cells() <= coarse.max_cells && few.visibility.cell > 0.05f);
+    CHECK(BakePlaceProbes(occluders, {}, {}, params).Empty()); // nothing to lay them over
+
+    // An interior: a 6 x 3 x 6 m room (its walls face inwards), a table (top at 0.8 m), a barrel 0.7 m from the +x
+    // wall, ceiling beams 0.4 m under the ceiling; the occlusion lobes on the room's cells.
+    std::vector<Vec3> rp;
+    std::vector<uint32_t> ridx;
+    AddBox(rp, ridx, {-3.0f, 0.0f, -3.0f}, {3.0f, 3.0f, 3.0f});
+    AddSolid(rp, ridx, {-0.6f, 0.76f, -0.6f}, {0.6f, 0.8f, 0.6f});
+    AddSolid(rp, ridx, {1.7f, 0.0f, -0.3f}, {2.3f, 0.9f, 0.3f});
+    for (float z = -2.5f; z <= 2.5f; z += 1.0f)
+        AddSolid(rp, ridx, {-3.0f, 2.6f, z - 0.1f}, {3.0f, 2.8f, z + 0.1f});
+    const Occluders room(rp, ridx);
+    ProbeParams interior;
+    interior.cell = 0.2f;
+    interior.max_cells = 1u << 20;
+    interior.turned = false;
+    interior.ao_radius = 1.5f;
+    interior.threads = 1;
+    const auto started = std::chrono::steady_clock::now();
+    const PlaceProbes probes = BakePlaceProbes(room, rp, ridx, interior);
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    const AoVolume &volume = probes.ao;
+    std::printf("probes, a room: %dx%dx%d cells of %.2f m, %.2f million rays in %.0f ms (1 thread)\n", volume.size[0],
+                volume.size[1], volume.size[2], volume.cell, static_cast<double>(probes.rays) * 1e-6, ms);
+    CHECK(!volume.Empty() && Near(volume.cell, 0.2f, 1e-6f) && volume.size == probes.visibility.size);
+    CHECK(volume.size[0] == 32 && volume.size[1] == 17 && volume.size[2] == 32);
+    // The room is closed: no sky, no sun in it.
+    const auto in_room = probes.visibility.Sample({-1.5f, 1.0f, -1.5f});
+    CHECK(in_room[0] < 0.02f && in_room[1] < 0.02f);
+    // Receivers sample one cell off the surface along the normal (as the shader does).
+    const Vec3 up{0.0f, 1.0f, 0.0f}, west{-1.0f, 0.0f, 0.0f};
+    const float floor = volume.Sample({-1.5f, 0.2f, -1.5f}, up), under_table = volume.Sample({0.0f, 0.2f, 0.0f}, up),
+                corner = volume.Sample({2.8f, 0.2f, 2.8f}, up), behind_barrel = volume.Sample({2.65f, 0.2f, 0.0f}, up),
+                in_front_of_barrel = volume.Sample({1.0f, 0.2f, 0.0f}, up), mid_air = volume.Sample({-1.5f, 1.6f, -1.5f}, up),
+                wall = volume.Sample({2.8f, 1.5f, -1.5f}, west), wall_under_beams = volume.Sample({2.8f, 2.35f, -1.5f}, west);
+    std::printf("probes, a room: open floor %.2f, under the table %.2f, corner %.2f, behind / in front of the barrel %.2f / "
+                "%.2f, wall %.2f, wall under the beams %.2f, mid-air %.2f\n",
+                floor, under_table, corner, behind_barrel, in_front_of_barrel, wall, wall_under_beams, mid_air);
+    CHECK(Near(floor, kAoOpenSurface, 0.03f) && Near(wall, kAoOpenSurface, 0.03f)); // the shader's reference
+    CHECK(under_table < 0.85f * floor);        // the shader scales the contrast (fx strength)
+    CHECK(behind_barrel < 0.75f * floor);      // ... and behind the barrels
+    CHECK(behind_barrel < in_front_of_barrel); // ... than in front of them
+    CHECK(corner < 0.85f * floor);
+    CHECK(wall > corner && wall < mid_air);
+    CHECK(mid_air > 0.9f);
+    CHECK(wall_under_beams > 0.65f * wall); // beams 0.25 m above shade a wall less than a table top shades the floor
+    CHECK(volume.At({0.0f, 50.0f, 0.0f}, up) == 1.0f); // outside the grid: open
+    // The winding does not matter: the same room with every triangle turned gives the same volume.
+    {
+        std::vector<uint32_t> turned = ridx;
+        for (size_t t = 0; t + 2 < turned.size(); t += 3)
+            std::swap(turned[t + 1], turned[t + 2]);
+        const Occluders turned_room(rp, turned);
+        interior.threads = 4;
+        CHECK(BakePlaceProbes(turned_room, rp, turned, interior).ao.visibility == volume.visibility);
+    }
+    interior.threads = 4;
+    const PlaceProbes threaded = BakePlaceProbes(room, rp, ridx, interior);
+    CHECK(threaded.ao.visibility == volume.visibility && threaded.visibility.sky_open == probes.visibility.sky_open);
+
+    // A cramped place, a corridor 1.2 m wide and 2 m high, with its walk points: its floor is as light as an open
+    // floor (its baked colours hold how light the place is), a shelf across it still darkens the floor under it.
+    {
+        std::vector<Vec3> cp;
+        std::vector<uint32_t> cidx;
+        AddBox(cp, cidx, {-0.6f, 0.0f, -4.0f}, {0.6f, 2.0f, 4.0f});
+        AddSolid(cp, cidx, {-0.6f, 0.76f, 2.0f}, {0.6f, 0.8f, 3.0f});
+        ProbeParams walked = interior;
+        for (float z = -3.5f; z <= 3.5f; z += 0.5f) // one walks along its middle, under the shelf too
+            walked.walk.push_back({0.0f, 0.0f, z});
+        const Occluders corridor_rays(cp, cidx);
+        const AoVolume corridor = BakePlaceProbes(corridor_rays, cp, cidx, walked).ao;
+        const float corridor_floor = corridor.Sample({0.0f, 0.2f, -1.0f}, up), under_shelf = corridor.Sample({0.0f, 0.2f, 2.5f}, up);
+        std::printf("probes, a corridor: floor %.2f, under the shelf %.2f\n", corridor_floor, under_shelf);
+        CHECK(corridor_floor > 0.9f * kAoOpenSurface);
+        CHECK(under_shelf < 0.85f * corridor_floor);
+        CHECK(PlaceKey({cp, cidx, {}, {}}, walked) != PlaceKey({cp, cidx, {}, {}}, interior)); // the walk points count
+    }
+
+    // Under a grating (its bars and holes 25 cm, cut by its texture's alpha) against under a solid plate of the same
+    // size, 0.6 m above a floor: the floor under the grating sees clearly more than under the plate, and less than an
+    // open floor. The rays pass the holes themselves: no pieces, no cell size between them and the grating.
+    {
+        const int n = 64;
+        AlphaMask checker;
+        checker.width = checker.height = n;
+        checker.alpha.resize(static_cast<size_t>(n) * n);
+        for (int y = 0; y < n; ++y)
+            for (int x = 0; x < n; ++x)
+                checker.alpha[static_cast<size_t>(y) * n + x] = ((x / 8 + y / 8) & 1) ? 0 : 255;
+        const auto mask = std::make_shared<const AlphaMask>(checker);
+        const auto floor_visibility = [&](bool plate, bool grating) {
+            std::vector<Vec3> gp;
+            std::vector<uint32_t> gidx;
+            AddSolid(gp, gidx, {-4.0f, -0.1f, -4.0f}, {6.0f, 0.0f, 6.0f});
+            if (plate)
+                AddSolid(gp, gidx, {0.0f, 0.6f, 0.0f}, {2.0f, 0.62f, 2.0f});
+            std::vector<std::array<float, 2>> guv(gp.size(), std::array<float, 2>{0.0f, 0.0f});
+            std::vector<Occluders::Cut> gcut(gidx.size() / 3);
+            if (grating)
+            {
+                const auto base = static_cast<uint32_t>(gp.size());
+                gp.insert(gp.end(), {Vec3{0.0f, 0.6f, 0.0f}, Vec3{2.0f, 0.6f, 0.0f}, Vec3{2.0f, 0.6f, 2.0f}, Vec3{0.0f, 0.6f, 2.0f}});
+                guv.insert(guv.end(), {{0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f}});
+                gidx.insert(gidx.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+                gcut.insert(gcut.end(), 2, Occluders::Cut{mask, 160.0f / 255.0f});
+            }
+            const Occluders rays(gp, gidx, guv, gcut);
+            ProbeParams over = interior;
+            over.lo = {-2.0f, -0.1f, -2.0f};
+            over.hi = {4.0f, 2.0f, 4.0f};
+            return BakePlaceProbes(rays, gp, gidx, over).ao.Sample({1.0f, 0.2f, 1.0f}, {0.0f, 1.0f, 0.0f});
+        };
+        const float open_floor = floor_visibility(false, false), under_plate = floor_visibility(true, false),
+                    under_grating = floor_visibility(false, true);
+        std::printf("probes, cut-out: the floor open %.2f, under a grating %.2f, under a plate %.2f\n", open_floor,
+                    under_grating, under_plate);
+        CHECK(under_plate < open_floor - 0.15f && under_grating > under_plate + 0.05f && under_grating < open_floor - 0.05f);
+    }
+}
+
+// The place's cache: one key, one file (fx/place_probes.hpp PlaceKey, PlaceFile).
+void CheckPlaceCache()
+{
+    std::vector<Vec3> p;
+    std::vector<uint32_t> idx;
+    AddSolid(p, idx, {-4.0f, -0.1f, -4.0f}, {4.0f, 0.0f, 4.0f});
+    AddSolid(p, idx, {0.0f, 1.0f, 0.0f}, {2.0f, 1.1f, 2.0f});
+    std::vector<std::array<float, 2>> uv(p.size(), std::array<float, 2>{0.25f, 0.25f});
+    AlphaMask leaves;
+    leaves.width = leaves.height = 8;
+    leaves.alpha.assign(64, 255);
+    leaves.alpha[9] = 0;
+    const auto mask = std::make_shared<const AlphaMask>(leaves);
+    std::vector<Occluders::Cut> cut(idx.size() / 3);
+    for (size_t t = 12; t < cut.size(); ++t)
+        cut[t] = {mask, 0.5f};
+    ProbeParams params;
+    params.threads = 1;
+    const uint64_t key = PlaceKey({p, idx, uv, cut}, params);
+    // The same place again: the same key, whatever the threads, whichever copy of the same mask.
+    ProbeParams threads = params;
+    threads.threads = 7;
+    const auto same_mask = std::make_shared<const AlphaMask>(leaves);
+    std::vector<Occluders::Cut> same_cut = cut;
+    for (size_t t = 12; t < same_cut.size(); ++t)
+        same_cut[t].mask = same_mask;
+    CHECK(key == PlaceKey({p, idx, uv, cut}, threads) && key == PlaceKey({p, idx, uv, same_cut}, params));
+    // The geometry: a vertex a centimetre off, another index.
+    std::vector<Vec3> moved = p;
+    moved[3][1] += 0.01f;
+    std::vector<uint32_t> turned = idx;
+    std::swap(turned[0], turned[1]);
+    CHECK(key != PlaceKey({moved, idx, uv, cut}, params) && key != PlaceKey({p, turned, uv, cut}, params));
+    // The alpha: one texel of a mask, the reference of the material, where the mask lies on a cut triangle, which
+    // triangles are cut at all. Each changes what a ray passes: another key.
+    AlphaMask torn = leaves;
+    torn.alpha[20] = 0;
+    const auto torn_mask = std::make_shared<const AlphaMask>(torn);
+    std::vector<Occluders::Cut> torn_cut = cut, sharper = cut, fewer = cut;
+    for (size_t t = 12; t < cut.size(); ++t)
+    {
+        torn_cut[t].mask = torn_mask;
+        sharper[t].reference = 0.75f;
+    }
+    fewer[12] = {};
+    std::vector<std::array<float, 2>> shifted = uv;
+    shifted[idx[3 * 12]][0] += 0.125f;
+    CHECK(key != PlaceKey({p, idx, uv, torn_cut}, params) && key != PlaceKey({p, idx, uv, sharper}, params) &&
+          key != PlaceKey({p, idx, uv, fewer}, params) && key != PlaceKey({p, idx, shifted, cut}, params) &&
+          key != PlaceKey({p, idx, uv, {}}, params));
+    // What changes no ray changes no key: the texture coordinates of a solid triangle (a texture moved or swapped on
+    // it, its colours: the key does not see them at all).
+    std::vector<std::array<float, 2>> repainted = uv;
+    repainted[idx[0]] = {0.9f, 0.1f};
+    CHECK(key == PlaceKey({p, idx, repainted, cut}, params));
+    // The grid and what the probes hold.
+    ProbeParams finer = params, near = params, lobes = params, boxed = params;
+    finer.cell = 0.25f;
+    near.near_sky = 10.0f;
+    lobes.ao_radius = 1.5f;
+    boxed.lo = {-1.0f, -1.0f, -1.0f};
+    boxed.hi = {1.0f, 1.0f, 1.0f};
+    for (const ProbeParams &other : {finer, near, lobes, boxed})
+        CHECK(key != PlaceKey({p, idx, uv, cut}, other));
+
+    // The probes' section: back as baked; a cut or foreign section is refused.
+    const Occluders occluders(p, idx, uv, cut);
+    lobes.near_sky = 5.0f;
+    lobes.turned = false;
+    const PlaceProbes probes = BakePlaceProbes(occluders, p, idx, lobes);
+    const std::vector<uint8_t> bytes = EncodeProbes(probes);
     std::string error;
-    const std::optional<BounceScene> back = DecodeBounceScene(EncodeBounceScene(one, key), key, error);
-    CHECK(back && back->hit == one.hit && back->albedo == one.albedo && back->stride == one.stride);
-    CHECK(!DecodeBounceScene(EncodeBounceScene(one, key), key + 1, error) && !error.empty());
-    // The texture: every cell of the grid, v (the light's direction) in block 1's B and A and block 2's A.
-    std::vector<uint8_t> vis(static_cast<size_t>(grid.size[0]) * grid.size[1] * grid.size[2] * 4, 0), block;
-    EncodeBounceBlocks(grid, field, {1.0f, 1.0f, 1.0f}, nullptr, vis, block);
-    CHECK(block.size() == vis.size());
-    const size_t wall_cell = ((static_cast<size_t>(6) * grid.size[1] + 4) * grid.size[0] + 16) * 4; // x 6.5, y 3.5, z 0.5
-    const float c = block[wall_cell] / 255.0f, vx = vis[wall_cell + 2] / 255.0f * 4.0f - 2.0f;
-    std::printf("bounce: the shaded wall's cell c %.3f, v.x %.2f\n", c * c * kBounceRange, vx);
-    CHECK(c * c * kBounceRange > 0.02f && vx > 0.3f); // red, from the east (the lit ground beyond the shadow)
-    // A weather's sun of half the strength, plus the lamp's field: the lamp next to the cell dominates it.
-    std::vector<uint8_t> lit_vis = vis, lit_block;
-    EncodeBounceBlocks(grid, field, {0.5f, 0.5f, 0.5f}, &lamps, lit_vis, lit_block);
-    CHECK(lit_block[wall_cell + 1] > block[wall_cell + 1] && lit_vis[wall_cell] == vis[wall_cell]); // R / G of block 1 kept
+    const std::optional<PlaceProbes> back = DecodeProbes(bytes, error);
+    CHECK(back && back->visibility.sky_open == probes.visibility.sky_open && back->visibility.size == probes.visibility.size &&
+          back->visibility.origin == probes.visibility.origin && back->visibility.cell == probes.visibility.cell &&
+          back->near_sky == probes.near_sky && back->ao.visibility == probes.ao.visibility && back->ao.size == probes.ao.size &&
+          back->rays == probes.rays);
+    CHECK(!DecodeProbes(std::span(bytes).first(bytes.size() - 1), error) && !error.empty());
+    CHECK(!DecodeProbes(std::span(bytes).first(10), error) && !error.empty());
+    std::vector<uint8_t> foreign = bytes;
+    foreign[0] ^= 0xff;
+    CHECK(!DecodeProbes(foreign, error) && !error.empty());
+
+    // The file: sections by kind and key; of a kind the last `keep` stay; another place's file is refused.
+    PlaceFile file;
+    file.Put(PlaceSection::Probes, key, bytes);
+    for (uint64_t set = 1; set <= 4; ++set)
+        file.Put(PlaceSection::LightmapSet, set, std::vector<uint8_t>(set, static_cast<uint8_t>(set)), 3);
+    file.Put(PlaceSection::LightmapSet, 2, {9, 9}, 3); // written again: it is the newest now
+    file.Put(PlaceSection::LightmapSet, 5, {5}, 3);
+    const std::vector<uint8_t> encoded = file.Encode(key);
+    const std::optional<PlaceFile> read = PlaceFile::Decode(encoded, key, error);
+    CHECK(read.has_value());
+    if (read)
+    {
+        const std::span<const uint8_t> kept = read->Find(PlaceSection::Probes, key);
+        CHECK(std::equal(kept.begin(), kept.end(), bytes.begin(), bytes.end()));
+        CHECK(read->Find(PlaceSection::LightmapSet, 1).empty() && read->Find(PlaceSection::LightmapSet, 3).empty());
+        CHECK(read->Find(PlaceSection::LightmapSet, 4).size() == 4 && read->Find(PlaceSection::LightmapSet, 5).size() == 1);
+        const std::span<const uint8_t> again = read->Find(PlaceSection::LightmapSet, 2);
+        CHECK(again.size() == 2 && again[0] == 9);
+        CHECK(read->Find(PlaceSection::Probes, key + 1).empty());
+    }
+    CHECK(!PlaceFile::Decode(encoded, key + 1, error) && error.find("another place") != std::string::npos);
+    CHECK(!PlaceFile::Decode(std::span(encoded).first(encoded.size() - 3), key, error) && !error.empty());
+    CHECK(!PlaceFile::Decode(std::span(encoded).first(6), key, error) && !error.empty());
 }
 
-// Observe the actual range scheduler without inserting a callback into a lighting kernel.
-ParallelRangeStats *g_bounce_stats = nullptr;
-std::mutex g_bounce_observe;
-std::set<std::thread::id> g_bounce_threads[2];
-std::atomic<bool> g_bounce_paused{false};
-int g_bounce_pause_stage = 0;
-const char *ObserveBounceRanges()
+// The place's bakes go before the background ones (fx/bakes.hpp BakePriority).
+void CheckBakePriority()
 {
-    const auto stage = g_bounce_stats->calls.load();
-    if (g_bounce_pause_stage != 0 && stage == static_cast<uint64_t>(g_bounce_pause_stage))
-    {
-        g_bounce_paused = true;
-        return "check: bounce stage held";
-    }
-    if (stage > 0 && stage <= 2)
-    {
-        std::lock_guard lock(g_bounce_observe);
-        g_bounce_threads[stage - 1].insert(std::this_thread::get_id());
-    }
-    return nullptr;
+    // A long background bake (a far LOD) is running, piece by piece. A bake of the place posted now starts at once on
+    // its own lane, and while it is queued or runs the background bake takes no further piece.
+    std::atomic<int> pieces{0};
+    std::atomic<bool> place_running{false}, place_done{false}, release{false};
+    std::atomic<int> pieces_at_start{-1}, pieces_while_place{-1};
+    BakeTicket background = PostBake(
+        "check: background",
+        [&] {
+            ParallelRanges(4000, 1, [&](size_t, size_t) {
+                ++pieces;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }, 1);
+        },
+        BakePriority::Background);
+    CHECK(WaitFor([&] { return pieces.load() >= 3; }));
+    const auto posted = std::chrono::steady_clock::now();
+    BakeTicket place = PostBake("check: place", [&] {
+        place_running = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(60)); // the piece the background bake was in ends
+        pieces_at_start = pieces.load();
+        while (!release)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        pieces_while_place = pieces.load();
+        place_done = true;
+    });
+    CHECK(WaitFor([&] { return place_running.load(); }));
+    const double started_ms = MsSince(posted);
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    release = true;
+    CHECK(WaitFor([&] { return place_done.load(); }));
+    const int after_place = pieces.load();
+    CHECK(WaitFor([&] { return pieces.load() > after_place + 3; })); // the background bake goes on
+    std::printf("bake priority: behind a running background bake a bake of the place started after %.1f ms; the "
+                "background bake took %d pieces while it ran, and went on after it\n",
+                started_ms, pieces_while_place.load() - pieces_at_start.load());
+    CHECK(started_ms < 100.0 && pieces_while_place.load() == pieces_at_start.load());
+    background.reset();
+    ShutdownBakes();
 }
 
-void CheckBounceCombined()
+// The bakes' threads by budget and by the device's cores (fx/bakes.hpp BakeCoresFor, CurrentBakeBudget).
+void CheckBakeBudget()
 {
-    std::vector<Vec3> walls;
-    std::vector<uint32_t> triangles;
-    AddBox(walls, triangles, {0.4f, -1.0f, -3.0f}, {0.6f, 3.0f, 3.0f});
-    const Occluders occluders(walls, triangles);
-    BounceScene scene;
-    scene.grid = {{9, 7, 5}, {-2.0f, -1.0f, -1.0f}, 0.5f};
-    scene.points = scene.grid.size;
-    scene.rays = 32;
-    for (size_t i = 0; i < 513; ++i) // odd count, piece boundaries and two-sided surfels
-    {
-        scene.position.push_back({static_cast<float>(i % 19) * 0.2f - 1.0f, 0.1f,
-                                  static_cast<float>(i % 13) * 0.2f - 1.0f});
-        scene.normal.push_back(i % 2 ? Vec3{0, 1, 0} : Vec3{1, 0, 0});
-        scene.albedo.push_back({0.6f, 0.2f, 0.1f});
-    }
-    scene.inside.resize(scene.Points());
-    scene.link.resize(scene.Points(), 7);
-    for (size_t i = 0; i < scene.Points(); ++i)
-        scene.inside[i] = i % 17 == 0;
-    for (size_t i = 0; i < scene.Points() * scene.rays; ++i)
-        scene.hit.push_back(i % 11 ? static_cast<uint32_t>(i % (scene.position.size() * 2)) : BounceScene::kMiss);
-    const Vec3 sun{0.6f, 0.8f, 0};
-    const Lamp lamp{{1.1f, 2.0f, 0}, {2, 1.5f, 0.8f}, 6, 1, 0.4f};
-    const float holders[] = {0.2f};
-    const std::vector<uint32_t> fixtures[] = {{0, 1}};
-    const auto serial_sun = GatherBounce(scene, SunOnSurfels(occluders, scene, sun, {1, 1, 1}, 1), 1);
-    const auto serial_lamps = GatherBounce(scene, LampsOnSurfels(occluders, scene, std::span(&lamp, 1), holders, fixtures, 1), 1);
-    const auto same = [](const BounceField &a, const BounceField &b) {
-        return a.points == b.points && a.origin == b.origin && a.spacing == b.spacing && a.moments == b.moments;
+    // A phone with two prime cores, three big and three small ones (cpu_capacity): behind a loading picture no cap
+    // of its own (the shared admission's permits decide); in play two, on the cores below the prime ones.
+    const std::vector<unsigned> phone = {1024, 1024, 900, 900, 900, 400, 400, 400};
+    const BakeCores loading = BakeCoresFor(BakeBudget::Loading, phone, 8), play = BakeCoresFor(BakeBudget::Play, phone, 8);
+    CHECK(loading.threads == 8 && loading.allowed.empty());
+    CHECK(play.threads == 2 && play.allowed == std::vector<unsigned>({2, 3, 4, 5, 6, 7}));
+    // One fast core and one slower: one thread in play, on the slower.
+    const std::vector<unsigned> two = {1024, 512};
+    CHECK(BakeCoresFor(BakeBudget::Play, two, 2).threads == 1 && BakeCoresFor(BakeBudget::Play, two, 2).allowed == std::vector<unsigned>({1}));
+    // No capacities (a desktop), or all the same: no core is told from another; two threads in play all the same.
+    const BakeCores desktop = BakeCoresFor(BakeBudget::Play, {}, 16);
+    const std::vector<unsigned> even(4, 1024);
+    CHECK(desktop.threads == 2 && desktop.allowed.empty());
+    CHECK(BakeCoresFor(BakeBudget::Play, even, 4).threads == 2 && BakeCoresFor(BakeBudget::Play, even, 4).allowed.empty());
+    CHECK(BakeCoresFor(BakeBudget::Play, {}, 1).threads == 1);
+
+    // The budget follows the shared admission: Loading in its opaque phase (a loading picture covers the scene),
+    // Play otherwise. In play a bake's pieces run on no more than kPlayBakeThreads threads, whatever it asks for; when
+    // the loading picture goes while it runs, the threads beyond the budget wait at their next piece.
+    CpuAdmission &admission = SharedCpuAdmission();
+    const uint64_t generation = 77;
+    const auto threads_of = [&](unsigned asked, bool shrink) {
+        std::mutex mutex;
+        std::set<std::thread::id> seen, late;
+        std::atomic<int> pieces{0};
+        ParallelRanges(4000, asked, [&](size_t, size_t) {
+            const int piece = pieces.fetch_add(1);
+            if (shrink && piece == 8)
+                admission.end(generation);
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
+            std::lock_guard lock(mutex);
+            seen.insert(std::this_thread::get_id());
+            if (piece >= 8 + 16) // every thread has asked again by then
+                late.insert(std::this_thread::get_id());
+        }, 10);
+        return std::pair<size_t, size_t>(seen.size(), late.size());
     };
-    ParallelRangeStats stats;
-    g_bounce_stats = &stats;
-    for (auto &threads : g_bounce_threads) threads.clear();
-    g_bounce_pause_stage = 0;
-    SetBakeGate(&ObserveBounceRanges);
-    const auto both = GatherBounceLights(occluders, scene, sun, std::span(&lamp, 1), holders, fixtures, 2, &stats);
-    SetBakeGate(nullptr);
-    CHECK(same(both.sun, serial_sun) && same(both.lamps, serial_lamps));
-    CHECK(stats.calls == 2 && stats.work_ns > 0 && stats.pieces > 2);
-    CHECK(!g_bounce_threads[0].empty() && g_bounce_threads[0].size() <= 2);
-    CHECK(!g_bounce_threads[1].empty() && g_bounce_threads[1].size() <= 2);
-    std::vector<uint8_t> old_vis(scene.Points() * 4, 91), new_vis = old_vis, old_block, new_block;
-    EncodeBounceBlocks(scene.grid, serial_sun, {0.3f, 0.5f, 0.8f}, &serial_lamps, old_vis, old_block, 1);
-    EncodeBounceBlocks(scene.grid, both.sun, {0.3f, 0.5f, 0.8f}, &both.lamps, new_vis, new_block, 2);
-    CHECK(old_vis == new_vis && old_block == new_block);
-    const auto night = GatherBounceLights(occluders, scene, {0, -1, 0}, std::span(&lamp, 1), holders, fixtures, 2);
-    CHECK(night.sun.Empty() && same(night.lamps, serial_lamps));
-    const auto no_lamps = GatherBounceLights(occluders, scene, sun, {}, {}, {}, 2);
-    CHECK(same(no_lamps.sun, serial_sun) && no_lamps.lamps.Energy() == 0.0);
-    const auto empty = GatherBounceLights(occluders, {}, sun, {}, {}, {}, 2);
-    CHECK(empty.sun.Empty() && empty.lamps.Empty());
-    // Exact memory fallback: >16 MiB extra SurfelLight scratch would be needed; no quality reduction.
-    BounceScene large = scene;
-    const size_t n = (16u << 20) / (2 * sizeof(Rgb)) + 1;
-    large.position.assign(n, {0, 0, 0});
-    large.normal.assign(n, {0, 0, 0}); // no ray work; exercise allocation/admission, not a slow geometry bake
-    large.albedo.assign(n, {0.6f, 0.2f, 0.1f});
-    ParallelRangeStats fallback;
-    const auto bounded = GatherBounceLights(occluders, large, sun, std::span(&lamp, 1), holders, fixtures, 2, &fallback);
-    CHECK(fallback.calls == 4 && bounded.sun.Energy() == 0.0 && bounded.lamps.Energy() == 0.0);
-    large = {};
-    // Cancel during either actual production phase. No partial field/old-generation publication after owner drop.
-    for (const int stage : {1, 2})
-    {
-        ParallelRangeStats cancelled;
-        g_bounce_stats = &cancelled;
-        g_bounce_pause_stage = stage;
-        g_bounce_paused = false;
-        std::atomic<bool> published{false}, next_done{false};
-        SetBakeGate(&ObserveBounceRanges, 60000);
-        auto job = PostBake("check: combined bounce cancellation", [&] {
-            const auto fields = GatherBounceLights(occluders, scene, sun, std::span(&lamp, 1), holders, fixtures, 2, &cancelled);
-            (void)fields;
-            published = true;
-        });
-        CHECK(WaitFor([] { return g_bounce_paused.load(); }));
-        job.reset();
-        auto next = PostBake("check: after combined bounce cancellation", [&] { next_done = true; });
-        CHECK(WaitFor([&] { return next_done.load(); }));
-        ShutdownBakes();
-        SetBakeGate(nullptr);
-        CHECK(!published && cancelled.calls == static_cast<uint64_t>(stage) && cancelled.gate_ns > 0);
-        CHECK(stage != 1 || cancelled.work_ns == 0);
-    }
-    g_bounce_stats = nullptr;
-    g_bounce_pause_stage = 0;
-    std::printf("combined bounce: exact fields/encoded bytes, one budget, fallback and two cancellation phases checked\n");
+    admission.end(generation);
+    CHECK(CurrentBakeBudget() == BakeBudget::Play);
+    const auto in_play = threads_of(8, false);
+    admission.begin(generation, true);
+    admission.opaque(generation, true);
+    CHECK(CurrentBakeBudget() == BakeBudget::Loading);
+    const auto shrunk = threads_of(8, true);
+    CHECK(CurrentBakeBudget() == BakeBudget::Play);
+    std::printf("bake budget: in play %u threads; a bake asking for 8 ran on %zu in play; one that began on %zu behind a "
+                "loading picture ended on %zu after it went\n",
+                kPlayBakeThreads, in_play.first, shrunk.first, shrunk.second);
+    CHECK(in_play.first <= kPlayBakeThreads && shrunk.second <= kPlayBakeThreads && shrunk.second >= 1);
+    CHECK(std::thread::hardware_concurrency() < 4 || shrunk.first > kPlayBakeThreads); // it did start wider
 }
 
 // fx::SeaWaves' steps (WaveClock): game time, all of it while a frame holds at most kMaxSteps * kMaxStep; 60 Hz
@@ -3144,11 +3156,6 @@ void CheckWetness()
 
 int main(int argc, char **argv)
 {
-    if (argc == 2 && std::string_view(argv[1]) == "--bounce-combined-only")
-    {
-        CheckBounceCombined();
-        return failures ? 1 : 0;
-    }
     CheckParallaxGeometry();
     if (argc == 2 && std::string_view(argv[1]) == "--parallax-geometry-only")
     {
@@ -3172,21 +3179,19 @@ int main(int argc, char **argv)
     CheckReliefModel();
     CheckReliefMaterial();
     CheckReliefRules();
-    CheckAoVolume();
     CheckFixtures();
     CheckLampShadows();
     CheckCutout();
     CheckSunFit();
     CheckTownLight();
-    CheckVisibility();
+    CheckOccluders();
+    CheckPlaceProbes();
+    CheckPlaceCache();
     CheckBakeThermal();
     CheckBakeCancel();
     CheckBakeLoads();
-    CheckOccluderCap();
-    CheckOccluderLargeTown();
-    CheckOccluderBackdrop();
-    CheckBounce();
-    CheckBounceCombined();
+    CheckBakePriority();
+    CheckBakeBudget();
     CheckParallaxTrust();
     CheckParallaxProbe();
     CheckSeaWaves();

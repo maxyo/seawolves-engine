@@ -16,12 +16,12 @@ endif()
 set(STORM_FX_SHADER_PROFILE "300_es" CACHE STRING "shaderc profile for the embedded fx shader blobs")
 include(cmake/storm_fx_shaders.cmake)
 
-# voxelizer.h (MIT, header-only): the triangle/box overlap test of the AO volume bake (src/voxelizer_impl.c).
-# Offline: -DFETCHCONTENT_SOURCE_DIR_STORM_VOXELIZER=/path/to/this/revision
+# madmann91/bvh (MIT, header-only, C++20): the bounding volume hierarchy of the place's ray bakes (src/sun_fit.cpp
+# Occluders). Offline: -DFETCHCONTENT_SOURCE_DIR_STORM_BVH=/path/to/this/revision
 include(FetchContent)
-storm_fetch_declare(storm_voxelizer
-    URL https://codeload.github.com/karimnaaji/voxelizer/tar.gz/f6ee9cf6863c034853a587f205f12183c7d57b74
-    URL_HASH SHA256=8b6971f0c8c3e79ca0feb6ef8f93cbf23378672159ebd58d458ff1996385be45
+storm_fetch_declare(storm_bvh
+    URL https://codeload.github.com/madmann91/bvh/tar.gz/ad9f7ee3fa54014cef8e789a8d45a3c2e7a117d0
+    URL_HASH SHA256=e4c66620e358265c4c81f9442de7a43fab129b079f5145ed417d9e87e8564db5
     STORM_POPULATE_ONLY)
 # SMAA (MIT): the reference SMAA.hlsl (included by shaders/include/fx_smaa.sh) and its precomputed area and search
 # tables (Textures/AreaTex.h, SearchTex.h, uploaded by src/post_chain.cpp). Offline: -DFETCHCONTENT_SOURCE_DIR_STORM_SMAA=...
@@ -36,21 +36,20 @@ storm_fetch_declare(storm_fidelityfx_fsr
     URL https://codeload.github.com/GPUOpen-Effects/FidelityFX-FSR/tar.gz/a21ffb8f6c13233ba336352bdff293894c706575
     URL_HASH SHA256=b529a31d21971ee9f2a3231bbe17e31d183ccbb7fb6e3f7b0508b2624f61c2d9
     STORM_POPULATE_ONLY)
-FetchContent_MakeAvailable(storm_voxelizer storm_smaa storm_fidelityfx_fsr)
+FetchContent_MakeAvailable(storm_bvh storm_smaa storm_fidelityfx_fsr)
 include(shaders/shaders.cmake)
 
 add_library(storm_bgfx_fx_core STATIC
     src/color_lut.cpp src/noise_bake.cpp src/sky_model.cpp
     src/lighting_model.cpp src/light_falloff.cpp src/light_set.cpp src/shadow_model.cpp src/normal_map.cpp src/settings.cpp src/log.cpp
-    src/ao_volume.cpp src/voxelizer_impl.c src/lamp_shadows.cpp src/bakes.cpp src/sun_fit.cpp src/town_light.cpp src/visibility.cpp src/bounce.cpp src/relief_model.cpp src/relief_store.cpp src/gloss_map.cpp src/upscale.cpp
+    src/ao_volume.cpp src/lamp_shadows.cpp src/bakes.cpp src/sun_fit.cpp src/town_light.cpp src/visibility.cpp src/place_probes.cpp src/relief_model.cpp src/relief_store.cpp src/gloss_map.cpp src/upscale.cpp
     src/height_map.cpp src/parallax_trust.cpp src/parallax_exclusions.cpp src/parallax_probe.cpp src/cutout.cpp src/wetness.cpp src/gpu_crash_guard.cpp
     src/skin_tone.cpp)
 target_compile_features(storm_bgfx_fx_core PUBLIC cxx_std_20)
 target_include_directories(storm_bgfx_fx_core PUBLIC include)
-target_include_directories(storm_bgfx_fx_core SYSTEM PRIVATE "${storm_voxelizer_SOURCE_DIR}")
-set_source_files_properties(src/voxelizer_impl.c PROPERTIES COMPILE_OPTIONS "-w")
+target_include_directories(storm_bgfx_fx_core SYSTEM PRIVATE "${storm_bvh_SOURCE_DIR}/src")
 find_package(Threads REQUIRED)
-target_link_libraries(storm_bgfx_fx_core PUBLIC Threads::Threads) # the AO bake's workers
+target_link_libraries(storm_bgfx_fx_core PUBLIC Threads::Threads) # the bake pool
 set_target_properties(storm_bgfx_fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(storm_bgfx_fx STATIC

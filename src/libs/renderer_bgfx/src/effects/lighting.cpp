@@ -1,5 +1,6 @@
 #include "effects/lighting.hpp"
 #include "storm/render/skinned_vertex.hpp"
+#include "storm/fx/texture_pixels.hpp"
 #include "storm/fx/skin_tone.hpp"
 
 #include "shim/device.hpp"
@@ -456,7 +457,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         return true;
     };
     // A town's walls and props without a lightmap, drawn with the game's baked colours into the game picture: our
-    // sun, sky and bounce relight them as our lightmaps relight the ground (town_light.hpp TownWallTone).
+    // sun and sky relight them as our lightmaps relight the ground (town_light.hpp TownWallTone).
     const bool town_wall = per_pixel && lighting_ && layout.has_normal && !lit_state && !lightmapped && target &&
                            target == picture && !lamps_.interior() && settings_.town_walls && town_light_.walls_active();
     baked |= town_wall;
@@ -1047,7 +1048,7 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
         // bone indices) that face forward in the bind pose (+z: the face, not the hair, a hat or the back of the
         // head), 3 x 3 texels each.
         const DrawVertices vertices = draw_source.vertices();
-        const fx::BounceTexture &pixels = *atlas.skin_pixels;
+        const fx::TexturePixels &pixels = *atlas.skin_pixels;
         std::vector<uint8_t> samples;
         // A material can first be drawn by a torso-only range. Retry later ranges until a real reference arrives;
         // cap each draw's work and rotate across large ranges rather than freezing the first empty result forever.
@@ -1197,7 +1198,7 @@ void Lighting::bind_ao_volume(const FfDraw &draw)
         ao_world_to_uvw_ = ao_volume_->world_to_uvw;
     }
     const fx::AoVolumeLevel &level = fx::kAoVolumeLevel[std::min<uint8_t>(settings_.ao_volume, fx::kAoVolumeLevels)];
-    const float params[4] = {level.strength, level.contrast, 0.5f * ao_volume_->cell, 1.0f / fx::kAoOpenSurface};
+    const float params[4] = {level.strength * settings_.ao_gain, level.contrast, ao_volume_->cell, 1.0f / fx::kAoOpenSurface};
     bgfx::setUniform(u_ao_matrix_, ao_view_to_uvw_.data());
     bgfx::setUniform(u_ao_params_, params);
     bgfx::setTexture(fx::kAoVolumeStage, s_ao_volume_, ao_volume_->texture);
@@ -1216,15 +1217,14 @@ void Lighting::bind_visibility(const FfDraw &draw)
     {
         if (!bgfx::isValid(visibility_open_))
         {
-            const uint8_t open[4] = {255, 255, 0, 0};
-            visibility_open_ = bgfx::createTexture3D(1, 1, 1, false, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_POINT, bgfx::copy(open, 4));
+            const uint8_t open[2] = {255, 255};
+            visibility_open_ = bgfx::createTexture3D(1, 1, 1, false, bgfx::TextureFormat::RG8, BGFX_SAMPLER_POINT, bgfx::copy(open, 2));
         }
         const float off[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bgfx::setUniform(u_visibility_params_, off);
         bgfx::setTexture(fx::kVisibilityStage, s_visibility_, visibility_open_);
         return;
     }
-    // (The texture's layout changes when the bounce's block comes or goes.)
     if (draw.world_view != visibility_view_ || visibility_->world_to_uvw != visibility_world_to_uvw_)
     {
         float inverse_view[16];
@@ -1233,10 +1233,8 @@ void Lighting::bind_visibility(const FfDraw &draw)
         visibility_view_ = draw.world_view;
         visibility_world_to_uvw_ = visibility_->world_to_uvw;
     }
-    // x the mode (2 / 3: the debug views of the visibility / the bounce), y the receivers' offset along their normal,
-    // one cell, z the bounce block's offset in v (0: none), w the lamps' share of the bounce's light.
-    const float mode = settings_.visibility_debug ? 2.0f : settings_.bounce_debug ? 3.0f : 1.0f;
-    const float params[4] = {mode, visibility_->cell, visibility_->block_offset, visibility_->lamp_share};
+    // x the mode (2: the debug view of the visibility), y the receivers' offset along their normal in metres.
+    const float params[4] = {settings_.visibility_debug ? 2.0f : 1.0f, visibility_->offset, 0.0f, 0.0f};
     bgfx::setUniform(u_visibility_matrix_, visibility_view_to_uvw_.data());
     bgfx::setUniform(u_visibility_params_, params);
     bgfx::setTexture(fx::kVisibilityStage, s_visibility_, visibility_->texture);
@@ -1259,7 +1257,6 @@ void Lighting::bind_town_wall(const FfDraw &draw)
         };
         u[0] = {tone->a, tone->b, tone->c, 1.0f};
         to_view(town_light_.live_sun(), u[1]);
-        u[1][3] = town_light_.live_sun_luminance();
         to_view(town_light_.bake_sun(), u[2]);
         for (int i = 0; i < fx::TownWallTone::kSkyBins; ++i)
             u[3 + i / 4][i % 4] = wall->game_sky[i];

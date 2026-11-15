@@ -1,4 +1,4 @@
-// When the background work must yield: the relief generation and the ray bakes (town light, visibility, bounce:
+// When the background work must yield: the relief generation and the ray bakes (the place's probes, the town light:
 // fx::SetBakeGate). Only an explicit renderer hold stops it (the automatic graphics preset
 // measures the GPU: renderer auto_preset.hpp). Thermal sensors provide telemetry, not a pause.
 #pragma once

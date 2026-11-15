@@ -93,6 +93,8 @@ enum class ShadowQuality : uint8_t
     Soft, // 2048² map, four taps
 };
 
+// The occlusion of the interior AO volume against its level's own (Settings::ao_gain).
+inline constexpr float kAoGain = 1.25f;
 // Strengths of the interior ambient-occlusion volume (Settings::ao_volume, option fx_ao_volume), for the owner's
 // choice of the interior contrast. The shader darkens by mix(1, pow(ao, contrast), strength), where ao is the baked
 // visibility relative to an open floor or wall (1 there, lower under tables, behind barrels, in corners).
@@ -218,19 +220,20 @@ struct Settings
     // (needs kLightingPerPixel; src/effects/town_light.hpp).
     bool town_light = false;
     // With town_light: the town's walls and props without a lightmap relit per pixel the same way (our sun with its
-    // shadow, our sky, the bounce over the game's baked sun and sky; src/effects/town_light.hpp TownWallTone).
+    // shadow, our sky over the game's baked sun and sky; src/effects/town_light.hpp TownWallTone).
     bool town_walls = false;
     bool town_light_debug = false;
-    // One bounce of indirect light (bounce.hpp, src/effects/bounce.hpp): the lit surfaces' light on what is around them,
-    // in their colour (needs kLightingPerPixel).
-    bool bounce = false;
-    // The location's visibility volume (fx/visibility.hpp: sky visibility, the wet surfaces' shelter, the bounce's
-    // carrier) for the lit draws (per-pixel or point lighting); off for A/B comparisons (option fx_visibility).
+    // The location's visibility volume (fx/visibility.hpp: sky visibility, the wet surfaces' shelter) for the lit
+    // draws (per-pixel or point lighting); off for A/B comparisons (option fx_visibility).
     bool visibility = true;
-    bool bounce_debug = false;    // lit and baked surfaces show the bounce's light over a dim grey picture
     bool visibility_debug = false; // lit and baked surfaces show the location's visibility volume (red sky, green open) // our town lightmaps show their sun visibility (grey) instead of the relit paint
     // Ambient-occlusion volume of interiors (ao_volume.hpp): 0 off, else one of the strengths AoVolumeLevel names.
     uint8_t ao_volume = 0;
+    // What the AO volume takes times this (option fx_ao_gain). Over 1: the probes' rays see a place a little more
+    // open than the voxel bake before them did (thin things were a voxel thick there), and the screen-space
+    // occlusion left the presets, so corners and the floor under furniture keep the depth it gave them. Measured on
+    // FortFrance's bank and port office: 1.15 gives the old bake's darkening, 1.25 a little more.
+    float ao_gain = kAoGain;
     // The lamps of a location relight it with shadows (lamp_shadows.hpp): how many lamps around the camera take
     // part, 0, 8 or 16. Interiors also light their lit models with the room's own baked light.
     uint8_t lamp_shadows = 0;
@@ -279,7 +282,6 @@ struct BackgroundProducts
 {
     bool far_lods = false;     // the simplified far models (far_lod_pixels)
     bool visibility = false;   // the location's visibility volume (lit draws: per-pixel or point lighting)
-    bool bounce = false;       // the bounced light in the visibility volume's second block
     bool ao_volume = false;    // an interior's AO volume
     bool town_light = false;   // our town lightmaps (place bake, sun relight)
     bool town_walls = false;   // the town walls' calibration (with town_light)

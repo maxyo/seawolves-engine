@@ -422,7 +422,7 @@ static void Settings(const std::string &models)
                                 "fx_light_normal_map", "fx_alpha_to_coverage", "fx_anisotropy", "fx_ao_volume", "fx_smaa", "fx_sharpen",
                                 "fx_render_height", "fx_gpu_profile", "fx_lamp_shadows", "fx_lamp_soft", "fx_lamp_model_lift",
                                 "fx_lamp_debug", "fx_sail_light", "fx_town_light", "fx_town_light_debug", "fx_lamp_tint",
-                                "render_backend", "render_thread", "render_overlap", "fx_bounce", "fx_bounce_debug",
+                                "render_backend", "render_thread", "render_overlap",
                                 "fx_town_walls", "fx_gloss", "fx_gloss_strength",
                                 "fx_gloss_debug", "fx_sea_waves", "fx_sea_waves_lift",
                                 "fx_sea_waves_debug", "fx_pom_probe",
@@ -460,9 +460,9 @@ static void Settings(const std::string &models)
         Expect(row("app-fx_light_reach")["options"] == Json::array({"пресет", "100%", "160%", "220%", "300%"}) &&
                    row("app-fx_light_core").is_object() && row("app-fx_light_level").is_object(),
                "effects debug: the lights' reach, core and level: " + rows.dump());
-        Expect(row("app-fx_bounce").is_object() && row("app-fx_bounce_debug").is_object() &&
+        Expect(row("app-fx_bounce").is_null() && row("app-fx_bounce_debug").is_null() &&
                    row("app-fx_town_walls")["options"] == Json::array({"пресет", "игра", "наши"}),
-               "effects debug: bounce and town walls: " + rows.dump());
+               "effects debug: town walls, and no bounce any more: " + rows.dump());
         Expect(row("app-fx_gloss").is_object() && row("app-fx_gloss_strength").is_object() &&
                    row("app-fx_gloss_debug")["options"].size() == 7,
                "effects debug: gloss maps: " + rows.dump());

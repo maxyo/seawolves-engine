@@ -1,22 +1,14 @@
-// The ambient-occlusion volume of the current interior (fx/ao_volume.hpp, Settings::ao_volume, option fx_ao_volume).
-//
-// The location reports the static geometry of an interior once it is loaded (render::SetEffectsLocationGeometry, from
-// Location's first frame). While the settings ask for the volume, it is read from the texture cache directory or
-// baked on the bake thread (fx::PostBake, fx::BakeAoVolume, about a second for an interior, the time logged) and
-// uploaded as an RGBA8 3D texture (four cosine lobes); the lit and baked fixed-function variants sample it. Outdoors, or before the volume is
-// ready, there is none and nothing darkens. A failed bake or upload is logged once per location.
+// The ambient-occlusion volume of the current interior (fx/ao_volume.hpp, Settings::ao_volume, option fx_ao_volume),
+// on the GPU: the occlusion lobes of the place's probes (effects/place_bake.hpp) as an RGBA8 3D texture; the lit and
+// baked fixed-function variants sample it. Outdoors, or before the probes are ready, there is none and nothing
+// darkens.
 #pragma once
 
 #include "storm/fx/ao_volume.hpp"
-#include "storm/fx/bakes.hpp"
 
 #include <bgfx/bgfx.h>
 
 #include <array>
-#include <atomic>
-#include <memory>
-#include <string>
-#include <vector>
 
 namespace storm::effects
 {
@@ -28,49 +20,15 @@ class AoVolumes
     {
         bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
         std::array<float, 16> world_to_uvw{}; // row-vector world -> 0..1 texture coordinates
-        float cell = 0.0f;                     // metres: the receivers' normal offset is half of it
+        float cell = 0.0f;                     // metres: the receivers read it one cell off their surface
     };
-
-    // Main thread. Replaces the location's geometry (empty: outdoors or no location, the volume goes).
-    // `bounds_lo` > `bounds_hi` (or both zero): no bounds, the geometry's box.
-    void set_geometry(std::string name, std::vector<fx::Vec3> positions, std::vector<uint32_t> indices,
-                      const fx::Vec3 &bounds_lo, const fx::Vec3 &bounds_hi, std::vector<fx::Vec3> walk);
-    // Main thread, once per frame with the active settings: starts the load or bake when wanted, uploads a finished
-    // one. The volume to sample this frame, or nullptr.
-    const Bound *update(bool wanted);
-
-    int initial_state(bool wanted) const {
-        if (!wanted || positions_.empty()) return 0;
-        if (job_ && job_->state.load() == Job::Failed) return 2;
-        return bgfx::isValid(bound_.texture) ? 0 : 1;
-    }
-    void shutdown();
-    void on_device_lost();
+    // Main thread: uploads `volume`. False when the texture cannot be created.
+    bool set(const fx::AoVolume &volume);
+    const Bound *bound() const { return bgfx::isValid(bound_.texture) ? &bound_ : nullptr; }
+    void reset();
+    void on_device_lost() { bound_ = {}; }
 
   private:
-    struct Job
-    {
-        enum State : int
-        {
-            Pending,
-            Ready,
-            Failed,
-        };
-        std::atomic<int> state{Pending};
-        std::string name;
-        fx::AoVolume volume;       // written by the bake before `state` becomes Ready
-        std::string how;           // "cache" or "baked in ... ms": for the log
-    };
-    void start();
-    void destroy_texture();
-
-    std::string name_;
-    std::vector<fx::Vec3> positions_;
-    std::vector<uint32_t> indices_;
-    fx::Vec3 bounds_lo_{1.0f, 1.0f, 1.0f}, bounds_hi_{-1.0f, -1.0f, -1.0f};
-    std::vector<fx::Vec3> walk_; // points on the floor where one walks (fx::AoBakeParams::walk)
-    fx::Bake<Job> job_;
-    bool failure_reported_ = false;
     Bound bound_{};
 };
 

@@ -3,8 +3,8 @@
 #pragma once
 
 #include "shim/shim.hpp"
-#include "storm/fx/bounce.hpp"
 #include "storm/fx/cutout.hpp"
+#include "storm/fx/texture_pixels.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -21,12 +21,8 @@ inline constexpr float kGameAlphaReference = 160.0f / 255.0f;
 // when the level's CPU copy is gone.
 std::shared_ptr<const fx::AlphaMask> texture_cutout(shim::TexStore &store);
 
-// The texture's colours from its level of at most 16 texels across (each the mean of the texels under it): what the
-// bounce takes a surface's colour from. Null for formats that cannot be read and when the level's CPU copy is gone.
-std::shared_ptr<const fx::BounceTexture> texture_albedo(shim::TexStore &store);
-
 // The texture's colours at its level of at most `size` texels across (a character atlas's, for its skin colour,
-// fx/skin_tone.hpp). Null as texture_albedo.
-std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &store, uint32_t size);
+// fx/skin_tone.hpp). Null for formats that cannot be read and when the level's CPU copy is gone.
+std::shared_ptr<const fx::TexturePixels> texture_level(shim::TexStore &store, uint32_t size);
 
 } // namespace storm::effects

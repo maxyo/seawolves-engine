@@ -407,8 +407,6 @@ int main()
             box({kX - 12.0f, 2.5f, kZ - 12.0f}, {kX, 2.7f, kZ + 12.0f});
             const std::vector<uint32_t> colors(positions.size(), 0xFF909090u);
             render::EffectsLocationGeometry geometry{"wet_surfaces_check roof", positions, colors, {}, indices, {}, false, {}, {}};
-            geometry.collision_positions = positions;
-            geometry.collision_indices = indices;
             render::SetEffectsLocationGeometry(geometry);
             Harness harness(*device);
             harness.relative = true;

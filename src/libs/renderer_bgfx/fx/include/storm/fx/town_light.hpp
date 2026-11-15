@@ -10,15 +10,14 @@
 // Here:
 //   * RasterizeLightmap: the texels a lightmap's triangles cover (world position and normal of each), plus a
 //     gutter of texels outside the triangles that take their nearest covered texel (bilinear filtering reads them);
-//   * SkyVisibility and SunVisibility (the bake's sun; soft: a few rays over the sun's disk and the texel), once
-//     per place, by ray casting the place's still geometry (fx::Occluders);
+//   * TexelSky (from the place's probes) and SunVisibility (the bake's sun; soft: a few rays over the sun's disk and
+//     the texel), once per lightmap set, through the place's still geometry (fx::Occluders);
 //   * CalibrateTownLight: how the game's lightmap was lit, fitted on its texels to its sun (the fitted bake
 //     direction) and sky;
 //   * the game's lightmap relit for the hour's sun is composed on the GPU (fx/sun_relight.hpp, from the place's sun
 //     map): its paint (the ground's colours are painted into it) and tone stay, its shadows move.
 #pragma once
 
-#include "storm/fx/bounce.hpp"
 #include "storm/fx/sky_model.hpp"
 #include "storm/fx/visibility.hpp"
 #include "storm/fx/sun_fit.hpp"
@@ -45,9 +44,9 @@ LightmapTexels RasterizeLightmap(std::span<const Vec3> positions, std::span<cons
                                  std::span<const uint32_t> indices, std::span<const uint32_t> triangle_lightmap,
                                  uint32_t lightmap, int width, int height, int gutter = 2);
 
-// 0..1 per texel: the share of the sky (cosine weighted, within `reach` metres) each texel sees.
-std::vector<uint8_t> SkyVisibility(const Occluders &occluders, const LightmapTexels &texels, float reach = 10.0f,
-                                   int rays = 32, unsigned threads = 1);
+// 0..1 per texel: the share of the sky (cosine weighted around +y, within the probes' near reach) at each texel, read
+// from the place's probes (fx/place_probes.hpp `near_sky`, per cell of `volume`) one cell off the surface.
+std::vector<uint8_t> TexelSky(const LightmapTexels &texels, const VisibilityVolume &volume, const std::vector<uint8_t> &near_sky);
 // 0..1 per texel: the sun's direct light on it, the share of `sun` (unit, towards the sun) the texel sees (over
 // `samples` rays spread across the sun's disk and the texel) times the cosine to its normal; 0 facing away.
 std::vector<uint8_t> SunVisibility(const Occluders &occluders, const LightmapTexels &texels, const Vec3 &sun,
@@ -79,8 +78,8 @@ TownLightTone CalibrateTownLight(const LightmapTexels &texels, std::span<const u
 // The town's walls and props without a lightmap (Средняя / Высокая): their baked vertex colours carry the game's own
 // sun (along the direction its lightmaps were baked with) and its ambient, which knows nothing of how closed a
 // place is (alleys, gaps between houses read as bright as the open street). They are relit per pixel like our
-// lightmaps (ff_fragment.sh, u_fxTownWall): our sun with its shadow, our sky from the visibility volume and the
-// bounce now, over the game's sun and the game's sky then, both with the lightmaps' tone (a + b sun + c sky).
+// lightmaps (ff_fragment.sh, u_fxTownWall): our sun with its shadow and our sky from the visibility volume now, over
+// the game's sun and the game's sky then, both with the lightmaps' tone (a + b sun + c sky).
 // The game's sky on the walls is measured here: over the vertices in the shade of the bake's sun, their mean
 // luminance per bin of our sky (read one cell off the surface, as the shader does) relative to the open ones,
 // turned into the sky the tone gives that luminance (at least ours: where the game's walls darken as much as our
@@ -99,9 +98,5 @@ TownWallTone CalibrateTownWalls(std::span<const Vec3> positions, std::span<const
                                 std::span<const uint32_t> indices, std::span<const uint8_t> skip,
                                 const VisibilityVolume &volume, const TownLightTone &tone, const Vec3 &bake,
                                 const Occluders &occluders, unsigned threads = 1);
-
-// The bounce on the texels (fx/bounce.hpp): per texel RGB, the irradiance the field gives one cell (`offset` metres)
-// off the surface along its normal, relative to the sun's (a white sun of 1), 0..1 in 0..255.
-std::vector<uint8_t> TexelBounce(const LightmapTexels &texels, const BounceField &field, float offset, unsigned threads = 1);
 
 } // namespace storm::fx

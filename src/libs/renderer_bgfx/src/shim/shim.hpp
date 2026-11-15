@@ -29,8 +29,8 @@ struct Job;
 namespace storm::fx
 {
 struct AlphaMask;
-struct BounceTexture;
 struct SkinTone;
+struct TexturePixels;
 }
 namespace storm::effects
 {
@@ -122,13 +122,10 @@ struct TexStore
     // small size, made when the game file is loaded (effects/texture_pixels.hpp); null for textures without holes.
     // Every pass that draws a material's depth or coverage cuts by it (effects/casters.hpp).
     std::shared_ptr<const fx::AlphaMask> cutout;
-    // Effects: its colours at a small size (effects/texture_pixels.hpp texture_albedo), made when the game file is
-    // loaded (the CPU copy goes after the upload): what the bounce takes a surface's colour from. Null: unreadable.
-    std::shared_ptr<const fx::BounceTexture> albedo;
     // Effects: a character atlas's colours at its level of at most 128 texels across (effects/texture_pixels.hpp
     // texture_level), made when it is loaded; null for other textures. Its skin colour (fx/skin_tone.hpp), read at the
     // skinned draws (effects/lighting.cpp): only a valid reference is final; missing parts keep the torso masked.
-    std::shared_ptr<const fx::BounceTexture> skin_pixels;
+    std::shared_ptr<const fx::TexturePixels> skin_pixels;
     std::shared_ptr<const fx::SkinTone> skin_tone;
     bool skin_tone_read = false; // an attempt has been logged (an invalid attempt may be retried)
     uint32_t skin_vertex_cursor = 0; // bounded walks of large draw ranges

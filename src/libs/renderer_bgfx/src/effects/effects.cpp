@@ -208,8 +208,8 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     };
     shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(!host.lighting().lamp_shadows().interior()), "sun shadows");
     shadow(draw_shadows ? (*draw_shadows)[1] : host.lighting().lamp_shadows().initial_state(), "lamp shadows");
-    // The town light, bounce and AO bakes and the visibility volume are quality products made in the background:
-    // they fill in after the reveal and never hold it.
+    // The place's probes (its visibility and AO volumes) and the town light are quality products made in the
+    // background: they fill in after the reveal and never hold it.
     progress ^= mix(uint64_t(resources.shadows) | (uint64_t(resources.failed) << 32) |
                     (uint64_t(resources.switching) << 63));
     load.gate.observe_progress(progress, load_milliseconds());
@@ -347,17 +347,15 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.wet_force = static_cast<float>(std::clamp(v, 0, 100)) / 100.0f; }},
     {"fx_ao_volume", "interiors: 0 off, 1 as the game's data, 2 moderate, 3 strong",
      [](fx::Settings &s, int v) { s.ao_volume = static_cast<uint8_t>(std::clamp(v, 0, 3)); }},
+    {"fx_ao_gain", "50..200 %: how much the interiors' occlusion volume takes against its level (125 by default)",
+     [](fx::Settings &s, int v) { s.ao_gain = static_cast<float>(std::clamp(v, 50, 200)) / 100.0f; }},
     {"fx_shadows", "0 off, 1 low, 2 soft",
      [](fx::Settings &s, int v) { s.shadows = static_cast<fx::ShadowQuality>(std::clamp(v, 0, 2)); }},
     {"fx_town_light", "0 the game's town lightmaps, 1 our own for the live sun",
      [](fx::Settings &s, int v) { s.town_light = on(v); }},
-    {"fx_town_walls", "0 the game's baked walls in towns, 1 relit by our sun, sky and bounce (with fx_town_light)",
+    {"fx_town_walls", "0 the game's baked walls in towns, 1 relit by our sun and sky (with fx_town_light)",
      [](fx::Settings &s, int v) { s.town_walls = on(v); }},
-    {"fx_bounce", "0 off, 1 one bounce of indirect light (lit surfaces light what is around them)",
-     [](fx::Settings &s, int v) { s.bounce = on(v); }},
-    {"fx_bounce_debug", "0 off, 1 lit and baked surfaces show the bounce's light over a dim grey picture",
-     [](fx::Settings &s, int v) { s.bounce_debug = on(v); }},
-    {"fx_visibility", "0 off, 1 on: the location's visibility volume (sky visibility, rain shelter; the bounce lives in it)",
+    {"fx_visibility", "0 off, 1 on: the location's visibility volume (sky visibility, rain shelter)",
      [](fx::Settings &s, int v) { s.visibility = on(v); }},
     {"fx_visibility_debug", "0 off, 1 lit and baked surfaces show the visibility volume (red sky, green open)",
      [](fx::Settings &s, int v) { s.visibility_debug = on(v); }},
@@ -516,10 +514,9 @@ void Host::on_device_lost()
     sea_waves_idle_ = {};
     u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
     sea_waves_frame_ = UINT32_MAX;
-    ao_.on_device_lost();
+    place_.on_device_lost();
     ao_bound_ = nullptr;
     lighting_.set_ao_volume(nullptr);
-    visibility_.on_device_lost();
     lighting_.set_visibility(nullptr);
     device_ready_ = false;
 }
@@ -542,11 +539,9 @@ void Host::shutdown()
             *uniform = BGFX_INVALID_HANDLE;
         }
     sea_depth_frame_ = UINT32_MAX;
-    ao_.shutdown();
+    place_.shutdown();
     ao_bound_ = nullptr;
     lighting_.set_ao_volume(nullptr);
-    bounce_.shutdown();
-    visibility_.shutdown();
     lighting_.set_visibility(nullptr);
     fx::ShutdownBakes(); // the bakes above were let go of: cancelled, the bake thread joined (at once, also while hot)
     device_ready_ = false;
@@ -926,35 +921,24 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     const auto &upload_load = location_load();
     upscales().end_frame(LoadingUploadScope::for_frame(upload_load.gate.generation(),
         !upload_load.sealed && upload_load.gate.state() == SceneReadiness::State::Warming, upload_load.opaque));
-    // Our lightmaps for the hour's sun, for the next frame's draws (the pre-game views of the next frame).
-    lighting_.town_light().update(weather_.sun_dir, weather_.sun_color, weather_last_frame_ && weather_.sun_present);
-    if (shim::Device *device = shim::Device::current; device && device_ready_)
-        lighting_.relight_town(*device);
-    ao_bound_ = ao_.update(products_.ao_volume); // for the next frame's draws
-    lighting_.set_ao_volume(ao_bound_);
     {
-        // The visibility volume and the bounce in its second block, for the next frame's draws.
-        // Read by the lit draws only (and through them by the bounce and the town walls, which need per-pixel
-        // lighting): Низкая has none, so it bakes none; fx_visibility=0 switches it off for comparisons.
-        visibility_.set_enabled(products_.visibility);
-        const Visibility::Bound *volume = visibility_.update();
+        // The place's bakes, for the next frame's draws: its probes are read by the lit draws (Низкая has none, so it
+        // bakes none; fx_visibility=0 switches them off for comparisons), an interior's occlusion lobes by
+        // fx_ao_volume, a town's sky and rays by the town light.
         TownLight &town = lighting_.town_light();
-        town.set_bounce_scene(products_.bounce ? bounce_.scene() : nullptr);
-        town.set_volume(products_.town_walls ? visibility_.volume() : nullptr); // the walls are calibrated with it
-        Bounce::Light light;
-        light.sun = weather_.sun_dir;
-        light.sun_present = weather_last_frame_ && weather_.sun_present;
-        light.sun_color = weather_last_frame_ ? weather_.sun_color : std::array<float, 3>{0.0f, 0.0f, 0.0f};
-        const LampShadows &lamps = lighting_.lamp_shadows();
-        light.lamps = &lamps.lamps();
-        light.holders = &lamps.holders();
-        light.fixtures = &lamps.fixtures();
-        light.lamp_layout = lamps.layout();
-        light.town_sun = town.active();
-        light.town_field = town.sun_bounce();
-        bounce_.set_enabled(products_.bounce);
-        bounce_.update(visibility_, volume, light);
+        place_.update(products_.visibility || products_.ao_volume, town.needs_rays());
+        town.set_place(place_.ready());
+        // Our lightmaps for the hour's sun, for the next frame's draws (the pre-game views of the next frame). The
+        // sun is the last weather's: a frame without weather (an interface over the place, a dialogue) is no night,
+        // and the lightmaps are not composed for one. A place that is left takes its lightmaps with it
+        // (set_lightmaps), an interior has none.
+        town.update(weather_.sun_dir, weather_.sun_present);
+        if (shim::Device *device = shim::Device::current; device && device_ready_)
+            lighting_.relight_town(*device);
+        const Visibility::Bound *volume = products_.visibility ? place_.visibility() : nullptr;
         lighting_.set_visibility(volume);
+        ao_bound_ = products_.ao_volume ? place_.ao_volume() : nullptr;
+        lighting_.set_ao_volume(ao_bound_);
         // Wet surfaces stay dry where the volume shows no open sky: without it (still baking, or failed) the rain
         // reaches under the roofs too. Said once until a volume is there.
         if (volume)
@@ -962,10 +946,10 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         else if (lighting_.wet().level > 0.0f && !wet_unsheltered_logged_)
         {
             wet_unsheltered_logged_ = true;
-            static const char *const kVisibilityStates[] = {"no location geometry", "baking", "ready", "its bake failed"};
+            static const char *const kPlaceStates[] = {"no location geometry", "baking", "ready", "its bake failed"};
             shim::logf("effects: wet surfaces without a visibility volume (%s): the rain wets everything outdoors, "
                        "under roofs too, until it is there",
-                       kVisibilityStates[static_cast<int>(visibility_.state())]);
+                       kPlaceStates[static_cast<int>(place_.state())]);
         }
     }
     // Opacity is committed by Device::Present only after frame advancement and stable surface.
@@ -1040,15 +1024,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             // The sun's layers over the kProfileFrames frames of this line: how often the static one was drawn (and
             // with how much), in how many frames the dynamic one, its casters.
             const SunShadows::Counters sun = lighting_.shadows().take_counters();
-            // The towns' relight since the start: the place's sun map drawn, lightmaps composed, bounce bakes started.
+            // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_bounce_bakes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
-                       sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, town.bounce_bakes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
+                       sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
@@ -1129,7 +1113,7 @@ void SetEffectsLightmaps(std::string_view name, std::span<const std::array<float
                          std::span<const uint32_t> triangle_lightmap, std::span<const EffectsLightmap> lightmaps)
 {
     effects::Host::instance().lighting().town_light().set_lightmaps(name, positions, uvs, indices, triangle_lightmap, lightmaps);
-    // The lightmapped ground is where one walks: the visibility volume covers it.
+    // The lightmapped ground is where one walks: the place's probes cover it.
     std::array<float, 3> lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
     for (const uint32_t i : indices)
         if (i < positions.size())
@@ -1138,7 +1122,7 @@ void SetEffectsLightmaps(std::string_view name, std::span<const std::array<float
                 lo[k] = std::min(lo[k], positions[i][k]);
                 hi[k] = std::max(hi[k], positions[i][k]);
             }
-    effects::Host::instance().visibility().set_focus(name, lo, hi);
+    effects::Host::instance().place().set_focus(name, lo, hi);
 }
 
 void SetEffectsLocationGeometry(const EffectsLocationGeometry &geometry)
@@ -1149,72 +1133,12 @@ void SetEffectsLocationGeometry(const EffectsLocationGeometry &geometry)
     effects::generation_focus().set_scene(geometry.name);
     effects::Host::instance().location_changed();
     effects::Host::instance().lighting().lamp_shadows().set_geometry(geometry);
-    effects::Host::instance().bounce().set_geometry(geometry);
-    // The geometry with the triangles of textures that cut holes replaced by the pieces the alpha test keeps
-    // (effects/casters.hpp: one rule for every pass), pieces of `piece` metres shrunk to `shrink` of their size.
-    const auto cut_out = [&](float piece, float shrink, std::vector<fx::Vec3> &points, std::vector<uint32_t> &triangles) {
-        points.assign(geometry.positions.begin(), geometry.positions.end());
-        std::vector<bool> cut(geometry.indices.size(), false);
-        std::vector<uint32_t> pieces;
-        if (geometry.uvs.size() == geometry.positions.size())
-            for (const auto &surface : geometry.surfaces)
-            {
-                const shim::TexStore *store = shim::store_of(surface.texture);
-                const effects::CasterMaterial material = effects::location_caster_material(store);
-                if (material.cut <= 0.0f || surface.first_index + surface.index_count > geometry.indices.size())
-                    continue;
-                std::fill(cut.begin() + surface.first_index, cut.begin() + surface.first_index + surface.index_count, true);
-                fx::AppendCutTriangles(points, pieces, geometry.uvs,
-                                       geometry.indices.subspan(surface.first_index, surface.index_count), *store->cutout,
-                                       material.cut, piece, shrink);
-            }
-        for (size_t i = 0; i < geometry.indices.size(); ++i)
-            if (!cut[i])
-                triangles.push_back(geometry.indices[i]);
-        triangles.insert(triangles.end(), pieces.begin(), pieces.end());
-    };
-    effects::Lighting &lighting = effects::Host::instance().lighting();
-    std::vector<fx::Vec3> points;
-    std::vector<uint32_t> triangles;
-    // The visibility volume rays through the collision data, as the location's own traces do.
-    effects::Host::instance().visibility().set_geometry(
-        std::string(geometry.name),
-        std::vector<fx::Vec3>(geometry.collision_positions.begin(), geometry.collision_positions.end()),
-        std::vector<uint32_t>(geometry.collision_indices.begin(), geometry.collision_indices.end()), geometry.interior,
-        geometry.room_lo, geometry.room_hi);
+    effects::Host::instance().place().set_geometry(geometry);
+    // Outdoors the still geometry casts the sun's shadows (in tiles, with its textures' holes); an interior has no sun.
     if (geometry.interior)
-    {
-        lighting.shadows().set_casters({});
-        lighting.town_light().set_occluders({}, {}, {}, {}, {}, {});
-        // The AO volume of an interior, from pieces shrunk to points at the bake's occupancy cell size of 0.1 m (holes
-        // narrower than a cell are below what the volume resolves).
-        const bool room = geometry.room_hi[0] > geometry.room_lo[0] && geometry.room_hi[1] > geometry.room_lo[1] &&
-                          geometry.room_hi[2] > geometry.room_lo[2];
-        if (room)
-            cut_out(0.1f, 0.02f, points, triangles);
-    }
+        effects::Host::instance().lighting().shadows().set_casters({});
     else
-    {
-        // Outdoors it casts the sun's shadows (in tiles, with its textures' holes) and closes the sky and the sun of our
-        // own lightmaps: palm leaves dapple them as they do the colour pass.
-        lighting.shadows().set_casters(geometry);
-        std::vector<fx::Occluders::Cut> cut(geometry.indices.size() / 3);
-        if (geometry.uvs.size() == geometry.positions.size())
-            for (const auto &surface : geometry.surfaces)
-            {
-                const shim::TexStore *store = shim::store_of(surface.texture);
-                const effects::CasterMaterial material = effects::location_caster_material(store);
-                if (material.cut <= 0.0f || surface.first_index + surface.index_count > geometry.indices.size())
-                    continue;
-                for (uint32_t t = surface.first_index / 3; t < (surface.first_index + surface.index_count) / 3; ++t)
-                    cut[t] = {store->cutout, material.cut};
-            }
-        lighting.town_light().set_occluders(geometry.name, geometry.positions, geometry.uvs, geometry.indices, std::move(cut),
-                                            geometry.colors);
-    }
-    effects::Host::instance().ao_volumes().set_geometry(std::string(geometry.name), std::move(points), std::move(triangles),
-                                                        geometry.room_lo, geometry.room_hi,
-                                                        std::vector<fx::Vec3>(geometry.walk.begin(), geometry.walk.end()));
+        effects::Host::instance().lighting().shadows().set_casters(geometry);
 }
 
 namespace
@@ -1418,7 +1342,6 @@ void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path
     {
         store->name = fx::NormalizeTexturePath(path ? path : "");
         store->cutout = effects::texture_cutout(*store);
-        store->albedo = effects::texture_albedo(*store);
         // A new material source invalidates every part of its previous skin reference, including non-character reuse.
         store->skin_pixels.reset();
         store->skin_tone.reset();

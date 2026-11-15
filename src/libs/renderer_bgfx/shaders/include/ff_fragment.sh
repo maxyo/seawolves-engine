@@ -78,8 +78,8 @@ uniform vec4 u_fxGloss; // the gloss of the material texture (s_fxMaterial, fx_l
 #endif
 
 // Ambient-occlusion volume of the interior (src/effects/ao_volume.hpp; stage 12 = fx::kAoVolumeStage).
-// u_fxAoVolume: view space -> volume uvw. u_fxAoParams: x strength (0 = no volume for this draw), y contrast,
-// z normal offset in metres (half a cell: sample the open side of the surface), w 1 / what an open surface sees.
+// u_fxAoVolume: view space -> volume uvw. u_fxAoParams: x strength (0 = no volume for this draw; times fx_ao_gain), y contrast,
+// z normal offset in metres (one cell: every cell the filter mixes lies before the surface), w 1 / what an open surface sees.
 // The volume holds four cosine lobes (fx::AoLobeAxes, RGBA); Nw is the world-space normal.
 SAMPLER3D(s_fxAoVolume, 12);
 uniform mat4 u_fxAoVolume;
@@ -94,34 +94,21 @@ float ffAoVolume(vec3 P, vec3 Ng, vec3 Nw)
     vec4 w = max(vec4(dot(Nw, vec3(k, k, k)), dot(Nw, vec3(k, -k, -k)), dot(Nw, vec3(-k, k, -k)), dot(Nw, vec3(-k, -k, k))), 0.0);
     float seen = dot(lobes, w) / max(dot(w, vec4_splat(1.0)), 1e-4);
     float ao = clamp(seen * u_fxAoParams.w, 0.0, 1.0);
-    return mix(1.0, pow(ao, u_fxAoParams.y), u_fxAoParams.x);
+    return max(mix(1.0, pow(ao, u_fxAoParams.y), u_fxAoParams.x), 0.0); // (the strength may pass 1: fx_ao_gain)
 }
 
 // How open to the sky the pixel's place is (src/effects/visibility.hpp, fx/visibility.hpp; stage 5 =
 // fx::kVisibilityStage, the stage 0 cube map's unit, which no lit or baked variant has): x sky (cosine-weighted, to the
 // place's bounds), y open (the share of directions more than 15° up that reach out). P and the geometric normal Ng in
-// view space: the volume is read one cell off the surface along Ng, on the side the surface faces (a wall's own cells
-// would mix in the other side's). u_fxVisibility: view space -> volume uvw; u_fxVisibilityParams: x 1 = this place
-// has a volume (0: everything counts as under open sky; 2 / 3: the debug views fx_visibility_debug / fx_bounce_debug),
-// y that offset in metres (one cell), z the v of the bounce's block over the volume's (0: no bounce; then the texture
-// is (2 n + 1) cells high, the volume's n, a guard and the bounce's n: half a cell is z - 0.5), w the lamps' share of
-// the bounce's light.
+// view space: the volume is read off the surface along Ng, on the side the surface faces (a wall's own cells would
+// mix in the other side's). u_fxVisibility: view space -> volume uvw; u_fxVisibilityParams: x 1 = this place has a
+// volume (0: everything counts as under open sky; 2: the debug view fx_visibility_debug), y that offset in metres.
+// Read once per pixel: every term that needs it takes the value.
 // A stage 0 cube map takes the unit: such a draw has no lit or baked variant, and its place counts as open.
 #ifndef STAGE0_CUBE
 SAMPLER3D(s_fxVisibility, 5);
 uniform mat4 u_fxVisibility;
 uniform vec4 u_fxVisibilityParams;
-// The volume's uvw of P read one cell off along Ng, v kept inside the volume's block.
-vec3 ffVisibilityUvw(vec3 P, vec3 Ng)
-{
-    vec3 uvw = mul(u_fxVisibility, vec4(P + Ng * u_fxVisibilityParams.y, 1.0)).xyz;
-    if (u_fxVisibilityParams.z > 0.0)
-    {
-        float half_cell = u_fxVisibilityParams.z - 0.5;
-        uvw.y = clamp(uvw.y, half_cell, u_fxVisibilityParams.z - 3.0 * half_cell);
-    }
-    return uvw;
-}
 #endif
 vec2 ffVisibility(vec3 P, vec3 Ng)
 {
@@ -130,13 +117,20 @@ vec2 ffVisibility(vec3 P, vec3 Ng)
 #else
     if (u_fxVisibilityParams.x <= 0.0)
         return vec2(1.0, 1.0);
-    return texture3D(s_fxVisibility, ffVisibilityUvw(P, Ng)).xy;
+    return texture3D(s_fxVisibility, mul(u_fxVisibility, vec4(P + Ng * u_fxVisibilityParams.y, 1.0)).xyz).xy;
 #endif
+}
+// Whether the sun can reach the pixel at all, from the volume's openness: closed under a roof (an interior, an
+// arcade), open as soon as a share of the sky above 15° is. It gates the sun; it does not dim it: where the sun
+// comes through, its shadow map alone says how much (the two multiplied darkened a sunlit alley twice).
+float ffSunReach(float open)
+{
+    return smoothstep(0.0, 0.2, open);
 }
 
 // The town walls' relight (src/effects/town_light.hpp, lighting.cpp bind_town_wall): [0] the lightmaps' tone a, b, c and
-// w 1 = on for this draw; [1] towards the live sun (view space), w its colour's luminance; [2] towards the sun the game
-// baked with; [3], [4] the game's sky per bin of ours (bin centres (i + 0.5) / 8).
+// w 1 = on for this draw; [1] towards the live sun (view space); [2] towards the sun the game baked with; [3], [4] the
+// game's sky per bin of ours (bin centres (i + 0.5) / 8).
 uniform vec4 u_fxTownWall[5];
 float ffWallSky(float k)
 {
@@ -146,26 +140,6 @@ float ffWallSky(float k)
     float lo = at < 4 ? u_fxTownWall[3][at] : u_fxTownWall[4][at - 4];
     float hi = at + 1 < 4 ? u_fxTownWall[3][at + 1] : u_fxTownWall[4][at - 3];
     return max(k, mix(lo, hi, x - i));
-}
-
-// One bounce of indirect light at P (src/effects/bounce.hpp, fx/bounce.hpp): the light the lit surfaces around reflect
-// onto a surface of world normal Nw, in the units the lights light with (a light's colour times its cosine), read one
-// cell off along Ng as ffVisibility. The bounce block holds sqrt(c / 2) and the direction's y, the volume's block B / A
-// its x / z: c * max(0, 1 + v.Nw) (the Lambert lobe of the light's L1 moments: a lit floor does not relight itself, a
-// shadowed wall takes the street's light). 0 where there is none.
-vec3 ffBounce(vec3 P, vec3 Ng, vec3 Nw)
-{
-#ifdef STAGE0_CUBE
-    return vec3_splat(0.0);
-#else
-    if (u_fxVisibilityParams.x <= 0.0 || u_fxVisibilityParams.z <= 0.0)
-        return vec3_splat(0.0);
-    vec3 uvw = ffVisibilityUvw(P, Ng);
-    vec4 near = texture3D(s_fxVisibility, uvw);
-    vec4 light = texture3D(s_fxVisibility, uvw + vec3(0.0, u_fxVisibilityParams.z, 0.0));
-    vec3 v = vec3(near.b, light.a, near.a) * 4.0 - 2.0;
-    return light.rgb * light.rgb * (2.0 * max(0.0, 1.0 + dot(v, Nw)));
-#endif
 }
 
 // The lamps of a location, per pixel and with their shadows (src/effects/lamp_shadows.hpp; fx/lamp_shadows.hpp for
@@ -713,12 +687,7 @@ void main()
     // Under a roof the sun and the weather's ambient do not arrive and the room's own occlusion counts in full; in
     // a doorway, by a window or under a hatch each arrives by its share.
     vec2 skySeen = ffVisibility(P, Ng);
-#ifndef STAGE0_CUBE
-    // Until the place's visibility volume is there (it is baked when the place is entered; ffVisibility says "open"
-    // without one), a place that has an AO volume counts as closed: it is one where one walks under a roof.
-    if (u_fxVisibilityParams.x <= 0.0 && u_fxAoParams.x > 0.0)
-        skySeen = vec2_splat(0.0);
-#endif
+    float sunReach = ffSunReach(skySeen.y);
     // The rain (ff_wet.sh): where it reaches (the openness above 15°: dry under roofs), the surface is wet, its relief
     // filled with water and its gloss raised, before the lamps and the sun take them; puddles in the relief's hollows.
     float ffHeight = 1.0;
@@ -745,7 +714,7 @@ void main()
     vec3 ffLampSpec;
     vec4 lamps = ffLampLight(Pw, Nw, normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz), ffSpecV, ffLampSpecOf, ffLampMoved, ffLampSpec);
     float aoVolume = mix(ffAoVolume(P, Ng, Nw), 1.0, skySeen.x);
-    // The relief's cavity: an occlusion at the texture's scale, under the light as the volume's is (ambient and bounce
+    // The relief's cavity: an occlusion at the texture's scale, under the light as the volume's is (ambient
     // in full, half of the direct light); a puddle's water fills it.
     float cavity = 1.0;
 #ifdef FX_LIGHT_PARALLAX
@@ -755,7 +724,7 @@ void main()
 #ifdef FX_FF_LIT
     // The volume occludes the ambient part (the per-vertex sum carries the global ambient and the lights not lit per
     // pixel); the per-pixel sun and the lamps keep their own visibility.
-    float sunShadow = fxSunShadow(P, Ng) * skySeen.y * cavityDirect;
+    float sunShadow = fxSunShadow(P, Ng) * sunReach * cavityDirect;
 #ifdef FX_LIGHT_PARALLAX
     sunShadow *= mix(fxParallaxShadow(ffReliefUv, ffPomFound, ffPomFrame.gu, ffPomFrame.gv,
                                     ffPomFrame.normal, u_fxLight[0].xyz), 1.0, ffSkin);
@@ -776,12 +745,6 @@ void main()
         ambient = roomAmbient; // (without the hemisphere the weather's ambient is in the vertex sum, switched off here)
 #endif
     }
-    // Outdoors (no room light: indoors it already carries the place's indirect light) the lit surfaces around light the
-    // model with their reflected light, in their colour; the AO volume occludes it with the rest of the ambient.
-    vec3 Nshade = normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz);
-    vec3 bounce = ffBounce(P, Ng, Nshade);
-    if (u_fxLampGrid[2].w <= 0.5)
-        ambient += bounce;
     // A lamp's light on a model is at most that of a fully lit surface: above half of it the sum is compressed
     // towards 1 (a model at a candle's flame is lit, not burnt out).
     float lampShown = lampSeen <= 0.5 ? lampSeen : 0.5 + (lampSeen - 0.5) / (1.0 + 2.0 * (lampSeen - 0.5));
@@ -852,21 +815,11 @@ void main()
     // part of that light the bake is taken to hold (k). The AO volume occludes all of it: the room's own look stays.
     float baked = max(dot(v_color0.rgb, vec3(0.299, 0.587, 0.114)), 0.03);
     float gain = u_fxLamps[0].z;
-    // The bake holds the game's own indirect light, and the part k = u_fxLamps[0].w of each lamp's: of the bounce only
-    // that of the lamp light the relight adds beyond it joins in (its lamps' share w of the bounce's light), and only
-    // where a lamp reaches (a room without lamps keeps its bake).
-    vec3 Nshade = normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz);
-    vec3 bounce = ffBounce(P, Ng, Nshade);
-    vec3 lampBounce = bounce * (u_fxVisibilityParams.w * (1.0 - u_fxLamps[0].w) * clamp(lamps.a * 50.0, 0.0, 1.0));
-    if (u_fxLamps[0].x < 0.5)
-        lampBounce = vec3_splat(0.0);
     // The baked colours already carry the tone the game gave its lamp light on these surfaces: the relight adds
     // and takes light in that tone, with only a share of the lamp's own, far more saturated colour
-    // (u_fxLampGrid[4].z; with all of it a candle-lit wall goes orange-red where the game's is warm white). The
-    // bounce of that light is added in the same tone.
-    vec3 lampAdded = lamps.rgb + lampBounce;
-    vec3 lampTone = mix(vec3_splat(dot(lampAdded, vec3(0.299, 0.587, 0.114))), lampAdded, u_fxLampGrid[4].z);
-    // The baked colour holds the sky, the bounce and the sun together: three quarters of the cavity.
+    // (u_fxLampGrid[4].z; with all of it a candle-lit wall goes orange-red where the game's is warm white).
+    vec3 lampTone = mix(vec3_splat(dot(lamps.rgb, vec3(0.299, 0.587, 0.114))), lamps.rgb, u_fxLampGrid[4].z);
+    // The baked colour holds the sky and the sun together: three quarters of the cavity.
     aoVolume *= mix(1.0, cavity, 0.75);
     // The moving casters' shadows (characters, ships) take the sun's part of the bake, not the lamps' light.
 #ifdef FX_LIGHT_SHADOW
@@ -884,14 +837,12 @@ void main()
     {
         // A town's wall (src/effects/town_light.hpp TownWallTone): its baked colour carries the game's sun along the
         // direction the game baked with and the game's sky, which takes no account of alleys and gaps between
-        // houses. Relit as our lightmaps are: a + b sun + c sky with our sun (its shadow, the openness to it), our
-        // sky and the sun's bounce (relative to the sun's own light) now, over the game's sun and sky then.
-        vec2 seen = ffVisibility(P, Ng);
-        float sunNow = max(0.0, dot(N, u_fxTownWall[1].xyz)) * fxSunShadow(P, Ng) * seen.y;
+        // houses. Relit as our lightmaps are: a + b sun + c sky with our sun (its shadow, where the sun reaches at
+        // all) and our sky now, over the game's sun and sky then.
+        float sunNow = max(0.0, dot(N, u_fxTownWall[1].xyz)) * fxSunShadow(P, Ng) * sunReach;
         float sunThen = max(0.0, dot(N, u_fxTownWall[2].xyz));
-        vec3 bounceNow = bounce / u_fxTownWall[1].w;
-        vec3 now = vec3_splat(u_fxTownWall[0].x + u_fxTownWall[0].z * seen.x) + u_fxTownWall[0].y * (vec3_splat(sunNow) + bounceNow);
-        float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(seen.x);
+        float now = u_fxTownWall[0].x + u_fxTownWall[0].y * sunNow + u_fxTownWall[0].z * skySeen.x;
+        float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(skySeen.x);
         current.rgb *= clamp(now / max(then, 0.02), 0.33, 3.0);
     }
     current.rgb = fxLit(current.rgb, tex0.rgb, (ffPointDiffuse + ffLampMoved) * cavityDirect, vec3_splat(0.0),
@@ -906,7 +857,7 @@ void main()
 #else
         float lampGain = gain;
 #endif
-        current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * bakedSun * skySeen.y + ffLampSpec * lampGain +
+        current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * bakedSun * sunReach + ffLampSpec * lampGain +
                                                              ffPointSpecular));
     }
 #endif
@@ -951,17 +902,10 @@ void main()
             current.rgb = vec3_splat(ffLampTaps * 2.0 / 255.0); // two steps of 8 bits per tap
     }
 #ifndef STAGE0_CUBE
-    if (u_fxVisibilityParams.x > 2.5)
-    {
-        // Debug view (fx_bounce_debug): the bounce's light (four times) over a dim grey picture.
-        current.rgb = vec3_splat(0.15 * dot(current.rgb, vec3(0.299, 0.587, 0.114))) +
-                      4.0 * ffBounce(P, Ng, normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz));
-    }
-    else if (u_fxVisibilityParams.x > 1.5)
+    if (u_fxVisibilityParams.x > 1.5)
     {
         // Debug view (fx_visibility_debug): red the sky, green the openness above 15°, over a grey picture.
-        vec2 vis = ffVisibility(P, Ng);
-        current.rgb = vec3(vis.x, vis.y, 0.15) * (0.35 + 0.65 * dot(current.rgb, vec3(0.299, 0.587, 0.114)));
+        current.rgb = vec3(skySeen.x, skySeen.y, 0.15) * (0.35 + 0.65 * dot(current.rgb, vec3(0.299, 0.587, 0.114)));
     }
 #endif
 #endif

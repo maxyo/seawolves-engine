@@ -443,31 +443,32 @@ int main()
             const std::vector<uint32_t> triangles = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6}; // a floor and a roof
             render::EffectsLocationGeometry geometry;
             geometry.name = "preset_switch_check";
-            geometry.collision_positions = points;
-            geometry.collision_indices = triangles;
+            geometry.positions = points;
+            geometry.indices = triangles;
             Frames frames(*device);
             render::ConfigureEffects(0, {});
             for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
                 frames.render();
             render::SetEffectsLocationGeometry(geometry);
-            const effects::Visibility &visibility = effects::Host::instance().visibility();
+            const effects::PlaceBake &place = effects::Host::instance().place();
             auto frames_until_ready = [&](std::chrono::milliseconds limit) {
                 const auto until = std::chrono::steady_clock::now() + limit;
-                while (visibility.state() != effects::Visibility::State::Ready && std::chrono::steady_clock::now() < until)
+                while (place.state() != effects::PlaceBake::State::Ready && std::chrono::steady_clock::now() < until)
                     frames.render();
-                return visibility.state();
+                return place.state();
             };
-            ok &= expect(frames_until_ready(std::chrono::milliseconds(1500)) == effects::Visibility::State::None,
-                         "«Низкая»: the location's visibility is not baked (nothing reads it) and holds no reveal");
+            ok &= expect(frames_until_ready(std::chrono::milliseconds(1500)) == effects::PlaceBake::State::None,
+                         "«Низкая»: the location's probes are not baked (nothing reads them) and hold no reveal");
             render::ConfigureEffects(2, {});
-            ok &= expect(frames_until_ready(std::chrono::seconds(20)) == effects::Visibility::State::Ready,
-                         "«Высокая»: the location's visibility is baked");
+            ok &= expect(frames_until_ready(std::chrono::seconds(20)) == effects::PlaceBake::State::Ready &&
+                             place.visibility() != nullptr,
+                         "«Высокая»: the location's probes are baked and its visibility volume is there");
             render::ConfigureEffects(0, {}); // and down again in the same location
             for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
                 frames.render();
             frames.render();
-            ok &= expect(visibility.state() == effects::Visibility::State::None,
-                         "«Высокая» → «Низкая»: the volume is dropped and nothing waits for it");
+            ok &= expect(place.state() == effects::PlaceBake::State::None && place.visibility() == nullptr,
+                         "«Высокая» → «Низкая»: the probes are dropped and nothing waits for them");
             render::SetEffectsLocationGeometry({});
             render::ConfigureEffects(0, {});
             for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)

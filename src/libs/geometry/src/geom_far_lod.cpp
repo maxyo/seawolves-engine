@@ -211,7 +211,7 @@ void GeomFarLod::post()
         }
         finish(job, 1);
         return true;
-    });
+    }, storm::fx::BakePriority::Background); // the place's own bakes (its probes, its lightmaps) go first
     posted_ = true;
     ++render_lod::pending;
 }

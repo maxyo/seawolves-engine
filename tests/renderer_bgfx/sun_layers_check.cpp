@@ -303,7 +303,7 @@ int main()
             for (const int preset : {2, 1})
             {
                 const char *name = preset == 2 ? "Высокая" : "Средняя";
-                render::ConfigureEffects(preset, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_town_light", 0}, {"fx_bounce", 0}});
+                render::ConfigureEffects(preset, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_town_light", 0}});
                 char file[64];
                 // ---- receivers ----
                 scene.lit_floor = true;
@@ -423,7 +423,7 @@ int main()
 
             // ---- at sea: no still geometry, a camera-relative world far from the origin, the region on the player ----
             {
-                render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_town_light", 0}, {"fx_bounce", 0}});
+                render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_town_light", 0}});
                 render::SetEffectsLocationGeometry({});
                 scene.lit_floor = true;
                 scene.plates = true;

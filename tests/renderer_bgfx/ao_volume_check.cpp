@@ -227,7 +227,11 @@ int main()
             harness.relative = relative;
             std::vector<std::array<float, 3>> positions;
             std::vector<uint32_t> indices;
-            add_box(positions, indices, {-3.0f, -0.05f, -3.0f}, {3.0f, 0.0f, 3.0f}); // the floor slab
+            // The room: floor, walls and ceiling (a place without them lies under the open sky, where the place's
+            // probes leave the occlusion to the sky's light).
+            // Its walls stand a metre outside the 6 m floor the picture shows: beyond the occlusion's reach of the open
+            // floor, and off the far spots the lamps' checks read.
+            add_box(positions, indices, {-4.0f, 0.0f, -4.0f}, {4.0f, 3.0f, 4.0f});
             add_box(positions, indices, {-0.6f, 0.76f, -0.6f}, {0.6f, 0.8f, 0.6f});  // the table top
             // The room box one walks in: the floor with room above it.
             const std::array<float, 3> room_lo{-3.0f, -0.2f, -3.0f}, room_hi{3.0f, 3.0f, 3.0f};

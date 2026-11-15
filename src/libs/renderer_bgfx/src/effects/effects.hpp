@@ -3,9 +3,7 @@
 // The shim asks it what to set up (RendererState) and calls it at the scene boundary.
 #pragma once
 
-#include "effects/ao_volume.hpp"
-#include "effects/bounce.hpp"
-#include "effects/visibility.hpp"
+#include "effects/place_bake.hpp"
 #include "effects/lighting.hpp"
 #include "storm/fx/capabilities.hpp"
 #include "storm/fx/post_chain.hpp"
@@ -89,10 +87,9 @@ class Host
     }
     // Per-pixel lighting and alpha to coverage of the fixed-function emulator (effects/lighting.hpp).
     Lighting &lighting() { return lighting_; }
-    AoVolumes &ao_volumes() { return ao_; }
-    // The location's visibility volume (effects/visibility.hpp): every lit and baked draw binds it.
-    Visibility &visibility() { return visibility_; }
-    Bounce &bounce() { return bounce_; }
+    // The location's bakes (effects/place_bake.hpp): its probes' visibility volume, which every lit and baked draw
+    // binds, and an interior's AO volume.
+    PlaceBake &place() { return place_; }
     // The interior's AO volume for the draws of this frame (null outdoors, before it is ready, or when off).
     const AoVolumes::Bound *ao_volume() const { return ao_bound_; }
 
@@ -207,9 +204,7 @@ class Host
     fx::Sky sky_;
     fx::SeaDepth sea_depth_;
     fx::DepthCopy depth_copy_;
-    AoVolumes ao_;
-    Visibility visibility_;
-    Bounce bounce_;
+    PlaceBake place_;
     const AoVolumes::Bound *ao_bound_ = nullptr;
     float camera_height_ = 0.0f; // of the last world pass
     bgfx::UniformHandle u_sea_fx_ = BGFX_INVALID_HANDLE;

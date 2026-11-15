@@ -1,6 +1,7 @@
 #include "effects/scene_readiness.hpp"
 #include "shim/pipeline_sets.hpp"
 
+#include "effects/effects.hpp"
 #include "shim/device.hpp"
 #include "shim/shim.hpp"
 #include "storm/fx/programs.hpp"

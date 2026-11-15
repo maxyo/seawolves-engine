@@ -14,6 +14,7 @@
 #include "check_backend.hpp"
 
 #include "effects/effects.hpp"
+#include "storm/fx/place_probes.hpp"
 #include "storm/fx/town_light.hpp"
 #include "storm/render/effects.hpp"
 
@@ -301,7 +302,24 @@ int main()
             const float texel_metres = 2.0f * kHalf / kMap;
             const std::vector<uint8_t> bake_vis = fx::SunVisibility(occluders, texels, bake_sun, 0.3f, 4, 4);
             const std::vector<uint8_t> hour_vis = fx::SunVisibility(occluders, texels, hour_sun, 0.3f, 4, 4);
-            const std::vector<uint8_t> sky = fx::SkyVisibility(occluders, texels, 10.0f, 32, 4);
+            // The sky on the texels, as the town light reads it: from the place's probes (their near sky), laid over
+            // the ground with the margins effects/place_bake.cpp gives a town.
+            std::vector<uint8_t> sky;
+            {
+                std::vector<fx::Vec3> place(ground.begin(), ground.end());
+                std::vector<uint32_t> place_idx = ground_idx;
+                for (const uint32_t i : house_idx)
+                    place_idx.push_back(i + 4);
+                place.insert(place.end(), houses.begin(), houses.end());
+                fx::ProbeParams probes;
+                probes.lo = {-kHalf - 8.0f, -2.0f, -kHalf - 8.0f};
+                probes.hi = {kHalf + 8.0f, 25.0f, kHalf + 8.0f};
+                probes.near_sky = 10.0f;
+                probes.threads = 4;
+                const fx::Occluders place_rays(place, place_idx);
+                const fx::PlaceProbes baked = fx::BakePlaceProbes(place_rays, place, place_idx, probes);
+                sky = fx::TexelSky(texels, baked.visibility, baked.near_sky);
+            }
             std::vector<uint8_t> grey(static_cast<size_t>(kMap) * kMap, 0);
             for (size_t i = 0; i < texels.texel.size(); ++i)
                 grey[texels.texel[i]] = static_cast<uint8_t>(
@@ -336,7 +354,7 @@ int main()
             const std::vector<uint32_t> still_colors(still.size(), 0xFF909090u);
             const std::array<float, 3> room_lo{-kHalf, -0.2f, -kHalf}, room_hi{kHalf, 10.0f, kHalf};
 
-            render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_bounce", 0}, {"fx_town_walls", 0}});
+            render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 0}, {"fx_town_walls", 0}});
             render::SetEffectsLocationGeometry({"sun_relight_check", still, still_colors, still_uv, still_idx, {}, false, room_lo, room_hi});
             render::SetEffectsLightmaps("sun_relight_check", ground, ground_uv, ground_idx, ground_map, std::span(&lightmap, 1));
 
@@ -413,9 +431,8 @@ int main()
 
             // Once per sun: the place's map and the compose. Nothing more while the sun stands.
             const auto counters = town.sun_counters();
-            std::printf("place map drawn %u time(s), %u compose(s), %u bounce bake(s)\n", counters.place_draws, counters.composes, counters.bounce_bakes);
+            std::printf("place map drawn %u time(s), %u compose(s)\n", counters.place_draws, counters.composes);
             expect(counters.place_draws == 1 && counters.composes == 1, "one draw of the place's sun map and one compose for the first sun");
-            expect(counters.bounce_bakes == 0, "no job on the bake thread for the hour's sun without a bounce scene");
             for (int f = 0; f < 30; ++f)
                 frame();
             expect(town.sun_counters().place_draws == 1 && town.sun_counters().composes == 1, "a standing sun draws and composes nothing");

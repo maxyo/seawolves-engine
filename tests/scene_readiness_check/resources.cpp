@@ -2,51 +2,12 @@
 // exposes private state only to construct the asynchronous completion ordering under test.
 #include <bits/stdc++.h>
 #define private public
-#include "effects/town_light.hpp"
-#include "effects/ao_volume.hpp"
 #include "effects/lamp_shadows.hpp"
 #undef private
 #include "effects/scene_readiness.hpp"
 #include "storm/render/scene_load_action.hpp"
 using namespace storm;
 int main() {
-    effects::TownLight town;
-    town.enabled_ = true; town.positions_.resize(3); town.lightmaps_.resize(1);
-    assert(town.initial_state() == 1); // registration is not the first completed bake
-    town.place_prepared_ = true;
-    assert(town.initial_state() == 0); // all calibrated maps rejected: genuinely inapplicable
-    town.maps_.resize(1); town.maps_[0].relight = 0; town.ready_ = true;
-    town.bounce_scene_ = std::make_shared<effects::Bounce::Scene>();
-    assert(town.initial_state() == 1); // first sun map lacks the scene's bounce
-    town.sun_job_.job_ = std::make_shared<effects::TownLight::SunJob>();
-    town.sun_bounce_ = std::make_shared<fx::BounceField>();
-    assert(town.initial_state() == 1); // ready_ true cannot hide corrective bake in flight
-    town.sun_job_.job_.reset(); assert(town.initial_state() == 0);
-    town.maps_[0].relight = fx::SunRelight::kNoMap; assert(town.initial_state() == 2); // its GPU setup failed
-    town.maps_[0].relight = 0;
-    town.unsupported_reported_ = true; assert(town.initial_state() == 0); // no relight on this device: not held
-    town.unsupported_reported_ = false;
-    town.wall_job_.job_ = std::make_shared<effects::TownLight::WallJob>();
-    town.wall_job_->state = 2; assert(town.initial_state() == 2);
-
-    effects::Bounce bounce; bounce.enabled_ = true; bounce.indices_.resize(3);
-    using V = effects::Visibility::State;
-    assert(bounce.initial_state(V::Building) == 1);
-    assert(bounce.initial_state(V::Failed) == 2);
-    bounce.unavailable_ = true; assert(bounce.initial_state(V::Ready) == 2); // oversized stacked volume
-    bounce.unavailable_ = false; assert(bounce.initial_state(V::Ready) == 1);
-    bounce.scene_ = std::make_shared<effects::Bounce::Scene>();
-    bounce.sun_field_ = std::make_shared<fx::BounceField>();
-    assert(bounce.initial_state(V::Ready) == 1); // lamps still in flight
-    bounce.lamp_field_ = std::make_shared<fx::BounceField>();
-    assert(bounce.initial_state(V::Ready) == 0);
-    bounce.failed_ = true; assert(bounce.initial_state(V::Ready) == 2);
-    effects::AoVolumes ao; ao.positions_.resize(3);
-    assert(ao.initial_state(true) == 1);
-    ao.job_.job_ = std::make_shared<effects::AoVolumes::Job>();
-    ao.job_->state = effects::AoVolumes::Job::Failed;
-    assert(ao.initial_state(true) == 2); assert(ao.initial_state(false) == 0);
-
     effects::LampShadows lamps; lamps.slots_ = 1; lamps.prepared_ = true;
     assert(lamps.initial_state() == 0); // no light/geometry/room resource is needed
     lamps.room_.rgba.resize(4);

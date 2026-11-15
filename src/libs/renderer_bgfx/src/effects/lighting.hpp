@@ -197,7 +197,7 @@ struct FfDraw
     bool ao = false;               // samples the interior's AO volume (submit() binds it for `view`)
     bool lamps = false;            // lit by the place's lamps with their shadows (submit() binds them for `view`)
     bool room_light = false;       // its ambient is the room light of the interior
-    bool town_wall = false;        // a town's wall relit by our sun, sky and bounce (u_fxTownWall)
+    bool town_wall = false;        // a town's wall relit by our sun and sky (u_fxTownWall)
     std::array<std::array<float, 4>, 2> wet{}; // u_fxWet (ff_wet.sh); x of the first = 0: the draw stays dry
 };
 

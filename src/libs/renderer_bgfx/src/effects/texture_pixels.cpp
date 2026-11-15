@@ -32,12 +32,7 @@ std::shared_ptr<const fx::AlphaMask> texture_cutout(shim::TexStore &store)
     return std::make_shared<const fx::AlphaMask>(std::move(mask));
 }
 
-std::shared_ptr<const fx::BounceTexture> texture_albedo(shim::TexStore &store)
-{
-    return texture_level(store, 16);
-}
-
-std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &store, uint32_t size)
+std::shared_ptr<const fx::TexturePixels> texture_level(shim::TexStore &store, uint32_t size)
 {
     if (store.kind != shim::TexKind::Tex2D || store.subs.empty())
         return nullptr;
@@ -54,7 +49,7 @@ std::shared_ptr<const fx::BounceTexture> texture_level(shim::TexStore &store, ui
     std::vector<uint8_t> rgba(static_cast<size_t>(width) * height * 4);
     if (!texture::decode_rgba8(static_cast<uint32_t>(store.format), data.data(), width, height, rgba.data()))
         return nullptr;
-    auto out = std::make_shared<fx::BounceTexture>();
+    auto out = std::make_shared<fx::TexturePixels>();
     out->width = static_cast<int>(width);
     out->height = static_cast<int>(height);
     out->srgb.resize(static_cast<size_t>(width) * height * 3);

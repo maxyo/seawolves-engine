@@ -423,7 +423,7 @@ void operator delete[](void *p, size_t) noexcept { fixture::release(p); }
 namespace storm::fx
 {
 void BakeTicket::reset() { if (state_) { state_->cancelled = true; state_.reset(); } }
-BakeTicket PostBake(std::string, BakeStep step)
+BakeTicket PostBake(std::string, BakeStep step, BakePriority)
 {
     auto state = std::make_shared<detail::BakeState>();
     fixture::queue.push_back({state, std::move(step)}); ++fixture::posts;

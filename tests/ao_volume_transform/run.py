@@ -59,7 +59,7 @@ public:
  void bind_ao_volume(const FfDraw &);
  Bound *ao_volume_=nullptr;
  bgfx::Handle s_ao_volume_,u_ao_matrix_,u_ao_params_,ao_open_;
- struct { uint8_t ao_volume=2; } settings_;
+ struct { uint8_t ao_volume=2; float ao_gain=1.25f; } settings_;
 FIELDS
 };
 METHOD

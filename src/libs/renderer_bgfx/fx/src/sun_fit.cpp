@@ -1,6 +1,12 @@
 #include "storm/fx/sun_fit.hpp"
 
-#include "storm/fx/log.hpp"
+#include <bvh/v2/bvh.h>
+#include <bvh/v2/default_builder.h>
+#include <bvh/v2/node.h>
+#include <bvh/v2/ray.h>
+#include <bvh/v2/stack.h>
+#include <bvh/v2/tri.h>
+#include <bvh/v2/vec.h>
 
 #include <algorithm>
 #include <cmath>
@@ -13,21 +19,6 @@ namespace storm::fx
 namespace
 {
 
-Vec3 Sub(const Vec3 &a, const Vec3 &b)
-{
-    return {a[0] - b[0], a[1] - b[1], a[2] - b[2]};
-}
-
-Vec3 Cross(const Vec3 &a, const Vec3 &b)
-{
-    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]};
-}
-
-float Dot(const Vec3 &a, const Vec3 &b)
-{
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
 Vec3 Direction(float azimuth_deg, float elevation_deg)
 {
     const float a = azimuth_deg * 0.017453293f, e = elevation_deg * 0.017453293f;
@@ -36,245 +27,153 @@ Vec3 Direction(float azimuth_deg, float elevation_deg)
 
 } // namespace
 
-Occluders::Occluders(std::span<const Vec3> positions, std::span<const uint32_t> indices,
-                     std::span<const std::array<float, 2>> uvs, std::vector<Cut> cut, std::optional<Box> within)
-    : Occluders(positions, indices, within)
+// The hierarchy (two-child nodes over the triangles' boxes, built by the library's sweep-SAH builder and its
+// reinsertion pass) and the triangles in its leaf order, each with the number it has in the place's geometry and,
+// where its texture cuts holes, the slot of its texture coordinates.
+struct Occluders::Tree
 {
-    if (uvs.size() == positions.size() && cut.size() == triangles_)
+    using Node = bvh::v2::Node<float, 3>;
+    using Tri = bvh::v2::PrecomputedTri<float>;
+    struct CutTriangle
     {
-        uvs_.assign(uvs.begin(), uvs.end());
-        cut_ = std::move(cut);
-    }
-}
+        std::shared_ptr<const AlphaMask> mask;
+        float reference = 0.5f;
+        std::array<std::array<float, 2>, 3> uv{};
+    };
+    static constexpr uint32_t kSolid = 0xffffffffu;
+    bvh::v2::Bvh<Node> bvh;
+    std::vector<Tri> triangles;       // leaf order
+    std::vector<uint32_t> number;     // leaf order: the triangle's number in the geometry
+    std::vector<uint32_t> cut_slot;   // leaf order: into `cut`, or kSolid (empty: nothing is cut)
+    std::vector<CutTriangle> cut;
 
-Box BoundsOf(std::span<const Vec3> points, float margin)
-{
-    Box b{{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
-    for (const Vec3 &p : points)
-        for (int k = 0; k < 3; ++k)
-        {
-            b.lo[k] = std::min(b.lo[k], p[k] - margin);
-            b.hi[k] = std::max(b.hi[k], p[k] + margin);
-        }
-    return b;
-}
-
-bool Occluders::Covers(const Vec3 &point) const
-{
-    for (int k = 0; k < 3; ++k)
-        if (!(point[k] >= lo_[k] && point[k] <= hi_[k]))
-            return false;
-    return triangles_ > 0;
-}
-
-Occluders::Occluders(std::span<const Vec3> positions, std::span<const uint32_t> indices, std::optional<Box> within)
-    : positions_(positions.begin(), positions.end()), indices_(indices.begin(), indices.end())
-{
-    triangles_ = indices_.size() / 3;
-    if (triangles_ == 0)
-        return;
-    // Triangles wholly outside `within` stay in the arrays (the triangle numbers of `cut` keep their meaning) but go
-    // in no cell: no ray tests them.
-    std::vector<uint8_t> kept(triangles_, 1);
-    auto triangle_box = [&](size_t t) {
-        Box b{{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
-        for (int j = 0; j < 3; ++j)
-            for (int k = 0; k < 3; ++k)
+    template <bool Any>
+    bool Trace(const Vec3 &origin, const Vec3 &dir, float reach, std::span<const uint32_t> ignore, Hit &best) const
+    {
+        using Vec = bvh::v2::Vec<float, 3>;
+        bvh::v2::Ray<float, 3> ray(Vec(origin[0], origin[1], origin[2]), Vec(dir[0], dir[1], dir[2]), 1e-3f, reach);
+        // A stack that grows with the tree's depth, kept per thread: no allocation per ray.
+        thread_local bvh::v2::GrowingStack<bvh::v2::Bvh<Node>::Index> stack;
+        stack.elems.clear();
+        bool found = false;
+        bvh.intersect<Any, false>(ray, bvh.get_root().index, stack, [&](size_t begin, size_t end) {
+            bool hit_here = false;
+            for (size_t i = begin; i < end; ++i)
             {
-                b.lo[k] = std::min(b.lo[k], positions_[indices_[3 * t + j]][k]);
-                b.hi[k] = std::max(b.hi[k], positions_[indices_[3 * t + j]][k]);
+                const auto hit = triangles[i].intersect(ray);
+                if (!hit)
+                    continue;
+                const auto [t, u, v] = *hit;
+                if (!(t < ray.tmax)) // at the reach itself: beyond
+                    continue;
+                if (!cut_slot.empty() && cut_slot[i] != kSolid)
+                {
+                    // Through the hole the texture's alpha cuts there?
+                    const CutTriangle &c = cut[cut_slot[i]];
+                    const float w = 1.0f - u - v;
+                    if (c.mask->At(w * c.uv[0][0] + u * c.uv[1][0] + v * c.uv[2][0],
+                                   w * c.uv[0][1] + u * c.uv[1][1] + v * c.uv[2][1]) <= c.reference)
+                        continue;
+                }
+                if (!ignore.empty() && std::binary_search(ignore.begin(), ignore.end(), number[i]))
+                    continue;
+                ray.tmax = t;
+                best = {t, number[i], u, v};
+                hit_here = found = true;
+                if (Any)
+                    return true;
             }
-        return b;
+            return hit_here;
+        });
+        return found;
+    }
+};
+
+Occluders::Occluders(std::span<const Vec3> positions, std::span<const uint32_t> indices) : Occluders(positions, indices, {}, {})
+{
+}
+
+Occluders::Occluders(std::span<const Vec3> positions, std::span<const uint32_t> indices,
+                     std::span<const std::array<float, 2>> uvs, std::span<const Cut> cut)
+    : tree_(std::make_unique<Tree>())
+{
+    using Vec = bvh::v2::Vec<float, 3>;
+    using BBox = bvh::v2::BBox<float, 3>;
+    triangles_ = indices.size() / 3;
+    if (triangles_ == 0)
+        return;
+    // Triangles without an area (and with corners that are no numbers) are hit by nothing: left out of the tree, the
+    // others keep their numbers.
+    std::vector<uint32_t> kept;
+    std::vector<BBox> boxes;
+    std::vector<Vec> centres;
+    kept.reserve(triangles_);
+    boxes.reserve(triangles_);
+    centres.reserve(triangles_);
+    auto corner = [&](size_t t, int k) {
+        const Vec3 &p = positions[indices[3 * t + k]];
+        return Vec(p[0], p[1], p[2]);
     };
-    lo_ = {1e30f, 1e30f, 1e30f};
-    hi_ = {-1e30f, -1e30f, -1e30f};
-    excluded_bounds_ = {{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
     for (size_t t = 0; t < triangles_; ++t)
     {
-        const Box tri_box = triangle_box(t);
-        bool inside = true;
-        if (within)
-            for (int k = 0; k < 3; ++k)
-                inside = inside && tri_box.hi[k] >= within->lo[k] && tri_box.lo[k] <= within->hi[k];
-        Vec3 &l = inside ? lo_ : excluded_bounds_.lo;
-        Vec3 &h = inside ? hi_ : excluded_bounds_.hi;
-        for (int k = 0; k < 3; ++k)
-        {
-            l[k] = std::min(l[k], tri_box.lo[k]);
-            h[k] = std::max(h[k], tri_box.hi[k]);
-        }
-        if (!inside)
-        {
-            kept[t] = 0;
-            ++excluded_;
-        }
+        if (indices[3 * t] >= positions.size() || indices[3 * t + 1] >= positions.size() || indices[3 * t + 2] >= positions.size())
+            continue;
+        const bvh::v2::Tri<float, 3> tri(corner(t, 0), corner(t, 1), corner(t, 2));
+        const Vec n = cross(tri.p1 - tri.p0, tri.p2 - tri.p0);
+        if (!(dot(n, n) > 1e-18f))
+            continue;
+        kept.push_back(static_cast<uint32_t>(t));
+        boxes.push_back(tri.get_bbox());
+        centres.push_back(tri.get_center());
     }
-    if (!excluded_)
-        excluded_bounds_ = {};
-    if (excluded_ == triangles_)
+    if (kept.empty())
     {
-        triangles_ = 0; // nothing a ray from `within` can reach
+        triangles_ = 0;
         return;
     }
-    if (within)
-        for (int k = 0; k < 3; ++k)
-        {
-            lo_[k] = std::max(lo_[k], within->lo[k]);
-            hi_[k] = std::min(hi_[k], within->hi[k]);
-        }
-    // The grid's cells over the box with a cell of margin: grown while there are more than kMaxOccluderCells (each
-    // costs 12 bytes while it is built), which only changes how many triangles a ray step tests, not what it hits.
-    auto cells_for = [&](float cell) {
-        double total = 1.0;
-        for (int k = 0; k < 3; ++k)
-            total *= std::floor((hi_[k] - lo_[k]) / cell + 2.0) + 1.0;
-        return total;
-    };
-    const float asked = cell_;
-    const double asked_cells = cells_for(asked);
-    while (cells_for(cell_) > static_cast<double>(kMaxOccluderCells))
-        cell_ *= 1.25f;
-    if (cell_ != asked)
-        Log(cell_ > kOccluderQuietCell ? LogLevel::Error : LogLevel::Info,
-            "occluders: %zu triangles over %.0f x %.0f x %.0f m would take %.0f cells of %.2f m, more than the cap of "
-            "%zu: cells of %.2f m instead (the same hits, slower rays)%s",
-            triangles_, hi_[0] - lo_[0], hi_[1] - lo_[1], hi_[2] - lo_[2], asked_cells, asked, kMaxOccluderCells, cell_,
-            cell_ > kOccluderQuietCell ? "; larger than any town with the sun's reach around it needs" : "");
-    for (int k = 0; k < 3; ++k)
+    bvh::v2::DefaultBuilder<Tree::Node>::Config config;
+    config.quality = bvh::v2::DefaultBuilder<Tree::Node>::Quality::High;
+    tree_->bvh = bvh::v2::DefaultBuilder<Tree::Node>::build(boxes, centres, config);
+    const bool cuts = uvs.size() == positions.size() && cut.size() == triangles_ &&
+                      std::any_of(cut.begin(), cut.end(), [](const Cut &c) { return c.mask != nullptr; });
+    tree_->triangles.resize(kept.size());
+    tree_->number.resize(kept.size());
+    if (cuts)
+        tree_->cut_slot.assign(kept.size(), Tree::kSolid);
+    for (size_t i = 0; i < kept.size(); ++i)
     {
-        lo_[k] -= cell_;
-        hi_[k] += cell_;
-        n_[k] = std::max(1, static_cast<int>((hi_[k] - lo_[k]) / cell_) + 1);
-    }
-    const size_t cells = static_cast<size_t>(n_[0]) * n_[1] * n_[2];
-    auto visit = [&](size_t t, auto &&f) {
-        const Vec3 &a = positions_[indices_[3 * t]], &b = positions_[indices_[3 * t + 1]], &c = positions_[indices_[3 * t + 2]];
-        int c0[3], c1[3];
-        for (int k = 0; k < 3; ++k)
+        const size_t t = kept[tree_->bvh.prim_ids[i]];
+        tree_->triangles[i] = Tree::Tri(corner(t, 0), corner(t, 1), corner(t, 2));
+        tree_->number[i] = static_cast<uint32_t>(t);
+        if (cuts && cut[t].mask)
         {
-            c0[k] = std::clamp(static_cast<int>((std::min({a[k], b[k], c[k]}) - lo_[k]) / cell_), 0, n_[k] - 1);
-            c1[k] = std::clamp(static_cast<int>((std::max({a[k], b[k], c[k]}) - lo_[k]) / cell_), 0, n_[k] - 1);
+            tree_->cut_slot[i] = static_cast<uint32_t>(tree_->cut.size());
+            tree_->cut.push_back({cut[t].mask, cut[t].reference,
+                                  {uvs[indices[3 * t]], uvs[indices[3 * t + 1]], uvs[indices[3 * t + 2]]}});
         }
-        for (int z = c0[2]; z <= c1[2]; ++z)
-            for (int y = c0[1]; y <= c1[1]; ++y)
-                for (int x = c0[0]; x <= c1[0]; ++x)
-                    f((static_cast<size_t>(z) * n_[1] + y) * n_[0] + x);
-    };
-    std::vector<uint32_t> counts(cells + 1, 0);
-    for (size_t t = 0; t < triangles_; ++t)
-        if (kept[t])
-            visit(t, [&](size_t c) { ++counts[c + 1]; });
-    for (size_t c = 1; c < counts.size(); ++c)
-        counts[c] += counts[c - 1];
-    start_ = counts;
-    items_.resize(counts.back());
-    std::vector<uint32_t> fill(counts.begin(), counts.end() - 1);
-    for (size_t t = 0; t < triangles_; ++t)
-        if (kept[t])
-            visit(t, [&](size_t c) { items_[fill[c]++] = static_cast<uint32_t>(t); });
+    }
+    std::vector<size_t>().swap(tree_->bvh.prim_ids); // the triangles are in leaf order
 }
 
-bool Occluders::Hits(uint32_t tri, const Vec3 &origin, const Vec3 &dir, float reach, Hit &hit) const
+Occluders::~Occluders() = default;
+
+size_t Occluders::Bytes() const
 {
-    const Vec3 &a = positions_[indices_[3 * tri]];
-    const Vec3 e1 = Sub(positions_[indices_[3 * tri + 1]], a), e2 = Sub(positions_[indices_[3 * tri + 2]], a);
-    const Vec3 p = Cross(dir, e2);
-    const float det = Dot(e1, p);
-    if (std::fabs(det) < 1e-9f)
-        return false;
-    const float inv = 1.0f / det;
-    const Vec3 s = Sub(origin, a);
-    const float u = Dot(s, p) * inv;
-    if (u < 0.0f || u > 1.0f)
-        return false;
-    const Vec3 q = Cross(s, e1);
-    const float v = Dot(dir, q) * inv;
-    if (v < 0.0f || u + v > 1.0f)
-        return false;
-    const float t = Dot(e2, q) * inv;
-    if (t <= 1e-3f || t >= reach)
-        return false;
-    if (!cut_.empty() && cut_[tri].mask)
-    {
-        // Through the hole the texture's alpha cuts there?
-        const std::array<float, 2> &t0 = uvs_[indices_[3 * tri]], &t1 = uvs_[indices_[3 * tri + 1]],
-                                   &t2 = uvs_[indices_[3 * tri + 2]];
-        const float w = 1.0f - u - v;
-        if (cut_[tri].mask->At(w * t0[0] + u * t1[0] + v * t2[0], w * t0[1] + u * t1[1] + v * t2[1]) <= cut_[tri].reference)
-            return false; // through the hole
-    }
-    hit = {t, tri, u, v};
-    return true;
+    const Tree &t = *tree_;
+    return t.bvh.nodes.capacity() * sizeof(Tree::Node) + t.triangles.capacity() * sizeof(Tree::Tri) +
+           (t.number.capacity() + t.cut_slot.capacity()) * sizeof(uint32_t) + t.cut.capacity() * sizeof(Tree::CutTriangle);
 }
 
-template <bool Closest>
-bool Occluders::March(const Vec3 &origin, const Vec3 &dir, float reach, Scratch &scratch, Hit &best,
-                      std::span<const uint32_t> ignore) const
-{
-    if (triangles_ == 0)
-        return false;
-    if (scratch.stamp.size() != triangles_)
-    {
-        scratch.stamp.assign(triangles_, 0u);
-        scratch.ray = 0;
-    }
-    if (++scratch.ray == 0)
-    {
-        std::fill(scratch.stamp.begin(), scratch.stamp.end(), 0u);
-        scratch.ray = 1;
-    }
-    int cell[3], step[3];
-    float next[3], delta[3];
-    for (int k = 0; k < 3; ++k)
-    {
-        cell[k] = static_cast<int>(std::floor((origin[k] - lo_[k]) / cell_));
-        step[k] = dir[k] > 0.0f ? 1 : -1;
-        const float bound = lo_[k] + static_cast<float>(cell[k] + (dir[k] > 0.0f ? 1 : 0)) * cell_;
-        next[k] = std::fabs(dir[k]) > 1e-9f ? (bound - origin[k]) / dir[k] : 1e30f;
-        delta[k] = std::fabs(dir[k]) > 1e-9f ? cell_ / std::fabs(dir[k]) : 1e30f;
-    }
-    bool found = false;
-    float t = 0.0f;
-    while (t < reach)
-    {
-        if (cell[0] < 0 || cell[1] < 0 || cell[2] < 0 || cell[0] >= n_[0] || cell[1] >= n_[1] || cell[2] >= n_[2])
-            return found;
-        const size_t c = (static_cast<size_t>(cell[2]) * n_[1] + cell[1]) * n_[0] + cell[0];
-        for (uint32_t i = start_[c]; i < start_[c + 1]; ++i)
-        {
-            const uint32_t tri = items_[i];
-            if (scratch.stamp[tri] == scratch.ray)
-                continue;
-            scratch.stamp[tri] = scratch.ray;
-            Hit hit;
-            if (!Hits(tri, origin, dir, Closest && found ? best.t : reach, hit) || std::binary_search(ignore.begin(), ignore.end(), tri))
-                continue;
-            best = hit;
-            found = true;
-            if (!Closest)
-                return true;
-        }
-        const int k = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
-        // A hit before this cell's far side is nearer than anything a later cell holds.
-        if (found && best.t <= next[k])
-            return true;
-        t = next[k];
-        next[k] += delta[k];
-        cell[k] += step[k];
-    }
-    return found;
-}
-
-bool Occluders::Occluded(const Vec3 &origin, const Vec3 &dir, float reach, Scratch &scratch, std::span<const uint32_t> ignore) const
+bool Occluders::Occluded(const Vec3 &origin, const Vec3 &dir, float reach, std::span<const uint32_t> ignore) const
 {
     Hit hit;
-    return March<false>(origin, dir, reach, scratch, hit, ignore);
+    return triangles_ != 0 && tree_->Trace<true>(origin, dir, reach, ignore, hit);
 }
 
-std::optional<Occluders::Hit> Occluders::Closest(const Vec3 &origin, const Vec3 &dir, float reach, Scratch &scratch) const
+std::optional<Occluders::Hit> Occluders::Closest(const Vec3 &origin, const Vec3 &dir, float reach) const
 {
     Hit hit;
-    if (!March<true>(origin, dir, reach, scratch, hit, {}))
+    if (triangles_ == 0 || !tree_->Trace<false>(origin, dir, reach, {}, hit))
         return std::nullopt;
     return hit;
 }
@@ -282,8 +181,7 @@ std::optional<Occluders::Hit> Occluders::Closest(const Vec3 &origin, const Vec3 
 namespace
 {
 
-SunFit Rate(const Occluders &occluders, std::span<const SunFitSample> samples, const Vec3 &dir, float reach,
-            Occluders::Scratch &scratch)
+SunFit Rate(const Occluders &occluders, std::span<const SunFitSample> samples, const Vec3 &dir, float reach)
 {
     SunFit fit;
     fit.dir = dir;
@@ -303,7 +201,7 @@ SunFit Rate(const Occluders &occluders, std::span<const SunFitSample> samples, c
     for (const SunFitSample &s : samples)
     {
         // A few centimetres above the ground: the ground itself is no occluder.
-        if (occluders.Occluded({s.position[0], s.position[1] + 0.05f, s.position[2]}, dir, reach, scratch))
+        if (occluders.Occluded({s.position[0], s.position[1] + 0.05f, s.position[2]}, dir, reach))
         {
             in_shadow += 1.0;
             sum_shadow += s.luminance;
@@ -333,9 +231,8 @@ std::pair<SunFit, Candidate> Best(const Occluders &occluders, std::span<const Su
     ParallelRanges(
         candidates.size(), threads,
         [&](size_t first, size_t last) {
-            Occluders::Scratch scratch;
             for (size_t i = first; i < last; ++i)
-                rated[i] = Rate(occluders, samples, Direction(candidates[i].az, candidates[i].el), reach, scratch);
+                rated[i] = Rate(occluders, samples, Direction(candidates[i].az, candidates[i].el), reach);
         },
         1);
     // The first of the best (as one thread would find it).
@@ -352,11 +249,10 @@ std::pair<SunFit, Candidate> Best(const Occluders &occluders, std::span<const Su
 // and would favour low suns that shade most of the ground.
 std::vector<SunFitSample> OpenSky(const Occluders &occluders, std::span<const SunFitSample> samples, float reach)
 {
-    Occluders::Scratch scratch;
     std::vector<SunFitSample> open;
     open.reserve(samples.size());
     for (const SunFitSample &s : samples)
-        if (!occluders.Occluded({s.position[0], s.position[1] + 0.05f, s.position[2]}, {0.0f, 1.0f, 0.0f}, reach, scratch))
+        if (!occluders.Occluded({s.position[0], s.position[1] + 0.05f, s.position[2]}, {0.0f, 1.0f, 0.0f}, reach))
             open.push_back(s);
     return open;
 }

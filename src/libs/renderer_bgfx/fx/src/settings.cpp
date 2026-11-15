@@ -71,7 +71,6 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.shadows = ShadowQuality::Low;
         s.town_light = true;
         s.town_walls = true;
-        s.bounce = true;
         s.ao_volume = 2;
         s.lamp_shadows = 8;
         s.lamp_moving = 1;
@@ -104,7 +103,6 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.shadows = ShadowQuality::Soft;
     s.town_light = true;
     s.town_walls = true;
-    s.bounce = true;
     s.ao_volume = 2; // the owner: the strong look left the rooms too dark
     s.lamp_shadows = 16;
     s.lamp_moving = 2;
@@ -125,9 +123,8 @@ BackgroundProducts BackgroundProductsFor(const Settings &s)
     const bool lit = (s.lighting_flags & (kLightingPerPixel | kLightingPoint)) != 0;
     BackgroundProducts p;
     p.far_lods = s.far_lod_pixels > 0.0f;
-    // The visibility volume is read by the lit draws only (and through them by the bounce and the town walls).
+    // The visibility volume is read by the lit draws only (and through them by the town walls).
     p.visibility = s.visibility && lit;
-    p.bounce = s.bounce && p.visibility;
     p.ao_volume = s.ao_volume > 0;
     p.town_light = s.town_light;
     p.town_walls = s.town_light && s.town_walls;
@@ -142,7 +139,7 @@ BackgroundProducts BackgroundProductsFor(const Settings &s)
 std::string BackgroundProducts::Describe() const
 {
     std::string text;
-    for (const auto &[on, name] : {std::pair{far_lods, "far LODs"}, {visibility, "visibility volume"}, {bounce, "bounce"},
+    for (const auto &[on, name] : {std::pair{far_lods, "far LODs"}, {visibility, "visibility volume"},
                                    {ao_volume, "AO volume"}, {town_light, "town light"}, {town_walls, "town walls"},
                                    {lamp_shadows, "lamp shadow faces"}, {sun_shadows, "sun shadow casters"},
                                    {relief, "relief maps"}, {gloss, "gloss maps"}, {upscale, "upscale x2"}})
@@ -286,8 +283,6 @@ constexpr Rule kRules[] = {
      [](Settings &s) { s.town_light = false; }, "our own town light needs per-pixel lighting: switched off"},
     {[](const Settings &s, const Support &) { return s.town_walls && !s.town_light; },
      [](Settings &s) { s.town_walls = false; }, "the town walls' relight needs our own town light: switched off"},
-    {[](const Settings &s, const Support &) { return s.bounce && !(s.lighting_flags & kLightingPerPixel); },
-     [](Settings &s) { s.bounce = false; }, "the bounce light needs per-pixel lighting: switched off"},
     {[](const Settings &s, const Support &c) { return s.shadows != ShadowQuality::Off && !c.shadow_map; },
      [](Settings &s) { s.shadows = ShadowQuality::Off; }, "sun shadows need a D16 depth render target: switched off"},
     {[](const Settings &s, const Support &c) { return (s.lighting_flags & kLightingNormalMap) && !c.normal_map; },

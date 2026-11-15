@@ -134,8 +134,7 @@ void Location::ReportGeometry()
     // floors, furniture, houses), with the lighting baked into their vertices. Models without collision are what lies
     // outside the room (the backdrop behind the windows, hundreds of metres wide) or glass; animated and moving models
     // do not stay where a shadow map or a bake has them.
-    std::vector<std::array<float, 3>> positions, collision_positions;
-    std::vector<uint32_t> collision_indices;
+    std::vector<std::array<float, 3>> positions;
     std::vector<std::array<float, 2>> uvs;
     std::vector<uint32_t> colors, indices;
     std::vector<storm::render::EffectsLocationGeometry::Surface> surfaces;
@@ -154,17 +153,6 @@ void Location::ReportGeometry()
                 break;
             if (!node->geo || !node->geo->HasCollision())
                 continue;
-            local.clear();
-            local_indices.clear();
-            node->geo->AppendCollisionTriangles(local, local_indices);
-            const auto collision_base = static_cast<uint32_t>(collision_positions.size());
-            for (const glm::vec3 &p : local)
-            {
-                const glm::vec3 w = storm::math::transformPoint(node->glob_mtx, p);
-                collision_positions.push_back({w.x, w.y, w.z});
-            }
-            for (const uint32_t index : local_indices)
-                collision_indices.push_back(collision_base + index);
             local.clear();
             local_indices.clear();
             local_surface = {};
@@ -221,8 +209,7 @@ void Location::ReportGeometry()
                         &c = ptc.vertex[ptc.triangle[t].i[2]];
         walk.push_back({(a.x + b.x + c.x) / 3.0f, (a.y + b.y + c.y) / 3.0f, (a.z + b.z + c.z) / 3.0f});
     }
-    storm::render::SetEffectsLocationGeometry({id ? id : "", positions, colors, uvs, indices, surfaces, interior, lo, hi,
-                                               collision_positions, collision_indices, walk});
+    storm::render::SetEffectsLocationGeometry({id ? id : "", positions, colors, uvs, indices, surfaces, interior, lo, hi, walk});
 }
 
 namespace
