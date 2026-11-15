@@ -1,15 +1,16 @@
 // Which bgfx backend the game window runs: Vulkan or OpenGL ES (storm/render/frame_owner.hpp, SetRenderBackend).
 //
-// The choice is made before bgfx::init from three things: what was asked for (engine.ini render_backend, the
-// Android graphics setting of the same name), what the system's Vulkan says about itself (ProbeVulkan: the loader
-// and the device bgfx would take, read without bgfx) and whether an earlier Vulkan start on this driver never got
-// to a presented frame (BackendAttempt). Vulkan then still has to initialise in bgfx and pass the backend self-test
-// (Context::start); if it does not, the device is started again on OpenGL ES. Every outcome is one
-// "render backend:" log line with the reason (the application's diagnostics export keeps it).
-//
-// OpenGL ES is not a fallback kept "just in case": it is the backend of every device Vulkan is not chosen for.
+// The choice is made before bgfx::init from four things: what was asked for (engine.ini render_backend, the Android
+// graphics setting of the same name), what the system's Vulkan says about itself (ProbeVulkan: the loader and the
+// device bgfx would take, read without bgfx), the denylist of driver versions known to be bad (VulkanDenied) and the
+// crash guard's record (VulkanStartGuard: an earlier Vulkan start on this device and driver that killed the process
+// or failed). `auto`, the default, takes Vulkan wherever the device has what the game needs (DecideBackend). Vulkan
+// then still has to initialise in bgfx and pass the backend self-test (Context::start); if it does not, the device is
+// started again on OpenGL ES and that driver is recorded. Every outcome is one "render backend:" log line with the
+// reason (the application's diagnostics export and the graphics settings show it).
 #pragma once
 
+#include "storm/fx/gpu_crash_guard.hpp"
 #include "storm/render/frame_owner.hpp"
 
 #include <cstdint>
@@ -37,6 +38,9 @@ struct VulkanDevice
     int vertex_texture_units = 0; // limits.maxPerStageDescriptorSampledImages
     bool large_points = false; // largePoints: point lists wider than one pixel (the stars)
     float max_point_size = 1.0f;
+    // textureCompressionETC2 or textureCompressionBC: the game's DXT textures stay compressed (shim objects.cpp
+    // resolve_tier); without either they are decoded to RGBA8, up to 8x the memory OpenGL ES 3 (ETC2 always) needs.
+    bool compressed_textures = false;
 
     bool found() const { return problem.empty(); }
     // "Adreno (TM) 740, Vulkan 1.3.128, driver 0x80273000, vendor 0x5143 device 0x43050a01" or the problem.
@@ -55,30 +59,37 @@ struct BackendDecision
     std::string reason;
 };
 
-// GPU vendors (VkPhysicalDeviceProperties::vendorID) whose devices run Vulkan when nothing is asked for
-// (render_backend = auto). Filled from measurements on real devices only (local-testing/vulkan in the workspace);
-// a vendor that is not listed runs OpenGL ES unless Vulkan is asked for.
-bool VulkanByDefault(uint32_t vendor_id);
+// Driver versions known to break the game on Vulkan (crashes, corrupted pictures): `render_backend = auto` runs
+// OpenGL ES there. Only entries backed by evidence (a device report, a Test Lab run) go into the table in
+// backend_select.cpp, each with where it came from. Empty when the device is not listed, else why it is.
+std::string VulkanDenied(const VulkanDevice &device);
 
-// Pure: the backend to try first. `failed_attempt`: BackendAttempt::failed_before() for this device.
-BackendDecision DecideBackend(render::Backend request, const VulkanDevice &device, bool failed_attempt);
+// Pure: the backend to try first. `crash`: the reason of the crash guard's record for this device and driver (an
+// earlier Vulkan start that killed the process or failed), empty when there is none.
+//
+// Vulkan, asked for or not, needs the loader and a device with Vulkan 1.1, VK_KHR_swapchain and VK_KHR_maintenance1
+// (bgfx's device), and no crash record. `auto` takes it when the device also is a hardware GPU (no CPU
+// implementation: lavapipe, SwiftShader), keeps the textures compressed (ETC2 or BC) and is not denylisted.
+BackendDecision DecideBackend(render::Backend request, const VulkanDevice &device, const std::string &crash);
 
-// Guards a Vulkan start against a driver that kills the process inside it: a marker file is written before
-// bgfx::init and removed when frames have been presented. A marker found at start for the same device and driver
-// means the last Vulkan start never got that far.
-class BackendAttempt
+// The crash guard of a Vulkan start (storm/fx/gpu_crash_guard.hpp, <cache>/RenderBackend/vulkan-*.txt): the marker
+// holds the device's cache_key from before bgfx::init until frames were presented (Context::present) or the device
+// was shut down in an orderly way. One left at the next start is logged at error; that device and driver run OpenGL
+// ES until the driver changes or «Очистить кэш». A failed bgfx::init or self-test is recorded the same way.
+class VulkanStartGuard
 {
   public:
-    // `directory`: under the cache root (render::ProgramCacheConfig::directory's parent); empty: no guard, logged.
-    BackendAttempt(std::filesystem::path directory, const VulkanDevice &device);
-    bool failed_before() const { return failed_before_; }
-    void begin();   // before bgfx::init on Vulkan
-    void succeed(); // frames were presented, or Vulkan was given up in an orderly way (reason logged by the caller)
+    // `directory`: empty: no guard, logged.
+    VulkanStartGuard(std::filesystem::path directory, const VulkanDevice &device);
+    // Why this device and driver do not start Vulkan (a crash or a failure recorded for it), or empty.
+    const std::string &crash() const { return crash_; }
+    void begin() const;   // before bgfx::init on Vulkan
+    void succeed() const; // frames were presented, or the device was shut down in an orderly way
+    void fail(const std::string &why) const; // Vulkan was given up in an orderly way (bgfx::init, the self-test)
 
   private:
-    std::filesystem::path file_;
-    std::string key_;
-    bool failed_before_ = false;
+    fx::GpuCrashGuard guard_;
+    std::string key_, crash_;
 };
 
 } // namespace storm::shim

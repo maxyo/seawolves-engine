@@ -233,6 +233,26 @@ inline bool reportAutoPreset(int preset, int render_height, int version, const s
     env->DeleteLocalRef(activity);
     return reported;
 }
+// The graphics API the game's device runs and why (renderer_bgfx frame_owner.hpp RenderBackendChoice), after each
+// device creation: GameActivity.renderBackendChosen keeps it for the graphics settings screen. Logged when the host
+// could not be told (the "render backend:" log line stays the record either way).
+inline void reportRenderBackend(const std::string &backend, const std::string &reason) {
+    auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
+    auto activity=static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !activity) { spdlog::error("render backend: no game activity to report {} to", backend); return; }
+    auto type=env->GetObjectClass(activity);
+    auto method=type ? env->GetMethodID(type,"renderBackendChosen","(Ljava/lang/String;Ljava/lang/String;)V") : nullptr;
+    auto name=env->NewStringUTF(backend.c_str());
+    auto why=env->NewStringUTF(reason.c_str());
+    bool reported=false;
+    if (method && name && why) { env->CallVoidMethod(activity,method,name,why); reported=true; }
+    if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); reported=false; }
+    if (!reported) spdlog::error("render backend: GameActivity.renderBackendChosen failed; the settings do not show {}", backend);
+    if (name) env->DeleteLocalRef(name);
+    if (why) env->DeleteLocalRef(why);
+    if (type) env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+}
 // The door the hero stands at (the touch HUD's bottom hint): where its reload locator leads and
 // whether it is locked now (the game's "Closed" quick action), null = at no door with a name.
 inline std::string lastReloadPlace = "\x01";

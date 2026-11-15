@@ -200,14 +200,19 @@ void SetRenderBackend(Backend backend, const std::filesystem::path &state_direct
     shim::Context::instance().set_backend(backend, state_directory);
 }
 
+void FailRenderBackendSelfTest(bool fail)
+{
+    shim::Context::instance().fail_self_test(fail);
+}
+
 void SetVulkanAsyncPipelines(bool enabled)
 {
     shim::Context::instance().set_async_pipelines(enabled);
 }
 
-const char *RenderBackendChoice()
+const BackendChoice &RenderBackendChoice()
 {
-    return shim::Context::instance().backend_choice().c_str();
+    return shim::Context::instance().backend_choice();
 }
 
 void SetFrameOverlap(int mode)
@@ -231,6 +236,10 @@ namespace storm::shim
 
 namespace
 {
+// Presented frames that confirm a Vulkan start (its crash guard's marker goes): about a second of the first screen,
+// past the swap chain's first presents and the first screens' pipelines.
+constexpr uint32_t kVulkanConfirmFrames = 60;
+
 bool native_handles(SDL_Window *window, void **nwh, void **ndt)
 {
     SDL_SysWMinfo info;
@@ -411,14 +420,14 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
     }
     window_ = window;
     vsync_ = vsync;
-    backend_attempt_.reset();
+    backend_guard_.reset();
     backend_presented_ = 0;
     std::string failure;
     if (!window)
     {
         // init_headless(): the shim does all its work, bgfx's Noop backend draws nothing.
         logf("headless: bgfx Noop renderer, nothing is drawn");
-        backend_choice_ = "none (headless: bgfx Noop)";
+        backend_choice_ = {"none", "headless: bgfx Noop", "none (headless: bgfx Noop)"};
         if (!start_backend(bgfx::RendererType::Noop, nullptr, width, height, &failure))
         {
             logf("ERROR: %s", failure.c_str());
@@ -428,24 +437,27 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
     else
     {
         const VulkanDevice vulkan = ProbeVulkan();
-        BackendAttempt attempt(backend_state_directory_, vulkan);
-        BackendDecision decision = DecideBackend(backend_request_, vulkan, attempt.failed_before());
+        const VulkanStartGuard guard(backend_state_directory_, vulkan);
+        BackendDecision decision = DecideBackend(backend_request_, vulkan, guard.crash());
+        bool vulkan_failed = false;
         if (decision.vulkan)
         {
-            // The marker stays until frames were presented (present()); a start that fails here in an orderly way
-            // leaves it too, so the next starts go to OpenGL ES at once instead of trying Vulkan every time.
-            attempt.begin();
+            // The marker stays until frames were presented (present()) or the device is shut down in an orderly way.
+            guard.begin();
             if (start_backend(bgfx::RendererType::Vulkan, &vulkan, width, height, &failure) && !backend_self_test(&failure))
                 stop_backend();
             if (failure.empty())
-                backend_attempt_.emplace(std::move(attempt));
+                backend_guard_.emplace(guard);
             else
             {
                 // The explicit exception to "no fallbacks": a device whose Vulkan cannot run the game still has to
-                // start. Said as an error, with the reason, and kept in the choice line below.
+                // start. Said as an error, with the reason, kept in the choice line below and recorded for this
+                // driver, so the next starts go to OpenGL ES at once.
                 logf("ERROR: render backend: Vulkan failed on %s: %s. Starting on OpenGL ES; Vulkan is not tried again "
                      "on this driver until the cache is cleared",
                      vulkan.describe().c_str(), failure.c_str());
+                guard.fail(failure);
+                vulkan_failed = true;
                 decision = {false, "Vulkan failed (" + failure + ")"};
                 failure.clear();
             }
@@ -456,13 +468,16 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
             return false;
         }
         static const char *const requests[] = {"auto", "gles", "vulkan"};
-        backend_choice_ = std::string(decision.vulkan ? "Vulkan" : "OpenGL ES") + " (render_backend = " +
-                          requests[static_cast<int>(backend_request_)] + "): " + decision.reason + "; Vulkan device: " +
-                          vulkan.describe();
-        // An asked-for backend that is not the one running is an error line; either way the same text.
-        const bool refused = (backend_request_ == render::Backend::Vulkan) != decision.vulkan &&
-                             backend_request_ != render::Backend::Auto;
-        logf("%srender backend: %s", refused ? "ERROR: " : "", backend_choice_.c_str());
+        backend_choice_.backend = decision.vulkan ? "Vulkan" : "OpenGL ES";
+        backend_choice_.reason = decision.reason;
+        backend_choice_.line = backend_choice_.backend + " (render_backend = " +
+                               requests[static_cast<int>(backend_request_)] + "): " + decision.reason +
+                               "; Vulkan device: " + vulkan.describe();
+        // A Vulkan that was asked for and does not run, or that auto would take but a crash or a failure on this
+        // driver keeps from it, is an error line; either way the same text.
+        const bool refused = !decision.vulkan && (backend_request_ == render::Backend::Vulkan || vulkan_failed ||
+                                                  (backend_request_ == render::Backend::Auto && !guard.crash().empty()));
+        logf("%srender backend: %s", refused ? "ERROR: " : "", backend_choice_.line.c_str());
         if (decision.vulkan && !vulkan.large_points)
             logf("render backend: the Vulkan device has no largePoints: point lists (the stars) are one pixel wide");
     }
@@ -714,6 +729,11 @@ bool Context::backend_self_test(std::string *failure)
             return false;
         }
     }
+    if (fail_self_test_)
+    {
+        *failure = "the backend self-test was made to fail (render_backend_self_test = fail)";
+        return false;
+    }
     logf("render backend: self-test passed on %s (shaders, a pipeline, a texture, a target and its read-back)",
          bgfx::getRendererName(bgfx::getRendererType()));
     return true;
@@ -767,7 +787,10 @@ void Context::shutdown()
     overlap_ = {};
     overlap_logged_ = false;
     gate_end_ = {};
-    backend_attempt_.reset(); // a Vulkan start that never presented keeps its marker
+    // An orderly shutdown is no crash, whether the Vulkan start presented its frames or not (a surface lost early).
+    if (backend_guard_)
+        backend_guard_->succeed();
+    backend_guard_.reset();
     {
         std::lock_guard lock(release_mutex_);
         reset_unapplied_ = false; // went with bgfx
@@ -1172,10 +1195,11 @@ void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint3
         if (presented)
         {
             // A Vulkan start is confirmed by frames on the screen: its marker goes (backend_select.hpp).
-            if (backend_attempt_ && ++backend_presented_ >= 3)
+            if (backend_guard_ && ++backend_presented_ >= kVulkanConfirmFrames)
             {
-                backend_attempt_->succeed();
-                backend_attempt_.reset();
+                logf("render backend: Vulkan presented %u frames; its start is confirmed", kVulkanConfirmFrames);
+                backend_guard_->succeed();
+                backend_guard_.reset();
             }
             FramePacing::instance().game_frame();
             double wait_ms = 0.0;

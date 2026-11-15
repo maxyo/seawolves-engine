@@ -183,7 +183,7 @@ on llvmpipe, so long scenes (many variants, a long `--settle`, scenes that wait 
 fraction of the time. The boot and the new game take as long in every mode (CPU-bound script and data
 loading).
 
-- `gles-gpu` (default): `render_backend = gles`, OpenGL ES on the host's GPU, the phones' default backend.
+- `gles-gpu` (default): `render_backend = gles`, OpenGL ES on the host's GPU, the backend of phones without a usable Vulkan.
   NVIDIA's EGL cannot initialise on an Xvfb display, so the engine runs under VirtualGL
   (`VGL_DISPLAY=egl`, its `libdlfaker.so` and `libvglfaker.so` preloaded): VirtualGL renders on the GPU
   through EGL's device platform and copies each frame into the shard's Xvfb display, whose framebuffer
@@ -191,7 +191,7 @@ loading).
   unpack the official release once (`dpkg -x VirtualGL_3.1.5_amd64.deb ~/vgl`; it is under the
   wxWindows Library Licence) and pass `--virtualgl ~/vgl` or set `STORM_VIRTUALGL`. Without it the
   sweep refuses to start and says so.
-- `vulkan`: `render_backend = vulkan` on the host's GPU; the Vulkan driver (measured with NVIDIA's)
+- `vulkan`: `render_backend = vulkan` on the host's GPU, the phones' default where Vulkan runs; the Vulkan driver (measured with NVIDIA's)
   presents into the Xvfb display directly, no VirtualGL. A capture waits for a frame in which no draw
   waited for its pipeline (`SceneSweepWindowComplete`; the report's `incomplete_windows`/`incomplete_ms`).
 - `llvmpipe`: OpenGL ES on Mesa llvmpipe on the CPU (`LIBGL_ALWAYS_SOFTWARE=1`, `--gl-threads`

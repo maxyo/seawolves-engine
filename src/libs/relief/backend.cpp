@@ -1,6 +1,7 @@
 #include "backend.hpp"
 
 #include "relief.hpp"
+#include "storm/fx/gpu_crash_guard.hpp"
 
 #include <gpu.h>
 #include <net.h>
@@ -528,13 +529,10 @@ const char *DeviceName(Device device)
 
 namespace
 {
-std::filesystem::path MarkerFile(const std::filesystem::path &cache)
+// The relief's files of the shared guard: relief-gpu-running.txt, relief-gpu-crashed.txt.
+fx::GpuCrashGuard Guard(const std::filesystem::path &cache)
 {
-    return cache / "relief-gpu-running.txt";
-}
-std::filesystem::path CrashFile(const std::filesystem::path &cache)
-{
-    return cache / "relief-gpu-crashed.txt";
+    return fx::GpuCrashGuard(cache, "relief-gpu");
 }
 } // namespace
 
@@ -545,25 +543,17 @@ std::string GpuLabel(const GpuDevice &gpu)
 
 void MarkGpuRunning(const std::filesystem::path &cache, const std::string &what)
 {
-    std::error_code ignored;
-    std::filesystem::create_directories(cache, ignored);
-    // Written through before the GPU work starts: a crash inside the driver leaves it behind.
-    std::ofstream out(MarkerFile(cache), std::ios::trunc);
-    out << what << "\n" << std::flush;
+    Guard(cache).mark(what);
 }
 
 void ClearGpuRunning(const std::filesystem::path &cache)
 {
-    std::error_code ignored;
-    std::filesystem::remove(MarkerFile(cache), ignored);
+    Guard(cache).clear();
 }
 
 std::string GpuCrash(const std::filesystem::path &cache)
 {
-    std::ifstream in(CrashFile(cache));
-    std::string line;
-    std::getline(in, line);
-    return line;
+    return Guard(cache).crashed().what;
 }
 
 Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> cpu_onnx, std::span<const uint8_t> gpu_param,
@@ -574,20 +564,12 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
     // That GPU and driver take the CPU from then on (relief-gpu-crashed.txt; «Очистить кэш» clears it); a crash before
     // the GPU was known keeps Vulkan closed altogether.
     std::error_code ignored;
+    if (const fx::GpuCrashGuard::Record left = Guard(cache).take_leftover(); !left.empty())
     {
-        std::ifstream in(MarkerFile(cache));
-        std::string what;
-        if (std::getline(in, what))
-        {
-            in.close();
-            if (what == kGpuOpening)
-                Log("ERROR: relief GPU inference crashed the previous run while Vulkan opened: using the CPU");
-            else
-                Log("ERROR: relief GPU inference crashed the previous run on %s: using the CPU", what.c_str());
-            std::filesystem::create_directories(cache, ignored);
-            std::ofstream(CrashFile(cache), std::ios::trunc) << what << "\n";
-            ClearGpuRunning(cache);
-        }
+        if (left.what == kGpuOpening)
+            Log("ERROR: relief GPU inference crashed the previous run while Vulkan opened: using the CPU");
+        else
+            Log("ERROR: relief GPU inference crashed the previous run on %s: using the CPU", left.what.c_str());
     }
     const std::string crash = GpuCrash(cache);
     if (crash == kGpuOpening)
@@ -606,7 +588,7 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
             return Device::Cpu;
         }
         // Another GPU or driver since: measured again.
-        std::filesystem::remove(CrashFile(cache), ignored);
+        Guard(cache).forget();
     }
     if (!gpu.available)
     {

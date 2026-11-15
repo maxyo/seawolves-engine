@@ -173,6 +173,14 @@ class SettingsScreen final : public Screen
                         rateLabels.push_back(std::to_string(rates.back()));
                     }
             Segment(bindings, graphics, "frame_rate", "settings.frame_rate", rates, rateLabels, false);
+            // The graphics API the game's device runs and why (the host's render_backend_in_use and
+            // render_backend_reason, from the engine's choice at the start): shown, not chosen.
+            if (draft_.is_object() && draft_.contains("render_backend_in_use") && draft_["render_backend_in_use"].is_string())
+                graphics.rows.push_back(
+                    Json{{"kind", "none"},
+                         {"id", "app-render_backend_in_use"},
+                         {"label", Fill(bindings.Text("settings.render_backend"), {draft_["render_backend_in_use"].get<std::string>()})},
+                         {"hint", draft_.value("render_backend_reason", std::string())}});
             game(detail, "HERB_CHECKBOX", "settings.grass");
             game(detail, "SEA_DETAILS_SLIDE", "settings.sea_detail");
             sections.push_back({"", {graphics, detail}});
@@ -344,8 +352,10 @@ class SettingsScreen final : public Screen
             {
                 // The settings only: what the host reports about the device (frame_rate_options), whether the preset
                 // was measured (fx_preset_auto: the host's automatic choice) and the measured scene height
-                // (fx_auto_render_height) are not ones.
+                // (fx_auto_render_height) and the graphics API in use (render_backend_in_use, _reason) are not ones.
                 Json settings = draft_;
+                settings.erase("render_backend_in_use");
+                settings.erase("render_backend_reason");
                 settings.erase("frame_rate_options");
                 settings.erase("fx_preset_auto");
                 settings.erase("fx_auto_render_height");

@@ -28,9 +28,10 @@ supported and were not tested.
 
 ## Requirements
 
-Android 7.0 (API 24) or newer, 64-bit ARM (arm64-v8a), a GPU with OpenGL ES 3.0. OpenGL ES is the default for now;
-Vulkan 1.1 can be turned on with `render_backend = vulkan` in engine.ini, and a device that fails to start
-on it goes back to OpenGL ES. Texture formats and effects follow the GPU's
+Android 7.0 (API 24) or newer, 64-bit ARM (arm64-v8a), a GPU with OpenGL ES 3.0. Vulkan 1.1 is used by default
+where the device supports what the game needs and passes a start-up self-test; otherwise, and after a Vulkan
+crash or failure on that driver, the game runs on OpenGL ES (logged, shown in the graphics settings).
+`render_backend = gles | vulkan` in engine.ini forces a backend. Texture formats and effects follow the GPU's
 capabilities, and anything turned off is logged.
 
 ## Building

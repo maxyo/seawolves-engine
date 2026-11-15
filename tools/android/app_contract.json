@@ -60,7 +60,7 @@
   },
   "settings": {
     "keys": ["fx_preset", "texture_degradation", "frame_rate"],
-    "host_facts": ["frame_rate_options", "fx_auto_render_height", "fx_preset_auto"],
+    "host_facts": ["frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "render_backend_in_use", "render_backend_reason"],
     "debug": {
       "fx_ssao": [-1, 0, 1],
       "fx_msaa": [-1, 1, 2, 4],
@@ -142,6 +142,7 @@
       ["GameActivity", "onUiHudInput", "(Ljava/lang/String;Ljava/lang/String;)V"],
       ["GameActivity", "onUiTextRequest", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZZIIII)V"],
       ["GameActivity", "pollMobileAction", "()[B"],
+      ["GameActivity", "renderBackendChosen", "(Ljava/lang/String;Ljava/lang/String;)V"],
       ["GameActivity", "showCinematic", "(Z)V"],
       ["GameActivity", "showDialogue", "(Z)V"],
       ["GameActivity", "showGameplayState", "([B)V"],

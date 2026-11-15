@@ -7,7 +7,12 @@
 //      presentation stops, and resumes after the surface is restored: many times, at any point of a frame; a restore
 //      asked for before the surface was destroyed again is dropped, the next one restores; a surface release after
 //      a reset waits until a frame applied it (never a later read-back's flush frame, to a destroyed window);
-//   4. the renderer shuts down and starts again.
+//   4. the renderer shuts down and starts again;
+//   5. Vulkan runs only: the safety nets of a Vulkan start (backend_select.hpp). A self-test that fails starts the
+//      device on OpenGL ES and records the driver, so the next start goes to OpenGL ES at once; a crash marker left
+//      by a start that never confirmed does the same; a cleared cache lets Vulkan start again, auto included on a
+//      hardware GPU.
+#include "backend_select.hpp"
 #include "device.hpp"
 #include "storm/render/frame_owner.hpp"
 
@@ -17,9 +22,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
+#include <unistd.h>
 
 using namespace storm;
 using shim::Context;
@@ -161,6 +168,60 @@ bool run(SDL_Window *window, bool render_thread)
     }
     return ok;
 }
+// Step 5: Vulkan's crash guard and self-test fallback, with the guard's files in a fresh directory.
+bool safety_nets(SDL_Window *window)
+{
+    const char *mode = "vulkan safety nets";
+    Context &context = Context::instance();
+    namespace fs = std::filesystem;
+    const fs::path directory = fs::temp_directory_path() / ("storm-render-thread-check-" + std::to_string(getpid()));
+    fs::remove_all(directory);
+    const auto start = [&](render::Backend backend) {
+        render::SetRenderBackend(backend, directory);
+        return context.init(window, kWidth, kHeight, false);
+    };
+    const auto reason = [] { return render::RenderBackendChoice().reason; };
+    bool ok = true;
+
+    render::FailRenderBackendSelfTest(true);
+    ok &= expect(start(render::Backend::Vulkan) && !context.device_info().vulkan && reason().find("self-test") != std::string::npos &&
+                     fs::exists(directory / "vulkan-crashed.txt") && !fs::exists(directory / "vulkan-running.txt"),
+                 mode, "a failed self-test starts the device on OpenGL ES and records the driver");
+    context.shutdown();
+    render::FailRenderBackendSelfTest(false);
+    ok &= expect(start(render::Backend::Vulkan) && !context.device_info().vulkan && reason().find("failed (") != std::string::npos,
+                 mode, "... and the next start goes to OpenGL ES at once, saying why");
+    context.shutdown();
+
+    fs::remove_all(directory); // «Очистить кэш»
+    ok &= expect(start(render::Backend::Vulkan) && context.device_info().vulkan && fs::exists(directory / "vulkan-running.txt"),
+                 mode, "a cleared cache starts Vulkan again; its marker stays until frames were presented");
+    // The process "dies" here: the marker as it was before the orderly shutdown below removes it.
+    const fs::path kept = directory / "kept-marker";
+    fs::copy_file(directory / "vulkan-running.txt", kept);
+    context.shutdown();
+    ok &= expect(!fs::exists(directory / "vulkan-running.txt"), mode, "an orderly shutdown is no crash");
+    fs::rename(kept, directory / "vulkan-running.txt");
+    ok &= expect(start(render::Backend::Vulkan) && !context.device_info().vulkan &&
+                     reason().find("crashed the process") != std::string::npos,
+                 mode, "a marker left by a start that never confirmed runs OpenGL ES, saying why");
+    context.shutdown();
+
+    fs::remove_all(directory);
+    ok &= expect(start(render::Backend::Vulkan) && context.device_info().vulkan, mode, "Vulkan again after the cache is cleared");
+    present(context, 70);
+    ok &= expect(!fs::exists(directory / "vulkan-running.txt"), mode, "presented frames confirm the start: no marker");
+    context.shutdown();
+    if (!shim::ProbeVulkan().software)
+    {
+        const bool started = start(render::Backend::Auto);
+        ok &= expect(started && context.device_info().vulkan && reason().find("asks for") == std::string::npos, mode,
+                     ("auto takes Vulkan on this hardware GPU: " + reason()).c_str());
+        context.shutdown();
+    }
+    fs::remove_all(directory);
+    return ok;
+}
 } // namespace
 
 int main()
@@ -180,6 +241,8 @@ int main()
     bool ok = run(window, true);
     ok &= run(window, false);
     ok &= run(window, true); // and back: bgfx forgets the single-threaded choice at shutdown
+    if (host_check::VulkanAsked())
+        ok &= safety_nets(window);
     SDL_DestroyWindow(window);
     SDL_Quit();
     std::printf("%s: render thread\n", ok ? "PASS" : "FAIL");

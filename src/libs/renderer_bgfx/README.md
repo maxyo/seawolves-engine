@@ -72,17 +72,25 @@ bgfx is built with two backends, OpenGL ES 3.0 and Vulkan; a device runs one, ch
 (`src/shim/backend_select.hpp`, `Context::start`):
 
 - Asked for with `render_backend = auto | gles | vulkan` in engine.ini (debuggable Android builds: the graphics
-  setting of the same name, 0 / 1 / 2). `auto`, the default, takes Vulkan only for GPU vendors listed in
-  `VulkanByDefault` (filled from measurements on real devices; empty so far) and OpenGL ES otherwise.
-- Vulkan needs: the system's loader and a device with Vulkan 1.1, `VK_KHR_swapchain` and `VK_KHR_maintenance1`
-  (read by `ProbeVulkan` before bgfx is touched); no marker of a Vulkan start on this device and driver that
-  never presented a frame (`<cache>/RenderBackend/vulkan-start`, written before `bgfx::init`, removed after three
-  presented frames: a driver that kills the process in its start is not started on Vulkan twice); `bgfx::init`;
-  and the backend self-test (a known picture drawn into a target and read back).
-- A Vulkan that fails any of the last three makes the device start again on OpenGL ES: the one deliberate
+  setting of the same name, 0 / 1 / 2). `auto`, the default, takes Vulkan wherever the device has what the game
+  needs; `gles` / `vulkan` force one.
+- Vulkan needs (`ProbeVulkan` reads it before bgfx is touched; `DecideBackend`): the system's loader and a device with
+  Vulkan 1.1, `VK_KHR_swapchain` and `VK_KHR_maintenance1` (bgfx's device); no crash record for this device and driver
+  (below); `bgfx::init`; and the backend self-test (a known picture drawn into a target and read back). `auto` also
+  needs a hardware GPU (no CPU implementation such as lavapipe or SwiftShader), ETC2 or BC textures (else the game's
+  DXT textures are decoded to RGBA8, up to 8x the memory) and a driver that is not on the denylist (`VulkanDenied`
+  in `backend_select.cpp`: vendor, device and driver versions, each entry with its evidence; empty so far).
+- The crash guard (`VulkanStartGuard` on the relief's `storm/fx/gpu_crash_guard.hpp`): a marker
+  `<cache>/RenderBackend/vulkan-running.txt` holds the device and driver from before `bgfx::init` until 60 frames
+  were presented or the device was shut down in an orderly way. One left at the next start means the process died
+  in the Vulkan start: logged at error and recorded (`vulkan-crashed.txt`); a failed `bgfx::init` or self-test is
+  recorded the same way with its reason. That device and driver then run OpenGL ES, with an error line, until the
+  driver changes or «Очистить кэш». Developer key `render_backend_self_test = fail` makes the self-test fail
+  (tests the fallback).
+- A Vulkan that fails `bgfx::init` or the self-test makes the device start again on OpenGL ES: the one deliberate
   fallback of the renderer, said as an error with the reason. Every start logs one line, which the
-  application's diagnostics export keeps:
-  `render backend: Vulkan (render_backend = vulkan): <reason>; Vulkan device: <name, version, driver, ids>`.
+  application's diagnostics export keeps and the graphics settings show (backend and reason):
+  `render backend: Vulkan (render_backend = auto): <reason>; Vulkan device: <name, version, driver, ids>`.
 - OpenGL ES is not a spare: it is the backend of every device Vulkan is not chosen for, and of the launcher's
   screens (their `GLSurfaceView` owns the context).
 

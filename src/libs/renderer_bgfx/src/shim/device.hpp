@@ -69,11 +69,13 @@ class Context final : public render::FrameOwner
     void set_frame_overlap(int mode);
     // render::SetRenderBackend. Before the device exists.
     void set_backend(render::Backend backend, std::filesystem::path state_directory);
+    // render::FailRenderBackendSelfTest. Before the device exists.
+    void fail_self_test(bool fail) { fail_self_test_ = fail; }
     // render::SetVulkanAsyncPipelines.
     void set_async_pipelines(bool enabled);
     bool async_pipelines() const { return async_pipelines_; }
-    // The backend the device runs and why, as logged ("render backend: ..." without the prefix); empty before.
-    const std::string &backend_choice() const { return backend_choice_; }
+    // The backend the device runs and why (render::RenderBackendChoice); empty before.
+    const render::BackendChoice &backend_choice() const { return backend_choice_; }
     // Valid from init on.
     const DeviceInfo &device_info() const { return device_info_; }
     // Any thread: a frame handed to the render thread is not finished yet (rendered and presented).
@@ -258,9 +260,10 @@ class Context final : public render::FrameOwner
     DeviceInfo device_info_;
     render::Backend backend_request_ = render::Backend::Auto;
     std::filesystem::path backend_state_directory_;
-    std::string backend_choice_;
-    std::optional<BackendAttempt> backend_attempt_;       // a Vulkan start not yet confirmed by presented frames
-    uint32_t backend_presented_ = 0;                        // presented frames of this device
+    render::BackendChoice backend_choice_;
+    std::optional<VulkanStartGuard> backend_guard_; // a Vulkan start not yet confirmed by presented frames
+    uint32_t backend_presented_ = 0;                // presented frames of this device
+    bool fail_self_test_ = false;                   // render::FailRenderBackendSelfTest
     BonePalettes bone_palettes_;
     bool flip_y_ = false;
     bool border_clamp_ = false;

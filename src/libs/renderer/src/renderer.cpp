@@ -822,9 +822,9 @@ bool Renderer::Init()
         renderThread = storm::android::graphicsSetting("render_thread", renderThread);
 #endif
         storm::render::SetRenderThread(renderThread != 0);
-        // Key render_backend (frame_owner.hpp SetRenderBackend): auto (the default: Vulkan on the devices it is
-        // chosen for), gles or vulkan. The Android graphics setting of the same name wins: 0 auto, 1 gles, 2 vulkan.
-        // A Vulkan start leaves its marker under the cache root until frames were presented. Logged by the shim.
+        // Key render_backend (frame_owner.hpp SetRenderBackend): auto (the default: Vulkan wherever the device runs it
+        // well), gles or vulkan. The Android graphics setting of the same name wins: 0 auto, 1 gles, 2 vulkan. The
+        // Vulkan crash guard keeps its files under the cache root («Очистить кэш» clears them). Logged by the shim.
         ini->ReadString(nullptr, "render_backend", str, sizeof(str), "auto");
         int renderBackend = std::string_view(str) == "gles" ? 1 : std::string_view(str) == "vulkan" ? 2 : 0;
         if (renderBackend == 0 && std::string_view(str) != "auto")
@@ -833,6 +833,12 @@ bool Renderer::Init()
         renderBackend = std::clamp(storm::android::graphicsSetting("render_backend", renderBackend), 0, 2);
 #endif
         storm::render::SetRenderBackend(static_cast<storm::render::Backend>(renderBackend), fs::GetCachePath() / "RenderBackend");
+        // Developer key render_backend_self_test = fail (frame_owner.hpp FailRenderBackendSelfTest): tests the
+        // OpenGL ES fallback of a Vulkan start.
+        ini->ReadString(nullptr, "render_backend_self_test", str, sizeof(str), "");
+        storm::render::FailRenderBackendSelfTest(std::string_view(str) == "fail");
+        if (str[0] && std::string_view(str) != "fail")
+            spdlog::error("engine.ini render_backend_self_test = '{}' is not fail; ignored", str);
         // Developer key vulkan_async_pipelines = 0 (frame_owner.hpp SetVulkanAsyncPipelines): measurements.
         storm::render::SetVulkanAsyncPipelines(ini->GetInt(nullptr, "vulkan_async_pipelines", 1) != 0);
         // Developer key render_overlap (frame_owner.hpp SetFrameOverlap): -1 chosen per frame, 0 never, 1 always.
@@ -1211,6 +1217,10 @@ bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t heig
     // One device on bgfx; the behaviour flags of D3D9 mean nothing to the shim.
     if (CHECKD3DERR(d3d->CreateDevice(0, D3DDEVTYPE_HAL, hwnd, D3DCREATE_HARDWARE_VERTEXPROCESSING, &d3dpp, &d3d9)))
         return false;
+#ifdef __ANDROID__
+    // The graphics settings show the backend in use and why.
+    storm::android::reportRenderBackend(storm::render::RenderBackendChoice().backend, storm::render::RenderBackendChoice().reason);
+#endif
 
     // The back buffer and its depth: the target of every frame (SetScreenAsRenderTarget).
     d3d9->GetRenderTarget(0, &pOriginalScreenSurface);

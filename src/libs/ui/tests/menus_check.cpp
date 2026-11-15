@@ -356,7 +356,7 @@ static void Settings(const std::string &models)
                image[0]["columns"][1]["title"] == "<settings.detail>",
            "image page: one graphics column and the game's scene detail");
     Json preset = image[0]["columns"][0]["rows"][0];
-    Expect(image[0]["columns"][0]["rows"].size() == 3 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false && !preset.contains("label") &&
+    Expect(image[0]["columns"][0]["rows"].size() == 4 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false && !preset.contains("label") &&
                preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
            "the quality preset «Низкая / Средняя / Высокая», applied at once; no effect overrides; a measured preset "
            "(fx_preset_auto) is not marked: " + preset.dump());
@@ -369,6 +369,10 @@ static void Settings(const std::string &models)
     Expect(rate["id"] == "app-frame_rate" && rate["label"] == "<settings.frame_rate>" && rate["selected"] == 1 && rate["restart"] == false &&
                rate["disabled"] == false && rate["options"] == Json::array({"30", "60", "90", "120"}),
            "«Частота кадров» offers the rates the host reports for the display, 60 chosen, applied at once: " + rate.dump());
+    const Json api = image[0]["columns"][0]["rows"][3];
+    Expect(api["kind"] == "none" && api["id"] == "app-render_backend_in_use" && api["label"] == "<settings.render_backend>" &&
+               api["hint"] == "the device has Vulkan 1.1 with what the game needs and no recorded failure" && !api.contains("options"),
+           "the graphics API in use and why, shown read-only: " + api.dump());
     const Json grass = image[0]["columns"][1]["rows"][0];
     Expect(image[0]["columns"][1]["rows"].size() == 2 && grass["kind"] == "segment" && grass["selected"] == 2 && grass["label"] == "<settings.grass>",
            "the game's grass (radio group as one segment) and sea detail; its other effects are the preset's");
@@ -388,7 +392,8 @@ static void Settings(const std::string &models)
                    "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"texture_degradation\":0}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the renderer options to the host and confirms the game's settings; the measured-preset "
-           "flag fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");
+           "flag fx_preset_auto, the measured scene height fx_auto_render_height and the graphics API in use stay with "
+           "the host");
     surface.commands.clear();
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 1, "unchanged renderer options are not sent again");

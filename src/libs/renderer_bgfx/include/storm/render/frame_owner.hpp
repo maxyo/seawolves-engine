@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace storm::render
@@ -234,20 +235,25 @@ void SetRenderThread(bool enabled);
 // they fit); 0 never; 1 always (engine.ini render_overlap, measurements). Each change is logged.
 void SetFrameOverlap(int mode);
 
-// The bgfx backend of the game window (src/shim/backend_select.hpp). Auto: Vulkan on the devices it is chosen for
-// (a Vulkan 1.1 device of a GPU family measured faster on it, whose Vulkan start and self-test pass), OpenGL ES on
-// the others. OpenGLES / Vulkan ask for that backend (engine.ini render_backend = gles / vulkan, measurements);
-// Vulkan asked for on a device that cannot run it still ends on OpenGL ES, with an error. Call before the device
-// is created; the choice and its reason are logged when it is ("render backend: ...").
+// The bgfx backend of the game window (src/shim/backend_select.hpp). Auto (the default): Vulkan wherever the
+// device has Vulkan 1.1 with what the game needs, is not on the denylist of bad drivers, has no recorded crash or
+// failure for its driver, and its Vulkan start and self-test pass; OpenGL ES on the others. OpenGLES / Vulkan ask
+// for that backend (engine.ini render_backend = gles / vulkan); Vulkan asked for on a device that cannot run it
+// still ends on OpenGL ES, with an error. Call before the device is created; the choice and its reason are logged
+// when it is ("render backend: ...").
 enum class Backend
 {
     Auto,
     OpenGLES,
     Vulkan,
 };
-// `state_directory` (under the cache root; may be cleared at any time): where a Vulkan start leaves its marker
-// until frames were presented, so a driver that kills the process in it is not started on Vulkan again.
+// `state_directory` (under the cache root; may be cleared at any time): the crash guard's files. A Vulkan start
+// leaves its marker there until frames were presented, so a driver that kills the process in it (or fails it) is
+// not started on Vulkan again until the driver changes or the cache is cleared.
 void SetRenderBackend(Backend backend, const std::filesystem::path &state_directory);
+// Makes the backend self-test of the next device fail (engine.ini render_backend_self_test = fail): tests the
+// OpenGL ES fallback of a Vulkan start and its record. Before the device is created.
+void FailRenderBackendSelfTest(bool fail);
 // Vulkan only: whether a scene draw whose pipeline does not exist yet waits for it off the render thread (on, the
 // default: the draw appears a few frames later and no frame waits for the driver's compile) or the render thread
 // creates it at the draw (engine.ini vulkan_async_pipelines = 0, measurements). Any time.
@@ -256,8 +262,14 @@ void SetVulkanAsyncPipelines(bool enabled);
 // out while its pipeline was being created; 0 while none was, and always on OpenGL ES. It changes whenever another
 // frame leaves a draw out: a frame shown after it stayed unchanged had every draw (tools/scene_sweep waits for that).
 uint32_t LastIncompleteFrame();
-// The backend the device runs and why, as logged; empty before the first device.
-const char *RenderBackendChoice();
+// The backend the device runs and why; empty before the first device.
+struct BackendChoice
+{
+    std::string backend; // "Vulkan", "OpenGL ES" (none headless)
+    std::string reason;  // why, one sentence
+    std::string line;    // as logged after "render backend: ", with the request and the Vulkan device
+};
+const BackendChoice &RenderBackendChoice();
 
 // Platform surface lifecycle, reported by the application loop (Android pause/resume).
 // Between Lost and Restored nothing is presented and FrameClient::OnUiRender is not called.

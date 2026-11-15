@@ -33,7 +33,7 @@ add_executable(grass_vertex_check grass_vertex_check.cpp)
 target_include_directories(grass_vertex_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
 target_link_libraries(grass_vertex_check PRIVATE storm_bgfx storm_check_sdl)
 
-# backend_select_check: the choice between Vulkan and OpenGL ES and the marker of a failed Vulkan start
+# backend_select_check: the choice between Vulkan and OpenGL ES, the denylist and the crash guard of a Vulkan start
 # (src/shim/backend_select.hpp). No GPU.
 add_executable(backend_select_check backend_select_check.cpp)
 target_include_directories(backend_select_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
@@ -82,7 +82,7 @@ target_link_libraries(preset_switch_check PRIVATE storm_bgfx storm_check_sdl)
 
 # render_thread_check: bgfx's render thread through the shim on OpenGL ES (an X display, like skinning_check): the
 # driver's strings arrive from it, the surface is released only with no frame in flight, both gate choices and
-# render_thread=0 present, the renderer restarts in either mode.
+# render_thread=0 present, the renderer restarts in either mode; on Vulkan also the crash guard and self-test fallback.
 add_executable(render_thread_check render_thread_check.cpp)
 target_include_directories(render_thread_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
     "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")

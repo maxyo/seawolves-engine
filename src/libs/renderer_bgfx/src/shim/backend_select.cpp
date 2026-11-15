@@ -8,11 +8,10 @@
 #define VK_NO_STDINT_H
 #include <vulkan-local/vulkan_core.h>
 
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <dlfcn.h>
-#include <fstream>
-#include <system_error>
 #include <vector>
 
 namespace storm::shim
@@ -169,73 +168,101 @@ VulkanDevice ProbeVulkan()
     out.vertex_texture_units = static_cast<int>(properties.limits.maxPerStageDescriptorSampledImages);
     out.large_points = features.largePoints == VK_TRUE;
     out.max_point_size = out.large_points ? properties.limits.pointSizeRange[1] : 1.0f;
+    out.compressed_textures = features.textureCompressionETC2 == VK_TRUE || features.textureCompressionBC == VK_TRUE;
     destroy_instance(instance, nullptr);
     return out;
 }
 
-bool VulkanByDefault(uint32_t)
+namespace
 {
-    // No GPU family yet: the first device measurements (OpenGL ES against Vulkan, the same build) are pending.
-    return false;
+// A denylist entry: a GPU vendor, optionally a device, and the driver versions [from, to] (VkPhysicalDeviceProperties,
+// the vendor's own encoding) that break the game on Vulkan, with the evidence. No entry yet: no device has been seen
+// failing. A crash on a device that is not listed is caught by the crash guard for that device and driver alone.
+struct DeniedDriver
+{
+    uint32_t vendor_id, device_id; // device_id 0: every device of the vendor
+    uint32_t driver_from, driver_to;
+    const char *evidence; // "Mali-G52 r20p0: the sea's pipeline crashes (Test Lab run <id>)"
+};
+constexpr std::array<DeniedDriver, 0> kDeniedDrivers{};
+} // namespace
+
+std::string VulkanDenied(const VulkanDevice &device)
+{
+    for (const DeniedDriver &entry : kDeniedDrivers)
+        if (entry.vendor_id == device.vendor_id && (!entry.device_id || entry.device_id == device.device_id) &&
+            device.driver_version >= entry.driver_from && device.driver_version <= entry.driver_to)
+            return entry.evidence;
+    return {};
 }
 
-BackendDecision DecideBackend(render::Backend request, const VulkanDevice &device, bool failed_attempt)
+BackendDecision DecideBackend(render::Backend request, const VulkanDevice &device, const std::string &crash)
 {
     if (request == render::Backend::OpenGLES)
         return {false, "render_backend asks for OpenGL ES"};
     const bool asked = request == render::Backend::Vulkan;
-    const char *prefix = asked ? "render_backend asks for Vulkan, but " : "";
+    const std::string prefix = asked ? "render_backend asks for Vulkan, but " : "";
     if (!device.found())
         return {false, prefix + device.problem};
     if (device.api_version < VK_API_VERSION_1_1)
-        return {false, prefix + ("the device has Vulkan " + version_text(device.api_version) + ", older than 1.1")};
+        return {false, prefix + "the device has Vulkan " + version_text(device.api_version) + ", older than 1.1"};
     if (!device.swapchain)
-        return {false, std::string(prefix) + "the device lacks VK_KHR_swapchain or VK_KHR_maintenance1"};
-    if (failed_attempt)
-        return {false, std::string(prefix) + "the last Vulkan start on this device and driver never presented a frame "
-                                             "(the marker of that start is still in the cache)"};
+        return {false, prefix + "the device lacks VK_KHR_swapchain or VK_KHR_maintenance1"};
+    if (!crash.empty())
+        return {false, prefix + "an earlier Vulkan start on this device and driver " + crash +
+                           " (kept until the driver changes or the cache is cleared)"};
     if (asked)
         return {true, "render_backend asks for Vulkan"};
-    if (!VulkanByDefault(device.vendor_id))
-        return {false, "Vulkan is available but not the default for this GPU vendor (no device measurement favours "
-                       "it yet); render_backend = vulkan asks for it"};
-    return {true, "Vulkan is the default for this GPU vendor"};
+    if (device.software)
+        return {false, "the Vulkan device is a CPU implementation, slower than OpenGL ES"};
+    if (!device.compressed_textures)
+        return {false, "the Vulkan device has neither ETC2 nor BC textures (the game's textures would take up to 8x "
+                       "the memory)"};
+    if (const std::string denied = VulkanDenied(device); !denied.empty())
+        return {false, "this Vulkan driver is on the denylist: " + denied};
+    return {true, "the device has Vulkan 1.1 with what the game needs and no recorded failure"};
 }
 
-BackendAttempt::BackendAttempt(std::filesystem::path directory, const VulkanDevice &device) : key_(device.cache_key())
+VulkanStartGuard::VulkanStartGuard(std::filesystem::path directory, const VulkanDevice &device)
+    : guard_(directory, "vulkan"), key_(device.cache_key())
 {
-    if (directory.empty())
+    if (!guard_.enabled())
     {
         logf("render backend: no cache directory configured: a Vulkan start that kills the process is not remembered");
         return;
     }
-    file_ = std::move(directory) / "vulkan-start";
-    std::ifstream in(file_);
-    std::string stored;
-    if (in && std::getline(in, stored))
-        failed_before_ = stored == key_; // another device or driver: its failure says nothing about this one
+    if (const fx::GpuCrashGuard::Record left = guard_.take_leftover(); !left.empty())
+        logf("ERROR: render backend: the previous Vulkan start never presented its first frames: the process died in "
+             "it on %s",
+             left.what.c_str());
+    const fx::GpuCrashGuard::Record record = guard_.crashed();
+    if (record.empty())
+        return;
+    if (record.what != key_)
+    {
+        // Another device or driver since: its failure says nothing about this one.
+        logf("render backend: the Vulkan failure recorded on %s is for another driver; Vulkan is tried again on %s",
+             record.what.c_str(), key_.c_str());
+        guard_.forget();
+        return;
+    }
+    crash_ = record.why == fx::GpuCrashGuard::kProcessDied ? "crashed the process" : "failed (" + record.why + ")";
 }
 
-void BackendAttempt::begin()
+void VulkanStartGuard::begin() const
 {
-    if (file_.empty())
-        return;
-    std::error_code error;
-    std::filesystem::create_directories(file_.parent_path(), error);
-    std::ofstream out(file_, std::ios::trunc);
-    out << key_ << '\n';
-    out.flush();
-    if (!out)
-        logf("ERROR: render backend: cannot write %s: a Vulkan start that kills the process is not remembered",
-             file_.string().c_str());
+    guard_.mark(key_);
 }
 
-void BackendAttempt::succeed()
+void VulkanStartGuard::succeed() const
 {
-    if (file_.empty())
-        return;
-    std::error_code error;
-    std::filesystem::remove(file_, error);
+    guard_.clear();
+}
+
+void VulkanStartGuard::fail(const std::string &why) const
+{
+    guard_.record(key_, why);
+    guard_.clear();
 }
 
 } // namespace storm::shim
