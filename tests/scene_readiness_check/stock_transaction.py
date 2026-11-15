@@ -4,7 +4,7 @@ The baseline uses the old actual native completion function and must fail readin
 before release. Encoder/resource readiness/platform pump are explicit test doubles.
 """
 from pathlib import Path
-import subprocess, tempfile, sys
+import os, subprocess, tempfile, sys
 root=Path(__file__).resolve().parents[2]
 def extract(text, signature):
     start=text.index(signature); brace=text.index('{',start); end=brace+1; depth=1
@@ -32,26 +32,42 @@ source=r'''
 #include <vector>
 #include <string>
 #include <functional>
+#include <algorithm>
 #include "loading_transaction.hpp"
+#include "platform/host_hooks.hpp"
 int frames=0,draws=0,presents=0,releases=0,pumps=0,pose=0,prime=0,danger=0;
 int pendingUntil=4,suspendFor=0,cancelAt=0;bool error=false,ack=false,prepared=false;
+int scheduledStarts=0,scheduledPresents=0,scheduledEnds=0,scheduledSuspends=0;
+int waitPolls=0,waits=0,cpuEnds=0,cpuSuspends=0;bool invalidateAfterPresent=false;
 namespace storm::render {
 struct Status {bool active=true;uint64_t generation=7;}; Status status;
 Status GetSceneLoadStatus(){return status;}
 bool HoldSceneReveal(){assert(prepared);return error||frames<pendingUntil;}
 void CompleteSceneReveal(){assert(!error&&frames>=pendingUntil);status.active=false;}
+void EndSceneCpuBudget(uint64_t g){assert(g==7);++cpuEnds;}
+void SuspendSceneCpuBudget(uint64_t g){assert(g==7);++cpuSuspends;}
 }
-namespace storm::platform {
-enum class LoadingPlatformState {Continue,Suspended,Cancel,Quit,Unavailable};
-struct LoadingPlatformTransaction{};
-LoadingPlatformState PumpLoadingPlatform(uint64_t g){
+storm::platform::LoadingPlatformState hostPump(uint64_t g){
+ using storm::platform::LoadingPlatformState;
  assert(g==7);++pumps;
  if(cancelAt&&pumps==cancelAt){ack=true;return LoadingPlatformState::Cancel;}
  if(pumps<=suspendFor)return LoadingPlatformState::Suspended;
  return LoadingPlatformState::Continue;
 }
+unsigned schedulePump(uint64_t g,storm::platform::LoadingSchedulePhase phase){
+ using Phase=storm::platform::LoadingSchedulePhase;
+ assert(g==7&&storm::platform::LoadingPlatformTransactionActive());
+ if(phase==Phase::Poll&&waitPolls){--waitPolls;return 5;}
+ if(phase==Phase::FrameStarted){assert(!prepared);++scheduledStarts;}
+ if(phase==Phase::FramePresented){
+  assert(!prepared&&presents==frames);++scheduledPresents;
+  if(invalidateAfterPresent)storm::render::status.generation=8;
+ }
+ if(phase==Phase::Suspended)++scheduledSuspends;
+ if(phase==Phase::Ended)++scheduledEnds;
+ return 0;
 }
-void SDL_Delay(int){}
+void SDL_Delay(unsigned ms){assert(ms<=2);++waits;}
 struct TIMER {std::chrono::high_resolution_clock::time_point Current,Previous;double Carry=99;};
 struct SERVICE {virtual void RunStart(){};virtual void RunEnd(){};virtual ~SERVICE()=default;};
 struct Renderer: SERVICE {
@@ -93,27 +109,47 @@ NATIVE
 void reset(){
  frames=draws=presents=releases=pumps=pose=prime=danger=0;
  pendingUntil=4;suspendFor=cancelAt=0;error=ack=prepared=false;
+ scheduledStarts=scheduledPresents=scheduledEnds=scheduledSuspends=0;
+ waitPolls=waits=cpuEnds=cpuSuspends=0;invalidateAfterPresent=false;
+ storm::platform::loadingPlatformPump=hostPump;
+ storm::platform::loadingSchedulePump=schedulePump;
  storm::render::status={true,7};renderer.progressTexture=1;
 }
 int main(){
  reset();slNativeReloadProgressEnd(nullptr);
  assert(frames>=4&&frames==draws&&frames==presents&&pose==frames&&prime==2*frames);
  assert(releases==1&&!danger&&!storm::loading::active&&core.Timer.Carry==0);
+ assert(scheduledStarts==frames&&scheduledPresents==frames&&scheduledEnds==1&&cpuEnds==1);
+ assert(!storm::platform::LoadingPlatformTransactionActive());
  reset();suspendFor=3;slNativeReloadProgressEnd(nullptr);
  assert(pumps==frames+3&&releases==1&&!danger);
+ assert(scheduledSuspends==3&&cpuSuspends==3&&scheduledEnds==1);
+ reset();waitPolls=3;slNativeReloadProgressEnd(nullptr);
+ assert(pumps==frames+3&&waits==3&&scheduledStarts==frames&&scheduledPresents==frames);
+ reset();waitPolls=8;cancelAt=3;bool waitCancelled=false;
+ try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){waitCancelled=a.outcome==storm::loading::Outcome::Cancel;}
+ assert(waitCancelled&&ack&&frames==0&&waits==2&&scheduledEnds==1&&cpuEnds==1);
  reset();error=true;cancelAt=3;bool continued=false;
  try {slNativeReloadProgressEnd(nullptr);continued=true;}
  catch(const storm::loading::Aborted&a){assert(a.outcome==storm::loading::Outcome::Cancel&&ack);}
  assert(!continued&&releases==0&&frames==2&&draws==2&&presents==2&&!danger);
  assert(!storm::loading::active&&core.Timer.Carry==0);
+ assert(scheduledEnds==1&&cpuEnds==1&&!storm::platform::LoadingPlatformTransactionActive());
+ reset();invalidateAfterPresent=true;bool invalidated=false;
+ try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){invalidated=a.outcome==storm::loading::Outcome::Invalidated;}
+ assert(invalidated&&frames==1&&releases==0&&scheduledEnds==1&&cpuEnds==1);
+ reset();renderer.progressTexture=-1;bool unavailable=false;
+ try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){unavailable=a.outcome==storm::loading::Outcome::Unavailable;}
+ assert(unavailable&&frames==1&&presents==0&&scheduledPresents==0&&scheduledEnds==1&&cpuEnds==1);
+ assert(!storm::platform::LoadingPlatformTransactionActive());
  reset();storm::loading::active=true;bool reentrant=false;
  try{core.PrepareLoadingScene();}catch(const storm::loading::Aborted&a){reentrant=a.outcome==storm::loading::Outcome::Reentrant;}
- assert(reentrant&&frames==0);storm::loading::active=false;
+ assert(reentrant&&frames==0&&scheduledEnds==0);storm::loading::active=false;
 }
 '''
 source=source.replace('METHOD',method).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))
 with tempfile.TemporaryDirectory(prefix='stock-transaction-') as tmp:
     p=Path(tmp);(p/'check.cpp').write_text(source)
-    subprocess.run(['c++','-std=c++20','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/util/include'),str(p/'check.cpp'),'-o',str(p/'check')],check=True)
+    subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/util/include'),str(p/'check.cpp'),'-o',str(p/'check')],check=True)
     subprocess.run([str(p/'check')],check=True)
 print('stock transaction actual core/native/renderer control PASS')

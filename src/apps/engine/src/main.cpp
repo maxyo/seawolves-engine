@@ -685,6 +685,47 @@ int main(int argc, char *argv[])
     storm::render::LoadingBudget loadingBudget;
     const auto loadingClock = [] { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count()); };
+    uint64_t loadingScheduleGeneration = 0;
+    auto loadingSchedule = [&](uint64_t generation, storm::platform::LoadingSchedulePhase phase) -> unsigned {
+        using Phase = storm::platform::LoadingSchedulePhase;
+        if (phase == Phase::Suspended || phase == Phase::Ended) {
+            if (generation == loadingScheduleGeneration) {
+                storm::render::SetSceneLoadingWindow(0, 0);
+                loadingBudget = {};
+                loadingScheduleGeneration = 0;
+            }
+            return 0;
+        }
+        const auto state = storm::render::GetSceneLoadStatus();
+        if (!state.active) {
+            if (loadingScheduleGeneration) {
+                storm::render::SetSceneLoadingWindow(0, 0);
+                loadingBudget = {};
+                loadingScheduleGeneration = 0;
+            }
+            return 0;
+        }
+        if (state.generation != generation) return 0;
+        if (loadingScheduleGeneration != generation) {
+            storm::render::SetSceneLoadingWindow(0, 0);
+            loadingBudget = {};
+            loadingScheduleGeneration = generation;
+        }
+        const auto now = loadingClock();
+        if (phase == Phase::FrameStarted) {
+            storm::render::SetSceneLoadingWindow(0, 0);
+            loadingBudget.frame_started(now);
+            return 0;
+        }
+        // The deadline requires the renderer's actual matching opaque Present,
+        // selected required work and fresh GPU timing; a stock request is insufficient.
+        const auto budget = storm::render::GetSceneLoadingBudget();
+        const auto until = loadingBudget.deadline(now, budget.eligible && budget.generation == generation,
+                                                   budget.gpu_ms, budget.measured_at_ms);
+        storm::render::SetSceneLoadingWindow(until > now ? generation : 0, until > now ? until : 0);
+        return phase == Phase::Poll && until > now ? static_cast<unsigned>(std::min<uint64_t>(2, until - now)) : 0;
+    };
+    storm::platform::LoadingScheduleRegistration loadingScheduleRegistration(loadingSchedule);
     isRunning = true;
     // This callback is used only inside the original synchronous loading stage.
     // It pumps OS/lifecycle queues, not ui::tick/takeCommands, Controls or Core::Run.
@@ -1062,20 +1103,21 @@ int main(int argc, char *argv[])
             }
             // All SDL/lifecycle and load actions were serviced above. Only real frames run the
             // adapters below; waiting never fabricates frame/stability observations.
-            const auto loading = storm::render::GetSceneLoadingBudget();
-            const auto loadingNow = loadingClock();
             bool canPaceLoading = bActive;
 #ifdef __ANDROID__
             canPaceLoading = canPaceLoading && androidLifecycle.canRun() && !mapModalHold;
 #endif
-            const auto loadingUntil = loadingBudget.deadline(loadingNow, canPaceLoading && loading.eligible,
-                                                             loading.gpu_ms, loading.measured_at_ms);
-            if (loadingUntil > loadingNow) {
-                storm::render::SetSceneLoadingWindow(loading.generation, loadingUntil);
-                std::this_thread::sleep_for(std::chrono::milliseconds(std::min<uint64_t>(2, loadingUntil - loadingNow)));
-                continue;
+            // The synchronous native stock loop invokes this same controller
+            // itself. The outer loop never supplies a second heartbeat for it.
+            if (!storm::platform::LoadingPlatformTransactionActive()) {
+                const auto loading = storm::render::GetSceneLoadStatus();
+                const auto wait = loadingSchedule(loading.generation, canPaceLoading
+                    ? storm::platform::LoadingSchedulePhase::Poll : storm::platform::LoadingSchedulePhase::Suspended);
+                if (wait) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(wait));
+                    continue;
+                }
             }
-            storm::render::SetSceneLoadingWindow(0, 0);
 
             if ((bActive || run_in_background)
 #ifdef __ANDROID__
@@ -1152,7 +1194,8 @@ int main(int argc, char *argv[])
                     storm::android::worldMapHud.beginDraw(SDL_GetTicks());
 #endif
                     STORM_PROFILE_ZONE("frame: script, entities, render");
-                    loadingBudget.frame_started(loadingClock());
+                    loadingSchedule(storm::render::GetSceneLoadStatus().generation,
+                                    storm::platform::LoadingSchedulePhase::FrameStarted);
                     RunFrame();
                 }
                 RethrowCallbackError(); // from a handler SDL called during the frame

@@ -302,6 +302,12 @@ void CoreImpl::PrepareLoadingScene()
     uint64_t loading_frames = 0;
     Trace("Stock loading transaction enter generation=%llu", static_cast<unsigned long long>(initial.generation));
     storm::platform::LoadingPlatformTransaction platform;
+    struct LoadingScheduleReset {
+        uint64_t generation;
+        ~LoadingScheduleReset() {
+            storm::platform::PumpLoadingSchedule(generation, storm::platform::LoadingSchedulePhase::Ended);
+        }
+    } schedule_reset{initial.generation};
     struct TimerBaseline {
         TIMER &timer;
         ~TimerBaseline() {
@@ -320,6 +326,7 @@ void CoreImpl::PrepareLoadingScene()
         const auto host = storm::platform::PumpLoadingPlatform(initial.generation);
         if (host == storm::platform::LoadingPlatformState::Suspended) {
             storm::render::SuspendSceneCpuBudget(initial.generation);
+            storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::Suspended);
             SDL_Delay(2);
             continue;
         }
@@ -327,6 +334,14 @@ void CoreImpl::PrepareLoadingScene()
             throw storm::loading::Aborted{host == storm::platform::LoadingPlatformState::Cancel
                 ? storm::loading::Outcome::Cancel : host == storm::platform::LoadingPlatformState::Quit
                 ? storm::loading::Outcome::Quit : storm::loading::Outcome::Unavailable};
+        const auto wait = storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::Poll);
+        if (wait) {
+            // The next iteration pumps lifecycle/cancel again. No fake render
+            // observation or ordinary frame is earned while the worker uses its window.
+            SDL_Delay(std::min(wait, 2u));
+            continue;
+        }
+        storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::FrameStarted);
         renderer->RunStart();
         // Animation service explicitly builds the already-selected pose in this context.
         if (animation) animation->RunStart();
@@ -343,6 +358,7 @@ void CoreImpl::PrepareLoadingScene()
         for (auto id : ids) if (auto *entity = GetEntityPointerSafe(id))
             entity->ProcessStage(Entity::Stage::loading_realize, 0);
         renderer->RunEnd(); // stock artwork, actual Present, upload/shadow/resource pumps
+        storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::FramePresented);
         ++loading_frames;
         storm::loading::first_frame = false;
         if (storm::loading::ready) {

@@ -78,6 +78,29 @@ inline LoadingPlatformState PumpLoadingPlatform(uint64_t generation)
     return loadingPlatformPump(generation);
 }
 
+// The stock loader owns the game thread until preparation finishes. Its host
+// controller must run there, not only in the outer game loop. These are resource
+// scheduling notifications, never permission to dispatch scripts or simulation.
+enum class LoadingSchedulePhase { Poll, FrameStarted, FramePresented, Suspended, Ended };
+using LoadingSchedulePump = std::function<unsigned(uint64_t, LoadingSchedulePhase)>;
+inline LoadingSchedulePump loadingSchedulePump;
+class LoadingScheduleRegistration
+{
+public:
+    explicit LoadingScheduleRegistration(LoadingSchedulePump callback)
+        : previous_(std::move(loadingSchedulePump)) { loadingSchedulePump = std::move(callback); }
+    ~LoadingScheduleRegistration() { loadingSchedulePump = std::move(previous_); }
+    LoadingScheduleRegistration(const LoadingScheduleRegistration &) = delete;
+    LoadingScheduleRegistration &operator=(const LoadingScheduleRegistration &) = delete;
+private:
+    LoadingSchedulePump previous_;
+};
+inline unsigned PumpLoadingSchedule(uint64_t generation, LoadingSchedulePhase phase)
+{
+    if (!LoadingPlatformTransactionActive() || !loadingSchedulePump) return 0;
+    return loadingSchedulePump(generation, phase);
+}
+
 // Time the game thread blocked in presents since the last FrameWorkClock lap: the frame pacing waiting for the
 // frame's vsync slot (renderer_bgfx shim/frame_pacing.cpp), which is not work. Game thread only.
 inline std::chrono::nanoseconds presentWait{0};

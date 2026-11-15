@@ -175,6 +175,17 @@ add_test(NAME scene_nested_progress_check
 set_tests_properties(scene_nested_progress_check PROPERTIES
     LABELS "scene_readiness;cpu" TIMEOUT 60)
 
+# Native stock ownership/cadence, using actual core and host-controller bodies.
+# No renderer window, model inference or GPU completion assumption.
+foreach(check IN ITEMS transaction scheduler)
+    add_test(NAME scene_stock_${check}_check
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/stock_${check}.py")
+    set_tests_properties(scene_stock_${check}_check PROPERTIES
+        LABELS "scene_readiness;cpu" TIMEOUT 60)
+endforeach()
+
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
     "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
