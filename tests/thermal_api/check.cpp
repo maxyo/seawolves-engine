@@ -60,10 +60,10 @@ int main()
 
     const float nan = std::nanf("");
     check(!thermal_hot(false, 0, 0.5f), "cool");
-    check(thermal_hot(false, 2, 0.f), "moderate pauses");
-    check(thermal_hot(false, 0, 0.95f), "headroom pauses early");
-    check(thermal_hot(true, 0, 0.8f), "stays paused above the resume headroom");
-    check(!thermal_hot(true, 0, 0.7f), "resumes below it");
+    check(thermal_hot(false, 2, 0.f), "moderate is elevated telemetry");
+    check(thermal_hot(false, 0, 0.95f), "headroom flags elevated load early");
+    check(thermal_hot(true, 0, 0.8f), "telemetry hysteresis retains elevated load");
+    check(!thermal_hot(true, 0, 0.7f), "telemetry clears below the lower threshold");
     check(!thermal_hot(false, 1, nan), "no forecast: the status decides");
     std::puts("thermal_api: ok");
 }

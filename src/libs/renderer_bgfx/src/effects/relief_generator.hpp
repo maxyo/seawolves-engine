@@ -12,8 +12,8 @@
 //     A complete pass prunes stale maps and leaves a mark (fx::kReliefMethodVersion, map size, candidate count): the
 //     next starts skip it.
 //   * The worker and onnxruntime's threads run at nice 10, on all cores but two (the game's main and render threads).
-//     On Android 11+ the device's thermal status (and, on 12+, the headroom forecast) pauses the work from MODERATE up (logged); older Android has no
-//     thermal API (logged once). The renderer's hold (the automatic graphics preset's measurement) pauses it too. The models are loaded at the first job and released after 10 s with no work left.
+//     The renderer's explicit hold (the automatic graphics preset's measurement) pauses work; device thermal
+//     status/headroom is telemetry only. The models are loaded at the first job and released after 10 s with no work left.
 // The maps persist: a texture's map is made once per game, method and map size.
 #pragma once
 
@@ -64,7 +64,7 @@ class ReliefGenerator
     // Main thread: relief is on (the rest of the game is made only then).
     void set_active(bool active);
     // Main thread: request a missing ×2 texture (effects/upscale.hpp). Alternates with loaded relief requests,
-    // before background preparation. A completed cache file is published even while thermal protection pauses
+    // before background preparation. A completed cache file is published even while an explicit renderer hold pauses
     // inference. The caller sets Waiting before enqueueing. False when
     // kUpscaleQueue requests wait already (the entry asks again later). Done: the entry becomes Stored, or Failed.
     bool request_upscale(const std::shared_ptr<UpscaleEntry> &entry);

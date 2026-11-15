@@ -10,7 +10,7 @@
 //     an "effects upscale: budget" line says how many and the nearest (each time that changes);
 //   * a chosen texture's ×2 is read from the upscale directory on a texture worker and uploaded (a KTX container with
 //     its whole chain, in the device's tier: ETC2 or BC); one not made yet is requested from the relief generator
-//     (effects/relief_generator.hpp: nice 10, the shared thermal pause, at most kUpscaleQueue waiting).
+//     (effects/relief_generator.hpp: nice 10, explicit renderer holds, at most kUpscaleQueue waiting).
 // Draws bind the ×2 in place of the texture (shim Device::draw); nothing else about the draw changes. The relief maps
 // of textures up to the map's size are made from their ×2 whatever this setting (src/libs/relief).
 #pragma once

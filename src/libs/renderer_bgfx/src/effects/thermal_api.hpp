@@ -1,4 +1,4 @@
-// The AThermal NDK API's availability and the pause decision, free of Android so a host check can run them: the
+// The AThermal NDK API's availability and thermal-load classification, free of Android so a host check can run them: the
 // symbol lookup is injected (thermal.cpp passes dlsym on libandroid.so). A symbol missing on an API that has it is an
 // error to log loudly, never a quiet "no thermal status" (a wrong symbol name once did that on every phone).
 #pragma once
@@ -53,14 +53,14 @@ template <class Lookup> ThermalResolution resolve_thermal_api(int api_level, Loo
 
 // ATHERMAL_STATUS_MODERATE: the first level where the platform asks to cut load.
 constexpr int kThermalModerate = 2;
-// Headroom (1.0 = severe throttling) forecast kHeadroomForecastSeconds ahead: pause early from kHeadroomPause, resume
-// below kHeadroomResume (and a status under MODERATE), so it does not flap.
+// Headroom (1.0 = severe throttling) forecast kHeadroomForecastSeconds ahead: flag elevated load from kHeadroomPause,
+// clear below kHeadroomResume (and a status under MODERATE), so telemetry does not flap. No scheduling pause.
 constexpr int kHeadroomForecastSeconds = 10;
 constexpr float kHeadroomPause = 0.9f;
 constexpr float kHeadroomResume = 0.75f;
 // Older Android implementations rate-limit headroom more strictly than status.
 // Keep one failed refresh's forecast, but never turn an unavailable sensor into
-// an indefinite pause. The current thermal status is still sampled every second.
+// an indefinitely hot classification. The current thermal status is still sampled every second.
 constexpr int kHeadroomPollMilliseconds = 10000;
 constexpr int kHeadroomValidMilliseconds = 20000;
 

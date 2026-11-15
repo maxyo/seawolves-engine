@@ -44,14 +44,13 @@ struct Thermal
         }
         if (!resolution.available)
         {
-            shim::logf("effects: no thermal status on Android API %d (AThermal needs API 30): the relief generation and "
-                       "the ray bakes do not pause when the device is hot", level);
+            shim::logf("effects: no thermal telemetry on Android API %d (AThermal needs API 30)", level);
             return;
         }
         api = resolution.api;
         manager = api.acquire();
         if (!manager)
-            shim::logf("effects: ERROR AThermal_acquireManager returned null on Android API %d: no thermal pause", level);
+            shim::logf("effects: ERROR AThermal_acquireManager returned null on Android API %d: no thermal telemetry", level);
         else
             shim::logf("effects: thermal status is read (API %d%s)", level, api.headroom ? ", with headroom" : "");
     }
@@ -94,12 +93,11 @@ bool device_hot()
                                    ? cached_headroom : std::nanf("");
         const bool was_hot = hot.load();
         const bool now_hot = thermal_hot(was_hot, status, headroom);
-        // The forecast can pause work while the reported status stays LIGHT. Log that transition too: otherwise
-        // diagnostics only show an earlier, cooler forecast and incorrectly suggest a MODERATE status was seen.
+        // Log forecast-driven load changes even while the reported status stays LIGHT.
+        // This is telemetry only: temperature no longer pauses background preparation.
         if (status != last_status.exchange(status) || now_hot != was_hot)
-            shim::logf("effects: thermal status: %s, headroom %.2f, background work %s (forecast pause %.2f, resume below %.2f)",
-                       status_name(status), static_cast<double>(headroom), now_hot ? "paused" : "allowed",
-                       static_cast<double>(kHeadroomPause), static_cast<double>(kHeadroomResume));
+            shim::logf("effects: thermal status: %s, headroom %.2f, load %s; automatic background thermal pause disabled",
+                       status_name(status), static_cast<double>(headroom), now_hot ? "elevated" : "normal");
         hot = now_hot;
     }
     return hot.load();
@@ -126,7 +124,8 @@ const char *background_wait_reason()
 {
     if (const char *held = g_hold.load())
         return held;
-    return device_hot() ? kThermalWaitReason : nullptr;
+    (void)device_hot(); // Keep bounded sensor telemetry, without an automatic preparation pause.
+    return nullptr;
 }
 
 } // namespace storm::effects

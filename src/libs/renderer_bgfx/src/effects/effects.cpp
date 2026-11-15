@@ -409,7 +409,7 @@ Host &Host::instance()
 void Host::on_device_created()
 {
     fx::SetLogSink(log_sink);
-    fx::SetBakeGate(&background_wait_reason); // the ray bakes pause while the device is hot or the renderer holds them
+    fx::SetBakeGate(&background_wait_reason); // Ray bakes honor explicit renderer holds; temperature is telemetry only.
     fx::RendererFacts facts;
     // The game's offscreen depth is a D24S8 BGFX_TEXTURE_RT texture (TexStore::create_gpu): sampleable. With MSAA
     // the pinned bgfx GL backend blits the depth into that texture too when the frame buffer is resolved
