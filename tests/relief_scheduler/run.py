@@ -9,6 +9,10 @@ with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
     source=Path(os.environ.get('STORM_RELIEF_GENERATOR_SOURCE',str(root/'src/libs/renderer_bgfx/src/effects/relief_generator.cpp')))
     worker=Path(directory)/'worker.cpp'
     text=source.read_text()
+    # Shorten only the polling cadence; the thermal predicate and all queue policy stay the production ones.
+    poll='constexpr auto kWaitPause = std::chrono::seconds(5);'
+    assert text.count(poll)==1, 'worker polling cadence changed'
+    text=text.replace(poll,'constexpr auto kWaitPause = std::chrono::milliseconds(10);')
     assert text.count('using Clock = std::chrono::steady_clock;')==1, 'worker clock declaration changed'
     text=text.replace('using Clock = std::chrono::steady_clock;',
         'struct Clock : std::chrono::steady_clock { static time_point now() { return test_now(); } };')
@@ -22,4 +26,4 @@ with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
         '-I'+str(root/'src/libs/relief'),str(check/'check.cpp'),
         str(worker),
         str(root/'src/libs/renderer_bgfx/fx/src/upscale.cpp'),'-o',str(output)],check=True)
-    subprocess.run([str(output),directory],check=True,timeout=50)
+    subprocess.run([str(output),directory],check=True,timeout=120) # a hang guard

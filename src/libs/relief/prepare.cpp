@@ -1,6 +1,7 @@
 #include "storm/fx/cpu_admission.hpp"
 #include "loading_retry.hpp"
 #include "relief.hpp"
+#include "finalizer.hpp"
 
 #include "backend.hpp"
 #include "device_retry.hpp"
@@ -60,17 +61,6 @@ void Log(const char *format, ...)
 namespace
 {
 using Clock = std::chrono::steady_clock;
-void LogCpuTiming(const char *texture, const char *model, const CpuInferenceTiming &timing, bool ok)
-{
-    if (!timing.applicable) {
-        Log("relief timing %s %s: CPU admission/ORT wall N/A (no CPU sample; GPU not applicable), success=%d", texture, model, ok);
-        return;
-    }
-    Log("relief timing %s %s: CPU admission wall %.3f ms, ORT Run wall %.3f ms, %llu tiles, success=%d (wall, not CPU time)",
-        texture, model, timing.admission_wall_ms, timing.ort_wall_ms,
-        static_cast<unsigned long long>(timing.tiles), ok);
-}
-
 constexpr uint32_t kTxFlagPalette = 1, kTxFlagCubemap = 2;
 
 double Seconds(Clock::time_point since)
@@ -463,7 +453,11 @@ struct Session::Impl
     std::mutex networks_mutex;   // swaps against Cancel from another thread
     Stats stats;
     std::atomic<bool> cancelled{false};
-    std::unique_ptr<texture::EacEncoder> encoder; // one caller; helpers run only after inference has returned
+    std::function<bool(size_t)> compute_admission;
+    std::unique_ptr<Finalizer> synchronous_finalizer; // compute owner only, never used by finalizer thread
+    std::shared_ptr<std::atomic<bool>> finalize_cancelled = std::make_shared<std::atomic<bool>>(false);
+    inline static std::atomic<uint64_t> next_session{0};
+    const uint64_t session = ++next_session;
 
     std::array<std::unique_ptr<Network>, 3> &Active() { return on_gpu ? gpu : cpu; }
     bool EnsureGpu(std::string &error)
@@ -587,7 +581,6 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     threads = threads > 0 ? std::min(threads, cores) : cores;
     impl->models = models;
     impl->threads = threads;
-    impl->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(threads));
     impl->cache = cache;
     // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
     const bool gpu_models = !models.normal_param.empty() && !models.height_param.empty() && !models.roughness_param.empty() &&
@@ -623,7 +616,7 @@ void Session::SetCpuBudget(unsigned threads)
     if (!threads || static_cast<unsigned>(impl_->threads) == threads) return;
     const auto started = Clock::now();
     impl_->ReleaseCpu(); // mutex excludes Cancel; no admission waits while held
-    impl_->encoder.reset();
+    impl_->synchronous_finalizer.reset(); // compute owner only; async finalizer has its own lifetime
     impl_->threads = static_cast<int>(threads);
     // A CPU timing measured with another pool size must not demote a GPU.
     impl_->cpu_ms_per_texel = impl_->upscale_cpu_ms_per_texel = 0.0;
@@ -633,8 +626,8 @@ void Session::SetCpuBudget(unsigned threads)
 
 void Session::ReleaseIdleModels()
 {
-    impl_->encoder.reset(); // helpers are idle here; release their stacks and thread-local encoding scratch too
     impl_->ReleaseCpu();
+    impl_->synchronous_finalizer.reset(); // release synchronous encoder workers/scratch on idle as before
     {
         std::lock_guard lock(impl_->networks_mutex);
         impl_->gpu_upscaler.reset();
@@ -667,6 +660,7 @@ bool Session::WaitsForGpu() const
 void Session::Cancel()
 {
     impl_->cancelled = true;
+    *impl_->finalize_cancelled = true;
     std::lock_guard lock(impl_->networks_mutex);
     for (auto *set : {&impl_->gpu, &impl_->cpu})
         for (const std::unique_ptr<Network> &network : *set)
@@ -682,7 +676,7 @@ const Session::Stats &Session::stats() const
     return impl_->stats;
 }
 
-Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::filesystem::path &file,
+ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const std::filesystem::path &file,
                              const std::filesystem::path &output, int map_size, std::string &failure,
                              const UpscaleOutput *display)
 {
@@ -718,6 +712,12 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         return Outcome::Skipped;
     if ((!key || fx::HasReliefMap(output, *key)) && (!gloss_key || fx::HasGlossMap(output, *gloss_key)))
         return Outcome::Existing;
+    const int selected = source_level(tx);
+    const size_t source_area = size_t(std::max(1u, tx.width >> selected)) * std::max(1u, tx.height >> selected);
+    // Full-image vectors + maximum x4 tile I/O scratch. The ORT arena remains a separate runtime bound.
+    if (impl_->compute_admission && !impl_->compute_admission(source_area * 256 + (size_t{32} << 20))) {
+        failure = "cancelled"; return Outcome::Failed;
+    }
     if (!tx.Load(file, source_level))
         return Outcome::Skipped;
     const double read_ms = lap();
@@ -762,9 +762,7 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         // The crash guard around the GPU's first texture (backend.hpp MarkGpuRunning): the ×2 is its first network.
         if (use_gpu && impl_->gpu_unproven)
             MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-        const bool upscaled = upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure);
-        LogCpuTiming(candidate->name.c_str(), "upscale", upscaler.CpuTiming(), upscaled);
-        if (!upscaled)
+        if (!upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure))
         {
             if (impl_->cancelled)
                 failure = "cancelled";
@@ -773,8 +771,11 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         }
         if (display && level == 0 && target != fx::UpscaleTarget::None)
             if (const std::optional<uint64_t> x2_key = Key(*candidate, tx, fx::UpscaleMethod(display->bc), std::max(width, height)))
-                if (!fx::HasUpscaled(display->directory, *x2_key))
+                if (!fx::HasUpscaled(display->directory, *x2_key)) {
+                    auto permit = fx::SharedCpuAdmission().acquire(1, [&] { return impl_->cancelled.load(); });
+                    if (!permit) { failure = "cancelled"; return Outcome::Failed; }
                     WriteDisplay(*display, *x2_key, x2, width * 2, height * 2, candidate->name);
+                }
         rgba = std::move(x2);
         width *= 2;
         height *= 2;
@@ -800,7 +801,6 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
             const Clock::time_point infer_start = Clock::now();
             const bool ok = model.Infer(image, pw, ph, out, failure);
             const double ms = std::chrono::duration<double, std::milli>(Clock::now() - infer_start).count();
-            LogCpuTiming(candidate->name.c_str(), &model == nets[0].get() ? "normal" : &model == nets[1].get() ? "height" : "roughness", model.CpuTiming(), ok);
             infer_ms += ms;
             infer_texels += static_cast<double>(pw) * ph;
             char part[64];
@@ -907,136 +907,25 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
         return Outcome::Failed;
     }
-    // The models' planes at the map's size (box-filtered when they ran on a ×2 at twice it).
-    if (mw != fw || mh != fh)
-    {
-        for (std::vector<float> *planes : {&normal_planes, &height_planes})
-            if (!planes->empty())
-            {
-                const size_t n = static_cast<size_t>(mw) * mh;
-                std::vector<float> boxed;
-                for (int c = 0; c < 3; ++c)
-                {
-                    const std::vector<float> one =
-                        HalveTo(std::vector<float>(planes->begin() + c * n, planes->begin() + (c + 1) * n), mw, mh, fw, fh);
-                    boxed.insert(boxed.end(), one.begin(), one.end());
-                }
-                *planes = std::move(boxed);
-            }
-        mw = fw;
-        mh = fh;
-    }
-    fx::GlossField gloss;
-    if (gloss_wanted)
-    {
-        int cw = width, ch = height;
-        const std::vector<uint8_t> colour = HalveTo(rgba, cw, ch, gw, gh);
-        gloss = fx::GlossOfRoughness(fx::ReliefModelHeight(roughness_planes, gw, gh), gloss_height, colour, gw, gh,
-                                     candidate->gloss);
-    }
-    const double gloss_ms = lap();
-    double encode_ms = 0.0, store_ms = 0.0;
-    unsigned encode_threads = 1;
-    const auto encode = [&](const fx::NormalMap &source, const std::vector<uint8_t> &texels,
-                            std::vector<uint8_t> &encoded) {
-        const auto begin = Clock::now();
-        if (!impl_->encoder)
-            impl_->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(impl_->threads));
-        auto permit = fx::SharedCpuAdmission().acquire(static_cast<unsigned>(impl_->threads), [&] { return impl_->cancelled.load(); });
-        const bool ok = static_cast<bool>(permit) && !texels.empty() && source.width > 0 && source.height > 0 && source.mip_count > 0 &&
-                       impl_->encoder->Encode(texture::EacFormat::Rg11, texels.data(), source.width, source.height,
-                                               source.mip_count, encoded, impl_->cancelled);
-        encode_ms += std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
-        encode_threads = std::max(encode_threads, impl_->encoder->participants());
-        if (!ok)
-        {
-            failure = impl_->cancelled ? "cancelled" : "invalid EAC input";
-            Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
-        }
-        return ok;
-    };
-    fx::NormalMap map;
-    if (key)
-    {
-        fx::NormalMap rg8 = fx::NormalMapOfNormals(fx::ReliefModelNormals(normal_planes, mw, mh), mw, mh);
-        if (height_class)
-        {
-            // The material's G: the gloss stretched over the map (empty: no gloss class, G 0).
-            const std::vector<uint8_t> g = gloss.gloss.empty() ? std::vector<uint8_t>{} : Stretch(gloss.gloss, gw, gh, mw, mh);
-            // The parallax trust reads the colour at the map's size.
-            int aw = width, ah = height;
-            const std::vector<uint8_t> albedo = HalveTo(rgba, aw, ah, mw, mh);
-            if (aw != mw || ah != mh ||
-                !fx::AddReliefMaterial(rg8, relief, fx::ReliefModelHeight(height_planes, mw, mh), g, albedo))
-                Log("relief %s: flat, no height", candidate->name.c_str());
-        }
-        map = {rg8.width, rg8.height, rg8.mip_count, fx::NormalMapFormat::EacRg11, {}};
-        if (!encode(rg8, rg8.rg, map.rg))
-            return Outcome::Failed;
-        if (!rg8.material.empty())
-        {
-            if (!encode(rg8, rg8.material, map.material))
-                return Outcome::Failed;
-            map.depth = rg8.depth;
-            map.trust = std::move(rg8.trust);
-            map.trust_coverage = rg8.trust_coverage;
-        }
-        if (impl_->cancelled)
-        {
-            failure = "cancelled";
-            return Outcome::Failed;
-        }
-        const auto store_start = Clock::now();
-        const bool written = fx::WriteReliefMap(output, *key, map);
-        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
-        if (!written)
-        {
-            failure = "cannot write " + fx::ReliefFile(output, *key).string();
-            Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
-            return Outcome::Failed;
-        }
-    }
-    if (gloss_key)
-    {
-        const fx::NormalMap rg = fx::GlossMaterial(gloss);
-        fx::NormalMap stored{rg.width, rg.height, rg.mip_count, fx::NormalMapFormat::EacRg11, {}};
-        if (!encode(rg, rg.rg, stored.rg))
-            return Outcome::Failed;
-        if (impl_->cancelled)
-        {
-            failure = "cancelled";
-            return Outcome::Failed;
-        }
-        const auto store_start = Clock::now();
-        const bool written = fx::WriteGlossMap(output, *gloss_key, stored);
-        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
-        if (!written)
-        {
-            failure = "cannot write " + fx::GlossFile(output, *gloss_key).string();
-            Log("ERROR: no gloss map for %s: %s", candidate->name.c_str(), failure.c_str());
-            return Outcome::Failed;
-        }
-    }
-    const double write_ms = lap();
-    const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
-    ++impl_->stats.prepared;
-    impl_->stats.max_texture_ms = std::max(impl_->stats.max_texture_ms, ms);
-    double mean_gloss = 0.0;
-    for (const float g : gloss.gloss)
-        mean_gloss += g;
-    mean_gloss = gloss.gloss.empty() ? 0.0 : mean_gloss / static_cast<double>(gloss.gloss.size());
-    Log("relief %s: %dx%d%s%s, gloss %s %dx%d (mean %.2f), %.0f ms (read %.0f, decode %.0f, ×2 %.0f, models %.0f of which "
-        "inference %.0f: %s; gloss %.0f, mips and material %.0f, EAC %.0f on %u threads, write %.0f; "
-        "depth %.1f texels, parallax trust %.0f%%; %s)",
-        candidate->name.c_str(), key ? mw : 0, key ? mh : 0, key ? "" : " (no relief)",
-        model_scale > 1 ? " from its ×2" : "", fx::GlossClassName(candidate->gloss), gloss.width, gloss.height, mean_gloss,
-        ms, read_ms, decode_ms, upscale_ms, model_ms, infer_ms, per_model.c_str(), gloss_ms,
-        std::max(0.0, write_ms - encode_ms - store_ms), encode_ms, encode_threads, store_ms,
-        static_cast<double>(map.depth), 100.0 * static_cast<double>(map.trust_coverage), impl_->stats.provider.c_str());
-    return Outcome::Prepared;
+    auto product = std::make_unique<ComputedTexture>();
+    product->session = impl_->session;
+    product->cancelled = impl_->finalize_cancelled;
+    product->name = candidate->name; product->gloss_class = candidate->gloss;
+    product->output = output; product->key = key; product->gloss_key = gloss_key; product->relief = relief;
+    product->width = width; product->height = height; product->model_scale = model_scale;
+    product->mw = mw; product->mh = mh; product->fw = fw; product->fh = fh; product->gw = gw; product->gh = gh;
+    product->height_class = height_class; product->gloss_wanted = gloss_wanted;
+    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->stats.provider;
+    product->rgba = std::move(rgba); product->normal_planes = std::move(normal_planes);
+    product->height_planes = std::move(height_planes); product->gloss_height = std::move(gloss_height);
+    product->roughness_planes = std::move(roughness_planes); product->per_model = std::move(per_model);
+    product->started = start; product->read_ms = read_ms; product->decode_ms = decode_ms;
+    product->upscale_ms = upscale_ms; product->model_ms = model_ms; product->infer_ms = infer_ms;
+    product->computed_at = Clock::now();
+    return product;
 }
 
-Outcome Session::Upscale(const std::filesystem::path &textures, const std::filesystem::path &file, const UpscaleOutput &display,
+ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, const std::filesystem::path &file, const UpscaleOutput &display,
                          int source_size, std::string &failure)
 {
     // The ×2 alone (fx/upscale.hpp): a texture whose maps do not come from it (larger than the map) or that has none (the
@@ -1069,6 +958,9 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
         return Outcome::Skipped;
     if (fx::HasUpscaled(display.directory, *key))
         return Outcome::Existing;
+    if (impl_->compute_admission && !impl_->compute_admission(size_t(lw) * lh * 256 + (size_t{32} << 20))) {
+        failure = "cancelled"; return Outcome::Failed;
+    }
     std::vector<uint8_t> rgba(size_t(lw) * lh * 4), x2;
     const std::span<const uint8_t> bytes = tx.Level(level);
     if (bytes.size() < texture::d3d_level_bytes(tx.format, lw, lh) || !texture::decode_rgba8(tx.format, bytes.data(), lw, lh, rgba.data()))
@@ -1088,9 +980,7 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
     Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
     if (use_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-    const bool upscaled = upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2, failure);
-    LogCpuTiming(name.c_str(), "upscale", upscaler.CpuTiming(), upscaled);
-    if (!upscaled)
+    if (!upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2, failure))
     {
         if (impl_->cancelled)
             failure = "cancelled";
@@ -1144,14 +1034,242 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
         }
         impl_->Describe();
     }
-    if (!WriteDisplay(display, *key, x2, static_cast<int>(lw) * 2, static_cast<int>(lh) * 2, name))
-    {
-        failure = "cannot write its file";
-        return Outcome::Failed;
+    if (impl_->cancelled) { failure = "cancelled"; return Outcome::Failed; }
+    auto product = std::make_unique<ComputedTexture>();
+    product->kind = ComputedTexture::Kind::Upscale;
+    product->session = impl_->session; product->cancelled = impl_->finalize_cancelled;
+    product->name = name; product->key = key; product->display = display; product->target = target;
+    product->width = static_cast<int>(lw); product->height = static_cast<int>(lh);
+    product->rgba = std::move(x2); product->started = start;
+    product->decode_ms = decode_ms; product->infer_ms = infer_ms;
+    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->stats.provider;
+    product->computed_at = Clock::now();
+    return product;
+}
+
+
+Finalizer::Finalizer() = default;
+Finalizer::~Finalizer() = default;
+
+FinalizeResult Finalizer::Run(std::unique_ptr<ComputedTexture> product)
+{
+    FinalizeResult result;
+    if (!product || !product->cancelled) { result.failure = "no computed texture"; return result; }
+    auto &p = *product;
+    result.session = p.session; result.provider = p.provider;
+    auto &cancelled = *p.cancelled;
+    auto &failure = result.failure;
+    const auto finalize_start = Clock::now();
+    if (cancelled) { failure = "cancelled"; return result; }
+    const auto start = p.started;
+    auto mark = finalize_start;
+    const auto lap = [&mark] {
+        const auto now = Clock::now();
+        const double ms = std::chrono::duration<double, std::milli>(now - mark).count();
+        mark = now; return ms;
+    };
+    const auto acquire = [&](unsigned count) {
+        return fx::SharedCpuAdmission().acquire(count, [&] { return cancelled.load(); });
+    };
+    auto material_permit = acquire(1);
+    if (!material_permit) { failure = "cancelled"; return result; }
+    if (p.kind == ComputedTexture::Kind::Upscale) {
+        result.upscale = true;
+        // WriteDisplay is single-threaded; this is its sole CPU permit.
+        if (cancelled || !WriteDisplay(p.display, *p.key, p.rgba, p.width * 2, p.height * 2, p.name)) {
+            failure = cancelled ? "cancelled" : "cannot write its file"; return result;
+        }
+        result.upscale_written = p.key;
+        result.outcome = Outcome::Prepared;
+        result.total_ms = Seconds(start) * 1000.0;
+        result.finalize_ms = Seconds(finalize_start) * 1000.0;
+        Log("×2 %s (%s): %dx%d, %.0f ms (read and decode %.0f, inference %.0f; finalize %.0f; %s)",
+            p.name.c_str(), fx::UpscaleTargetName(p.target), p.width, p.height, result.total_ms,
+            p.decode_ms, p.infer_ms, result.finalize_ms, p.provider.c_str());
+        return result;
     }
-    Log("×2 %s (%s): %ux%u, %.0f ms (read and decode %.0f, inference %.0f)", name.c_str(), fx::UpscaleTargetName(target), lw,
-        lh, Seconds(start) * 1000.0, decode_ms, infer_ms);
-    return Outcome::Prepared;
+    auto &rgba = p.rgba; auto &normal_planes = p.normal_planes; auto &height_planes = p.height_planes;
+    auto &gloss_height = p.gloss_height; auto &roughness_planes = p.roughness_planes;
+    auto &mw = p.mw; auto &mh = p.mh;
+    const int fw = p.fw, fh = p.fh, gw = p.gw, gh = p.gh, width = p.width, height = p.height;
+    const int model_scale = p.model_scale;
+    const auto &key = p.key; const auto &gloss_key = p.gloss_key; const auto &output = p.output;
+    const bool height_class = p.height_class, gloss_wanted = p.gloss_wanted;
+    const auto relief = p.relief; const auto gloss_class = p.gloss_class;
+    const auto &name = p.name; const auto &provider = p.provider; const auto &per_model = p.per_model;
+    const double read_ms = p.read_ms, decode_ms = p.decode_ms, upscale_ms = p.upscale_ms;
+    const double model_ms = p.model_ms, infer_ms = p.infer_ms;
+    // The models' planes at the map's size (box-filtered when they ran on a ×2 at twice it).
+    if (mw != fw || mh != fh)
+    {
+        for (std::vector<float> *planes : {&normal_planes, &height_planes})
+            if (!planes->empty())
+            {
+                const size_t n = static_cast<size_t>(mw) * mh;
+                std::vector<float> boxed;
+                for (int c = 0; c < 3; ++c)
+                {
+                    const std::vector<float> one =
+                        HalveTo(std::vector<float>(planes->begin() + c * n, planes->begin() + (c + 1) * n), mw, mh, fw, fh);
+                    boxed.insert(boxed.end(), one.begin(), one.end());
+                }
+                *planes = std::move(boxed);
+            }
+        mw = fw;
+        mh = fh;
+    }
+    fx::GlossField gloss;
+    if (gloss_wanted)
+    {
+        int cw = width, ch = height;
+        const std::vector<uint8_t> colour = HalveTo(rgba, cw, ch, gw, gh);
+        gloss = fx::GlossOfRoughness(fx::ReliefModelHeight(roughness_planes, gw, gh), gloss_height, colour, gw, gh,
+                                     gloss_class);
+    }
+    const double gloss_ms = lap();
+    double encode_ms = 0.0, store_ms = 0.0;
+    unsigned encode_threads = 1;
+    const auto encode = [&](const fx::NormalMap &source, const std::vector<uint8_t> &texels,
+                            std::vector<uint8_t> &encoded) {
+        const auto begin = Clock::now();
+        // Release the one-thread material permit before acquiring the encoder team: never nested.
+        material_permit.reset();
+        const unsigned participants = source.width > 512 || source.height > 512 ||
+            size_t(texture::blocks_x(source.width)) * texture::blocks_x(source.height) < 256 ? 1u :
+            std::min(4u, fx::SharedCpuAdmission().threads());
+        if (!encoder_ || encoder_threads_ != participants) {
+            encoder_ = std::make_unique<texture::EacEncoder>(participants);
+            encoder_threads_ = participants;
+        }
+        auto permit = acquire(participants);
+        const bool ok = static_cast<bool>(permit) && !texels.empty() && source.width > 0 && source.height > 0 && source.mip_count > 0 &&
+                       encoder_->Encode(texture::EacFormat::Rg11, texels.data(), source.width, source.height,
+                                               source.mip_count, encoded, cancelled);
+        encode_ms += std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
+        encode_threads = std::max(encode_threads, encoder_->participants());
+        if (!ok)
+        {
+            failure = cancelled ? "cancelled" : "invalid EAC input";
+            Log("ERROR: no relief map for %s: %s", name.c_str(), failure.c_str());
+        }
+        return ok;
+    };
+    fx::NormalMap map;
+    if (key)
+    {
+        fx::NormalMap rg8 = fx::NormalMapOfNormals(fx::ReliefModelNormals(normal_planes, mw, mh), mw, mh);
+        if (height_class)
+        {
+            // The material's G: the gloss stretched over the map (empty: no gloss class, G 0).
+            const std::vector<uint8_t> g = gloss.gloss.empty() ? std::vector<uint8_t>{} : Stretch(gloss.gloss, gw, gh, mw, mh);
+            // The parallax trust reads the colour at the map's size.
+            int aw = width, ah = height;
+            const std::vector<uint8_t> albedo = HalveTo(rgba, aw, ah, mw, mh);
+            if (aw != mw || ah != mh ||
+                !fx::AddReliefMaterial(rg8, relief, fx::ReliefModelHeight(height_planes, mw, mh), g, albedo))
+                Log("relief %s: flat, no height", name.c_str());
+        }
+        map = {rg8.width, rg8.height, rg8.mip_count, fx::NormalMapFormat::EacRg11, {}};
+        if (!encode(rg8, rg8.rg, map.rg))
+            return result;
+        if (!rg8.material.empty())
+        {
+            if (!encode(rg8, rg8.material, map.material))
+                return result;
+            map.depth = rg8.depth;
+            map.trust = std::move(rg8.trust);
+            map.trust_coverage = rg8.trust_coverage;
+        }
+        if (cancelled)
+        {
+            failure = "cancelled";
+            return result;
+        }
+        const auto store_start = Clock::now();
+        const bool written = fx::WriteReliefMap(output, *key, map);
+        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
+        if (!written)
+        {
+            failure = "cannot write " + fx::ReliefFile(output, *key).string();
+            Log("ERROR: no relief map for %s: %s", name.c_str(), failure.c_str());
+            return result;
+        }
+        result.relief_written = key;
+    }
+    if (gloss_key)
+    {
+        if (!material_permit)
+            material_permit = acquire(1);
+        if (!material_permit) { failure = "cancelled"; return result; }
+        const fx::NormalMap rg = fx::GlossMaterial(gloss);
+        fx::NormalMap stored{rg.width, rg.height, rg.mip_count, fx::NormalMapFormat::EacRg11, {}};
+        if (!encode(rg, rg.rg, stored.rg))
+            return result;
+        if (cancelled)
+        {
+            failure = "cancelled";
+            return result;
+        }
+        const auto store_start = Clock::now();
+        const bool written = fx::WriteGlossMap(output, *gloss_key, stored);
+        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
+        if (!written)
+        {
+            failure = "cannot write " + fx::GlossFile(output, *gloss_key).string();
+            Log("ERROR: no gloss map for %s: %s", name.c_str(), failure.c_str());
+            return result;
+        }
+        result.gloss_written = gloss_key;
+    }
+    const double write_ms = lap();
+    const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    result.total_ms = ms;
+    result.finalize_ms = std::chrono::duration<double, std::milli>(Clock::now() - finalize_start).count();
+    double mean_gloss = 0.0;
+    for (const float g : gloss.gloss)
+        mean_gloss += g;
+    mean_gloss = gloss.gloss.empty() ? 0.0 : mean_gloss / static_cast<double>(gloss.gloss.size());
+    Log("relief %s: %dx%d%s%s, gloss %s %dx%d (mean %.2f), %.0f ms (read %.0f, decode %.0f, ×2 %.0f, models %.0f of which "
+        "inference %.0f: %s; gloss %.0f, mips and material %.0f, EAC %.0f on %u threads, write %.0f; "
+        "depth %.1f texels, parallax trust %.0f%%; %s)",
+        name.c_str(), key ? mw : 0, key ? mh : 0, key ? "" : " (no relief)",
+        model_scale > 1 ? " from its ×2" : "", fx::GlossClassName(gloss_class), gloss.width, gloss.height, mean_gloss,
+        ms, read_ms, decode_ms, upscale_ms, model_ms, infer_ms, per_model.c_str(), gloss_ms,
+        std::max(0.0, write_ms - encode_ms - store_ms), encode_ms, encode_threads, store_ms,
+        static_cast<double>(map.depth), 100.0 * static_cast<double>(map.trust_coverage), provider.c_str());
+    result.outcome = Outcome::Prepared;
+    return result;
+}
+
+void Session::SetComputeAdmission(std::function<bool(size_t)> admission)
+{
+    impl_->compute_admission = std::move(admission);
+}
+
+void Session::AccountFinalized(const FinalizeResult &result)
+{
+    if (result.session != impl_->session || result.outcome != Outcome::Prepared || result.upscale) return;
+    ++impl_->stats.prepared;
+    impl_->stats.max_texture_ms = std::max(impl_->stats.max_texture_ms, result.total_ms);
+}
+
+Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::filesystem::path &file,
+    const std::filesystem::path &output, int map_size, std::string &failure, const UpscaleOutput *display)
+{
+    auto computed = ComputeFile(textures, file, output, map_size, failure, display);
+    if (!computed.product) return computed.outcome;
+    if (!impl_->synchronous_finalizer) impl_->synchronous_finalizer = std::make_unique<Finalizer>();
+    auto result = impl_->synchronous_finalizer->Run(std::move(computed.product));
+    AccountFinalized(result); failure = std::move(result.failure); return result.outcome;
+}
+Outcome Session::Upscale(const std::filesystem::path &textures, const std::filesystem::path &file,
+    const UpscaleOutput &display, int source_size, std::string &failure)
+{
+    auto computed = ComputeUpscale(textures, file, display, source_size, failure);
+    if (!computed.product) return computed.outcome;
+    if (!impl_->synchronous_finalizer) impl_->synchronous_finalizer = std::make_unique<Finalizer>();
+    auto result = impl_->synchronous_finalizer->Run(std::move(computed.product));
+    AccountFinalized(result); failure = std::move(result.failure); return result.outcome;
 }
 
 std::vector<UpscaleCandidate> UpscaleCandidates(const std::filesystem::path &textures)

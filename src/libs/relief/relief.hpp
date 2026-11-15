@@ -20,6 +20,8 @@
 namespace storm::relief
 {
 struct LoadingRetry;
+struct ComputeResult;
+struct FinalizeResult;
 
 // The relief textures of a game (its RESOURCE/Textures), by name, without the characters' atlases (made only on request). Only names are read (a scan of the models for the
 // most used ones took minutes on a phone's storage, in the way of the textures on screen).
@@ -90,6 +92,17 @@ class Session
     // there already.
     Outcome Upscale(const std::filesystem::path &textures, const std::filesystem::path &file, const UpscaleOutput &display,
                     int source_size, std::string &failure);
+    // Compute owner only. A non-null product is pending CPU finalization, never Stored/Prepared.
+    // Owns every buffer crossing the handoff; the finalizer never accesses Session or its networks.
+    ComputeResult ComputeFile(const std::filesystem::path &textures, const std::filesystem::path &file,
+                              const std::filesystem::path &output, int map_size, std::string &failure,
+                              const UpscaleOutput *display = nullptr);
+    ComputeResult ComputeUpscale(const std::filesystem::path &textures, const std::filesystem::path &file,
+                                 const UpscaleOutput &display, int source_size, std::string &failure);
+    void AccountFinalized(const FinalizeResult &result); // compute owner, originating session only
+    // Worker only; before decode/model work, with a conservative non-ORT workspace estimate.
+    // False cancels this job. The callback holds no network mutex or admission permits.
+    void SetComputeAdmission(std::function<bool(size_t)> admission);
     // Any thread (the game's shutdown): the texture being prepared fails at once, and every later one.
     void Cancel();
     // Any thread: whether the game leaves the GPU free now (a loading or an interface screen, the game in the

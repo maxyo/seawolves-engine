@@ -5,6 +5,9 @@
 #include "effects/upscale.hpp"
 #include "effects/thermal_api.hpp"
 #include "relief.hpp"
+#include "finalize_queue.hpp"
+#include "storm/fx/cpu_admission.hpp"
+namespace storm::texture { class EacEncoder {}; }
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -13,6 +16,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <mutex>
+#include <map>
 #include <thread>
 using namespace storm;
 using namespace std::chrono_literals;
@@ -27,6 +31,7 @@ std::atomic<int64_t> clock_offset{0};
 std::atomic<int> list_calls{0}, prune_calls{0}, complete_calls{0}, marked_complete{0};
 std::mutex events_mutex;
 std::vector<std::string> events;
+std::map<std::string,uint64_t> upscale_keys;
 std::filesystem::path cache;
 void expect(bool value, const char *message) {
     if (!value) { std::fprintf(stderr,"FAIL: %s\n",message); std::exit(1); }
@@ -38,6 +43,8 @@ template<class Predicate> void until(Predicate predicate, const char *message) {
     expect(predicate(),message);
 }
 void reset() {
+    // Independent cases cannot inherit exact-key completed files from a prior case.
+    if(!cache.empty()){std::filesystem::remove_all(cache);std::filesystem::create_directories(cache);}
     status=2; forecast=0.95f; hot=true; block_job=false; cancelled=false; slow_open=false; opened=0; started=0; pause_after=0;
     list_calls=0; prune_calls=0; complete_calls=0; marked_complete=0; clock_offset=0;
     std::lock_guard lock(events_mutex); events.clear();
@@ -56,6 +63,7 @@ std::shared_ptr<effects::NormalMapEntry> normal(const char *name, uint64_t key, 
     e->state=effects::NormalMapEntry::Waiting;return e;
 }
 std::shared_ptr<effects::UpscaleEntry> upscale(const char *name, uint64_t key) {
+    {std::lock_guard lock(events_mutex);upscale_keys[name]=key;}
     auto e=std::make_shared<effects::UpscaleEntry>();e->name=name;e->file=name;e->key=key;e->width=e->height=1024;
     e->state=effects::UpscaleEntry::Waiting;return e;
 }
@@ -75,6 +83,7 @@ const char *background_wait_reason() {
 }
 }
 namespace storm::fx {
+CpuAdmission &SharedCpuAdmission(){static CpuAdmission value(1);return value;}
 bool HasReliefMap(const std::filesystem::path&,uint64_t) { return true; }
 bool HasGlossMap(const std::filesystem::path&,uint64_t) { return true; }
 }
@@ -82,21 +91,29 @@ namespace storm::relief {
 struct Session::Impl { Stats stats; std::chrono::steady_clock::time_point since=test_now(); bool free=false; };
 Session::Session(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 Session::~Session()=default;
-std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::path&,std::string&) {
-    ++opened; if (slow_open) std::this_thread::sleep_for(150ms);
+std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::path&,std::string&,std::function<bool()> cancel) {
+    ++opened; if (slow_open) {const auto end=std::chrono::steady_clock::now()+150ms;while(std::chrono::steady_clock::now()<end){if(cancel&&cancel())return {};std::this_thread::sleep_for(1ms);}}
+    if(cancel&&cancel())return {};
     auto impl=std::make_unique<Impl>();impl->stats.gpu_possible=cpu_detour;return std::unique_ptr<Session>(new Session(std::move(impl)));
 }
 const Session::Stats &Session::stats() const { return impl_->stats; }
 void Session::Cancel() { cancelled=true; }
 void Session::SetGpuFree(bool value) {impl_->free=value;}
 void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
+void Session::SetCpuBudget(unsigned) {}
+void Session::SetComputeAdmission(std::function<bool(size_t)>) {}
+void Session::AccountFinalized(const FinalizeResult&) {}
+ComputeResult Session::ComputeFile(const std::filesystem::path&a,const std::filesystem::path&b,const std::filesystem::path&c,int d,std::string&e,const UpscaleOutput*f){return PrepareFile(a,b,c,d,e,f);}
+ComputeResult Session::ComputeUpscale(const std::filesystem::path&a,const std::filesystem::path&b,const UpscaleOutput&c,int d,std::string&e){return Upscale(a,b,c,d,e);}
+Finalizer::Finalizer()=default;Finalizer::~Finalizer()=default;
+FinalizeResult Finalizer::Run(std::unique_ptr<ComputedTexture>){std::abort();}
 void Session::ReleaseIdleModels() {++idle_releases;}
 bool Session::WaitsForGpu() const { return cpu_detour && !impl_->stats.gpu && !impl_->free && test_now()-impl_->since<std::chrono::seconds(60); }
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,
     const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { if(cpu_detour && !WaitsForGpu()) impl_->stats.gpu=true;
     return infer(file,"N:"); }
 Outcome Session::Upscale(const std::filesystem::path&,const std::filesystem::path &file,
-    const UpscaleOutput&,int,std::string&) { return infer(file,"U:"); }
+    const UpscaleOutput&,int,std::string&) { auto result=infer(file,"U:");if(result==Outcome::Prepared){std::lock_guard lock(events_mutex);const uint8_t payload[]={1,2,3};expect(fx::WriteUpscaled(cache,upscale_keys.at(file.string()),payload),"fake completed upscale commits its exact production key");}return result; }
 bool ReleaseGpu() { return false; }
 // These sentinels make accidental whole-corpus discovery observable, not merely an inference count.
 std::vector<std::filesystem::path> List(const std::filesystem::path&) { ++list_calls; return {"background"}; }
@@ -112,9 +129,8 @@ int main(int argc,char **argv) {
     std::filesystem::create_directories(cache);
     auto &g=effects::ReliefGenerator::instance();
     // Automatic corpus discovery/preparation is absent in every renderer state, even after long quiet periods.
-    // A legacy quality/diagnostic request must not turn it back on or block dynamically loaded requests.
-    for(bool paused : {false,true}) {
-        reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_active(true);g.pause_background(paused);
+    {
+        reset();status=0;forecast=0.1f;hot=false;configure(g);
         for(int state=0;state<3;++state) {
             if(state==1) g.frame(true); // actual gameplay, independent of quality/provider
             if(state==2) for(int i=0;i<30;++i) g.frame(false); // loading/interface, formerly corpus eligible
@@ -123,12 +139,11 @@ int main(int argc,char **argv) {
             expect(opened==0 && started==0 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
                    "idle/missing frames, actual3D and no-scene loading never discover or prepare the corpus");
         }
-        expect(g.background_pause_acknowledged()==paused,"legacy diagnostic ACK stays compatible without a corpus job");
         // A texture can appear after loading/discovery. It still gets its own real demand preparation.
         auto late=normal("late-loaded-normal",920);auto late_u=upscale("late-loaded-upscale",921);
         g.request(late,late->file);expect(g.request_upscale(late_u),"late-loaded x2 request accepted");
         until([&]{return late->state==effects::NormalMapEntry::Stored && late_u->state==effects::UpscaleEntry::Stored;},
-              "late-loaded normal and x2 complete for either legacy diagnostic value");
+              "late-loaded normal and x2 complete");
         expect(started==2 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
                "loaded demand performs no whole-game inventory/prune/completion and creates no false warm mark");
         g.shutdown();
@@ -267,7 +282,7 @@ int main(int argc,char **argv) {
     }
     until([&]{return !g.stats().paused.empty();},"thermal pause observed before work");
     status=1;forecast=0.8f;
-    std::this_thread::sleep_for(5200ms);
+    std::this_thread::sleep_for(50ms); // runner accelerates only the real worker polling interval
     expect(started==0,"LIGHT with forecast above resume threshold remains paused");
     pause_after=2; forecast=0.6f;
     until([&]{return started==2;},"brief cool window admits only two jobs");
@@ -335,7 +350,7 @@ int main(int argc,char **argv) {
     until([&]{return started==1;},"demand anchor starts");
     auto live=normal("foreground-normal",651,1);auto live_upscale=upscale("foreground-upscale",652);
     g.request(live,"foreground-normal");expect(g.request_upscale(live_upscale),"both loaded lanes queued before idle gap");
-    g.set_active(true);{ std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
+    { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
     block_job=false;
     until([&]{return live->state==effects::NormalMapEntry::Stored && live_upscale->state==effects::UpscaleEntry::Stored;},
           "both loaded lanes finish after a long idle-clock gap");

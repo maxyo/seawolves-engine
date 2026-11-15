@@ -7,6 +7,7 @@
 #include "backend.hpp"
 #include "effects/upscale.hpp"
 #include "relief.hpp"
+#include "finalize_queue.hpp"
 #include "shim/shim.hpp"
 #include "storm/fx/relief_store.hpp"
 
@@ -26,6 +27,9 @@ namespace
 {
 using Clock = std::chrono::steady_clock;
 constexpr auto kIdleRelease = std::chrono::seconds(10);
+// Separate <=128MiB estimates for pending CPU tail and next compute: <=256MiB combined,
+// excluding source file bytes, model/runtime arenas, upload/GPU memory. Not a process RSS bound.
+constexpr size_t kAddedStageBytes = size_t{128} << 20;
 constexpr auto kWaitPause = std::chrono::seconds(5); // asked again this often while the work must wait
 
 double Ms(Clock::time_point since)
@@ -61,6 +65,21 @@ void ReliefGenerator::configure(ReliefSetup setup)
     last_frame_us_ = 0;
     next_upscale_ = false;
     admitted_ = 0;
+    next_finalize_ = 0; finalizing_.reset(); computing_ = computing_normal_ = false;
+    auto finalizer = std::make_shared<relief::Finalizer>();
+    finalizer_queue_ = std::make_unique<relief::FinalizeQueue>(
+        [finalizer](std::unique_ptr<relief::ComputedTexture> product) { return finalizer->Run(std::move(product)); },
+        [this] {
+            // Completion is stored under the queue's mutex, whereas the consumer waits under ours.
+            // Take ours before notification so completion cannot land between its predicate check
+            // and the atomic release/wait, losing the only wakeup for an occupied slot.
+            std::lock_guard lock(mutex_);
+            wake_.notify_all();
+        }, [] {
+#if defined(__linux__) || defined(__ANDROID__)
+            setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
+#endif
+        });
     idle_since_ = Clock::now();
     shim::logf("effects: relief generation: loaded textures only; automatic whole-corpus preparation disabled");
     worker_ = std::thread([this] { run(); });
@@ -75,6 +94,7 @@ void ReliefGenerator::shutdown()
         loading_retry_.reset(); loading_normal_.clear(); loading_upscale_.clear();
         if (running_)
             running_->Cancel();
+        if (finalizer_queue_) finalizer_queue_->request_stop();
         for (const Request &request : requests_)
             if (const std::shared_ptr<NormalMapEntry> entry = request.entry.lock())
                 entry->state = NormalMapEntry::Missing;
@@ -87,6 +107,16 @@ void ReliefGenerator::shutdown()
     wake_.notify_all();
     if (worker_.joinable())
         worker_.join();
+    if (finalizer_queue_) finalizer_queue_->stop();
+    std::lock_guard lock(mutex_);
+    if (finalizing_) {
+        if (finalizing_->request) if (auto entry = finalizing_->request->entry.lock())
+            if (entry->state == NormalMapEntry::Waiting) entry->state = NormalMapEntry::Missing;
+        if (auto entry = finalizing_->upscale.lock())
+            if (entry->state == UpscaleEntry::Waiting) entry->state = UpscaleEntry::Missing;
+    }
+    finalizing_.reset(); finalizer_queue_.reset(); inline_finalizer_.reset();
+    computing_ = computing_normal_ = false;
     running_ = nullptr;
     session_.reset();
     // The Vulkan instance closes with the generator, not in ncnn's exit handler: by then the driver's own exit
@@ -144,6 +174,8 @@ ReliefGenerator::Stats ReliefGenerator::stats()
     stats.requested = static_cast<uint32_t>(std::count_if(requests_.begin(), requests_.end(), [](const Request &request) {
         return !request.entry.expired();
     }));
+    stats.requested += (computing_normal_ ? 1u : 0u) + (finalizing_ && !finalizing_->is_upscale ? 1u : 0u);
+    stats.working = computing_ || finalizing_.has_value();
     return stats;
 }
 
@@ -165,7 +197,12 @@ std::optional<ReliefGenerator::Request> ReliefGenerator::next_request()
     if (requests_.empty())
         return std::nullopt;
     const auto at = generation_focus().snapshot();
-    const auto best = std::min_element(requests_.begin(), requests_.end(), [&](const Request &a, const Request &b) {
+    const auto available = [this](const Request &request) {
+        const auto entry = request.entry.lock();
+        return entry && (!finalizing_ || finalizing_->is_upscale ||
+            (finalizing_->relief_key != entry->key && finalizing_->gloss_key != entry->key));
+    };
+    const auto better = [&](const Request &a, const Request &b) {
         const auto ea = a.entry.lock(), eb = b.entry.lock();
         const auto ra = rank(ea, at, admitted_), rb = rank(eb, at, admitted_);
         if (ra != rb) return ra < rb;
@@ -177,7 +214,11 @@ std::optional<ReliefGenerator::Request> ReliefGenerator::next_request()
         }
         const uint32_t da = ea ? ea->drawn.load() : 0, db = eb ? eb->drawn.load() : 0;
         return da != db ? da > db : a.order < b.order;
-    });
+    };
+    auto best = requests_.end();
+    for (auto it = requests_.begin(); it != requests_.end(); ++it)
+        if (available(*it) && (best == requests_.end() || better(*it, *best))) best = it;
+    if (best == requests_.end()) return {};
     Request request = std::move(*best);
     requests_.erase(best);
     return request;
@@ -187,12 +228,19 @@ std::shared_ptr<UpscaleEntry> ReliefGenerator::next_upscale()
 {
     if (upscales_.empty()) return {};
     const auto at = generation_focus().snapshot();
-    const auto best = std::min_element(upscales_.begin(), upscales_.end(), [&](const auto &a, const auto &b) {
+    const auto better = [&](const auto &a, const auto &b) {
         const auto ea = a.lock(), eb = b.lock();
         const auto ra = rank(ea, at, admitted_), rb = rank(eb, at, admitted_);
         if (ra != rb) return ra < rb;
         return ra.second < 0.0f && ea && eb && ea->queued_after < eb->queued_after;
-    });
+    };
+    auto best = upscales_.end();
+    for (auto it = upscales_.begin(); it != upscales_.end(); ++it) {
+        const auto entry = it->lock();
+        if (entry && finalizing_ && finalizing_->is_upscale && entry->key == finalizing_->key) continue;
+        if (best == upscales_.end() || better(*it, *best)) best = it;
+    }
+    if (best == upscales_.end()) return {};
     auto result = best->lock();
     upscales_.erase(best);
     return result;
@@ -224,6 +272,7 @@ void ReliefGenerator::run()
 #endif
     for (;;)
     {
+        drain_finalized();
         std::optional<Request> request;
         std::shared_ptr<UpscaleEntry> upscale;
         std::shared_ptr<relief::LoadingRetry> loading_retry;
@@ -233,6 +282,10 @@ void ReliefGenerator::run()
             {
                 if (stopping_)
                     return;
+                if (finalizer_queue_->completed()) {
+                    lock.unlock(); drain_finalized(); lock.lock();
+                    continue;
+                }
                 if (trim_)
                 {
                     trim_ = false;
@@ -304,12 +357,13 @@ void ReliefGenerator::run()
                 (upscale && std::find(loading_upscale_.begin(), loading_upscale_.end(), upscale) != loading_upscale_.end())))
                 loading_retry = loading_retry_;
             stats_.working = true;
+            computing_ = true; computing_normal_ = request.has_value();
         }
         if (!fx::SharedCpuAdmission().wait_for_opaque([this] { return stopping_.load(); })) {
             std::lock_guard lock(mutex_);
             if (request) requests_.push_front(std::move(*request));
             if (upscale) upscales_.push_front(upscale);
-            stats_.working = false;
+            stats_.working = false; computing_ = computing_normal_ = false;
             continue; // generation changed: reselect; shutdown checked at loop top
         }
         if (!open_session())
@@ -324,18 +378,26 @@ void ReliefGenerator::run()
                 if (const std::shared_ptr<NormalMapEntry> entry = r.entry.lock())
                     entry->state = NormalMapEntry::Missing;
             requests_.clear();
-            stats_.working = false;
+            stats_.working = false; computing_ = computing_normal_ = false;
             continue;
         }
+        session_->SetComputeAdmission([this](size_t workspace) {
+            return workspace <= kAddedStageBytes ? !stopping_.load() : wait_finalizer();
+        });
         session_->SetCpuBudget(fx::SharedCpuAdmission().threads());
         session_->SetLoadingRetry(loading_retry);
-        if (request)
-            prepare_request(*request);
-        else if (upscale)
-            prepare_upscale(upscale);
+        try {
+            if (request) prepare_request(*request);
+            else if (upscale) prepare_upscale(upscale);
+        } catch (const std::exception &e) {
+            shim::logf("ERROR: effects: texture preparation exception: %s", e.what());
+            if (request) if (auto entry = request->entry.lock())
+                entry->state = stopping_ ? NormalMapEntry::Missing : NormalMapEntry::Failed;
+            if (upscale) upscale->state = stopping_ ? UpscaleEntry::Missing : UpscaleEntry::Failed;
+        }
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
-        stats_.working = false;
+        stats_.working = false; computing_ = computing_normal_ = false;
     }
 }
 
@@ -410,42 +472,116 @@ void ReliefGenerator::prepare_request(const Request &request)
     }
     const Clock::time_point start = Clock::now();
     std::string failure;
-    const relief::Outcome outcome =
-        session_->PrepareFile(setup_.textures, request.file, setup_.directory, fx::kReliefMapSize, failure,
-                              display ? &*display : nullptr);
-    const double ms = Ms(start);
-    {
-        std::lock_guard lock(mutex_);
-        stats_.device = session_->stats().provider; // the device of the last texture (relief::Session, per texture)
-        if (stopping_)
-        {
-            entry->state = NormalMapEntry::Missing;
-            return;
-        }
-        if (outcome == relief::Outcome::Prepared)
-        {
-            ++stats_.made;
-            stats_.made_ms += ms;
-            stats_.slowest_ms = std::max(stats_.slowest_ms, ms);
-        }
+    auto computed = session_->ComputeFile(setup_.textures, request.file, setup_.directory, fx::kReliefMapSize,
+                                          failure, display ? &*display : nullptr);
+    PendingFinalize pending; pending.id = ++next_finalize_; pending.key = entry->key; pending.request = request;
+    { std::lock_guard lock(mutex_); stats_.device = session_->stats().provider; }
+    if (computed.product) stage(std::move(computed.product), std::move(pending));
+    else {
+        relief::FinalizeResult result; result.outcome = computed.outcome; result.failure = std::move(failure);
+        result.total_ms = Ms(start); finish(pending, result);
     }
-    // A gloss entry waits for the texture's gloss map, a relief entry for its relief map: one preparation makes both.
-    const bool gloss = entry->gloss != fx::GlossClass::None;
-    if ((outcome == relief::Outcome::Prepared || outcome == relief::Outcome::Existing) &&
-        (gloss ? fx::HasGlossMap(setup_.directory, entry->key) : fx::HasReliefMap(setup_.directory, entry->key)))
-    {
-        entry->state = NormalMapEntry::Stored; // the next draw reads and uploads it
+}
+
+bool ReliefGenerator::wait_finalizer()
+{
+    for (;;) {
+        drain_finalized();
+        std::unique_lock lock(mutex_);
+        if (stopping_) return false;
+        if (!finalizer_queue_->occupied()) return true;
+        wake_.wait(lock, [this] { return stopping_ || finalizer_queue_->completed(); });
+    }
+}
+
+void ReliefGenerator::stage(std::unique_ptr<relief::ComputedTexture> product, PendingFinalize pending)
+{
+    pending.relief_key = product->kind == relief::ComputedTexture::Kind::Relief ? product->key : std::nullopt;
+    pending.gloss_key = product->gloss_key;
+    if (!wait_finalizer()) {
+        relief::FinalizeResult cancelled; cancelled.failure = "cancelled"; finish(pending, cancelled); return;
+    }
+    if (product->staging_bytes() > kAddedStageBytes) {
+        shim::logf("effects: relief finalizer: %zu owned bytes, %zu estimated stage bytes exceeds %zu bound; synchronous progress",
+                   product->owned_bytes(), product->staging_bytes(), kAddedStageBytes);
+        if (!inline_finalizer_) inline_finalizer_ = std::make_unique<relief::Finalizer>();
+        relief::FinalizeResult result;
+        try { result = inline_finalizer_->Run(std::move(product)); }
+        catch (const std::exception &e) { result.failure = e.what(); }
+        catch (...) { result.failure = "finalizer exception"; }
+        if (session_) session_->AccountFinalized(result);
+        finish(pending, result);
         return;
     }
-    if (outcome == relief::Outcome::Failed)
+    std::unique_lock lock(mutex_);
+    if (stopping_) {
+        lock.unlock(); relief::FinalizeResult cancelled; cancelled.failure = "cancelled";
+        finish(pending, cancelled); return;
+    }
+    finalizing_ = pending;
+    if (!finalizer_queue_->submit(pending.id, product)) {
+        finalizing_.reset(); lock.unlock();
+        relief::FinalizeResult failed; failed.failure = "finalizer slot unavailable";
+        finish(pending, failed); return; // never publish an uncommitted entry
+    }
+    computing_ = computing_normal_ = false;
+}
+
+void ReliefGenerator::drain_finalized()
+{
+    if (!finalizer_queue_) return;
+    auto done = finalizer_queue_->take();
+    if (!done) return;
+    std::optional<PendingFinalize> pending;
+    {
+        std::lock_guard lock(mutex_);
+        if (finalizing_ && finalizing_->id == done->id) pending = std::move(finalizing_);
+        finalizing_.reset();
+    }
+    if (done->exception) {
+        try { std::rethrow_exception(done->exception); }
+        catch (const std::exception &e) { done->result.failure = e.what(); }
+        catch (...) { done->result.failure = "finalizer exception"; }
+        done->result.outcome = relief::Outcome::Failed;
+    }
+    if (session_) session_->AccountFinalized(done->result); // only this compute owner touches Session
+    if (pending) finish(*pending, done->result);
+}
+
+void ReliefGenerator::finish(const PendingFinalize &pending, const relief::FinalizeResult &result)
+{
+    std::lock_guard lock(mutex_);
+    if (pending.is_upscale) {
+        const auto entry = pending.upscale.lock();
+        if (!entry || entry->key != pending.key || entry->state != UpscaleEntry::Waiting) return;
+        if (stopping_) { entry->state = UpscaleEntry::Missing; return; }
+        if ((result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing ||
+            result.upscale_written == pending.key) && display_ && fx::HasUpscaled(display_directory_, pending.key)) {
+            if (result.outcome == relief::Outcome::Prepared) { ++stats_.upscaled; stats_.upscale_ms += result.total_ms; }
+            entry->state = UpscaleEntry::Stored;
+        } else {
+            shim::logf("ERROR: effects upscale: ×2 of %s not made (%s)", entry->name.c_str(), result.failure.c_str());
+            entry->state = UpscaleEntry::Failed;
+        }
+        return;
+    }
+    const auto entry = pending.request ? pending.request->entry.lock() : nullptr;
+    if (!entry || entry->key != pending.key || entry->state != NormalMapEntry::Waiting) return;
+    if (stopping_) { entry->state = NormalMapEntry::Missing; return; }
+    if (result.outcome == relief::Outcome::Prepared) {
+        ++stats_.made; stats_.made_ms += result.total_ms;
+        stats_.slowest_ms = std::max(stats_.slowest_ms, result.total_ms);
+    }
+    const bool gloss = entry->gloss != fx::GlossClass::None;
+    const bool committed = (gloss ? result.gloss_written : result.relief_written) == pending.key;
+    if ((result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing || committed) &&
+        (gloss ? fx::HasGlossMap(setup_.directory, pending.key) : fx::HasReliefMap(setup_.directory, pending.key))) {
+        entry->state = NormalMapEntry::Stored;
+    } else {
         shim::logf("ERROR: effects: %s map of %s not made (%s)", gloss ? "gloss" : "relief", entry->name.c_str(),
-                   failure.c_str());
-    else
-        // The preparation and the game disagree on the texture (its key or class): a defect to fix, not a state.
-        shim::logf("ERROR: effects: %s map of %s: its file %s %s", gloss ? "gloss" : "relief", entry->name.c_str(),
-                   request.file.string().c_str(),
-                   outcome == relief::Outcome::Skipped ? "gets no prepared map" : "has a map under another key");
-    entry->state = NormalMapEntry::Failed;
+                   result.failure.empty() ? "no committed map under its expected key" : result.failure.c_str());
+        entry->state = NormalMapEntry::Failed;
+    }
 }
 
 void ReliefGenerator::loading_window(uint64_t generation, uint64_t deadline_ms,
@@ -526,34 +662,15 @@ void ReliefGenerator::prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry
     }
     const Clock::time_point start = Clock::now();
     std::string failure;
-    const relief::Outcome outcome = session_->Upscale(setup_.textures, entry->file, display,
-                                                      static_cast<int>(std::max(entry->width, entry->height)), failure);
-    const double ms = Ms(start);
-    std::lock_guard lock(mutex_);
-    stats_.device = session_->stats().provider;
-    if (stopping_)
-    {
-        entry->state = UpscaleEntry::Missing;
-        return;
-    }
-    switch (outcome)
-    {
-    case relief::Outcome::Prepared:
-        ++stats_.upscaled;
-        stats_.upscale_ms += ms;
-        [[fallthrough]];
-    case relief::Outcome::Existing:
-        entry->state = UpscaleEntry::Stored; // the next plan reads it
-        break;
-    case relief::Outcome::Skipped:
-        // The game and the preparation disagree on the texture's class or file: a defect, not a state.
-        shim::logf("ERROR: effects upscale: %s: its file %s gets no ×2", entry->name.c_str(), entry->file.string().c_str());
-        entry->state = UpscaleEntry::Failed;
-        break;
-    case relief::Outcome::Failed:
-        shim::logf("ERROR: effects upscale: ×2 of %s not made (%s)", entry->name.c_str(), failure.c_str());
-        entry->state = UpscaleEntry::Failed;
-        break;
+    auto computed = session_->ComputeUpscale(setup_.textures, entry->file, display,
+        static_cast<int>(std::max(entry->width, entry->height)), failure);
+    PendingFinalize pending; pending.id = ++next_finalize_; pending.key = entry->key;
+    pending.upscale = entry; pending.is_upscale = true;
+    { std::lock_guard lock(mutex_); stats_.device = session_->stats().provider; }
+    if (computed.product) stage(std::move(computed.product), std::move(pending));
+    else {
+        relief::FinalizeResult result; result.outcome = computed.outcome; result.failure = std::move(failure);
+        result.total_ms = Ms(start); finish(pending, result);
     }
 }
 

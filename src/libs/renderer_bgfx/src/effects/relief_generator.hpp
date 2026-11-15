@@ -35,6 +35,10 @@ namespace storm::relief
 {
 class Session;
 struct LoadingRetry;
+struct ComputedTexture;
+struct FinalizeResult;
+class Finalizer;
+class FinalizeQueue;
 }
 
 namespace storm::effects
@@ -105,6 +109,18 @@ class ReliefGenerator
         std::filesystem::path file;
         uint64_t order = 0;
     };
+    struct PendingFinalize
+    {
+        uint64_t id = 0, key = 0;
+        std::optional<uint64_t> relief_key, gloss_key;
+        std::optional<Request> request;
+        std::weak_ptr<UpscaleEntry> upscale;
+        bool is_upscale = false;
+    };
+    bool wait_finalizer(); // no admission/network lock held
+    void stage(std::unique_ptr<relief::ComputedTexture> product, PendingFinalize pending);
+    void drain_finalized(); // compute owner, never called with mutex_ held
+    void finish(const PendingFinalize &pending, const relief::FinalizeResult &result);
     void run();
     std::optional<Request> next_request(); // under mutex_
     std::shared_ptr<UpscaleEntry> next_upscale(); // under mutex_: nearest live candidate
@@ -141,6 +157,12 @@ class ReliefGenerator
     std::unique_ptr<relief::Session> session_;
     std::array<std::vector<uint8_t>, 12> models_; // relief::kModelFiles; onnxruntime keeps no copy of the bytes it was given
     bool model_failed_ = false;
+    std::unique_ptr<relief::FinalizeQueue> finalizer_queue_;
+    std::unique_ptr<relief::Finalizer> inline_finalizer_; // oversized progress, only after the worker slot drains
+    std::optional<PendingFinalize> finalizing_; // under mutex_: includes unconsumed completion
+    uint64_t next_finalize_ = 0;
+    bool computing_ = false, computing_normal_ = false; // under mutex_
+
     relief::Session *running_ = nullptr; // under mutex_: the session shutdown() cancels
 };
 
