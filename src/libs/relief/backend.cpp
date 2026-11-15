@@ -179,9 +179,13 @@ class CpuNetwork final : public Network
                         [&](const float *in, int w, int h, float *out, double &) { return Run(in, w, h, out, error); });
     }
 
+    void SetCpuAdmission(std::function<std::shared_ptr<void>()> acquire) override { cpu_admission_ = std::move(acquire); }
+
     // One whole image (its output `scale_` times the size).
     bool Run(const float *image, int width, int height, float *planes, std::string &error)
     {
+        auto cpu_lease = cpu_admission_ ? cpu_admission_() : std::shared_ptr<void>{};
+        if (cpu_admission_ && !cpu_lease) { error = "CPU admission cancelled"; return false; }
         const int64_t shape[4] = {1, 3, height, width};
         const size_t texels = static_cast<size_t>(width) * height;
         OrtValue *input = nullptr, *output = nullptr;
@@ -215,6 +219,7 @@ class CpuNetwork final : public Network
     }
 
   private:
+    std::function<std::shared_ptr<void>()> cpu_admission_;
     const OrtApi *api_;
     std::string describe_;
     int halo_, scale_, tile_;

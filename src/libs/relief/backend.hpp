@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -27,6 +28,7 @@ class Network
     virtual void Cancel() = 0;
     // Worker only: exact current-location opaque loading permission; CPU networks ignore it.
     // Revocation/deadline remain shared with the renderer. This grants no inference by itself.
+    virtual void SetCpuAdmission(std::function<std::shared_ptr<void>()>) {}
     virtual void SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
     // "CPU, 6 threads of 8 cores" / "GPU Adreno (TM) 740, Vulkan, 176 px tiles".
     virtual std::string Describe() const = 0;
