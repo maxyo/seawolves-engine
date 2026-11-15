@@ -81,12 +81,9 @@ inline int cinematicState = -1;
 // end it at once ("widget:game_over\tEND", main.cpp).
 inline bool gameOverShown = false;
 // Gameplay state: channel "gameplay" of the UI host, and the activity's copy for its own controls.
-inline std::string lastGameplayState;
-inline void publishGameplayState(const std::string &json)
+inline HudChannel<decltype(std::declval<const GameplayState &>().publicationKey())> gameplayChannel;
+inline void sendGameplayState(const std::string &json)
 {
-    if (lastGameplayState == json) return;
-    if (json.size() > 8192) { spdlog::error("gameplay state of {} bytes is over the 8192-byte bound: not published", json.size()); return; }
-    lastGameplayState = json;
     ui::state("gameplay", json);
     // The activity keeps the gameplay mode for its own controls (look surface, virtual keys).
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
@@ -102,6 +99,25 @@ inline void publishGameplayState(const std::string &json)
     if (bytes) env->DeleteLocalRef(bytes);
     if (type) env->DeleteLocalRef(type);
     env->DeleteLocalRef(activity);
+}
+// The main loop's publisher: the JSON is built only for a new gameplay revision.
+inline void publishGameplayState(const GameplayState &state)
+{
+    const auto *json = gameplayChannel.publish(state.publicationKey(), [&] {
+        auto json = state.json();
+        if (json.size() <= 8192) return json;
+        spdlog::error("gameplay state of {} bytes is over the 8192-byte bound: not published", json.size());
+        return gameplayChannel.json(); // the last one sent: nothing to publish
+    });
+    if (json) sendGameplayState(*json);
+}
+// The same channel from a ready JSON text (the loop's start, blocked and stop paths).
+inline void publishGameplayState(const std::string &json)
+{
+    if (gameplayChannel.json() == json) return;
+    if (json.size() > 8192) { spdlog::error("gameplay state of {} bytes is over the 8192-byte bound: not published", json.size()); return; }
+    gameplayChannel.published(json);
+    sendGameplayState(json);
 }
 // Live ship telemetry (channel "ship"). Independent from action revisions; rendering
 // acknowledgements are never inherited by a new UI host.

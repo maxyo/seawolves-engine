@@ -8,6 +8,8 @@
 #include "core_private.h"
 
 #include <cctype>
+#include <tuple>
+#include <utility>
 
 namespace storm::android
 {
@@ -142,7 +144,6 @@ inline void updateCombatState(const GameplayState &gameplay, CorePrivate *script
     combatInteractDialog = std::move(interactDialog);
 }
 inline uint64_t combatHost = 0;
-inline std::string lastCombatState;
 inline PistolState readPistolState()
 {
     if (combatInput.player().empty()) return {};
@@ -154,26 +155,35 @@ inline PistolState readPistolState()
     return pistolState(equipped, shipText(character, "chr_ai.tmpl") == "player",
                        shipNumber(character, "chr_ai.charge"), shipNumber(character, "chr_ai.chargeprc"));
 }
+// Everything the "combat" channel's JSON is built from (HudChannel).
+inline auto combatPublicationKey(const PistolState &pistol)
+{
+    return std::tuple_cat(combatInput.publicationKey(),
+                          std::tie(std::as_const(combatInteractKind), std::as_const(combatInteractName),
+                                   std::as_const(combatInteractDialog), pistol));
+}
+inline HudChannel<decltype(combatPublicationKey(PistolState{}))> combatChannel;
 inline void publishCombatState()
 {
     if (combatHost != ui::generation())
     {
         combatHost = ui::generation(); // a new UI host: nothing held through the old one counts
-        lastCombatState.clear();
+        combatChannel.reset();
         combatInput.resetActivity();
         movementInput.resetActivity();
     }
-    auto json=combatInput.json();
     const auto pistol = readPistolState();
-    json.pop_back();
-    json += ",\"interactKind\":" + gameplayJsonString(combatInteractKind);
-    json += ",\"interactName\":" + gameplayJsonString(combatInteractName);
-    json += ",\"interactDialog\":" + gameplayJsonString(combatInteractDialog);
-    json += ",\"pistol\":{\"state\":" + gameplayJsonString(pistol.state) +
-            ",\"progress\":" + std::to_string(pistol.progress) + "}}";
-    if (json == lastCombatState) return;
-    lastCombatState = json;
-    ui::state("combat", json);
+    const auto *json = combatChannel.publish(combatPublicationKey(pistol), [&] {
+        auto json = combatInput.json();
+        json.pop_back();
+        json += ",\"interactKind\":" + gameplayJsonString(combatInteractKind);
+        json += ",\"interactName\":" + gameplayJsonString(combatInteractName);
+        json += ",\"interactDialog\":" + gameplayJsonString(combatInteractDialog);
+        json += ",\"pistol\":{\"state\":" + gameplayJsonString(pistol.state) +
+                ",\"progress\":" + std::to_string(pistol.progress) + "}}";
+        return json;
+    });
+    if (json) ui::state("combat", *json);
 }
 }
 #endif

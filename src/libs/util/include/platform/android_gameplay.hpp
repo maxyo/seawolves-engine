@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace storm::android
@@ -117,6 +118,8 @@ public:
         }
         return result + "]}";
     }
+    // Everything json() reads (HudChannel, android_ui.hpp): every change of the snapshot is a new revision.
+    auto publicationKey() const { return std::tie(revision_); }
     bool offer(std::string_view request, uint32_t tick)
     {
         if (pending_.size() >= 8 || request.size() > 96) return false;

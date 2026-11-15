@@ -1227,7 +1227,7 @@ int main(int argc, char *argv[])
                 storm::android::publishSeaQuickAction();
                 storm::android::updateCombatState(gameplayState, core_private);
                 storm::android::publishCombatState();
-                storm::android::publishGameplayState(gameplayState.json());
+                storm::android::publishGameplayState(gameplayState);
                 storm::android::worldMapHud.update(storm::android::readWorldMapFrame(gameplayState,gameplayReady),SDL_GetTicks());
                 storm::android::worldMapHud.finishDraw(SDL_GetTicks());
                 if(storm::android::worldMapHud.modal.receipt(SDL_GetTicks()).token){

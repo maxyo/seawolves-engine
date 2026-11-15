@@ -4,9 +4,12 @@
 // mutations; after every step the old publisher (build the JSON, compare it with the last text)
 // and the new one (compare the publication key, build only on a change) run side by side and must
 // publish the same byte-identical sequence. Loops with an unchanged state must not build.
+#include <platform/android_combat_input.hpp>
+#include <platform/android_gameplay.hpp>
 #include <platform/android_hud_channel.hpp>
 #include <platform/android_land_commands.hpp>
 #include <platform/android_sea_orders.hpp>
+#include <platform/android_pistol_state.hpp>
 #include <platform/android_sea_quick_action.hpp>
 #include <cassert>
 #include <chrono>
@@ -217,6 +220,122 @@ void seaQuickActionChannel()
     twin.verify();
 }
 
+// The "combat" channel as publishCombatState (android_combat_state.hpp) keys and builds it.
+std::string combatInteractKind = "dialog", combatInteractName, combatInteractDialog;
+auto combatKey(const CombatInput &input, const PistolState &pistol)
+{
+    return std::tuple_cat(input.publicationKey(), std::tie(std::as_const(combatInteractKind),
+        std::as_const(combatInteractName), std::as_const(combatInteractDialog), pistol));
+}
+std::string combatJson(const CombatInput &input, const PistolState &pistol)
+{
+    auto json = input.json();
+    json.pop_back();
+    json += ",\"interactKind\":" + gameplayJsonString(combatInteractKind);
+    json += ",\"interactName\":" + gameplayJsonString(combatInteractName);
+    json += ",\"interactDialog\":" + gameplayJsonString(combatInteractDialog);
+    json += ",\"pistol\":{\"state\":" + gameplayJsonString(pistol.state) +
+            ",\"progress\":" + std::to_string(pistol.progress) + "}}";
+    return json;
+}
+
+std::vector<CombatBinding> combatBindings(std::mt19937 &random, bool melee)
+{
+    std::vector<CombatBinding> bindings;
+    if (random() % 4) bindings.push_back({"weapon", "ChrFightMode", false});
+    if (random() % 2) bindings.push_back({"interact", "ChrAction", false, static_cast<int64_t>(random() % 3)});
+    bindings.push_back({"freelook", "ChrCamSpecMode", true});
+    if (melee)
+    {
+        bindings.push_back({"block", random() % 2 ? "ChrBlock" : "ChrBlock2", true});
+        bindings.push_back({"dash", "ChrRecoil", false});
+    }
+    return bindings;
+}
+
+void combatChannel()
+{
+    std::mt19937 random(17);
+    CombatInput input;
+    input.guard = [] { return true; };
+    PistolState pistol;
+    Twin<decltype(combatKey(input, pistol))> twin{"combat"};
+    const auto json = [&] { return combatJson(input, pistol); };
+    twin.step(json, combatKey(input, pistol));
+    uint64_t revision = 1;
+    std::string mode = "explore", player = "7";
+    auto bindings = combatBindings(random, false);
+    uint32_t tick = 0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        tick += 16;
+        switch (random() % 20)
+        {
+        case 0: ++revision; break;
+        case 1: mode = random() % 2 ? "melee" : "explore"; bindings = combatBindings(random, mode == "melee"); break;
+        case 2: bindings = combatBindings(random, mode == "melee"); break;
+        case 3: player = random() % 2 ? "7" : ""; break;
+        case 4: twin.reset(); input.resetActivity(); break; // publishCombatState on a new UI host
+        case 5: cancelAndroidCombatInput(); break;
+        case 6:
+            input.offer("2\t" + std::to_string(input.generation()) + "\t" + std::to_string(input.actionGeneration("weapon")) +
+                        "\t" + std::to_string(i + 1) + "\tweapon\ttap", tick);
+            break;
+        case 7: input.advance(tick); break;
+        case 8: combatInteractName = random() % 2 ? "Nathaniel \"Hawk\"" : ""; break;
+        case 9: combatInteractKind = random() % 2 ? "dialog" : "boarding"; break;
+        case 10: combatInteractDialog = random() % 2 ? "common_store" : ""; break;
+        case 11: pistol = pistolState(random() % 2, true, (random() % 5) * .25, .5); break;
+        default: break; // an unchanged loop: most of them
+        }
+        // updateCombatState runs every loop with what it read (the bindings anew each time).
+        input.update(revision, "scene1", player, mode, bindings);
+        twin.step(json, combatKey(input, pistol));
+    }
+    twin.verify();
+}
+
+GameplaySnapshot gameplaySnapshot(std::mt19937 &random)
+{
+    GameplaySnapshot snapshot;
+    static const char *modes[] = {"explore", "melee", "sailing", "unknown"};
+    snapshot.mode = modes[random() % 4];
+    snapshot.language = "russian";
+    snapshot.group = "PrimaryLand";
+    snapshot.scene = random() % 2 ? "loc1" : "loc2";
+    snapshot.capabilities = {"ChrAction", "BI_InstantRepair"};
+    if (random() % 2) snapshot.capabilities.push_back("Ship_Fire");
+    snapshot.inputOwner = random() % 2 ? "player1" : "";
+    snapshot.analogMovement = !snapshot.inputOwner.empty();
+    snapshot.movementGeneration = random() % 3;
+    snapshot.blocked = snapshot.mode == "unknown" ? "interface" : "";
+    return snapshot;
+}
+
+void gameplayChannel()
+{
+    std::mt19937 random(19);
+    GameplayState state;
+    Twin<decltype(state.publicationKey())> twin{"gameplay"};
+    const auto json = [&] { return state.json(); };
+    auto snapshot = gameplaySnapshot(random);
+    uint32_t tick = 0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        tick += 16;
+        switch (random() % 10)
+        {
+        case 0: snapshot = gameplaySnapshot(random); break;
+        case 1: state.offer(std::to_string(state.revision()) + "\tShip_Fire", tick); break;
+        case 2: state.take(tick); break;
+        default: break;
+        }
+        state.update(snapshot); // readGameplaySnapshot every loop
+        twin.step(json, state.publicationKey());
+    }
+    twin.verify();
+}
+
 template <class Run> double nanosPerLoop(int loops, Run &&run)
 {
     const auto start = std::chrono::steady_clock::now();
@@ -269,6 +388,28 @@ void bench()
         const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(s.publicationKey(), [&] { return s.json(); }) != nullptr); });
         std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "seaQuickAction", old, now);
     }
+    {
+        CombatInput input;
+        input.update(1, "scene1", "7", "melee", combatBindings(random, true));
+        combatInteractName = "Nathaniel Hawk";
+        const PistolState pistol = pistolState(true, true, 1., 0.);
+        std::string last = combatJson(input, pistol);
+        HudChannel<decltype(combatKey(input, pistol))> channel;
+        channel.publish(combatKey(input, pistol), [&] { return combatJson(input, pistol); });
+        const double old = nanosPerLoop(loops, [&] { const auto j = combatJson(input, pistol); sink = sink + (j == last); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(combatKey(input, pistol), [&] { return combatJson(input, pistol); }) != nullptr); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "combat", old, now);
+    }
+    {
+        GameplayState state;
+        state.update(gameplaySnapshot(random));
+        std::string last = state.json();
+        HudChannel<decltype(state.publicationKey())> channel;
+        channel.publish(state.publicationKey(), [&] { return state.json(); });
+        const double old = nanosPerLoop(loops, [&] { const auto j = state.json(); sink = sink + (j == last); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(state.publicationKey(), [&] { return state.json(); }) != nullptr); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "gameplay", old, now);
+    }
 }
 } // namespace
 
@@ -278,5 +419,7 @@ int main(int argc, char **argv)
     seaOrdersChannel();
     landCommandsChannel();
     seaQuickActionChannel();
+    combatChannel();
+    gameplayChannel();
     std::puts("android_hud_channels: ok");
 }

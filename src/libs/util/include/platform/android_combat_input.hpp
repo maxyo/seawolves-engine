@@ -64,7 +64,7 @@ struct CombatBinding
 // state the combat actions do not depend on (movement generation, language).
 class CombatInput
 {
-    struct Bound { CombatBinding binding; uint64_t generation = 0; };
+    struct Bound { CombatBinding binding; uint64_t generation = 0; bool operator==(const Bound &) const = default; };
     struct Request { uint64_t generation, action, cancel; uint32_t tick; std::string name, phase; };
     struct Virtual { bool held = false, previous = false, pulse = false; int state = 0; };
     inline static std::atomic<uint64_t> nextGeneration_{0};
@@ -237,6 +237,8 @@ public:
         }
         return result+"}}";
     }
+    // Everything json() reads (HudChannel, android_combat_state.hpp).
+    auto publicationKey() const { return std::tie(revision_, generation_, player_, mode_, bindings_); }
 };
 inline CombatInput combatInput;
 }

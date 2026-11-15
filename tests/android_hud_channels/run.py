@@ -36,6 +36,19 @@ for function, channel, key in (
     assert re.search(re.escape(channel) + r'\.publish\(' + re.escape(key) + r', \[', body), body
     assert 'json() ==' not in body and '== json' not in body, body
 
+combat = (root / 'src/apps/engine/src/android_combat_state.hpp').read_text()
+body = publisher(combat, 'inline void publishCombatState()')
+assert re.search(r'combatChannel\.publish\(combatPublicationKey\(pistol\), \[', body), body
+assert 'lastCombatState' not in combat, 'the text compare is gone'
+key = publisher(combat, 'inline auto combatPublicationKey(')
+for part in ('combatInput.publicationKey()', 'combatInteractKind', 'combatInteractName', 'combatInteractDialog', 'pistol'):
+    assert part in key, (part, key)
+body = publisher(ui, 'inline void publishGameplayState(const GameplayState &state)')
+assert re.search(r'gameplayChannel\.publish\(state\.publicationKey\(\), \[', body), body
+main = (root / 'src/apps/engine/src/main.cpp').read_text()
+loop = main[main.index('STORM_PROFILE_ZONE("HUD adapter: gameplay, combat, map, ship");'):]
+assert 'publishGameplayState(gameplayState);' in loop[:loop.index('publishWorldMapHud(')], 'the loop publishes the typed state'
+
 with tempfile.TemporaryDirectory(prefix='storm-hud-channels-') as directory:
     compiler = os.environ.get('CXX', 'c++')
     include = '-I' + str(root / 'src/libs/util/include')
