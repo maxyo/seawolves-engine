@@ -807,10 +807,10 @@ class SeaScene final : public Scene
             return;
         if (verb == "open")
             Released(hud_.Current()); // the panel takes the screen: the helm is let go first
-        if (verb == "selectRecipient")
+        if (verb == "selectRecipient" || verb == "back" || verb == "close")
         {
-            // A delayed selection reply from the old ship must not activate its
-            // pending item while the recipient change is still in flight.
+            // A delayed selection reply must not activate an abandoned item
+            // while a recipient change or panel navigation is still in flight.
             choice_.clear();
             hud_.Rebuild();
         }

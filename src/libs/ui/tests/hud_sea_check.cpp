@@ -655,6 +655,46 @@ static void CheckOrderRecipientChange()
     }
 }
 
+static void CheckOrderNavigationCancel()
+{
+    for (const std::string route : {"root-back", "nested-back", "ribbon-back", "close", "scrim"})
+    {
+        Bench bench;
+        FakeMount &mount = bench.mount;
+        Sail(bench);
+        Json orders = State(route == "root-back" ? "sea-orders-root" : "sea-orders-targets");
+        bench.Set("seaOrders", orders);
+        bench.Feed("gameplay", "gameplay-orders");
+        bench.Feed("ship", "ship-orders");
+        bench.Frame();
+        bench.Press("item-i1");
+        Expect(mount.Last().find("\tselectItem\ti1") != std::string::npos, route + ": selection waits for acknowledgement");
+        if (route == "root-back" || route == "nested-back") Expect(bench.hud.Back(), route + ": Back handled");
+        else if (route == "ribbon-back") bench.Press("sheet-back");
+        else if (route == "close") bench.Press("sheet-close");
+        else bench.Press("sheet", "close");
+        const std::string verb = route == "nested-back" || route == "ribbon-back" ? "back" : "close";
+        Expect(mount.Last().find("\t" + verb + "\t") != std::string::npos, route + ": navigation sent");
+        mount.commands.clear();
+        // The selection reply was already in flight before navigation. It still
+        // describes the same panel, with a new revision and the selected item.
+        orders["revision"] = orders["revision"].get<int>() + 1;
+        orders["selectedItemId"] = "i1";
+        bench.Set("seaOrders", orders);
+        bench.Frame();
+        bool action = false;
+        for (const auto &command : mount.commands)
+            action |= command.find("\tselectItem\t") != std::string::npos || command.find("\tactivateItem\t") != std::string::npos;
+        Expect(!action, route + ": delayed selection reply cannot activate cancelled intent");
+        const auto &entries = mount.shown.sheet_props[route == "root-back" ? "tiles" : "rows"];
+        Expect(entries[1]["pressed"] == false, route + ": cancelled item loses its pressed state");
+        mount.commands.clear();
+        bench.Press("item-i1");
+        Expect(mount.Last().find("\tactivateItem\ti1") != std::string::npos, route + ": a fresh tap remains usable");
+        Expect(mount.errors.empty(), route + ": no channel errors");
+    }
+}
+
 static void CheckEmptyCategory()
 {
     Bench bench;
@@ -816,6 +856,7 @@ int main(int argc, char **argv)
     CheckEmptyAmmo();
     CheckOrders();
     CheckOrderRecipientChange();
+    CheckOrderNavigationCancel();
     CheckEmptyCategory();
     CheckTouches(pack);
     CheckDeckTouches(pack);
