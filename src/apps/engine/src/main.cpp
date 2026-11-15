@@ -29,6 +29,7 @@
 #include "app_events.hpp"
 #include "storm/render/effects.hpp"
 #include "v_sound_service.h"
+#include "animation.h"
 #include "fs.h"
 #include "platform/host_hooks.hpp"
 #include "profiler.hpp"
@@ -362,6 +363,8 @@ void SubscribeEngineToAppEvents()
                     released = soundService->TrimCaches();
                 spdlog::warn("Low memory: released {} KiB of cached audio; the relief models go after their texture",
                              released / 1024);
+                if (auto *animationService = static_cast<AnimationService *>(core.GetService("AnimationServiceImp")))
+                    spdlog::warn("Low memory: released {} unused animations", animationService->TrimCaches());
                 storm::render::TrimRelief();
                 core_private->Event("AppLowMemory");
             }

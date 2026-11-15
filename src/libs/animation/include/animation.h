@@ -247,6 +247,8 @@ class AnimationService : public SERVICE
 
     // Create animation for the model, delete with "delete"
     virtual Animation *CreateAnimation(const char *animationName) = 0;
+    // Game thread: release unused animation data under memory pressure. Returns entries released.
+    virtual uint32_t TrimCaches() = 0;
 };
 
 //============================================================================================

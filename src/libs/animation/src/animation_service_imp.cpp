@@ -22,8 +22,8 @@ CREATE_SERVICE(AnimationServiceImp)
 
 //============================================================================================
 
-// Unused animation unload time
-#define ASRV_DOWNTIME 1
+// Keep animation data across short character/location transitions (unscaled frame milliseconds).
+constexpr uint32_t ASRV_DOWNTIME = 30'000;
 // Longest time span supplied by the AnimationManager
 #define ASRV_MAXDLTTIME 50
 
@@ -97,13 +97,14 @@ void AnimationServiceImp::RunStart()
     if (core.Controls->GetDebugAsyncKeyState(VK_F4))
         return;
     auto dltTime = core.GetDeltaTime();
+    const auto cacheDeltaTime = core.GetRDeltaTime();
     if (dltTime > 1000)
         dltTime = 1000;
     // Check all animations
     for (int32_t i = 0; i < ainfo.size(); i++)
         if (ainfo[i])
         {
-            ainfo[i]->AddDowntime(dltTime);
+            ainfo[i]->AddDowntime(cacheDeltaTime);
             if (ainfo[i]->GetDowntime() >= ASRV_DOWNTIME)
             {
                 // Unloading unused animation
@@ -127,6 +128,21 @@ void AnimationServiceImp::RunStart()
 
 void AnimationServiceImp::RunEnd()
 {
+}
+
+uint32_t AnimationServiceImp::TrimCaches()
+{
+    uint32_t released = 0;
+    for (auto *&info : ainfo)
+    {
+        if (info && info->IsUnused())
+        {
+            delete info;
+            info = nullptr;
+            ++released;
+        }
+    }
+    return released;
 }
 
 // Create animation for the model, delete using "delete"

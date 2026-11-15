@@ -13,6 +13,7 @@
 #include "action_info.h"
 #include "bone.h"
 #include "storm_assert.h"
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -48,9 +49,10 @@ class AnimationInfo final
     // Decrement reference count
     void RelRef();
     // Add downtime
-    void AddDowntime(int32_t dltTime);
+    void AddDowntime(uint32_t dltTime);
     // Get downtime
-    int32_t GetDowntime();
+    uint32_t GetDowntime();
+    bool IsUnused() const;
     // Get animation name
     const char *GetName();
     // Find action by name
@@ -87,7 +89,7 @@ class AnimationInfo final
     std::vector<uint8_t> skinBones;  // SetSkinBones
 
     int32_t refCounter; // Reference counter for this animation
-    int32_t downtime;   // Downtime
+    uint32_t downtime; // Unscaled frame milliseconds since the last reference was released
 
     std::unordered_map<std::string, std::string> userData; // User data
 };
@@ -131,6 +133,7 @@ inline Bone &AnimationInfo::GetBone(int32_t iBone)
 inline void AnimationInfo::AddRef()
 {
     refCounter++;
+    downtime = 0;
 }
 
 // Decrement reference count
@@ -141,24 +144,26 @@ inline void AnimationInfo::RelRef()
 }
 
 // Add downtime
-inline void AnimationInfo::AddDowntime(int32_t dltTime)
+inline void AnimationInfo::AddDowntime(uint32_t dltTime)
 {
     if (refCounter == 0)
     {
-        if (dltTime <= 10)
-            dltTime = 10;
-        downtime += dltTime;
+        const auto remaining = std::numeric_limits<uint32_t>::max() - downtime;
+        downtime += dltTime > remaining ? remaining : dltTime;
     }
     else
-        downtime = 0;
-    if (downtime < 0)
         downtime = 0;
 }
 
 // Get downtime
-inline int32_t AnimationInfo::GetDowntime()
+inline uint32_t AnimationInfo::GetDowntime()
 {
     return downtime;
+}
+
+inline bool AnimationInfo::IsUnused() const
+{
+    return refCounter == 0;
 }
 
 // Get animation name

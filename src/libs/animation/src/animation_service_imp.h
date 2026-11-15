@@ -35,6 +35,7 @@ class AnimationServiceImp final : public AnimationService
     void RunEnd() override;
     // Create animation for the model, delete using "delete"
     Animation *CreateAnimation(const char *animationName) override;
+    uint32_t TrimCaches() override;
 
     // --------------------------------------------------------------------------------------------
     // Functions for Animation
