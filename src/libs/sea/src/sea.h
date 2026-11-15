@@ -153,6 +153,7 @@ class SEA : public SEA_BASE
     glm::mat4 mTexProjection;
 
     void SSE_WaveXZ(SeaVertex **pArray);
+    bool HeightField(SeaHeightField &field) const override;
     float WaveXZ(float x, float z, glm::vec3 *pNormal = nullptr) override;
     void AddWaveSource(const storm::render::EffectsWaveSource &source) override;
 

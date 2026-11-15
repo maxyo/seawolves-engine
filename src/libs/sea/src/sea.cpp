@@ -791,6 +791,27 @@ void SEA::AddWaveSource(const storm::render::EffectsWaveSource &source)
     waveSources_.push_back(source);
 }
 
+// The field WaveXZ below samples, for the coast foam's vertex shader (vs_port_coastfoam.sc): keep the two together.
+bool SEA::HeightField(SeaHeightField &field) const
+{
+    if (aBumps.size() != FRAMES)
+        return false;
+    field.frames = aBumps.data();
+    field.frameCount = FRAMES;
+    field.size = XWIDTH;
+    field.frame[0] = fFrame1;
+    field.frame[1] = fFrame2;
+    field.scale[0] = fScale1;
+    field.scale[1] = fScale2;
+    field.amplitude[0] = fAmp1;
+    field.amplitude[1] = fAmp2;
+    field.move[0] = vMove1;
+    field.move[1] = vMove2;
+    field.camera = vCamPos;
+    field.reach = fMaxSeaDistance;
+    return true;
+}
+
 float SEA::WaveXZ(float x, float z, glm::vec3 *pNormal)
 {
     int32_t iX11, iX12, iX21, iX22, iY11, iY12, iY21, iY22;

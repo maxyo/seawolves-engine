@@ -3,8 +3,9 @@ $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, 
 // Port of the technique shader grass_main (vs_1_1) of src/techniques/effects/grass.fx, drawing from the static vertex
 // buffer of src/libs/location/src/grass.cpp: first the per-blade wind, the bending around characters and the LOD blend
 // the game once computed on the CPU for every vertex of every frame (Grass::RenderBlock, as it was until the grass
-// moved to the GPU), then grass_main's instructions, one D3D9 instruction per line. Which blades are drawn the CPU
-// still decides per block (the indices of Grass::DrawRuns).
+// moved to the GPU), then grass_main's instructions, one D3D9 instruction per line. For which blades are drawn the CPU
+// keeps a set of blocks for the camera's cell and direction (Grass::UpdateVisible); this shader drops the blades of
+// it the block's distance and LOD do not draw.
 //
 // Vertex: four 16-bit integers (Grass::GpuVertex, 8 bytes):
 //   x, z: the blade's place in the buffer's window of blocks (Grass::UpdateWindow) in 1/32 of a block (block * 32 +
@@ -21,9 +22,9 @@ $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, 
 //   c44 phase 0, 3, 4, cos-phase 1     c45 sin-phase 2, 5, 6, wind power
 //   c46 force^10 term, amplitude factor, quality (0..2), number of characters
 //   c47 map start x, z, camera x, z    c48 min / max visible distance, min LOD, the lowest blade height
-//   c49 the height step, the window's first block x, z on the minimap
+//   c49 the height step, the window's first block x, z on the minimap, the metres of the fade before the distance
 //   c50 + 2i, c51 + 2i: character i position, its inertial position (GRASS_CHARACTERS, as in grass.cpp): the
-//   characters touching a drawn blade
+//   characters touching a drawn blade (Grass::CharacterContacts)
 #define PORT_VSC_COUNT 82 // registers c0..c81 (the GL program uploads exactly these)
 #define GRASS_CHARACTERS 16
 #include "port_vs.sh"
@@ -86,8 +87,19 @@ void main()
     if (lod < quality)
         lod = quality;
     float kBlend = clamp(1.0 - (kLod - float(lod)), 0.0, 1.0);
-    // Grass::DrawRuns draws the blades the block's LOD draws; those the next LOD keeps too are opaque.
+    // The CPU's set of blocks holds every blade the camera may see from its cell (Grass::UpdateVisible); drawn are
+    // those of the blocks within the visible distance that the block's LOD draws (the first num[lod] of the block,
+    // maxLod >= lod), RenderBlock's tests as they were. Those the next LOD keeps too are opaque; the last
+    // u_vsc[49].w metres before the visible distance fade out instead of the blocks popping.
+    if (dist >= u_vsc[48].y * u_vsc[48].y || maxLod < lod)
+    {
+        vec4 none = vec4(0.0, 0.0, 0.0, 1.0);
+        PORT_VS_OUTPUT(vec4(0.0, 0.0, 2.0, 1.0), oD0, oD1, none, none, none, none, none, oFog); // no area
+        return;
+    }
     float alpha = maxLod >= lod + 1 ? 1.0 : kBlend;
+    if (u_vsc[49].w > 0.0)
+        alpha *= clamp((u_vsc[48].y - sqrt(dist)) / u_vsc[49].w, 0.0, 1.0);
 
     // ---- the blade's wind ----
     float x = v0.x, y = v0.y, z = v0.z;

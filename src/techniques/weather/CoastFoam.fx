@@ -11,13 +11,16 @@ technique CoastFoam
         SrcBlend = srcalpha;
         DestBlend = invsrcalpha;
 
-        ColorOp[0] = selectarg1;
-        ColorArg1[0] = texture;
+        // Stage 0: the foam texture (colour = texture, alpha = texture * diffuse * 2, fs_port_coastfoam);
+        // stage 1: the sea's height frames, sampled by the vertex shader (vs_port_coastfoam)
+        MinFilter[1] = linear;
+        MagFilter[1] = linear;
+        MipFilter[1] = none;
+        AddressU[1] = wrap;
+        AddressV[1] = wrap;
+        AddressW[1] = wrap;
 
-        AlphaOp[0] = modulate2x;
-        AlphaArg1[0] = texture;
-        AlphaArg2[0] = diffuse;
-
-        ColorOp[1] = disable;
+        VertexShader = FOAM_VERTEX_SHADER;
+        PixelShader = FOAM_PIXEL_SHADER;
     }
 }

@@ -7,6 +7,7 @@
 #include "model.h"
 #include "sea_base.h"
 #include "vma.hpp"
+#include "foam_gpu.hpp"
 
 enum FOAMTYPE
 {
@@ -48,29 +49,13 @@ class CoastFoam : public Entity
     }
 
   private:
-    struct FoamVertex
-    {
-        glm::vec3 vPos;
-        uint32_t dwColor;
-        float tu, tv;
-    };
-
     struct FoamPart
     {
         glm::vec3 v[2];
     };
 
-    struct SubPart
-    {
-        // float tv;
-        float fPos;
-        float fSpeed;
-        // float fA;
-    };
-
     struct WorkPart
     {
-        SubPart p[8];
         glm::vec3 v[2];
         float tu;
         // FOAMMODE    Mode;
@@ -100,6 +85,8 @@ class CoastFoam : public Entity
         float fBrakingMin, fBrakingMax;
         float fAppearMin, fAppearMax;
         float fTexScaleX;
+
+        uint32_t dwFirstIndex = 0, dwIndices = 0; // its strand in the static index buffer (BuildBuffers)
     };
 
     int32_t iEditFoam, iEditFoamPart, iEditFoamVertex;
@@ -107,11 +94,27 @@ class CoastFoam : public Entity
     float fCursorPosX, fCursorPosY;
     int32_t iFoamTexture, iCursorTex;
     std::vector<Foam *> aFoams;
-    int32_t iVBuffer, iIBuffer;
-    // The strands of one texture that follow each other, drawn together (FlushStrands): one draw drew one strand
-    std::vector<FoamVertex> aBatchVertices;
-    std::vector<uint16_t> aBatchIndices;
-    int32_t iBatchTexture = -1;
+    // Every foam's strand once (BuildBuffers): drawn twice when the foam has two, with the strand's motion
+    // (aStrandParams) moving it in vs_port_coastfoam
+    int32_t iVBuffer = -1, iIBuffer = -1;
+    uint32_t dwBufferVertices = 0;
+    bool bBuffersDirty = true;
+    storm::render::VertexDeclarationId vertexDecl_{};
+    // Per foam, for its visibility test (IsFoamVisible): the first work part's end, the bounding sphere of its parts
+    struct FoamCull
+    {
+        glm::vec3 vFirst{}, vCentre{};
+        float fRadius = 0.0f;
+        bool bWorkParts = false;
+    };
+    std::vector<FoamCull> aFoamCull;
+    // This frame's strands: per strand (0, 1) and foam: move, alpha, texture offset, 1 when drawn
+    std::vector<glm::vec4> aStrandParams[2];
+    // The sea's height frames on the GPU (foam_gpu::pack_frames), uploaded once per sea
+    int32_t iHeightTexture = -1;
+    entid_t heightSea{};
+    const uint8_t *const *pHeightFrames = nullptr;
+    bool bHeightsLogged = false;
     PLANE *pFrustumPlanes;
 
     float fMaxFoamDistance, fFoamDeltaY;
@@ -123,17 +126,18 @@ class CoastFoam : public Entity
 
     void ExtractRay(const D3DVIEWPORT9 &viewport, float fCursorX, float fCursorY, glm::vec3 &raystart, glm::vec3 &rayend);
 
-    bool IsClipped(Foam *pF);
+    bool IsClipped(const Foam *pF) const;
 
     void Load();
     void clear();
 
     void InitNewFoam(Foam *pF);
     void RecalculateFoam(int32_t iFoam);
-    void ExecuteFoamType2(Foam *pF, float fDeltaTime, SEA_BASE &Sea);
-    void ExecuteFoamType1(Foam *pF, float fDeltaTime, SEA_BASE &Sea);
-    // Room in the batch for a strand of `vertices` vertices and `indices` indices drawn with `texture`: the batch is
-    // drawn first when the texture differs or the buffers would overflow; base is the strand's first vertex.
-    void AddStrand(int32_t texture, uint32_t vertices, uint32_t indices, FoamVertex *&pFV, uint16_t *&pI, uint16_t &base);
-    void FlushStrands();
+    bool IsFoamVisible(int32_t iFoam, const glm::vec3 &vCamPos) const;
+    void ExecuteFoam(int32_t iFoam, float fDeltaTime);
+    void BuildBuffers();
+    void ReleaseBuffers();
+    // The sea's height field this frame, its frames on the GPU; false (logged) when the sea has none
+    bool UpdateHeights(entid_t seaId, const SEA_BASE &Sea, SeaHeightField &field);
+    void DrawStrands(const SeaHeightField &field, const glm::mat4 &mWVP);
 };

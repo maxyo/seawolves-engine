@@ -14,6 +14,9 @@
 
 #include "character.h"
 #include "entity.h"
+#include "storm/render/effects.hpp"
+
+#include <algorithm>
 
 // ============================================================================================
 
@@ -22,16 +25,23 @@
 #define GRASS_MIN_DIST 10.0f // Minimum Lod Switching Distance
 #define GRASS_MAX_W 1.0f     // Greatest width
 #define GRASS_MAX_H 0.2f     // Highest height
-#define GRASS_VEIW ((int32_t)(m_fMaxVisibleDist / GRASS_BLK_DST / GRASS_BLK_DST + 0.5f) + 1) // Visibility range in blocks
 #define GRASS_FRM_W 4 // Number of frames in width M = 2^N
 #define GRASS_FRM_H 4 // Number of frames in height M = 2^N
 #define GRASS_TEX_W (1.0f / GRASS_FRM_W)
 #define GRASS_TEX_H (1.0f / GRASS_FRM_H)
 #define GRASS_TEX_DELTA (1.0f / 256.0f)
-#define GRASS_MAX_POINTS 8192
 
 #define GRASS_DEFTEXTURE "Grass\\grass.tga"
 #define GRASS_CHARACTERS 16 // characters bending the grass in one frame (vs_port_grass.sc GRASS_CHARACTERS)
+
+namespace
+{
+constexpr float kCellMetres = 4.0f;          // the camera's cells of the visible set (Grass::UpdateVisible)
+constexpr float kBucketRadians = 0.1745329f; // 10 degrees: its direction buckets
+constexpr float kFadeShare = 0.15f;          // the share of the visible distance the grass fades out over
+// The visible and LOD distances per graphics preset (Низкая, Средняя, Высокая): Высокая keeps the game's own
+constexpr float kPresetDistance[3] = {0.6f, 0.8f, 1.0f};
+} // namespace
 
 // ============================================================================================
 // Construction, destruction
@@ -111,12 +121,6 @@ bool Grass::Init()
         throw std::runtime_error("No service: renderer");
     // Vertex declaration
     CreateVertexDeclaration();
-    // The indices of the blades drawn in a frame (DrawRuns)
-    ib = rs->CreateIndexBuffer(GRASS_MAX_POINTS * 6 * sizeof(uint32_t), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
-                               D3DFMT_INDEX32);
-    if (ib < 0)
-        return false;
-
     // Constants
     static const auto pi2 = 2.0f * 3.141592653f;
     for (size_t i = 0; i < 16; i++)
@@ -208,9 +212,6 @@ bool Grass::LoadData(const char *patchName)
         startZ = hdr.startZ;
         numElements = elements;
 
-        cachedMiniMap.clear();
-        cachedMiniMap.reserve(miniX * miniZ);
-
         // Correcting the position of the blades of grass from local to world
         for (int32_t z = 0; z < miniZ; z++)
         {
@@ -225,15 +226,6 @@ bool Grass::LoadData(const char *patchName)
                 {
                     el[i].x += cx;
                     el[i].z += cz;
-                }
-            }
-
-            // cache non-empty blocks
-            for (int32_t x = 0; x < miniX; x++)
-            {
-                if (miniMap[z * miniX + x].num[0] != 0)
-                {
-                    cachedMiniMap.emplace_back(x, z);
                 }
             }
         }
@@ -273,9 +265,8 @@ void Grass::PrepareHeights()
 
 void Grass::UpdateWindow(int32_t camx, int32_t camz)
 {
-    // The blocks Realize can draw: those within the visible distance (RenderBlock's test, in world units: the data
-    // scale sizes the blocks), whichever square DrawGrass walks. GRASS_VEIW ignores the scale: for the island jungle
-    // seen from the sea (scale 10-20) it held a window five times as wide, tens of MB of blades never drawn.
+    // The blocks Realize can draw: those within the visible distance (in world units: the data scale sizes the
+    // blocks; the island jungle seen from the sea has a scale of 10-20).
     int32_t reach = static_cast<int32_t>(ceilf(m_fMaxVisibleDist / (m_fDataScale * GRASS_BLK_DST))) + 2;
     // The window's 1/32-block places are 15 bits: 1023 blocks across
     if (reach > grass_pack::kMaxReach)
@@ -326,7 +317,7 @@ void Grass::UpdateWindow(int32_t camx, int32_t camz)
             for (int32_t i = 0; i < mm.num[0]; i++, blade++)
             {
                 const GRSMapElementEx &el = block[mm.start + i];
-                // RenderBlock draws the first num[lod] blades of a block (num[] does not grow with the LOD)
+                // A block's LOD draws its first num[lod] blades (num[] does not grow with the LOD)
                 int32_t maxLod = 0;
                 for (int32_t lod = 1; lod < 4; lod++)
                     if (i < mm.num[lod])
@@ -339,6 +330,7 @@ void Grass::UpdateWindow(int32_t camx, int32_t camz)
             }
         }
     rs->UnLockVertexBuffer(vb);
+    windowSerial++; // the visible set indexes the old window
 }
 
 // Set texture
@@ -360,6 +352,18 @@ void Grass::Execute(uint32_t delta_time)
     if (initForce < 20)
     {
         initForce++;
+    }
+
+    // The graphics preset (its distances, kPresetDistance), looked at once a second
+    presetSeconds -= delta_time * 0.001f;
+    if (presetSeconds <= 0.0f)
+    {
+        presetSeconds = 1.0f;
+        const int32_t current = storm::render::CurrentEffects().preset;
+        if (current != preset)
+            core.Trace("Grass: graphics preset %d: grass up to %.0f%% of its visible distance", current,
+                       100.0f * kPresetDistance[std::clamp(current, 0, 2)]);
+        preset = current;
     }
 
     VDATA *param = core.Event("GOpt_GetGrassQuality");
@@ -655,37 +659,20 @@ void Grass::Realize(uint32_t delta_time)
     // set constants
     rs->SetVertexShaderConstantF(0, (const float *)consts, sizeof(consts) / sizeof(VSConstant));
 
+    minDist = m_fMinVisibleDist * kPresetDistance[std::clamp(preset, 0, 2)];
+    maxDist = m_fMaxVisibleDist * kPresetDistance[std::clamp(preset, 0, 2)];
     // Camera position on the map
     int32_t camx = static_cast<int32_t>((pos.x / m_fDataScale - startX) / GRASS_BLK_DST);
     int32_t camz = static_cast<int32_t>((pos.z / m_fDataScale - startZ) / GRASS_BLK_DST);
     UpdateWindow(camx, camz);
-    // The square that covers the area of view on the map
-    int32_t left = camx - GRASS_VEIW, right = camx + GRASS_VEIW;
-    int32_t top = camz - GRASS_VEIW, bottom = camz + GRASS_VEIW;
-    // Clip by the size of the map
-    if (right < 0 || left >= miniX)
+    if (vb < 0 || window.empty())
+    {
+        rs->SetRenderState(D3DRS_FOGDENSITY, dwOldFogDensity);
         return;
-    if (bottom < 0 || top >= miniZ)
-        return;
-    if (left < 0)
-        left = 0;
-    if (right >= miniX)
-        right = miniX - 1;
-    if (top < 0)
-        top = 0;
-    if (bottom >= miniZ)
-        bottom = miniZ - 1;
-
-    if (camx < 0)
-        camx = 0;
-    if (camx >= miniX)
-        camx = miniX - 1;
-    if (camz < 0)
-        camz = 0;
-    if (camz >= miniZ)
-        camz = miniZ - 1;
-    // Preparing blocks for rendering
-    DrawGrass(pos, plane, numPlanes, left, right, top, bottom);
+    }
+    UpdateVisible(pos, view, prj);
+    CharacterContacts(pos, plane, numPlanes);
+    DrawVisible(pos);
 
     rs->SetRenderState(D3DRS_FOGDENSITY, dwOldFogDensity);
 
@@ -698,39 +685,6 @@ void Grass::Realize(uint32_t delta_time)
     }
 }
 
-void Grass::DrawGrass(const glm::vec3 &pos, const PLANE *plane, int32_t numPlanes, int32_t left, int32_t right,
-                      int32_t top, int32_t bottom)
-{
-    runs.clear();
-    chrNear.assign(characters.size(), 0);
-    rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(glm::mat4()));
-
-    if (right != miniX - 1 || bottom != miniZ - 1)
-    {
-        for (auto mx = left; mx < right; mx++)
-        {
-            for (auto mz = top; mz < bottom; mz++)
-            {
-                GRSMiniMapElement &mm = miniMap[mz * miniX + mx];
-
-                // Checking for the block
-                if (mm.num[0] != 0)
-                {
-                    RenderBlock(pos, plane, numPlanes, mx, mz);
-                }
-            }
-        }
-    }
-    else
-    {
-        for (const auto &[mx, mz] : cachedMiniMap)
-        {
-            RenderBlock(pos, plane, numPlanes, mx, mz);
-        }
-    }
-
-    DrawRuns();
-}
 
 uint64_t Grass::ProcessMessage(MESSAGE &message)
 {
@@ -768,56 +722,6 @@ void Grass::RestoreRender()
     CreateVertexDeclaration();
 }
 
-// Draw a block with coordinates on the minimap
-void Grass::RenderBlock(const glm::vec3 &camPos, const PLANE *plane, int32_t numPlanes, int32_t mx, int32_t mz)
-{
-    glm::vec3 min, max;
-    // The block we draw
-    GRSMiniMapElement &mm = miniMap[mz * miniX + mx];
-    // Distance from the center of the cluster (box) to the camera in 2D
-    const float cx = m_fDataScale * (startX + (mx + 0.5f) * GRASS_BLK_DST);
-    const float cz = m_fDataScale * (startZ + (mz + 0.5f) * GRASS_BLK_DST);
-    const float dist = (cx - camPos.x) * (cx - camPos.x) + (cz - camPos.z) * (cz - camPos.z);
-    // Range limitation
-    if (dist >= m_fMaxVisibleDist * m_fMaxVisibleDist)
-        return;
-    // Defining visibility
-    min.x = cx - 0.5f * GRASS_BLK_DST * m_fDataScale - 2.0f * m_fMaxWidth;
-    min.y = mm.minHeight * m_fDataScale;
-    min.z = cz - 0.5f * GRASS_BLK_DST * m_fDataScale - 2.0f * m_fMaxWidth;
-    max.x = cx + 0.5f * GRASS_BLK_DST * m_fDataScale + 2.0f * m_fMaxWidth;
-    max.y = mm.maxHeight * m_fDataScale;
-    max.z = cz + 0.5f * GRASS_BLK_DST * m_fDataScale + 2.0f * m_fMaxWidth;
-    if (!VisibleTest(plane, numPlanes, min, max))
-        return;
-    // Lod definition
-    float kLod = (sqrtf(dist) - m_fMinVisibleDist) / (m_fMaxVisibleDist - m_fMinVisibleDist);
-    // if(kLod < 0.0f) kLod = 0.0f;
-    if (kLod < m_fMinGrassLod)
-        kLod = m_fMinGrassLod;
-    // Determine the characters that fall into the current block
-    blockChrs.clear();
-    for (size_t i = 0; i < characters.size(); i++)
-    {
-        // skip falling out characters
-        if (characters[i].pos.x + 0.9f < min.x)
-            continue;
-        if (characters[i].pos.x - 0.9f > max.x)
-            continue;
-        if (characters[i].pos.y + 0.9f < min.y)
-            continue;
-        if (characters[i].pos.y - 0.9f > max.y)
-            continue;
-        if (characters[i].pos.z + 0.9f < min.z)
-            continue;
-        if (characters[i].pos.z - 0.9f > max.z)
-            continue;
-        // Add an index
-        blockChrs.push_back(i);
-    }
-    QueueBlock(mx, mz, kLod);
-}
-
 // The block's LOD, as the vertex shader finds it (vs_port_grass.sc)
 static int32_t BlockLod(float kLod, int32_t quality)
 {
@@ -825,50 +729,199 @@ static int32_t BlockLod(float kLod, int32_t quality)
     return lod < quality ? quality : lod;
 }
 
-void Grass::QueueBlock(int32_t mx, int32_t mz, float kLod)
+float Grass::BlockKLod(float distance) const
 {
-    GRSMiniMapElement &mm = miniMap[mz * miniX + mx];
-    const int32_t lod = BlockLod(kLod, quality);
-    Assert(lod >= 0 && lod < 4);
-    // The block's first num[lod] blades, as RenderBlock draws them; DrawRuns writes their indices
-    if (mm.num[lod] > 0)
-    {
-        // UpdateWindow keeps every block Realize can draw in the buffer
-        if (mx < window.x0 || mx >= window.x1 || mz < window.z0 || mz >= window.z1 || vb < 0)
-        {
-            if (!outsideLogged)
-                core.Trace("ERROR: Grass: block %d, %d drawn outside the buffer's window %d..%d x %d..%d; not drawn", mx,
-                           mz, window.x0, window.x1, window.z0, window.z1);
-            outsideLogged = true;
-            return;
-        }
-        runs.emplace_back(windowStart[(mz - window.z0) * window.width() + (mx - window.x0)], mm.num[lod]);
-    }
-    if (blockChrs.empty() || quality > rq_middle)
-        return;
-    // The characters' grass contacts (Character::SetGrassSound), counted as RenderBlock counts them; the characters
-    // touching a drawn blade go to the vertex shader
-    const GRSMapElementEx *b = block + mm.start;
-    for (int32_t i = 0; i < mm.num[lod]; i++)
-        for (size_t chr = 0; chr < blockChrs.size(); chr++)
-        {
-            CharacterPos &cp = characters[blockChrs[chr]];
-            if (fabsf(cp.pos.y - b[i].y) >= 0.7f)
-                continue;
-            const float pldx = ((b[i].x - cp.pos.x) + (b[i].x - cp.lastPos.x)) * 0.5f;
-            const float pldz = ((b[i].z - cp.pos.z) + (b[i].z - cp.lastPos.z)) * 0.5f;
-            const float dst = pldx * pldx + pldz * pldz;
-            if (dst < 0.8f * 0.8f && dst > 0.0f)
-            {
-                cp.useCounter++;
-                chrNear[blockChrs[chr]] = 1; // the vertex shader bends this blade around the character
-            }
-        }
+    float kLod = (distance - minDist) / (maxDist - minDist);
+    return kLod < m_fMinGrassLod ? m_fMinGrassLod : kLod;
 }
 
-void Grass::DrawRuns()
+void Grass::UpdateVisible(const glm::vec3 &camPos, const glm::mat4 &view, const glm::mat4 &prj)
 {
-    if (runs.empty() || vb < 0)
+    // The camera's cell (about kCellMetres across) and the bucket of its direction: the set below holds every blade
+    // the camera can see from anywhere in that cell looking anywhere in that bucket, so it is built again only when
+    // one of them changes (or the buffer's window, the quality, the distances).
+    const float block = GRASS_BLK_DST * m_fDataScale;
+    const int32_t cellBlocks = std::max(1, static_cast<int32_t>(kCellMetres / block + 0.5f));
+    const float cell = cellBlocks * block;
+    glm::mat4 inverse = view;
+    storm::math::invertRigid(inverse);
+    const glm::vec3 forward = storm::math::normalizeOrZero(storm::math::vz(inverse));
+    const float yaw = atan2f(forward.x, forward.z), pitch = asinf(std::clamp(forward.y, -1.0f, 1.0f));
+    VisibleKey key;
+    key.cellX = static_cast<int32_t>(floorf(camPos.x / cell));
+    key.cellY = static_cast<int32_t>(floorf(camPos.y / cell));
+    key.cellZ = static_cast<int32_t>(floorf(camPos.z / cell));
+    key.yaw = static_cast<int32_t>(floorf(yaw / kBucketRadians + 0.5f));
+    key.pitch = static_cast<int32_t>(floorf(pitch / kBucketRadians + 0.5f));
+    // The projection's half-angle tangents, rounded up to 1/64: a zoom or another aspect starts a new set
+    const float tanX = prj[0][0] != 0.0f ? fabsf(1.0f / prj[0][0]) : 1.0f;
+    const float tanY = prj[1][1] != 0.0f ? fabsf(1.0f / prj[1][1]) : 1.0f;
+    key.tanX = static_cast<int32_t>(ceilf(tanX * 64.0f));
+    key.tanY = static_cast<int32_t>(ceilf(tanY * 64.0f));
+    key.windowSerial = windowSerial;
+    key.quality = quality;
+    key.minDist = minDist;
+    key.maxDist = maxDist;
+    key.minLod = m_fMinGrassLod;
+    key.scale = m_fDataScale;
+    if (visibleValid && key == visibleKey)
+        return;
+    visibleKey = key;
+    visibleValid = true;
+
+    // The cone of every view direction in the bucket from every point of the cell: half-angle of the frustum's
+    // corner plus the bucket's half diagonal, its apex behind the cell's centre so that the cone holds the cones of
+    // all points of the cell.
+    const float bucketYaw = key.yaw * kBucketRadians, bucketPitch = key.pitch * kBucketRadians;
+    const glm::vec3 axis(sinf(bucketYaw) * cosf(bucketPitch), sinf(bucketPitch), cosf(bucketYaw) * cosf(bucketPitch));
+    const float corner = atanf(sqrtf((key.tanX * key.tanX + key.tanY * key.tanY) / (64.0f * 64.0f)));
+    const float half = corner + kBucketRadians * 0.7072f;
+    const bool cone = half < 1.48f; // about 85 degrees: wider than that, every direction is in
+    const float slack = cell * 0.8661f; // the cell's half diagonal
+    const glm::vec3 centre((key.cellX + 0.5f) * cell, (key.cellY + 0.5f) * cell, (key.cellZ + 0.5f) * cell);
+    const glm::vec3 apex = cone ? centre - axis * (slack / sinf(half)) : centre;
+    const float coneCos = cosf(half), coneSin = sinf(half);
+    const float slack2d = cell * 0.7072f;
+
+    visibleBlades = 0;
+    std::vector<uint32_t> &indices = visibleIndices;
+    indices.clear();
+    const int32_t reach = static_cast<int32_t>(ceilf((maxDist + slack2d) / block)) + 1;
+    const int32_t ccx = static_cast<int32_t>(floorf((centre.x / m_fDataScale - startX) / GRASS_BLK_DST));
+    const int32_t ccz = static_cast<int32_t>(floorf((centre.z / m_fDataScale - startZ) / GRASS_BLK_DST));
+    const int32_t left = std::max(window.x0, ccx - reach), right = std::min(window.x1, ccx + reach + 1);
+    const int32_t top = std::max(window.z0, ccz - reach), bottom = std::min(window.z1, ccz + reach + 1);
+    const float halfBlock = 0.5f * block + 2.0f * m_fMaxWidth;
+    for (int32_t mx = left; mx < right; mx++)
+        for (int32_t mz = top; mz < bottom; mz++)
+        {
+            const GRSMiniMapElement &mm = miniMap[mz * miniX + mx];
+            if (mm.num[0] == 0)
+                continue;
+            const float cx = m_fDataScale * (startX + (mx + 0.5f) * GRASS_BLK_DST);
+            const float cz = m_fDataScale * (startZ + (mz + 0.5f) * GRASS_BLK_DST);
+            // The nearest the camera can come to the block's centre from its cell: the vertex shader draws the block
+            // (and its LOD's blades) from the camera's own distance
+            const float dx = cx - centre.x, dz = cz - centre.z;
+            const float dist = std::max(0.0f, sqrtf(dx * dx + dz * dz) - slack2d);
+            if (dist >= maxDist)
+                continue;
+            if (cone)
+            {
+                // The block's box (as the former RenderBlock's: widened by the blades' width, its blades' heights)
+                // as a sphere
+                const float lowY = mm.minHeight * m_fDataScale, highY = mm.maxHeight * m_fDataScale;
+                const glm::vec3 c(cx, 0.5f * (lowY + highY), cz);
+                const float radius = sqrtf(2.0f * halfBlock * halfBlock + 0.25f * (highY - lowY) * (highY - lowY));
+                const glm::vec3 v = c - apex;
+                const float along = glm::dot(v, axis);
+                const float across = sqrtf(std::max(0.0f, glm::dot(v, v) - along * along));
+                if (across * coneCos - along * coneSin > radius)
+                    continue;
+            }
+            // The blades the nearest LOD draws (the farther LODs draw a prefix of them, the shader drops the rest)
+            const int32_t blades = mm.num[BlockLod(BlockKLod(dist), quality)];
+            const auto first = static_cast<uint32_t>(windowStart[(mz - window.z0) * window.width() + (mx - window.x0)]);
+            for (int32_t i = 0; i < blades; i++)
+            {
+                const uint32_t point = (first + i) * 4;
+                indices.insert(indices.end(), {point, point + 1, point + 2, point + 2, point + 1, point + 3});
+            }
+            visibleBlades += blades;
+        }
+    if (visibleBlades == 0)
+        return;
+    if (visibleBlades > ibBlades || ib < 0)
+    {
+        if (ib >= 0)
+            rs->ReleaseIndexBuffer(ib);
+        ibBlades = visibleBlades + visibleBlades / 4;
+        ib = rs->CreateIndexBuffer(static_cast<size_t>(ibBlades) * 6 * sizeof(uint32_t), D3DUSAGE_WRITEONLY,
+                                   D3DFMT_INDEX32);
+    }
+    auto *index = ib >= 0 ? static_cast<uint32_t *>(rs->LockIndexBuffer(ib, D3DLOCK_DISCARD)) : nullptr;
+    if (!index)
+    {
+        core.Trace("ERROR: Grass: no index buffer for %d blades; the grass is not drawn", visibleBlades);
+        visibleBlades = 0;
+        return;
+    }
+    memcpy(index, indices.data(), indices.size() * sizeof(uint32_t));
+    rs->UnLockIndexBuffer(ib);
+}
+
+void Grass::CharacterContacts(const glm::vec3 &camPos, const PLANE *plane, int32_t numPlanes)
+{
+    // The characters' grass contacts (Character::SetGrassSound) with the blades drawn this frame, counted as
+    // RenderBlock once counted them for every drawn block, but only in the few blocks around each character; the
+    // characters touching a blade bend the grass in the vertex shader.
+    nearCharacters.clear();
+    if (quality > rq_middle)
+        return;
+    const float reachX = 0.9f + 2.0f * m_fMaxWidth + 0.5f * GRASS_BLK_DST * m_fDataScale;
+    for (size_t chr = 0; chr < characters.size(); chr++)
+    {
+        CharacterPos &cp = characters[chr];
+        bool touches = false;
+        const auto blockX = [&](float x) {
+            return static_cast<int32_t>(floorf((x / m_fDataScale - startX) / GRASS_BLK_DST));
+        };
+        const auto blockZ = [&](float z) {
+            return static_cast<int32_t>(floorf((z / m_fDataScale - startZ) / GRASS_BLK_DST));
+        };
+        const int32_t x0 = std::max(window.x0, blockX(cp.pos.x - reachX));
+        const int32_t x1 = std::min(window.x1 - 1, blockX(cp.pos.x + reachX));
+        const int32_t z0 = std::max(window.z0, blockZ(cp.pos.z - reachX));
+        const int32_t z1 = std::min(window.z1 - 1, blockZ(cp.pos.z + reachX));
+        for (int32_t mx = x0; mx <= x1; mx++)
+            for (int32_t mz = z0; mz <= z1; mz++)
+            {
+                const GRSMiniMapElement &mm = miniMap[mz * miniX + mx];
+                if (mm.num[0] == 0)
+                    continue;
+                // The former RenderBlock's tests of the block: the distance, the frustum, the character in the
+                // block's box
+                const float cx = m_fDataScale * (startX + (mx + 0.5f) * GRASS_BLK_DST);
+                const float cz = m_fDataScale * (startZ + (mz + 0.5f) * GRASS_BLK_DST);
+                const float dist = (cx - camPos.x) * (cx - camPos.x) + (cz - camPos.z) * (cz - camPos.z);
+                if (dist >= maxDist * maxDist)
+                    continue;
+                glm::vec3 min, max;
+                min.x = cx - 0.5f * GRASS_BLK_DST * m_fDataScale - 2.0f * m_fMaxWidth;
+                min.y = mm.minHeight * m_fDataScale;
+                min.z = cz - 0.5f * GRASS_BLK_DST * m_fDataScale - 2.0f * m_fMaxWidth;
+                max.x = cx + 0.5f * GRASS_BLK_DST * m_fDataScale + 2.0f * m_fMaxWidth;
+                max.y = mm.maxHeight * m_fDataScale;
+                max.z = cz + 0.5f * GRASS_BLK_DST * m_fDataScale + 2.0f * m_fMaxWidth;
+                if (cp.pos.x + 0.9f < min.x || cp.pos.x - 0.9f > max.x || cp.pos.y + 0.9f < min.y ||
+                    cp.pos.y - 0.9f > max.y || cp.pos.z + 0.9f < min.z || cp.pos.z - 0.9f > max.z)
+                    continue;
+                if (!VisibleTest(plane, numPlanes, min, max))
+                    continue;
+                const int32_t lod = BlockLod(BlockKLod(sqrtf(dist)), quality);
+                const GRSMapElementEx *b = block + mm.start;
+                for (int32_t i = 0; i < mm.num[lod]; i++)
+                {
+                    if (fabsf(cp.pos.y - b[i].y) >= 0.7f)
+                        continue;
+                    const float pldx = ((b[i].x - cp.pos.x) + (b[i].x - cp.lastPos.x)) * 0.5f;
+                    const float pldz = ((b[i].z - cp.pos.z) + (b[i].z - cp.lastPos.z)) * 0.5f;
+                    const float dst = pldx * pldx + pldz * pldz;
+                    if (dst < 0.8f * 0.8f && dst > 0.0f)
+                    {
+                        cp.useCounter++;
+                        touches = true;
+                    }
+                }
+            }
+        if (touches)
+            nearCharacters.push_back(static_cast<int32_t>(chr));
+    }
+}
+
+void Grass::DrawVisible(const glm::vec3 &camPos)
+{
+    if (visibleBlades == 0 || vb < 0 || ib < 0)
         return;
     // c42.. (vs_port_grass.sc): the wind, LOD and characters for the vertex shader
     VSConstant c[8 + 2 * GRASS_CHARACTERS];
@@ -880,17 +933,12 @@ void Grass::DrawRuns()
     c[1] = VSConstant(winDir.x, winDir.z, winForce, lowWind);
     c[2] = VSConstant(phase[0], phase[3], phase[4], cosPh1);
     c[3] = VSConstant(sinPh2, sinPh5, sinPh6, winPow);
-    glm::vec3 pos, ang;
-    float prs;
-    rs->GetCamera(pos, ang, prs);
-    c[5] = VSConstant(startX, startZ, pos.x, pos.z);
-    c[6] = VSConstant(m_fMinVisibleDist, m_fMaxVisibleDist, m_fMinGrassLod, heightMin);
-    c[7] = VSConstant(heightStep, static_cast<float>(window.x0), static_cast<float>(window.z0), 0.0f);
+    c[5] = VSConstant(startX, startZ, camPos.x, camPos.z);
+    c[6] = VSConstant(minDist, maxDist, m_fMinGrassLod, heightMin);
+    c[7] = VSConstant(heightStep, static_cast<float>(window.x0), static_cast<float>(window.z0), kFadeShare * maxDist);
     int32_t count = 0;
-    for (size_t i = 0; i < characters.size(); i++)
+    for (const int32_t i : nearCharacters)
     {
-        if (!chrNear[i])
-            continue;
         if (count == GRASS_CHARACTERS)
         {
             if (!tooManyLogged)
@@ -907,38 +955,12 @@ void Grass::DrawRuns()
     c[4] = VSConstant(winF10, kAmpWF, static_cast<float>(quality), static_cast<float>(count));
     rs->SetVertexShaderConstantF(42, (const float *)c, 8 + 2 * count);
 
-    // The blades in drawing order as indices into the static buffer, GRASS_MAX_POINTS blades a draw like the CPU path
+    // The visible set's blades in one draw from the static buffers; the shader drops the blades of blocks beyond
+    // the camera's distance and those the block's LOD does not draw
     rs->SetVertexDeclaration(vertexDecl_);
     rs->SetStreamSource(0, vb, sizeof(Vertex));
-    const char *technique = isGrassLightsOn == 1 ? "Grass" : "GrassDark";
-    uint32_t *index = nullptr;
-    int32_t blades = 0;
-    const auto draw = [&] {
-        rs->UnLockIndexBuffer(ib);
-        index = nullptr;
-        rs->DrawBuffer(-1, sizeof(Vertex), ib, 0, static_cast<size_t>(vbBlades) * 4, 0, blades * 2, technique);
-        blades = 0;
-    };
-    for (const auto &[start, count] : runs)
-    {
-        if (index && blades + count > GRASS_MAX_POINTS)
-            draw();
-        if (!index && !(index = static_cast<uint32_t *>(rs->LockIndexBuffer(ib, D3DLOCK_DISCARD))))
-            return;
-        for (int32_t i = 0; i < count; i++, index += 6)
-        {
-            const auto point = static_cast<uint32_t>(start + i) * 4;
-            index[0] = point;
-            index[1] = point + 1;
-            index[2] = point + 2;
-            index[3] = point + 2;
-            index[4] = point + 1;
-            index[5] = point + 3;
-        }
-        blades += count;
-    }
-    if (index)
-        draw();
+    rs->DrawBuffer(-1, sizeof(Vertex), ib, 0, static_cast<size_t>(vbBlades) * 4, 0,
+                   static_cast<size_t>(visibleBlades) * 2, isGrassLightsOn == 1 ? "Grass" : "GrassDark");
     rs->SetStreamSource(0, -1, 0);
 }
 

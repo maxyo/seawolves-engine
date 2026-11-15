@@ -5,7 +5,8 @@ namespace storm::shim
 {
 namespace
 {
-// The 15 vs_1_1 / ps_1_x shaders referenced by src/techniques (see shaders/ports). vsc_count must match the
+// The 15 vs_1_1 / ps_1_x shaders referenced by src/techniques (see shaders/ports) and the coast foam's pair
+// (technique CoastFoam, src/libs/island/src/foam.cpp). vsc_count must match the
 // port's PORT_VSC_COUNT (tests/renderer_bgfx/run.py checks it).
 const ShaderPort ports[] = {
     {"grass_main", true, "vs_port_grass", 0, 82},
@@ -23,6 +24,8 @@ const ShaderPort ports[] = {
     {"sea_sea3_vertex_shader", true, "vs_port_sea3", 0, 59},
     {"sea_sea3_pixel_shader", false, "fs_port_sea3", 4, 0},
     {"worldmap_shader", true, "vs_port_worldmap", 0, 7},
+    {"coastfoam_foam_vertex_shader", true, "vs_port_coastfoam", 0, 72},
+    {"coastfoam_foam_pixel_shader", false, "fs_port_coastfoam", 2, 0},
 };
 } // namespace
 

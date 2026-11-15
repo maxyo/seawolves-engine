@@ -33,6 +33,9 @@ target_link_libraries(perf_check PRIVATE storm_bgfx storm_check_sdl)
 add_executable(grass_vertex_check grass_vertex_check.cpp)
 target_include_directories(grass_vertex_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
 target_link_libraries(grass_vertex_check PRIVATE storm_bgfx storm_check_sdl)
+add_executable(coast_foam_vertex_check coast_foam_vertex_check.cpp)
+target_include_directories(coast_foam_vertex_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_link_libraries(coast_foam_vertex_check PRIVATE storm_bgfx storm_check_sdl)
 
 # backend_select_check: the choice between Vulkan and OpenGL ES, the denylist and the crash guard of a Vulkan start
 # (src/shim/backend_select.hpp). No GPU.

@@ -142,21 +142,20 @@ class Grass : public Entity
     // Encapsulation
     // --------------------------------------------------------------------------------------------
   private:
-    // Render block
-    void RenderBlock(const glm::vec3 &camPos, const PLANE *plane, int32_t numPlanes, int32_t mx, int32_t mz);
     // Box visibility check
     bool VisibleTest(const PLANE *plane, int32_t numPlanes, const glm::vec3 &min, const glm::vec3 &max);
-    // The block's drawn blades are queued; the characters' grass contacts are counted
-    void QueueBlock(int32_t mx, int32_t mz, float kLod);
-    // The per-frame constants c42.. and the draws of the queued blades
-    void DrawRuns();
     // The base heights of a new map (LoadData); the buffer is filled by UpdateWindow
     void PrepareHeights();
     // The blades of the blocks around the camera's block into the buffer, when the camera left the current window
     void UpdateWindow(int32_t camx, int32_t camz);
-    // The visible blocks
-    void DrawGrass(const glm::vec3 &pos, const PLANE *plane, int32_t numPlanes, int32_t left, int32_t right, int32_t top,
-                   int32_t bottom);
+    // The block's LOD factor (0..1 between the LOD and visible distances) at a distance from the camera
+    float BlockKLod(float distance) const;
+    // The indices of the blades the camera can see from its cell in its direction bucket, when either changed
+    void UpdateVisible(const glm::vec3 &camPos, const glm::mat4 &view, const glm::mat4 &prj);
+    // The characters' contacts with the blades drawn this frame: the grass sounds and the characters bending it
+    void CharacterContacts(const glm::vec3 &camPos, const PLANE *plane, int32_t numPlanes);
+    // The per-frame constants c42.. and the draw of the visible set
+    void DrawVisible(const glm::vec3 &camPos);
     // Get the color
     static int32_t GetColor(glm::vec3 color);
     // Vertex declaration
@@ -166,19 +165,40 @@ class Grass : public Entity
     // Render service
     VRenderer *rs;
     // Buffers: the blades of a window of blocks around the camera, 4 vertices each (UpdateWindow); the indices of the
-    // blades drawn (DrawRuns)
+    // visible set's blades (UpdateVisible)
     int32_t vb, ib;
     int32_t vbBlades = 0;                                        // capacity of vb
+    int32_t ibBlades = 0;                                        // capacity of ib
     grass_pack::Window window;                                   // the blocks in vb
+    int32_t windowSerial = 0;                                    // counts the windows vb held
     std::vector<int32_t> windowStart;                            // first blade of each window block in vb
-    bool outsideLogged = false, reachLogged = false;
+    bool reachLogged = false;
+
+    // The visible set: built for the camera's cell and direction bucket, the projection, the window and the
+    // distances; drawn from as long as they stay the same
+    struct VisibleKey
+    {
+        int32_t cellX = 0, cellY = 0, cellZ = 0, yaw = 0, pitch = 0;
+        int32_t tanX = 0, tanY = 0; // the projection's half-angle tangents in 1/64, rounded up
+        int32_t windowSerial = -1, quality = -1;
+        float minDist = 0.0f, maxDist = 0.0f, minLod = 0.0f, scale = 0.0f;
+        bool operator==(const VisibleKey &) const = default;
+    };
+    VisibleKey visibleKey;
+    bool visibleValid = false;
+    int32_t visibleBlades = 0;          // blades in ib
+    std::vector<uint32_t> visibleIndices; // their indices, as written to ib
+    std::vector<int32_t> nearCharacters; // characters touching a drawn blade this frame (CharacterContacts)
+
+    // The graphics preset's share of the game's distances (kPresetDistance in grass.cpp)
+    int32_t preset = 2;
+    float presetSeconds = 0.0f;
+    float minDist = 0.0f, maxDist = 0.0f; // this frame's LOD and visible distance (Realize)
     // Texture
     int32_t texture;
 
     // Minimap
     GRSMiniMapElement *miniMap;
-    // Full non-empty cached minimap
-    std::vector<std::pair<int32_t, int32_t>> cachedMiniMap;
     // Minimap sizes
     int32_t miniX, miniZ;
     // Starting position of the map
@@ -195,14 +215,10 @@ class Grass : public Entity
     glm::vec3 lColor; // Source color
     glm::vec3 aColor; // Ambient light color
 
-    std::vector<int32_t> blockChrs; // Indexes of characters processed by the block
-
     float lodSelect; // Lod selection range factor (kLod = kLod^lodSelect)
     float winForce;  // Wind speed coefficient 0..1
     glm::vec3 winDir;  // Normalized wind direction
 
-    std::vector<std::pair<int32_t, int32_t>> runs; // first blade, count of each block drawn this frame, in order
-    std::vector<uint8_t> chrNear;             // characters touching a drawn blade this frame
     float heightMin = 0.0f, heightStep = 1.0f; // the base heights of Vertex::height
     bool tooManyLogged = false;
 
