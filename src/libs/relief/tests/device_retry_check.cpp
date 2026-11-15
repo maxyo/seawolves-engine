@@ -57,8 +57,6 @@ void MarkGpuRunning(const std::filesystem::path&,const std::string &what){gpu_ma
 void ClearGpuRunning(const std::filesystem::path&){gpu_marker.clear();}
 std::string GpuCrash(const std::filesystem::path&){return {};}
 std::string GpuLabel(const GpuDevice&){return "deterministic";}
-// Kept so the same negative-control fixture links against the pre-situational production implementation.
-void DemoteGpu(const std::filesystem::path&,const std::string&){}
 }
 int main(int argc,char**argv) {
  using namespace storm::relief;
