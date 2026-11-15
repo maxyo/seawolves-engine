@@ -142,8 +142,10 @@ inline bool isPatchTargetPath(const fs::path &relative)
     const auto extension = android::resourceKey(relative.extension());
     if (extension != ".c" && extension != ".h")
         return false;
-    // Reviewed world-map pirate-frequency patch; keep the rest of Encounters closed.
-    if (key == "program/dialog.c" || key == "program/encounters/encounters_map.c")
+    // Exact reviewed root scripts for loading completion and pirate frequency;
+    // keep unrelated root scripts and the rest of Encounters closed.
+    if (key == "program/dialog.c" || key == "program/encounters/encounters_map.c" ||
+        key == "program/reload.c" || key == "program/seadogs.c")
         return true;
     // Dialog texts are per language: program/dialogs/<language>/..., each
     // language file is a target of its own.

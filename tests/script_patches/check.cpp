@@ -139,10 +139,14 @@ void checkWhitelist()
     CHECK(isPatchTargetPath("PROGRAM/Encounters/encounters_map.c"));
     CHECK(isPatchTargetPath("program/encounters/ENCOUNTERS_MAP.C"));
     CHECK(!storm::android::isUiOverlayPath("PROGRAM/Encounters/encounters_map.c"));
+    // Exact reviewed root scripts (loading completion): only these two names, never other root files.
+    CHECK(isPatchTargetPath("PROGRAM/seadogs.c"));
+    CHECK(isPatchTargetPath("program/reload.c"));
+    CHECK(!storm::android::isUiOverlayPath("PROGRAM/seadogs.c"));
     for (const char *path : {"program/controls/init.c", "program/dialogs/x.c",
                              "program/encounters/encounters.c", "program/encounters/encounters_init.c",
                              "program/encounters/encounters_map.h", "program/encounters/encounters_map.c/other.c",
-                             "program/seadogs.c", "program/battle_interface/bi.txt", "program/quests/q.txt", "../program/dialog.c",
+                             "program/utils.c", "program/seadogs.h", "program/battle_interface/bi.txt", "program/quests/q.txt", "../program/dialog.c",
                              "/program/dialog.c", "program/quests/../seadogs.c", "resource/ini/x.ini"})
         CHECK(!isPatchTargetPath(path));
 }
