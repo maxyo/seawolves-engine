@@ -1,8 +1,9 @@
 // Relief maps from PBRify's normal, height and roughness models (fx/relief_model.hpp) on the GPU (ncnn) or the CPU
 // (onnxruntime), for the game's stone,
 // wood, building, plaster and ground textures, made from the player's game files into the relief directory (fx/relief_store.hpp) the game reads.
-// The game makes the maps of the textures it loads while it runs (renderer_bgfx effects/relief_generator.hpp: Session);
-// the host tool makes a whole game at once (Prepare: List, every texture, Prune, MarkComplete). Contract: README.md here.
+// The game makes the maps of the textures it loads, and of its current place's neighbours, while it runs (renderer_bgfx
+// effects/relief_generator.hpp: Session, Listed); the host tool makes a whole game at once (Prepare: List, every texture,
+// Prune). Contract: README.md here.
 #pragma once
 
 #include "storm/fx/relief_store.hpp"
@@ -26,6 +27,8 @@ struct FinalizeResult;
 // The relief textures of a game (its RESOURCE/Textures), by name, without the characters' atlases (made only on request). Only names are read (a scan of the models for the
 // most used ones took minutes on a phone's storage, in the way of the textures on screen).
 std::vector<std::filesystem::path> List(const std::filesystem::path &textures);
+// Whether List would give this texture file (by its name only): the game's neighbour textures are filtered with it.
+bool Listed(const std::filesystem::path &textures, const std::filesystem::path &file);
 
 enum class Outcome
 {
@@ -131,14 +134,9 @@ class Session
 // Also discovers on-demand textures (characters) for cache validity, without adding them to that queue.
 // Reads each source's header and probe level only. Returns the removal count, or -1 on incomplete/unreadable
 // source inventory (no maps removed) or output I/O failure (some stale maps may already be removed).
-// Current keys are preserved. A caller must retry later and must not MarkComplete after -1.
+// Current keys are preserved. A caller must retry later after -1.
 int Prune(const std::filesystem::path &textures, const std::vector<std::filesystem::path> &files,
           const std::filesystem::path &output, int map_size);
-// The mark of a complete pass (Prune done): the method, the map size and how many relief textures the game had
-// (`candidates`: List(textures).size()), written by Prepare; Complete reads it back.
-void MarkComplete(const std::filesystem::path &output, int map_size, size_t candidates);
-// Also false when maps of that pass are missing since (the system evicted part of its cache): `missing` says how many.
-bool Complete(const std::filesystem::path &output, int map_size, size_t candidates, int *missing = nullptr);
 
 // The whole job at once (host tool and checks): List, every texture, Prune.
 struct Job

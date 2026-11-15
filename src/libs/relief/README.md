@@ -30,21 +30,24 @@ In the game process, lazily (renderer_bgfx `src/effects/relief_generator.hpp`): 
 requested; one worker thread (nice 10, onnxruntime on all cores but two, paused by explicit renderer holds;
 thermal status is telemetry) makes the most recently drawn first, then the other required loaded textures.
 Normal/gloss and ×2 maps required by scene loading are prepared before the readiness gate reveals the scene;
-textures loaded later still request their own missing maps. Automatic whole-game discovery, pruning and preparation
-never run in the game process, including idle/loading/gameplay. No whole-game completion mark is created there.
-Existing valid cached maps are still consumed; a newly made map is uploaded and its relief fades in over 0.3 s.
-Explicit standalone `storm_relief_cli` whole-game preparation/pruning/completion remains available below.
+textures loaded later still request their own missing maps. After a location is revealed, its direct neighbours (the
+locations and the island's sea its exits lead to: `render::SetEffectsNeighbours`, from the location's script
+attributes and the texture names in its neighbours' models) are made ahead with no loaded request waiting: the
+neighbour whose exit is nearest the player first, at most `kNeighbourMaps` (24) new maps per place, never while the
+device is hot (`device_hot`) or the networks wait for the GPU on a CPU detour; then the worker is idle
+(`effects: relief generation: the neighbours of <place> are done: ...`). Nothing else of the game is listed, pruned
+or prepared in the game process. Existing valid cached maps are still consumed; a newly made map is uploaded and its
+relief fades in over 0.3 s. The host's `storm_relief_cli` makes a whole game at once (below).
 A map's key holds its method (`fx::ReliefMethod`: the method version, the
 models' digests `fx::kReliefNormalModelDigest`, `fx::kReliefHeightModelDigest`, `fx::kReliefRoughnessModelDigest`, the height's and the gloss's versions, the class's options with the derivation's version, the map size), so a
-change never reuses a map made before it; a pass that starts without a matching mark first prunes the maps of other
-methods. The maps are a cache: on Android the relief directory is in the app's cache, so «Очистить кэш» (or the
-system evicting it) removes them and the game makes them again lazily; a complete pass whose maps went missing
-since is resumed (logged with their count). At start the stores of earlier builds are removed (logged): the files
+change never reuses a map made before it; the host's whole-game pass prunes the maps of other methods. The maps are a
+cache: on Android the relief directory is in the app's cache, so «Очистить кэш» (or the system evicting it) removes
+them and the game makes them again lazily. At start the stores of earlier builds are removed (logged): the files
 directory's `relief`, kept across «Очистить кэш» (the app removes the old locations in its caches, GameCache); the
 store in use is never removed as an old one. Each texture logs the key and method of its map when it is
 looked up (`effects: relief <name> (<class>): map <key> of method <method>`). The models
 are loaded at the first job and released after 10 s with no work left. The "effects relief:" log line counts the
-textures waiting and the rest still to make; each map logs its stages (`relief <name>: WxH, N ms (read, decode,
+textures waiting; each map logs its stages (`relief <name>: WxH, N ms (read, decode,
 models of which inference, mips, material (depth), encode, write)`).
 
 `storm_relief_cli <RESOURCE/Textures> <relief dir> <model dir> [map size] [threads]` makes a whole game at once:

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -124,6 +125,18 @@ void SetEffectsWorldOrigin(const std::array<float, 3> &origin);
 // `owner` is identity only; clearing an old owner must not clear its replacement's position.
 void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner);
 void ClearEffectsPlayerPosition(const void *owner);
+
+// Location, once it has read them: its direct neighbours (the locations and the island's sea its exits lead to) and
+// the game texture files their models use. Their relief maps are made ahead once the place is revealed (renderer
+// effects/relief_generator.hpp: the nearest exit first, a small budget, only while the device is cool); nothing else
+// of the game is. A new scene drops them.
+struct EffectsNeighbour
+{
+    std::string name;                              // the location or island id
+    std::optional<std::array<float, 3>> position; // its exit in this location (absolute world); none: unplaced
+    std::vector<std::filesystem::path> files;      // resolved game texture files
+};
+void SetEffectsNeighbours(std::string_view place, std::vector<EffectsNeighbour> neighbours);
 
 // The legacy sea (Sea2), every frame it draws, before its draws: what makes waves on it this frame
 // (Settings::sea_waves: ripples around the camera, the hulls' wakes among them).

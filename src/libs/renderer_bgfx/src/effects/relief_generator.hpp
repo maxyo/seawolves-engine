@@ -7,8 +7,12 @@
 //     upscales within the same 10 m band. Unobserved entries fall back to draw/load order; old-scene entries follow
 //     current-scene work. Live work ages after 16 other admissions. When its map is written the texture's entry
 //     becomes Stored: the draw reads and uploads it and the relief fades in (NormalMaps::handle).
-//   * Only loaded normal/gloss and ×2 requests are made. The game never lists/prepares the whole corpus in
-//     idle, loading or gameplay. Explicit standalone storm_relief_cli preparation remains independent.
+//   * The current place's direct neighbours (render::SetEffectsNeighbours: its exits to other locations, the port, the
+//     island's sea) are made ahead, after the place is revealed and only while no loaded request waits: the neighbour
+//     whose exit is nearest the player first, at most kNeighbourMaps new maps per place, only while relief or gloss is
+//     on (set_active), never while the device is hot
+//     (thermal.hpp device_hot) or while the networks wait for the GPU on a CPU detour. Then the worker is idle.
+//     Nothing else of the game is listed or prepared, in any state. The host's storm_relief_cli is separate.
 //   * The worker runs at nice 10. CPU jobs use cores-2 in gameplay and all cores
 //     after a presented opaque stock frame, sharing admission with ray-bake pieces.
 //     The renderer's explicit hold (the automatic graphics preset's measurement) pauses work; device thermal
@@ -27,6 +31,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -45,6 +50,17 @@ namespace storm::effects
 {
 struct NormalMapEntry;
 struct UpscaleEntry;
+
+// New maps made ahead for one place's neighbours at most (textures that have theirs already cost nothing).
+inline constexpr uint32_t kNeighbourMaps = 24;
+
+// A direct neighbour of the current place and the textures its models use.
+struct ReliefNeighbour
+{
+    std::string name;                              // its location or island id, for the log
+    std::optional<std::array<float, 3>> position; // its exit in the current place (absolute world); none: after the others
+    std::vector<std::filesystem::path> files;      // game texture files (under ReliefSetup::textures)
+};
 
 struct ReliefSetup
 {
@@ -70,6 +86,13 @@ class ReliefGenerator
     // inference. The caller sets Waiting before enqueueing. False when
     // kUpscaleQueue requests wait already (the entry asks again later). Done: the entry becomes Stored, or Failed.
     bool request_upscale(const std::shared_ptr<UpscaleEntry> &entry);
+    // Main thread: the neighbours of `place` to make ahead (see above); replaces the previous place's, empty clears.
+    // Only the textures the game makes maps for by their name are kept (relief::Listed).
+    void set_neighbours(std::string place, std::vector<ReliefNeighbour> neighbours);
+    // Main thread: relief or gloss maps are drawn (NormalMaps::configure); off, no neighbour is made.
+    void set_active(bool active);
+    // Main thread: the controlled character or ship (absolute world), for the order of the neighbours.
+    void set_anchor(const std::array<float, 3> &position);
     // Main thread: the game shows the ×2 textures (Settings::upscale): the requested relief maps made from a ×2 also
     // keep it in `directory`, encoded for the tier (`bc`). No other game textures are discovered here.
     void set_display(bool on, std::filesystem::path directory, bool bc);
@@ -109,13 +132,29 @@ class ReliefGenerator
         std::filesystem::path file;
         uint64_t order = 0;
     };
+    struct NeighbourJob
+    {
+        uint64_t place = 0; // neighbours_.serial when it was taken
+        std::string neighbour;
+        std::filesystem::path file;
+    };
     struct PendingFinalize
     {
         uint64_t id = 0, key = 0;
         std::optional<uint64_t> relief_key, gloss_key;
         std::optional<Request> request;
         std::weak_ptr<UpscaleEntry> upscale;
+        std::optional<NeighbourJob> neighbour;
         bool is_upscale = false;
+    };
+    struct Neighbours
+    {
+        uint64_t serial = 0;
+        std::string place;
+        std::vector<ReliefNeighbour> list; // files still to look at
+        std::set<std::filesystem::path> taken; // looked at already (neighbours share textures)
+        uint32_t made = 0, existing = 0, skipped = 0, failed = 0, in_flight = 0;
+        bool done = true;
     };
     bool wait_finalizer(); // no admission/network lock held
     void stage(std::unique_ptr<relief::ComputedTexture> product, PendingFinalize pending);
@@ -131,6 +170,10 @@ class ReliefGenerator
     void release_models(const char *why, bool keep_policy);
     bool must_wait(); // under mutex_: the background gate (thermal.hpp), changes logged
     void prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry);
+    std::optional<NeighbourJob> next_neighbour(); // under mutex_: the nearest neighbour's next file, within the budget
+    const char *neighbour_wait();                 // under mutex_: why the neighbours wait now (logged on change); null: go
+    void neighbours_finished();                   // under mutex_: logs the place's result once nothing is left or in flight
+    void prepare_neighbour(const NeighbourJob &job);
 
     std::mutex mutex_;
     std::condition_variable wake_;
@@ -148,6 +191,10 @@ class ReliefGenerator
     ReliefSetup setup_;
     std::deque<Request> requests_;
     std::deque<std::weak_ptr<UpscaleEntry>> upscales_;
+    Neighbours neighbours_;
+    bool active_ = false;
+    std::optional<std::array<float, 3>> anchor_;
+    std::string neighbour_wait_; // the logged reason
     bool display_ = false, display_bc_ = false;
     std::filesystem::path display_directory_;
     uint64_t order_ = 0, admitted_ = 0;

@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
 #if defined(__linux__) || defined(__ANDROID__)
 #include <sys/resource.h>
@@ -81,7 +82,11 @@ void ReliefGenerator::configure(ReliefSetup setup)
 #endif
         });
     idle_since_ = Clock::now();
-    shim::logf("effects: relief generation: loaded textures only; automatic whole-corpus preparation disabled");
+    const uint64_t serial = neighbours_.serial + 1;
+    neighbours_ = {};
+    neighbours_.serial = serial;
+    neighbour_wait_.clear();
+    shim::logf("effects: relief generation: loaded textures and the current place's neighbours only");
     worker_ = std::thread([this] { run(); });
 }
 
@@ -143,6 +148,50 @@ bool ReliefGenerator::request_upscale(const std::shared_ptr<UpscaleEntry> &entry
     return true;
 }
 
+void ReliefGenerator::set_neighbours(std::string place, std::vector<ReliefNeighbour> neighbours)
+{
+    size_t files = 0;
+    for (ReliefNeighbour &neighbour : neighbours)
+    {
+        std::erase_if(neighbour.files, [this](const std::filesystem::path &file) { return !relief::Listed(setup_.textures, file); });
+        files += neighbour.files.size();
+    }
+    std::erase_if(neighbours, [](const ReliefNeighbour &neighbour) { return neighbour.files.empty(); });
+    {
+        std::lock_guard lock(mutex_);
+        if (!neighbours_.done)
+            shim::logf("effects: relief generation: the neighbours of %s left unfinished (the place changed): %u maps made",
+                       neighbours_.place.c_str(), neighbours_.made);
+        const size_t count = neighbours.size();
+        const uint64_t serial = neighbours_.serial + 1;
+        neighbours_ = {};
+        neighbours_.serial = serial;
+        neighbours_.place = std::move(place);
+        neighbours_.list = std::move(neighbours);
+        neighbours_.done = neighbours_.list.empty();
+        if (!neighbours_.place.empty())
+            shim::logf("effects: relief generation: %zu neighbours of %s with %zu relief and gloss textures: made ahead, "
+                       "the nearest exit first, at most %u new maps",
+                       count, neighbours_.place.c_str(), files, kNeighbourMaps);
+    }
+    wake_.notify_all();
+}
+
+void ReliefGenerator::set_active(bool active)
+{
+    {
+        std::lock_guard lock(mutex_);
+        active_ = active;
+    }
+    wake_.notify_all();
+}
+
+void ReliefGenerator::set_anchor(const std::array<float, 3> &position)
+{
+    std::lock_guard lock(mutex_);
+    anchor_ = position;
+}
+
 void ReliefGenerator::set_display(bool on, std::filesystem::path directory, bool bc)
 {
     std::lock_guard lock(mutex_);
@@ -174,7 +223,8 @@ ReliefGenerator::Stats ReliefGenerator::stats()
     stats.requested = static_cast<uint32_t>(std::count_if(requests_.begin(), requests_.end(), [](const Request &request) {
         return !request.entry.expired();
     }));
-    stats.requested += (computing_normal_ ? 1u : 0u) + (finalizing_ && !finalizing_->is_upscale ? 1u : 0u);
+    stats.requested += (computing_normal_ ? 1u : 0u) +
+                       (finalizing_ && !finalizing_->is_upscale && !finalizing_->neighbour ? 1u : 0u);
     stats.working = computing_ || finalizing_.has_value();
     return stats;
 }
@@ -275,7 +325,18 @@ void ReliefGenerator::run()
         drain_finalized();
         std::optional<Request> request;
         std::shared_ptr<UpscaleEntry> upscale;
+        std::optional<NeighbourJob> neighbour;
         std::shared_ptr<relief::LoadingRetry> loading_retry;
+        // A neighbour's file taken but not started goes back to the front of its list.
+        const auto put_back = [this](NeighbourJob &job) {
+            if (job.place != neighbours_.serial)
+                return;
+            neighbours_.taken.erase(job.file);
+            for (ReliefNeighbour &n : neighbours_.list)
+                if (n.name == job.neighbour)
+                    return void(n.files.insert(n.files.begin(), std::move(job.file)));
+            neighbours_.list.push_back({job.neighbour, std::nullopt, {std::move(job.file)}});
+        };
         {
             std::unique_lock lock(mutex_);
             for (;;)
@@ -321,8 +382,23 @@ void ReliefGenerator::run()
                 }
                 if (request || upscale)
                     break;
-                // Only loaded requests can wake preparation. Idle/loading/gameplay never discover the corpus.
+                // Then the current place's neighbours (within their budget, while the device is cool); nothing else
+                // of the game, in any state.
                 Clock::time_point until = Clock::time_point::max();
+                if (!neighbours_.done && active_)
+                {
+                    const bool left = neighbours_.made + neighbours_.in_flight < kNeighbourMaps &&
+                                      std::any_of(neighbours_.list.begin(), neighbours_.list.end(),
+                                                  [](const ReliefNeighbour &n) { return !n.files.empty(); });
+                    if (!left)
+                        neighbours_finished();
+                    else if (neighbour_wait())
+                        until = now + kWaitPause;
+                    else if ((neighbour = next_neighbour()))
+                        break;
+                    else
+                        continue;
+                }
                 // Once per idle period: a retained device-policy shell has nothing more to release until it works again.
                 if (session_ && !inference_released_)
                 {
@@ -344,15 +420,19 @@ void ReliefGenerator::run()
                     requests_.push_front(std::move(*request));
                 if (upscale)
                     upscales_.push_front(upscale);
+                if (neighbour)
+                    put_back(*neighbour);
                 wake_.wait_for(lock, kWaitPause, [this] { return stopping_.load(); });
                 continue;
             }
+            if (neighbour)
+                ++neighbours_.in_flight;
             if (request || upscale)
             {
                 next_upscale_ = request.has_value(); // pauses and cache-only completion consume no turn
                 ++admitted_;
             }
-            // Only current-location loaded requests can claim this permission, never whole-corpus work.
+            // Only current-location loaded requests can claim this permission, never a neighbour's texture.
             if (loading_retry_ && ((request && std::find(loading_normal_.begin(), loading_normal_.end(), request->entry.lock()) != loading_normal_.end()) ||
                 (upscale && std::find(loading_upscale_.begin(), loading_upscale_.end(), upscale) != loading_upscale_.end())))
                 loading_retry = loading_retry_;
@@ -363,6 +443,7 @@ void ReliefGenerator::run()
             std::lock_guard lock(mutex_);
             if (request) requests_.push_front(std::move(*request));
             if (upscale) upscales_.push_front(upscale);
+            if (neighbour && neighbour->place == neighbours_.serial) { --neighbours_.in_flight; put_back(*neighbour); }
             stats_.working = false; computing_ = computing_normal_ = false;
             continue; // generation changed: reselect; shutdown checked at loop top
         }
@@ -374,6 +455,11 @@ void ReliefGenerator::run()
                     entry->state = NormalMapEntry::Missing;
             if (upscale)
                 upscale->state = stopping_ ? UpscaleEntry::Missing : UpscaleEntry::Failed;
+            if (neighbour && neighbour->place == neighbours_.serial)
+            {
+                --neighbours_.in_flight; // no models: the neighbours end with what they have (open_session logged why)
+                neighbours_.list.clear();
+            }
             for (const Request &r : requests_)
                 if (const std::shared_ptr<NormalMapEntry> entry = r.entry.lock())
                     entry->state = NormalMapEntry::Missing;
@@ -389,11 +475,16 @@ void ReliefGenerator::run()
         try {
             if (request) prepare_request(*request);
             else if (upscale) prepare_upscale(upscale);
+            else if (neighbour) prepare_neighbour(*neighbour);
         } catch (const std::exception &e) {
             shim::logf("ERROR: effects: texture preparation exception: %s", e.what());
             if (request) if (auto entry = request->entry.lock())
                 entry->state = stopping_ ? NormalMapEntry::Missing : NormalMapEntry::Failed;
             if (upscale) upscale->state = stopping_ ? UpscaleEntry::Missing : UpscaleEntry::Failed;
+            if (neighbour) {
+                std::lock_guard lock(mutex_);
+                if (neighbour->place == neighbours_.serial) { --neighbours_.in_flight; ++neighbours_.failed; }
+            }
         }
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
@@ -484,6 +575,83 @@ void ReliefGenerator::prepare_request(const Request &request)
     }
 }
 
+void ReliefGenerator::prepare_neighbour(const NeighbourJob &job)
+{
+    std::optional<relief::UpscaleOutput> display;
+    {
+        std::lock_guard lock(mutex_);
+        if (display_)
+            display = relief::UpscaleOutput{display_directory_, display_bc_};
+    }
+    const Clock::time_point start = Clock::now();
+    std::string failure;
+    auto computed = session_->ComputeFile(setup_.textures, job.file, setup_.directory, fx::kReliefMapSize, failure,
+                                          display ? &*display : nullptr);
+    PendingFinalize pending; pending.id = ++next_finalize_; pending.neighbour = job;
+    { std::lock_guard lock(mutex_); stats_.device = session_->stats().provider; }
+    if (computed.product) stage(std::move(computed.product), std::move(pending));
+    else {
+        relief::FinalizeResult result; result.outcome = computed.outcome; result.failure = std::move(failure);
+        result.total_ms = Ms(start); finish(pending, result);
+    }
+}
+
+std::optional<ReliefGenerator::NeighbourJob> ReliefGenerator::next_neighbour()
+{
+    const auto distance = [this](const ReliefNeighbour &n) {
+        if (!n.position || !anchor_)
+            return std::numeric_limits<float>::infinity();
+        float sum = 0.0f;
+        for (int i = 0; i < 3; ++i)
+            sum += ((*n.position)[i] - (*anchor_)[i]) * ((*n.position)[i] - (*anchor_)[i]);
+        return sum;
+    };
+    for (;;)
+    {
+        std::erase_if(neighbours_.list, [](const ReliefNeighbour &n) { return n.files.empty(); });
+        if (neighbours_.list.empty())
+            return std::nullopt;
+        // The nearest exit; equal (unplaced, or no player yet) in the order the place gave them.
+        auto nearest = std::min_element(neighbours_.list.begin(), neighbours_.list.end(),
+                                        [&](const ReliefNeighbour &a, const ReliefNeighbour &b) { return distance(a) < distance(b); });
+        std::filesystem::path file = std::move(nearest->files.front());
+        nearest->files.erase(nearest->files.begin());
+        if (neighbours_.taken.insert(file).second)
+            return NeighbourJob{neighbours_.serial, nearest->name, std::move(file)};
+    }
+}
+
+const char *ReliefGenerator::neighbour_wait()
+{
+    const char *why = device_hot()                          ? "the device is hot"
+                      : session_ && session_->WaitsForGpu() ? "the game keeps the GPU busy and the networks run on the CPU"
+                                                            : nullptr;
+    if ((why ? why : "") != neighbour_wait_)
+    {
+        if (why)
+            shim::logf("effects: relief generation: the neighbours of %s wait: %s", neighbours_.place.c_str(), why);
+        else
+            shim::logf("effects: relief generation: the neighbours of %s go on (waited: %s)", neighbours_.place.c_str(),
+                       neighbour_wait_.c_str());
+        neighbour_wait_ = why ? why : "";
+    }
+    return why;
+}
+
+void ReliefGenerator::neighbours_finished()
+{
+    if (neighbours_.done || neighbours_.in_flight)
+        return;
+    shim::logf("effects: relief generation: the neighbours of %s are done%s: %u maps made, %u had theirs, %u without a map, "
+               "%u failed; idle until a texture is loaded or another place is entered",
+               neighbours_.place.c_str(), neighbours_.made >= kNeighbourMaps ? " (the budget is spent)" : "",
+               neighbours_.made, neighbours_.existing, neighbours_.skipped, neighbours_.failed);
+    neighbours_.done = true;
+    neighbours_.list.clear();
+    neighbours_.taken.clear();
+    neighbour_wait_.clear();
+}
+
 bool ReliefGenerator::wait_finalizer()
 {
     for (;;) {
@@ -552,6 +720,25 @@ void ReliefGenerator::drain_finalized()
 void ReliefGenerator::finish(const PendingFinalize &pending, const relief::FinalizeResult &result)
 {
     std::lock_guard lock(mutex_);
+    if (pending.neighbour) {
+        if (pending.neighbour->place != neighbours_.serial) return; // another place by now
+        --neighbours_.in_flight;
+        switch (result.outcome) {
+        case relief::Outcome::Prepared:
+            ++neighbours_.made; ++stats_.made; stats_.made_ms += result.total_ms;
+            stats_.slowest_ms = std::max(stats_.slowest_ms, result.total_ms);
+            break;
+        case relief::Outcome::Existing: ++neighbours_.existing; break;
+        case relief::Outcome::Skipped: ++neighbours_.skipped; break;
+        case relief::Outcome::Failed:
+            ++neighbours_.failed;
+            if (!stopping_)
+                shim::logf("ERROR: effects: relief map of %s (a neighbour of %s) not made (%s)",
+                           pending.neighbour->file.string().c_str(), neighbours_.place.c_str(), result.failure.c_str());
+            break;
+        }
+        return;
+    }
     if (pending.is_upscale) {
         const auto entry = pending.upscale.lock();
         if (!entry || entry->key != pending.key || entry->state != UpscaleEntry::Waiting) return;

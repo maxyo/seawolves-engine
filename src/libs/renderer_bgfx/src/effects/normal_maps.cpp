@@ -66,6 +66,7 @@ void NormalMaps::configure(bool enabled, int max_size, bool material)
     enabled_ = enabled;
     max_size_ = max_size;
     material_ = material;
+    ReliefGenerator::instance().set_active(enabled_ || gloss_enabled_); // the neighbours' maps only then
     if (!changed)
         return;
     std::erase_if(entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
@@ -464,6 +465,7 @@ void NormalMaps::configure_gloss(bool enabled, int max_size)
     const bool changed = enabled != gloss_enabled_ || max_size != gloss_max_size_;
     gloss_enabled_ = enabled;
     gloss_max_size_ = max_size;
+    ReliefGenerator::instance().set_active(enabled_ || gloss_enabled_); // the neighbours' maps only then
     if (!changed)
         return;
     std::erase_if(gloss_entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
@@ -577,8 +579,7 @@ void NormalMaps::end_frame()
     logged_made_ = generator.made;
     logged_device_ = generator.device;
     shim::logf("effects relief: %u normal maps resident (%.1f MB, max %d px; %u with a material texture (height, gloss), %.1f MB of "
-               "it); %u loaded textures waiting for their map, "
-               "automatic whole-corpus preparation disabled (loaded demand only)%s; %u maps made (%.0f ms, slowest %.0f ms); %u without "
+               "it); %u loaded textures waiting for their map%s; %u maps made (%.0f ms, slowest %.0f ms); %u without "
                "a map (generation unavailable); %u loaded while relief was off; models on %s",
                now.resident, static_cast<double>(now.bytes) / 1048576.0, max_size_, now.materials,
                static_cast<double>(now.material_bytes) / 1048576.0, now.waiting,

@@ -25,10 +25,10 @@ std::atomic<int> status{2};
 std::atomic<float> forecast{0.95f};
 std::atomic<bool> hot{true}, block_job{false}, cancelled{false}, slow_open{false};
 std::atomic<int> opened{0}, started{0}, pause_after{0}, idle_releases{0};
-std::atomic<bool> cpu_detour{false};
+std::atomic<bool> cpu_detour{false}, device_is_hot{false};
 std::atomic<int64_t> clock_offset{0};
 
-std::atomic<int> list_calls{0}, prune_calls{0}, complete_calls{0}, marked_complete{0};
+std::atomic<int> list_calls{0}, prune_calls{0};
 std::mutex events_mutex;
 std::vector<std::string> events;
 std::map<std::string,uint64_t> upscale_keys;
@@ -46,7 +46,7 @@ void reset() {
     // Independent cases cannot inherit exact-key completed files from a prior case.
     if(!cache.empty()){std::filesystem::remove_all(cache);std::filesystem::create_directories(cache);}
     status=2; forecast=0.95f; hot=true; block_job=false; cancelled=false; slow_open=false; opened=0; started=0; pause_after=0;
-    list_calls=0; prune_calls=0; complete_calls=0; marked_complete=0; clock_offset=0;
+    list_calls=0; prune_calls=0; clock_offset=0; device_is_hot=false;
     std::lock_guard lock(events_mutex); events.clear();
 }
 relief::Outcome infer(const std::filesystem::path &file, const char *lane) {
@@ -54,6 +54,7 @@ relief::Outcome infer(const std::filesystem::path &file, const char *lane) {
     { std::lock_guard lock(events_mutex); events.emplace_back(std::string(lane)+file.string()); }
     while (block_job && !cancelled) std::this_thread::sleep_for(1ms);
     if (cancelled || file.string().find("fail")!=std::string::npos) return relief::Outcome::Failed;
+    if (file.string().find("have")!=std::string::npos) return relief::Outcome::Existing;
     std::this_thread::sleep_for(2ms);
     if (pause_after > 0 && started == pause_after) { status=2; forecast=0.95f; }
     return relief::Outcome::Prepared;
@@ -70,6 +71,7 @@ std::shared_ptr<effects::UpscaleEntry> upscale(const char *name, uint64_t key) {
 void configure(effects::ReliefGenerator &g) {
     g.configure({cache,cache,[](const char*){return std::vector<uint8_t>{1};}});
     g.set_display(true,cache,false);
+    g.set_active(true);
 }
 }
 std::chrono::steady_clock::time_point test_now() { return std::chrono::steady_clock::now()+std::chrono::seconds(clock_offset.load()); }
@@ -77,6 +79,7 @@ namespace storm::shim { void logf(const char*,...) {} }
 namespace storm::effects {
 NormalMapEntry::~NormalMapEntry()=default;
 UpscaleEntry::~UpscaleEntry()=default;
+bool device_hot() { return device_is_hot; }
 const char *background_wait_reason() {
     const bool value=thermal_hot(hot.load(),status.load(),forecast.load());hot=value;
     return value?"synthetic thermal hold":nullptr;
@@ -120,8 +123,7 @@ std::vector<std::filesystem::path> List(const std::filesystem::path&) { ++list_c
 int Prune(const std::filesystem::path&,const std::vector<std::filesystem::path>&,const std::filesystem::path&,int) {
     ++prune_calls; return 0;
 }
-void MarkComplete(const std::filesystem::path&,int,size_t) { ++marked_complete; }
-bool Complete(const std::filesystem::path&,int,size_t,int*) { ++complete_calls; return false; }
+bool Listed(const std::filesystem::path&,const std::filesystem::path &file) { return file.string().find("nomap")==std::string::npos; }
 
 }
 int main(int argc,char **argv) {
@@ -136,7 +138,7 @@ int main(int argc,char **argv) {
             if(state==2) for(int i=0;i<30;++i) g.frame(false); // loading/interface, formerly corpus eligible
             { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
             std::this_thread::sleep_for(30ms);
-            expect(opened==0 && started==0 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
+            expect(opened==0 && started==0 && list_calls==0 && prune_calls==0,
                    "idle/missing frames, actual3D and no-scene loading never discover or prepare the corpus");
         }
         // A texture can appear after loading/discovery. It still gets its own real demand preparation.
@@ -144,7 +146,7 @@ int main(int argc,char **argv) {
         g.request(late,late->file);expect(g.request_upscale(late_u),"late-loaded x2 request accepted");
         until([&]{return late->state==effects::NormalMapEntry::Stored && late_u->state==effects::UpscaleEntry::Stored;},
               "late-loaded normal and x2 complete");
-        expect(started==2 && list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,
+        expect(started==2 && list_calls==0 && prune_calls==0,
                "loaded demand performs no whole-game inventory/prune/completion and creates no false warm mark");
         g.shutdown();
     }
@@ -217,7 +219,7 @@ int main(int argc,char **argv) {
     expect(idle_releases==1 && opened==1 && started==1,"idle releases inference objects without reopening or unrelated work");
     advance(50);g.frame(true);
     std::this_thread::sleep_for(30ms);
-    expect(started==1 && list_calls==0 && prune_calls==0 && marked_complete==0,
+    expect(started==1 && list_calls==0 && prune_calls==0,
            "elapsed60-second provider retry never starts a corpus job");
     expect(idle_releases==1,"the retained shell is released once per idle period, not every 10 s");
     auto retry=normal("retry-loaded-later",92);g.request(retry,retry->file);
@@ -360,7 +362,7 @@ int main(int argc,char **argv) {
         expect(events==std::vector<std::string>{"N:demand-anchor","U:foreground-upscale","N:foreground-normal"},
                "loaded lane fairness is unchanged and unrelated corpus never follows");
     }
-    expect(list_calls==0 && prune_calls==0 && complete_calls==0 && marked_complete==0,"neither loaded lane triggers whole-game discovery or completion");
+    expect(list_calls==0 && prune_calls==0,"neither loaded lane triggers whole-game discovery or completion");
     g.shutdown();
     // A real inference failure is terminal for that entry and does not starve the other lane.
     reset();status=0;forecast=0.5f;hot=false;configure(g);
@@ -390,5 +392,71 @@ int main(int argc,char **argv) {
     expect(g.request_upscale(opening),"cancelled entry can be queued again");
     until([&]{return opening->state==effects::UpscaleEntry::Stored;},"retry completes in the new session");
     g.shutdown();
+    // The current place's neighbours: only their listed files, the nearest exit first (re-ranked as the player moves),
+    // after the loaded requests, never while the device is hot; then idle. Nothing outside the place and its neighbours.
+    {
+        using N=effects::ReliefNeighbour;
+        const auto idle=[&]{auto s=g.stats();return !s.working && s.requested==0;};
+        const auto ran=[&]{std::lock_guard lock(events_mutex);return events;};
+        reset();status=0;forecast=0.1f;hot=false;device_is_hot=true;block_job=true;configure(g);
+        g.set_anchor({0,0,0});
+        auto loaded=normal("place-loaded",3000,1);g.request(loaded,"place-loaded");
+        until([&]{return started==1;},"the place's loaded texture runs first");
+        g.set_neighbours("Town",{N{"tavern",std::array<float,3>{100,0,0},{"tavern-a","tavern-b","tavern-nomap"}},
+                                 N{"sea",std::array<float,3>{10,0,0},{"sea-a","shared-have"}},
+                                 N{"jungle",std::nullopt,{"jungle-a","shared-have","tavern-a"}}});
+        block_job=false;
+        until([&]{return loaded->state==effects::NormalMapEntry::Stored;},"loaded request completes");
+        std::this_thread::sleep_for(50ms);
+        expect(started==1,"no neighbour work while the device is hot");
+        device_is_hot=false;g.wake_.notify_all();
+        until([&]{return started>=2;},"the first neighbour texture starts once the device is cool");
+        until([&]{return started==6 && idle();},"every neighbour texture is looked at once");
+        std::this_thread::sleep_for(50ms);
+        expect(ran()==std::vector<std::string>{"N:place-loaded","N:sea-a","N:shared-have","N:tavern-a","N:tavern-b","N:jungle-a"},
+               "loaded first, then the nearest exit, unplaced last; shared textures once; unlisted never");
+        expect(started==6 && list_calls==0 && prune_calls==0,"idle after the neighbours: nothing else of the game");
+        expect(g.stats().made==5,"maps of the loaded texture and the neighbours counted (an existing one costs nothing)");
+        g.shutdown();
+        // The player moves between two files: the next file comes from the now nearest neighbour.
+        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);g.set_anchor({0,0,0});
+        g.set_neighbours("Port",{N{"near",std::array<float,3>{1,0,0},{"near-a","near-b"}},
+                                 N{"far",std::array<float,3>{50,0,0},{"far-a"}}});
+        until([&]{return started==1;},"nearest neighbour starts");
+        g.set_anchor({50,0,0});block_job=false;
+        until([&]{return started==3 && idle();},"moved neighbours complete");
+        expect(ran()==std::vector<std::string>{"N:near-a","N:far-a","N:near-b"},"neighbours re-ranked by the player's position");
+        g.shutdown();
+        // The budget: at most kNeighbourMaps new maps per place; then idle with files left.
+        reset();status=0;forecast=0.1f;hot=false;configure(g);
+        std::vector<std::filesystem::path> many;
+        for(uint32_t i=0;i<effects::kNeighbourMaps+10;++i) many.push_back("budget-"+std::to_string(i));
+        g.set_neighbours("Fort",{N{"interior",std::nullopt,many}});
+        until([&]{return g.stats().made==effects::kNeighbourMaps && idle();},"the budget's maps are made");
+        std::this_thread::sleep_for(50ms);
+        expect(started==int(effects::kNeighbourMaps),"no neighbour map beyond the budget");
+        g.shutdown();
+        // A new place drops the previous place's neighbours; a scene without neighbours makes none.
+        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);
+        g.set_neighbours("Old",{N{"old",std::nullopt,{"old-a","old-b","old-c"}}});
+        until([&]{return started==1;},"old place neighbour started");
+        g.set_neighbours("New",{N{"new",std::nullopt,{"new-a"}}});
+        block_job=false;
+        until([&]{return started==2 && idle();},"new place neighbours complete");
+        std::this_thread::sleep_for(50ms);
+        expect(ran()==std::vector<std::string>{"N:old-a","N:new-a"},"the previous place's remaining neighbours are dropped");
+        g.set_neighbours({},{});
+        std::this_thread::sleep_for(50ms);
+        expect(started==2,"a scene without neighbours prepares nothing");
+        g.shutdown();
+        // Relief and gloss off: neighbours wait, made once either is on again.
+        reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_active(false);
+        g.set_neighbours("Off",{N{"off",std::nullopt,{"off-a"}}});
+        std::this_thread::sleep_for(50ms);
+        expect(started==0,"no neighbour map while relief and gloss are off");
+        g.set_active(true);
+        until([&]{return started==1 && idle();},"neighbours made once relief is on");
+        g.shutdown();
+    }
     std::puts("relief_scheduler: PASS");
 }

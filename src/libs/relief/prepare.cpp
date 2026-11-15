@@ -385,6 +385,12 @@ std::vector<std::filesystem::path> List(const std::filesystem::path &textures)
     return files;
 }
 
+bool Listed(const std::filesystem::path &textures, const std::filesystem::path &file)
+{
+    const std::optional<Candidate> candidate = Classify(textures, file);
+    return candidate && candidate->background;
+}
+
 namespace
 {
 // The game's ×2 of a texture (fx/upscale.hpp): its chain encoded for the device's tier, into the upscale directory.
@@ -1389,64 +1395,6 @@ int Prune(const std::filesystem::path &textures, const std::vector<std::filesyst
     return error ? -1 : removed;
 }
 
-namespace
-{
-std::string CompleteMark(size_t candidates, int map_size)
-{
-    // Every class's method (model, options, versions): another build's maps never count as complete.
-    uint64_t methods = 0;
-    for (const fx::ReliefClass relief : {fx::ReliefClass::Stone, fx::ReliefClass::Wood, fx::ReliefClass::Building,
-                                         fx::ReliefClass::Plaster, fx::ReliefClass::Metal, fx::ReliefClass::Prop,
-                                         fx::ReliefClass::Character, fx::ReliefClass::HeightMap})
-        methods = (methods ^ fx::ReliefMethod(relief)) * 0x100000001b3ull;
-    for (int gloss = 1; gloss <= static_cast<int>(fx::kLastGlossClass); ++gloss)
-        methods = (methods ^ fx::GlossMethod(static_cast<fx::GlossClass>(gloss))) * 0x100000001b3ull;
-    char hex[24];
-    std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(methods));
-    return std::string("method ") + hex + " size " + std::to_string(map_size) + " textures " +
-           std::to_string(candidates) + "\n";
-}
-std::filesystem::path CompleteFile(const std::filesystem::path &output)
-{
-    return output / "complete.txt";
-}
-
-int CountMaps(const std::filesystem::path &output)
-{
-    int maps = 0;
-    std::error_code error;
-    for (const auto &entry : std::filesystem::directory_iterator(output, error))
-        maps += entry.path().extension() == ".relief" || entry.path().extension() == ".gloss" ? 1 : 0;
-    return maps;
-}
-} // namespace
-
-void MarkComplete(const std::filesystem::path &output, int map_size, size_t candidates)
-{
-    std::error_code error;
-    std::filesystem::create_directories(output, error);
-    std::ofstream(CompleteFile(output), std::ios::trunc) << CompleteMark(candidates, map_size) << "maps " << CountMaps(output)
-                                                         << "\n";
-}
-
-bool Complete(const std::filesystem::path &output, int map_size, size_t candidates, int *missing)
-{
-    if (missing)
-        *missing = 0;
-    std::ifstream in(CompleteFile(output));
-    std::string method, maps;
-    if (!std::getline(in, method) || !std::getline(in, maps) || method + "\n" != CompleteMark(candidates, map_size) ||
-        maps.rfind("maps ", 0) != 0)
-        return false;
-    // The system may evict a cache: maps of a complete pass gone since are made again.
-    const int marked = std::atoi(maps.c_str() + 5), present = CountMaps(output);
-    if (present >= marked)
-        return true;
-    if (missing)
-        *missing = marked - present;
-    return false;
-}
-
 std::string Result::Json() const
 {
     char text[640];
@@ -1518,8 +1466,6 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
             result.status = 2;
             result.error = "cache pruning deferred: texture inventory, source read or cache I/O failure";
         }
-        else
-            MarkComplete(job.output, job.map_size, files.size());
     }
     result.seconds = Seconds(start);
     result.infer_seconds = session->stats().infer_seconds;

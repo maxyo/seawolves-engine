@@ -431,6 +431,15 @@ void Location::Realize(uint32_t delta_time)
         ReportGeometry();
     if (!lightmapsReported_)
         ReportLightmaps();
+    if (!neighbours_.begun())
+        neighbours_.Begin(AttributesPointer, [this](const char *name) -> std::optional<std::array<float, 3>> {
+            LocatorArray *reload = FindLocatorsGroup("reload");
+            float x, y, z;
+            if (!reload || !reload->GetLocatorPos(reload->FindByName(name), x, y, z))
+                return std::nullopt;
+            return std::array<float, 3>{x, y, z};
+        });
+    neighbours_.Step();
     const auto fDeltaTime = static_cast<float>(delta_time) * 0.001f;
 
     fCausticFrame += fDeltaTime * fCausticSpeed;
