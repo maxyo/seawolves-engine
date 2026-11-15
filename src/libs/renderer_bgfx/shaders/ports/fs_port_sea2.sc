@@ -22,13 +22,15 @@ $input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v
 //   is the game's foam texture, thresholded by the foam amount (optional).
 #include "port_ps.sh"
 #include "sea_waves.sh"
+#include "sea_optics.sh"
 SAMPLER3D(s_vol0, 8);
 SAMPLER2D(s_tex1, 1);
 SAMPLERCUBE(s_cube3, 11);
 SAMPLER2D(s_seaDepth, 14);
 // [0] x: band limit, y: soft edges, z: specular (each 0 or 1), w: far plane of the packed scene distance
 // [1] xyz: towards the sun (world), w: specular power   [2] rgb: sun colour * strength, w: 1 / edge depth (metres)
-uniform vec4 u_seaFx[3];
+// [3] rgb: current game water colour, w: extinction per metre (0 disables turbidity).
+uniform vec4 u_seaFx[4];
 
 void main()
 {
@@ -68,6 +70,24 @@ void main()
     r0.a = v0.a;                                                            // mov r0.w, v0.wwww
     float highlight = pow(max(dot(normalize(R), u_seaFx[1].xyz), 0.0), u_seaFx[1].w);
     r0.rgb += u_seaFx[0].z * highlight * u_seaFx[2].rgb;
+    float gap = -1.0;
+    if (u_seaFx[0].y > 0.5 || u_seaFx[3].w > 0.0)
+    {
+        vec3 packed = texture2D(s_seaDepth, gl_FragCoord.xy * u_viewTexel.xy).rgb;
+        float behind = dot(packed, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0)) * u_seaFx[0].w;
+        gap = behind - v_fog.z;
+    }
+    if (u_seaFx[3].w > 0.0 && gap >= 0.0 && u_seaWaves[2].x < 0.5)
+    {
+        // View-z distance to ray distance; neither surface normal nor wave strength changes.
+        vec3 viewRay = mul(u_view, vec4(e, 0.0)).xyz;
+        float transmission = seaOpticalTransmission(gap, viewRay.z, u_seaFx[3].w);
+        // Sea2 blends source + destination*alpha. Only the transmitted fraction
+        // becomes water-colour scattering; reflection/Fresnel remain as calculated.
+        float scattered = r0.a * (1.0 - transmission);
+        r0.rgb += clamp(u_seaFx[3].rgb, 0.0, 1.0) * scattered;
+        r0.a *= transmission;
+    }
     if (foam > 0.0)
     {
         // The foam texture's bright streaks (its luminance: 0.15 dark water .. 0.75 foam), more of them the more foam:
@@ -91,9 +111,6 @@ void main()
     if (u_seaFx[0].y > 0.5)
     {
         // Blended as Sea2: source + destination * alpha; fading to the scene keeps destination * 1.
-        vec3 packed = texture2D(s_seaDepth, gl_FragCoord.xy * u_viewTexel.xy).rgb;
-        float behind = dot(packed, vec3(1.0, 1.0 / 255.0, 1.0 / 65025.0)) * u_seaFx[0].w;
-        float gap = behind - v_fog.z;
         float edge = gap < 0.0 ? 1.0 : clamp(gap * u_seaFx[2].w, 0.0, 1.0);
         gl_FragColor.rgb *= edge;
         gl_FragColor.a = 1.0 - edge * (1.0 - gl_FragColor.a);

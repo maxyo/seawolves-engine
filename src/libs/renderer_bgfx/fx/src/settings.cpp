@@ -43,6 +43,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.grade = GradePreset::Caribbean;
     s.grade_strength = 0.35f;
     // Medium and High: softer mapped relief and highlights, with slightly less colourful added light.
+    s.sea_turbidity = true; // Medium and High use the same optical depth contract.
     s.normal_map_strength = 0.75f;
     s.gloss_strength = 0.70f;
     s.light_saturation = 0.90f;
@@ -207,6 +208,9 @@ constexpr Rule kRules[] = {
      "render scale cannot carry the depth of a multisampled scene on this renderer: the scene at native resolution (or turn MSAA off)"},
     {[](const Settings &s, const Support &c) { return s.render_height > 0 && !c.scene_depth; }, [](Settings &s) { s.render_height = 0; },
      "render scale needs a sampleable scene depth texture: the scene at native resolution"},
+    {[](const Settings &s, const Support &c) { return s.sea_turbidity && (!c.scene_depth || (s.msaa > 1 && !c.msaa_depth)); },
+     [](Settings &s) { s.sea_turbidity = false; },
+     "water turbidity needs readable scene depth (including MSAA resolve): legacy transmission retained"},
     {[](const Settings &s, const Support &c) { return s.msaa > 1 && !c.msaa_depth && s.sea_soft_edges; },
      [](Settings &s) { s.sea_soft_edges = false; },
      "soft sea edges cannot read the depth of a multisampled scene on this renderer: switched off (or turn MSAA off)"},

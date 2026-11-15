@@ -113,54 +113,63 @@ void Host::prepare_sea(shim::Device &device)
 {
     if (!bgfx::isValid(u_sea_fx_))
     {
-        u_sea_fx_ = bgfx::createUniform("u_seaFx", bgfx::UniformType::Vec4, 3);
+        u_sea_fx_ = bgfx::createUniform("u_seaFx", bgfx::UniformType::Vec4, 4);
         s_sea_depth_ = bgfx::createUniform("s_seaDepth", bgfx::UniformType::Sampler);
     }
     float near_plane = 0.1f, far_plane = 4000.0f;
     clip_planes(device.s.proj, near_plane, far_plane);
     bool soft_edges = device_ready_ && settings_.sea_soft_edges;
-    if (soft_edges)
+    bool turbidity = device_ready_ && settings_.sea_turbidity;
+    bool depth_ready = false;
+    if (soft_edges || turbidity)
     {
         // The scene distance behind the sea: the depth of the current target, read in a view of its own before the
         // first sea draw into this target in this frame; the sea then continues in a new view on the same target.
-        shim::TexStore *color = device.rt->store.get();
+        shim::TexStore *color = device.rt ? device.rt->store.get() : nullptr;
         shim::TexStore *depth = device.ds ? device.ds->store.get() : nullptr;
         // A multisampled target is read through its resolve textures, which hold the depth too only where the
         // backend resolves it (Support::msaa_depth; ConstrainSettings keeps the soft edges off otherwise).
-        const bool readable = depth && (!color->target_flags || support_.msaa_depth);
+        const bool readable = color && depth && (!color->target_flags || support_.msaa_depth);
         const uint32_t frame = shim::Context::instance().submitted_frames();
         if (!readable)
         {
-            soft_edges = false;
+            soft_edges = turbidity = false;
             if (!sea_depth_logged_)
                 shim::logf("ERROR: effects: the sea is drawn into a target without a readable depth: no soft sea edges "
-                           "there (logged once)");
+                           "or turbidity there (logged once)");
             sea_depth_logged_ = true;
         }
         else if (sea_depth_frame_ != frame || sea_depth_target_ != device.rt)
         {
             depth->sync();
             const bgfx::ViewId capture = device.effects_view(true);
-            sea_depth_.Capture(capture, depth->handle, static_cast<uint16_t>(color->width),
+            const bool captured = sea_depth_.Capture(capture, depth->handle, static_cast<uint16_t>(color->width),
                                static_cast<uint16_t>(color->height), near_plane, far_plane);
             device.effects_view(true);
-            sea_depth_frame_ = frame;
-            sea_depth_target_ = device.rt;
+            sea_depth_frame_ = captured ? frame : UINT32_MAX;
+            sea_depth_target_ = captured ? device.rt : nullptr;
         }
+        depth_ready = readable && sea_depth_frame_ == frame && sea_depth_target_ == device.rt &&
+                      bgfx::isValid(sea_depth_.Texture());
     }
+    soft_edges &= depth_ready;
+    turbidity &= depth_ready;
     advance_sea_waves(device);
     set_sea_waves_uniforms();
     const bool specular = device_ready_ && settings_.sea_specular && has_weather();
     const auto &sun = weather_.sun_dir;
     const float strength = settings_.sea_specular_strength;
-    const float sea_fx[12] = {
+    // Sea2 vertex constant29 is the current weather/game water colour, not a new global tint.
+    const auto &water_color = device.s.vs_const[29];
+    const float sea_fx[16] = {
         settings_.sea_band_limit ? 1.0f : 0.0f, soft_edges ? 1.0f : 0.0f, specular ? 1.0f : 0.0f, far_plane,
         sun[0], sun[1], sun[2], settings_.sea_specular_power,
         weather_.sun_color[0] * strength, weather_.sun_color[1] * strength, weather_.sun_color[2] * strength,
         1.0f / std::max(settings_.sea_edge_depth, 0.01f),
+        water_color[0], water_color[1], water_color[2], turbidity ? 1.0f / 12.0f : 0.0f,
     };
-    bgfx::setUniform(u_sea_fx_, sea_fx, 3);
-    if (soft_edges) // otherwise the shader does not read the unit
+    bgfx::setUniform(u_sea_fx_, sea_fx, 4);
+    if (depth_ready) // otherwise neither optical feature reads the unit
         bgfx::setTexture(fx::kNormalMapStage, s_sea_depth_, sea_depth_.Texture(), BGFX_SAMPLER_UVW_CLAMP | BGFX_SAMPLER_POINT);
 }
 

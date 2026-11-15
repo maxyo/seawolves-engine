@@ -216,12 +216,12 @@ std::string describe(const fx::Settings &s)
     char text[512];
     snprintf(text, sizeof(text),
              "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) ssao=%d dither=%d flare=%d scene_grading=%d "
-             "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d waves=%d%d shadows=%d "
+             "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d turbidity=%d waves=%d%d shadows=%d "
              "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) contact=%d wet=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
              static_cast<double>(s.sharpness), s.ssao, s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
-             s.alpha_to_coverage, s.anisotropy, s.sea_band_limit, s.sea_soft_edges, s.sea_specular,
+             s.alpha_to_coverage, s.anisotropy, s.sea_band_limit, s.sea_soft_edges, s.sea_specular, s.sea_turbidity,
              s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
              static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity,
              static_cast<int>(s.character_relief), static_cast<double>(s.character_relief_strength),
@@ -610,7 +610,7 @@ void Host::advance_switch()
     const int per_frame = from_cache ? kCachedProgramsPerFrame : kProgramsPerFrame;
     int budget = per_frame;
     // The post chain's programs also on «Низкая»: the underwater wobble runs on every preset.
-    const bool ready = post_.Prepare(target_, budget) && (!target_.sea_soft_edges || sea_depth_.Prepare(budget)) &&
+    const bool ready = post_.Prepare(target_, budget) && (!(target_.sea_soft_edges || target_.sea_turbidity) || sea_depth_.Prepare(budget)) &&
                        (!target_.sea_waves || sea_waves_.Prepare(budget)) &&
                        (target_.render_height == 0 || depth_copy_.Prepare(budget)) &&
                        contact_.Prepare(target_, budget) &&

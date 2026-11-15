@@ -453,12 +453,14 @@ void CheckSupport()
     // No sampleable scene depth: occlusion and the sea's soft edges off.
     Support no_depth = all;
     no_depth.scene_depth = false;
-    // ... and the render scale: the 3D drawn after the scene needs the scene depth on the display-size picture.
-    CHECK(ValidateSettings(high, no_depth).size() == 3);
+    // ... and the render scale: the 3D drawn after the scene needs the scene depth on the display-size picture;
+    // the sea's turbidity reads the optical depth from it too.
+    CHECK(ValidateSettings(high, no_depth).size() == 4);
     std::vector<std::string> changes;
     Settings constrained = ConstrainSettings(high, no_depth, changes);
     CHECK(!constrained.ssao && !constrained.sea_soft_edges && constrained.sea_band_limit && constrained.render_height == 0);
-    CHECK(changes.size() == 3);
+    CHECK(high.sea_turbidity && !constrained.sea_turbidity);
+    CHECK(changes.size() == 4);
     CHECK(constrained.shadows == high.shadows && constrained.bloom && constrained.lighting_flags == high.lighting_flags);
     CHECK(ValidateSettings(constrained, no_depth).empty());
 
@@ -564,7 +566,7 @@ void CheckSupport()
     changes.clear();
     constrained = ConstrainSettings(high, no_msaa_depth, changes);
     CHECK(constrained.msaa == 4 && !constrained.ssao && !constrained.sea_soft_edges && constrained.render_height == 0 &&
-          changes.size() == 3);
+          !constrained.sea_turbidity && changes.size() == 4);
     // Only 2x for the scene target formats (per-format caps): 4x is lowered to 2x, reported, alpha to coverage stays.
     Support msaa_x2 = all;
     msaa_x2.msaa_samples = 2;

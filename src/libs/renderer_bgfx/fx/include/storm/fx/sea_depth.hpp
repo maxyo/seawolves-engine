@@ -21,9 +21,10 @@ class SeaDepth
     // Programs for the settings switch (counts one against `budget` when it has to load).
     bool Prepare(int &budget);
     // `scene_depth`: the depth texture of the target the sea is drawn into (its resolve texture when multisampled).
-    void Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint16_t width, uint16_t height, float near_plane,
+    bool Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint16_t width, uint16_t height, float near_plane,
                  float far_plane);
-    // The packed distances of the last Capture(); its RGB decode to distance / far_plane.
+    // Capture returns false when no valid current capture could be submitted.
+    // The packed distances of the last successful Capture(); its RGB decode to distance / far_plane.
     bgfx::TextureHandle Texture() const;
     void Shutdown();
     void OnDeviceLost();

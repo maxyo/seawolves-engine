@@ -160,6 +160,7 @@ struct Settings
     // reflected ray is clamped to the horizon always, these are optional:
     bool sea_band_limit = false;  // the bump detail fades with the pixel footprint: no shimmer towards the horizon
     bool sea_soft_edges = false;  // the sea fades out where shallow in front of the scene (needs the scene depth)
+    bool sea_turbidity = false;  // depth-dependent transmission and water-colour scattering
     bool sea_specular = false;    // a clean sun highlight from the bumped normal over the game's own sun road
     float sea_edge_depth = 1.5f;  // metres of water over which a soft edge fades in
     float sea_specular_power = 400.0f;

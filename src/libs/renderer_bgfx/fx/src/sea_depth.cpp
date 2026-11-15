@@ -24,9 +24,11 @@ bool SeaDepth::Prepare(int &budget)
     return true;
 }
 
-void SeaDepth::Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint16_t width, uint16_t height,
+bool SeaDepth::Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint16_t width, uint16_t height,
                        float near_plane, float far_plane)
 {
+    if (!bgfx::isValid(scene_depth) || width == 0 || height == 0)
+        return false;
     // Per pixel of the scene: a coarser capture gave the pixels next to an object its distance (fringes).
     const uint16_t w = std::max<uint16_t>(width, 1), h = std::max<uint16_t>(height, 1);
     if (!bgfx::isValid(target_) || width_ != w || height_ != h)
@@ -43,11 +45,15 @@ void SeaDepth::Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint1
         s_depth_ = bgfx::createUniform("s_fxSceneDepth", bgfx::UniformType::Sampler);
         u_capture_ = bgfx::createUniform("u_fxCapture", bgfx::UniformType::Vec4);
     }
+    if (!bgfx::isValid(target_) || !bgfx::isValid(program_) ||
+        !bgfx::isValid(s_depth_) || !bgfx::isValid(u_capture_))
+        return false;
     SetupView(view, "fx sea depth", target_, w, h);
     const float capture[4] = {near_plane * far_plane, far_plane, far_plane - near_plane, 1.0f / far_plane};
     bgfx::setUniform(u_capture_, capture);
     bgfx::setTexture(1, s_depth_, scene_depth, kClampPoint);
     SubmitScreenTriangle(view, program_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    return true;
 }
 
 bgfx::TextureHandle SeaDepth::Texture() const
