@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "rain.h"
 
 #include "core.h"
@@ -241,14 +242,16 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
     if (sea_id = core.GetEntityId("sea"))
         pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(sea_id));
 
-    fDropsDeltaTime += fDeltaTime;
-
-    auto iNumNewDrops1 = static_cast<int32_t>(fDropsDeltaTime * static_cast<float>(dwDropsNearNum));
-    auto iNumNewDrops2 = static_cast<int32_t>(fDropsDeltaTime * static_cast<float>(dwDropsFarNum));
-    fDropsDeltaTime -= static_cast<float>(static_cast<double>(iNumNewDrops1 + iNumNewDrops2) /
-                                          static_cast<double>(dwDropsNearNum + dwDropsFarNum));
-    if (fDropsDeltaTime < 0.0f)
-        fDropsDeltaTime = 0.0f;
+    int32_t iNumNewDrops1 = 0, iNumNewDrops2 = 0;
+    if (!storm::loading::active)
+    {
+        fDropsDeltaTime += fDeltaTime;
+        iNumNewDrops1 = static_cast<int32_t>(fDropsDeltaTime * static_cast<float>(dwDropsNearNum));
+        iNumNewDrops2 = static_cast<int32_t>(fDropsDeltaTime * static_cast<float>(dwDropsFarNum));
+        fDropsDeltaTime -= static_cast<float>(static_cast<double>(iNumNewDrops1 + iNumNewDrops2) /
+                                              static_cast<double>(dwDropsNearNum + dwDropsFarNum));
+        if (fDropsDeltaTime < 0.0f) fDropsDeltaTime = 0.0f;
+    }
 
     if (auto && entities = core.GetEntityIds(RAIN_DROPS); !entities.empty())
     {
@@ -350,6 +353,7 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
         drop.fLifeTime -= fDeltaTime;
         if (drop.fLifeTime <= 0.0f || (drop.iShip >= 0 && !aShips[drop.iShip].pShip))
         {
+            if (storm::loading::active) continue;
             // aDrops.ExtractNoShift(i);
             aDrops[i] = aDrops.back();
             aDrops.pop_back();
@@ -395,6 +399,7 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
         drop.fTime -= fDeltaTime;
         if (drop.fTime <= 0.0f)
         {
+            if (storm::loading::active) continue;
             // aSeaDrops.ExtractNoShift(i);
             aSeaDrops[i] = aSeaDrops.back();
             aSeaDrops.pop_back();
@@ -493,20 +498,24 @@ void RAIN::Realize(uint32_t Delta_Time)
 
                 mWorld = mWorld * (mY2 * (mX * mY1));
 
-                pRainBlocks[i].vPos.y -= fRainSpeed * 0.2f * static_cast<float>(Delta_Time) / 60.0f;
-                pRainBlocks[i].fWindFlaw += FRAND(fRainJitter) - fRainJitter / 2.0f;
-                float f = 0.0f; // pRainBlocks[i].fWindFlaw * float(Delta_Time) / 50.0f;
-                pRainBlocks[i].vPos.x +=
-                    (fRainSpeed * fRainWindSpeed + f) * static_cast<float>(Delta_Time) / 60.0f * sinf(fWindAngle);
-                pRainBlocks[i].vPos.z +=
-                    (fRainSpeed * fRainWindSpeed + f) * static_cast<float>(Delta_Time) / 60.0f * cosf(fWindAngle);
-                pRainBlocks[i].dwTime += Delta_Time;
-                if (pRainBlocks[i].vPos.y < vCamPos.y - fRainHeight)
+                if (!storm::loading::active)
                 {
-                    InitialSomeBlockParameters(i);
-                    pRainBlocks[i].vPos.y += fRainHeight * 2.0f - 1.0f;
-                    pRainBlocks[i].vAng.y = FRAND(PIm2);
-                    pRainBlocks[i].dwTime = 0;
+                    pRainBlocks[i].vPos.y -= fRainSpeed * 0.2f * static_cast<float>(Delta_Time) / 60.0f;
+                    pRainBlocks[i].fWindFlaw += FRAND(fRainJitter) - fRainJitter / 2.0f;
+                    float f = 0.0f; // pRainBlocks[i].fWindFlaw * float(Delta_Time) / 50.0f;
+                    pRainBlocks[i].vPos.x +=
+                        (fRainSpeed * fRainWindSpeed + f) * static_cast<float>(Delta_Time) / 60.0f * sinf(fWindAngle);
+                    pRainBlocks[i].vPos.z +=
+                        (fRainSpeed * fRainWindSpeed + f) * static_cast<float>(Delta_Time) / 60.0f * cosf(fWindAngle);
+                    pRainBlocks[i].dwTime += Delta_Time;
+                    if (pRainBlocks[i].vPos.y < vCamPos.y - fRainHeight)
+                    {
+                        InitialSomeBlockParameters(i);
+                        pRainBlocks[i].vPos.y += fRainHeight * 2.0f - 1.0f;
+                        pRainBlocks[i].vAng.y = FRAND(PIm2);
+                        pRainBlocks[i].dwTime = 0;
+                    }
+
                 }
 
                 rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(mWorld));

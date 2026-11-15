@@ -99,6 +99,7 @@ class ParticleManager : public IParticleManager
 
     // Execute Particles
     void Execute(float DeltaTime) override;
+    void DrawCurrent() override;
 
     // Find out whether the system is available or not
     bool IsSystemAvailable(const char *FileName) override;

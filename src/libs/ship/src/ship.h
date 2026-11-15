@@ -274,6 +274,9 @@ class SHIP : public SHIP_BASE
         case Stage::execute:
             Execute(delta);
             break;
+        case Stage::loading_realize:
+            Realize(0);
+            break;
         case Stage::realize:
             Realize(delta);
             break;

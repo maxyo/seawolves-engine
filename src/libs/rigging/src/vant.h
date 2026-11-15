@@ -40,6 +40,13 @@ class VANT_BASE : public Entity
         case Stage::execute:
             Execute(delta);
             break;
+        case Stage::loading_prepare:
+            if (bRunFirstTime) FirstRun();
+            else if (bUse) doMove();
+            break;
+        case Stage::loading_realize:
+            Realize(0);
+            break;
         case Stage::realize:
             Realize(delta);
             break;

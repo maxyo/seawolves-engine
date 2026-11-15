@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "core.h"
 #include "save_load.h"
 #include "ship_camera.h"
@@ -126,6 +127,24 @@ void SHIP_CAMERA::Move(float fDeltaTime)
     if (vAng.x > fMaxAngleX)
         vAng.x = fMaxAngleX;
 
+    ApplyView(true);
+}
+
+void SHIP_CAMERA::PrimeLoadingCamera()
+{
+    if (!isOn() || !isActive() || !pACharacter || !FindShip()) return;
+    SetPerspective(AttributesPointer->GetAttributeAsFloat("Perspective"));
+    pSea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
+    if (!pSea) return;
+    const auto *model = GetModelPointer();
+    if (!model) return;
+    vCenter = storm::math::pos(model->mtx);
+    fModelAy = atan2(storm::math::vz(model->mtx).x, storm::math::vz(model->mtx).z);
+    ApplyView(false);
+}
+
+void SHIP_CAMERA::ApplyView([[maybe_unused]] bool acceptZoom)
+{
     const auto *modelMtx = GetAIObj()->GetMatrix();
     auto boxSize = GetAIObj()->GetBoxsize();
     // Recalculate box size: (box size + immersion) * hand-fitted scale
@@ -152,6 +171,7 @@ void SHIP_CAMERA::Move(float fDeltaTime)
 #ifdef __ANDROID__
     // The pinch of the camera look (platform/android_camera_zoom.hpp) moves the wheel's distance,
     // within its 0..1, so that the camera comes as many times nearer as the fingers spread.
+    if (acceptZoom)
     if (const float scale = storm::android::cameraZoom.take(); scale != 1.0f)
     {
         const auto length = [&](float distance) { return glm::length(place(distance).second); };
@@ -279,7 +299,7 @@ bool SHIP_CAMERA::IslandCollision(glm::vec3 &pos)
         {
             if (const auto island_id = core.GetEntityId("island"))
                 pIsland = static_cast<ISLAND_BASE *>(core.GetEntityPointer(island_id));
-            lIlsInitCnt++;
+            if (!storm::loading::active) lIlsInitCnt++;
             if (pIsland == nullptr)
                 return false;
         }

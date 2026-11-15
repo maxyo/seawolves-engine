@@ -277,6 +277,11 @@ void PARTICLES::DeleteResource(PARTICLE_SYSTEM *pResource)
     }
 }
 
+void PARTICLES::LoadingRealize()
+{
+    if (pManager) pManager->DrawCurrent();
+}
+
 void PARTICLES::Realize(uint32_t Delta_Time)
 {
     bSystemDelete = true;

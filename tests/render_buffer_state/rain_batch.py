@@ -8,6 +8,7 @@ p = Path(sys.argv[1]) if len(sys.argv)>1 else ROOT / 'src/libs/weather/src/rain.
 s=p.read_text();a=s.index('    // draw circles on the water');b=s.index('\n}\n\nvoid RAIN::Realize(',a)
 code=r'''
 #include "storm_glm.h" // the production block computes with glm::vec3 / glm::mat4
+#include "loading_transaction.hpp" // storm::loading::active: the stock loader's native preparation
 #include <vector>
 #include <array>
 #include <cassert>
@@ -53,10 +54,11 @@ int main(){
  }
  {Renderer r;Sea sea;std::vector<seadrop_t> drops(501,{{0,0,0},.05f,1.f});actual(&r,&sea,drops);assert(drops.empty()&&r.attempts==0);}
  {Renderer r;Sea sea;std::vector<seadrop_t> drops(500,{{0,0,0},1.f,1.f});drops.insert(drops.begin(),{{0,0,0},.05f,1.f});actual(&r,&sea,drops);assert(drops.size()==500&&r.batches==std::vector<int>{500}&&!r.locked);}
- std::cout<<"actual rain sea-drop production block: bounds/0/499/500/501/1000/expiry/first and repeated lock failure PASS\n";
+ {Renderer r;Sea sea;std::vector<seadrop_t> drops(3,{{0,0,0},.05f,1.f});storm::loading::active=true;actual(&r,&sea,drops);storm::loading::active=false;assert(drops.size()==3);} // loading never retires drops
+ std::cout<<"actual rain sea-drop production block: bounds/0/499/500/501/1000/expiry/first and repeated lock failure, loading keeps drops PASS\n";
 }
 '''
 with tempfile.TemporaryDirectory(prefix='rain-batch-') as d:
  c=Path(d)/'test.cpp';c.write_text(code);exe=Path(d)/'test'
- subprocess.run(['c++','-std=c++17','-fsanitize=address,undefined','-g',*math_include_flags(),str(c),'-o',str(exe)],check=True)
+ subprocess.run(['c++','-std=c++17','-fsanitize=address,undefined','-g',*math_include_flags(),'-I'+str(ROOT/'src/libs/util/include'),str(c),'-o',str(exe)],check=True)
  subprocess.run([str(exe)],check=True)

@@ -72,6 +72,9 @@ class WEATHER : public WEATHER_BASE
         case Stage::execute:
             Execute(delta);
             break;
+        case Stage::loading_prepare:
+            PushEffectsWeather(); // already configured weather; no clock or script update
+            break;
         case Stage::realize:
             Realize(delta);
             break;

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "water_flare.h"
 
 #include "core.h"
@@ -112,7 +113,7 @@ void WATERFLARE::Realize(uint32_t Delta_Time) const
     {
         const auto fDeltaTime = static_cast<float>(Delta_Time) * 0.001f;
         pfAlpha[i] += fDeltaTime;
-        if (pfAlpha[i] > 2.0f)
+        if (!storm::loading::active && pfAlpha[i] > 2.0f)
         {
             pfAlpha[i] = 0.0f;
             pRSRect[i].vPos = glm::vec3(FRAND(200.0f), 0.0f, FRAND(200.0f));

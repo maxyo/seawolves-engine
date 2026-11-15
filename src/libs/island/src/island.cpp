@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "island.h"
 #include <storm/render/far_lod.hpp>
 #include "island_overhang.hpp"
@@ -152,7 +153,7 @@ void ISLAND::Realize(uint32_t Delta_Time)
             pRS->SetRenderState(D3DRS_ZWRITEENABLE, false);
         pRS->SetNearFarPlane((j == 0) ? fOldNear : fOldFar * static_cast<float>(j),
                              fOldFar * static_cast<float>(j + 1));
-        pModel->ProcessStage(Stage::realize, Delta_Time);
+        pModel->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, Delta_Time);
         pRS->SetRenderState(D3DRS_LIGHTING, true);
         D3DLIGHT9 lt, ltold;
         pRS->GetLight(0, &ltold);
@@ -184,7 +185,7 @@ void ISLAND::Realize(uint32_t Delta_Time)
             static_cast<MODEL *>(ent)->mtx = mTemp * mOld;
 
             core.Send_Message(AIFortEID, "li", AI_MESSAGE_FORT_SET_LIGHTS, aForts[k]);
-            static_cast<Entity *>(ent)->ProcessStage(Stage::realize, Delta_Time);
+            static_cast<Entity *>(ent)->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, Delta_Time);
             core.Send_Message(AIFortEID, "li", AI_MESSAGE_FORT_UNSET_LIGHTS, aForts[k]);
 
             static_cast<MODEL *>(ent)->mtx = mOld;
@@ -203,7 +204,7 @@ void ISLAND::Realize(uint32_t Delta_Time)
 
         auto *pSeaBed = static_cast<MODEL *>(core.GetEntityPointer(seabed_id));
         if (pSeaBed)
-            pSeaBed->ProcessStage(Stage::realize, Delta_Time);
+            pSeaBed->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, Delta_Time);
     }
 
     pRS->SetNearFarPlane(fOldNear, fOldFar);
@@ -222,7 +223,7 @@ void ISLAND::Realize(uint32_t Delta_Time)
             pModel->mtx = storm::math::translation(vPos.x, 5.0f, vPos.z);
     }
 
-    if (core.Controls->GetDebugAsyncKeyState('O') < 0)
+    if (!storm::loading::active && core.Controls->GetDebugAsyncKeyState('O') < 0)
         bView ^= 1;
     if (bView)
     {

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "ship.h"
 
 #include <algorithm>
@@ -1206,7 +1207,7 @@ void SHIP::Realize(uint32_t dtime)
         // The ship's model is what its lanterns' cached shadows hold (ShipLights::ReportToEffects).
         const storm::render::EffectsShipDraw still(
             static_cast<uint64_t>(reinterpret_cast<uintptr_t>(static_cast<VAI_OBJBASE *>(this))));
-        pM->ProcessStage(Stage::realize, dtime);
+        pM->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, dtime);
     }
     pRS->SetRenderState(D3DRS_LIGHTING, false);
 
@@ -1219,7 +1220,7 @@ void SHIP::Realize(uint32_t dtime)
         glm::mat4 m1;
         m1 = storm::math::eulerMatrix(0.0f, fUpperShipAY, 0.0f, State.vPos.x + fXOffset, State.vPos.y + fUpperShipY, State.vPos.z + fZOffset);
         pModelUpperShip->mtx = m1;
-        pModelUpperShip->ProcessStage(Stage::realize, dtime);
+        pModelUpperShip->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, dtime);
     }
 
     if (bMassaShow)

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include <algorithm>
 #include <cctype>
 
@@ -259,7 +260,8 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
     {
         float fTmpK[5];
         float fTmpRnd[7];
-        m_fTwinklingTime += core.GetDeltaTime() * 0.001f * (0.8f + FRAND(0.2f));
+        if (!storm::loading::active)
+            m_fTwinklingTime += core.GetDeltaTime() * 0.001f * (0.8f + FRAND(0.2f));
         if (m_fTwinklingTime > PI * 2 * 3 * 5 * 7)
             m_fTwinklingTime -= PI * 2 * 3 * 5 * 7;
         fTmpK[0] = 0.7f + 0.3f * sinf(m_fTwinklingTime * 0.5f);
@@ -268,7 +270,7 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
         fTmpK[3] = 0.8f + 0.2f * sinf(m_fTwinklingTime * 5.f);
         fTmpK[4] = 0.85f + 0.15f * sinf(m_fTwinklingTime * 7.f);
         for (int32_t n = 0; n < 7; n++)
-            fTmpRnd[n] = 0.8f + FRAND(0.2f);
+            fTmpRnd[n] = storm::loading::active ? 0.9f : 0.8f + FRAND(0.2f);
         auto *pVColors = static_cast<uint32_t *>(pRS->LockVertexBuffer(iVertexBufferColors, D3DLOCK_DISCARD));
         auto size = aStars.size();
         for (uint32_t i = 0; i < size; i++)
@@ -399,7 +401,8 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
     }*/
     // RDTSC_E(dw1);
 
-    fPrevFov = fFov;
+    // Hidden deterministic colors must not validate the ordinary randomized cache.
+    fPrevFov = storm::loading::active ? -1.0f : fFov;
 
     // core.Trace("RDTSC = %d", dw1);
     // Astronomy::pRS->SetTransform(D3DTS_VIEW, mView);

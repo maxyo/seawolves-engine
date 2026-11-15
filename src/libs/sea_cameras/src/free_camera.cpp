@@ -82,6 +82,13 @@ void FREE_CAMERA::Execute(uint32_t Delta_Time)
     Move(core.GetDeltaTime());
 }
 
+void FREE_CAMERA::PrimeLoadingCamera()
+{
+    if (!isOn() || !isActive()) return;
+    SetPerspective(AttributesPointer->GetAttributeAsFloat("Perspective"));
+    pRS->SetCamera(vPos, vAng, GetPerspective());
+}
+
 void FREE_CAMERA::Move(uint32_t DeltaTime)
 {
     if (!isActive())

@@ -72,12 +72,20 @@ class FLAG : public Entity
     bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
+    void LoadingPrepare();
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
         {
         case Stage::execute:
             Execute(delta);
+            break;
+        case Stage::loading_prepare:
+            LoadingPrepare();
+            break;
+        case Stage::loading_realize:
+            Realize(0);
             break;
         case Stage::realize:
             Realize(delta);
@@ -117,8 +125,8 @@ class FLAG : public Entity
         NODE *nod;
         glm::mat4 *pMatWorld;
 
-        int texNumC;
-        int texNumR;
+        int texNumC = 0;
+        int texNumR = 0;
 
         FLAGDATA *next;
 
@@ -156,6 +164,7 @@ class FLAG : public Entity
     void GroupSTORM_DELETE(entid_t m_id);
     void DoSTORM_DELETE();
     void SetAdd(int flagNum);
+    void ResolveTextures(int group);
     void MoveOtherHost(entid_t newm_id, int32_t flagNum, entid_t oldm_id);
     void UpdateTexture(const std::string_view &texturePath);
 

@@ -71,6 +71,7 @@ class DECK_CAMERA : public COMMON_CAMERA
     void SetDevice();
     bool Init() override;
     void Move(uint32_t DeltaTime);
+    void ApplyView();
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
     bool CreateState(ENTITY_STATE_GEN *state_gen);
@@ -78,10 +79,15 @@ class DECK_CAMERA : public COMMON_CAMERA
     uint32_t AttributeChanged(ATTRIBUTES *pAttr) override;
     uint64_t ProcessMessage(MESSAGE &message) override;
 
+    void PrimeLoadingCamera();
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
         {
+        case Stage::loading_prepare:
+            PrimeLoadingCamera();
+            break;
         case Stage::execute:
             Execute(delta);
             break;

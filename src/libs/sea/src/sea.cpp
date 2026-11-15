@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "sea.h"
 
 #include <algorithm>
@@ -1297,7 +1298,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
 {
     static float fTmp = 0.0f;
 
-    if (core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState('S') < 0)
+    if (!storm::loading::active && core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState('S') < 0)
     {
         if (bTempFullMode)
         {
@@ -1359,7 +1360,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
     if (bStarted && vCamPos.y < WaveXZ(vCamPos.x, vCamPos.z))
         bUnderSea = true;
 
-    if (!bUnderSea)
+    if (!storm::loading::active && !bUnderSea)
         bUnderSeaStarted = false;
 
     cubeFaces_ = CubeFacesDue(); // EnvMap_Render / SunRoad_Render draw only these faces this frame
@@ -1552,7 +1553,8 @@ void SEA::Realize(uint32_t dwDeltaTime)
         }
     }
 
-    waveSources_.clear(); // the Execute stage of the next frame adds them again
+    if (!storm::loading::active)
+        waveSources_.clear(); // the Execute stage of the next frame adds them again
     RDTSC_E(dwTotalRDTSC);
     // rs->Print(50, 300, "Total ticks with rendering %d", /*iVStart, iTStart, */dwTotalRDTSC);
     /*rs->Print(50, 320, "calc blk%s: %d", (bHT) ? " (HT)" : "", dwBlockRDTSC);
@@ -1579,7 +1581,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
     {
         glm::vec3 d(20.0f, 5.0f, 20.0f);
         glm::vec3 d2(54.0f, 10.0f, 54.0f);
-        if (!bUnderSeaStarted)
+        if (!storm::loading::active && !bUnderSeaStarted)
         {
             // doing a bunch of sea trash for the first time
             aSeaTrash.clear();
@@ -1611,7 +1613,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
 
         // add 1 item of sea trash every second
         fLastTrashTime += fDeltaTime;
-        while (fLastTrashTime >= 0.03f)
+        while (!storm::loading::active && fLastTrashTime >= 0.03f)
         {
             fLastTrashTime -= 0.03f;
 
@@ -1629,7 +1631,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
         for (int32_t i = 0; i < aSeaTrash.size(); i++)
         {
             aSeaTrash[i].fTime -= fDeltaTime;
-            if (aSeaTrash[i].fTime <= 0.0f)
+            if (!storm::loading::active && aSeaTrash[i].fTime <= 0.0f)
             {
                 // aSeaTrash.ExtractNoShift(i);
                 aSeaTrash[i] = aSeaTrash.back();
@@ -1671,7 +1673,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
         // draw light poles
         // add 1 light pole every second
         fLastLightTime += fDeltaTime;
-        while (fLastLightTime >= 1.0f)
+        while (!storm::loading::active && fLastLightTime >= 1.0f)
         {
             fLastLightTime -= 1.0f;
 
@@ -1688,7 +1690,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
         for (int32_t i = 0; i < aSeaLights.size(); i++)
         {
             aSeaLights[i].fTime -= fDeltaTime;
-            if (aSeaLights[i].fTime <= 0.0f)
+            if (!storm::loading::active && aSeaLights[i].fTime <= 0.0f)
             {
                 aSeaLights[i] = aSeaLights.back();
                 aSeaLights.pop_back();
@@ -1727,7 +1729,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
             rs->DrawRects(&aLightsRects[0], aLightsRects.size(), "seatrash", 2, 2, 0.5f);
         }
 
-        bUnderSeaStarted = true;
+        if (!storm::loading::active) bUnderSeaStarted = true;
     }
 
     bStarted = true;

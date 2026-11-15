@@ -58,12 +58,17 @@ class PARTICLES : public Entity
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
 
+    void LoadingRealize();
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
         {
         case Stage::execute:
             Execute(delta);
+            break;
+        case Stage::loading_realize:
+            LoadingRealize();
             break;
         case Stage::realize:
             Realize(delta);

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "sky.h"
 #include "sun_glow.h"
 #include "core.h"
@@ -130,7 +131,7 @@ bool SKY::DrawSkyObjects(uint32_t Delta_Time, bool sun_sprite)
     if (!pAstronomy && !pSunGlow)
         return false;
     if (pAstronomy)
-        pAstronomy->ProcessStage(Stage::realize, Delta_Time);
+        pAstronomy->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, Delta_Time);
     if (pSunGlow)
         static_cast<SUNGLOW *>(pSunGlow)->DrawSunMoon(sun_sprite);
     return true;
@@ -179,7 +180,7 @@ void SKY::Realize(uint32_t Delta_Time)
 
         drawSky(sTechSkyBlend, dwColor, true);
 
-        if (Delta_Time != 0 && DrawSkyObjects(Delta_Time, true))
+        if ((Delta_Time != 0 || storm::loading::active) && DrawSkyObjects(Delta_Time, true))
         {
             pRS->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(pMatWorld));
             drawSky(sTechSkyBlendAlpha, dwColor, true);

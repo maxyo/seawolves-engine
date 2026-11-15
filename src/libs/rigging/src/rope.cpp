@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "rope.h"
 #include "entity.h"
 #include "core.h"
@@ -142,7 +143,7 @@ void ROPE::Realize(uint32_t Delta_Time)
         uint64_t rtm;
 
         RDTSC_B(rtm);
-        if (Delta_Time == 0)
+        if (Delta_Time == 0 && !storm::loading::active)
         {
             // draw mirror rope
         }

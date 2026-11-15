@@ -39,16 +39,22 @@ class SHIP_CAMERA : public COMMON_CAMERA
     VRenderer *pRS;
 
     void Move(float fDeltaTime);
+    void ApplyView(bool acceptZoom);
 
     bool Init() override;
     void SetDevices();
     void Execute(uint32_t dwDeltaTime);
     void Realize(uint32_t dwDeltaTime) const;
 
+    void PrimeLoadingCamera();
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
         {
+        case Stage::loading_prepare:
+            PrimeLoadingCamera();
+            break;
         case Stage::execute:
             Execute(delta);
             break;

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "track.h"
 #include "entity.h"
 #include "core.h"
@@ -67,7 +68,10 @@ void ShipTracks::Realize(uint32_t dwDeltaTime)
 {
     for (int32_t i = 0; i < aShips.size(); i++)
     {
-        aShips[i]->Execute(static_cast<float>(dwDeltaTime) * 0.001f);
+        if (!storm::loading::active)
+            aShips[i]->Execute(static_cast<float>(dwDeltaTime) * 0.001f);
+        else
+            aShips[i]->PrepareVertices();
         aShips[i]->Realize(static_cast<float>(dwDeltaTime) * 0.001f);
     }
 }
@@ -274,11 +278,7 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
         trackSpacing.Reset();
     }
 
-    float fFov;
-    glm::vec3 vCamPos, vCamAng;
-    pRS->GetCamera(vCamPos, vCamAng, fFov);
     const auto vCurPos = pShip->GetPos();
-    const auto fWaveUP = storm::ship::TrackElevation(vCamPos, vCurPos, fUP1, fUP2);
     const auto vCurAng = pShip->GetAng();
 
     const auto vBoxSize = pShip->GetBoxsize();
@@ -347,6 +347,33 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
         }
     }
 
+    for (int32_t i = 0; i < aTrack2.size(); i++)
+    {
+        auto &T = aTrack2[i];
+
+        T.fTime += fDeltaTime;
+        T.fAlpha = T.fInitialAlpha * Clamp(1.0f - T.fTime / fLifeTime2); // 10.0f);
+        T.fWidth = storm::ship::TrackWidth(T.fInitialWidth, -T.fSpeed, T.fTime, fLifeTime2);
+
+        if (T.fTime >= fLifeTime2)
+        {
+            aTrack2.erase(aTrack2.begin() + i);
+            i--;
+        }
+    }
+
+    PrepareVertices();
+
+}
+
+void ShipTracks::ShipTrack::PrepareVertices()
+{
+    if (!pShip || !pSea) return;
+    float fFov;
+    glm::vec3 vCamPos, vCamAng;
+    pRS->GetCamera(vCamPos, vCamAng, fFov);
+    const auto vCurPos = pShip->GetPos();
+    const auto fWaveUP = storm::ship::TrackElevation(vCamPos, vCurPos, fUP1, fUP2);
     if (Reserve1(aTrack1.size()))
         if (aTrack1.size() > 1)
         {
@@ -373,21 +400,6 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
             }
             pRS->UnLockVertexBuffer(iVTmpBuffer1);
         }
-
-    for (int32_t i = 0; i < aTrack2.size(); i++)
-    {
-        auto &T = aTrack2[i];
-
-        T.fTime += fDeltaTime;
-        T.fAlpha = T.fInitialAlpha * Clamp(1.0f - T.fTime / fLifeTime2); // 10.0f);
-        T.fWidth = storm::ship::TrackWidth(T.fInitialWidth, -T.fSpeed, T.fTime, fLifeTime2);
-
-        if (T.fTime >= fLifeTime2)
-        {
-            aTrack2.erase(aTrack2.begin() + i);
-            i--;
-        }
-    }
 
     if (Reserve2(aTrack2.size()))
         if (aTrack2.size() > 1)

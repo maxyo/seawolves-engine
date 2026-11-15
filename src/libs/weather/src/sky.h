@@ -27,6 +27,9 @@ class SKY : public Entity
     {
         switch (stage)
         {
+        case Stage::loading_realize:
+            Realize(0);
+            break;
         case Stage::realize:
             Realize(delta);
             break;

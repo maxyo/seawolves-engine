@@ -207,6 +207,15 @@ void ParticleManager::RemoveResource(IParticleSystem *pResource)
 }
 
 // Execute Particles
+void ParticleManager::DrawCurrent()
+{
+    pRS->TextureSet(0, pProjectTexture);
+    pRS->TextureSet(1, pProjectTexture);
+    pRS->TextureSet(3, pProjectTextureNormalMap);
+    BB_Processor->Draw();
+    MDL_Processor->Draw();
+}
+
 void ParticleManager::Execute(float DeltaTime)
 {
     GraphRead = 0;

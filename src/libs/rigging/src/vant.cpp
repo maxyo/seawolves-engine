@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "vant.h"
 #include "entity.h"
 #include "core.h"
@@ -857,7 +858,7 @@ void VANT_BASE::doMove()
         {
             if (gdata[vlist[vn]->HostGroup].bDeleted || vlist[vn]->bDeleted)
             {
-                bYesDeleted = true;
+                if (!storm::loading::active) bYesDeleted = true;
                 continue;
             }
             glm::vec3 vtmp, htmp;
@@ -865,8 +866,9 @@ void VANT_BASE::doMove()
             lPos = storm::math::inverseTransformPoint(*gdata[vlist[vn]->HostGroup].pMatWorld, storm::math::transformPoint(*vlist[vn]->pDownMatWorld, vlist[vn]->pLeft));
             rPos = storm::math::inverseTransformPoint(*gdata[vlist[vn]->HostGroup].pMatWorld, storm::math::transformPoint(*vlist[vn]->pDownMatWorld, vlist[vn]->pRight));
 
-            if (!VectCmp(lPos, vlist[vn]->pLeftStart, MAXFALL_CMP_VAL) ||
-                !VectCmp(uPos, vlist[vn]->pUpStart, MAXFALL_CMP_VAL))
+            if (!storm::loading::active &&
+                (!VectCmp(lPos, vlist[vn]->pLeftStart, MAXFALL_CMP_VAL) ||
+                 !VectCmp(uPos, vlist[vn]->pUpStart, MAXFALL_CMP_VAL)))
             {
                 vlist[vn]->bDeleted = true; // set the sign of guy removal
                 bYesDeleted = true;

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "bb_processor.h"
 
 #include "core.h"
@@ -413,7 +414,7 @@ void BillBoardProcessor::Draw()
             SpeedVector.z = SpeedVector.y;
             DirAngle = storm::math::angleY(SpeedVector, pR->OldRenderAngle);
 
-            pR->OldRenderAngle = DirAngle;
+            if (!storm::loading::active) pR->OldRenderAngle = DirAngle;
         }
 
         uint32_t dwAlpha = static_cast<uint8_t>(Alpha) << 24;

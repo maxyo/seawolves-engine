@@ -120,6 +120,12 @@ class SAIL : public SAIL_BASE
         case Stage::execute:
             Execute(delta);
             break;
+        case Stage::loading_prepare:
+            if (bFirstRun) FirstRun();
+            break;
+        case Stage::loading_realize:
+            Realize(0);
+            break;
         case Stage::realize:
             Realize(delta);
             break;

@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "foam.h"
 #include "core.h"
 #include "math_inlines.h"
@@ -164,7 +165,7 @@ void CoastFoam::Realize(uint32_t Delta_Time)
 
     // rs->Print(0, 300, "dwNumPenasExecuted = %d, ticks = %d", dwNumPenasExecuted, dw1);
 
-    if (!bCanEdit)
+    if (storm::loading::active || !bCanEdit)
         return;
 
     std::vector<RS_LINE> aLines;
@@ -502,45 +503,49 @@ void CoastFoam::ExecuteFoamType2(Foam *pF, float fDeltaTime, SEA_BASE &Sea)
             pF->fMove[k] = 0.0f;
         }
 
-        switch (pF->iMode[k])
+        if (!storm::loading::active)
         {
-        case 0:
-            pF->fAlpha[k] = Clampf(pF->fAlpha[k] + fDeltaTime * 0.15f);
-            if (pF->fMove[k] > 0.6f)
-                pF->iMode[k] = 1;
-            break;
-        case 1:
-            pF->fAlpha[k] = Clampf(pF->fAlpha[k] + fDeltaTime * 0.15f);
-            pF->fSpeed[k] *= (1.0f - Clampf(fDeltaTime * 0.8f));
-            if (pF->fSpeed[k] < 0.01f && pF->fMove[kk] < 0.0f)
+            switch (pF->iMode[k])
             {
-                pF->fSX[kk] = Rnd(100.0f);
-                pF->fAlpha[kk] = 0.0f;
-                pF->iMode[kk] = 0;
-                pF->fSpeed[kk] = RRnd(pF->fSpeedMin, pF->fSpeedMax);
-                pF->fMove[kk] = 0.0f;
-                pF->fAlphaColor[k] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
+            case 0:
+                pF->fAlpha[k] = Clampf(pF->fAlpha[k] + fDeltaTime * 0.15f);
+                if (pF->fMove[k] > 0.6f)
+                    pF->iMode[k] = 1;
+                break;
+            case 1:
+                pF->fAlpha[k] = Clampf(pF->fAlpha[k] + fDeltaTime * 0.15f);
+                pF->fSpeed[k] *= (1.0f - Clampf(fDeltaTime * 0.8f));
+                if (pF->fSpeed[k] < 0.01f && pF->fMove[kk] < 0.0f)
+                {
+                    pF->fSX[kk] = Rnd(100.0f);
+                    pF->fAlpha[kk] = 0.0f;
+                    pF->iMode[kk] = 0;
+                    pF->fSpeed[kk] = RRnd(pF->fSpeedMin, pF->fSpeedMax);
+                    pF->fMove[kk] = 0.0f;
+                    pF->fAlphaColor[k] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
+                }
+                if (pF->fSpeed[k] < 0.01f)
+                {
+                    pF->iMode[k] = 2;
+                }
+                break;
+            case 2:
+                pF->fSpeed[k] -= fDeltaTime * 0.035f;
+                pF->fSpeed[k] = Max(-0.04f, pF->fSpeed[k]);
+                pF->fAlpha[k] = Clampf(pF->fAlpha[k] - fDeltaTime * 0.2f);
+                if (pF->fAlpha[k] <= 0.0f)
+                {
+                    // pF->fMove[k] = -10000.0f;
+                    pF->fSX[k] = Rnd(100.0f);
+                    pF->fAlpha[k] = 0.0f;
+                    pF->iMode[k] = 0;
+                    pF->fSpeed[k] = RRnd(pF->fSpeedMin, pF->fSpeedMax);
+                    pF->fMove[k] = -RRnd(pF->fAppearMin, pF->fAppearMax);
+                    pF->fAlphaColor[k] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
+                }
+                break;
             }
-            if (pF->fSpeed[k] < 0.01f)
-            {
-                pF->iMode[k] = 2;
-            }
-            break;
-        case 2:
-            pF->fSpeed[k] -= fDeltaTime * 0.035f;
-            pF->fSpeed[k] = Max(-0.04f, pF->fSpeed[k]);
-            pF->fAlpha[k] = Clampf(pF->fAlpha[k] - fDeltaTime * 0.2f);
-            if (pF->fAlpha[k] <= 0.0f)
-            {
-                // pF->fMove[k] = -10000.0f;
-                pF->fSX[k] = Rnd(100.0f);
-                pF->fAlpha[k] = 0.0f;
-                pF->iMode[k] = 0;
-                pF->fSpeed[k] = RRnd(pF->fSpeedMin, pF->fSpeedMax);
-                pF->fMove[k] = -RRnd(pF->fAppearMin, pF->fAppearMax);
-                pF->fAlphaColor[k] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
-            }
-            break;
+
         }
 
         pF->fMove[k] += pF->fSpeed[k] * fDeltaTime;

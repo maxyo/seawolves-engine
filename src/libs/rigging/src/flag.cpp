@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "flag.h"
 #include "core.h"
 #include "entity.h"
@@ -115,6 +116,27 @@ void FLAG::Execute(uint32_t Delta_Time)
     }
 }
 
+void FLAG::LoadingPrepare()
+{
+    if (bFirstRun) FirstRun();
+    else SetTextureCoordinate();
+    if (!bUse) return;
+    if (const auto ei = core.GetEntityId("weather"))
+    {
+        auto *wb = static_cast<WEATHER_BASE *>(core.GetEntityPointer(ei));
+        const auto angle = wb->GetFloat(whf_wind_angle);
+        globalWind.ang.x = sinf(angle);
+        globalWind.ang.z = cosf(angle);
+        globalWind.base = wb->GetFloat(whf_wind_speed) / fWindMaxValue;
+    }
+    vertBuf = static_cast<FLAGLXVERTEX *>(RenderService->LockVertexBuffer(vBuf));
+    if (vertBuf)
+    {
+        for (auto fn = 0; fn < flagQuantity; ++fn) DoMove(flist[fn], 0.0f);
+        RenderService->UnLockVertexBuffer(vBuf);
+    }
+}
+
 void FLAG::Realize(uint32_t Delta_Time)
 {
     if (bUse)
@@ -212,6 +234,7 @@ uint64_t FLAG::ProcessMessage(MESSAGE &message)
                 }
             }
         }
+        ResolveTextures(groupQuantity - 1);
         bFirstRun = true;
     }
     break;
@@ -279,6 +302,7 @@ uint64_t FLAG::ProcessMessage(MESSAGE &message)
                 }
             }
         }
+        ResolveTextures(groupQuantity - 1);
         bFirstRun = true;
     }
     break;
@@ -362,10 +386,10 @@ void FLAG::DoMove(FLAGDATA *pr, float delta_time) const
     auto xMul = globalWind.ang.x;
     auto zMul = globalWind.ang.z;
 
-    if ((pr->Alfa +=
+    if (!storm::loading::active && (pr->Alfa +=
          (ALFA_DEPEND + ALFA_RAND * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * delta_time) > PIm2)
         pr->Alfa = 0.f;
-    if ((pr->Beta +=
+    if (!storm::loading::active && (pr->Beta +=
          (BETA_DEPEND + BETA_RAND * static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * delta_time) > PIm2)
         pr->Beta = 0.f;
     auto Alfa = -pr->Alfa;
@@ -787,9 +811,53 @@ void FLAG::DoSTORM_DELETE()
     bUse = flagQuantity > 0;
 }
 
+void FLAG::ResolveTextures(int group)
+{
+    for (int fn = 0; fn < flagQuantity; ++fn)
+    {
+        if (!flist[fn] || flist[fn]->HostGroup != group) continue;
+        VDATA *pvdat = nullptr;
+        int32_t curTexNumC = 0;
+        int32_t curTexNumR = 0;
+
+        // set texture number
+        if (flist[fn]->isShip) // ship
+        {
+            pvdat = core.Event("GetRiggingData", "sllla", "GetShipFlagTexNum", flist[fn]->triangle,
+                               gdata[flist[fn]->HostGroup].nation, flist[fn]->isSpecialFlag,
+                               gdata[flist[fn]->HostGroup].char_attributes);
+        }
+        else
+        {
+            pvdat = core.Event("GetRiggingData", "slll", "GetTownFlagTexNum", flist[fn]->triangle,
+                               gdata[flist[fn]->HostGroup].nation, flist[fn]->isSpecialFlag);
+        }
+        if (pvdat == nullptr)
+        {
+            curTexNumC = 0;
+            curTexNumR = 0;
+        }
+        else
+        {
+            if (pvdat->IsArray())
+            {
+                pvdat->Get(curTexNumC, 0);
+                pvdat->Get(curTexNumR, 1);
+            }
+            else
+            {
+                pvdat->Get(curTexNumC);
+                curTexNumR = 0;
+            }
+        }
+
+        flist[fn]->texNumC = curTexNumC;
+        flist[fn]->texNumR = curTexNumR;
+    }
+}
+
 void FLAG::SetAdd(int flagNum)
 {
-    VDATA *pvdat;
     // set vertex and index buffers
     nIndx *= 3;
     for (auto fn = flagNum; fn < flagQuantity; fn++)
@@ -837,39 +905,8 @@ void FLAG::SetAdd(int flagNum)
         }
         else
         {
-            int32_t curTexNumC = 0;
-            int32_t curTexNumR = 0;
-
-            // set texture number
-            if (flist[fn]->isShip) // ship
-            {
-                pvdat = core.Event("GetRiggingData", "sllla", "GetShipFlagTexNum", flist[fn]->triangle,
-                                   gdata[flist[fn]->HostGroup].nation, flist[fn]->isSpecialFlag,
-                                   gdata[flist[fn]->HostGroup].char_attributes);
-            }
-            else
-            {
-                pvdat = core.Event("GetRiggingData", "slll", "GetTownFlagTexNum", flist[fn]->triangle,
-                                   gdata[flist[fn]->HostGroup].nation, flist[fn]->isSpecialFlag);
-            }
-            if (pvdat == nullptr)
-            {
-                curTexNumC = 0;
-                curTexNumR = 0;
-            }
-            else
-            {
-                if (pvdat->IsArray())
-                {
-                    pvdat->Get(curTexNumC, 0);
-                    pvdat->Get(curTexNumR, 1);
-                }
-                else
-                {
-                    pvdat->Get(curTexNumC);
-                    curTexNumR = 0;
-                }
-            }
+            const int32_t curTexNumC = flist[fn]->texNumC;
+            const int32_t curTexNumR = flist[fn]->texNumR;
 
             if (curTexNumC == -1 || curTexNumR == -1)
             {

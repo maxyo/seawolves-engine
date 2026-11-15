@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "core.h"
 #include <storm/render/far_lod.hpp>
 
@@ -217,6 +218,7 @@ bool SEA::EnvMap_Render2()
 
 uint32_t SEA::CubeFacesDue()
 {
+    if (storm::loading::active) return (1u << 6) - 1;
     if (cubeUnderSea_ != bUnderSea || storm::math::lengthSquared(vCamPos - cubeCamPos_) > kCubeJump * kCubeJump)
         cubeRefreshAll_ = true;
     cubeUnderSea_ = bUnderSea;

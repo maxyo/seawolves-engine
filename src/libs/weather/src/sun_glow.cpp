@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "sun_glow.h"
 #include "storm/render/effects.hpp"
 
@@ -294,7 +295,7 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
 
     // calculate and draw flares
     aRSR.clear();
-    if (Delta_Time && Flares.aFlares.size() && bHaveFlare && !fx_glare)
+    if ((Delta_Time || storm::loading::active) && Flares.aFlares.size() && bHaveFlare && !fx_glare)
     {
         auto mCam = OldMatrix;
         storm::math::invertRigid(mCam);

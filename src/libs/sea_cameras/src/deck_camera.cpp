@@ -123,26 +123,6 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
     else if (camera_ang.y > PIm2)
         camera_ang.y -= PIm2;
 
-    // determine the real angle of rotation of the camera
-    glm::mat4 glbRotMtx;
-    glbRotMtx = storm::math::eulerMatrix(camera_ang);
-    glm::mat4 rotMtx;
-    storm::math::copy3x3(*&rotMtx, pathNode->glob_mtx);
-    glbRotMtx = rotMtx * glbRotMtx;
-    float xAng, yAng, zAng;
-    auto v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 0, 1.f));
-    yAng = atan2f(v.x, v.z);
-    glbRotMtx = storm::math::rotationY(-yAng) * glbRotMtx;
-    v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 0, 1.f));
-    xAng = atan2f(-v.y, v.z);
-    glbRotMtx = storm::math::rotationX(-xAng) * glbRotMtx;
-    v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 1.f, 0));
-    zAng = atan2f(-v.x, v.y);
-    glm::vec3 s_ang;
-    s_ang.x = xAng + (camera_ang.x - xAng) * (1.0f - fRockingX);
-    s_ang.y = yAng;
-    s_ang.z = zAng * fRockingZ;
-
     // find out new camera position
     auto prev_pos = camera_pos;
     auto speed0 = static_cast<float>(deckWalkTime(DeltaTime, core.GetRDeltaTime())) * fSensivityDistance;
@@ -296,6 +276,42 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
             }
         }
     }
+
+    ApplyView();
+}
+
+void DECK_CAMERA::PrimeLoadingCamera()
+{
+    if (!isOn() || !isActive() || !pACharacter || !FindShip()) return;
+    pModel = GetModelPointer();
+    if (!pModel) return;
+    pModel->Update(); // current transforms only; animation service already built the frozen pose
+    if (!FindPath()) return;
+    SetPerspective(AttributesPointer->GetAttributeAsFloat("Perspective"));
+    ApplyView();
+}
+
+void DECK_CAMERA::ApplyView()
+{
+    // determine the real angle of rotation of the camera
+    glm::mat4 glbRotMtx;
+    glbRotMtx = storm::math::eulerMatrix(camera_ang);
+    glm::mat4 rotMtx;
+    storm::math::copy3x3(*&rotMtx, pathNode->glob_mtx);
+    glbRotMtx = rotMtx * glbRotMtx;
+    float xAng, yAng, zAng;
+    auto v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 0, 1.f));
+    yAng = atan2f(v.x, v.z);
+    glbRotMtx = storm::math::rotationY(-yAng) * glbRotMtx;
+    v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 0, 1.f));
+    xAng = atan2f(-v.y, v.z);
+    glbRotMtx = storm::math::rotationX(-xAng) * glbRotMtx;
+    v = storm::math::transformPoint(glbRotMtx, glm::vec3(0, 1.f, 0));
+    zAng = atan2f(-v.x, v.y);
+    glm::vec3 s_ang;
+    s_ang.x = xAng + (camera_ang.x - xAng) * (1.0f - fRockingX);
+    s_ang.y = yAng;
+    s_ang.z = zAng * fRockingZ;
 
     // calculate camera position
     glm::vec3 s_pos;

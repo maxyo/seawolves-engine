@@ -8,7 +8,7 @@ class FREE_CAMERA : public COMMON_CAMERA
 {
   private:
     VRenderer *pRS;
-    glm::vec3 vPos, vAng;
+    glm::vec3 vPos{}, vAng{};
     float fFov;
     int32_t iLockX, iLockY;
 
@@ -27,10 +27,15 @@ class FREE_CAMERA : public COMMON_CAMERA
     bool CreateState(ENTITY_STATE_GEN *state_gen) const;
     bool LoadState(ENTITY_STATE *state);
 
+    void PrimeLoadingCamera();
+
     void ProcessStage(Stage stage, uint32_t delta) override
     {
         switch (stage)
         {
+        case Stage::loading_prepare:
+            PrimeLoadingCamera();
+            break;
         case Stage::execute:
             Execute(delta);
             break;

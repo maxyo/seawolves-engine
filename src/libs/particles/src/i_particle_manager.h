@@ -42,6 +42,7 @@ class IParticleManager
 
     // Execute Particles
     virtual void Execute(float DeltaTime) = 0;
+    virtual void DrawCurrent() = 0; // resource-only loading draw, no simulation
 
     // Find out whether the system is available or not
     virtual bool IsSystemAvailable(const char *FileName) = 0;
