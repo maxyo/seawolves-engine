@@ -255,17 +255,17 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
             work(0, count);
     };
     // 1. Depth ties over the whole model: inside an object (kept in order, in one cluster) and between objects (a
-    // decal of its own over another object's surface: both kept exact). Then the clusters of every object.
+    // decal of its own over another object's surface: both kept exact, outside the simplifier). Then the clusters of
+    // every object.
     std::vector<std::vector<std::pair<uint32_t, uint32_t>>> own_ties(objects.size());
-    std::vector<std::vector<uint32_t>> exact(objects.size()); // per object: triangles never simplified (other ties)
+    std::vector<std::vector<bool>> exact(objects.size());
+    for (size_t o = 0; o < objects.size(); ++o)
+        exact[o].assign(objects[o].triangle_count, false);
     for (const auto &[a, b] : ModelDepthTies(objects, buffers, triangles))
         if (a.object == b.object)
             own_ties[a.object].push_back({a.triangle, b.triangle});
         else
-        {
-            exact[a.object].push_back(a.triangle);
-            exact[b.object].push_back(b.triangle);
-        }
+            exact[a.object][a.triangle] = exact[b.object][b.triangle] = true;
     std::vector<Split> splits(objects.size());
     run(objects.size(), [&](size_t first, size_t last) {
         for (size_t o = first; o < last; ++o)
@@ -285,6 +285,8 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
     for (size_t o = 0; o < objects.size(); ++o)
     {
         const MeshObject &object = objects[o];
+        if (object.triangle_count == 0)
+            continue;
         const MeshBuffer &buffer = buffers[object.vertex_buffer];
         const uint16_t *indices = triangles.data() + 3 * size_t(object.first_triangle);
         for (size_t c = 0; c < splits[o].clusters.size(); ++c)
@@ -333,15 +335,17 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
                 if (const auto it = owners.find(key(position)); it != owners.end() && it->second == kShared)
                     p.locks[v] = 1;
             }
-            // A tie triangle never changes: its corners stay.
+            // Kept triangles are outside the simplifier. Lock every copy of their corners so the remaining
+            // surface still meets them, including material/UV splits with duplicate positions.
             const uint16_t *indices = triangles.data() + 3 * size_t(object.first_triangle);
+            std::unordered_set<PositionKey, PositionHash> fixed_positions;
             for (uint32_t t = 0; t < object.triangle_count; ++t)
-                if (splits[o].tied[t])
+                if (exact[o][t] || splits[o].tied[t])
                     for (int k = 0; k < 3; ++k)
-                        p.locks[indices[3 * t + k]] = 1;
-            for (const uint32_t t : exact[o])
-                for (int k = 0; k < 3; ++k)
-                    p.locks[indices[3 * t + k]] = 1;
+                        fixed_positions.insert(key(position(buffer, object, indices[3 * t + k])));
+            for (uint32_t v = 0; v < object.vertex_count; ++v)
+                if (fixed_positions.contains(key(position(buffer, object, v))))
+                    p.locks[v] = 1;
         }
     });
 
@@ -353,11 +357,13 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
     };
     std::vector<Made> made(work.size());
     run(work.size(), [&](size_t first, size_t last) {
-        std::vector<uint32_t> source, simplified, ordered, ties, all, lost;
+        std::vector<uint32_t> source, simplified, ordered, fixed, ties, all, lost;
         std::vector<unsigned char> own_locks;
-        std::vector<std::pair<EdgeKey, uint32_t>> seams;
+        struct Seam { EdgeKey edge; uint32_t triangle; int count; };
+        std::vector<Seam> seams;
         std::unordered_map<EdgeKey, std::pair<int, uint32_t>, EdgeHash> open;
-        std::unordered_set<EdgeKey, EdgeHash> drawn;
+        std::unordered_map<EdgeKey, int, EdgeHash> drawn;
+        std::unordered_set<EdgeKey, EdgeHash> fixed_edges;
         for (size_t w = first; w < last; ++w)
         {
             const MeshObject &object = objects[work[w].object];
@@ -370,10 +376,14 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
             Cluster &cluster = out.cluster;
             source.clear();
             ties.clear();
+            fixed.clear();
             for (const uint32_t t : parts.clusters[work[w].cluster])
-                (parts.tied[t] ? ties : source).insert((parts.tied[t] ? ties : source).end(), indices + 3 * t,
-                                                       indices + 3 * t + 3);
+            {
+                auto &destination = parts.tied[t] ? ties : exact[work[w].object][t] ? fixed : source;
+                destination.insert(destination.end(), indices + 3 * t, indices + 3 * t + 3);
+            }
             all = source;
+            all.insert(all.end(), fixed.begin(), fixed.end());
             all.insert(all.end(), ties.begin(), ties.end());
             sphere(object, buffer, all, cluster);
             // The cluster's seams: its open edges that another cluster or object also has, with the triangle that has
@@ -381,6 +391,12 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
             // neighbour is finer.
             seams.clear();
             open.clear();
+            fixed_edges.clear();
+            for (const auto *kept : {&fixed, &ties})
+                for (size_t i = 0; i < kept->size(); i += 3)
+                    for (int k = 0; k < 3; ++k)
+                        fixed_edges.insert(edgeKey(key(position(buffer, object, (*kept)[i + k])),
+                                                   key(position(buffer, object, (*kept)[i + (k + 1) % 3]))));
             for (size_t i = 0; i < source.size(); i += 3)
                 for (int k = 0; k < 3; ++k)
                 {
@@ -391,14 +407,16 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
                     triangle = static_cast<uint32_t>(i);
                 }
             for (const auto &[e, entry] : open)
-                if (entry.first == 1)
-                    if (const auto it = edge_owners.find(e); it != edge_owners.end() && it->second == kShared)
-                        seams.push_back({e, entry.second});
+                if (const auto it = edge_owners.find(e); fixed_edges.contains(e) ||
+                    (entry.first == 1 && it != edge_owners.end() && it->second == kShared))
+                    seams.push_back({e, entry.second, entry.first});
 
             const auto append = [&](const std::vector<uint32_t> &level, int l) {
-                ordered.resize(level.size());
-                if (!level.empty())
-                    meshopt_optimizeVertexCache(ordered.data(), level.data(), level.size(), object.vertex_count);
+                all = level;
+                all.insert(all.end(), fixed.begin(), fixed.end());
+                ordered.resize(all.size());
+                if (!all.empty())
+                    meshopt_optimizeVertexCache(ordered.data(), all.data(), all.size(), object.vertex_count);
                 cluster.first[l] = static_cast<uint32_t>(out.indices.size() / 3);
                 cluster.count[l] = static_cast<uint32_t>((ordered.size() + ties.size()) / 3);
                 for (const uint32_t i : ordered)
@@ -435,11 +453,11 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
                         drawn.clear();
                         for (size_t i = 0; i < simplified.size(); i += 3)
                             for (int k = 0; k < 3; ++k)
-                                drawn.insert(edgeKey(key(position(buffer, object, simplified[i + k])),
-                                                     key(position(buffer, object, simplified[i + (k + 1) % 3]))));
+                                ++drawn[edgeKey(key(position(buffer, object, simplified[i + k])),
+                                                key(position(buffer, object, simplified[i + (k + 1) % 3])))];
                         lost.clear();
-                        for (const auto &[e, triangle] : seams)
-                            if (!drawn.contains(e))
+                        for (const auto &[e, triangle, count] : seams)
+                            if (drawn[e] < count)
                                 lost.push_back(triangle);
                         if (lost.empty())
                             break;
@@ -458,7 +476,8 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
                                 own_locks[source[i + k]] = 1;
                     }
                 }
-                if (source.size() / 3 < kSmallCluster || !sealed || double(kept) > kMinimumGain * double(previous))
+                if (previous == 0 || source.size() / 3 < kSmallCluster || !sealed ||
+                    double(kept) > kMinimumGain * double(previous))
                 {
                     // Not worth it: the previous level stands in.
                     cluster.first[l] = cluster.first[l - 1];
@@ -467,7 +486,7 @@ Lods Build(std::span<const MeshObject> objects, std::span<const MeshBuffer> buff
                     continue;
                 }
                 append(simplified, l);
-                cluster.error[l] = error;
+                cluster.error[l] = std::max(cluster.error[l - 1], error);
                 previous = kept;
             }
         }
@@ -506,6 +525,8 @@ struct Header
 
 template <class T> void put(std::vector<uint8_t> &out, const T *data, size_t count)
 {
+    if (count == 0)
+        return;
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     out.insert(out.end(), bytes, bytes + sizeof(T) * count);
 }
@@ -515,7 +536,8 @@ template <class T> bool take(std::span<const uint8_t> &in, T *data, size_t count
     const size_t size = sizeof(T) * count;
     if (in.size() < size)
         return false;
-    std::memcpy(data, in.data(), size);
+    if (size > 0)
+        std::memcpy(data, in.data(), size);
     in = in.subspan(size);
     return true;
 }
@@ -562,27 +584,54 @@ std::optional<Lods> Decode(std::span<const uint8_t> data, std::span<const MeshOb
     if (!take(data, lods.objects.data(), lods.objects.size()) || !take(data, lods.clusters.data(), lods.clusters.size()) ||
         meshopt_decodeIndexBuffer(lods.indices.data(), lods.indices.size(), sizeof(uint16_t), data.data(), data.size()) != 0)
         return std::nullopt;
-    // Every range inside the data and every index inside its object's vertex range: the cache is not trusted.
+    // Build packs objects, clusters and new level ranges consecutively. Repeated levels alias the preceding
+    // range exactly. Validate that structure as well as bounds: overlapping or unowned ranges are corrupt too.
     const uint64_t triangle_count = header.indices / 3;
+    uint64_t next_cluster = 0, next_triangle = 0;
     for (size_t o = 0; o < objects.size(); ++o)
     {
         const ObjectLods &object = lods.objects[o];
-        if (uint64_t(object.first_cluster) + object.cluster_count > lods.clusters.size() ||
+        if (object.first_cluster != next_cluster ||
+            uint64_t(object.first_cluster) + object.cluster_count > lods.clusters.size() ||
             (objects[o].triangle_count == 0) != (object.cluster_count == 0))
             return std::nullopt;
+        next_cluster += object.cluster_count;
+        uint64_t level0 = 0;
         for (uint32_t c = object.first_cluster; c < object.first_cluster + object.cluster_count; ++c)
+        {
+            const Cluster &cluster = lods.clusters[c];
+            if (!std::isfinite(cluster.radius) || cluster.radius < 0 ||
+                std::ranges::any_of(cluster.center, [](float x) { return !std::isfinite(x); }) ||
+                cluster.count[0] == 0 || cluster.error[0] != 0)
+                return std::nullopt;
+            level0 += cluster.count[0];
             for (int l = 0; l < kLevels; ++l)
             {
-                const Cluster &cluster = lods.clusters[c];
-                // A level never has more triangles than the one before (the composed lists are sized by level 0).
                 if (uint64_t(cluster.first[l]) + cluster.count[l] > triangle_count ||
-                    (l > 0 && cluster.count[l] > cluster.count[l - 1]))
+                    !std::isfinite(cluster.error[l]) || cluster.error[l] < 0 || cluster.error[l] > kLevelError[l] ||
+                    (l > 0 && (cluster.count[l] > cluster.count[l - 1] || cluster.error[l] < cluster.error[l - 1])))
                     return std::nullopt;
+                if (l > 0 && cluster.first[l] == cluster.first[l - 1])
+                {
+                    if (cluster.count[l] != cluster.count[l - 1] || cluster.error[l] != cluster.error[l - 1])
+                        return std::nullopt;
+                }
+                else
+                {
+                    if (cluster.first[l] != next_triangle)
+                        return std::nullopt;
+                    next_triangle += cluster.count[l];
+                }
                 for (uint64_t i = 3 * uint64_t(cluster.first[l]); i < 3 * (uint64_t(cluster.first[l]) + cluster.count[l]); ++i)
                     if (lods.indices[i] >= objects[o].vertex_count)
                         return std::nullopt;
             }
+        }
+        if (level0 != objects[o].triangle_count)
+            return std::nullopt;
     }
+    if (next_cluster != lods.clusters.size() || next_triangle != triangle_count)
+        return std::nullopt;
     return lods;
 }
 

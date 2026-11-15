@@ -60,7 +60,7 @@ class GEOM_SERVICE_R final : public GEOM_SERVICE
     void UnlockVertexBuffer(GEOS::ID vb);
     void ReleaseVertexBuffer(GEOS::ID vb);
 
-    GEOS::ID CreateIndexBuffer(int32_t size);
+    GEOS::ID CreateIndexBuffer(int32_t size, bool progress = true);
     void *LockIndexBuffer(GEOS::ID ib);
     void UnlockIndexBuffer(GEOS::ID ib);
     void ReleaseIndexBuffer(GEOS::ID ib);

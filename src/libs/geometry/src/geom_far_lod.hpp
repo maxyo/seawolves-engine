@@ -4,6 +4,7 @@
 
 #include "far_lod.hpp"
 #include "geos.h"
+#include <storm/render/frame_owner.hpp>
 
 #include <storm/fx/bakes.hpp>
 
@@ -19,7 +20,7 @@ namespace storm::render::far_lod
 struct View;
 }
 
-class GeomFarLod
+class GeomFarLod : private storm::render::FrameClient
 {
   public:
     // The model's data as GEOM read it from the file, for the background job: of every vertex its position and normal
@@ -42,9 +43,8 @@ class GeomFarLod
     GeomFarLod(const GeomFarLod &) = delete;
     GeomFarLod &operator=(const GeomFarLod &) = delete;
 
-    // Main thread, at draw: true once the LODs are in place. The first call with far LODs on queues the background
-    // work, a later one installs its result (or queues it again when the bakes were shut down before it finished).
-    bool Ready();
+    // Pure readiness query: uploads and background work are serviced before scene submission.
+    bool Ready() const;
     // Draws object `o` (vertex buffer already set) at its levels for the current far_lod::View and pass; false when
     // the object must be drawn whole from the model's own index buffer (far LODs off, no view, or no index buffer
     // for its list: logged).
@@ -54,6 +54,8 @@ class GeomFarLod
 
   private:
     void post();
+    void OnFrameBegin(const storm::render::FrameContext &) override;
+    storm::render::FrameOwner *owner_ = nullptr;
     // Per object, per pass: the clusters' current levels (hysteresis), and for objects of more than one cluster the
     // indices composed for that choice in a buffer of their own.
     struct Slot
@@ -62,6 +64,7 @@ class GeomFarLod
         GEOS::ID buffer = -1;
         uint32_t capacity = 0;            // triangles
         std::vector<uint32_t> order;      // clusters in the composed buffer (nearest first)
+        std::vector<float> distance;
         std::vector<uint32_t> offset;     // first triangle of each of them in the buffer
         uint32_t triangles = 0;
         bool composed = false;
@@ -69,6 +72,7 @@ class GeomFarLod
     };
 
     void install();
+    void releaseBuffers();
     bool choose(Slot &slot, uint32_t first_cluster, uint32_t count, const storm::render::far_lod::View &view) const;
     bool compose(Slot &slot, uint32_t first_cluster, uint32_t count);
 

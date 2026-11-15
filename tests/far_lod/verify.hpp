@@ -3,7 +3,8 @@
 //
 // For every object and cluster: level 0 is exactly the cluster's triangles; every level uses only vertices of its
 // object and of its cluster; triangles that tie in depth are in every level, last and in the file's order; every edge
-// a cluster shares with another cluster or object at level 0 is still drawn at every level (no cracks); Encode and
+// a cluster shares with another cluster or object at level 0, and each fixed/simplified boundary, is still drawn at
+// every level (no cracks); triangles that tie with another object's stay exact; Encode and
 // Decode give the LODs back (the codec may rotate a triangle's corners) and Decode refuses damaged data.
 #pragma once
 
@@ -100,11 +101,13 @@ inline std::array<uint32_t, 3> canonical(const uint16_t *i)
 struct Totals
 {
     size_t models = 0, objects = 0, clusters = 0, triangles = 0, encoded = 0;
+    size_t depth_pairs = 0, fixed_seams = 0;
     std::array<double, far_lod::kLevels> kept{};
     double ms = 0;
     void add(const Totals &o)
     {
         models += o.models, objects += o.objects, clusters += o.clusters, triangles += o.triangles, encoded += o.encoded;
+        depth_pairs += o.depth_pairs, fixed_seams += o.fixed_seams;
         for (int l = 0; l < far_lod::kLevels; ++l)
             kept[l] += o.kept[l];
         ms += o.ms;
@@ -152,7 +155,9 @@ inline Totals check(const Model &model)
 
     // Triangles that tie with another object's (a decal of its own): kept exact at every level.
     std::vector<std::set<std::array<uint32_t, 3>>> exact(model.objects.size());
-    for (const auto &[a, b] : far_lod::ModelDepthTies(model.objects, views, model.triangles))
+    const auto ties = far_lod::ModelDepthTies(model.objects, views, model.triangles);
+    totals.depth_pairs = ties.size();
+    for (const auto &[a, b] : ties)
         if (a.object != b.object)
             for (const far_lod::TriangleRef &r : {a, b})
                 exact[r.object].insert(
@@ -185,6 +190,7 @@ inline Totals check(const Model &model)
             const far_lod::Cluster &cluster = lods.clusters[object_lods.first_cluster + c];
             std::set<uint32_t> cluster_vertices;
             std::multiset<std::array<uint32_t, 3>> cluster0;
+            std::unordered_map<Edge, int, EdgeHash> fixed0, surface0;
             std::unordered_map<Edge, int, EdgeHash> seam0; // the cluster's L0 open edges that another cluster or object also has
             for (uint32_t t = 0; t < cluster.count[0]; ++t)
             {
@@ -194,9 +200,21 @@ inline Totals check(const Model &model)
                 for (int k = 0; k < 3; ++k)
                     cluster_vertices.insert(i[k]);
                 for (int k = 0; k < 3; ++k)
-                    ++seam0[edge(position(model, object, i[k]), position(model, object, i[(k + 1) % 3]))];
+                {
+                    const Edge e = edge(position(model, object, i[k]), position(model, object, i[(k + 1) % 3]));
+                    ++seam0[e];
+                    ++(exact[o].contains(canonical(i)) ? fixed0 : surface0)[e];
+                }
             }
             std::erase_if(seam0, [&](const auto &entry) { return entry.second != 1 || users[entry.first].size() < 2; });
+            // A fixed triangle and simplified surface in the SAME cluster also form a seam. Require both
+            // incidences, so the kept triangle alone cannot make a lost neighbouring surface edge pass.
+            for (const auto &[e, n] : fixed0)
+                if (surface0.contains(e))
+                {
+                    seam0[e] = n + surface0[e];
+                    ++totals.fixed_seams;
+                }
             // The tie triangles of this cluster, in the file's order: the tail of every level.
             std::vector<std::array<uint32_t, 3>> tie_tail;
             for (const uint32_t t : tied)
@@ -268,7 +286,11 @@ inline Totals check(const Model &model)
         return true;
     };
     if (!decoded || !same_triangles(decoded->indices, lods.indices) || decoded->clusters.size() != lods.clusters.size() ||
-        std::memcmp(decoded->clusters.data(), lods.clusters.data(), sizeof(far_lod::Cluster) * lods.clusters.size()) != 0)
+        decoded->objects.size() != lods.objects.size() ||
+        (!lods.objects.empty() && std::memcmp(decoded->objects.data(), lods.objects.data(),
+                                              sizeof(far_lod::ObjectLods) * lods.objects.size()) != 0) ||
+        (!lods.clusters.empty() && std::memcmp(decoded->clusters.data(), lods.clusters.data(),
+                                               sizeof(far_lod::Cluster) * lods.clusters.size()) != 0))
         fail("Encode/Decode round trip");
     std::vector<uint8_t> damaged(encoded.begin(), encoded.end() - 1);
     if (far_lod::Decode(damaged, model.objects))

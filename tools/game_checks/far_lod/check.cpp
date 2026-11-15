@@ -126,6 +126,7 @@ int gameModels(const std::filesystem::path &root, const std::vector<std::string>
                     t.models, t.objects, t.clusters, t.triangles);
         for (int l = 0; l < far_lod::kLevels; ++l)
             std::printf(" %5.1f%%", 100.0 * t.kept[l] / std::max<size_t>(1, t.triangles));
+        std::printf("; %zu depth pairs, %zu fixed/surface seams", t.depth_pairs, t.fixed_seams);
         std::printf("; %.2f bytes/triangle encoded; %.1f s (%.1f us/triangle)\n",
                     double(t.encoded) / std::max<size_t>(1, t.triangles), t.ms / 1000,
                     1000 * t.ms / std::max<size_t>(1, t.triangles));

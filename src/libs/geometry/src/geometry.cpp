@@ -402,9 +402,9 @@ void GEOM_SERVICE_R::ReleaseVertexBuffer(GEOS::ID vb)
         RenderService->ReleaseVertexBuffer(vb);
 }
 
-GEOS::ID GEOM_SERVICE_R::CreateIndexBuffer(int32_t size)
+GEOS::ID GEOM_SERVICE_R::CreateIndexBuffer(int32_t size, bool progress)
 {
-    if (RenderService)
+    if (RenderService && progress)
         RenderService->ProgressView();
     if (size == 0)
         return INVALID_BUFFER_ID;

@@ -74,12 +74,13 @@ struct GeomFarLod::Job
 {
     Source source;
     // 0 queued or being made, 1 ready, 2 failed, 3 dropped before it finished (the bakes shut down with the device:
-    // the app went to the background): queued again at the next draw.
+    // the app went to the background): queued again at the next frame begin.
     std::atomic<int> state{0};
     std::optional<uint64_t> key; // the cache key, computed by the first stage that runs
     std::optional<far_lod::Lods> lods;
     std::string failure;
     bool from_cache = false;
+    bool cache_checked = false;
     double ms = 0;
 };
 
@@ -88,6 +89,9 @@ namespace
 // The LODs from the cache, or nothing. A damaged entry is logged (and made again).
 bool readCache(GeomFarLod::Job &job)
 {
+    if (job.cache_checked)
+        return false;
+    job.cache_checked = true;
     const auto started = std::chrono::steady_clock::now();
     const auto data = storm::render::ReadDerivedData(*job.key, cacheShape(job.source), kMaxCacheBytes);
     if (!data)
@@ -106,9 +110,10 @@ bool readCache(GeomFarLod::Job &job)
 // Done (ready or failed): the copies of the model's data go, only the object table stays.
 void finish(GeomFarLod::Job &job, int state)
 {
-    job.source.buffers = {};
-    job.source.strides = {};
-    job.source.triangles = {};
+    // Move-assign empty vectors: initializer-list assignment would keep the triangle allocation alive.
+    job.source.buffers = decltype(job.source.buffers){};
+    job.source.strides = decltype(job.source.strides){};
+    job.source.triangles = decltype(job.source.triangles){};
     job.state = state;
 }
 } // namespace
@@ -126,12 +131,28 @@ GeomFarLod::GeomFarLod(Source source, GEOM_SERVICE &srv) : srv_(srv), name_(sour
 {
     job_ = std::make_shared<Job>();
     job_->source = std::move(source);
+    owner_ = storm::render::FrameOwner::Get();
+    if (!owner_)
+    {
+        spdlog::error("far LOD: {} has no active LOD frame service: it is drawn whole", name_);
+        job_.reset();
+        owner_ = nullptr;
+        return;
+    }
+    owner_->AddClient(this);
+    try
+    {
+        post(); // Even models never drawn release their source when the job finishes.
+    }
+    catch (...)
+    {
+        owner_->RemoveClient(this);
+        throw;
+    }
 }
 
 void GeomFarLod::post()
 {
-    posted_ = true;
-    ++render_lod::pending;
     auto guard = std::make_shared<GeomFarLodJobGuard<Job>>(job_);
     ticket_ = storm::fx::PostBake("far LOD " + name_, [guard](storm::fx::BakeStage stage) {
         Job &job = *guard->job;
@@ -158,27 +179,12 @@ void GeomFarLod::post()
         {
             if (!job.key)
                 job.key = cacheKey(job.source);
-            // Another copy of the same model (ships of one class) may have made them since this one looked.
-            if (readCache(job))
-            {
-                finish(job, 1);
-                return true;
-            }
             const auto buffers = views(job.source);
             job.lods = far_lod::Build(job.source.objects, buffers, job.source.triangles,
                                       [](size_t count, const std::function<void(size_t, size_t)> &work) {
                                           storm::fx::ParallelRanges(count, storm::fx::BakeThreads(), work, 1);
                                       });
             job.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-            const std::vector<uint8_t> encoded = far_lod::Encode(*job.lods);
-            if (!storm::render::DerivedDataCacheEnabled())
-                spdlog::error("far LOD: no cache directory: the LODs of {} are made again on every load", job.source.name);
-            else if (!storm::render::WriteDerivedData(*job.key, cacheShape(job.source), encoded))
-                spdlog::error("far LOD: cannot write the LODs of {} into the cache", job.source.name);
-        }
-        catch (const storm::fx::BakeCancelled &)
-        {
-            throw; // the owner let go, or the bakes shut down: the bake thread logs it
         }
         catch (const std::exception &error)
         {
@@ -186,49 +192,105 @@ void GeomFarLod::post()
             finish(job, 2);
             return true;
         }
+        // Persistence is optional: failure must not discard a successful build.
+        try
+        {
+            if (!storm::render::DerivedDataCacheEnabled())
+                spdlog::error("far LOD: no cache directory: the LODs of {} are made again on every load", job.source.name);
+            else
+            {
+                const std::vector<uint8_t> encoded = far_lod::Encode(*job.lods);
+                if (!storm::render::WriteDerivedData(*job.key, cacheShape(job.source), encoded))
+                    spdlog::error("far LOD: cannot write the LODs of {} into the cache", job.source.name);
+            }
+        }
+        catch (const std::exception &error)
+        {
+            spdlog::error("far LOD: caching the LODs of {} failed ({}): keeping the in-memory LODs",
+                          job.source.name, error.what());
+        }
         finish(job, 1);
         return true;
     });
+    posted_ = true;
+    ++render_lod::pending;
 }
 
 GeomFarLod::~GeomFarLod()
 {
+    if (owner_)
+        owner_->RemoveClient(this);
     ticket_.reset(); // cancels the job if it is still queued or running
     if (job_ && posted_)
         --render_lod::pending;
+    releaseBuffers();
+}
+
+void GeomFarLod::releaseBuffers()
+{
     if (static_buffer_ != -1)
         srv_.ReleaseIndexBuffer(static_buffer_);
+    static_buffer_ = -1;
     for (auto &passes : slots_)
         for (Slot &slot : passes)
             if (slot.buffer != -1)
                 srv_.ReleaseIndexBuffer(slot.buffer);
+    slots_.clear();
 }
 
-bool GeomFarLod::Ready()
+bool GeomFarLod::Ready() const
 {
-    if (lods_)
-        return true;
-    if (!job_ || render_lod::pixels <= 0.f)
-        return false; // failed before, or far LODs off: nothing is made while they are off
-    if (!posted_)
+    return render_lod::pixels > 0.f && lods_.has_value();
+}
+
+void GeomFarLod::OnFrameBegin(const storm::render::FrameContext &)
+{
+    if (render_lod::pixels <= 0.f)
     {
-        post();
-        return false;
+        if (job_)
+        {
+            spdlog::warn("far LOD: switched off while preparing {}: its source is dropped, it is drawn whole until it is "
+                         "loaded again", name_);
+            ticket_.reset();
+            if (posted_)
+                --render_lod::pending;
+            posted_ = false;
+            job_.reset();
+        }
+        return;
     }
+    if (!job_)
+        return;
     switch (job_->state.load())
     {
     case 0:
-        return false;
+        return;
     case 3:
         spdlog::info("far LOD: making the LODs of {} stopped with the background work (the device was let go): "
                      "queued again", name_);
         --render_lod::pending;
+        posted_ = false;
         job_->state = 0;
-        post();
-        return false;
+        try
+        {
+            post();
+        }
+        catch (const std::exception &error)
+        {
+            spdlog::error("far LOD: reposting {} failed ({}): it is drawn whole", name_, error.what());
+            job_.reset();
+        }
+        return;
     default:
-        install();
-        return lods_.has_value();
+        try
+        {
+            install();
+        }
+        catch (const std::exception &error)
+        {
+            releaseBuffers();
+            spdlog::error("far LOD: installing {} failed ({}): it is drawn whole", name_, error.what());
+        }
     }
 }
 
@@ -237,6 +299,7 @@ void GeomFarLod::install()
     std::shared_ptr<Job> job = std::move(job_);
     ticket_.reset();
     --render_lod::pending;
+    posted_ = false;
     if (job->state == 2)
     {
         spdlog::error("far LOD: making the LODs of {} failed ({}): it is drawn whole", name_, job->failure);
@@ -244,16 +307,38 @@ void GeomFarLod::install()
     }
     far_lod::Lods &lods = *job->lods;
     const size_t bytes = lods.indices.size() * sizeof(uint16_t);
-    static_buffer_ = srv_.CreateIndexBuffer(static_cast<int32_t>(bytes));
+    static_buffer_ = srv_.CreateIndexBuffer(static_cast<int32_t>(bytes), false);
     auto *target = static_cast<uint16_t *>(srv_.LockIndexBuffer(static_buffer_));
     if (target == nullptr)
     {
         spdlog::error("far LOD: no index buffer of {} bytes for {}: it is drawn whole", bytes, name_);
+        releaseBuffers();
         return;
     }
     std::memcpy(target, lods.indices.data(), bytes);
     srv_.UnlockIndexBuffer(static_buffer_);
     slots_.resize(lods.objects.size());
+    for (size_t o = 0; o < lods.objects.size(); ++o)
+    {
+        const auto &object = lods.objects[o];
+        for (Slot &slot : slots_[o])
+        {
+            slot.levels.resize(object.cluster_count, 0);
+            if (object.cluster_count <= 1)
+                continue;
+            slot.order.resize(object.cluster_count);
+            slot.offset.resize(object.cluster_count);
+            slot.distance.resize(object.cluster_count);
+            for (uint32_t c = 0; c < object.cluster_count; ++c)
+                slot.capacity += lods.clusters[object.first_cluster + c].count[0];
+            slot.buffer = srv_.CreateIndexBuffer(static_cast<int32_t>(slot.capacity * 3 * sizeof(uint16_t)), false);
+            if (slot.buffer == -1)
+            {
+                spdlog::error("far LOD: no composed index buffer for {}: this object/pass is drawn whole", name_);
+                slot.failed = true;
+            }
+        }
+    }
     std::array<uint64_t, far_lod::kLevels> kept{};
     for (const far_lod::Cluster &cluster : lods.clusters)
         for (int l = 0; l < far_lod::kLevels; ++l)
@@ -271,8 +356,6 @@ void GeomFarLod::install()
 bool GeomFarLod::choose(Slot &slot, uint32_t first_cluster, uint32_t count, const render_lod::View &view) const
 {
     const float limit = render_lod::pixels;
-    if (slot.levels.size() != count)
-        slot.levels.assign(count, 0);
     bool changed = false;
     for (uint32_t c = 0; c < count; ++c)
     {
@@ -305,17 +388,9 @@ bool GeomFarLod::choose(Slot &slot, uint32_t first_cluster, uint32_t count, cons
 bool GeomFarLod::compose(Slot &slot, uint32_t first_cluster, uint32_t count)
 {
     const render_lod::View &view = render_lod::view;
-    if (slot.buffer == -1)
-    {
-        slot.capacity = 0;
-        for (uint32_t c = 0; c < count; ++c)
-            slot.capacity += lods_->clusters[first_cluster + c].count[0];
-        slot.buffer = srv_.CreateIndexBuffer(static_cast<int32_t>(slot.capacity * 3 * sizeof(uint16_t)));
-    }
     // Nearest first: a depth slice draws one run of them (Draw).
-    slot.order.resize(count);
     std::iota(slot.order.begin(), slot.order.end(), 0u);
-    std::vector<float> distance(count);
+    auto &distance = slot.distance;
     for (uint32_t c = 0; c < count; ++c)
     {
         const far_lod::Cluster &cluster = lods_->clusters[first_cluster + c];
@@ -333,7 +408,6 @@ bool GeomFarLod::compose(Slot &slot, uint32_t first_cluster, uint32_t count)
         slot.failed = true;
         return false;
     }
-    slot.offset.resize(count);
     slot.triangles = 0;
     for (const uint32_t c : slot.order)
     {

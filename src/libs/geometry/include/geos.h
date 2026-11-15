@@ -348,7 +348,8 @@ class GEOM_SERVICE
     virtual void UnlockVertexBuffer(GEOS::ID vb) = 0;
     virtual void ReleaseVertexBuffer(GEOS::ID vb) = 0;
 
-    virtual GEOS::ID CreateIndexBuffer(int32_t size) = 0;
+    // Background results installed at frame begin pass false: a progress frame would interrupt submission.
+    virtual GEOS::ID CreateIndexBuffer(int32_t size, bool progress = true) = 0;
     virtual void *LockIndexBuffer(GEOS::ID ib) = 0;
     virtual void UnlockIndexBuffer(GEOS::ID ib) = 0;
     virtual void ReleaseIndexBuffer(GEOS::ID ib) = 0;

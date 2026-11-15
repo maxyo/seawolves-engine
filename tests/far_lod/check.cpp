@@ -1,43 +1,11 @@
 // Far LOD host check (run.py): the levels of synthetic models (verify.hpp says what is checked), the result
 // independent of the threads, and a broken layout refused. The game's models: tools/game_checks/far_lod.
 #include "verify.hpp"
-#include "../../src/libs/geometry/src/geom_far_lod_job.hpp"
-#include <atomic>
-#include <type_traits>
+#include <limits>
 
 namespace
 {
 using namespace far_lod_check;
-
-void jobLifetime()
-{
-    struct Job { std::atomic<int> state{0}; };
-    using Guard = GeomFarLodJobGuard<Job>;
-    static_assert(!std::is_copy_constructible_v<Guard>);
-    static_assert(!std::is_move_constructible_v<Guard>);
-    for (const int finished : {0, 1, 2})
-    {
-        auto job = std::make_shared<Job>();
-        auto guard = std::make_shared<Guard>(job);
-        if (job->state != 0) fail("posting marked a live far LOD job dropped");
-        auto loadStage = [guard] {};
-        auto bakeStage = loadStage;
-        guard.reset();
-        if (job->state != 0) fail("handing off a far LOD job marked it dropped");
-        job->state = finished;
-        {
-            auto lastStage = std::move(bakeStage);
-        }
-        if (job->state != finished) fail("a remaining stage lost its far LOD job");
-        // loadStage is the final owner. Completed and failed jobs must keep
-        // their result; an unfinished job is dropped only after the last stage.
-        std::function<void()> finalStage = std::move(loadStage);
-        finalStage = {};
-        if (job->state != (finished == 0 ? 3 : finished))
-            fail("far LOD job completion/drop state did not survive queue release");
-    }
-    std::printf("far LOD job lifecycle: passed\n");
-}
 
 struct Builder
 {
@@ -135,8 +103,8 @@ void depthTieProjection()
             b.model.triangles.insert(b.model.triangles.end(), {first, uint16_t(first + 1), uint16_t(first + 2)});
         }
         b.model.objects.push_back({0, 0, 120, 0, 40});
-        vertex(0, 0, 0), vertex(1, 0, 1), vertex(0, 2, 0);
-        vertex(-0.00390625f, 0.5f, 0.00390625f), vertex(-1.00390625f, 0.5f, -0.99609375f),
+        vertex(0, 0, 0), vertex(0.999755859375f, 0, 1), vertex(0, 2, 0);
+        vertex(-0.00390625f, 0.5f, 0.00390625f), vertex(-1.003662109375f, 0.5f, -0.99609375f),
             vertex(-0.00390625f, 0.6f, 0.00390625f);
         b.model.triangles.insert(b.model.triangles.end(), {0, 1, 2, 3, 4, 5});
         b.model.objects.push_back({0, 120, 6, 40, 2});
@@ -144,9 +112,8 @@ void depthTieProjection()
         const auto views = model.views();
         const auto local = far_lod::DepthTiePairs(model.objects[1], views[0], model.triangles);
         const auto global = far_lod::ModelDepthTies(model.objects, views, model.triangles);
-        // Rotation can change which equal-magnitude normal component wins, so use the small-bin exact result
-        // as the oracle. At least the unrotated case must contain the deliberately overlapping pair.
-        if (rotation == 0 && local != std::vector<std::pair<uint32_t, uint32_t>>{{0, 1}})
+        // The target has a unique dominant axis in every rotation: every oracle must contain the pair.
+        if (local != std::vector<std::pair<uint32_t, uint32_t>>{{0, 1}})
             fail("depth-tie projection fixture does not overlap");
         std::vector<std::pair<uint32_t, uint32_t>> own;
         for (const auto &[a, c] : global)
@@ -168,6 +135,88 @@ void depthTieProjection()
         check(merged);
     }
     std::printf("depth-tie projection consistency: passed\n");
+}
+
+void crossObjectDecal()
+{
+    // A decal object 2 mm over a grid (a depth tie across objects): both sides are kept exact, outside the
+    // simplifier, and the simplified grid still meets the kept triangles (fixed/surface seams).
+    Builder b;
+    b.grid(0, 0, 20, 1.f, 0.f);
+    b.decal(7.5f, 7.5f, 0.f);
+    const Model model = b.done();
+    std::set<std::pair<uint32_t, uint32_t>> exact;
+    for (const auto &[a, c] : far_lod::ModelDepthTies(model.objects, model.views(), model.triangles))
+        if (a.object != c.object)
+            exact.insert({a.object, a.triangle}), exact.insert({c.object, c.triangle});
+    // Both base triangles of cell (8,8), wholly under the decal, and both decal triangles.
+    for (const auto &required : {std::pair{0u, 336u}, std::pair{0u, 337u}, std::pair{1u, 0u}, std::pair{1u, 1u}})
+        if (!exact.contains(required))
+            fail("cross-object depth ties missed a known base/decal triangle");
+    const Totals t = check(model);
+    if (t.fixed_seams == 0)
+        fail("cross-object decal fixture has no fixed/simplified seam");
+    if (t.kept.back() >= t.kept.front())
+        fail("cross-object decal fixture did not exercise simplification");
+    std::printf("cross-object decal: kept exact, sealed fixed/surface boundaries passed\n");
+}
+
+void damagedCache()
+{
+    Builder b;
+    b.grid(0, 0, 8, 1.f, 0.f);
+    b.grid(100, 0, 8, 1.f, 0.f);
+    const Model model = b.done();
+    const auto lods = far_lod::Build(model.objects, model.views(), model.triangles);
+    const auto valid = far_lod::Encode(lods);
+    if (!far_lod::Decode(valid, model.objects))
+        fail("damage fixture did not round trip");
+    size_t cases = 0;
+    const auto reject = [&](const far_lod::Lods &broken, const char *why) {
+        if (far_lod::Decode(far_lod::Encode(broken), model.objects))
+            fail(std::string("Decode accepted ") + why);
+        ++cases;
+    };
+    const auto mutate = [&](const auto &change, const char *why) {
+        auto broken = lods;
+        change(broken);
+        reject(broken, why);
+    };
+    mutate([](auto &x) { x.objects[1].first_cluster = 0; }, "overlapping object cluster ownership");
+    mutate([](auto &x) { x.clusters.push_back(x.clusters.back()); }, "unowned cluster");
+    mutate([](auto &x) { x.clusters[0].first[0] = UINT32_MAX; }, "triangle range overflow");
+    mutate([](auto &x) { x.clusters[0].count[0] = 0; }, "empty level zero");
+    mutate([](auto &x) { --x.clusters[0].count[0]; }, "wrong level-zero total");
+    mutate([](auto &x) { x.clusters[0].count[1] = x.clusters[0].count[0] + 1; }, "growing level");
+    mutate([](auto &x) { x.clusters[0].radius = -1; }, "negative sphere radius");
+    mutate([](auto &x) { x.clusters[0].center[0] = std::numeric_limits<float>::quiet_NaN(); }, "NaN center");
+    mutate([](auto &x) { x.clusters[0].radius = std::numeric_limits<float>::infinity(); }, "infinite radius");
+    mutate([](auto &x) { x.clusters[0].error[0] = 0.01f; }, "nonzero level-zero error");
+    mutate([](auto &x) { x.clusters[0].error[1] = std::numeric_limits<float>::quiet_NaN(); }, "NaN error");
+    mutate([](auto &x) { x.clusters[0].error[1] = -1; }, "negative error");
+    mutate([](auto &x) { x.clusters[0].error[1] = far_lod::kLevelError[1] * 2; }, "excessive error");
+    mutate([](auto &x) { x.indices[0] = UINT16_MAX; }, "out-of-object index");
+    mutate([](auto &x) { x.indices.insert(x.indices.end(), {0, 1, 2}); }, "unowned indices");
+    // Raw format/codec damage, in addition to structurally invalid but correctly encoded payloads above.
+    for (const size_t at : {size_t(0), size_t(4), size_t(8), size_t(16), size_t(20),
+                           valid.size() - 1})
+    {
+        auto broken = valid;
+        if (at == valid.size() - 1)
+            broken.pop_back();
+        else
+            broken[at] ^= 0xff;
+        if (far_lod::Decode(broken, model.objects))
+            fail("Decode accepted corrupted header or truncated codec");
+        ++cases;
+    }
+    // The encoded stream starts after the fixed-size header, object table and cluster table.
+    auto bad_codec = valid;
+    bad_codec[24 + sizeof(far_lod::ObjectLods) * lods.objects.size() + sizeof(far_lod::Cluster) * lods.clusters.size()] = 0;
+    if (far_lod::Decode(bad_codec, model.objects))
+        fail("Decode accepted a bad index codec header");
+    ++cases;
+    std::printf("Decode damage: %zu structural, numeric, header and codec cases passed\n", cases);
 }
 
 void synthetic()
@@ -226,6 +275,11 @@ void synthetic()
         if (!far_lod::CheckMeshLayout(model.objects, model.counts(), model.triangles))
             fail("CheckMeshLayout took an index outside its object");
     }
+    {
+        Model empty;
+        empty.objects.push_back({UINT32_MAX, 0, 0, 0, 0});
+        check(empty);
+    }
     std::printf("synthetic models: passed\n");
 }
 } // namespace
@@ -234,9 +288,10 @@ int main()
 {
     try
     {
-        jobLifetime();
         depthTieProjection();
         synthetic();
+        crossObjectDecal();
+        damagedCache();
         return 0;
     }
     catch (const std::exception &error)

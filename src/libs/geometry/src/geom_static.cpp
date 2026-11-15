@@ -9,6 +9,7 @@ Import library main file
 ******************************************************************************/
 #include "geom.h"
 #include <storm/config.hpp>
+#include <storm/render/far_lod.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -171,6 +172,25 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
         throw std::runtime_error(fmt::format("cannot create the index buffer of {} ({} triangles)", fname,
                                              rhead.ntriangles));
     srv.ReadFile(file, trg, sizeof(RDF_TRIANGLE) * rhead.ntriangles);
+    // Capture while the file's upload buffer is still locked: far LODs must never need a GPU readback.
+    GeomFarLod::Source lod_source;
+    bool lods = storm::render::far_lod::pixels > 0.f &&
+                GeomFarLod::Wanted(fname, rhead.radius, false) && rhead.ntriangles > 0;
+    if (lods)
+    {
+        try
+        {
+            lod_source.name = fname;
+            const auto *triangles = reinterpret_cast<const uint16_t *>(trg);
+            lod_source.triangles.assign(triangles, triangles + 3 * size_t(rhead.ntriangles));
+        }
+        catch (const std::exception &error)
+        {
+            spdlog::error("far LOD: copying {} failed ({}): it is drawn whole", fname, error.what());
+            lod_source = {};
+            lods = false;
+        }
+    }
     srv.UnlockIndexBuffer(idx_buff);
 
     auto nvertices = 0;
@@ -192,16 +212,10 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
     bool animated = false;
     for (v = 0; v < rhead.nvrtbuffs; v++)
         animated = animated || (vbuff[v].type & 4) != 0;
-    const bool lods = GeomFarLod::Wanted(fname, rhead.radius, animated) && rhead.ntriangles > 0;
-    GeomFarLod::Source lod_source;
-    if (lods)
+    if (animated)
     {
-        lod_source.name = fname;
-        const auto *triangles = static_cast<const uint16_t *>(srv.ReadIndexBuffer(idx_buff));
-        if (triangles == nullptr)
-            throw std::runtime_error(fmt::format("cannot read back the index buffer of {}", fname));
-        lod_source.triangles.assign(triangles, triangles + 3 * size_t(rhead.ntriangles));
-        srv.UnlockIndexBuffer(idx_buff);
+        lod_source = {};
+        lods = false;
     }
     // The game has no baked lighting of this model for this light set (weather): the model's own vertex colours are
     // drawn, as in the original engine. Reported for models with vertices (locator models have none).
@@ -247,16 +261,25 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
         }
         if (lods)
         {
-            // What the LODs are made from: position and normal (24 bytes), uv0 at 28 (GeomFarLod::kSourceStride).
-            const auto *bytes = reinterpret_cast<const uint8_t *>(vrt);
-            auto &copy = lod_source.buffers.emplace_back(size_t(vbuff[v].nverts) * GeomFarLod::kSourceStride);
-            for (int32_t vr = 0; vr < vbuff[v].nverts; vr++)
+            try
             {
-                std::memcpy(&copy[size_t(vr) * GeomFarLod::kSourceStride], bytes + size_t(vbuff[v].stride) * vr, 24);
-                std::memcpy(&copy[size_t(vr) * GeomFarLod::kSourceStride + 28],
-                            bytes + size_t(vbuff[v].stride) * vr + 28, 8);
+                // What the LODs are made from: position and normal (24 bytes), uv0 at 28 (GeomFarLod::kSourceStride).
+                const auto *bytes = reinterpret_cast<const uint8_t *>(vrt);
+                auto &copy = lod_source.buffers.emplace_back(size_t(vbuff[v].nverts) * GeomFarLod::kSourceStride);
+                for (int32_t vr = 0; vr < vbuff[v].nverts; vr++)
+                {
+                    std::memcpy(&copy[size_t(vr) * GeomFarLod::kSourceStride], bytes + size_t(vbuff[v].stride) * vr, 24);
+                    std::memcpy(&copy[size_t(vr) * GeomFarLod::kSourceStride + 28],
+                                bytes + size_t(vbuff[v].stride) * vr + 28, 8);
+                }
+                lod_source.strides.push_back(GeomFarLod::kSourceStride);
             }
-            lod_source.strides.push_back(GeomFarLod::kSourceStride);
+            catch (const std::exception &error)
+            {
+                spdlog::error("far LOD: copying {} failed ({}): it is drawn whole", fname, error.what());
+                lod_source = {};
+                lods = false;
+            }
         }
 
         srv.UnlockVertexBuffer(vbuff[v].dev_buff);
@@ -294,19 +317,26 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
 
     if (lods)
     {
-        lod_source.objects.resize(rhead.nobjects);
-        for (int32_t o = 0; o < rhead.nobjects; o++)
-            lod_source.objects[o] = {static_cast<uint32_t>(object[o].vertex_buff), static_cast<uint32_t>(object[o].start_vertex),
-                                     static_cast<uint32_t>(object[o].num_vertices), static_cast<uint32_t>(object[o].striangle),
-                                     static_cast<uint32_t>(object[o].ntriangles)};
-        std::vector<uint32_t> vertex_counts;
-        for (const auto &buffer : lod_source.buffers)
-            vertex_counts.push_back(static_cast<uint32_t>(buffer.size() / lod_source.strides[vertex_counts.size()]));
-        if (const auto problem = storm::geometry::far_lod::CheckMeshLayout(lod_source.objects, vertex_counts,
-                                                                           lod_source.triangles))
-            spdlog::warn("far LOD: {} gets none: {}", fname, *problem);
-        else
-            far_lod_ = std::make_unique<GeomFarLod>(std::move(lod_source), srv);
+        try
+        {
+            lod_source.objects.resize(rhead.nobjects);
+            for (int32_t o = 0; o < rhead.nobjects; o++)
+                lod_source.objects[o] = {static_cast<uint32_t>(object[o].vertex_buff), static_cast<uint32_t>(object[o].start_vertex),
+                                         static_cast<uint32_t>(object[o].num_vertices), static_cast<uint32_t>(object[o].striangle),
+                                         static_cast<uint32_t>(object[o].ntriangles)};
+            std::vector<uint32_t> vertex_counts;
+            for (const auto &buffer : lod_source.buffers)
+                vertex_counts.push_back(static_cast<uint32_t>(buffer.size() / lod_source.strides[vertex_counts.size()]));
+            if (const auto problem = storm::geometry::far_lod::CheckMeshLayout(lod_source.objects, vertex_counts,
+                                                                               lod_source.triangles))
+                spdlog::error("far LOD: {} gets none: {}", fname, *problem);
+            else
+                far_lod_ = std::make_unique<GeomFarLod>(std::move(lod_source), srv);
+        }
+        catch (const std::exception &error)
+        {
+            spdlog::error("far LOD: preparing {} failed ({}): it is drawn whole", fname, error.what());
+        }
     }
 
     for (int32_t t = 0; t < rhead.ntextures; t++)
