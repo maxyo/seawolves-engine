@@ -10,7 +10,8 @@
 namespace storm::ui::screens::hero
 {
 
-// A field of an adapter fact row ("" when absent). Attribute names arrive in lower case.
+// A field of an adapter fact row ("" when absent). Script attribute names are case-insensitive and keep
+// whichever spelling was interned first (itemId may arrive as itemid), so the lookup ignores case.
 std::string Field(const Widget *fact, const char *key);
 // The first number in a game text ("Вес: 4.6 / 140" → 4, "-3" → -3), 0 without one.
 int Number(const std::string &text);
