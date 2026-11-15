@@ -73,7 +73,6 @@ int main() {
  service.post_cache(io,[]{event(100);});
  {std::unique_lock lock(mutex);require(changed.wait_for(lock,std::chrono::milliseconds(500),[]{return events.size()==1;}),"cache IO must finish before held transcode release");}
  finish(service);
-#ifndef BASELINE
  // IO fairness/cap/cancel independent from occupied CPU transcodes.
  reset();service.configure({},nullptr);
  std::mutex gate_mutex;std::condition_variable gate_cv;bool started=false,leave=false;
@@ -107,6 +106,5 @@ int main() {
  {std::lock_guard l(gate_mutex);leave=true;}gate_cv.notify_all();stop.join();
  require(events.empty(),"queued callbacks dropped on shutdown");
  require(service.workers_.empty(),"late IO callback must not restart CPU workers during shutdown");
-#endif
  std::puts("PASS actual cache IO isolation, fairness, bounds, generation and shutdown");
 }

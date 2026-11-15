@@ -177,13 +177,35 @@ set_tests_properties(scene_nested_progress_check PROPERTIES
 
 # Native stock ownership/cadence, using actual core and host-controller bodies.
 # No renderer window, model inference or GPU completion assumption.
-foreach(check IN ITEMS transaction scheduler)
+foreach(check IN ITEMS transaction scheduler progress consumers)
     add_test(NAME scene_stock_${check}_check
         COMMAND "${CMAKE_COMMAND}" -E env
             "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
             "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/stock_${check}.py")
     set_tests_properties(scene_stock_${check}_check PROPERTIES
         LABELS "scene_readiness;cpu" TIMEOUT 60)
+endforeach()
+
+# Hidden loading frames: no beauty, probe or opaque acknowledgement, while resource preparation goes on.
+add_test(NAME scene_hidden_work_check
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
+        "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/hidden_scene_work.py")
+set_tests_properties(scene_hidden_work_check PROPERTIES
+    LABELS "scene_readiness;cpu" TIMEOUT 60)
+
+# Independent cache-lane/codec controls (the bounded CPU tile recovery is its own host check, tests/relief_cpu_tiles).
+# These execute current production code without models, renderer or device.
+foreach(pair IN ITEMS "texture_cache_lane;../texture_cache_lane/run.py"
+                      "texture_cache_codec;../texture_cache_lane/codec.py")
+    list(GET pair 0 check)
+    list(GET pair 1 script)
+    add_test(NAME ${check}_check
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
+            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/${script}")
+    set_tests_properties(${check}_check PROPERTIES
+        LABELS "texture_pipeline;cpu" TIMEOUT 60)
 endforeach()
 
 add_executable(upscale_swap_check upscale_swap_check.cpp)

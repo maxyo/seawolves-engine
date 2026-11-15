@@ -50,9 +50,6 @@ def run():
         assert draw.index('if (hiddenBeauty)') < draw.index('render::SceneOpaqueDrawSubmitted')
         assert draw.index('fx_lighting.submit(fx_draw)') < draw.index('if (hiddenBeauty)')
         assert draw.index('ObserveSceneTexture') < draw.index('if (hiddenBeauty)')
-        base = subprocess.check_output(['git', '-C', str(ROOT), 'show',
-            '25686db2872135da1ca8508f87d3143ae6376bf7:src/libs/renderer_bgfx/src/shim/draw.cpp'], text=True)
-        old = block(base, '    if (hiddenBeauty)') if '    if (hiddenBeauty)' in base else ''
         fixture = r'''
 #include <cassert>
 int beauty=0, probe=0, caster=0, discarded=0, invalidated=0;
@@ -83,7 +80,8 @@ int main() {
  assert(beauty == 1 && probe == 1 && caster == 1);
 }
 '''
-        for name, snippet, negative in [('before', old, True), ('after', branch, False)]:
+        # Negative control: the same draw without the suppression branch must fail.
+        for name, snippet, negative in [('without-branch', '', True), ('actual', branch, False)]:
             source = tmp / (name + '.cpp')
             source.write_text(fixture.replace('BRANCH', snippet))
             compile_run(source, name, negative)

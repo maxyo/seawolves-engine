@@ -7,8 +7,6 @@ import subprocess, tempfile, sys, os
 root=Path(__file__).resolve().parents[2]
 path='src/libs/renderer_bgfx/src/shim/device.cpp'
 s=(root/path).read_text()
-if '--baseline' in sys.argv:
-    s=subprocess.check_output(['git','show','06683035:'+path],cwd=root,text=True)
 start=s.index('    // The interface is drawn on the processed picture')
 tail=s[start:s.index('\n}\n',start)]
 start=s.index('    if (views_used > 0 && !render::HideSceneBeauty')
@@ -99,9 +97,5 @@ with tempfile.TemporaryDirectory(prefix='post-handoff-') as tmp:
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O0','-g','-fsanitize=address,undefined','-I'+str(root/'src/libs/renderer_bgfx/include'),'-I'+str(root/'src/libs/renderer_bgfx/src'),str(p),'-o',str(binary)],check=True)
     r=subprocess.run([str(binary)],capture_output=True,text=True,env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0'))
     print(r.stdout+r.stderr,end='')
-    if '--baseline' in sys.argv:
-        assert r.returncode != 0 and 'actual post swap followed by Present must qualify' in r.stderr, 'baseline must fail semantic assertion, not compile/sanitizer'
-        print('actual baseline post-swap→Present assertion negative PASS')
-    else:
-        assert r.returncode==0,r.returncode
-        print('actual post-swap→Present +3full/scaled/no-post/invalidation controls PASS')
+    assert r.returncode==0,r.returncode
+    print('actual post-swap→Present +3full/scaled/no-post/invalidation controls PASS')

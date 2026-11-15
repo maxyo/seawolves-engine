@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Actual stock draw snippets: no loading RNG/emission/simulation. CPU-only.
---baseline-rain uses the pre-admission rain body and must fail its first invariant.
 This is a focused side-effect control, not a substitute for target compilation or
 real sea/cabin/boarding readiness and frame evidence.
 """
@@ -21,9 +20,6 @@ def method(text, signature):
     return text[start:end]
 
 rain = (root / 'src/libs/weather/src/rain.cpp').read_text()
-if '--baseline-rain' in sys.argv:
-    rain = subprocess.check_output(
-        ['git', 'show', 'd7255c66:src/libs/weather/src/rain.cpp'], cwd=root, text=True)
 render = method(rain, 'void RAIN::Realize(')
 start = render.index('                pRainBlocks[i].vPos.y -=')
 if 'if (!storm::loading::active)' in render[:start]:
