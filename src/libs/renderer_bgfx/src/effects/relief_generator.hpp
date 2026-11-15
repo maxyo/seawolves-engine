@@ -127,7 +127,8 @@ class ReliefGenerator
     void reconcile_upscales(); // under mutex_: publish completed files; prune expired/stale requests
     bool open_session();
     void prepare_request(const Request &request);
-    void release_models(const char *why); // worker, under mutex_
+    // Worker, under mutex_. keep_policy: an idle CPU detour keeps its device-policy shell (low memory does not).
+    void release_models(const char *why, bool keep_policy);
     bool must_wait(); // under mutex_: the background gate (thermal.hpp), changes logged
     void prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry);
 
@@ -152,6 +153,7 @@ class ReliefGenerator
     uint64_t order_ = 0, admitted_ = 0;
     bool next_upscale_ = false; // a live lane never waits behind the entire other queue
     std::chrono::steady_clock::time_point idle_since_{};
+    bool inference_released_ = false; // the retained shell's inference objects are released (until a job runs)
     Stats stats_;
     // Worker only.
     std::unique_ptr<relief::Session> session_;

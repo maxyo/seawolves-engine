@@ -289,7 +289,7 @@ void ReliefGenerator::run()
                 if (trim_)
                 {
                     trim_ = false;
-                    release_models("the system is low on memory");
+                    release_models("the system is low on memory", false);
                 }
                 const Clock::time_point now = Clock::now();
                 if (session_)
@@ -323,12 +323,12 @@ void ReliefGenerator::run()
                     break;
                 // Only loaded requests can wake preparation. Idle/loading/gameplay never discover the corpus.
                 Clock::time_point until = Clock::time_point::max();
-                if (session_)
+                // Once per idle period: a retained device-policy shell has nothing more to release until it works again.
+                if (session_ && !inference_released_)
                 {
                     if (now - idle_since_ >= kIdleRelease)
                     {
-                        release_models("idle");
-                        idle_since_ = now; // a retained device-policy shell must not spin on the elapsed deadline
+                        release_models("idle", true);
                         continue;
                     }
                     until = std::min(until, idle_since_ + kIdleRelease);
@@ -397,6 +397,7 @@ void ReliefGenerator::run()
         }
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
+        inference_released_ = false; // the job reopened what it needed
         stats_.working = false; computing_ = computing_normal_ = false;
     }
 }
@@ -625,13 +626,15 @@ void ReliefGenerator::trim()
     wake_.notify_all();
 }
 
-void ReliefGenerator::release_models(const char *why)
+void ReliefGenerator::release_models(const char *why, bool keep_policy)
 {
     const bool had = session_ != nullptr;
-    // Releasing a blocked CPU detour must not reset its 60-second epoch or let a new session admit
+    // Releasing a blocked CPU detour when idle must not reset its 60-second epoch or let a new session admit
     // background CPU work. Keep its small policy shell and borrowed serialized model spans; drop inference
-    // objects (including the CPU runtime/arenas). Shutdown/reconfigure still destroys the whole session.
-    const bool kept_policy = session_ && session_->stats().gpu_possible && !session_->stats().gpu;
+    // objects (including the CPU runtime/arenas). Low memory, shutdown and reconfigure destroy the whole session,
+    // serialized models included (the retry epoch starts again).
+    const bool kept_policy = keep_policy && session_ && session_->stats().gpu_possible && !session_->stats().gpu;
+    inference_released_ = kept_policy;
     if (kept_policy)
         session_->ReleaseIdleModels();
     else

@@ -219,6 +219,7 @@ int main(int argc,char **argv) {
     std::this_thread::sleep_for(30ms);
     expect(started==1 && list_calls==0 && prune_calls==0 && marked_complete==0,
            "elapsed60-second provider retry never starts a corpus job");
+    expect(idle_releases==1,"the retained shell is released once per idle period, not every 10 s");
     auto retry=normal("retry-loaded-later",92);g.request(retry,retry->file);
     until([&]{return retry->state==effects::NormalMapEntry::Stored;},"new loaded demand resumes after model idle release");
     expect(opened==1 && started==2 && g.session_->stats().gpu,"same policy session retains GPU retry epoch for subsequent demand");
