@@ -2,6 +2,7 @@
 #include "android_gameplay.hpp"
 #include "android_hud_presenter.hpp"
 #include <array>
+#include <tuple>
 
 namespace storm::android
 {
@@ -122,6 +123,8 @@ public:
                ",\"map\":" + (valid() && frame_.map ? "true" : "false") +
                ",\"mapLabel\":" + gameplayJsonString(valid() && frame_.map ? frame_.mapLabel : "") + "}";
     }
+    // Everything json() reads (HudChannel, android_ui.hpp).
+    auto publicationKey() const { return std::tie(activity_, revision_, frame_); }
 };
 inline SeaQuickActionState seaQuickAction;
 // The engine loop says whether the player can act at all (focus, lifecycle, no screen, no loading).

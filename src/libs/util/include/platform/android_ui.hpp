@@ -148,24 +148,20 @@ inline void publishSeaOrders()
 // The sea quick action (U1). A new UI host gets a new activity generation: nothing drawn or
 // tapped by the old one counts.
 inline uint64_t seaQuickActionHost = 0;
-inline std::string lastSeaQuickAction;
+inline HudChannel<decltype(seaQuickAction.publicationKey())> seaQuickActionChannel;
 inline void publishSeaQuickAction()
 {
-    if (seaQuickActionHost != ui::generation()) { seaQuickActionHost = ui::generation(); lastSeaQuickAction.clear(); seaQuickAction.resetActivity(); }
-    const auto json = seaQuickAction.json();
-    if (json == lastSeaQuickAction) return;
-    lastSeaQuickAction = json;
-    ui::state("seaQuickAction", json);
+    if (seaQuickActionHost != ui::generation()) { seaQuickActionHost = ui::generation(); seaQuickActionChannel.reset(); seaQuickAction.resetActivity(); }
+    if (const auto *json = seaQuickActionChannel.publish(seaQuickAction.publicationKey(), [] { return seaQuickAction.json(); }))
+        ui::state("seaQuickAction", *json);
 }
 inline uint64_t landCommandsHost = 0;
-inline std::string lastLandCommands;
+inline HudChannel<decltype(landCommands.publicationKey())> landCommandsChannel;
 inline void publishLandCommands()
 {
-    if (landCommandsHost != ui::generation()) { landCommandsHost = ui::generation(); lastLandCommands.clear(); landCommands.resetActivity(); }
-    const auto json = landCommands.json();
-    if (json == lastLandCommands) return;
-    lastLandCommands = json;
-    ui::state("landCommands", json);
+    if (landCommandsHost != ui::generation()) { landCommandsHost = ui::generation(); landCommandsChannel.reset(); landCommands.resetActivity(); }
+    if (const auto *json = landCommandsChannel.publish(landCommands.publicationKey(), [] { return landCommands.json(); }))
+        ui::state("landCommands", *json);
 }
 inline std::string lastVitals;
 inline uint32_t lastVitalsTick=0;

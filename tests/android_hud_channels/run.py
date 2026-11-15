@@ -29,6 +29,8 @@ def publisher(source, signature):
 # Each publisher compares the typed key the check drives, and builds the JSON only inside publish.
 for function, channel, key in (
         ('inline void publishSeaOrders()', 'seaOrdersChannel', 'seaOrders.publicationKey()'),
+        ('inline void publishSeaQuickAction()', 'seaQuickActionChannel', 'seaQuickAction.publicationKey()'),
+        ('inline void publishLandCommands()', 'landCommandsChannel', 'landCommands.publicationKey()'),
 ):
     body = publisher(ui, function)
     assert re.search(re.escape(channel) + r'\.publish\(' + re.escape(key) + r', \[', body), body

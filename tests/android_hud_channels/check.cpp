@@ -5,7 +5,9 @@
 // and the new one (compare the publication key, build only on a change) run side by side and must
 // publish the same byte-identical sequence. Loops with an unchanged state must not build.
 #include <platform/android_hud_channel.hpp>
+#include <platform/android_land_commands.hpp>
 #include <platform/android_sea_orders.hpp>
+#include <platform/android_sea_quick_action.hpp>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -91,6 +93,127 @@ void seaOrdersChannel()
         }
         twin.step(json, s.publicationKey());
     }
+    // A change the wire format does not carry: built, compared, not published.
+    frame.active = true;
+    frame.items = {{"i0", "command", "Drift", "native-drift", true, .5, "BI_Drift"}};
+    s.update("battle1:ship11", frame);
+    twin.step(json, s.publicationKey());
+    const auto sent = twin.newSent.size(), builds = twin.builds;
+    frame.items[0].cooldown = .5 + 1e-9;
+    s.update("battle1:ship11", frame);
+    twin.step(json, s.publicationKey());
+    assert(twin.builds == builds + 1 && twin.newSent.size() == sent);
+    twin.verify();
+}
+
+LandCommandsFrame landFrame(std::mt19937 &random)
+{
+    LandCommandsFrame f;
+    f.available = random() % 8 != 0;
+    f.active = random() % 3 == 0;
+    f.language = "russian";
+    f.ownerIdentity = "list1";
+    f.offered = {"BI_Dialog", "BI_Officers"};
+    if (f.active)
+    {
+        f.items.push_back({"i0", "command", "Talk", "BI_Dialog", "id0", true, 1, "icons:3"});
+        f.items.push_back({"i1", "command", "Off\\icers", "BI_Officers", "id1", random() % 2 == 0,
+                           (random() % 4) * .25 + (random() % 2) * 1e-9, ""});
+        f.selectedItemId = random() % 2 ? "i0" : "i1";
+    }
+    return f;
+}
+
+std::string landRequest(const LandCommandsState &s, const char *verb, const char *id)
+{
+    return "1\t" + std::to_string(s.sceneEpoch()) + "\t" + std::to_string(s.revision()) + "\t" +
+           std::to_string(s.activityGeneration()) + "\t" + verb + "\t" + id;
+}
+
+void landCommandsChannel()
+{
+    std::mt19937 random(11);
+    LandCommandsState s;
+    Twin<decltype(s.publicationKey())> twin{"landCommands"};
+    const auto json = [&] { return s.json(); };
+    s.resetActivity();
+    twin.step(json, s.publicationKey());
+    auto frame = landFrame(random);
+    uint32_t tick = 0;
+    uint64_t receipts = 0, lastSerial = 0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        tick += 16;
+        switch (random() % 18)
+        {
+        case 0: frame = landFrame(random); s.update("owner:list1", frame); break;
+        case 1: s.update(random() % 2 ? "owner:list1" : "owner:list2", frame); break;
+        case 2: s.invalidate(); break;
+        case 3: s.resetActivity(); break;
+        case 4: twin.reset(); s.resetActivity(); break; // publishLandCommands on a new UI host
+        case 5: s.releaseUnavailableSource(random() % 2 ? LandCommandSource::Missing : LandCommandSource::Forbidden); break;
+        // Taps: accepted, refused with a receipt, or stale.
+        case 6: s.offer(landRequest(s, "activateItem", random() % 2 ? "i0" : "i1"), tick); break;
+        case 7: s.offer(landRequest(s, "open", ""), tick); break;
+        case 8: s.offer("1\t1\t1\t" + std::to_string(s.activityGeneration()) + "\tactivateItem\ti0", tick); break;
+        case 9:
+            if (const auto request = s.take(tick + (random() % 2) * 2000))
+                s.result(*request, random() % 2 == 0, "native-dispatched");
+            break;
+        default: s.update("owner:list1", frame); break; // an unchanged refresh: most loops
+        }
+        twin.step(json, s.publicationKey());
+        if (const auto serial = std::get<4>(s.publicationKey()); serial != lastSerial) { lastSerial = serial; ++receipts; }
+    }
+    assert(receipts > 10); // the walk does reach the receipts
+    twin.verify();
+}
+
+SeaQuickActionFrame quickFrame(std::mt19937 &random)
+{
+    SeaQuickActionFrame f;
+    f.host = 5;
+    f.sea = true;
+    f.available = random() % 4 != 0;
+    f.complete = random() % 6 != 0;
+    static const char *actions[] = {"Moor", "Board", "Reload", "Bogus"};
+    f.action = actions[random() % 4];
+    f.label = f.action + " here";
+    f.owner = "owner";
+    f.target = random() % 2 ? "t1" : "t2";
+    f.map = random() % 2 == 0;
+    f.mapLabel = f.map ? "Map" : "";
+    return f;
+}
+
+void seaQuickActionChannel()
+{
+    std::mt19937 random(13);
+    SeaQuickActionState s;
+    Twin<decltype(s.publicationKey())> twin{"seaQuickAction"};
+    const auto json = [&] { return s.json(); };
+    twin.step(json, s.publicationKey());
+    auto frame = quickFrame(random);
+    uint32_t tick = 0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        tick += 16;
+        const auto request = [&](const std::string &verb, const std::string &value) {
+            return "1\t" + std::to_string(s.activity()) + "\t" + std::to_string(s.revision()) + "\t" + verb + "\t" + value;
+        };
+        switch (random() % 14)
+        {
+        case 0: frame = quickFrame(random); s.update(frame); break;
+        case 1: s.update({}); break;
+        case 2: s.resetActivity(); break;
+        case 3: twin.reset(); s.resetActivity(); break; // publishSeaQuickAction on a new UI host
+        case 4: s.offer(request("ack", random() % 2 ? "1" : "0"), tick); break;
+        case 5: s.offer(request("activate", frame.action), tick); break;
+        case 6: s.consume(tick + (random() % 2) * 2000); break;
+        default: s.update(frame); break; // an unchanged frame: most loops
+        }
+        twin.step(json, s.publicationKey());
+    }
     twin.verify();
 }
 
@@ -122,6 +245,30 @@ void bench()
         const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(s.publicationKey(), [&] { return s.json(); }) != nullptr); });
         std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "seaOrders", old, now);
     }
+    {
+        LandCommandsState s;
+        s.resetActivity();
+        auto f = landFrame(random);
+        f.active = false;
+        f.items.clear();
+        s.update("owner:list1", f);
+        std::string last = s.json();
+        HudChannel<decltype(s.publicationKey())> channel;
+        channel.publish(s.publicationKey(), [&] { return s.json(); });
+        const double old = nanosPerLoop(loops, [&] { const auto j = s.json(); sink = sink + (j == last); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(s.publicationKey(), [&] { return s.json(); }) != nullptr); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "landCommands", old, now);
+    }
+    {
+        SeaQuickActionState s;
+        s.update(quickFrame(random));
+        std::string last = s.json();
+        HudChannel<decltype(s.publicationKey())> channel;
+        channel.publish(s.publicationKey(), [&] { return s.json(); });
+        const double old = nanosPerLoop(loops, [&] { const auto j = s.json(); sink = sink + (j == last); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(s.publicationKey(), [&] { return s.json(); }) != nullptr); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "seaQuickAction", old, now);
+    }
 }
 } // namespace
 
@@ -129,5 +276,7 @@ int main(int argc, char **argv)
 {
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) { bench(); return 0; }
     seaOrdersChannel();
+    landCommandsChannel();
+    seaQuickActionChannel();
     std::puts("android_hud_channels: ok");
 }

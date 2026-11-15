@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace storm::android
 {
@@ -270,7 +271,9 @@ public:
         return out + "]}";
     }
     std::string json() const { return jsonFor(frame_); }
-
+    // Everything json() reads (HudChannel, android_ui.hpp): every change of the receipts advances
+    // the receipt serial, or the activity generation (resetActivity).
+    auto publicationKey() const { return std::tie(frame_, scene_, revision_, activity_, receipt_.serial); }
 };
 inline LandCommandsState landCommands;
 // When the touch HUD asks the scripts for the menu again (AndroidLandRefresh, which runs the
