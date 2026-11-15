@@ -5,7 +5,6 @@
 #include "options_parser.hpp"
 
 #include <SDL2/SDL.h>
-#include <storm/render/frame_owner.hpp>
 
 #include "xinterface.h"
 #include "profiler.hpp"
@@ -2693,25 +2692,6 @@ void XINTERFACE::DoControl()
                 if (auto *next = node->DoAction(code, stop, true)) SetCurNode(next);
             }
         }
-    }
-    if (!m_bUse) return;
-    while (!storm::android::uiTouches.empty() && m_bUse)
-    {
-        const auto touch = storm::android::uiTouches.front();
-        storm::android::uiTouches.pop_front();
-        // Touches are fractions of the whole view; the game picture may be letterboxed inside it.
-        const auto picture = storm::render::GamePictureRect();
-        const float x = (touch.x - picture.x) / picture.w, y = (touch.y - picture.y) / picture.h;
-        if (touch.phase == 0 && (x < 0.0f || x > 1.0f || y < 0.0f || y > 1.0f))
-            continue; // a press on the bars outside the picture
-        fXMousePos = std::clamp(x, 0.0f, 1.0f) * dwScreenWidth - m_lXMouse;
-        fYMousePos = std::clamp(y, 0.0f, 1.0f) * dwScreenHeight - m_lYMouse;
-        m_bShowMouse = false;
-        m_idButton = MOUSE_LBUTTON;
-        if (touch.phase == 0) { m_bNotFirstPress = false; MouseClick(true); }
-        else if (touch.phase == 1) MouseClick(false);
-        else if (touch.phase == 2) { MouseDeClick(); m_bNotFirstPress = false; }
-        else { m_pMouseNode = nullptr; m_bNotFirstPress = false; }
     }
     if (!m_bUse) return;
 #endif

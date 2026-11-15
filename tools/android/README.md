@@ -266,3 +266,20 @@ time (contents are not hashed), and a local rebuild where only files other than
 builds, and changes to tokens or bytecode layout recompile `compiler.cpp`.
 
 APK packaging and releases belong to https://github.com/maxyo/corsairs-android.
+
+## The application contract
+
+`app_contract.json` lists what the engine and the application exchange by name: the commands the main
+loop's dispatcher accepts (an unknown one is an error log), the HUD input handed to the activity, the UI's
+host actions and state channels, the settings and debug overrides of the settings screen, the script
+events the application's interface scripts handle, the JNI natives and the Java methods the engine looks up.
+`tests/app_contract` checks the engine sources against it; the application's `tests/engine_contract` checks
+its Java and scripts against the same file in the pinned submodule. Rename one of these in the engine:
+change the file in the same commit; the application's host checks fail until it follows.
+
+## Native crash reports
+
+Android builds keep `STORM_ENABLE_CRASH_REPORTS` (sentry-native) off: the platform's debuggerd writes the
+tombstone of a native crash, and the application's diagnostics export carries its backtrace with the build
+ids of the libraries (ApplicationExitInfo, Android 12+). Release symbols stay beside the APK the application
+packages; its `tools/android/symbolize.py` resolves the frames of an export against them.

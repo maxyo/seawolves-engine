@@ -26,7 +26,6 @@
 
 namespace storm::android
 {
-struct UiTouch { float x, y; int phase; };
 // All native state is accessed only by the game thread. Java marshals its UI queue.
 inline std::string mobileScreen;
 // The engine's plain text as a JSON string (what the text channels carry), control characters escaped.
@@ -47,7 +46,6 @@ inline std::string uiJsonText(std::string_view text)
 inline uint64_t mobileScreenRevision = 1;
 inline InterfacePresentation interfacePresentation;
 inline std::deque<std::string> dialogueActions;
-inline std::deque<UiTouch> uiTouches;
 struct UiWidgetAction { std::string screen, node, value; int index; };
 inline std::deque<UiWidgetAction> uiWidgetActions;
 inline std::string lastWidgetSnapshot;
@@ -349,7 +347,6 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
     }
     ++mobileScreenRevision;
     interfacePresentation.begin(mobileScreenRevision, !screen.empty(), interfacePresentation.negotiated());
-    uiTouches.clear();
     uiWidgetActions.clear();
     lastWidgetSnapshot.clear();
     ui::screen(screen, mobileScreenRevision, release_ms, load_ms);
@@ -357,14 +354,17 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
     auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return;
     const auto type = env->GetObjectClass(activity);
-    const auto versionedMethod = type ? env->GetMethodID(type, "showMobileScreen", "(Ljava/lang/String;J)V") : nullptr;
-    // Old applications intentionally omit the overload and retain native UI.
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    const auto method = !versionedMethod && type ? env->GetMethodID(type, "showMobileScreen", "(Ljava/lang/String;)V") : nullptr;
-    interfacePresentation.begin(mobileScreenRevision, !screen.empty(), versionedMethod != nullptr);
+    // The activity ships with this engine (tools/android/app_contract.json): a missing method is an error.
+    const auto method = type ? env->GetMethodID(type, "showMobileScreen", "(Ljava/lang/String;J)V") : nullptr;
+    if (!method)
+    {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        __android_log_print(ANDROID_LOG_ERROR, "StormUI", "the activity has no showMobileScreen(String, long): interface %s not reported",
+                            screen.c_str());
+    }
+    interfacePresentation.begin(mobileScreenRevision, !screen.empty(), method != nullptr);
     const auto value = env->NewStringUTF(screen.c_str());
-    if (versionedMethod && value) env->CallVoidMethod(activity, versionedMethod, value, static_cast<jlong>(mobileScreenRevision));
-    else if (method && value) env->CallVoidMethod(activity, method, value);
+    if (method && value) env->CallVoidMethod(activity, method, value, static_cast<jlong>(mobileScreenRevision));
     if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
     if (value) env->DeleteLocalRef(value);
     if (type) env->DeleteLocalRef(type);

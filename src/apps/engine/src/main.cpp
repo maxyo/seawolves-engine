@@ -54,27 +54,12 @@
 #include "android_land_commands_state.hpp"
 #include "android_worldmap_state.hpp"
 #include "android_dialogue_watchdog.hpp"
+#include <set>
 #include <sstream>
 #include <charconv>
 #endif
 
 #ifdef __ANDROID__
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_stormengine_port_GameActivity_nativeWorldMapModal(JNIEnv *env,jobject caller,jlong revision,jlong activity,
-    jlong gameplay,jlong token,jlong proof,jint operation)
-{
-    auto current=static_cast<jobject>(SDL_AndroidGetActivity());
-    const bool same=current&&env->IsSameObject(current,caller);
-    if(current)env->DeleteLocalRef(current);
-    if(!same||revision<=0||activity<=0||gameplay<=0||token<=0||proof<0){
-        storm::android::traceWorldMapModal("invalid-caller-or-identity","token="+std::to_string(token));return JNI_FALSE;
-    }
-    const bool accepted=storm::android::worldMapHud.modal.operate(revision,activity,gameplay,token,proof,operation,SDL_GetTicks());
-    storm::android::traceWorldMapModal(accepted?"accepted":"rejected",
-        "op="+std::to_string(operation)+" requested="+std::to_string(token)+"/"+std::to_string(proof)+" "+storm::android::worldMapHud.modal.debug());
-    return accepted?JNI_TRUE:JNI_FALSE;
-}
-
 // GameActivity's bounded exit wait polls this from the UI thread; see host_hooks.hpp.
 extern "C" JNIEXPORT jboolean JNICALL Java_org_stormengine_port_GameActivity_nativeSaveInProgress(JNIEnv *, jclass)
 {
@@ -847,10 +832,13 @@ int main(int argc, char *argv[])
                     if (storm::android::mobileScreen.empty())
                         gameplayShortcuts.offer(std::string_view(command).substr(9), SDL_GetTicks());
                 }
-                else if (command.starts_with("main:") && storm::android::mobileScreen == "mainmenu")
+                else if (command.starts_with("main:"))
                 {
+                    // The title screen's five commands (EngineCommand); one that arrives after the title closed is stale.
                     const auto action = command.substr(5);
-                    if (action == "New" || action == "Load" || action == "Options" || action == "Credits" || action == "Exit")
+                    if (action != "New" && action != "Load" && action != "Options" && action != "Credits" && action != "Exit")
+                        __android_log_print(ANDROID_LOG_ERROR, "StormInput", "unknown title command '%s'", command.c_str());
+                    else if (storm::android::mobileScreen == "mainmenu")
                         core_private->Event("backgroundcommand", "s", action.c_str());
                 }
                 else if (command.starts_with("audiofocus:"))
@@ -862,8 +850,12 @@ int main(int argc, char *argv[])
                     else if (state == "loss") { audioGate.audioFocus = false; audioGate.duck = 1.0f; }
                     else __android_log_print(ANDROID_LOG_ERROR, "StormAudio", "unknown audio focus state '%s'", command.c_str());
                 }
-                else if (command == "back" && !storm::android::mobileScreen.empty())
-                    core_private->Event("exitCancel");
+                else if (command == "back")
+                {
+                    // The interface's back; one that arrives after its interface closed has nothing to close.
+                    if (!storm::android::mobileScreen.empty())
+                        core_private->Event("exitCancel");
+                }
                 else if (command == "uisound:press")
                 {
                     // A press started on the touch UI's game interface: the scripts' interface click,
@@ -900,14 +892,18 @@ int main(int argc, char *argv[])
                             storm::android::uiWidgetActions.push_back({screen, node, value, index});
                     }
                 }
-                else if (command.starts_with("touch:"))
+                else
                 {
-                    std::istringstream stream(command.substr(6));
-                    std::string screen;
-                    float x, y; int phase;
-                    if (stream >> screen >> x >> y >> phase && screen == storm::android::mobileScreen &&
-                        x >= 0 && x <= 1 && y >= 0 && y <= 1 && phase >= 0 && phase <= 3)
-                        storm::android::uiTouches.push_back({x, y, phase});
+                    // Every command the UI library or the activity sends has its branch above
+                    // (tools/android/app_contract.json, checked by tests/app_contract here and the app's
+                    // tests/engine_contract): anything else is a broken contract, never dropped quietly.
+                    // Logged once per command family, so a per-frame sender cannot flood the log.
+                    static std::set<std::string> reported;
+                    const std::string family = command.substr(0, command.find_first_of(":\t"));
+                    if (reported.insert(family).second)
+                        __android_log_print(ANDROID_LOG_ERROR, "StormInput",
+                                            "unknown engine command '%s' (no handler; later '%s' commands are not logged)",
+                                            command.c_str(), family.c_str());
                 }
             }
 #endif
