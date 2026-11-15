@@ -64,7 +64,6 @@ struct CacheTask
     std::atomic<uint64_t> generation{0};
     std::atomic<bool> cancelled{false};
     std::shared_ptr<void> bytes; // read/ready payload reservation; released after consumer upload/discard
-    std::chrono::steady_clock::time_point queued = std::chrono::steady_clock::now();
 };
 
 class Service
@@ -93,12 +92,11 @@ class Service
     // have a thread of their own: fx::PostBake.)
     void post(std::function<void()> task);
     // One bounded IO lane, independent of CPU transcodes. False: caller must retry.
-    bool post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task);
+    bool post_cache(std::shared_ptr<CacheTask> ticket, std::function<void()> task);
     enum class CacheBytes { Reserved, Busy, TooLarge };
     // Actual validated file size, not an estimate of a callback's memory use.
     CacheBytes reserve_cache_bytes(const std::shared_ptr<CacheTask> &ticket, uint64_t bytes);
     void promote_cache(const std::shared_ptr<CacheTask> &ticket);
-    bool cache_scope_current(const std::shared_ptr<CacheTask> &ticket) const;
     // Game thread lifecycle: beginning/replacing/cancelling/revealing a scene revokes old priority.
     void begin_loading_cache_scope();
     void end_loading_cache_scope();
@@ -124,7 +122,6 @@ class Service
     {
         std::function<void()> work;
         std::shared_ptr<CacheTask> cache;
-        std::string name;
     };
     std::deque<Task> tasks_;
     std::deque<Task> cache_tasks_;

@@ -240,7 +240,7 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
 {
     entry->state = UpscaleEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
-    if (!texture::Service::instance().post_cache(entry->cache_task, (read ? "x2 read " : "x2 lookup ") + entry->name,
+    if (!texture::Service::instance().post_cache(entry->cache_task,
         [weak = std::weak_ptr<UpscaleEntry>(entry), read, directory = directory_] {
         const auto entry = weak.lock();
         if (!entry) return;
@@ -283,7 +283,6 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
             return;
         }
         entry->ktx = std::move(*ktx);
-        entry->cache_ready = Clock::now();
         entry->state = UpscaleEntry::Read;
     })) entry->state = read ? UpscaleEntry::Stored : UpscaleEntry::Unknown;
 }
@@ -303,8 +302,7 @@ void Upscales::end_frame(LoadingUploadScope scope)
             continue;
         if (scope.active() && !scope.accepts(entry->upload_generation, entry->selected))
             continue; // opaque loading admits only this location's budget-selected ready bytes
-        const auto upload_start = Clock::now();
-        const double elapsed = std::chrono::duration<double, std::milli>(upload_start - batch_start).count();
+        const double elapsed = std::chrono::duration<double, std::milli>(Clock::now() - batch_start).count();
         if (!batch.allows(entry->ktx.size(), elapsed))
             break;
         batch.submitted(entry->ktx.size());
@@ -327,13 +325,6 @@ void Upscales::end_frame(LoadingUploadScope scope)
         entry->bytes = info.storageSize;
         entry->handle = handle;
         entry->state = UpscaleEntry::Resident;
-        if (entry->cache_task && entry->cache_task->generation.load() != 0)
-            shim::logf("loading cache upload: x2 %s key=%016llx ready-to-submit=%.3f ms submit=%.3f ms bytes=%llu scope-active=%d (CPU; not GPU completion)",
-                entry->name.c_str(), static_cast<unsigned long long>(entry->key),
-                std::chrono::duration<double, std::milli>(upload_start - entry->cache_ready).count(),
-                std::chrono::duration<double, std::milli>(Clock::now() - upload_start).count(),
-                static_cast<unsigned long long>(entry->bytes), texture::Service::instance().cache_scope_current(entry->cache_task));
-        entry->cache_ready = {};
     }
     if (scope.active() && batch.uploads() != 0)
     {

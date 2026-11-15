@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
  # Execute the exact production CPU Run admission prefix and Session budget
  # method with inert ORT/model teardown doubles (not an inference speed test).
  backend=(root/'src/libs/relief/backend.cpp').read_text()
- start=backend.index('        const auto admission_started =')
+ start=backend.index('        auto cpu_lease =')
  prefix=backend[start:backend.index('        const int64_t shape[4]',start)]
  prepare=(root/'src/libs/relief/prepare.cpp').read_text()
  start=prepare.index('void Session::SetCpuBudget(')
@@ -54,11 +54,8 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
 namespace fx=storm::fx;
 using Clock=std::chrono::steady_clock;
 void Log(const char*,...){}
-double Ms(Clock::time_point t){return std::chrono::duration<double,std::milli>(Clock::now()-t).count();}
-struct Timing {double admission_wall_ms=0;};
 int active=0;
 struct CpuRun {
- Timing cpu_timing_;
  std::function<std::shared_ptr<void>()> cpu_admission_;
  bool Run(std::string &error) {
  PREFIX
@@ -108,4 +105,4 @@ int main(){
  subprocess.run([str(binary)],check=True,timeout=3)
  import hashlib
  print('actual CPU Run hook + Session finalizer-reset/budget boundary/no-op controls PASS; backend sha256 '+hashlib.sha256(backend.encode()).hexdigest())
-subprocess.run([sys.executable,str(Path(__file__).with_name('timing.py'))],check=True)
+subprocess.run([sys.executable,str(Path(__file__).with_name('run_admission.py'))],check=True)

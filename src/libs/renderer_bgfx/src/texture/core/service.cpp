@@ -124,21 +124,20 @@ void Service::post(std::function<void()> task)
     {
         std::lock_guard lock(mutex_);
         if (stopping_) return;
-        tasks_.push_back({std::move(task), {}, {}});
+        tasks_.push_back({std::move(task), {}});
         if (workers_.empty())
             start_workers();
     }
     wake_.notify_all();
 }
 
-bool Service::post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task)
+bool Service::post_cache(std::shared_ptr<CacheTask> ticket, std::function<void()> task)
 {
     {
         std::lock_guard lock(mutex_);
         if (stopping_ || !ticket || ticket->cancelled || cache_tasks_.size() + cache_running_ >= kMaxCacheTasks)
             return false;
-        ticket->queued = std::chrono::steady_clock::now();
-        cache_tasks_.push_back({std::move(task), std::move(ticket), std::move(name)});
+        cache_tasks_.push_back({std::move(task), std::move(ticket)});
         if (!cache_worker_.joinable()) cache_worker_ = std::thread(&Service::cache_worker, this);
     }
     wake_.notify_all();
@@ -177,18 +176,10 @@ void Service::cache_worker()
         auto urgent = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), foreground);
         auto ordinary = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), [&](const Task &t) { return !foreground(t); });
         auto chosen = urgent != cache_tasks_.end() && (foreground_streak_ < 2 || ordinary == cache_tasks_.end()) ? urgent : ordinary;
-        const bool admitted_foreground = foreground(*chosen);
-        foreground_streak_ = admitted_foreground ? foreground_streak_ + 1 : 0;
+        foreground_streak_ = foreground(*chosen) ? foreground_streak_ + 1 : 0;
         Task task = std::move(*chosen); cache_tasks_.erase(chosen); ++cache_running_;
-        const auto ticket_generation = task.cache->generation.load();
         lock.unlock();
-        const auto start = std::chrono::steady_clock::now();
         if (!task.cache->cancelled) task.work();
-        if (ticket_generation && log_)
-            log_("loading cache: %s scope=%llu ticket=%llu foreground=%d queue=%.3f ms work=%.3f ms (IO lane; includes validation/read)",
-                 task.name.c_str(), static_cast<unsigned long long>(generation), static_cast<unsigned long long>(ticket_generation), admitted_foreground,
-                 std::chrono::duration<double, std::milli>(start - task.cache->queued).count(),
-                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
         lock.lock(); --cache_running_;
     }
 }
@@ -197,12 +188,6 @@ void Service::promote_cache(const std::shared_ptr<CacheTask> &ticket)
 {
     if (ticket)
         ticket->generation = loading_generation_.load();
-}
-
-bool Service::cache_scope_current(const std::shared_ptr<CacheTask> &ticket) const
-{
-    const uint64_t generation = loading_generation_;
-    return generation != 0 && ticket && ticket->generation.load() == generation;
 }
 
 void Service::begin_loading_cache_scope()

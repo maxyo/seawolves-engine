@@ -173,7 +173,6 @@ class CpuNetwork final : public Network
 
     bool Infer(const float *image, int width, int height, float *planes, std::string &error) override
     {
-        cpu_timing_ = {true};
         // Restart only allocation failures, at a strictly smaller shape. No partial result is reported successful;
         // the existing tiler overwrites every inner output texel, with the same halo/model/scale.
         for (unsigned attempt = 0;; ++attempt)
@@ -208,15 +207,12 @@ class CpuNetwork final : public Network
         }
     }
 
-    CpuInferenceTiming CpuTiming() const override { return cpu_timing_; }
     void SetCpuAdmission(std::function<std::shared_ptr<void>()> acquire) override { cpu_admission_ = std::move(acquire); }
 
     // One whole image (its output `scale_` times the size).
     bool Run(const float *image, int width, int height, float *planes, std::string &error)
     {
-        const auto admission_started = Clock::now();
         auto cpu_lease = cpu_admission_ ? cpu_admission_() : std::shared_ptr<void>{};
-        cpu_timing_.admission_wall_ms += Ms(admission_started);
         if (cpu_admission_ && !cpu_lease) { error = "CPU admission cancelled"; return false; }
         const int64_t shape[4] = {1, 3, height, width};
         const size_t texels = static_cast<size_t>(width) * height;
@@ -226,12 +222,7 @@ class CpuNetwork final : public Network
                                                              shape, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input),
                         error);
         const char *in_names[] = {"input"}, *out_names[] = {"output"};
-        if (ok) {
-            const auto ort_started = Clock::now();
-            ++cpu_timing_.tiles;
-            ok = OrtOk(api_, api_->Run(session_, run_, in_names, &input, 1, out_names, 1, &output), error);
-            cpu_timing_.ort_wall_ms += Ms(ort_started);
-        }
+        ok = ok && OrtOk(api_, api_->Run(session_, run_, in_names, &input, 1, out_names, 1, &output), error);
         float *data = nullptr;
         ok = ok && OrtOk(api_, api_->GetTensorMutableData(output, reinterpret_cast<void **>(&data)), error);
         if (ok)
@@ -256,7 +247,6 @@ class CpuNetwork final : public Network
     }
 
   private:
-    CpuInferenceTiming cpu_timing_;
     std::function<std::shared_ptr<void>()> cpu_admission_;
     const OrtApi *api_;
     std::string describe_;

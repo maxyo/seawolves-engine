@@ -62,7 +62,6 @@ struct UpscaleEntry
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
     std::atomic<int> state{Unknown};
     std::shared_ptr<texture::CacheTask> cache_task; // game thread; queued task retains its own ticket
-    std::chrono::steady_clock::time_point cache_ready{}; // worker, published before Derived/Read
     std::string name; // normalized texture path
     std::filesystem::path file;
     fx::UpscaleTarget target = fx::UpscaleTarget::None;
