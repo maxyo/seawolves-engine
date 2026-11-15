@@ -1054,6 +1054,11 @@ bool Lighting::shadow_volumes(shim::Device &device)
     if (shadow_volumes_prepared_)
         return shadow_casters_.volumes() != 0;
     shadow_volumes_prepared_ = true;
+    {
+        std::array<float, 16> view_proj;
+        bx::mtxMul(view_proj.data(), &device.s.view.m[0][0], &device.s.proj.m[0][0]);
+        shadow_casters_.set_camera(view_proj, origin_);
+    }
     // The same calls the first receiver of the frame makes (prepare()): whichever comes first prepares the maps.
     if (lamps_.enabled())
     {

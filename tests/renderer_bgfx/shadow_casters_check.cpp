@@ -10,6 +10,7 @@
 //   * a plate the camera sees casts, and is submitted into the sun's view once;
 //   * a plate far outside the camera's volume, which the game's traversal would cull, casts onto the visible floor
 //     when the traversal draws it for the shadow volumes only (render::ShadowCasterOnly), and draws no colour;
+//   * an off-screen plate inside the sun's volume whose shadow falls beside the camera's view is not submitted;
 //   * a plate the camera sees but the sun's volume does not reach is not submitted into the sun's view at all;
 //   * a plate that is still geometry of the location is left to the sun's static layer (it casts nothing here: the
 //     reported geometry does not hold it), still geometry of a ship casts;
@@ -142,6 +143,40 @@ void check_rules()
     effects::ShadowVolume lamp = dynamic_layer;
     lamp.pass = effects::Casters::Pass::Lamp;
     expect(takes(lamp, no_sun), "a lamp's volume takes a lit draw the sun does not light");
+
+    // Shadows nobody sees: a camera looking along +z from the origin (90 degrees, 0.1..50 m), a lamp 10 m ahead.
+    {
+        effects::ShadowCasters seen;
+        std::array<float, 16> camera;
+        bx::mtxProj(camera.data(), 90.0f, 1.0f, 0.1f, 50.0f, false);
+        seen.set_camera(camera, {});
+        effects::ShadowVolume all;
+        all.sphere = {0, 0, 10, 30};
+        all.light = {0, 0, 10, 1};
+        all.pass = effects::Casters::Pass::Lamp;
+        seen.publish(all);
+        expect(seen.takes(caster_at(0, 0, 5, 0.5f)), "a caster in view is taken by a lamp");
+        expect(seen.takes(caster_at(0, 0, 14, 0.5f)), "a caster behind the lamp, in view, is taken");
+        expect(!seen.takes(caster_at(0, 0, -5, 0.5f)), "a caster behind the camera whose shadow falls further behind is left out");
+        expect(seen.takes(caster_at(12, 0, 10, 0.5f)) == false && seen.takes(caster_at(-3, 0, -1, 0.5f)) == false,
+               "casters beside and behind the view whose shadows point away from it are left out");
+        effects::ShadowCasters across;
+        across.set_camera(camera, {});
+        all.sphere = {0, 0, -10, 30};
+        all.light = {0, 0, -10, 1};
+        across.publish(all);
+        expect(across.takes(caster_at(0, 0, -5, 0.5f)), "a caster behind the camera between it and the lamp shadows the view: taken");
+        // The first draw of a frame may come from a pass with other near and far planes (at sea the far pass: near
+        // 500 m): only the field of view bounds what is seen, so the ships 120 m ahead still cast.
+        effects::ShadowCasters far_pass;
+        std::array<float, 16> far_camera;
+        bx::mtxProj(far_camera.data(), 90.0f, 1.0f, 500.0f, 5000.0f, false);
+        far_pass.set_camera(far_camera, {});
+        all.sphere = {0, 0, 126, 30};
+        all.light = {0, 0, 126, 1};
+        far_pass.publish(all);
+        expect(far_pass.takes(caster_at(0, 0, 120, 0.5f)), "a near plane beyond the casters does not leave them out");
+    }
 
     // reach(): the traversal's question, for the current owner.
     effects::ShadowCasters casters;
@@ -418,6 +453,7 @@ int main()
                 {"a plate the camera sees beyond the sun's volume is not submitted to it", {{{{0.0f, 1.0f, 0.0f}}, {{0.0f, -400.0f, 0.0f}}}, {}}, {-1.25f, 0.0f}, true, 3, 2, 0, 0, 0, 2, kFloorTriangles + 2},
                 {"still geometry of the location is left to the sun's static layer", {{{{0.0f, 1.0f, 0.0f}, false, render::kShadowStillLocation}}, {}}, {-1.25f, 0.0f}, false, 2, 1, 0, 0, 0, 1, kFloorTriangles},
                 {"still geometry of a ship casts into the sun's map", {{{{0.0f, 1.0f, 0.0f}, false, kShip}}, {}}, {-1.25f, 0.0f}, true, 2, 2, 0, 0, 0, 2, kFloorTriangles + 2},
+                {"an off-screen plate whose shadow falls outside the camera's view is not submitted", {{{{-8.0f, 2.0f, 0.0f}, true}}, {}}, {0.0f, 0.0f}, false, 2, 1, 0, 0, 0, 1, kFloorTriangles},
                 {"a skinned plate off screen casts where its bone puts it", {{{posed, true, 0, true, true, posed}}, {}}, {0.0f, 1.5f}, true, 2, 2, 1, 1, 0, 2, kFloorTriangles + 2},
                 {"a skinned plate whose node lies beyond the sun's volume is not submitted", {{{posed, true, 0, true, true, {0.0f, -400.0f, 0.0f}}}, {}}, {0.0f, 1.5f}, false, 2, 1, 0, 0, 0, 1, kFloorTriangles},
                 {"a skinned plate without a node's bounds casts, counted as unbounded", {{{posed, true, 0, true, false, {}}}, {}}, {0.0f, 1.5f}, true, 2, 2, 1, 1, 1, 2, kFloorTriangles + 2},

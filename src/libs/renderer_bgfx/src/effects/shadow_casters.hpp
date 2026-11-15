@@ -19,6 +19,10 @@
 // passes the device's camera-relative world (origin = Lighting's world origin of the frame), so its casters are
 // submitted with the world matrix the game set, untouched; the lamps are absolute (origin 0).
 //
+// Shadows nobody sees. With the light given (ShadowVolume::light) a caster is taken only when the shadow it throws,
+// from itself away from the light, can cross the camera's view: a character behind the camera whose shadow falls
+// further behind it costs nothing.
+//
 // Frame order. publish() while a light prepares its maps (Lighting::shadow_volumes: on the frame's first candidate or
 // render::ShadowCasterReach, with the device's camera); submit() per caster; stats() any time until end_frame(), which
 // the publishers' own end_frame() precede (Lighting::end_frame).
@@ -63,14 +67,19 @@ struct ShadowVolume
     std::array<float, 16> transform{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
     uint64_t state = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS; // the primitive type is the caster's
     std::array<uint16_t, 4> scissor{}; // x, y, width, height in the view's target; width 0: none (an atlas tile)
+    // Where the light is, so a caster whose shadow cannot fall into the camera's view is left out (set_camera()):
+    // w = 1: a point at xyz (a lamp; its shadows end at the sphere's radius); w = 0: xyz is the unit direction towards
+    // it (the sun; its shadows are `shadow_length` long); w < 0: not given, every caster in the bounds is taken.
+    std::array<float, 4> light{0.0f, 0.0f, 0.0f, -1.0f};
+    float shadow_length = 0.0f;
     // One vec4 set with every submit (the lamp casters' u_fxLampCaster); invalid: none.
     bgfx::UniformHandle uniform = BGFX_INVALID_HANDLE;
     std::array<float, 4> uniform_value{};
 
     // The planes of the clip volume of `to_clip` (volume space -> the clip space of the map's own square, before any
     // atlas placement; an orthographic or a perspective projection; clip depth 0..w, or -w..w with
-    // `homogeneous_depth`, bgfx::Caps::homogeneousDepth).
-    void set_clip_bounds(const std::array<float, 16> &to_clip, bool homogeneous_depth);
+    // `homogeneous_depth`, bgfx::Caps::homogeneousDepth). `depth` false: the four side planes only, no near and far.
+    void set_clip_bounds(const std::array<float, 16> &to_clip, bool homogeneous_depth, bool depth = true);
 };
 
 struct ShadowVolumeStats
@@ -108,6 +117,11 @@ class ShadowCasters
     using Id = uint32_t;
     // A light, while it prepares its maps: the volume's id, valid until end_frame().
     Id publish(const ShadowVolume &volume);
+    // Lighting, before the lights publish: the camera of the picture (`view_proj`: device world -> clip, depth 0..w;
+    // `origin` as ShadowCaster::origin). Shadows are seen only inside its side planes: the game draws one frame with
+    // several near and far planes (at sea the far pass's near plane lies beyond the ships), so the projection of
+    // whichever draw comes first bounds the view by its field of view only.
+    void set_camera(const std::array<float, 16> &view_proj, const std::array<float, 3> &origin);
     size_t volumes() const { return volumes_.size(); }
     const ShadowVolume &volume(Id id) const { return volumes_[id]; }
     const ShadowVolumeStats &stats(Id id) const { return stats_[id]; }
@@ -154,6 +168,8 @@ class ShadowCasters
 
   private:
     bool accepts(const ShadowVolume &volume, const ShadowCaster &caster) const;
+    bool meets(const ShadowVolume &volume, const ShadowCaster &caster, std::array<float, 3> &in_volume) const;
+    ShadowVolume camera_; // its planes and origin; plane_count 0: no camera this frame
 
     std::vector<ShadowVolume> volumes_;
     std::vector<ShadowVolumeStats> stats_;

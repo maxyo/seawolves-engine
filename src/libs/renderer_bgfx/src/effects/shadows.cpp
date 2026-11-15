@@ -103,6 +103,9 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
     volume.view = kShadowView;
     volume.origin = origin;
     volume.state = fx::Shadows::kCasterState;
+    const std::array<float, 3> towards_sun = Normalize(sun_dir_);
+    volume.light = {towards_sun[0], towards_sun[1], towards_sun[2], 0.0f};
+    volume.shadow_length = 2.0f * kRadius + kCasterReach;
     // uv 0..1 -> the clip square -1..1; the depth is 0..1 already.
     const float to_clip[16] = {2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, -1.0f, 0.0f, 1.0f};
     std::array<float, 16> world_to_clip;

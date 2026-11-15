@@ -14,33 +14,14 @@ namespace storm::effects
 namespace
 {
 
-// The caster's sphere centre in the volume's space, or false when the sphere lies outside the volume.
-bool meets(const ShadowVolume &volume, const std::array<float, 3> &center, float radius, const std::array<float, 3> &origin,
-           std::array<float, 3> &in_volume)
+bool outside(const std::array<float, 4> &plane, const float p[3], float radius)
 {
-    for (int k = 0; k < 3; ++k)
-        in_volume[k] = center[k] + (origin[k] - volume.origin[k]);
-    if (radius < 0.0f)
-        return true; // no bounds: the volume takes it
-    if (volume.sphere[3] > 0.0f)
-    {
-        const float dx = in_volume[0] - volume.sphere[0], dy = in_volume[1] - volume.sphere[1], dz = in_volume[2] - volume.sphere[2];
-        const float reach = volume.sphere[3] + radius;
-        if (dx * dx + dy * dy + dz * dz > reach * reach)
-            return false;
-    }
-    for (uint8_t i = 0; i < volume.plane_count; ++i)
-    {
-        const std::array<float, 4> &p = volume.planes[i];
-        if (p[0] * in_volume[0] + p[1] * in_volume[1] + p[2] * in_volume[2] + p[3] < -radius)
-            return false;
-    }
-    return true;
+    return plane[0] * p[0] + plane[1] * p[1] + plane[2] * p[2] + plane[3] < -radius;
 }
 
 } // namespace
 
-void ShadowVolume::set_clip_bounds(const std::array<float, 16> &m, bool homogeneous_depth)
+void ShadowVolume::set_clip_bounds(const std::array<float, 16> &m, bool homogeneous_depth, bool depth)
 {
     // clip = p * m (row vectors): component c of the clip position is the dot product of (p, 1) with column c.
     const auto column = [&](int c) { return std::array<float, 4>{m[c], m[4 + c], m[8 + c], m[12 + c]}; };
@@ -53,13 +34,71 @@ void ShadowVolume::set_clip_bounds(const std::array<float, 16> &m, bool homogene
                                                    combine(w, -1.0f, y), homogeneous_depth ? combine(w, 1.0f, z) : z,
                                                    combine(w, -1.0f, z)};
     plane_count = 0;
-    for (const std::array<float, 4> &p : clip)
+    for (size_t i = 0; i < (depth ? clip.size() : 4); ++i)
     {
+        const std::array<float, 4> &p = clip[i];
         const float length = std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]);
         if (length <= 1e-12f)
             continue; // not a plane of this projection (a constant row)
         planes[plane_count++] = {p[0] / length, p[1] / length, p[2] / length, p[3] / length};
     }
+}
+
+// The caster's sphere centre in the volume's space, or false when the sphere lies outside the volume or its shadow
+// outside the camera's view.
+bool ShadowCasters::meets(const ShadowVolume &volume, const ShadowCaster &caster, std::array<float, 3> &in_volume) const
+{
+    for (int k = 0; k < 3; ++k)
+        in_volume[k] = caster.center[k] + (caster.origin[k] - volume.origin[k]);
+    const float radius = caster.radius;
+    if (radius < 0.0f)
+        return true; // no bounds: the volume takes it
+    if (volume.sphere[3] > 0.0f)
+    {
+        const float dx = in_volume[0] - volume.sphere[0], dy = in_volume[1] - volume.sphere[1], dz = in_volume[2] - volume.sphere[2];
+        const float reach = volume.sphere[3] + radius;
+        if (dx * dx + dy * dy + dz * dz > reach * reach)
+            return false;
+    }
+    for (uint8_t i = 0; i < volume.plane_count; ++i)
+        if (outside(volume.planes[i], in_volume.data(), radius))
+            return false;
+    if (volume.light[3] < 0.0f || camera_.plane_count == 0)
+        return true;
+    // The shadow: the hull of the caster's sphere and of the sphere where its shadow ends, in the camera's space. A
+    // camera plane that has both spheres outside has the whole shadow outside.
+    float near_end[3], far_end[3], far_radius = radius;
+    for (int k = 0; k < 3; ++k)
+        near_end[k] = in_volume[k] + (volume.origin[k] - camera_.origin[k]);
+    if (volume.light[3] > 0.5f)
+    {
+        float to[3], distance2 = 0.0f;
+        for (int k = 0; k < 3; ++k)
+        {
+            to[k] = in_volume[k] - volume.light[k];
+            distance2 += to[k] * to[k];
+        }
+        const float distance = std::sqrt(distance2);
+        if (distance <= radius)
+            return true; // the light is inside the caster: its shadow goes everywhere
+        const float scale = std::max(1.0f, volume.sphere[3] / distance);
+        far_radius = radius * scale;
+        for (int k = 0; k < 3; ++k)
+            far_end[k] = near_end[k] + to[k] * (scale - 1.0f);
+    }
+    else
+        for (int k = 0; k < 3; ++k)
+            far_end[k] = near_end[k] - volume.light[k] * volume.shadow_length;
+    for (uint8_t i = 0; i < camera_.plane_count; ++i)
+        if (outside(camera_.planes[i], near_end, radius) && outside(camera_.planes[i], far_end, far_radius))
+            return false;
+    return true;
+}
+
+void ShadowCasters::set_camera(const std::array<float, 16> &view_proj, const std::array<float, 3> &origin)
+{
+    camera_.set_clip_bounds(view_proj, false, false);
+    camera_.origin = origin;
 }
 
 ShadowCasters::Id ShadowCasters::publish(const ShadowVolume &volume)
@@ -116,7 +155,7 @@ bool ShadowCasters::takes(const ShadowCaster &caster) const
         }
     std::array<float, 3> in_volume;
     for (const ShadowVolume &volume : volumes_)
-        if (accepts(volume, caster) && meets(volume, caster.center, caster.radius, caster.origin, in_volume))
+        if (accepts(volume, caster) && meets(volume, caster, in_volume))
             return true;
     return false;
 }
@@ -128,7 +167,7 @@ uint32_t ShadowCasters::submit(shim::Device &device, Casters &programs, const Sh
     for (size_t id = 0; id < volumes_.size(); ++id)
     {
         const ShadowVolume &volume = volumes_[id];
-        if (!accepts(volume, caster) || !meets(volume, caster.center, caster.radius, caster.origin, in_volume))
+        if (!accepts(volume, caster) || !meets(volume, caster, in_volume))
             continue;
         // The program sets its cut uniforms; a failed one is logged by the device.
         const bgfx::ProgramHandle program = programs.program(device, volume.pass, caster.skinned, caster.material);
@@ -198,6 +237,7 @@ void ShadowCasters::end_frame()
     volumes_.clear();
     stats_.clear();
     boxed_ = false;
+    camera_.plane_count = 0;
 }
 
 void ShadowCasters::on_device_lost()

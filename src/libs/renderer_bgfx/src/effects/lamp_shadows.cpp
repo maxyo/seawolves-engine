@@ -838,6 +838,7 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
         volume.view = kLampDynamicView;
         volume.state = kCasterState;
         volume.sphere = {l.position[0], l.position[1], l.position[2], l.range};
+        volume.light = {l.position[0], l.position[1], l.position[2], 1.0f};
         // A lamp's own model (a street lantern's, a ship lantern's) and the hand that carries a lantern cast no
         // shadow of it.
         volume.uniform = u_caster_;
