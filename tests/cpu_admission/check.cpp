@@ -1,0 +1,83 @@
+#include "storm/fx/cpu_admission.hpp"
+#include "storm/fx/bakes.hpp"
+#include <cassert>
+#include <cstdlib>
+#include <atomic>
+#include <future>
+#include <chrono>
+using namespace std::chrono_literals;
+using storm::fx::CpuAdmission;
+template<class F> void until(F fn) {
+ const auto end=std::chrono::steady_clock::now()+2s;
+ while(!fn()) { assert(std::chrono::steady_clock::now()<end && "bounded waiter progress");std::this_thread::yield(); }
+}
+int main(int argc,char**) {
+ if(argc>1) {
+  // Queue is constructed before its worker first needs admission. std::exit
+  // deliberately retains the local inference holder: queue teardown must cancel
+  // its waiting worker before destroying the governor, not wait for holder release.
+  std::atomic<bool> start=false;
+  auto ticket=storm::fx::PostBake("exit admission",[&]{until([&]{return start.load();});storm::fx::ParallelRanges(2,2,[](size_t,size_t){},1);});
+  auto &g=storm::fx::SharedCpuAdmission();auto all=g.acquire(g.threads(),{});start=true;
+  until([&]{return g.queued()>0;});std::exit(0);
+ }
+
+ CpuAdmission first(2);first.begin(11,true);
+ auto waiting=std::async(std::launch::async,[&]{assert(first.wait_for_opaque({}));return first.threads();});
+ assert(waiting.wait_for(30ms)==std::future_status::timeout);
+ first.opaque(10,true);assert(waiting.wait_for(30ms)==std::future_status::timeout);
+ first.opaque(11,true);assert(waiting.get()==2); // first selected job opens its pool only now
+ first.suspend();assert(first.threads()==1);
+ std::atomic<bool> stop=false;
+ auto cancelled_phase=std::async(std::launch::async,[&]{return first.wait_for_opaque([&]{return stop.load();});});
+ stop=true;assert(cancelled_phase.wait_for(500ms)==std::future_status::ready&&!cancelled_phase.get());
+ auto reset_phase=std::async(std::launch::async,[&]{return first.wait_for_opaque({});});
+ assert(reset_phase.wait_for(30ms)==std::future_status::timeout);first.begin(12,true);
+ assert(reset_phase.wait_for(500ms)==std::future_status::ready&&!reset_phase.get());
+ first.opaque(12,true);first.end(11);first.suspend(11);assert(first.threads()==2);
+ first.end(12);assert(first.wait_for_opaque({})&&first.threads()==1);
+ CpuAdmission p(2);assert(p.threads()==1);p.begin(7,true);p.opaque(7,true);assert(p.threads()==2);
+ assert(!p.acquire(3,{})); // infeasible request must not poison FIFO
+ auto held=p.acquire(2,{});std::atomic<bool> cancel=false;
+ auto cancelled=std::async(std::launch::async,[&]{return p.acquire(2,[&]{return cancel.load();});});
+ until([&]{return p.queued()==1;});
+ std::atomic<int> order=0;std::promise<void> release;auto release_future=release.get_future();
+ auto bake=std::async(std::launch::async,[&]{auto lease=p.acquire(1,{});assert(++order==1);release_future.wait();});
+ until([&]{return p.queued()==2;});
+ auto infer=std::async(std::launch::async,[&]{auto lease=p.acquire(2,{});assert(++order==2);});
+ until([&]{return p.queued()==3;});
+ cancel=true;assert(cancelled.wait_for(500ms)==std::future_status::ready);assert(!cancelled.get());
+ held.reset();until([&]{return order==1;});release.set_value();
+ assert(bake.wait_for(1s)==std::future_status::ready);bake.get();assert(infer.wait_for(1s)==std::future_status::ready);infer.get();
+ p.suspend();assert(p.threads()==1);
+ p.begin(7,true);p.opaque(7,true);assert(p.threads()==2);p.suspend();assert(p.threads()==1);
+ // An immutable old two-thread job may finish after the loading permission ends.
+ auto old=p.acquire(2,{});assert(old);old.reset();
+ // Production bake consumers share the out-of-line singleton; nested work must
+ // run under its parent piece permit, including the helpers' thread-local context.
+ auto &global=storm::fx::SharedCpuAdmission();
+ auto all=global.acquire(global.threads(),{});std::atomic<int> pieces=0;
+ auto ranges=std::async(std::launch::async,[&]{storm::fx::ParallelRanges(8,2,[&](size_t a,size_t b){
+  storm::fx::ParallelRanges(b-a,2,[&](size_t x,size_t y){pieces+=y-x;},1);
+ },1);});
+ assert(ranges.wait_for(80ms)==std::future_status::timeout && "actual bake work must wait for inference permits");
+ all.reset();assert(ranges.wait_for(2s)==std::future_status::ready);ranges.get();assert(pieces==8);
+ // A cancelled real bake queued behind inference must leave FIFO promptly,
+ // without requiring the inference holder to release first.
+ all=global.acquire(global.threads(),{});std::atomic<bool> ran=false;
+ auto ticket=storm::fx::PostBake("cancel admission",[&]{storm::fx::ParallelRanges(8,2,[&](size_t,size_t){ran=true;},1);});
+ until([&]{return global.queued()>0;});ticket.reset();until([&]{return global.queued()==0;});
+ assert(!ran);all.reset();storm::fx::ShutdownBakes();
+ // Real production helpers exist before the opaque grant, but only one piece
+ // may execute under gameplay capacity on the injected two-core device.
+ assert(storm::fx::BakeThreads()==2);
+ global.begin(33,true);std::atomic<int> active=0,peak=0;std::atomic<bool> finish=false;
+ auto boosted=std::async(std::launch::async,[&]{storm::fx::ParallelRanges(2,storm::fx::BakeThreads(),[&](size_t,size_t){
+  const int now=++active;int previous=peak.load();while(previous<now&&!peak.compare_exchange_weak(previous,now)){}
+  until([&]{return finish.load();});--active;
+ },1);});
+ until([&]{return active==1&&global.queued()>0;});assert(peak==1);
+ global.opaque(33,true);until([&]{return active==2;});finish=true;
+ assert(boosted.wait_for(1s)==std::future_status::ready);boosted.get();assert(peak==2);global.end(33);
+
+}

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -27,6 +28,7 @@ class Upscaler
     // Any thread: the running inference stops with an error, and every later one.
     void Cancel();
     void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry); // worker only; underlying network owns the lease
+    void SetCpuAdmission(std::function<std::shared_ptr<void>()> admission); // worker only
     double infer_ms() const { return infer_ms_; } // inference time of the last Run
 
   private:

@@ -23,6 +23,9 @@ void BeginScenePipelines(const char *scene);
 // explicit resource failures report an error while rendering continues behind the closed fader.
 // Other scene types retain the original bounded pipeline wait.
 bool HoldSceneReveal();
+// Lifecycle/transaction exit revokes CPU loading admission until valid opaque Present.
+void SuspendSceneCpuBudget(uint64_t generation);
+void EndSceneCpuBudget(uint64_t generation);
 // Location-scoped resources, independently of the Vulkan pipeline gate. Counts include jobs whose queues are empty
 // because a worker has already taken them, disk-resident maps still needing upload, and initial shadow passes.
 

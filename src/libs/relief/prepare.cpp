@@ -1,3 +1,4 @@
+#include "storm/fx/cpu_admission.hpp"
 #include "loading_retry.hpp"
 #include "relief.hpp"
 
@@ -487,6 +488,7 @@ struct Session::Impl
         std::lock_guard lock(networks_mutex);
         // A failed load must leave no partial sessions. Their runtime must outlive them, including when
         // the next Open fails (transient allocation/model errors can be retried on this Session).
+        const auto reopen_started = Clock::now();
         auto next_runtime = CpuRuntime::Open(threads, error);
         if (!next_runtime)
             return false;
@@ -507,6 +509,11 @@ struct Session::Impl
         runtime = std::move(next_runtime);
         cpu = std::move(next_cpu);
         cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
+        const unsigned permits = static_cast<unsigned>(threads);
+        auto admission = [this, permits] { return fx::SharedCpuAdmission().acquire(permits, [this] { return cancelled.load(); }); };
+        for (auto &network : cpu) network->SetCpuAdmission(admission);
+        cpu_upscaler->SetCpuAdmission(admission);
+        Log("relief CPU runtime ready: %d threads, model reopen %.3f ms", threads, std::chrono::duration<double, std::milli>(Clock::now() - reopen_started).count());
         return cpu_upscaler != nullptr;
     }
     bool EnsureDevice(bool &use_gpu, std::string &error)
@@ -562,10 +569,11 @@ Session::Session(std::unique_ptr<Impl> impl) : impl_(std::move(impl))
 Session::~Session() = default;
 
 std::unique_ptr<Session> Session::Open(const Models &models, int threads, const std::filesystem::path &cache,
-                                       std::string &error)
+                                       std::string &error, std::function<bool()> cancelled)
 {
     auto impl = std::make_unique<Impl>();
-    threads = threads > 0 ? threads : static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+    const int cores = static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
+    threads = threads > 0 ? std::min(threads, cores) : cores;
     impl->models = models;
     impl->threads = threads;
     impl->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(threads));
@@ -573,9 +581,14 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
     const bool gpu_models = !models.normal_param.empty() && !models.height_param.empty() && !models.roughness_param.empty() &&
                             !models.upscale_param.empty();
+    // Calibration may run CPU inference before persistent CPU networks exist.
+    // Its fixed pool must participate in the same admission as normal tiles.
+    auto probe_permit = gpu_models ? fx::SharedCpuAdmission().acquire(static_cast<unsigned>(threads), cancelled) : std::shared_ptr<void>{};
+    if (gpu_models && !probe_permit) { error = "CPU probe admission cancelled"; return nullptr; }
     const Device device = gpu_models ? ChooseDevice(cache, models.normal, models.normal_param, models.normal_bin,
                                                     fx::kReliefModelPad, threads, impl->cpu_ms_per_texel)
                                      : Device::Cpu;
+    probe_permit.reset();
     if (!gpu_models)
         Log("relief device: CPU (no ncnn graphs given)");
     impl->stats.gpu_crash = GpuCrash(cache);
@@ -592,6 +605,19 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
         ReleaseGpu(); // opened to learn the GPU, never used
     impl->Describe();
     return std::unique_ptr<Session>(new Session(std::move(impl)));
+}
+
+void Session::SetCpuBudget(unsigned threads)
+{
+    if (!threads || static_cast<unsigned>(impl_->threads) == threads) return;
+    const auto started = Clock::now();
+    impl_->ReleaseCpu(); // mutex excludes Cancel; no admission waits while held
+    impl_->encoder.reset();
+    impl_->threads = static_cast<int>(threads);
+    // A CPU timing measured with another pool size must not demote a GPU.
+    impl_->cpu_ms_per_texel = impl_->upscale_cpu_ms_per_texel = 0.0;
+    Log("relief CPU budget: %u threads; old runtime release %.3f ms; lazy model reopen measured separately", threads,
+        std::chrono::duration<double, std::milli>(Clock::now() - started).count());
 }
 
 void Session::ReleaseIdleModels()
@@ -902,7 +928,8 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         const auto begin = Clock::now();
         if (!impl_->encoder)
             impl_->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(impl_->threads));
-        const bool ok = !texels.empty() && source.width > 0 && source.height > 0 && source.mip_count > 0 &&
+        auto permit = fx::SharedCpuAdmission().acquire(static_cast<unsigned>(impl_->threads), [&] { return impl_->cancelled.load(); });
+        const bool ok = static_cast<bool>(permit) && !texels.empty() && source.width > 0 && source.height > 0 && source.mip_count > 0 &&
                        impl_->encoder->Encode(texture::EacFormat::Rg11, texels.data(), source.width, source.height,
                                                source.mip_count, encoded, impl_->cancelled);
         encode_ms += std::chrono::duration<double, std::milli>(Clock::now() - begin).count();

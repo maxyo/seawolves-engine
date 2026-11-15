@@ -1,3 +1,4 @@
+#include "storm/fx/cpu_admission.hpp"
 #include "effects/bounce.hpp"
 
 #include "effects/occluder_log.hpp"
@@ -329,9 +330,11 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
             job->sun_ms = job->lamps_ms = -1.0; // elapsed attribution is for the shared job, not separate stages
             fx::Log(fx::LogLevel::Info,
                     "bounce: combined initial fields wall %.1f ms; worker elapsed sums work %.1f ms gate %.1f ms, "
-                    "%llu pieces, budget %u (thread sums, not CPU time; separate-stage times not applicable)",
+                    "%llu pieces, helper ceiling %u (thread sums, not CPU time; separate-stage times not applicable)",
                     Since(t), stats.work_ns.load() / 1e6, stats.gate_ns.load() / 1e6,
                     static_cast<unsigned long long>(stats.pieces.load()), threads);
+                const auto cpu = fx::SharedCpuAdmission().stats();
+                fx::Log(fx::LogLevel::Info, "CPU admission: phase cap %u, helper ceiling %u, reserved now %u, reserved peak %u since process start (permits, not CPU utilization)", cpu.phase_cap, cpu.helper_ceiling, cpu.reserved, cpu.reserved_peak);
         }
         if (bake_sun && !combined)
         {

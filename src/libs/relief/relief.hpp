@@ -77,7 +77,7 @@ class Session
     // `threads`: the CPU's inference threads; 0 = every core. `cache`: where the device choice is kept (the cache
     // root's relief directory). Null and `error` on failure.
     static std::unique_ptr<Session> Open(const Models &models, int threads, const std::filesystem::path &cache,
-                                         std::string &error);
+                                         std::string &error, std::function<bool()> cancelled = {});
     ~Session();
     // One texture file under `textures` (the game's RESOURCE/Textures; the key does not depend on where the game
     // lies), unless its map is there already. A texture up to the map's size is upscaled first and its maps are made
@@ -99,6 +99,9 @@ class Session
     void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry);
     // Worker idle/trim: release inference objects, preserving CPU retry timing/count and model spans.
     void ReleaseIdleModels();
+    // Worker only, between textures. Reopens CPU models lazily only on a changed
+    // budget; outer device/retry state and model bytes stay alive.
+    void SetCpuBudget(unsigned threads);
     // Background work waits during a CPU detour until the GPU is free or its bounded retry is due.
     bool WaitsForGpu() const;
     const Stats &stats() const;

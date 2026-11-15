@@ -1,4 +1,5 @@
 #include "storm/fx/bakes.hpp"
+#include "storm/fx/cpu_admission.hpp"
 
 #include "storm/fx/log.hpp"
 
@@ -19,6 +20,8 @@
 
 namespace storm::fx
 {
+CpuAdmission &SharedCpuAdmission() { static CpuAdmission admission; return admission; }
+
 namespace
 {
 void LowerThreadPriority()
@@ -35,6 +38,7 @@ bool Cancelled(const detail::BakeState *bake)
 
 // The bake the calling thread runs (the bake thread while it runs one; null elsewhere: never cancelled).
 thread_local const detail::BakeState *t_bake = nullptr;
+thread_local unsigned t_cpu_piece = 0;
 
 std::atomic<const char *(*)()> g_gate{nullptr};
 std::mutex g_pause;
@@ -91,6 +95,7 @@ class BakeQueue
   public:
     static BakeQueue &instance()
     {
+        SharedCpuAdmission(); // register lifetime before the queue and its worker
         static BakeQueue queue;
         return queue;
     }
@@ -275,9 +280,28 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
     const detail::BakeState *bake = t_bake;
     min_piece = std::max<size_t>(1, min_piece);
     threads = std::max(1u, std::min<unsigned>(threads, static_cast<unsigned>(std::max<size_t>(1, count / min_piece))));
+    // A nested range belongs to the current piece permit: never acquire again
+    // or spawn helpers while its parent waits for this call.
+    if (t_cpu_piece) threads = 1;
     // Pieces of at least min_piece items, about 16 per thread, taken in turn: the gate (SetBakeGate) sits between them.
     const size_t piece = std::max<size_t>(min_piece, (count + threads * 16 - 1) / (threads * 16));
     std::atomic<size_t> next{0};
+    auto admitted_work = [&](size_t first, size_t last) {
+        const auto wait_start = std::chrono::steady_clock::now();
+        auto permit = t_cpu_piece ? std::shared_ptr<void>{} :
+            SharedCpuAdmission().acquire(1, [&] { return Cancelled(bake); });
+        if (!t_cpu_piece && !permit) throw BakeCancelled{};
+        struct Piece { Piece() { ++t_cpu_piece; } ~Piece() { --t_cpu_piece; } } piece_scope;
+        const auto work_start = std::chrono::steady_clock::now();
+        if (stats) stats->gate_ns.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(work_start - wait_start).count()), std::memory_order_relaxed);
+        struct Timing {
+            ParallelRangeStats *stats;
+            std::chrono::steady_clock::time_point start;
+            ~Timing() { if (stats) stats->work_ns.fetch_add(static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count()), std::memory_order_relaxed); }
+        } timing{stats, work_start};
+        if (stats) stats->pieces.fetch_add(1, std::memory_order_relaxed);
+        work(first, last);
+    };
     auto run = [&] {
         for (;;)
         {
@@ -291,7 +315,7 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
                 BakeGate(bake);
                 if (Cancelled(bake))
                     return;
-                work(first, std::min(count, first + piece));
+                admitted_work(first, std::min(count, first + piece));
             }
             else
             {
@@ -312,9 +336,7 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
                 }
                 if (Cancelled(bake))
                     return;
-                Elapsed timing{stats->work_ns};
-                stats->pieces.fetch_add(1, std::memory_order_relaxed);
-                work(first, std::min(count, first + piece));
+                admitted_work(first, std::min(count, first + piece));
             }
         }
     };
@@ -324,6 +346,9 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
     std::mutex failure_mutex;
     std::exception_ptr failure;
     const auto guarded = [&] {
+        const auto previous_bake = t_bake;
+        t_bake = bake;
+        struct RestoreBake { const detail::BakeState *old; ~RestoreBake() { t_bake = old; } } restore{previous_bake};
         try
         {
             run();
@@ -353,8 +378,10 @@ void ParallelRanges(size_t count, unsigned threads, const std::function<void(siz
 
 unsigned BakeThreads()
 {
-    const unsigned cores = std::thread::hardware_concurrency();
-    return cores > 2 ? cores - 2 : 1;
+    // Helpers exist up to the physical ceiling; per-piece admission decides
+    // how many may actually work. First opaque Present can wake more helpers
+    // even when this range was constructed before the loading frame.
+    return SharedCpuAdmission().maximum_threads();
 }
 
 } // namespace storm::fx

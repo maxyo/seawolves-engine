@@ -145,3 +145,8 @@ bool Upscaler::Run(std::span<const uint8_t> rgba, int width, int height, bool wr
 }
 
 } // namespace storm::relief
+
+void storm::relief::Upscaler::SetCpuAdmission(std::function<std::shared_ptr<void>()> admission)
+{
+    network_->SetCpuAdmission(std::move(admission));
+}

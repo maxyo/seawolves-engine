@@ -1,3 +1,4 @@
+#include "storm/fx/cpu_admission.hpp"
 #include "loading_retry.hpp"
 #include "effects/relief_generator.hpp"
 
@@ -36,6 +37,7 @@ double Ms(Clock::time_point since)
 
 ReliefGenerator &ReliefGenerator::instance()
 {
+    fx::SharedCpuAdmission(); // destroyed after this worker has joined
     static ReliefGenerator generator;
     return generator;
 }
@@ -289,7 +291,7 @@ void ReliefGenerator::run()
                     requests_.push_front(std::move(*request));
                 if (upscale)
                     upscales_.push_front(upscale);
-                wake_.wait_for(lock, kWaitPause, [this] { return stopping_; });
+                wake_.wait_for(lock, kWaitPause, [this] { return stopping_.load(); });
                 continue;
             }
             if (request || upscale)
@@ -302,6 +304,13 @@ void ReliefGenerator::run()
                 (upscale && std::find(loading_upscale_.begin(), loading_upscale_.end(), upscale) != loading_upscale_.end())))
                 loading_retry = loading_retry_;
             stats_.working = true;
+        }
+        if (!fx::SharedCpuAdmission().wait_for_opaque([this] { return stopping_.load(); })) {
+            std::lock_guard lock(mutex_);
+            if (request) requests_.push_front(std::move(*request));
+            if (upscale) upscales_.push_front(upscale);
+            stats_.working = false;
+            continue; // generation changed: reselect; shutdown checked at loop top
         }
         if (!open_session())
         {
@@ -318,6 +327,7 @@ void ReliefGenerator::run()
             stats_.working = false;
             continue;
         }
+        session_->SetCpuBudget(fx::SharedCpuAdmission().threads());
         session_->SetLoadingRetry(loading_retry);
         if (request)
             prepare_request(*request);
@@ -355,13 +365,11 @@ bool ReliefGenerator::open_session()
             error = std::string("cannot read the model file ") + relief::kModelFiles[i];
         }
     }
-    // All cores but the game's main and render threads.
-    const unsigned cores = std::thread::hardware_concurrency();
-    const int threads = cores > 2 ? static_cast<int>(cores - 2) : 1;
+    const int threads = static_cast<int>(fx::SharedCpuAdmission().threads());
     const relief::Models models{models_[0], models_[1], models_[2], models_[3],  models_[4],  models_[5],
                                 models_[6], models_[7], models_[8], models_[9], models_[10], models_[11]};
     std::unique_ptr<relief::Session> session =
-        read ? relief::Session::Open(models, threads, setup_.directory, error) : nullptr;
+        read ? relief::Session::Open(models, threads, setup_.directory, error, [this] { return stopping_.load(); }) : nullptr;
     if (!session)
     {
         model_failed_ = true;

@@ -9,7 +9,8 @@
 //     becomes Stored: the draw reads and uploads it and the relief fades in (NormalMaps::handle).
 //   * Only loaded normal/gloss and ×2 requests are made. The game never lists/prepares the whole corpus in
 //     idle, loading or gameplay. Explicit standalone storm_relief_cli preparation remains independent.
-//   * The worker and onnxruntime's threads run at nice 10, on all cores but two (the game's main and render threads).
+//   * The worker runs at nice 10. CPU jobs use cores-2 in gameplay and all cores
+//     after a presented opaque stock frame, sharing admission with ray-bake pieces.
 //     The renderer's explicit hold (the automatic graphics preset's measurement) pauses work; device thermal
 //     status/headroom is telemetry only. The models are loaded at the first job and released after 10 s with no work left.
 // The maps persist: a texture's map is made once per game, method and map size.
@@ -117,7 +118,7 @@ class ReliefGenerator
     std::mutex mutex_;
     std::condition_variable wake_;
     std::thread worker_;
-    bool stopping_ = false;
+    std::atomic<bool> stopping_{false};
     std::atomic<int64_t> last_frame_us_{0};
     std::atomic<bool> scene_quiet_{false};
     bool scene_draws_[30] = {};

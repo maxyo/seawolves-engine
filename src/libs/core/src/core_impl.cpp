@@ -297,6 +297,7 @@ void CoreImpl::PrepareLoadingScene()
     const auto initial = storm::render::GetSceneLoadStatus();
     if (!initial.active) return;
     storm::loading::Scope loading;
+    struct CpuAdmissionReset { uint64_t generation; ~CpuAdmissionReset() { storm::render::EndSceneCpuBudget(generation); } } cpu_admission_reset{initial.generation};
     const auto loading_started = std::chrono::steady_clock::now();
     uint64_t loading_frames = 0;
     Trace("Stock loading transaction enter generation=%llu", static_cast<unsigned long long>(initial.generation));
@@ -318,6 +319,7 @@ void CoreImpl::PrepareLoadingScene()
             throw storm::loading::Aborted{storm::loading::Outcome::Invalidated};
         const auto host = storm::platform::PumpLoadingPlatform(initial.generation);
         if (host == storm::platform::LoadingPlatformState::Suspended) {
+            storm::render::SuspendSceneCpuBudget(initial.generation);
             SDL_Delay(2);
             continue;
         }

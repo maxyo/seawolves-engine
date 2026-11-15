@@ -1,3 +1,4 @@
+#include "storm/fx/cpu_admission.hpp"
 #include "storm/render/loading_budget.hpp"
 #include "storm/render/loading_scene_work.hpp"
 #include "effects/scene_readiness.hpp"
@@ -76,6 +77,7 @@ void BeginSceneResources(const char *scene)
     texture::Service::instance().end_loading_cache_scope();
     render::SetSceneLoadingWindow(0, 0);
     load.opaque.invalidate();
+    fx::SharedCpuAdmission().suspend();
     load.scene_work.invalidate();
     load.timing_at = 0;
     load.loading_normal.clear(); load.loading_upscale.clear();
@@ -86,9 +88,11 @@ void BeginSceneResources(const char *scene)
     load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
     load.failures = {}; load.pipelines_pending = false;
     load.phase_polled_at = 0; load.cooling = false;
+    if (load.sealed) fx::SharedCpuAdmission().begin(0, false);
     if (!load.sealed) {
         texture::Service::instance().begin_loading_cache_scope();
         load.gate.begin(load_milliseconds());
+        fx::SharedCpuAdmission().begin(load.gate.generation(), true);
         upscales().begin_scene();
         shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
                    static_cast<unsigned long long>(load.gate.generation()));
@@ -473,6 +477,7 @@ void Host::on_device_lost()
 {
     render::SetSceneLoadingWindow(0, 0);
     location_load().opaque.invalidate();
+    fx::SharedCpuAdmission().suspend();
     location_load().scene_work.invalidate();
     location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
@@ -530,6 +535,7 @@ render::EffectsReport Host::configure(int preset, const std::vector<render::Effe
 {
     render::SetSceneLoadingWindow(0, 0);
     location_load().opaque.invalidate();
+    fx::SharedCpuAdmission().suspend();
     location_load().scene_work.invalidate();
     location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
@@ -1369,9 +1375,12 @@ void SceneOpaqueDrawSubmitted(bool full_coverage, bool additive_blend) {
     auto &load = effects::location_load();
     load.opaque.submitted(load.sealed ? 0 : load.gate.generation(), full_coverage, additive_blend);
 }
+void EndSceneCpuBudget(uint64_t generation) { fx::SharedCpuAdmission().end(generation); }
+void SuspendSceneCpuBudget(uint64_t generation) { fx::SharedCpuAdmission().suspend(generation); }
 void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer) {
     auto &load = effects::location_load();
     load.opaque.frame(load.sealed ? 0 : load.gate.generation(), frame_advanced, stable_backbuffer);
+    fx::SharedCpuAdmission().opaque(load.gate.generation(), !load.sealed && load.opaque.presented(load.gate.generation()));
     load.scene_work.presented(frame_advanced, stable_backbuffer);
     if (!load.opaque.presented(load.gate.generation())) SetSceneLoadingWindow(0, 0);
 }
@@ -1427,6 +1436,7 @@ void CompleteSceneReveal() {
     auto &load = effects::location_load();
     if (load.gate.state() == effects::SceneReadiness::State::Ready) {
         load.sealed = true;
+        fx::SharedCpuAdmission().begin(0, false);
         texture::Service::instance().end_loading_cache_scope();
     }
 }
@@ -1439,7 +1449,9 @@ bool RetrySceneResources(uint64_t generation)
         if (store->upscale && store->upscale->state == effects::UpscaleEntry::Failed)
             store->upscale->state = effects::UpscaleEntry::Unknown;
     }
+    fx::SharedCpuAdmission().suspend();
     load.gate.begin(effects::load_milliseconds());
+    fx::SharedCpuAdmission().begin(load.gate.generation(), true);
     effects::upscales().begin_scene();
     load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
     load.failures = {};
