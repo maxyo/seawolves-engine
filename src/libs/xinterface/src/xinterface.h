@@ -14,6 +14,11 @@
 #include "mobile_interface_leaving.hpp"
 #include "mobile_facts_cache.hpp"
 #include "mobile_save_list.hpp"
+#include "mobile_action_frame.hpp"
+namespace storm::android
+{
+struct UiWidgetAction; // platform/android_ui.hpp
+}
 #include "script_state.hpp"
 #endif
 
@@ -339,6 +344,10 @@ class XINTERFACE : public XINTERFACE_BASE
 
 #ifdef __ANDROID__
     void MobileCollectWidgets(std::vector<MobileWidget> &widgets);
+    storm::mobile::ActionOutcome MobileApplyAction(storm::android::UiWidgetAction &action);
+    void MobileAnswer(uint64_t request, const storm::mobile::ActionOutcome &outcome, bool queuedEvents);
+    void MobileFlushAnswers();
+    std::vector<uint64_t> mobileHeldAnswers_; // applied actions whose script events have not run yet
     // The interface model (Realize): collected again only when an input of the last collection
     // changed (MobileModelDue), published when the collection differs from the last one.
     struct MobileModelInputs
@@ -367,6 +376,7 @@ class XINTERFACE : public XINTERFACE_BASE
     struct
     {
         uint64_t opening = 0, frames = 0, collections = 0, published = 0;
+        uint64_t resend = 0, changes = 0, script = 0, variables = 0; // collections due to each input (one may have several)
     } mobileModelStats_; // of the opening, logged at the next one
     std::string mobileModelScreen_; // of that opening
     void MobileKeepSaveProfile();

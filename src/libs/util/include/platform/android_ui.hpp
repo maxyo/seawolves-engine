@@ -48,7 +48,10 @@ inline std::string uiJsonText(std::string_view text)
 inline uint64_t mobileScreenRevision = 1;
 inline InterfacePresentation interfacePresentation;
 inline std::deque<std::string> dialogueActions;
-struct UiWidgetAction { std::string screen, node, value; int index; };
+// A widget action of the touch UI for the open interface (XINTERFACE::DoControl applies it). `value`
+// is the wire its node reads ("select@<opening>:<row>", storm::ui::WidgetWire); `request` is the UI's
+// request number: every action is answered (ui::answer), 0 = nobody waits for the answer.
+struct UiWidgetAction { std::string screen, node, value; int index; uint64_t request = 0; };
 inline std::deque<UiWidgetAction> uiWidgetActions;
 inline std::string contextAction, requestedContextAction;
 // Opt-in, bounded diagnostics for the Android interaction bridge. Game thread only.
@@ -292,6 +295,7 @@ inline int loadingState = -1;
 inline void publishLoading(bool active) {
     if (loadingState == static_cast<int>(active)) return;
     loadingState=active;
+    ui::loading(active);
     auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity=static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return;
@@ -331,6 +335,8 @@ inline bool publishLocationReadiness(const char *ack = "", bool cancelled = fals
         ",\"shadows\":" + std::to_string(r.shadows) + ",\"failed\":" + std::to_string(r.failed) +
         ",\"detail\":" + uiJsonText(r.detail) + ",\"phase\":" + uiJsonText(r.phase) +
         ",\"actionAck\":" + uiJsonText(ack) + "}";
+    // A location load under way (or being cancelled) covers the game like the loading screen.
+    ui::locationLoad((r.active && !cancelled) || cancelled);
     static std::string previous;
     if (previous == json && !cancelled) return true;
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
@@ -385,6 +391,7 @@ inline bool fullscreenVideo() { return fullscreenVideoOwner != nullptr; }
 inline void publishCinematic(bool active) {
     if (cinematicState == static_cast<int>(active)) return;
     cinematicState=active;
+    ui::cinematic(active);
     auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity=static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return;
@@ -412,6 +419,8 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
     }
     ++mobileScreenRevision;
     interfacePresentation.begin(mobileScreenRevision, !screen.empty(), interfacePresentation.negotiated());
+    for (const auto &action : uiWidgetActions) // queued for the interface that went away
+        ui::answer(action.request, false, "the interface changed before it was applied");
     uiWidgetActions.clear();
     ui::screen(screen, mobileScreenRevision, release_ms, load_ms);
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());

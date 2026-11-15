@@ -69,6 +69,7 @@ struct FakeSurface final : Surface
         commands.push_back(EngineCommand(action));
         actions.push_back(action);
     }
+    size_t answered = 0; // actions[0, answered) have had the engine's answer (AnswerAll)
     void RequestText(TextRequest request, const std::string &) override
     {
         text = std::move(request);
@@ -111,6 +112,15 @@ struct FakeSurface final : Surface
         return commands.empty() ? std::string() : commands.back();
     }
 };
+
+// The engine answers every widget action sent since the last answers (Router::Answer, as Host::Answer).
+static void AnswerAll(Router &router, FakeSurface &surface, bool applied, const std::string &reason = {})
+{
+    for (; surface.answered < surface.actions.size(); ++surface.answered)
+        if (const uint64_t request = surface.actions[surface.answered].request)
+            router.Answer(request, applied, reason);
+}
+
 
 static InterfaceModel Load(const std::string &directory, const char *name)
 {
@@ -249,9 +259,21 @@ static void Generic(const std::string &models)
     router.SetInterface(next);
     Expect(surface.props["actions"][1]["busy"] == false, "next revision clears busy");
     router.OnEvent({"g-primary", "click", ""});
-    surface.now = 5.0;
+    Expect(surface.props["actions"][1]["busy"] == true && surface.actions.back().request != 0, "a widget press carries a request and looks busy");
+    AnswerAll(router, surface, true);
+    Expect(surface.props["actions"][1]["busy"] == true, "applied: busy until the model that follows");
+    router.SetInterface(next); // the engine sends the model again after its answer, unchanged here
+    Expect(surface.props["actions"][1]["busy"] == false, "the model after the answer ends busy, without a new revision");
+    router.OnEvent({"g-primary", "click", ""});
+    AnswerAll(router, surface, false, "the button cannot be pressed now");
+    Expect(surface.props["actions"][1]["busy"] == false && !surface.logs.empty() && surface.logs.back().find("cannot be pressed") != std::string::npos,
+           "a refusal ends busy at once and is logged");
+    const size_t errors_before = surface.errors.size();
+    router.OnEvent({"g-primary", "click", ""});
+    surface.now = 6.0;
     router.Tick();
-    Expect(surface.props["actions"][1]["busy"] == false, "busy expires when the engine never answers");
+    Expect(surface.props["actions"][1]["busy"] == false && surface.errors.size() == errors_before + 1,
+           "no answer within 5 s is an error, and the press stops looking busy");
     router.OnEvent({"header-back", "click", ""});
     ExpectEqual(surface.Last(), "widget:mod_bounty\tEXIT_BTN\t-1\tpress", "← presses the exit button");
 
@@ -1107,12 +1129,16 @@ static void Transfer(const std::string &models)
         router.SetInterface(answered); // a revision with the same figures: not the answer yet
         Expect(surface.props["list"]["rows"][0]["q"]["value"] == 140 && surface.props["primary"]["busy"] == true,
                "a revision that does not change the figures is not the answer: the sent amount waits");
-        surface.now += 2.0;
-        router.Tick(); // (the game refused: no change within the answer time)
+        AnswerAll(router, surface, true); // the presses were applied ...
+        Expect(surface.props["list"]["rows"][0]["q"]["value"] == 140, "applied answers alone are not the result: the model after them is");
+        answered.revision += 1;
+        router.SetInterface(answered); // ... and the model after them still has the old figures: the game said no
         Expect(surface.props["list"]["rows"][0]["q"]["value"] == 100 && surface.props["primary"]["label"] == "<transfer.take_all>",
                "a refused move opens the amount again at the game's figure; the bar is the place's again");
         DraftFlow("transfer cargo: give", router, surface, "goods", 0, "<trade.give> 100", arrows, presses("B_RIGHT", 5), [] {}, 100);
-        surface.now += 2.0;
+        AnswerAll(router, surface, false, "the button cannot be pressed now"); // refused: open again at once, no model needed
+        Expect(surface.props["list"]["rows"][0]["q"]["value"] == 100 && surface.props["primary"]["label"] == "<transfer.take_all>",
+               "a move the engine refused opens the amount again at once");
         answered.revision += 5;
         router.SetInterface(answered);
         surface.commands.clear();

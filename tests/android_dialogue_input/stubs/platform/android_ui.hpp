@@ -23,5 +23,7 @@ inline JNIEnv env;
 inline void *SDL_AndroidGetJNIEnv() { return &env; }
 inline void *SDL_AndroidGetActivity() { return &env; }
 namespace storm::android { inline std::deque<std::string> dialogueActions; }
-namespace storm::android::ui { inline void state(std::string_view, std::string json) { publications.push_back(std::move(json)); } }
+namespace storm::android::ui { inline void state(std::string_view, std::string json) { publications.push_back(std::move(json)); }
+inline std::vector<bool> presented; // the presentation's dialogue flag
+inline void dialogue(bool active) { presented.push_back(active); } }
 namespace spdlog { template <typename... Args> void error(Args &&...) {} }

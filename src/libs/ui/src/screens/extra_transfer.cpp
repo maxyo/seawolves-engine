@@ -545,7 +545,7 @@ class TransferScreen final : public Screen
             quick_row_ = -1;
             if (can_take && high > own)
             {
-                cargo_.Sent(high, bindings.Now());
+                cargo_.Sent(high, bindings);
                 move(high - own);
             }
         }

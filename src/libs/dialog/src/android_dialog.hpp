@@ -35,6 +35,7 @@ inline void sendDialogue(const std::string &json) {
     const bool active = json.rfind("{\"active\":true", 0) == 0;
     if (active == dialogueShown) return;
     dialogueShown = active;
+    ui::dialogue(active);
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return;

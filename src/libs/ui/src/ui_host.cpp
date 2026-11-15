@@ -950,6 +950,13 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     // --- game interfaces -----------------------------------------------------------
 
+    void Answer(uint64_t request, bool applied, const std::string &reason) override
+    {
+        const auto started = std::chrono::steady_clock::now();
+        router_->Answer(request, applied, reason);
+        counters_.apply_ms += Milliseconds(started, std::chrono::steady_clock::now());
+    }
+
     bool SetInterface(const std::string &json) override
     {
         InterfaceModel model;
@@ -2011,8 +2018,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             return false;
         const hud::States &states = hud_->Current();
         // Engine states only (gameplay, video, spyglass): they arrive in the engine's own frame.
-        // The platform's presentation (its cinematic flag) comes a thread hop and a loop later and
-        // stays stale through a load that follows a video (the title).
+        // The presentation's cinematic flag is polled (every 200 ms, main.cpp) and stays stale
+        // through a load that follows a video (the title).
         if ((states.spyglass.known && states.spyglass.on) || hud_->InGameplay())
             return false;
         const std::string &why = states.gameplay.blocked;

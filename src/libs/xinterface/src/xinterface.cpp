@@ -42,6 +42,15 @@
 #include <sys/system_properties.h>
 #include <chrono>
 static std::optional<storm::mobile::SaveListCapability::Target> deferredSaveAction;
+static uint64_t deferredSaveRequest = 0; // the UI's request of deferredSaveAction, answered when it is retried
+// Drops the deferred save-list action: its request is refused with `reason`.
+static void DropDeferredSave(const char *reason)
+{
+    if (deferredSaveAction)
+        storm::android::ui::answer(deferredSaveRequest, false, reason);
+    deferredSaveAction.reset();
+    deferredSaveRequest = 0;
+}
 static std::chrono::steady_clock::time_point deferredSaveDeadline;
 #include "android_newgame.hpp"
 #include "platform/android_ui.hpp"
@@ -434,6 +443,9 @@ void XINTERFACE::Execute(uint32_t)
             delete pE;
         }
     }
+#ifdef __ANDROID__
+    MobileFlushAnswers(); // the touch UI's actions that queued these events: their results are in place
+#endif
     if (!m_bUse)
         return;
 
@@ -571,8 +583,10 @@ bool XINTERFACE::MobileModelDue(const std::optional<storm::mobile::SaveListSnaps
     {
         // What the last opening cost: frames shown, collections, models published.
         if (mobileModelStats_.opening)
-            spdlog::info("UI model {}: {} frames, collected {} times, {} models published", mobileModelScreen_, mobileModelStats_.frames,
-                         mobileModelStats_.collections, mobileModelStats_.published);
+            spdlog::info("UI model {}: {} frames, collected {} times ({} after actions, {} node changes, {} script state, {} script variables), "
+                         "{} models published",
+                         mobileModelScreen_, mobileModelStats_.frames, mobileModelStats_.collections, mobileModelStats_.resend,
+                         mobileModelStats_.changes, mobileModelStats_.script, mobileModelStats_.variables, mobileModelStats_.published);
         mobileModelStats_ = {};
         mobileModelStats_.opening = opening;
         mobileModelScreen_ = storm::android::mobileScreen;
@@ -582,10 +596,14 @@ bool XINTERFACE::MobileModelDue(const std::optional<storm::mobile::SaveListSnaps
     }
     ++mobileModelStats_.frames;
     const char *language = pStringService ? pStringService->GetLanguage() : nullptr;
-    mobileModelDue_ = mobileModelResend_ || !mobileModelInputs_ || mobileModelInputs_->opening != opening ||
-                      mobileModelInputs_->changes != mobileChanges_ || mobileModelInputs_->script != storm::ScriptStateGeneration() ||
-                      mobileModelInputs_->language != (language ? language : "") || mobileModelInputs_->saves != saves ||
-                      mobileVariableReads.Changed(MobileReadVariable);
+    auto &why = mobileModelStats_;
+    const bool first = !mobileModelInputs_ || mobileModelInputs_->opening != opening;
+    const bool changes = !first && mobileModelInputs_->changes != mobileChanges_;
+    const bool script = !first && mobileModelInputs_->script != storm::ScriptStateGeneration();
+    const bool other = !first && (mobileModelInputs_->language != (language ? language : "") || mobileModelInputs_->saves != saves);
+    const bool variables = !first && mobileVariableReads.Changed(MobileReadVariable);
+    why.resend += mobileModelResend_, why.changes += changes, why.script += script, why.variables += variables;
+    mobileModelDue_ = mobileModelResend_ || first || changes || script || other || variables;
     return mobileModelDue_;
 }
 
@@ -1057,10 +1075,28 @@ int32_t oldCurNum = -1L;
 
 uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
 {
-#ifdef __ANDROID__
-    ++mobileChanges_; // a node's state may change: the interface model is collected again
-#endif
     auto cod = message.Long();
+#ifdef __ANDROID__
+    // A message may change a node's state: the interface model is collected again. The queries below
+    // change nothing (some scripts ask for the current node every frame).
+    switch (cod)
+    {
+    case MSG_INTERFACE_GET_SELECTABLE:
+    case MSG_INTERFACE_GET_CURRENT_NODE:
+    case MSG_INTERFACE_GET_LANGUAGE_STRING:
+    case MSG_INTERFACE_CHECK_QRECORD:
+    case MSG_INTERFACE_GET_STRWIDTH:
+    case MSG_INTERFACE_CLICK_STATUS:
+    case MSG_INTERFACE_GET_SAVE_DATA:
+    case MSG_INTERFACE_FILENAME2DATASTR:
+    case MSG_INTERFACE_GETTIME:
+    case MSG_INTERFACE_IS_READY_LOAD:
+    case MSG_INTERFACE_GET_FREE_SPACE:
+        break;
+    default:
+        ++mobileChanges_;
+    }
+#endif
 
     switch (cod)
     {
@@ -1182,6 +1218,7 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
 
     case MSG_INTERFACE_RELEASE: {
 #ifdef __ANDROID__
+        MobileFlushAnswers(); // actions whose events released the interface took effect
         storm::ScriptStateForget(); // no interface, no cached facts: gameplay writes are not looked at
         storm::android::showMobileScreen("");
         inventoryEquipCapability.invalidate();
@@ -2593,6 +2630,245 @@ void XINTERFACE::DrawNode(CINODE *nod, uint32_t Delta_Time, int32_t startPrior, 
     }
 }
 
+// Answers a widget action: refused at once, applied now or, when it queued script events (they run
+// at the next Execute), once they have run, so that the model the UI gets next shows its result.
+void XINTERFACE::MobileAnswer(uint64_t request, const storm::mobile::ActionOutcome &outcome, bool queuedEvents)
+{
+    if (outcome.state == storm::mobile::ActionOutcome::Deferred)
+        return;
+    if (outcome.state == storm::mobile::ActionOutcome::Refused)
+        storm::android::ui::answer(request, false, outcome.reason);
+    else if (queuedEvents)
+        mobileHeldAnswers_.push_back(request);
+    else
+        storm::android::ui::answer(request, true, outcome.reason);
+}
+
+// The script events of the actions held in mobileHeldAnswers_ have run (or never will: the interface
+// was released by them): they are applied.
+void XINTERFACE::MobileFlushAnswers()
+{
+    for (const uint64_t request : mobileHeldAnswers_)
+        storm::android::ui::answer(request, true, {});
+    mobileHeldAnswers_.clear();
+}
+
+// One widget action of the touch UI on the open interface (DoControl): applied, refused with a reason,
+// or deferred (the save list retries it while its thumbnails load).
+storm::mobile::ActionOutcome XINTERFACE::MobileApplyAction(storm::android::UiWidgetAction &action)
+{
+    using Outcome = storm::mobile::ActionOutcome;
+    const auto refused = [](const char *reason) { return Outcome{Outcome::Refused, reason}; };
+    const Outcome applied{Outcome::Applied, {}}, superseded{Outcome::Applied, "superseded by a newer value"},
+        deferred{Outcome::Deferred, {}};
+    if(action.screen=="goodstransfer"&&action.node=="ANDROID_GOODS_ORDER"){
+        return MobileApplyGoodsTransfer(action.value)?applied:refused("the goods order does not apply now");
+    }
+    if(action.screen=="alchemy"&&(action.node=="ANDROID_ALCHEMY"||action.node=="ANDROID_ALCHEMY_RECIPE")){
+        return MobileApplyAlchemy(action.node,action.value)?applied:refused("the alchemy step does not apply now");
+    }
+    if(action.screen=="itemsbox"&&action.node=="ANDROID_TAKE_ALL"){
+        return MobileApplyItemsBoxTakeAll(action.value)?applied:refused("take-all does not apply now");
+    }
+    if(action.screen=="colonycapture"&&action.node=="ANDROID_LOOT"){
+        return MobileApplyColonyLoot(action.value)?applied:refused("the loot does not apply now");
+    }
+    if(action.screen=="shipyard"&&action.value.rfind("yard@",0)==0){
+        return MobileApplyShipyard(action.node,action.index,action.value)?applied:refused("the shipyard offer is not current");
+    }
+    
+    DropDeferredSave("another action came first");
+    if (action.screen == "selectcharacter" && action.node == "ANDROID_TUTORIAL_SKIP")
+    {
+        if (action.index != 0 || !storm::android::TutorialSkipSupported())
+            return refused("no tutorial skip here");
+        storm::android::tutorialSkip.apply(storm::android::mobileScreenRevision, action.value);
+            return applied;
+    }
+
+    if (action.screen == "save_load" && action.node == "ANDROID_SAVE_LIST")
+    {
+        auto *window = FindNode("MAIN_WINDOW", nullptr);
+        const auto state = storm::mobile::ReadSaveList();
+        if (!window || window->m_nNodeType != NODETYPE_WINDOW || !static_cast<CXI_WINDOW *>(window)->GetActive() || !state) return refused("the save list is not shown");
+        const auto target = storm::mobile::saveListCapability.accept(*state, action.index, action.value);
+        if (!target) return refused("the save record is no longer listed");
+        if (!storm::mobile::SelectSaveTarget(*target))
+        {
+            // The original script populates thumbnails asynchronously and
+            // temporarily makes newly paged slots unselectable. Retry the
+            // identity-bound request while that cache loads, never a raw index.
+            deferredSaveAction = target;
+            deferredSaveRequest = action.request;
+            deferredSaveDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            return deferred;
+        }
+        storm::mobile::saveListCapability.pending = target;
+        if (target->verb == "delete") core.Event("eventBtnAction", "ls", ACTION_ACTIVATE, "BTN_DELETE");
+        else core.Event("eventSelecterActivate");
+        return applied;
+    }
+    if (action.screen == "save_load" && (action.node == "CONFIRM_YES" || action.node == "CUSTOM_SAVE_BTN_OK"))
+    {
+        const auto &pending = storm::mobile::saveListCapability.pending;
+        if (pending && pending->owner.revision == storm::android::mobileScreenRevision)
+        {
+            if (!storm::mobile::RestoreSaveTarget(*pending))
+            {
+                spdlog::warn("save_load: {} refused: the chosen record is no longer where the game lists it", action.node);
+                return refused("the chosen record moved");
+            }
+            if (action.node == "CONFIRM_YES")
+            {
+                auto *mode = static_cast<VDATA *>(core.GetScriptVariable("g_nConfirmMode"));
+                int32_t actual = -1;
+                const int expected = pending->verb == "delete" ? 2 : pending->owner.saving ? 3 : 4;
+                if (!mode || !mode->Get(actual) || actual != expected)
+                {
+                    spdlog::error("save_load: CONFIRM_YES refused: the game asks question {} instead of {}", actual, expected);
+                    return refused("the game asks another question");
+                }
+                // The player's load: save_load.c ProcessLoad closes the interface and posts
+                // evntLoad. Watched until the record is applied (load_watch.hpp).
+                const auto index = static_cast<size_t>(pending->index);
+                if (expected == 4 && index < pending->owner.records.size())
+                {
+                    const std::string record = "SAVE\\" + pending->owner.records[index].profile + "\\" +
+                                               pending->owner.records[index].file;
+                    spdlog::info("load watch: '{}' asked for", record);
+                    storm::loadWatch().Requested(record);
+                }
+            }
+            else if (!pending->owner.saving)
+            {
+                spdlog::error("save_load: CUSTOM_SAVE_BTN_OK refused: the chosen record is not a save");
+                return refused("the chosen record is not a save");
+            }
+        }
+    }
+    const bool guardedEquip = action.screen == "items" && action.node == "EQUIP_BUTTON" &&
+                              action.value.rfind("press@", 0) == 0;
+    if (action.screen == "items" && !guardedEquip)
+        inventoryEquipCapability.invalidate();
+    const auto find = [&](const auto &self, CINODE *node, const std::string &target) -> CINODE * {
+        for (; node; node = node->m_next)
+        {
+            if (!node->m_bUse || node->m_bLockedNode) continue;
+            if (node->m_nodeName && target == node->m_nodeName) return node;
+            if (auto *child = self(self, node->m_list, target)) return child;
+        }
+        return nullptr;
+    };
+    auto *node = find(find, m_pNodes, action.node);
+    if (node && (node->m_nNodeType == NODETYPE_PCEDITBOX || node->m_nNodeType == NODETYPE_EDITBOX))
+    {
+        // A quantity drag sends its amount as an ordered pair per step (zero, then the amount),
+        // and every text waits a frame for its script event: a fast drag queued steps behind
+        // each other and the amount trailed the finger. A text with a whole later pair for the
+        // same box behind it is superseded: only the newest pair is applied.
+        const auto later = std::count_if(storm::android::uiWidgetActions.begin(), storm::android::uiWidgetActions.end(),
+                                         [&](const auto &next) { return next.screen == action.screen && next.node == action.node; });
+        if (later >= 2)
+            return superseded;
+    }
+    // A map's "release" ends the right-button hold while the window the hold opened has
+    // locked the map (CXI_SCROLLEDPICTURE::MobileApply).
+    if (!node && action.value == "release")
+        if (auto *map = FindNode(action.node.c_str(), nullptr); map && map->m_bUse && map->m_nNodeType == NODETYPE_SCROLLEDPICTURE)
+            node = map;
+    if (!node) return refused("no such node in use");
+    if (action.value.rfind("guard@", 0) == 0)
+    {
+        std::optional<std::string> original;
+        if (action.screen == "hirecrew") {
+            auto *owner = find(find, m_pNodes, "SHIPS_SCROLL");
+            if (owner && owner->m_nNodeType == NODETYPE_SCROLLIMAGE)
+                original = static_cast<CXI_SCROLLIMAGE *>(owner)->MobileHireCrewQuantity(action.node, action.value);
+        } else original = storm::mobile::CommerceQuantityValue(action.screen, action.node,
+            storm::android::mobileScreenRevision, AttributesPointer, action.value);
+        if (!original) return refused("the guarded row changed");
+        action.value = *original;
+    }
+    if (node->m_nNodeType == NODETYPE_SLIDELINE)
+    {
+        int position;
+        // A delayed drag from a previous opening of the same screen must
+        // never modify the new screen's slider state.
+        if (!MobileSliderSetPosition(action.value, storm::android::mobileScreenRevision, position))
+            return refused("a slider position of another opening");
+            node->MobileApply(action.index, std::to_string(position));
+        return applied;
+    }
+    if (guardedEquip)
+    {
+        if (action.index != -1 || !node->m_bSelected || !node->m_bClickable || node->m_bLockStatus)
+            return refused("the button cannot be pressed now");
+        const int code = node->CheckCommandUsed(ACTION_MOUSECLICK) ? ACTION_MOUSECLICK : ACTION_ACTIVATE;
+        if (!node->CheckCommandUsed(code))
+            return refused("the button has no command");
+        auto *table = core.Entity_GetAttributeClass(g_idInterface, "TABLE_ITEMS");
+        auto *characters = core.Entity_GetAttributeClass(g_idInterface, "CHARACTERS_SCROLL");
+        auto *tableNode = FindNode("TABLE_ITEMS", nullptr);
+        const bool tableEnabled = tableNode && tableNode->m_bUse && tableNode->m_bClickable &&
+                                  !tableNode->m_bLockedNode && !tableNode->m_bLockStatus;
+        if (!inventoryEquipCapability.consume(action.value, storm::android::mobileScreenRevision,
+                                             storm::mobile::InventorySelectedRowId(table, characters), tableEnabled))
+            return refused("the equip offer is not current");
+        bool stop = false;
+        if (auto *next = node->DoAction(code, stop, true)) SetCurNode(next);
+        return applied;
+    }
+    if(action.screen=="nationrelation" && action.value.rfind("nation@",0)==0) {
+        // "…:pick=<picture>" carries the flag the player tapped; the capability is "…:pick".
+        const auto pick=action.value.find(":pick=");
+        const std::string token=pick==std::string::npos?action.value:action.value.substr(0,pick+5);
+        const std::string target=pick==std::string::npos?std::string():action.value.substr(pick+6);
+        std::vector<MobileWidget> live;MobileCollectWidgets(live);
+        const auto granted=std::find_if(live.begin(),live.end(),[&](const auto &w){
+            return w.node==action.node&&w.index==action.index&&w.enabled&&
+                std::find(w.actions.begin(),w.actions.end(),token)!=w.actions.end();
+        });
+        if(granted==live.end()||node->m_bLockStatus||node->m_nDoDelay>0)return refused("the nation offer is not current");
+        ++m_mobileNationGeneration; // Consume this frame capability before callbacks or delayed native events.
+        if(pick!=std::string::npos) {
+            // The script cycles the candidate one nation per press (NationRelation.c SetNewNation):
+            // press › until the candidate is the tapped flag, within one frame, at most once round.
+            const auto candidate=[this]{
+                std::vector<MobileWidget> now;MobileCollectWidgets(now);
+                for(const auto &w:now)if(storm::iEquals(w.node,"FlagPic")&&w.type=="image"&&w.images.size()==1)return w.images.front().source.image;
+                return std::string();
+            };
+            const int code=node->CheckCommandUsed(ACTION_MOUSECLICK)?ACTION_MOUSECLICK:ACTION_ACTIVATE;
+            for(int step=0;step<8&&!target.empty()&&!storm::iEquals(candidate(),target)&&node->m_bUse&&node->CheckCommandUsed(code);++step) {
+                SetCurNode(node);bool stop=false;node->DoAction(code,stop,step==0);
+            }
+            if(!storm::iEquals(candidate(),target)){MobileNationPickFailed(target);return refused("the flag was not reached");}
+            return applied;
+        }
+        if(granted->type=="nation_help_close") {core.Event("MouseRClickUP");return applied;}
+        if(!node->m_bSelected)return refused("not selectable");
+        const int code=granted->type=="nation_help"?ACTION_MOUSERCLICK:
+            node->CheckCommandUsed(ACTION_MOUSECLICK)?ACTION_MOUSECLICK:ACTION_ACTIVATE;
+        if(!node->CheckCommandUsed(code))return refused("no command");
+        SetCurNode(node);bool stop=false;
+        if(auto *next=node->DoAction(code,stop,true))SetCurNode(next);
+        return applied;
+    }
+    if (node->MobileApply(action.index, action.value))
+        return applied;
+    if (action.index == -1 && action.value == "press" && node->m_bSelected && node->m_bClickable)
+    {
+        const int code = node->CheckCommandUsed(ACTION_MOUSECLICK) ? ACTION_MOUSECLICK : ACTION_ACTIVATE;
+        if (node->CheckCommandUsed(code))
+        {
+            bool stop = false;
+            if (auto *next = node->DoAction(code, stop, true)) SetCurNode(next);
+                return applied;
+        }
+    }
+        return refused("the node did not take it");
+}
+
 void XINTERFACE::DoControl()
 {
     int32_t nExitKey;
@@ -2605,17 +2881,21 @@ void XINTERFACE::DoControl()
     {
         const auto state = storm::mobile::ReadSaveList();
         auto *window = FindNode("MAIN_WINDOW", nullptr);
-        if (!state || !storm::mobile::SaveListCapability::current(*deferredSaveAction, *state) ||
-            std::chrono::steady_clock::now() >= deferredSaveDeadline || !window ||
+        if (!state || !storm::mobile::SaveListCapability::current(*deferredSaveAction, *state) || !window ||
             window->m_nNodeType != NODETYPE_WINDOW || !static_cast<CXI_WINDOW *>(window)->GetActive())
-            deferredSaveAction.reset();
+            DropDeferredSave("the save list changed");
+        else if (std::chrono::steady_clock::now() >= deferredSaveDeadline)
+            DropDeferredSave("the save record stayed unselectable for 5 s");
         else if (storm::mobile::SelectSaveTarget(*deferredSaveAction))
         {
             const auto target = *deferredSaveAction;
+            const uint64_t request = deferredSaveRequest;
             deferredSaveAction.reset();
+            deferredSaveRequest = 0;
             storm::mobile::saveListCapability.pending = target;
             if (target.verb == "delete") core.Event("eventBtnAction", "ls", ACTION_ACTIVATE, "BTN_DELETE");
             else core.Event("eventSelecterActivate");
+            MobileAnswer(request, {}, true);
         }
     }
     // Actions that queued a script event end this frame's share (mobile_action_frame.hpp).
@@ -2624,212 +2904,20 @@ void XINTERFACE::DoControl()
     {
         auto action = storm::android::uiWidgetActions.front();
         storm::android::uiWidgetActions.pop_front();
-        if (action.screen != storm::android::mobileScreen) continue;
+        if (action.screen != storm::android::mobileScreen)
+        {
+            storm::android::ui::answer(action.request, false, "another interface is open");
+            continue;
+        }
         // Whatever it does, the model is collected again and goes out (unchanged, it is the answer).
         ++mobileChanges_;
         mobileModelResend_ = true;
         const storm::mobile::UiAction::Scope programmatic(storm::mobile::uiAction); // silent: the UI clicked for the press
-        if(action.screen=="goodstransfer"&&action.node=="ANDROID_GOODS_ORDER"){
-            MobileApplyGoodsTransfer(action.value);continue;
-        }
-        if(action.screen=="alchemy"&&(action.node=="ANDROID_ALCHEMY"||action.node=="ANDROID_ALCHEMY_RECIPE")){
-            MobileApplyAlchemy(action.node,action.value);continue;
-        }
-        if(action.screen=="itemsbox"&&action.node=="ANDROID_TAKE_ALL"){
-            MobileApplyItemsBoxTakeAll(action.value);continue;
-        }
-        if(action.screen=="colonycapture"&&action.node=="ANDROID_LOOT"){
-            MobileApplyColonyLoot(action.value);continue;
-        }
-        if(action.screen=="shipyard"&&action.value.rfind("yard@",0)==0){
-            MobileApplyShipyard(action.node,action.index,action.value);continue;
-        }
-        
-        deferredSaveAction.reset();
-        if (action.screen == "selectcharacter" && action.node == "ANDROID_TUTORIAL_SKIP")
-        {
-            if (action.index == 0 && storm::android::TutorialSkipSupported())
-                storm::android::tutorialSkip.apply(storm::android::mobileScreenRevision, action.value);
-            continue;
-        }
-
-        if (action.screen == "save_load" && action.node == "ANDROID_SAVE_LIST")
-        {
-            auto *window = FindNode("MAIN_WINDOW", nullptr);
-            const auto state = storm::mobile::ReadSaveList();
-            if (!window || window->m_nNodeType != NODETYPE_WINDOW || !static_cast<CXI_WINDOW *>(window)->GetActive() || !state) continue;
-            const auto target = storm::mobile::saveListCapability.accept(*state, action.index, action.value);
-            if (!target) continue;
-            if (!storm::mobile::SelectSaveTarget(*target))
-            {
-                // The original script populates thumbnails asynchronously and
-                // temporarily makes newly paged slots unselectable. Retry the
-                // identity-bound request while that cache loads, never a raw index.
-                deferredSaveAction = target;
-                deferredSaveDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-                continue;
-            }
-            storm::mobile::saveListCapability.pending = target;
-            if (target->verb == "delete") core.Event("eventBtnAction", "ls", ACTION_ACTIVATE, "BTN_DELETE");
-            else core.Event("eventSelecterActivate");
-            continue;
-        }
-        if (action.screen == "save_load" && (action.node == "CONFIRM_YES" || action.node == "CUSTOM_SAVE_BTN_OK"))
-        {
-            const auto &pending = storm::mobile::saveListCapability.pending;
-            if (pending && pending->owner.revision == storm::android::mobileScreenRevision)
-            {
-                if (!storm::mobile::RestoreSaveTarget(*pending))
-                {
-                    spdlog::warn("save_load: {} refused: the chosen record is no longer where the game lists it", action.node);
-                    continue;
-                }
-                if (action.node == "CONFIRM_YES")
-                {
-                    auto *mode = static_cast<VDATA *>(core.GetScriptVariable("g_nConfirmMode"));
-                    int32_t actual = -1;
-                    const int expected = pending->verb == "delete" ? 2 : pending->owner.saving ? 3 : 4;
-                    if (!mode || !mode->Get(actual) || actual != expected)
-                    {
-                        spdlog::error("save_load: CONFIRM_YES refused: the game asks question {} instead of {}", actual, expected);
-                        continue;
-                    }
-                    // The player's load: save_load.c ProcessLoad closes the interface and posts
-                    // evntLoad. Watched until the record is applied (load_watch.hpp).
-                    const auto index = static_cast<size_t>(pending->index);
-                    if (expected == 4 && index < pending->owner.records.size())
-                    {
-                        const std::string record = "SAVE\\" + pending->owner.records[index].profile + "\\" +
-                                                   pending->owner.records[index].file;
-                        spdlog::info("load watch: '{}' asked for", record);
-                        storm::loadWatch().Requested(record);
-                    }
-                }
-                else if (!pending->owner.saving)
-                {
-                    spdlog::error("save_load: CUSTOM_SAVE_BTN_OK refused: the chosen record is not a save");
-                    continue;
-                }
-            }
-        }
-        const bool guardedEquip = action.screen == "items" && action.node == "EQUIP_BUTTON" &&
-                                  action.value.rfind("press@", 0) == 0;
-        if (action.screen == "items" && !guardedEquip)
-            inventoryEquipCapability.invalidate();
-        const auto find = [&](const auto &self, CINODE *node, const std::string &target) -> CINODE * {
-            for (; node; node = node->m_next)
-            {
-                if (!node->m_bUse || node->m_bLockedNode) continue;
-                if (node->m_nodeName && target == node->m_nodeName) return node;
-                if (auto *child = self(self, node->m_list, target)) return child;
-            }
-            return nullptr;
-        };
-        auto *node = find(find, m_pNodes, action.node);
-        if (node && (node->m_nNodeType == NODETYPE_PCEDITBOX || node->m_nNodeType == NODETYPE_EDITBOX))
-        {
-            // A quantity drag sends its amount as an ordered pair per step (zero, then the amount),
-            // and every text waits a frame for its script event: a fast drag queued steps behind
-            // each other and the amount trailed the finger. A text with a whole later pair for the
-            // same box behind it is superseded: only the newest pair is applied.
-            const auto later = std::count_if(storm::android::uiWidgetActions.begin(), storm::android::uiWidgetActions.end(),
-                                             [&](const auto &next) { return next.screen == action.screen && next.node == action.node; });
-            if (later >= 2)
-                continue;
-        }
-        // A map's "release" ends the right-button hold while the window the hold opened has
-        // locked the map (CXI_SCROLLEDPICTURE::MobileApply).
-        if (!node && action.value == "release")
-            if (auto *map = FindNode(action.node.c_str(), nullptr); map && map->m_bUse && map->m_nNodeType == NODETYPE_SCROLLEDPICTURE)
-                node = map;
-        if (!node) continue;
-        if (action.value.rfind("guard@", 0) == 0)
-        {
-            std::optional<std::string> original;
-            if (action.screen == "hirecrew") {
-                auto *owner = find(find, m_pNodes, "SHIPS_SCROLL");
-                if (owner && owner->m_nNodeType == NODETYPE_SCROLLIMAGE)
-                    original = static_cast<CXI_SCROLLIMAGE *>(owner)->MobileHireCrewQuantity(action.node, action.value);
-            } else original = storm::mobile::CommerceQuantityValue(action.screen, action.node,
-                storm::android::mobileScreenRevision, AttributesPointer, action.value);
-            if (!original) continue;
-            action.value = *original;
-        }
-        if (node->m_nNodeType == NODETYPE_SLIDELINE)
-        {
-            int position;
-            // A delayed drag from a previous opening of the same screen must
-            // never modify the new screen's slider state.
-            if (MobileSliderSetPosition(action.value, storm::android::mobileScreenRevision, position))
-                node->MobileApply(action.index, std::to_string(position));
-            continue;
-        }
-        if (guardedEquip)
-        {
-            if (action.index != -1 || !node->m_bSelected || !node->m_bClickable || node->m_bLockStatus)
-                continue;
-            const int code = node->CheckCommandUsed(ACTION_MOUSECLICK) ? ACTION_MOUSECLICK : ACTION_ACTIVATE;
-            if (!node->CheckCommandUsed(code))
-                continue;
-            auto *table = core.Entity_GetAttributeClass(g_idInterface, "TABLE_ITEMS");
-            auto *characters = core.Entity_GetAttributeClass(g_idInterface, "CHARACTERS_SCROLL");
-            auto *tableNode = FindNode("TABLE_ITEMS", nullptr);
-            const bool tableEnabled = tableNode && tableNode->m_bUse && tableNode->m_bClickable &&
-                                      !tableNode->m_bLockedNode && !tableNode->m_bLockStatus;
-            if (!inventoryEquipCapability.consume(action.value, storm::android::mobileScreenRevision,
-                                                 storm::mobile::InventorySelectedRowId(table, characters), tableEnabled))
-                continue;
-            bool stop = false;
-            if (auto *next = node->DoAction(code, stop, true)) SetCurNode(next);
-            continue;
-        }
-        if(action.screen=="nationrelation" && action.value.rfind("nation@",0)==0) {
-            // "…:pick=<picture>" carries the flag the player tapped; the capability is "…:pick".
-            const auto pick=action.value.find(":pick=");
-            const std::string token=pick==std::string::npos?action.value:action.value.substr(0,pick+5);
-            const std::string target=pick==std::string::npos?std::string():action.value.substr(pick+6);
-            std::vector<MobileWidget> live;MobileCollectWidgets(live);
-            const auto granted=std::find_if(live.begin(),live.end(),[&](const auto &w){
-                return w.node==action.node&&w.index==action.index&&w.enabled&&
-                    std::find(w.actions.begin(),w.actions.end(),token)!=w.actions.end();
-            });
-            if(granted==live.end()||node->m_bLockStatus||node->m_nDoDelay>0)continue;
-            ++m_mobileNationGeneration; // Consume this frame capability before callbacks or delayed native events.
-            if(pick!=std::string::npos) {
-                // The script cycles the candidate one nation per press (NationRelation.c SetNewNation):
-                // press › until the candidate is the tapped flag, within one frame, at most once round.
-                const auto candidate=[this]{
-                    std::vector<MobileWidget> now;MobileCollectWidgets(now);
-                    for(const auto &w:now)if(storm::iEquals(w.node,"FlagPic")&&w.type=="image"&&w.images.size()==1)return w.images.front().source.image;
-                    return std::string();
-                };
-                const int code=node->CheckCommandUsed(ACTION_MOUSECLICK)?ACTION_MOUSECLICK:ACTION_ACTIVATE;
-                for(int step=0;step<8&&!target.empty()&&!storm::iEquals(candidate(),target)&&node->m_bUse&&node->CheckCommandUsed(code);++step) {
-                    SetCurNode(node);bool stop=false;node->DoAction(code,stop,step==0);
-                }
-                if(!storm::iEquals(candidate(),target))MobileNationPickFailed(target);
-                continue;
-            }
-            if(granted->type=="nation_help_close") {core.Event("MouseRClickUP");continue;}
-            if(!node->m_bSelected)continue;
-            const int code=granted->type=="nation_help"?ACTION_MOUSERCLICK:
-                node->CheckCommandUsed(ACTION_MOUSECLICK)?ACTION_MOUSECLICK:ACTION_ACTIVATE;
-            if(!node->CheckCommandUsed(code))continue;
-            SetCurNode(node);bool stop=false;
-            if(auto *next=node->DoAction(code,stop,true))SetCurNode(next);
-            continue;
-        }
-        if (node->MobileApply(action.index, action.value))
-            continue;
-        if (action.index == -1 && action.value == "press" && node->m_bSelected && node->m_bClickable)
-        {
-            const int code = node->CheckCommandUsed(ACTION_MOUSECLICK) ? ACTION_MOUSECLICK : ACTION_ACTIVATE;
-            if (node->CheckCommandUsed(code))
-            {
-                bool stop = false;
-                if (auto *next = node->DoAction(code, stop, true)) SetCurNode(next);
-            }
-        }
+        const void *eventsBefore = m_pEvents;
+        const auto outcome = MobileApplyAction(action);
+        if (outcome.state == storm::mobile::ActionOutcome::Refused)
+            spdlog::info("UI action {} {}[{}] '{}' refused: {}", action.screen, action.node, action.index, action.value, outcome.reason);
+        MobileAnswer(action.request, outcome, m_pEvents != eventsBefore);
     }
     if (!m_bUse) return;
 #endif

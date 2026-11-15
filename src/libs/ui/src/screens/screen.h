@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <span>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -161,6 +162,18 @@ class Bindings
     // engine until the next model revision (R22).
     bool Pending(const std::string &id, const std::string &value = {}) const;
     double Now() const;
+    // The engine's answers to widget actions (Router::Answer). RequestFloor: the number the next
+    // widget action gets. AnsweredSince: whether every widget action numbered from `floor` on went out
+    // and was answered: Refused when one was refused, Applied when all were applied and the model that
+    // followed the last answer arrived (it shows their result), Waiting otherwise.
+    enum class Answers
+    {
+        Waiting,
+        Applied,
+        Refused,
+    };
+    uint64_t RequestFloor() const;
+    Answers AnsweredSince(uint64_t floor) const;
 
   private:
     friend class Router;
@@ -278,6 +291,9 @@ class Router
     void Back();
     // The modals the view shows now, the topmost last (Bindings::Modal), and whether each has a cancel.
     std::vector<std::pair<std::string, bool>> Modals() const;
+    // The engine's answer to the widget action `request` (Host::Answer): a refusal ends the busy mark
+    // of the press at once (logged); applied, the mark ends with the model that follows.
+    void Answer(uint64_t request, bool applied, const std::string &reason);
     // Flushes throttled sends and expired pending marks; returns seconds until it must be
     // called again (a large number when idle).
     double Tick();
@@ -322,6 +338,19 @@ class Router
         std::string id, value;
         uint64_t revision = 0;
         double until = 0.0;
+        bool answers = false;  // its event sent widget actions: the engine's answers end it (`until` is then an error)
+        bool answered = false; // all of them were applied: it ends with the next model
+    };
+    // A widget action sent and not answered yet, and the mark (event id, value) it belongs to.
+    struct Request
+    {
+        std::string id, value, node;
+        bool marked = false;
+    };
+    struct Answered
+    {
+        bool applied = false;
+        bool model_after = false; // a model arrived after the answer
     };
     struct Waiting
     {
@@ -344,6 +373,7 @@ class Router
     void Build();
     void BuildView();
     void Emit(Action action);
+    bool MarkOpen(const std::string &id, const std::string &value) const;
     Json ExtrasView(const Admission &admitted, Json rows);
     Action Make(const Widget &widget, const std::string &verb, const std::string &value, const std::string &guard) const;
 
@@ -359,6 +389,9 @@ class Router
     std::vector<std::unique_ptr<StateConsumer>> consumers_;
     std::vector<PendingMark> pending_;
     std::vector<Waiting> waiting_;
+    uint64_t next_request_ = 0;
+    std::map<uint64_t, Request> outstanding_;
+    std::map<uint64_t, Answered> answers_; // the latest answers, for the amount drafts (AnsweredSince)
     std::set<std::string> logged_; // once per (screen, node set): extras, generic use, rejections
     // The notices (Bindings::Notice) of the view on the screen and of the one being built: a notice is logged when
     // it appears, not again at every build while it stays.

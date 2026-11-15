@@ -292,10 +292,22 @@ void AmountDraft::Follow(const std::string &key, int origin, int other, Bindings
         Open(key, origin, other); // a new control, or the game's figures changed (a move went through)
     else if (sent_)
     {
-        if (bindings.Now() - sent_at_ >= kAnswer)
-            Open(key, origin, other); // refused: the game's figures as they are
-        else
-            bindings.RebuildAfter(sent_at_ + kAnswer - bindings.Now());
+        switch (bindings.AnsweredSince(floor_))
+        {
+        case Bindings::Answers::Refused: // the engine refused an action of the deal (logged by the router)
+        case Bindings::Answers::Applied: // all applied, and the model after them still has the old figures: the game said no
+            Open(key, origin, other);
+            break;
+        case Bindings::Answers::Waiting:
+            if (bindings.Now() - sent_at_ >= kNoAnswer)
+            {
+                bindings.Error("the deal on " + key + " got no answer from the game in 5 s");
+                Open(key, origin, other);
+            }
+            else
+                bindings.RebuildAfter(sent_at_ + kNoAnswer - bindings.Now());
+            break;
+        }
     }
 }
 
@@ -356,7 +368,7 @@ Json AmountDraft::Buttons(Bindings &bindings, int low, int high, Labels labels, 
     bindings.On("primary", "", [this, &bindings, value, delta, disabled, commit](const Event &) {
         if (disabled || sent_)
             return;
-        Sent(value, bindings.Now());
+        Sent(value, bindings);
         commit(delta);
         bindings.Rebuild();
     });
@@ -378,11 +390,12 @@ void AmountDraft::CancelAction(Bindings &bindings, Json &actions)
     });
 }
 
-void AmountDraft::Sent(int value, double now)
+void AmountDraft::Sent(int value, Bindings &bindings)
 {
     target_ = value;
     sent_ = true;
-    sent_at_ = now;
+    sent_at_ = bindings.Now();
+    floor_ = bindings.RequestFloor();
 }
 
 bool AmountDraft::Drop()

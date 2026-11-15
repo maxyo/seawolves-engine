@@ -109,7 +109,12 @@ Verbs and what the engine receives (`EngineCommand`, today's queue line
   rows of the «Прочее» sheet under the header «⋯»; texts become one parchment note.
   Logged once per (screen, node set): `screen store extras=B_GUILD,GUILD_NOTE`.
 - **Busy until answered (R22).** An event that sent something marks its element
-  (`bindings.Pending(id)`); the mark goes with the next model revision or after 1.5 s.
+  (`bindings.Pending(id)`). Widget actions carry a request number and the engine answers each
+  (`Router::Answer`): a refusal ends the mark at once (logged), applied answers end it with the model
+  that follows them, a new revision ends every mark. No answer in 5 s is an error. A mark of an event
+  that sent no widget action (back, a dialogue reply) goes with the next revision or after 1.5 s.
+  An amount draft (`AmountDraft`) waits for the answers to its deal the same way: refused, or applied
+  with the game's figures unchanged in the model after them, it opens again at the game's figures.
 - **Incremental update.** Every revision sets new props on the same mounted screen; the
   component tree is patched in place, so scroll offsets and pressed parts survive.
 - **Nothing is dropped quietly.** Malformed models, a missing pack screen, an event

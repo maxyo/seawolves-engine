@@ -26,6 +26,17 @@ void screen(const std::string &screen, uint64_t revision, double release_ms = 0.
 // The interface model of the open screen (xinterface), in the frame it changed; the newest
 // replaces older ones. Taken as the struct itself: nothing is serialised.
 void interfaceModel(storm::ui::InterfaceModel &&model);
+// The answer to a widget action of the open interface (UiWidgetAction::request): applied (its
+// script events have run) or refused with the reason. Request 0 is nobody's: ignored.
+void answer(uint64_t request, bool applied, std::string reason);
+// The engine's facts of state channel "presentation", in the frame they change: a loading screen
+// is up, a cinematic plays (the hero is an actor, a video runs), a dialogue covers the game. The
+// open interface comes from screen(); only `live` (the game is in front and running) is Android's.
+void loading(bool active);
+void cinematic(bool active);
+void dialogue(bool active);
+// A location load (render::GetSceneLoadStatus) blocks the game: shown as loading.
+void locationLoad(bool blocks);
 // A passing line of the game's log: a toast over the game; `target` is where a tap on it
 // leads (Host::GameMessage), "" = nowhere.
 void toast(std::string text, std::string target = {});

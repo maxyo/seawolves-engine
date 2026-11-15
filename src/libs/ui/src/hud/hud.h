@@ -272,8 +272,9 @@ struct WorldMap
     std::vector<Command> commands;
 };
 
-// Channel "presentation": what the platform host shows over the game and whether the
-// player can act at all. Published by the host, not by the engine.
+// Channel "presentation": what covers the game (an interface, the loading screen, a cinematic, a
+// dialogue) and whether the player can act at all. The engine's host composes it from the engine's
+// facts and the platform's `live` (ui_host engine_ui.cpp).
 struct Presentation
 {
     bool known = false;

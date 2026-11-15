@@ -1004,20 +1004,6 @@ int main(int argc, char *argv[])
                     if (storm::android::dialogueActions.size() < 8)
                         storm::android::dialogueActions.push_back(command.substr(9));
                 }
-                else if (command.starts_with("widget:"))
-                {
-                    std::istringstream stream(command.substr(7));
-                    std::string screen, node, indexText, value;
-                    if (std::getline(stream, screen, '\t') && std::getline(stream, node, '\t') &&
-                        std::getline(stream, indexText, '\t') && std::getline(stream, value) &&
-                        screen == storm::android::mobileScreen)
-                    {
-                        int index;
-                        const auto parsed = std::from_chars(indexText.data(), indexText.data() + indexText.size(), index);
-                        if (parsed.ec == std::errc() && parsed.ptr == indexText.data() + indexText.size())
-                            storm::android::uiWidgetActions.push_back({screen, node, value, index});
-                    }
-                }
                 else
                 {
                     // Every command the UI library or the activity sends has its branch above

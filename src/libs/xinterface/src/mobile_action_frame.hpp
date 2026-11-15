@@ -1,7 +1,23 @@
 #pragma once
 
+#include <string>
+
 namespace storm::mobile
 {
+// What became of one widget action of the touch UI (XINTERFACE::MobileApplyAction). The UI gets
+// the answer: applied once the action's script events have run (the model that follows shows its
+// result), refused with the reason at once. A deferred action is answered when it is retried.
+struct ActionOutcome
+{
+    enum State
+    {
+        Applied,
+        Refused,
+        Deferred,
+    } state = Applied;
+    std::string reason;
+};
+
 // One player action per interface frame, as the mouse delivers them. A node raises its script
 // event through XINTERFACE's event list, which the next Execute runs newest first, so two
 // actions applied in one frame ran their scripts in reverse. In the store, closing the open

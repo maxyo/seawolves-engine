@@ -46,11 +46,20 @@ struct Action
     uint64_t opening = 0; // InterfaceModel::opening the action belongs to
     int index = -1;
     std::string guard; // row the action must still apply to (commerce quantities); may be empty
+    // A widget action of a game interface (AnsweredAction) carries the router's request number: the
+    // engine answers each one (Host::Answer). 0 for every other action.
+    uint64_t request = 0;
 };
-// The line today's engine queue expects for an action ("widget:store\tTABLE_LIST\t3\tselect@7:id",
-// "back"). Platform hosts forward it unchanged; an engine that hosts the UI itself reads
-// the Action and does not need it.
+// The line of the engine's command queue for an action ("back", "main:New", "hud" input,
+// "widget:store\tTABLE_LIST\t3\tselect@7:id" for hosts that are not the engine). The engine
+// takes a widget action of its open interface as the Action itself (AnsweredAction, WidgetWire).
 std::string EngineCommand(const Action &action);
+// True for an action on a widget of a game interface: the engine applies it to the interface's
+// node and answers it (Host::Answer).
+bool AnsweredAction(const Action &action);
+// What the node of a widget action reads: "<verb>@<opening>:<value>", "guard@<opening>:<row>|…",
+// the plain verb, or the value of a toggle or edit.
+std::string WidgetWire(const Action &action);
 
 // A text field asks for the platform editor (IME bridge). The host shows a native editor
 // over `x, y, width, height` (physical pixels) and answers with Host::SubmitText.
@@ -249,13 +258,18 @@ class Host
     virtual void ExpectInterface() = 0;
     // A named state channel of the game: JSON as the engine publishes it ("dialogue",
     // "gameplay", "combat", "vitals", "landCommands"; "worldInfo" and "contextAction" are
-    // the engine's text as a JSON string), plus "presentation", which the platform host
-    // writes itself: {"screen": "<interface id open in the game, or empty>", "loading",
-    // "cinematic", "dialogue", "live": <the game is in front and running>}. The HUD scene
+    // the engine's text as a JSON string), plus "presentation": {"screen": "<interface id open
+    // in the game, or empty>", "loading", "cinematic", "dialogue", "live": <the game is in front
+    // and running>}, composed by the engine's host from the engine's facts in the frame they
+    // change and the platform's `live`. The HUD scene
     // of the gameplay mode is drawn from these while nothing else covers the game.
     // False (and an error) for malformed JSON; a channel without a consumer and data that
     // does not fit its channel are errors too (logged, shown in debug hosts).
     virtual bool SetState(const std::string &channel, const std::string &json) = 0;
+    // The engine's answer to a widget action (Action::request): applied (its result is in the next
+    // interface model) or refused, with the reason (logged). The screen's busy marks and amount
+    // drafts follow it.
+    virtual void Answer(uint64_t request, bool applied, const std::string &reason) = 0;
     // Answer to Config::on_text_request; `accepted` false = the editor was dismissed.
     virtual void SubmitText(const std::string &token, const std::string &text, bool accepted) = 0;
     // True while a game interface or a plain document covers the game.

@@ -66,9 +66,10 @@ class AmountDraft
     };
     // The control of `key` (a row) shows `origin` (ours) beside `other` (theirs) as the game has them now. A new
     // key, or figures the game changed (a move went through), open the draft again at the origin. A draft that
-    // was sent waits for the game's answer (its figures changed, or kAnswer s pass: refused): the control keeps
-    // showing it, and no second deal can be sent meanwhile. (Not the model revision: a move that goes through
-    // the game's own window takes several, and the first ones still show the old figures.)
+    // was sent waits for the engine's answers to its actions (Bindings::AnsweredSince): the control keeps showing
+    // it, and no second deal can be sent meanwhile. Refused, or applied with the game's figures unchanged in the
+    // model that followed (the game's script turned the deal down), it opens again at the game's figures. No
+    // answer in kNoAnswer s is an error.
     void Follow(const std::string &key, int origin, int other, Bindings &bindings);
     void Close(); // the control is gone (the game closed its window)
     int Origin() const
@@ -95,12 +96,13 @@ class AmountDraft
     // Only for a setting kept as a draft (the treasurer's standing order), never for a transfer.
     void CancelAction(Bindings &bindings, Json &actions);
     // The deal was sent by other means (the quick take of a whole stack): wait for the answer like after Buttons.
-    void Sent(int value, double now);
+    // Call it before sending: the actions sent from now on are the deal's.
+    void Sent(int value, Bindings &bindings);
     // Drops a changed draft (the platform back); false when there was nothing to drop.
     bool Drop();
 
   private:
-    static constexpr double kAnswer = 1.5; // s: how long a sent draft waits for the game's answer
+    static constexpr double kNoAnswer = 5.0; // s: a sent draft without an answer by then is an error
     void Open(const std::string &key, int origin, int other);
     bool open_ = false;
     std::string key_;
@@ -108,6 +110,7 @@ class AmountDraft
     int target_ = 0;
     bool sent_ = false;
     double sent_at_ = 0.0;
+    uint64_t floor_ = 0; // the first request of the deal (Bindings::RequestFloor)
     double reason_at_ = -10.0; // when the "cannot go further" reason was last said
 };
 // {kind:"action", id, title, disabled, reason, selected, busy}: a button or choice as a list row.

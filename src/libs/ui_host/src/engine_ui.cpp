@@ -9,6 +9,7 @@
 // top of the next engine frame), and receives what only Android can do (pause dialog,
 // shortcuts mailbox, system editor, About).
 #include "logging.hpp"
+#include "platform/android_ui.hpp"
 #include "platform/android_ui_sink.hpp"
 
 #include "storm_ui/asset_files.h"
@@ -152,6 +153,8 @@ class EngineUi
         if (!screen.empty())
         {
             close_at_ = 0;
+            presentation_.screen = screen;
+            PublishPresentation();
             // Its model comes once the interface has loaded, seconds later at times: the UI
             // owns the touches from now and holds them for the screen (Host::ExpectInterface).
             if (host_)
@@ -183,6 +186,38 @@ class EngineUi
             __android_log_print(ANDROID_LOG_ERROR, kTag, "no UI host yet, game message not shown: %s", text.c_str());
     }
 
+    // The engine's answer to a widget action. One the engine gives while the UI is still handling the
+    // event that sent the action (OnAction) waits for the next Tick: the press has no busy mark yet.
+    void Answer(uint64_t request, bool applied, std::string reason)
+    {
+        if (!request)
+            return;
+        TraceInput("answer", std::to_string(request) + (applied ? " applied" : " refused: " + reason));
+        if (in_action_ || !host_)
+        {
+            answers_.push_back({request, applied, std::move(reason)});
+            return;
+        }
+        host_->Answer(request, applied, reason);
+    }
+
+    void Loading(bool active)
+    {
+        Set(presentation_.loading, active);
+    }
+    void Cinematic(bool active)
+    {
+        Set(presentation_.cinematic, active);
+    }
+    void Dialogue(bool active)
+    {
+        Set(presentation_.dialogue, active);
+    }
+    void LocationLoad(bool blocks)
+    {
+        Set(presentation_.location_load, blocks);
+    }
+
     void AlertString(const std::string &key)
     {
         if (host_)
@@ -203,14 +238,26 @@ class EngineUi
             if (host_)
                 host_->CloseInterface();
             PublishInterfaceActive();
+            presentation_.screen.clear(); // after the same grace: a menu that follows at once keeps it
+            PublishPresentation();
         }
         std::vector<Step> work;
+        std::optional<bool> live;
         {
             const std::lock_guard lock(inbox_mutex_);
             work.swap(inbox_);
+            live = std::exchange(live_, std::nullopt);
+        }
+        if (live)
+        {
+            presentation_.live = *live;
+            presentation_.live_known = true;
+            PublishPresentation();
         }
         if (!host_)
             return; // nothing of it applies to a host that is not there (touches of no UI)
+        for (auto &[request, applied, reason] : std::exchange(answers_, {}))
+            host_->Answer(request, applied, reason);
         const double now_ms = MonotonicMs();
         for (Step &step : work)
         {
@@ -317,6 +364,34 @@ class EngineUi
     // at start), and what is posted to no host is dropped; a new host gets the latest of each.
     void PlatformState(std::string channel, std::string json)
     {
+        if (channel == "presentation")
+        {
+            // Android's part of the presentation: {"live": true|false}. The rest is the engine's
+            // (Presentation): it reaches the UI in the frame it changes, not through this thread.
+            bool on = json == R"({"live":true})", off = json == R"({"live":false})";
+            if (!on && !off)
+            {
+                // Documented exception, until every application in use sends {"live"} only: an older
+                // activity still sends the whole presentation; only its `live` is taken (said once).
+                on = json.find(R"("live":true)") != std::string::npos;
+                off = json.find(R"("live":false)") != std::string::npos;
+                static bool said = false;
+                if (on != off && !said)
+                {
+                    said = true;
+                    __android_log_print(ANDROID_LOG_WARN, kTag, "presentation: the activity sends its old form; only \"live\" is taken: %s",
+                                        json.c_str());
+                }
+            }
+            if (on == off)
+            {
+                __android_log_print(ANDROID_LOG_ERROR, kTag, "presentation from the activity has no \"live\": %s", json.c_str());
+                return;
+            }
+            const std::lock_guard lock(inbox_mutex_);
+            live_ = on;
+            return;
+        }
         {
             const std::lock_guard lock(inbox_mutex_);
             platform_states_[channel] = json;
@@ -478,6 +553,20 @@ class EngineUi
             });
             return;
         }
+        if (storm::ui::AnsweredAction(action))
+        {
+            // A widget of the open interface: the action itself goes to the interface (XINTERFACE::DoControl
+            // applies and answers it), with the wire its node reads.
+            in_action_ = true;
+            TraceInput("action", action.screen + " " + action.node + " " + action.verb + " request " + std::to_string(action.request));
+            if (action.screen != screen_)
+                Answer(action.request, false, "the interface " + action.screen + " is not open");
+            else
+                storm::android::uiWidgetActions.push_back(
+                    {action.screen, action.node, storm::ui::WidgetWire(action), action.index, action.request});
+            in_action_ = false;
+            return;
+        }
         const std::string command = storm::ui::EngineCommand(action);
         TraceInput("action", action.screen + " " + action.node + " " + action.verb + " -> " + command);
         if (!command.empty())
@@ -504,6 +593,33 @@ class EngineUi
                          env->DeleteLocalRef(verb);
                          env->DeleteLocalRef(value);
                      });
+    }
+
+    // State channel "presentation" (hud::Presentation), on a change, once Android has said whether the
+    // game is live.
+    void Set(bool &field, bool value)
+    {
+        if (field == value)
+            return;
+        field = value;
+        PublishPresentation();
+    }
+
+    void PublishPresentation()
+    {
+        if (!presentation_.live_known)
+            return;
+        const auto flag = [](bool value) { return value ? "true" : "false"; };
+        std::string screen;
+        for (const char c : presentation_.screen) // an interface id: the ini name in lower case
+            if (c != '"' && c != '\\' && static_cast<unsigned char>(c) >= 32)
+                screen += c;
+        std::string json = std::string("{\"screen\":\"") + screen + "\",\"loading\":" + flag(presentation_.loading || presentation_.location_load) + ",\"cinematic\":" +
+                           flag(presentation_.cinematic) + ",\"dialogue\":" + flag(presentation_.dialogue) + ",\"live\":" + flag(presentation_.live) + "}";
+        if (json == presented_)
+            return;
+        presented_ = json;
+        State("presentation", std::move(json));
     }
 
     void PublishInterfaceActive()
@@ -599,10 +715,28 @@ class EngineUi
     std::map<std::string, std::string> states_;
     std::map<std::string, std::string> platform_states_; // guarded by inbox_mutex_
     std::string screen_;
+    // Channel "presentation": the engine's facts as they change, `live` from the activity.
+    struct
+    {
+        std::string screen;
+        bool loading = true, cinematic = false, dialogue = false, live = false;
+        bool location_load = false; // a location load blocks the game: loading for the UI
+        bool live_known = false;
+    } presentation_;
+    std::string presented_;
+    std::optional<bool> live_; // from the platform thread, guarded by inbox_mutex_
     std::optional<storm::ui::InterfaceModel> interface_; // the open interface's newest model (replayed to a new host)
     uint32_t close_at_ = 0; // SDL ticks; 0 = no close pending
     std::atomic<bool> interface_active_{false};
     std::vector<std::string> commands_;
+    bool in_action_ = false; // inside OnAction: answers wait for the next Tick
+    struct PendingAnswer
+    {
+        uint64_t request;
+        bool applied;
+        std::string reason;
+    };
+    std::vector<PendingAnswer> answers_;
     std::map<std::string, size_t> slots_; // slot -> index in commands_
     // What the platform thread sent: a call, or (no call) a pointer step.
     struct Step
@@ -639,6 +773,31 @@ void interfaceModel(storm::ui::InterfaceModel &&model)
 void toast(std::string text, std::string target)
 {
     EngineUi::Get().GameMessage(std::move(text), std::move(target));
+}
+
+void answer(uint64_t request, bool applied, std::string reason)
+{
+    EngineUi::Get().Answer(request, applied, std::move(reason));
+}
+
+void loading(bool active)
+{
+    EngineUi::Get().Loading(active);
+}
+
+void cinematic(bool active)
+{
+    EngineUi::Get().Cinematic(active);
+}
+
+void dialogue(bool active)
+{
+    EngineUi::Get().Dialogue(active);
+}
+
+void locationLoad(bool blocks)
+{
+    EngineUi::Get().LocationLoad(blocks);
 }
 
 void alert(std::string string_key)

@@ -1,6 +1,8 @@
 #include "mobile_image_cache.hpp"
 #include "mobile_interface_model.hpp"
 #include "mobile_image_bridge.hpp"
+#include "mobile_variable_reads.hpp"
+#include <map>
 #include <cassert>
 #include <iostream>
 using namespace storm::mobile;
@@ -77,6 +79,26 @@ int main()
     auto moved = slider;
     moved.value = "5";
     assert(!(MobileInterfaceModel("ship", "english", 4, 7, {widget, moved, check}) == model) && !(moved == slider));
+    // The script variables a collection read are its inputs: a read outside a collection is nobody's,
+    // a variable that reads differently now asks for a new collection.
+    VariableReads reads;
+    using Kind = VariableReads::Kind;
+    std::map<std::string, std::optional<std::string>> vars{{"TradeMode", "1"}, {"sMessageMode", "sink"}};
+    const auto read = [&vars](const char *name, Kind) { return vars.count(name) ? vars[name] : std::nullopt; };
+    reads.Note("TradeMode", Kind::Integer, vars["TradeMode"]);
+    reads.Begin();
+    reads.Note("sMessageMode", Kind::Text, vars["sMessageMode"]);
+    reads.Note("missing", Kind::Object, std::nullopt);
+    reads.Note("sMessageMode", Kind::Text, vars["sMessageMode"]);
+    reads.End();
+    assert(reads.Count() == 2 && !reads.Changed(read));
+    vars["TradeMode"] = "0"; // not read by the collection
+    assert(!reads.Changed(read));
+    vars["sMessageMode"] = "free";
+    assert(reads.Changed(read));
+    vars["sMessageMode"] = "sink";
+    vars["missing"] = "0x1"; // a reference that points somewhere now
+    assert(reads.Changed(read));
     std::cout
         << "PASS mobile images: picture handles, screen lifetimes, bounds, sources and the interface model\n";
 }

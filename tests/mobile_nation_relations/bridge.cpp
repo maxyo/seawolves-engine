@@ -1,3 +1,4 @@
+#include "mobile_action_frame.hpp"
 #include "mobile_nation_relations.hpp"
 #include <map>
 #include <cctype>
@@ -26,9 +27,12 @@ struct XINTERFACE {
  std::string MobileNationScore(const std::string &n) const{return n=="Spa"?"-40":"5";}int pickFailed=0;std::string MobileNationFlags() const{return "England=0,France=1,Spain=1,Holland=0,Pirate=1";}void MobileNationPickFailed(const std::string&){++pickFailed;}
  void SetCurNode(CINODE*){}void MobileCollectWidgets(std::vector<MobileWidget>&);void MobileCollectNations(std::vector<MobileWidget>&);
  struct Action {std::string screen="nationrelation",node,value;int index=-1;};
- void apply(Action action){for(int once=0;once<1;once++){auto *node=FindNode(action.node.c_str(),nullptr);if(!node)continue;
- #include "dispatch.inc"
- }}
+ // XINTERFACE::MobileApplyAction's nation branch, with its outcomes.
+ storm::mobile::ActionOutcome apply(Action action){using Outcome=storm::mobile::ActionOutcome;
+  const auto refused=[](const char *reason){return Outcome{Outcome::Refused,reason};};const Outcome applied{};
+  auto *node=FindNode(action.node.c_str(),nullptr);if(!node)return refused("no such node");
+#include "dispatch.inc"
+  return refused("not a nation action");}
 };
 #include "collection.inc"
 int main(){

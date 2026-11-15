@@ -24,6 +24,23 @@ std::string EngineCommand(const Action &action)
         return action.verb == "back" ? "back" : "main:" + action.node;
     if (action.node.empty())
         return action.verb == "back" ? "back" : std::string();
+    return "widget:" + action.screen + "\t" + action.node + "\t" + std::to_string(action.index) + "\t" + WidgetWire(action);
+}
+
+bool HostOwnsHud(const std::string &mode)
+{
+    return !hud::Ported(mode);
+}
+
+bool AnsweredAction(const Action &action)
+{
+    return !action.screen.empty() && !action.node.empty() && action.screen != "sound" && action.screen != "hud" &&
+           action.screen != "dialogue" && action.screen != "mainmenu" && action.screen != "game_over" &&
+           action.screen.rfind("app:", 0) != 0; // the launcher's screens: the application's own host
+}
+
+std::string WidgetWire(const Action &action)
+{
     const std::string stamp = "@" + std::to_string(action.opening) + ":";
     std::string wire;
     if (action.verb == "toggle" || action.verb == "edit")
@@ -34,12 +51,7 @@ std::string EngineCommand(const Action &action)
         wire = action.verb;
     if (!action.guard.empty())
         wire = "guard" + stamp + action.guard + "|" + wire;
-    return "widget:" + action.screen + "\t" + action.node + "\t" + std::to_string(action.index) + "\t" + wire;
-}
-
-bool HostOwnsHud(const std::string &mode)
-{
-    return !hud::Ported(mode);
+    return wire;
 }
 
 } // namespace storm::ui
@@ -50,7 +62,8 @@ namespace storm::ui::screens
 namespace
 {
 
-constexpr double kPendingSeconds = 1.5; // a press the engine never answers stops looking busy
+constexpr double kPendingSeconds = 1.5; // a press that sent no widget action (back, a dialogue reply) stops looking busy
+constexpr double kAnswerSeconds = 5.0;  // a widget action the engine has not answered by then is an error
 constexpr double kFlushSeconds = 0.12;  // drags reach the engine at most this often
 constexpr double kIdle = 3600.0;
 // The game publishes an interface while its script is still filling it (the store's first
@@ -413,6 +426,29 @@ double Bindings::Now() const
     return router_.surface_.Now();
 }
 
+uint64_t Bindings::RequestFloor() const
+{
+    return router_.next_request_ + 1;
+}
+
+Bindings::Answers Bindings::AnsweredSince(uint64_t floor) const
+{
+    if (!router_.waiting_.empty())
+        return Answers::Waiting; // something of it has not gone out yet
+    if (router_.outstanding_.lower_bound(floor) != router_.outstanding_.end())
+        return Answers::Waiting;
+    bool any = false;
+    for (auto it = router_.answers_.lower_bound(floor); it != router_.answers_.end(); ++it)
+    {
+        if (!it->second.applied)
+            return Answers::Refused;
+        if (!it->second.model_after)
+            return Answers::Waiting;
+        any = true;
+    }
+    return any ? Answers::Applied : Answers::Waiting;
+}
+
 // --- Router -----------------------------------------------------------------------------
 
 namespace
@@ -511,7 +547,52 @@ void Router::Emit(Action action)
 {
     if (current_)
         sent_in_event_ = true;
+    if (AnsweredAction(action))
+    {
+        action.request = ++next_request_;
+        outstanding_[action.request] = {current_ ? current_->id : std::string(), current_ ? current_->value : std::string(), action.node,
+                                        current_ != nullptr};
+    }
     surface_.Send(action);
+}
+
+bool Router::MarkOpen(const std::string &id, const std::string &value) const
+{
+    for (const auto &[number, request] : outstanding_)
+        if (request.marked && request.id == id && request.value == value)
+            return true;
+    return false;
+}
+
+void Router::Answer(uint64_t request, bool applied, const std::string &reason)
+{
+    const auto found = outstanding_.find(request);
+    if (found == outstanding_.end())
+    {
+        // An action of an opening that is gone (its marks went with it).
+        surface_.Log("answer to request " + std::to_string(request) + " of an earlier opening: " + (applied ? "applied" : "refused: " + reason));
+        return;
+    }
+    const Request sent = found->second;
+    outstanding_.erase(found);
+    answers_[request] = {applied, false};
+    while (answers_.size() > 256)
+        answers_.erase(answers_.begin());
+    if (!applied)
+    {
+        surface_.Log("screen " + using_ + ": the game refused " + sent.node + " (" + sent.id + "): " + reason);
+        if (sent.marked)
+            pending_.erase(std::remove_if(pending_.begin(), pending_.end(),
+                                          [&](const PendingMark &mark) { return mark.id == sent.id && mark.value == sent.value; }),
+                           pending_.end());
+        if (screen_)
+            Build(); // the screen shows the game's state again at once (an amount draft goes back)
+        return;
+    }
+    if (sent.marked && !MarkOpen(sent.id, sent.value))
+        for (PendingMark &mark : pending_)
+            if (mark.id == sent.id && mark.value == sent.value)
+                mark.answered = true;
 }
 
 void Router::SetInterface(const InterfaceModel &model)
@@ -521,6 +602,11 @@ void Router::SetInterface(const InterfaceModel &model)
         surface_.SetLanguage(model.language);
     const bool changed = model.revision != model_.revision;
     model_ = model;
+    // The engine sends the model after every widget action it answered: the answers before it are
+    // now shown, and the presses they answered stop looking busy.
+    for (auto &[number, answer] : answers_)
+        answer.model_after = true;
+    pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [](const PendingMark &mark) { return mark.answered; }), pending_.end());
     if (reopened)
     {
         opened_at_ = surface_.Now();
@@ -530,6 +616,7 @@ void Router::SetInterface(const InterfaceModel &model)
         reading_text_.clear();
         pending_.clear();
         waiting_.clear();
+        outstanding_.clear();
         edit_token_.clear();
         edit_handler_ = nullptr;
     }
@@ -550,6 +637,7 @@ void Router::CloseInterface()
     modals_.clear();
     pending_.clear();
     waiting_.clear();
+    outstanding_.clear();
     edit_token_.clear();
     edit_handler_ = nullptr;
     model_ = InterfaceModel();
@@ -610,7 +698,10 @@ void Router::BuildView()
     notices_shown_ = std::move(notices_building_);
     notices_building_.clear();
     rebuild_ = false;
-    rebuild_at_ = 0.0;
+    // A deadline still ahead stays (Bindings::RebuildAfter from an event handler: the build that
+    // follows the event must not drop it); one that came is spent.
+    if (rebuild_at_ > 0.0 && rebuild_at_ <= surface_.Now())
+        rebuild_at_ = 0.0;
     bindings_.handlers_.clear();
     modals_.clear();
     // The ported screen registered for the id draws it when the model passes its admission.
@@ -765,7 +856,8 @@ bool Router::OnEvent(const Event &event)
         // An action row of the «Прочее» sheet closes it, as a menu does.
         if (event.id.rfind("extra-a", 0) == 0)
             extras_open_ = false;
-        pending_.push_back({event.id, event.value, model_.revision, surface_.Now() + kPendingSeconds});
+        const bool answers = MarkOpen(event.id, event.value);
+        pending_.push_back({event.id, event.value, model_.revision, surface_.Now() + (answers ? kAnswerSeconds : kPendingSeconds), answers});
         rebuild_ = true;
     }
     if (rebuild_ && screen_)
@@ -824,7 +916,7 @@ void Router::SubmitText(const std::string &token, const std::string &text, bool 
     }
     Action action = edit_action_;
     action.value = text;
-    surface_.Send(action);
+    Emit(std::move(action));
 }
 
 bool Router::WantsBack() const
@@ -862,8 +954,8 @@ double Router::Tick()
         {
             last_flush_ = now;
             if (waiting_[i].lead)
-                surface_.Send(*waiting_[i].lead);
-            surface_.Send(waiting_[i].action);
+                Emit(*waiting_[i].lead);
+            Emit(waiting_[i].action);
             waiting_.erase(waiting_.begin() + static_cast<long>(i));
         }
         else
@@ -873,6 +965,13 @@ double Router::Tick()
         }
     }
     const size_t before = pending_.size();
+    for (const PendingMark &mark : pending_)
+        if (now >= mark.until && mark.answers && MarkOpen(mark.id, mark.value))
+        {
+            surface_.Error("screen " + using_ + ": the game did not answer " + mark.id + " in " + std::to_string(int(kAnswerSeconds)) + " s");
+            for (auto it = outstanding_.begin(); it != outstanding_.end();)
+                it = it->second.marked && it->second.id == mark.id && it->second.value == mark.value ? outstanding_.erase(it) : std::next(it);
+        }
     pending_.erase(std::remove_if(pending_.begin(), pending_.end(), [&](const PendingMark &mark) { return now >= mark.until; }),
                    pending_.end());
     for (const PendingMark &mark : pending_)

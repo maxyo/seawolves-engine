@@ -15,8 +15,8 @@ with tempfile.TemporaryDirectory(prefix='nation-relations-') as tmp:
     # dispatcher itself so a new screen does not break this nation check.
     others=sorted(set(re.findall(r'\b(MobileCollect\w+)\(widgets\)',collection))-{'MobileCollectNations'})
     (pathlib.Path(tmp)/'collectors.inc').write_text(''.join(f'void {name}(std::vector<MobileWidget>&){{}}\n' for name in others))
-    start=source.index('        if(action.screen=="nationrelation" && action.value.rfind("nation@",0)==0)')
-    (pathlib.Path(tmp)/'dispatch.inc').write_text(source[start:source.index('        if (node->MobileApply',start)])
+    start=source.index('    if(action.screen=="nationrelation" && action.value.rfind("nation@",0)==0)')
+    (pathlib.Path(tmp)/'dispatch.inc').write_text(source[start:source.index('    if (node->MobileApply',start)])
     bridge=pathlib.Path(tmp)/'bridge'
     subprocess.run(['c++','-std=c++20','-g','-O1','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/xinterface/src'),'-I'+tmp,str(here/'bridge.cpp'),'-o',str(bridge)],check=True)
     subprocess.run([str(bridge)],check=True)

@@ -126,5 +126,7 @@ int main() {
     assert(takeDialogueChoice(owner, &attrs, fits) == choice);
     closeDialogue(owner);
     assert(dialogueOwner == nullptr && publications.back() == "{\"active\":false}");
-    std::cout << "PASS UTF-8/input bounds, actual bridge metadata, stale generations, errors, atomic edits and ordinary choices\n";
+    // The UI's presentation gets the same dialogue flag as the activity, in the same call.
+    assert(!storm::android::ui::presented.empty() && storm::android::ui::presented == env.shown && !storm::android::ui::presented.back());
+    std::cout << "PASS UTF-8/input bounds, the presentation's dialogue flag, actual bridge metadata, stale generations, errors, atomic edits and ordinary choices\n";
 }

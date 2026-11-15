@@ -46,7 +46,6 @@
     "shortcut:mainmenu": "app",
     "spyglass:": "ui",
     "uisound:press": "ui",
-    "widget:": "ui",
     "widget:game_over\tEND\t": "ui",
     "worldmap:": "ui"
   },
