@@ -97,6 +97,8 @@ PerfCounters PerfCounters::Since(const PerfCounters &start) const
     d.buffer_creates -= start.buffer_creates;
     d.texture_uploads -= start.texture_uploads;
     d.texture_upload_bytes -= start.texture_upload_bytes;
+    d.lamp_face_draws -= start.lamp_face_draws;
+    d.lamp_atlas_clears -= start.lamp_atlas_clears;
     d.shim_ms -= start.shim_ms;
     d.submit_ms -= start.submit_ms;
     d.wait_ms -= start.wait_ms;
@@ -117,14 +119,15 @@ std::string PerfCounters::Summary() const
              "draws=%.1f skipped=%.1f views=%.1f programs=%.1f states=%.1f uniforms=%.1f uniform_kb=%.1f "
              "uniform_draws=%.1f gl_uniforms=%.1f gl_uniform_kb=%.1f tex_binds=%.1f tex_changes=%.1f tvb_kb=%.1f tib_kb=%.1f fans=%.1f buf_uploads=%.2f "
              "buf_kb=%.1f buf_creates=%.2f tex_uploads=%.2f tex_kb=%.1f shim_ms=%.3f submit_ms=%.3f wait_ms=%.3f gpu_ms=%.3f tex_mb=%.1f rt_mb=%.1f "
-             "tex_shadow_mb=%.1f buf_shadow_mb=%.1f buf_gpu_mb=%.1f tvb_max_kb=%.0f tib_max_kb=%.0f",
+             "tex_shadow_mb=%.1f buf_shadow_mb=%.1f buf_gpu_mb=%.1f tvb_max_kb=%.0f tib_max_kb=%.0f lamp_face_draws=%.2f lamp_atlas_clears=%.2f",
              mean(draws), mean(skipped_draws), mean(views), mean(program_changes), mean(state_changes),
              mean(uniform_updates), kb(uniform_bytes), mean(uniform_draws), mean(gl_uniform_calls), kb(gl_uniform_bytes), mean(texture_binds), mean(texture_changes),
              kb(transient_vb_bytes), kb(transient_ib_bytes), mean(fan_draws), mean(buffer_uploads),
              kb(buffer_upload_bytes), mean(buffer_creates), mean(texture_uploads), kb(texture_upload_bytes), shim_ms / n, submit_ms / n, wait_ms / n,
              gpu_frames ? gpu_ms / static_cast<double>(gpu_frames) : 0.0, texture_memory / 1048576.0,
              render_target_memory / 1048576.0, texture_shadow_bytes / 1048576.0, buffer_shadow_bytes / 1048576.0,
-             buffer_gpu_bytes / 1048576.0, transient_vb_frame_max / 1024.0, transient_ib_frame_max / 1024.0);
+             buffer_gpu_bytes / 1048576.0, transient_vb_frame_max / 1024.0, transient_ib_frame_max / 1024.0,
+             mean(lamp_face_draws), mean(lamp_atlas_clears));
     return text;
 }
 } // namespace storm::render

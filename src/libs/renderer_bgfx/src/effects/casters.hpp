@@ -11,7 +11,8 @@
 // by the colour pass itself, with its alpha test. There is no depth prepass.
 //
 // The caster programs live here as well, so no pass keeps a copy: vs_ff_caster[_cut][_skin] with fs_ff_caster[_cut]
-// (the sun cascade's depth) or fs_ff_lamp_caster[_cut] (the lamp atlases' distance).
+// (plain depth: the sun cascade and the lamp faces) or fs_ff_lamp_caster[_cut] (lamp faces, discarding what lies
+// inside the lamp's holder sphere). None of them writes its depth: early depth testing stays on.
 #pragma once
 
 #include "shim/shim.hpp"
@@ -48,8 +49,9 @@ class Casters
   public:
     enum class Pass
     {
-        Sun,  // depth of the sun cascade
-        Lamp, // distance to a lamp
+        Sun,        // depth of the sun cascade
+        Lamp,       // depth of a lamp face
+        LampHolder, // depth of a lamp face, nothing inside the lamp's holder sphere (u_fxLampCaster)
     };
     // The program of a caster (logs a failure and returns an invalid handle), with its cut uniforms set when the
     // material has one. The material's textures must be bound at their stages (a draw's own still are).
@@ -67,7 +69,7 @@ class Casters
     void ensure_uniforms();
 
     uint32_t vs_[2][2] = {};  // [cut][skinned]
-    uint32_t fs_[2][2] = {};  // [pass][cut]
+    uint32_t fs_[3][2] = {};  // [pass][cut]
     bgfx::UniformHandle u_cut_ = BGFX_INVALID_HANDLE, u_uv_ = BGFX_INVALID_HANDLE, s_tex0_ = BGFX_INVALID_HANDLE;
 };
 

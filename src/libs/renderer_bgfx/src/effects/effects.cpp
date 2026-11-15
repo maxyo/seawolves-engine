@@ -322,7 +322,9 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.sea_waves_debug = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
     {"fx_lamp_shadows", "lamps that relight a location with their shadows, 0, 8 or 16",
      [](fx::Settings &s, int v) { s.lamp_shadows = static_cast<uint8_t>(std::clamp(v, 0, 16)); }},
-    {"fx_lamp_soft", "0 3x3, 1 5x5 filter of the lamp shadows", [](fx::Settings &s, int v) { s.lamp_soft = on(v); }},
+    {"fx_lamp_soft", "0 3x3, 1 5x5 filter of the strongest lamp's shadows", [](fx::Settings &s, int v) { s.lamp_soft = on(v); }},
+    {"fx_lamp_per_pixel", "1..8: the most grid lamps that light one pixel with their shadows",
+     [](fx::Settings &s, int v) { s.lamp_per_pixel = static_cast<uint8_t>(std::clamp(v, 1, 8)); }},
     {"fx_lamp_moving", "0, 1, 2: lamp slots for carried lanterns and torches (their shadows move with them)",
      [](fx::Settings &s, int v) { s.lamp_moving = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
     {"fx_lamp_gain", "0..300 % of the lamps' strength on baked surfaces",
@@ -339,8 +341,8 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.light_falloff.level = static_cast<float>(std::clamp(v, 10, 200)) / 100.0f; }},
     {"fx_lamp_model_lift", "0..100 %: lit models of an interior brighter than the room light around them",
      [](fx::Settings &s, int v) { s.lamp_model_lift = static_cast<float>(std::clamp(v, 0, 100)) / 100.0f; }},
-    {"fx_lamp_debug", "0 off, 1 every lamp in its own colour, 2 the shadow mask",
-     [](fx::Settings &s, int v) { s.lamp_debug = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
+    {"fx_lamp_debug", "0 off, 1 every lamp in its own colour, 2 the shadow mask, 3 the shadow taps per pixel (2/255 each)",
+     [](fx::Settings &s, int v) { s.lamp_debug = static_cast<uint8_t>(std::clamp(v, 0, 3)); }},
     {"fx_wet_surfaces", "rain wetness outdoors: 0 off, 1 wet surfaces, 2 also puddles in the relief's hollows",
      [](fx::Settings &s, int v) { s.wet_surfaces = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
     {"fx_wet_force", "0..100 %: this wetness outdoors whatever the rain (review); -1 = the rain's",
@@ -715,7 +717,7 @@ void Host::activate(const fx::Settings &settings, const fx::Support &support)
     // at the next reset.
     bgfx::gl::g_stormMaxAnisotropy.store(static_cast<float>(state.max_anisotropy), std::memory_order_relaxed);
     bgfx::vk::g_stormMaxAnisotropy.store(static_cast<float>(state.max_anisotropy), std::memory_order_relaxed);
-    lighting_.configure(settings_, renderer_state_);
+    lighting_.configure(settings_, renderer_state_, support.lamp_depth);
     upscales().configure(settings_.upscale, settings_.upscale_budget_mb);
     // One line per change of what runs in the background: «Низкая» makes the far LODs only, no bake and no texture.
     const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings_);

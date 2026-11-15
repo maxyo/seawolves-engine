@@ -170,7 +170,14 @@ uint32_t ShadowCasters::submit(shim::Device &device, Casters &programs, const Sh
         if (!accepts(volume, caster) || !meets(volume, caster, in_volume))
             continue;
         // The program sets its cut uniforms; a failed one is logged by the device.
-        const bgfx::ProgramHandle program = programs.program(device, volume.pass, caster.skinned, caster.material);
+        Casters::Pass pass = volume.pass;
+        if (volume.holder[3] > 0.0f)
+        {
+            const float dx = in_volume[0] - volume.holder[0], dy = in_volume[1] - volume.holder[1], dz = in_volume[2] - volume.holder[2];
+            if (caster.radius < 0.0f || std::sqrt(dx * dx + dy * dy + dz * dz) < volume.holder[3] + caster.radius)
+                pass = Casters::Pass::LampHolder;
+        }
+        const bgfx::ProgramHandle program = programs.program(device, pass, caster.skinned, caster.material);
         if (!bgfx::isValid(program))
             continue;
         float world[16], model[16];

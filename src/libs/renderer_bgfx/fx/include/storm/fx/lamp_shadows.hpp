@@ -6,7 +6,8 @@
 //
 // Face convention (shared with ff_fragment.sh ffLampVisibility): for L = P - lamp, the face is the axis with the
 // largest |component|; u = dot(L, right) / |major|, v = dot(L, up) / |major|, both -1..1 over the face (a guard band
-// widens the projected field so filtering never reads the neighbour face).
+// widens the projected field so filtering never reads the neighbour face). The faces hold the hardware depth of their
+// own perspective projection (LampFaceDepth): no caster writes its depth itself, so early depth testing stays on.
 #pragma once
 
 #include "storm/fx/light_falloff.hpp"
@@ -31,6 +32,13 @@ inline constexpr float kLampHolderRadius = 0.12f;
 inline constexpr int kLampGridCapacity = 8; // lamps per cell of the lamp grid
 inline constexpr float kLampFaceGuard = 1.05f;  // field of view scale over 90°: the face's border texels
 
+// Light under half a step of an 8-bit picture (gamma space, per unit of the receivers' strongest gain): a lamp
+// whose light at a pixel is below it is not filtered against its shadow there, and the parts of the room where all
+// of its light is below it (beyond LampReach) neither list it in the lamp grid nor cast into its faces.
+inline constexpr float kLampNegligible = 0.5f / 255.0f;
+// The lamps flicker: their reach is taken for a colour this many times the one they have when it is measured.
+inline constexpr float kLampReachHeadroom = 2.0f;
+
 struct Lamp
 {
     Vec3 position{0.0f, 0.0f, 0.0f};
@@ -43,6 +51,9 @@ struct Lamp
     AggregateRef aggregate;
 };
 LightShape ShapeOf(const Lamp &lamp);
+// Metres from the lamp beyond which its light (its strongest colour channel times the gamma-space falloff, as the
+// receivers add it) stays under `level`: 0 when it is under it everywhere, at most its range.
+float LampReach(const Lamp &lamp, float level);
 
 // Candles of one candlestick or sconce are separate lights a few centimetres apart: one shadow for them. Lamps
 // closer than `radius` merge (colour summed, position weighted by brightness, the largest range, intensity and core
@@ -88,9 +99,10 @@ struct LampGrid
     int overflow_cells = 0; // cells reached by more lamps than they hold (the weakest there are left out)
     int max_lamps = 0;      // the most lamps over one cell
 };
-// `lamps`: range = the radius each one lights. Cells are at least `cell` metres and at most
-// max_cells per axis (larger rooms get larger cells).
-LampGrid BuildLampGrid(std::span<const Lamp> lamps, Vec3 lo, Vec3 hi, float cell, int max_cells_xz, int max_cells_y);
+// `lamps`: range = the radius of its falloff; `reach`: per lamp, how far its light counts (LampReach; 0 = it is in
+// no cell). Cells are at least `cell` metres and at most max_cells per axis (larger rooms get larger cells).
+LampGrid BuildLampGrid(std::span<const Lamp> lamps, std::span<const float> reach, Vec3 lo, Vec3 hi, float cell,
+                       int max_cells_xz, int max_cells_y);
 
 // The light of a place around a point, from its baked vertex colours: a grid of cells over lo..hi, each holding the
 // mean colour of the surfaces in and around it (cells without a surface take their neighbours'). It is the light a
@@ -148,6 +160,19 @@ std::array<float, 16> LampFaceViewProj(Vec3 position, int face, float far_plane)
 // guard band, and in front of the lamp). Characters are drawn only into the faces they can shadow.
 bool SphereInLampFace(Vec3 lamp, int face, Vec3 center, float radius);
 
+// The still triangles of a lamp's faces, sorted into the faces their bounding sphere reaches (SphereInLampFace) and,
+// within a face, into those that lie clear of the lamp's holder sphere and those that may reach into it (only these
+// need the caster shader that discards fragments inside the holder: the others keep early depth testing).
+// `triangles`: index triples into `positions`. Lists are concatenated into `indices`; list k = face * 2 + near
+// runs from first[k] to first[k + 1] (index counts).
+struct LampFaceLists
+{
+    std::vector<uint32_t> indices;
+    std::array<uint32_t, 13> first{};
+};
+void SplitByLampFace(std::span<const Vec3> positions, std::span<const uint32_t> triangles, Vec3 lamp, float holder,
+                     LampFaceLists &out);
+
 // Atlas tiles: lamp slot s, face f -> tile s * 6 + f, `columns` x `rows` tiles of equal size. A tile in atlas
 // coordinates measured from the top-left corner (0..1): x0, y0 and its size sx, sy.
 struct AtlasTile
@@ -160,15 +185,19 @@ AtlasTile LampAtlasTile(int slot, int face, int columns, int rows);
 std::array<float, 16> TileClip(const AtlasTile &tile);
 
 // The receiver side, as the shader computes it: the face and the atlas position from the top-left (sample at u = x,
-// v = origin_bottom_left ? 1 - y : y). The value compared there is the distance to the lamp over its radius.
+// v = origin_bottom_left ? 1 - y : y). The value compared there is LampFaceDepth of the point's distance along the
+// face's axis.
 struct LampFaceSample
 {
     int face;
     float x, y;
 };
 LampFaceSample LampFaceCoord(Vec3 lamp, Vec3 point, int slot, int columns, int rows);
-// The caster side: what fs_ff_lamp_caster computes from a fragment at clip position (x, y, w) of a face (before the
-// tile transform): the distance to the lamp.
+// The depth a face stores for a point `major` metres along its axis (clip z / w of LampFaceViewProj, 0..1 over
+// kLampShadowNear..far_plane); the receivers compute the same (ff_fragment.sh ffLampVisibility).
+float LampFaceDepth(float major, float far_plane);
+// What fs_ff_lamp_caster computes from a fragment at clip position (x, y, w) of a face (before the tile transform):
+// its distance to the lamp, tested against the holder sphere.
 float LampCasterDistance(float clip_x, float clip_y, float clip_w);
 
 } // namespace storm::fx

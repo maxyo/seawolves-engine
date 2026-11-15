@@ -146,6 +146,16 @@ bool SupportsShadowMap()
     return Format(bgfx::TextureFormat::D16, BGFX_CAPS_FORMAT_TEXTURE_2D | BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
 }
 
+LampDepth LampDepthFormat()
+{
+    const uint32_t flags = BGFX_CAPS_FORMAT_TEXTURE_2D | BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER;
+    if (Format(bgfx::TextureFormat::D24, flags))
+        return LampDepth::D24;
+    if (Format(bgfx::TextureFormat::D32F, flags))
+        return LampDepth::D32F;
+    return LampDepth::None;
+}
+
 bool SupportsNormalMap(bgfx::TextureFormat::Enum format)
 {
     return Format(format, BGFX_CAPS_FORMAT_TEXTURE_2D);

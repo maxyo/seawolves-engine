@@ -429,6 +429,7 @@ void CheckSupport()
 {
     Support all;
     all.lut_3d = all.shadow_map = all.scene_depth = all.normal_map = true;
+    all.lamp_depth = LampDepth::D24;
     all.msaa_samples = 4;
     all.msaa_depth = all.anisotropy = all.ao_volume = all.smaa = all.sea_waves_vertex = all.sea_waves_float = all.sea_waves_surface_float = true;
     for (QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
@@ -470,8 +471,20 @@ void CheckSupport()
     no_shadow.shadow_map = false;
     changes.clear();
     constrained = ConstrainSettings(high, no_shadow, changes);
-    CHECK(constrained.shadows == ShadowQuality::Off && constrained.lamp_shadows == 0 && changes.size() == 2); // sun, lamps
+    CHECK(constrained.shadows == ShadowQuality::Off && constrained.lamp_shadows == high.lamp_shadows && changes.size() == 1); // sun
     CHECK(LightingDefines(constrained).find("FX_LIGHT_SHADOW") == std::string::npos);
+    // No 24-bit or float depth target: no lamp shadows (their faces' perspective depth), said once; the sun stays.
+    Support no_lamp_depth = all;
+    no_lamp_depth.lamp_depth = LampDepth::None;
+    changes.clear();
+    constrained = ConstrainSettings(high, no_lamp_depth, changes);
+    CHECK(constrained.lamp_shadows == 0 && constrained.shadows == high.shadows && changes.size() == 1);
+    // At most 8 lamps per pixel (the grid's cell); the presets: 4 on Высокая, 2 on Средняя.
+    Settings crowded = high;
+    crowded.lamp_per_pixel = 12;
+    changes.clear();
+    CHECK(ConstrainSettings(crowded, all, changes).lamp_per_pixel == 8 && changes.size() == 1);
+    CHECK(high.lamp_per_pixel == 4 && Settings::FromPreset(QualityPreset::Medium).lamp_per_pixel == 2);
 
     // No R8 3D textures: no AO volume, said once; the rest stays.
     Support no_ao = all;
@@ -1544,6 +1557,7 @@ void CheckCapsProfiles()
 {
     Support all;
     all.lut_3d = all.shadow_map = all.scene_depth = all.normal_map = true;
+    all.lamp_depth = LampDepth::D24;
     all.msaa_samples = 4;
     all.msaa_depth = all.anisotropy = all.smaa = all.sea_waves_vertex = all.sea_waves_float = all.sea_waves_surface_float = true;
     for (int p = 0; p < static_cast<int>(CapsProfile::Count); ++p)
@@ -1684,7 +1698,8 @@ void CheckLampShadows()
         std::vector<Lamp> row;
         for (int i = 0; i < 3; ++i)
             row.push_back({{2.5f + 5.0f * static_cast<float>(i), 1.5f, 2.5f}, {2.0f, 2.0f, 2.0f}, 3.0f, 0.3f, 0.4f});
-        const LampGrid grid = BuildLampGrid(row, {0.0f, 0.0f, 0.0f}, {15.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
+        const std::vector<float> far(12, 100.0f);
+        const LampGrid grid = BuildLampGrid(row, far, {0.0f, 0.0f, 0.0f}, {15.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
         CHECK(grid.nx == 15 && grid.ny == 3 && grid.nz == 5 && grid.rgba.size() == 2u * 15 * 3 * 5 * 4 && grid.overflow_cells == 0);
         const auto cell = [&](int x, int y, int z, int k) {
             return grid.rgba[((static_cast<size_t>(z) * grid.ny + y) * (2 * grid.nx) + x + (k / 4) * grid.nx) * 4 + k % 4];
@@ -1695,18 +1710,39 @@ void CheckLampShadows()
         CHECK(cell(4, 1, 2, 0) == 1 && cell(4, 1, 2, 1) == 2); // nearer the first: it comes first
         std::vector<Lamp> crowd(12, row[0]);
         crowd[11].color = {9.0f, 9.0f, 9.0f}; // the strongest, last in the list
-        const LampGrid full = BuildLampGrid(crowd, {0.0f, 0.0f, 0.0f}, {5.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
+        const LampGrid full = BuildLampGrid(crowd, far, {0.0f, 0.0f, 0.0f}, {5.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
         CHECK(full.max_lamps == 12 && full.overflow_cells > 0);
         const size_t texel = (static_cast<size_t>(2) * full.ny + 1) * (2 * full.nx) + 2;
         CHECK(full.rgba[texel * 4] == 12 && full.rgba[(texel + full.nx) * 4 + 3] != 0);
         // A lamp with radius 0 (a free slot) is in no cell.
         row[1].range = 0.0f;
-        const LampGrid without = BuildLampGrid(row, {0.0f, 0.0f, 0.0f}, {15.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
+        const LampGrid without = BuildLampGrid(row, far, {0.0f, 0.0f, 0.0f}, {15.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
         for (size_t i = 0; i < without.rgba.size(); ++i)
             CHECK(without.rgba[i] != 2);
         // A hall larger than the grid holds cells: larger cells, the same coverage.
-        const LampGrid hall = BuildLampGrid(row, {0.0f, 0.0f, 0.0f}, {200.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
+        const LampGrid hall = BuildLampGrid(row, far, {0.0f, 0.0f, 0.0f}, {200.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
         CHECK(hall.nx == 64 && Near(hall.cell[0], 200.0f / 64.0f, 1e-4f));
+        // A lamp is listed only as far as its light counts (its reach), not over its whole radius.
+        const std::vector<float> short_reach = {1.2f, 100.0f, 100.0f};
+        const LampGrid gated = BuildLampGrid(row, short_reach, {0.0f, 0.0f, 0.0f}, {15.0f, 3.0f, 5.0f}, 1.0f, 64, 16);
+        const auto gated_cell = [&](int x, int y, int z, int k) {
+            return gated.rgba[((static_cast<size_t>(z) * gated.ny + y) * (2 * gated.nx) + x + (k / 4) * gated.nx) * 4 + k % 4];
+        };
+        CHECK(gated_cell(2, 1, 2, 0) == 1 && gated_cell(4, 1, 2, 0) == 0 && cell(4, 1, 2, 0) == 1);
+    }
+
+    // The reach of a lamp: where its strongest channel's gamma-space light falls under the level; within its range,
+    // farther for a brighter lamp, and the light there is the level.
+    {
+        const float reach = LampReach(candle, kLampNegligible);
+        CHECK(reach > 0.0f && reach < candle.range);
+        CHECK(Near(2.2f * LightFalloffGammaAt(ShapeOf(candle), reach), kLampNegligible, 1e-4f));
+        Lamp bright = candle;
+        bright.color = {4.4f, 3.0f, 1.0f};
+        CHECK(LampReach(bright, kLampNegligible) > reach && LampReach(bright, kLampNegligible) <= candle.range);
+        Lamp dark = candle;
+        dark.color = {0.0f, 0.0f, 0.0f};
+        CHECK(LampReach(dark, kLampNegligible) == 0.0f);
     }
 
     // The still triangles a lamp can shadow with: those that touch its sphere, found through the triangle grid; the
@@ -1820,6 +1856,9 @@ void CheckLampShadows()
             const float x = atlas[0] / atlas[3] * 0.5f + 0.5f, yy = 0.5f - atlas[1] / atlas[3] * 0.5f;
             CHECK(Near(x, s.x, 1e-4f) && Near(yy, s.y, 1e-4f));
             CHECK(Near(LampCasterDistance(clip[0], clip[1], clip[3]), distance, 1e-3f));
+            // The depth the face stores (its own projection) is the one the receiver computes from the distance
+            // along the face's axis.
+            CHECK(Near(LampFaceDepth(clip[3], far_plane), clip[2] / clip[3], 1e-5f));
             // In front of the near plane (a table top 15 cm under its candle, a wall 3 cm behind its sconce).
             CHECK(clip[3] > kLampShadowNear && clip[2] / clip[3] > 0.0f && clip[2] / clip[3] < 1.0f);
             const AtlasTile t = LampAtlasTile(slot, s.face, columns, rows);
@@ -1838,6 +1877,27 @@ void CheckLampShadows()
         at_lamp += SphereInLampFace(lamp, f, lamp, 0.4f) ? 1 : 0;
     }
     CHECK(in_faces == 1 && edge_faces == 2 && at_lamp == 6);
+
+    // The still triangles sorted into the faces: a floor quad under the lamp lands in the down face (and the side
+    // faces its corners reach), never in the up face; a small triangle next to the flame is in the holder lists,
+    // the floor not.
+    {
+        const std::vector<Vec3> p = {{-1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 1.0f}, {-1.0f, 0.0f, 1.0f},
+                                     {0.55f, 2.0f, -1.0f}, {0.6f, 2.0f, -1.0f}, {0.55f, 2.05f, -1.0f}};
+        const std::vector<uint32_t> idx = {0, 1, 2, 0, 2, 3, 4, 5, 6};
+        LampFaceLists lists;
+        SplitByLampFace(p, idx, lamp, 0.12f, lists);
+        const auto count = [&](int face, int near) { return (lists.first[face * 2 + near + 1] - lists.first[face * 2 + near]) / 3; };
+        CHECK(count(3, 0) == 2 && count(2, 0) == 0);
+        int near = 0;
+        for (int f = 0; f < 6; ++f)
+        {
+            near += static_cast<int>(count(f, 1));
+            for (uint32_t i = lists.first[f * 2 + 1]; i < lists.first[f * 2 + 2]; ++i)
+                CHECK(lists.indices[i] >= 4); // only the triangle by the flame
+        }
+        CHECK(near >= 1 && lists.first[12] == lists.indices.size());
+    }
 }
 
 void CheckAoVolume()

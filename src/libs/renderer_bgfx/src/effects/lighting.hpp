@@ -203,7 +203,8 @@ struct WetFrame
 class Lighting
 {
   public:
-    void configure(const fx::Settings &settings, const fx::RendererState &state);
+    // lamp_depth: Support::lamp_depth (the format of the lamps' shadow faces).
+    void configure(const fx::Settings &settings, const fx::RendererState &state, fx::LampDepth lamp_depth);
     bool aggregate_available() const;
     // Creates the fixed-function programs the draws of `settings` can pick (lit / baked variants with and without
     // relief and shadow, their skinned twins, coverage, shadow casters), at most `budget` of them (reduced by the
@@ -274,6 +275,8 @@ class Lighting
     std::array<float, 8> skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source);
     LampShadows &lamp_shadows() { return lamps_; }
     const LampShadows &lamp_shadows() const { return lamps_; }
+    // Right before every bgfx::frame() (Context::set_before_frame): frame uniforms that depend on the frame's casters.
+    void before_frame() { lamps_.before_frame(); }
     void end_frame();
     // A textured draw of `texture` for the parallax census: it drew with the parallax (kCoverageParallax) or missed it
     // for a ParallaxMiss. census() calls it; public for tests/renderer_bgfx/relief_switch_check.cpp.

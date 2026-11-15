@@ -1,6 +1,6 @@
 $input v_texcoord0, v_texcoord1, v_texcoord2
 // fs_ff_lamp_caster for casters whose material cuts holes: where the colour pass's alpha test would discard, nothing
-// is cast.
+// is cast; nothing inside the lamp's holder sphere either.
 #include "storm_common.sh"
 #include "ff_caster_cut.sh"
 
@@ -13,5 +13,4 @@ void main()
     if (reach < u_fxLampCaster.z || ffCasterCut())
         discard;
     gl_FragColor = vec4_splat(0.0);
-    gl_FragDepth = clamp(reach * u_fxLampCaster.y, 0.0, 1.0);
 }

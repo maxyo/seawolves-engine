@@ -64,6 +64,25 @@ LightShape ShapeOf(const Lamp &lamp)
     return {lamp.range, lamp.intensity, lamp.core};
 }
 
+float LampReach(const Lamp &lamp, float level)
+{
+    const float strongest = std::max({lamp.color[0], lamp.color[1], lamp.color[2]});
+    const LightShape shape = ShapeOf(lamp);
+    if (!(strongest > 0.0f) || !(shape.range > 0.0f))
+        return 0.0f;
+    const auto shown = [&](float d) { return strongest * LightFalloffGammaAt(shape, d); };
+    if (shown(0.0f) < level)
+        return 0.0f;
+    // The falloff only falls with the distance.
+    float lo = 0.0f, hi = shape.range;
+    for (int i = 0; i < 24; ++i)
+    {
+        const float mid = 0.5f * (lo + hi);
+        (shown(mid) >= level ? lo : hi) = mid;
+    }
+    return hi;
+}
+
 namespace
 {
 struct Piece
@@ -226,7 +245,8 @@ std::vector<Fixture> FindFixtures(std::span<const Vec3> positions, std::span<con
     return fixtures;
 }
 
-LampGrid BuildLampGrid(std::span<const Lamp> lamps, Vec3 lo, Vec3 hi, float cell, int max_cells_xz, int max_cells_y)
+LampGrid BuildLampGrid(std::span<const Lamp> lamps, std::span<const float> reach_of, Vec3 lo, Vec3 hi, float cell,
+                       int max_cells_xz, int max_cells_y)
 {
     LampGrid grid;
     grid.lo = lo;
@@ -259,7 +279,7 @@ LampGrid BuildLampGrid(std::span<const Lamp> lamps, Vec3 lo, Vec3 hi, float cell
                     const Vec3 d{nearest[0] - lamps[i].position[0], nearest[1] - lamps[i].position[1],
                                  nearest[2] - lamps[i].position[2]};
                     const float distance = std::sqrt(Dot(d, d));
-                    if (distance >= lamps[i].range)
+                    if (distance >= std::min(lamps[i].range, reach_of[i]))
                         continue;
                     float score = Luminance(lamps[i].color) * LightFalloffGammaAt(ShapeOf(lamps[i]), distance);
                     if (const auto *g = lamps[i].aggregate.get())
@@ -590,6 +610,43 @@ bool SphereInLampFace(Vec3 lamp, int face, Vec3 center, float radius)
            (-y - g * z) / norm <= radius;
 }
 
+void SplitByLampFace(std::span<const Vec3> positions, std::span<const uint32_t> triangles, Vec3 lamp, float holder,
+                     LampFaceLists &out)
+{
+    std::array<std::vector<uint32_t>, 12> lists;
+    for (size_t t = 0; t + 2 < triangles.size(); t += 3)
+    {
+        const Vec3 &a = positions[triangles[t]], &b = positions[triangles[t + 1]], &c = positions[triangles[t + 2]];
+        Vec3 lo, hi;
+        for (int k = 0; k < 3; ++k)
+        {
+            lo[k] = std::min({a[k], b[k], c[k]});
+            hi[k] = std::max({a[k], b[k], c[k]});
+        }
+        const Vec3 center{0.5f * (lo[0] + hi[0]), 0.5f * (lo[1] + hi[1]), 0.5f * (lo[2] + hi[2])};
+        const Vec3 half{0.5f * (hi[0] - lo[0]), 0.5f * (hi[1] - lo[1]), 0.5f * (hi[2] - lo[2])};
+        const float radius = std::sqrt(Dot(half, half));
+        // The box's nearest point to the lamp within the holder sphere: some fragment may lie inside it.
+        float gap = 0.0f;
+        for (int k = 0; k < 3; ++k)
+        {
+            const float d = std::max({lo[k] - lamp[k], 0.0f, lamp[k] - hi[k]});
+            gap += d * d;
+        }
+        const int near = gap < holder * holder ? 1 : 0;
+        for (int face = 0; face < 6; ++face)
+            if (SphereInLampFace(lamp, face, center, radius))
+                lists[face * 2 + near].insert(lists[face * 2 + near].end(), {triangles[t], triangles[t + 1], triangles[t + 2]});
+    }
+    out.indices.clear();
+    for (size_t k = 0; k < lists.size(); ++k)
+    {
+        out.first[k] = static_cast<uint32_t>(out.indices.size());
+        out.indices.insert(out.indices.end(), lists[k].begin(), lists[k].end());
+    }
+    out.first[12] = static_cast<uint32_t>(out.indices.size());
+}
+
 AtlasTile LampAtlasTile(int slot, int face, int columns, int rows)
 {
     const int tile = slot * 6 + face;
@@ -626,6 +683,12 @@ LampFaceSample LampFaceCoord(Vec3 lamp, Vec3 point, int slot, int columns, int r
     const float u = Dot(l, f.right) / major * s, v = Dot(l, f.up) / major * s;
     const AtlasTile tile = LampAtlasTile(slot, face, columns, rows);
     return {face, tile.x0 + (u * 0.5f + 0.5f) * tile.sx, tile.y0 + (0.5f - v * 0.5f) * tile.sy};
+}
+
+float LampFaceDepth(float major, float far_plane)
+{
+    const float n = kLampShadowNear, far = std::max(far_plane, n * 2.0f);
+    return far / (far - n) * (1.0f - n / major);
 }
 
 float LampCasterDistance(float clip_x, float clip_y, float clip_w)

@@ -42,6 +42,10 @@ struct PerfCounters
     uint64_t buffer_creates = 0;   // bgfx buffers created for them (ranges of shared GL buffers; a rewrite updates in place: none)
     uint64_t texture_uploads = 0;  // texture levels created or updated from the CPU
     uint64_t texture_upload_bytes = 0;
+    // The lamps' shadow faces (src/effects/lamp_shadows.hpp): submits into either atlas (a still slot's row clear
+    // included) and atlas clears (a frame's pass of the characters' atlas, a still slot's row).
+    uint64_t lamp_face_draws = 0;
+    uint64_t lamp_atlas_clears = 0;
     // Time, milliseconds.
     double shim_ms = 0;     // game thread inside the shim's draw path (D3D9 -> bgfx translation)
     double submit_ms = 0;   // the GL backend's submit of the frame's draws (bgfx::Stats cpuTimeBegin..End: commands,
@@ -66,7 +70,7 @@ struct PerfCounters
     // Per-frame means of a window as space-separated key=value pairs (empty without frames):
     // draws skipped views programs states uniforms uniform_kb uniform_draws gl_uniforms gl_uniform_kb tex_binds tex_changes
     // tvb_kb tib_kb fans buf_uploads buf_kb tex_uploads tex_kb shim_ms submit_ms wait_ms gpu_ms tex_mb rt_mb
-    // tex_shadow_mb buf_shadow_mb buf_gpu_mb tvb_max_kb tib_max_kb.
+    // tex_shadow_mb buf_shadow_mb buf_gpu_mb tvb_max_kb tib_max_kb lamp_face_draws lamp_atlas_clears.
     std::string Summary() const;
 };
 

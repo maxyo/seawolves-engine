@@ -120,7 +120,7 @@ void component_shadows(shim::Device &device)
     lamps.set_geometry(geometry);
     fx::Settings settings;
     settings.lamp_shadows = 2; settings.lamp_moving = 0;
-    lamps.configure(settings);
+    lamps.configure(settings, fx::LampDepth::D24);
     effective = {fx::Lamp{{0,3,0}}, fx::Lamp{{.4f,3,0}}};
     flames = {{{0,3,0},0}, {{.4f,3,0},1}};
     report(effective, flames);
@@ -228,7 +228,7 @@ int main()
         fx::Settings settings;
         settings.lamp_shadows = 2;
         settings.lamp_moving = 1;
-        lamps.configure(settings);
+        lamps.configure(settings, fx::LampDepth::D24);
         render::EffectsShip ship;
         ship.id = 7;
         ship.signature = 4;

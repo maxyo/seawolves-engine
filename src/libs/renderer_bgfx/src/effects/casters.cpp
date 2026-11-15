@@ -93,8 +93,10 @@ void Casters::find_shaders()
     vs_[1][1] = shim::shader_id_by_name("vs_ff_caster_cut_skin");
     fs_[0][0] = shim::shader_id_by_name("fs_ff_caster");
     fs_[0][1] = shim::shader_id_by_name("fs_ff_caster_cut");
-    fs_[1][0] = shim::shader_id_by_name("fs_ff_lamp_caster");
-    fs_[1][1] = shim::shader_id_by_name("fs_ff_lamp_caster_cut");
+    fs_[1][0] = fs_[0][0];
+    fs_[1][1] = fs_[0][1];
+    fs_[2][0] = shim::shader_id_by_name("fs_ff_lamp_caster");
+    fs_[2][1] = shim::shader_id_by_name("fs_ff_lamp_caster_cut");
 }
 
 void Casters::ensure_uniforms()
@@ -124,18 +126,21 @@ bgfx::ProgramHandle Casters::program(shim::Device &device, Pass pass, bool skinn
         bgfx::setUniform(u_cut_, reference);
         bgfx::setUniform(u_uv_, sets);
     }
-    return device.program(vs_[cut][skinned ? 1 : 0], fs_[pass == Pass::Lamp ? 1 : 0][cut]);
+    return device.program(vs_[cut][skinned ? 1 : 0], fs_[static_cast<int>(pass)][cut]);
 }
 
 bool Casters::prepare_programs(shim::Device &device, Pass pass, int &budget)
 {
     find_shaders();
-    const int p = pass == Pass::Lamp ? 1 : 0;
-    for (int cut = 0; cut < 2; ++cut)
-        for (int skinned = 0; skinned < 2; ++skinned)
-            if (!device.prepare_program(vs_[cut][skinned], fs_[p][cut], budget))
-                return false;
-    return true;
+    // A lamp's faces take both: plain depth and the holder's.
+    const auto prepare = [&](Pass p) {
+        for (int cut = 0; cut < 2; ++cut)
+            for (int skinned = 0; skinned < 2; ++skinned)
+                if (!device.prepare_program(vs_[cut][skinned], fs_[static_cast<int>(p)][cut], budget))
+                    return false;
+        return true;
+    };
+    return pass == Pass::Lamp ? prepare(Pass::Lamp) && prepare(Pass::LampHolder) : prepare(pass);
 }
 
 void Casters::shutdown()

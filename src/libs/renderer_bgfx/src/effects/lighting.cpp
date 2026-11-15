@@ -175,7 +175,7 @@ void Lighting::prepare_aggregates(FfDraw &draw, const fx::LightSelection &select
         }
 }
 
-void Lighting::configure(const fx::Settings &settings, const fx::RendererState &state)
+void Lighting::configure(const fx::Settings &settings, const fx::RendererState &state, fx::LampDepth lamp_depth)
 {
     settings_ = settings;
     flags_ = settings.lighting_flags;
@@ -186,7 +186,7 @@ void Lighting::configure(const fx::Settings &settings, const fx::RendererState &
     // Our own lightmaps for the towns with the per-pixel lighting (Средняя / Высокая); Низкая keeps the game's.
     town_light_.set_enabled(fx::BackgroundProductsFor(settings).town_light);
     town_light_.set_debug(settings.town_light_debug);
-    lamps_.configure(settings);
+    lamps_.configure(settings, lamp_depth);
     const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings);
     gloss_ = products.gloss;
     // The relief's material texture (height and gloss) is uploaded when the parallax, the cavity or the gloss reads it.

@@ -6,18 +6,27 @@
 // (render::SetEffectsLocationGeometry). Candles of one fixture are merged; every lamp lights within its shape's radius
 // (fx/light_falloff.hpp, the same falloff as every light). Its own fixture (fx::FindFixtures: candlestick, lantern,
 // post, chandelier) casts no shadow of it. The lamps nearest to the camera, up to Settings::lamp_shadows, take a slot:
-//   * a row of six cube faces in two depth atlases holding the distance to the lamp / its radius (linear, written
-//     by fs_ff_lamp_caster): `static` with the still geometry around the lamp, drawn once when the lamp takes the
-//     slot (a few slots per frame; all of them in the first frame of a location); `dynamic` with what moves (the
-//     characters and the other lit draws that reach a face, on screen or not: the faces are published as shadow
-//     volumes, effects/shadow_casters.hpp), redrawn every frame;
+//   * a row of six cube faces in two depth atlases (D24, else D32F: Support::lamp_depth) holding the hardware depth of
+//     each face's own perspective projection (fx::LampFaceDepth; no caster writes its depth, early depth testing
+//     stays on): `static` with the still geometry around the lamp, each triangle only in the faces it reaches,
+//     drawn once when the lamp takes the slot (a few slots per frame; all of them in the first frame of a location);
+//     `dynamic` with what moves (the characters and the other lit draws that reach a face within the lamp's reach,
+//     on screen or not: the faces are published as shadow volumes, effects/shadow_casters.hpp), drawn only in frames
+//     that have such a caster (no clear, no pass otherwise). The faces that hold a caster this frame are a frame
+//     uniform (u_fxLampFaces, set before the frame is handed to bgfx: before_frame): the receivers read the dynamic
+//     atlas only there;
 //   * its number in the lamp grid (a small 3D texture: which slots reach which cell of the place).
+// A lamp counts only as far as its light can show (fx::LampReach, fx::kLampNegligible): the grid lists it there,
+// still triangles and characters cast into its faces from there; a receiver where its light is under that level
+// takes no shadow taps for it. The strongest lamp of a pixel takes the 5x5 filter (Settings::lamp_soft), the others
+// 3x3; at most Settings::lamp_per_pixel grid lamps light one pixel.
 // A lamp fades in once its faces are drawn and fades out before its slot goes to another lamp.
 // The last Settings::lamp_moving slots are for the lights that move, the nearest to the camera; the receivers take
 // them without the grid, and they only add light (no bake holds theirs), as far and as strong as the game's point
 // light they stand for (its shape, as fxPointLight lights it):
 //   * carried lanterns and torches (render::SetEffectsDynamicLights): their still faces are drawn again from the
-//     location's triangles around them whenever they move;
+//     location's triangles around them whenever they move (or their radius changes), each triangle only into the
+//     faces it reaches; their colour, intensity and core follow the light every frame;
 //   * the ships' lanterns (render::SetEffectsShipLights): a lantern stands still on its ship, so its faces are in
 //     the ship's space (the receivers and the casters turn into it): the still faces hold the ship itself but the
 //     lantern's own fixture (render::SetEffectsShipGeometry, drawn once and when the ship changes), the dynamic ones
@@ -42,6 +51,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -62,7 +72,7 @@ namespace storm::effects
 class LampShadows
 {
   public:
-    void configure(const fx::Settings &settings);
+    void configure(const fx::Settings &settings, fx::LampDepth depth);
     bool enabled() const { return slots_ > 0; }
     // An interior is loaded (its still geometry was reported): the weather's sun and ambient are not its light.
     bool interior() const { return interior_ && !positions_.empty(); }
@@ -131,8 +141,13 @@ class LampShadows
         for (const auto &slot : slot_) if (slot.lamp != -1 && !slot.ready) return 1;
         return 0;
     }
+    // Right before every bgfx::frame() (a present, or a flush for a read-back that ends the bgfx frame early): the
+    // faces that took a caster this frame (the published volumes' counts) into u_fxLampFaces, which every draw of
+    // that bgfx frame reads.
+    void before_frame();
     void end_frame();
-    // Lamps with a slot and static faces drawn in the last frame (effects profile).
+    // Lamps with a slot and static faces drawn in the last frame (effects profile). Face draws and atlas clears are
+    // renderer counters (render::PerfCounters).
     int last_slots() const { return last_slots_; }
     int last_static_faces() const { return last_static_faces_; }
 
@@ -140,11 +155,18 @@ class LampShadows
     void on_device_lost();
 
   private:
+    // Index lists of a slot's still faces (fx::LampFaceLists): one buffer, list k = face * 2 + near the holder.
+    struct FaceBuffer
+    {
+        bgfx::IndexBufferHandle handle = BGFX_INVALID_HANDLE;
+        std::array<uint32_t, 13> first{};
+    };
     struct Slot
     {
         int lamp = -1;          // index into lamps_, -1: free (a moving slot: kMovingLamp while it holds a light)
         bool moving = false;    // one of the slots kept for lights that move: its still faces follow the light
         fx::Lamp at{};          // the lamp its faces were drawn for (range = its radius)
+        float reach = 0.0f;     // metres its light counts (fx::LampReach with the flicker's headroom)
         float holder = 0.0f;    // metres around it in which the still geometry casts nothing
         bool ready = false;     // its static faces are drawn
         bool redraw = false;    // a moving light has moved, a ship's geometry came: its still faces are drawn again
@@ -153,14 +175,19 @@ class LampShadows
         std::array<float, 16> to_local{}; // ... absolute world -> that space (row vectors), this frame
         bool leaving = false;   // fading out: the slot goes to another lamp
         float weight = 0.0f;    // 0..1, the fade
-        bgfx::IndexBufferHandle triangles = BGFX_INVALID_HANDLE; // the solid still geometry within its radius
-        std::vector<std::pair<std::shared_ptr<shim::TexStore>, bgfx::IndexBufferHandle>> cut; // ... and of each cut-out texture
-        uint32_t last_casters = 0;                               // caster draws in its dynamic faces in the last frame
-        std::array<ShadowCasters::Id, 6> volume{};               // this frame's dynamic faces (while `published`)
+        FaceBuffer triangles;   // the solid still geometry within its reach
+        std::vector<std::pair<std::shared_ptr<shim::TexStore>, FaceBuffer>> cut; // ... and of each cut-out texture
+        std::array<ShadowCasters::Id, 6> volume{}; // this frame's dynamic faces (while `published`)
         bool published = false;
     };
 
     void ensure_targets();
+    // The faces' index buffer of `triangles` (index triples into `positions`) for a lamp at `lamp` (an invalid
+    // handle when none reaches a face).
+    static FaceBuffer face_buffer(std::span<const fx::Vec3> positions, std::span<const uint32_t> triangles, fx::Vec3 lamp,
+                                  float holder);
+    static void free_faces(FaceBuffer &faces);
+    float reach_of(const fx::Lamp &lamp) const;
     void choose_slots(const std::array<float, 3> &eye);
     void free_slot(Slot &slot);
     void draw_static(shim::Device &device, bool all, Casters &casters);
@@ -173,6 +200,9 @@ class LampShadows
     void upload_room();
 
     int slots_ = 0;
+    fx::LampDepth depth_ = fx::LampDepth::None;
+    int per_pixel_ = fx::kLampGridCapacity;
+    float level_ = fx::kLampNegligible; // in the receivers' gamma units over the strongest gain
     int face_size_ = 0, dynamic_face_size_ = 0;
     int columns_ = 0, rows_ = 0;
     float gain_ = 1.0f, baked_ = 0.5f;
@@ -259,9 +289,10 @@ class LampShadows
     bgfx::UniformHandle s_static_ = BGFX_INVALID_HANDLE, s_dynamic_ = BGFX_INVALID_HANDLE, s_grid_ = BGFX_INVALID_HANDLE,
                         s_room_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_view_ = BGFX_INVALID_HANDLE, u_lamps_ = BGFX_INVALID_HANDLE, u_grid_ = BGFX_INVALID_HANDLE,
-                        u_caster_ = BGFX_INVALID_HANDLE;
+                        u_caster_ = BGFX_INVALID_HANDLE, u_faces_ = BGFX_INVALID_HANDLE;
     std::array<std::array<float, 4>, 2 + 3 * fx::kMaxShadowLamps> uniforms_{};
-    std::array<std::array<float, 4>, 11> grid_uniforms_{};
+    std::array<std::array<float, 4>, 12> grid_uniforms_{};
+    std::array<std::array<float, 4>, fx::kMaxShadowLamps> faces_uniform_{}; // u_fxLampFaces (a frame uniform)
     std::array<float, 16> bound_view_{}, view_to_world_{};
     bool reported_ = false;
     bool transient_reported_ = false, ship_reported_ = false, carried_reported_ = false;

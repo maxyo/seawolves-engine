@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include "storm/fx/capabilities.hpp"
+#include "storm/fx/lamp_shadows.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -75,6 +76,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.ao_volume = 2;
         s.lamp_shadows = 8;
         s.lamp_moving = 1;
+        s.lamp_per_pixel = 2; // frame.md budget: the mid class
         s.wet_surfaces = 1;
         return s;
     }
@@ -108,6 +110,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.lamp_shadows = 16;
     s.lamp_moving = 2;
     s.lamp_soft = true;
+    s.lamp_per_pixel = 4; // frame.md budget: the flagship class
     s.ssao = true;
     s.ssao_intensity = 0.35f;
     s.wet_surfaces = 2;
@@ -158,6 +161,20 @@ float RenderScale(uint16_t render_height, uint32_t display_height)
     return std::max(kMinRenderScale, static_cast<float>(render_height) / static_cast<float>(display_height));
 }
 
+const char *LampDepthName(LampDepth depth)
+{
+    switch (depth)
+    {
+    case LampDepth::D24:
+        return "D24";
+    case LampDepth::D32F:
+        return "D32F";
+    case LampDepth::None:
+        break;
+    }
+    return "NO";
+}
+
 std::string Support::Describe() const
 {
     const auto word = [](bool ok) { return ok ? "yes" : "NO"; };
@@ -165,6 +182,8 @@ std::string Support::Describe() const
     text += word(lut_3d);
     text += ", shadow map: ";
     text += word(shadow_map);
+    text += ", lamp face depth: ";
+    text += LampDepthName(lamp_depth);
     text += ", sampleable scene depth: ";
     text += word(scene_depth);
     text += ", EAC RG11 normal maps: ";
@@ -323,8 +342,12 @@ constexpr Rule kRules[] = {
     {[](const Settings &s, const Support &) { return s.lamp_moving > 2 || (s.lamp_shadows && s.lamp_moving > s.lamp_shadows); },
      [](Settings &s) { s.lamp_moving = static_cast<uint8_t>(std::min<int>({s.lamp_moving, 2, s.lamp_shadows ? s.lamp_shadows : 2})); },
      "at most 2 of the lamp slots are for moving lights: lowered"},
-    {[](const Settings &s, const Support &c) { return s.lamp_shadows && !c.shadow_map; }, [](Settings &s) { s.lamp_shadows = 0; },
-     "lamp shadows need a D16 depth render target: switched off"},
+    {[](const Settings &s, const Support &c) { return s.lamp_shadows && c.lamp_depth == LampDepth::None; },
+     [](Settings &s) { s.lamp_shadows = 0; },
+     "lamp shadows need a D24 or D32F depth render target (perspective depth over a lamp's radius): switched off"},
+    {[](const Settings &s, const Support &) { return s.lamp_per_pixel < 1 || s.lamp_per_pixel > kLampGridCapacity; },
+     [](Settings &s) { s.lamp_per_pixel = static_cast<uint8_t>(std::clamp<int>(s.lamp_per_pixel, 1, kLampGridCapacity)); },
+     "1 to 8 lamps light a pixel with their shadows: clamped"},
     {[](const Settings &s, const Support &c) { return s.lamp_shadows && !c.ao_volume; }, [](Settings &s) { s.lamp_shadows = 0; },
      "the lamps' grid and the room light need RGBA8 3D textures: lamp shadows switched off"},
     {[](const Settings &s, const Support &) { return s.lamp_shadows && !(s.lighting_flags & kLightingPerPixel); },

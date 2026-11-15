@@ -942,6 +942,8 @@ bool Context::run_frame(uint32_t flags, uint32_t *frame_number)
 {
     // The frame's bone palettes go up in one update, before the draws that read them are rendered.
     bone_palettes_.flush();
+    if (before_frame_)
+        before_frame_();
     bool refused = false;
     {
         std::lock_guard lock(release_mutex_);

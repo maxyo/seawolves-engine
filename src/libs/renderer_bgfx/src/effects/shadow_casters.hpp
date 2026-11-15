@@ -72,6 +72,10 @@ struct ShadowVolume
     // it (the sun; its shadows are `shadow_length` long); w < 0: not given, every caster in the bounds is taken.
     std::array<float, 4> light{0.0f, 0.0f, 0.0f, -1.0f};
     float shadow_length = 0.0f;
+    // A lamp's holder sphere (volume space, w > 0): a caster whose sphere meets it is drawn with
+    // Casters::Pass::LampHolder (nothing inside the sphere casts), the others with `pass` (plain depth, early depth
+    // testing kept).
+    std::array<float, 4> holder{};
     // One vec4 set with every submit (the lamp casters' u_fxLampCaster); invalid: none.
     bgfx::UniformHandle uniform = BGFX_INVALID_HANDLE;
     std::array<float, 4> uniform_value{};

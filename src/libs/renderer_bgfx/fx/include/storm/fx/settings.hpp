@@ -238,7 +238,11 @@ struct Settings
     // The lamps of a location relight it with shadows (lamp_shadows.hpp): how many lamps around the camera take
     // part, 0, 8 or 16. Interiors also light their lit models with the room's own baked light.
     uint8_t lamp_shadows = 0;
-    bool lamp_soft = false;  // a 5x5 instead of a 3x3 filter on the lamp shadows of the still geometry
+    bool lamp_soft = false;  // a 5x5 instead of a 3x3 filter on the lamp shadows of the still geometry, for the
+                             // strongest lamp of a pixel (the others take the 3x3)
+    // The most lamps that light one pixel with their shadows, strongest of its cell first (1..kLampGridCapacity):
+    // the weaker lamps of a crowded cell keep only the light the bake holds of them.
+    uint8_t lamp_per_pixel = 8;
     // How many of those slots are kept for lights that move (carried lanterns and torches): the nearest to the
     // camera cast shadows, their still faces redrawn whenever they move. 0, 1 or 2.
     uint8_t lamp_moving = 0;
@@ -251,7 +255,7 @@ struct Settings
     // Indoors the lit models stand this much above the room light around them (0 = at its level): the owner wants
     // the characters to stand out from the room a little.
     float lamp_model_lift = 0.2f;
-    uint8_t lamp_debug = 0;  // 1: every lamp slot in its own colour, 2: the shadow mask
+    uint8_t lamp_debug = 0;  // 1: every lamp slot in its own colour, 2: the shadow mask, 3: the shadow taps per pixel
     // Rain wetness of the outdoor surfaces where the rain reaches them (wetness.hpp, ff_wet.sh): 0 off, 1 wet (darker,
     // glossier, the sky's reflection; following the rain and drying after it), 2 also puddles in the relief's hollows
     // (the parallax's height). Lit and baked draws (per-pixel lighting); highlights where there is FX_LIGHT_SPECULAR.
@@ -295,6 +299,14 @@ struct BackgroundProducts
 };
 BackgroundProducts BackgroundProductsFor(const Settings &settings);
 
+enum class LampDepth : uint8_t
+{
+    None,
+    D24,  // 24-bit fixed point
+    D32F, // 32-bit float
+};
+const char *LampDepthName(LampDepth depth);
+
 // What the device and the renderer can do, decided once at start-up (fx::DetectSupport() in capabilities.hpp
 // fills the GPU part; the renderer fills `scene_depth`). Show it on the settings screen: an option whose
 // requirement is missing must be disabled there, not quietly ignored.
@@ -302,6 +314,9 @@ struct Support
 {
     bool lut_3d = false;        // 3D RGBA8 texture: the grading table every post effect passes through
     bool shadow_map = false;    // D16 texture as a render target: Settings::shadows
+    // The depth format of the lamps' shadow faces (lamp_shadows.hpp): a perspective depth over 1 cm..the lamp's
+    // radius needs 24 bits or a float (16 bits resolve 15 cm at 10 m). None: Settings::lamp_shadows is switched off.
+    LampDepth lamp_depth = LampDepth::None;
     bool scene_depth = false;   // the scene's depth attachment can be sampled: Settings::ssao, Settings::sea_soft_edges
     bool normal_map = false;    // EAC RG11 textures (the derived maps): kLightingNormalMap, Settings::gloss
     uint8_t msaa_samples = 1;   // the highest MSAA sample count (1 = none, 2 or 4) the scene target renders with,

@@ -1,6 +1,8 @@
 // Internal helpers shared by the bgfx passes of the fx package.
 #pragma once
 
+#include "storm/fx/settings.hpp"
+
 #include <bgfx/bgfx.h>
 
 #include <array>
@@ -34,6 +36,8 @@ void SetupView(bgfx::ViewId view, const char *name, bgfx::FrameBufferHandle targ
 // Device capabilities the passes depend on; fx::DetectSupport() reports the same answers.
 bool SupportsLut3d();
 bool SupportsShadowMap();
+// The depth format of the lamps' shadow faces: D24 where it renders and samples, else D32F, else none.
+LampDepth LampDepthFormat();
 bool SupportsAoVolume();
 bool SupportsNormalMap(bgfx::TextureFormat::Enum format);
 uint8_t MsaaSamples(); // 1, 2 or 4

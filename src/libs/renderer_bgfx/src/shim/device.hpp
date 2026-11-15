@@ -92,6 +92,9 @@ class Context final : public render::FrameOwner
     }
 
     BonePalettes &bone_palettes() { return bone_palettes_; }
+    // Called on the game thread right before every bgfx::frame() (a present or a flush for a read-back): the last
+    // moment to set what the whole frame reads (frame uniforms, effects::Lighting::before_frame).
+    void set_before_frame(void (*hook)()) { before_frame_ = hook; }
 
     bool init(SDL_Window *window, uint32_t width, uint32_t height, bool vsync);
     // Host checks without a display (tests/renderer_bgfx): bgfx's Noop renderer, no window, no surface events.
@@ -265,6 +268,7 @@ class Context final : public render::FrameOwner
     uint32_t backend_presented_ = 0;                // presented frames of this device
     bool fail_self_test_ = false;                   // render::FailRenderBackendSelfTest
     BonePalettes bone_palettes_;
+    void (*before_frame_)() = nullptr;
     bool flip_y_ = false;
     bool border_clamp_ = false;
     bool border_colors_ = false;

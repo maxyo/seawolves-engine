@@ -168,23 +168,38 @@ vec3 ffBounce(vec3 P, vec3 Ng, vec3 Nw)
 // u_fxLamps[0]: x lamp slots (0 = no lamps for this draw), y 1 = GL texture origin (bottom-left), z the lamps' gain
 //               on baked colours, w the part of the lamp light the baked colours already hold
 // u_fxLamps[1]: x 1 / faces per atlas row, y 1 / atlas rows, z static face size in texels, w dynamic face size
-// per slot i at 2 + 3i: xyz position, w radius | rgb colour (with the slot's fade), w 1 = characters stand in its
-//               light, + 2 = a light that moves (a carried lantern: no bake holds its light, it only adds) |
-//               intensity, core², unused, w unused
-// u_fxLampGrid[0]: xyz the lamp grid's corner, w debug view (1 each slot in its colour, 2 the shadow mask)
+// per slot i at 2 + 3i: xyz position, w radius | rgb colour (with the slot's fade), w 2 = a light that moves (a
+//               carried lantern: no bake holds its light, it only adds), else 0 | intensity, core², unused, unused
+// u_fxLampGrid[0]: xyz the lamp grid's corner, w debug view (1 each slot in its colour, 2 the shadow mask, 3 the
+//                  shadow taps per pixel)
 // u_fxLampGrid[1]: xyz 1 / the grid's extent, w cells along x
 // u_fxLampGrid[2]: xyz the room light's corner, w > 0 = this draw takes its ambient from the room light, times w
-// u_fxLampGrid[3]: xyz 1 / the room light's extent, w 1 = 5x5 filter on the static faces
+// u_fxLampGrid[3]: xyz 1 / the room light's extent, w 1 = 5x5 filter on the static faces of the strongest lamp
 // u_fxLampGrid[4]: x the first slot of the lights that move, y how many such slots (they are not in the grid),
-//                  z the share of a lamp's own colour in what it adds to baked surfaces (the rest: the bake's tone)
+//                  z the share of a lamp's own colour in what it adds to baked surfaces (the rest: the bake's tone),
+//                  w the light under which a lamp is not filtered against its shadow (fx::kLampNegligible over
+//                  the strongest gain, gamma space)
 // u_fxLampGrid[5..7], [8..10]: per such slot, the rows of the turn from the world into the space of its faces
+// u_fxLampGrid[11]: x the most grid lamps per pixel (Settings::lamp_per_pixel), y the faces' near plane
+//                   (fx::kLampShadowNear)
+// u_fxLampFaces[i].x (a frame uniform, the value at the end of the frame for every draw of it): per slot, the faces
+//                   (bit f = face f) of its dynamic atlas that hold a caster this frame; the others are not read.
 uniform vec4 u_fxLamps[50];
-uniform vec4 u_fxLampGrid[11];
+uniform vec4 u_fxLampGrid[12];
+uniform vec4 u_fxLampFaces[16];
 SAMPLER3D(s_fxRoomLight, 8);
 SAMPLER3D(s_fxLampGrid, 9);
 SAMPLER2DSHADOW(s_fxLampDynamic, 10);
 SAMPLER2DSHADOW(s_fxLampStatic, 11);
 #include "ff_wet.sh"
+
+// Shadow compare taps of this pixel (the debug view u_fxLampGrid[0].w = 3); a global of the shader (HLSL, which the
+// SPIR-V path compiles, reads a global without `static` as a uniform).
+#if BGFX_SHADER_LANGUAGE_GLSL
+float ffLampTaps = 0.0;
+#else
+static float ffLampTaps = 0.0;
+#endif
 
 // 3x3 percentage-closer filter in four hardware-filtered compare taps: the optimised PCF of The Witness, after
 // MJP's Shadows sample (github.com/TheRealMJP/Shadows, MIT). uv: atlas coordinates, size: the atlas in texels.
@@ -203,6 +218,7 @@ SAMPLER2DSHADOW(s_fxLampStatic, 11);
                   pcf_w1.x * pcf_w0.y * shadow2D(map, vec3(pcf_base.x + pcf_o1.x, pcf_base.y + pcf_o0.y, depth)) + \
                   pcf_w0.x * pcf_w1.y * shadow2D(map, vec3(pcf_base.x + pcf_o0.x, pcf_base.y + pcf_o1.y, depth)) + \
                   pcf_w1.x * pcf_w1.y * shadow2D(map, vec3(pcf_base.x + pcf_o1.x, pcf_base.y + pcf_o1.y, depth))) / 16.0; \
+        ffLampTaps += 4.0; \
     }
 
 // The same filter over 5x5 texels in nine taps.
@@ -226,15 +242,23 @@ SAMPLER2DSHADOW(s_fxLampStatic, 11);
                   pcf_w0.x * pcf_w2.y * shadow2D(map, vec3(pcf_base.x + pcf_o0.x, pcf_base.y + pcf_o2.y, depth)) + \
                   7.0 * pcf_w2.y * shadow2D(map, vec3(pcf_base.x + pcf_o1.x, pcf_base.y + pcf_o2.y, depth)) + \
                   pcf_w2.x * pcf_w2.y * shadow2D(map, vec3(pcf_base.x + pcf_o2.x, pcf_base.y + pcf_o2.y, depth))) / 144.0; \
+        ffLampTaps += 9.0; \
     }
 
+// The depth a face stores for a point `major` metres along its axis (fx::LampFaceDepth).
+float ffLampFaceDepth(float major, float radius)
+{
+    float near = u_fxLampGrid[11].y;
+    return clamp((1.0 - near / max(major, 1e-4)) * radius / (radius - near), 0.0, 1.0);
+}
+
 // 1 = the lamp of slot `slot` reaches the point at L from it (unit geometric normal Ng, facing the lamp by ngl),
-// 0 = the location or a character stands between them. radius: the lamp's; characters: its dynamic faces hold some.
-float ffLampVisibility(float slot, vec3 L, float radius, float characters, vec3 Ng, float ngl)
+// 0 = the location or a character stands between them. radius: the lamp's; soft: 1 = the 5x5 filter on its still
+// faces (the strongest lamp of the pixel), 0 = 3x3. Its dynamic faces are read only where they hold a caster.
+float ffLampVisibility(float slot, vec3 L, float radius, vec3 Ng, float ngl, float soft)
 {
     // One texel of a face at this distance, in metres: the receiver steps that far off its surface (further at grazing
-    // light), and the compared distance is pulled in by most of a texel.
-    float soft = u_fxLampGrid[3].w;
+    // light), and the compared point is pulled towards the lamp by most of a texel.
     float texel = 2.1 * length(L) / u_fxLamps[1].z;
     vec3 Lo = L + Ng * (texel * (1.0 + soft + 1.5 * (1.0 - clamp(ngl, 0.0, 1.0))) + 0.004);
     vec3 a = abs(Lo);
@@ -263,7 +287,9 @@ float ffLampVisibility(float slot, vec3 L, float radius, float characters, vec3 
                    (slot + 0.5 - 0.5 * s * dot(Lo, U) / major) * u_fxLamps[1].y);
     if (u_fxLamps[0].y > 0.5)
         uv.y = 1.0 - uv.y;
-    float depth = (length(Lo) - 0.75 * texel) / radius;
+    // Along the ray to the lamp the stored depth only grows: the pull in metres becomes a shorter axis distance.
+    float len = max(length(Lo), 1e-4);
+    float depth = ffLampFaceDepth(major * (len - 0.75 * texel) / len, radius);
     vec2 faces = vec2(1.0 / u_fxLamps[1].x, 1.0 / u_fxLamps[1].y);
     float lit;
     if (soft > 0.5)
@@ -274,11 +300,12 @@ float ffLampVisibility(float slot, vec3 L, float radius, float characters, vec3 
     {
         FF_LAMP_PCF3(lit, s_fxLampStatic, uv, faces * u_fxLamps[1].z, depth)
     }
-    if (characters > 0.5)
+    if (mod(floor(u_fxLampFaces[int(slot + 0.5)].x / exp2(face) + 0.001), 2.0) > 0.5)
     {
         // The characters' faces are coarser by the ratio of the face sizes.
+        float pull = 0.75 * texel + texel * (u_fxLamps[1].z / u_fxLamps[1].w - 1.0);
         float moving;
-        FF_LAMP_PCF3(moving, s_fxLampDynamic, uv, faces * u_fxLamps[1].w, depth - texel * (u_fxLamps[1].z / u_fxLamps[1].w - 1.0) / radius)
+        FF_LAMP_PCF3(moving, s_fxLampDynamic, uv, faces * u_fxLamps[1].w, ffLampFaceDepth(major * (len - pull) / len, radius))
         lit = min(lit, moving);
     }
     return lit;
@@ -290,12 +317,27 @@ vec3 ffLampDebugColor(float slot)
     return clamp(hue, 0.0, 1.0);
 }
 
+// The light of the lamp in slot `slot` at Pw without its shadow and its surface's turn: its strongest channel times
+// its falloff (which lamp of a pixel is the strongest).
+float ffLampShown(float slot, vec3 Pw)
+{
+    int base = 2 + 3 * int(slot + 0.5);
+    vec4 lamp = u_fxLamps[base];
+    float reach = length(Pw - lamp.xyz);
+    if (reach >= lamp.w)
+        return 0.0;
+    vec3 c = u_fxLamps[base + 1].rgb;
+    vec4 shape = u_fxLamps[base + 2];
+    return max(c.r, max(c.g, c.b)) * fxLightFalloff(reach, lamp.w, shape.x, shape.y);
+}
+
 // Adds the lamp with grid number `id` (slot + 1, 0 = none) at Pw: sum.rgb its light with its shadow, sum.a the
 // luminance of its light without the shadow. Ng: geometric normal (shadow bias, no light from behind the
-// surface), N: shading normal. fxLightFalloff: the lamp's shape, zero at its radius.
+// surface), N: shading normal. fxLightFalloff: the lamp's shape, zero at its radius. strongest: the slot of the
+// pixel's strongest lamp (the 5x5 filter), -1 = none.
 // specV, spec: the world-space unit vector to the eye and the pixel's highlight (fxGlossSpec / fxMaterialSpec); the
 // lamp's highlight with its shadow is added to lampSpec.
-void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, inout vec4 sum, inout vec3 lampSpec)
+void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float strongest, inout vec4 sum, inout vec3 lampSpec)
 {
     if (id < 0.5)
         return;
@@ -315,7 +357,7 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, inout 
         // Exactly one visibility, including grazing-center normals. At the center the lookup direction is undefined.
         float seen = 1.0;
         if (reach > 1e-4)
-            seen = ffLampVisibility(slot,L,lamp.w,u_fxLamps[base+1].w,Ng,dot(Ng,-L/reach));
+            seen = ffLampVisibility(slot, L, lamp.w, Ng, dot(Ng, -L / reach), abs(slot - strongest) < 0.5 ? 1.0 : 0.0);
         if (u_fxLampGrid[0].w > 0.5)
             diffuse.rgb = ffLampDebugColor(slot) * diffuse.a;
         sum.rgb += diffuse.rgb * seen;
@@ -338,16 +380,26 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, inout 
     vec3 rgb = fxLightColor(color.rgb);
     if (u_fxLampGrid[0].w > 0.5)
         rgb = ffLampDebugColor(slot) * dot(rgb, vec3(0.299, 0.587, 0.114));
-    // The faces of a ship's lantern are in the ship's space: the direction and the normal turn into it.
-    vec3 Lf = L;
-    vec3 Nf = Ng;
-    if (moving > 0.5)
+    // Light the picture cannot show (under half a step, fx::kLampNegligible) is not filtered against its shadow.
+    float shown = max(rgb.r, max(rgb.g, rgb.b)) * light;
+#ifdef FX_LIGHT_LINEAR
+    shown = sqrt(shown);
+#endif
+    float seen = 1.0;
+    if (shown >= u_fxLampGrid[4].w)
     {
-        int turn = 5 + 3 * int(slot - u_fxLampGrid[4].x + 0.5);
-        Lf = vec3(dot(L, u_fxLampGrid[turn].xyz), dot(L, u_fxLampGrid[turn + 1].xyz), dot(L, u_fxLampGrid[turn + 2].xyz));
-        Nf = vec3(dot(Ng, u_fxLampGrid[turn].xyz), dot(Ng, u_fxLampGrid[turn + 1].xyz), dot(Ng, u_fxLampGrid[turn + 2].xyz));
+        // The faces of a ship's lantern are in the ship's space: the direction and the normal turn into it.
+        vec3 Lf = L;
+        vec3 Nf = Ng;
+        if (moving > 0.5)
+        {
+            int turn = 5 + 3 * int(slot - u_fxLampGrid[4].x + 0.5);
+            Lf = vec3(dot(L, u_fxLampGrid[turn].xyz), dot(L, u_fxLampGrid[turn + 1].xyz), dot(L, u_fxLampGrid[turn + 2].xyz));
+            Nf = vec3(dot(Ng, u_fxLampGrid[turn].xyz), dot(Ng, u_fxLampGrid[turn + 1].xyz), dot(Ng, u_fxLampGrid[turn + 2].xyz));
+        }
+        float soft = abs(slot - strongest) < 0.5 ? 1.0 : 0.0;
+        seen = ffLampVisibility(slot, Lf, lamp.w, Nf, ngl, soft);
     }
-    float seen = ffLampVisibility(slot, Lf, lamp.w, color.w - 2.0 * moving, Nf, ngl);
     sum.rgb += rgb * (light * seen);
     sum.a += dot(rgb, vec3(0.299, 0.587, 0.114)) * light;
 #ifdef FX_LIGHT_SPECULAR
@@ -363,7 +415,8 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, inout 
 // bake holds nothing of them: it is plain added light, as the game's own point lights, not a part of the relit sum:
 // `lampMoved` of ffLampLight.
 
-// The lamps that reach Pw, from the lamp grid (up to eight per cell); `lampSpec` their highlights (ffLampAdd).
+// The lamps that reach Pw: the lights that move, and from the lamp grid up to u_fxLampGrid[11].x of the eight of its
+// cell, strongest first; `lampSpec` their highlights (ffLampAdd).
 vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampMoved, out vec3 lampSpec)
 {
     vec4 sum = vec4_splat(0.0);
@@ -371,34 +424,70 @@ vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampM
     lampSpec = vec3_splat(0.0);
     if (u_fxLamps[0].x < 0.5)
         return sum;
+    float cap = u_fxLampGrid[11].x;
+    vec4 near = vec4_splat(0.0);
+    vec4 more = vec4_splat(0.0);
+    vec3 cell = (Pw - u_fxLampGrid[0].xyz) * u_fxLampGrid[1].xyz;
+    if (min(min(cell.x, cell.y), cell.z) >= 0.0 && max(max(cell.x, cell.y), cell.z) <= 1.0)
+    {
+        float half_texel = 0.5 / u_fxLampGrid[1].w;
+        float u = 0.5 * clamp(cell.x, half_texel, 1.0 - half_texel);
+        near = floor(texture3D(s_fxLampGrid, vec3(u, cell.y, cell.z)) * 255.0 + vec4_splat(0.5));
+        if (near.w > 0.5 && cap > 4.5)
+            more = floor(texture3D(s_fxLampGrid, vec3(u + 0.5, cell.y, cell.z)) * 255.0 + vec4_splat(0.5));
+    }
+    // The strongest lamp of the pixel takes the soft filter: the first of its cell (the grid lists the strongest
+    // first) or a light that moves, whichever is stronger here.
+    float strongest = -1.0;
+    if (u_fxLampGrid[3].w > 0.5)
+    {
+        float best = 0.0;
+        if (near.x > 0.5)
+        {
+            strongest = near.x - 1.0;
+            best = ffLampShown(strongest, Pw);
+        }
+        for (int i = 0; i < 2; ++i)
+        {
+            float slot = u_fxLampGrid[4].x + float(i);
+            if (u_fxLampGrid[4].y > float(i) + 0.5)
+            {
+                float s = ffLampShown(slot, Pw);
+                if (s > best)
+                {
+                    best = s;
+                    strongest = slot;
+                }
+            }
+        }
+    }
     // The lights that move (at most two) are few and anywhere: every pixel asks them, without the grid.
     vec4 moved = vec4_splat(0.0);
     if (u_fxLampGrid[4].y > 0.5)
-        ffLampAdd(u_fxLampGrid[4].x + 1.0, Pw, Ng, N, specV, spec, moved, lampSpec);
+        ffLampAdd(u_fxLampGrid[4].x + 1.0, Pw, Ng, N, specV, spec, strongest, moved, lampSpec);
     if (u_fxLampGrid[4].y > 1.5)
-        ffLampAdd(u_fxLampGrid[4].x + 2.0, Pw, Ng, N, specV, spec, moved, lampSpec);
+        ffLampAdd(u_fxLampGrid[4].x + 2.0, Pw, Ng, N, specV, spec, strongest, moved, lampSpec);
     // The debug views show every light the same way.
     if (u_fxLampGrid[0].w > 0.5)
         sum = moved;
     else
         lampMoved = moved.rgb;
-    vec3 cell = (Pw - u_fxLampGrid[0].xyz) * u_fxLampGrid[1].xyz;
-    if (min(min(cell.x, cell.y), cell.z) < 0.0 || max(max(cell.x, cell.y), cell.z) > 1.0)
-        return sum;
-    float half_texel = 0.5 / u_fxLampGrid[1].w;
-    float u = 0.5 * clamp(cell.x, half_texel, 1.0 - half_texel);
-    vec4 near = floor(texture3D(s_fxLampGrid, vec3(u, cell.y, cell.z)) * 255.0 + vec4_splat(0.5));
-    ffLampAdd(near.x, Pw, Ng, N, specV, spec, sum, lampSpec);
-    ffLampAdd(near.y, Pw, Ng, N, specV, spec, sum, lampSpec);
-    ffLampAdd(near.z, Pw, Ng, N, specV, spec, sum, lampSpec);
-    ffLampAdd(near.w, Pw, Ng, N, specV, spec, sum, lampSpec);
-    if (near.w > 0.5)
+    ffLampAdd(near.x, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+    if (cap > 1.5)
+        ffLampAdd(near.y, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+    if (cap > 2.5)
+        ffLampAdd(near.z, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+    if (cap > 3.5)
+        ffLampAdd(near.w, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+    if (cap > 4.5)
     {
-        vec4 more = floor(texture3D(s_fxLampGrid, vec3(u + 0.5, cell.y, cell.z)) * 255.0 + vec4_splat(0.5));
-        ffLampAdd(more.x, Pw, Ng, N, specV, spec, sum, lampSpec);
-        ffLampAdd(more.y, Pw, Ng, N, specV, spec, sum, lampSpec);
-        ffLampAdd(more.z, Pw, Ng, N, specV, spec, sum, lampSpec);
-        ffLampAdd(more.w, Pw, Ng, N, specV, spec, sum, lampSpec);
+        ffLampAdd(more.x, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+        if (cap > 5.5)
+            ffLampAdd(more.y, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+        if (cap > 6.5)
+            ffLampAdd(more.z, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+        if (cap > 7.5)
+            ffLampAdd(more.w, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
     }
     return sum;
 }
@@ -841,8 +930,10 @@ void main()
         float grey = dot(current.rgb, vec3(0.299, 0.587, 0.114));
         if (u_fxLampGrid[0].w < 1.5)
             current.rgb = vec3_splat(0.35 * grey) + lamps.rgb * u_fxLamps[0].z;
-        else
+        else if (u_fxLampGrid[0].w < 2.5)
             current.rgb = vec3_splat(lamps.a > 1e-4 ? dot(lamps.rgb, vec3(0.299, 0.587, 0.114)) / lamps.a : 0.5);
+        else
+            current.rgb = vec3_splat(ffLampTaps * 2.0 / 255.0); // two steps of 8 bits per tap
     }
 #ifndef STAGE0_CUBE
     if (u_fxVisibilityParams.x > 2.5)
