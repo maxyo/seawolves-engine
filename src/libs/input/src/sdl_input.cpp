@@ -560,6 +560,9 @@ uint32_t SDLInput::GetWheelFactor() const
 int SDLInput::SDLEventHandler(void *userdata, SDL_Event *evt)
 {
     auto in = static_cast<SDLInput *>(userdata);
+#ifdef __ANDROID__
+    const auto loadingEpoch = platform::LoadingPlatformTransactionEpoch();
+#endif
     if (platform::LoadingPlatformTransactionActive() && IsGameplayInputEvent(*evt)) return 0;
 #ifdef __ANDROID__
     // JNI may push events from Android's UI thread. Dispatch game callbacks
@@ -567,9 +570,10 @@ int SDLInput::SDLEventHandler(void *userdata, SDL_Event *evt)
     if (IsInputEvent(*evt) || IsInputBoundary(*evt)) {
         if(IsGameplayInputEvent(*evt)&&MapModalInputBlocked())return 0;
         std::lock_guard<std::mutex> guard(in->pendingMutex_);
-        // A producer may have passed the outer check before the transaction
-        // began and its cancellation drained the queue. Recheck under that lock.
-        if (platform::LoadingPlatformTransactionActive() && IsGameplayInputEvent(*evt)) return 0;
+        // Reject a producer which crossed either boundary, even if the complete
+        // transaction ended while it was delayed before this mutex.
+        if (IsGameplayInputEvent(*evt) && (platform::LoadingPlatformTransactionActive() ||
+            loadingEpoch != platform::LoadingPlatformTransactionEpoch())) return 0;
         if (IsInputBoundary(*evt))
         {
             // Also invalidate a batch already detached by PumpEvents and all

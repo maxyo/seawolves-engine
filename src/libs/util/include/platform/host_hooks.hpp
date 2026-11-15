@@ -29,15 +29,27 @@ void CancelLoadingPlatformInput();
 using LoadingPlatformPump = std::function<LoadingPlatformState(uint64_t)>;
 inline LoadingPlatformPump loadingPlatformPump;
 inline std::atomic<unsigned> loadingPlatformDepth{0};
+inline std::atomic<uint64_t> loadingPlatformEpoch{0};
+inline uint64_t LoadingPlatformTransactionEpoch() { return loadingPlatformEpoch.load(); }
 inline bool LoadingPlatformTransactionActive()
 {
-    return loadingPlatformDepth.load(std::memory_order_acquire) != 0;
+    return loadingPlatformDepth.load() != 0;
 }
 class LoadingPlatformTransaction
 {
 public:
-    LoadingPlatformTransaction() { loadingPlatformDepth.fetch_add(1, std::memory_order_acq_rel); }
-    ~LoadingPlatformTransaction() { loadingPlatformDepth.fetch_sub(1, std::memory_order_acq_rel); }
+    LoadingPlatformTransaction()
+    {
+        // Sequentially consistent ordering pairs the active boundary with the
+        // epoch observed by a producer before entering the input queue mutex.
+        loadingPlatformDepth.fetch_add(1);
+        loadingPlatformEpoch.fetch_add(1);
+    }
+    ~LoadingPlatformTransaction()
+    {
+        loadingPlatformEpoch.fetch_add(1);
+        loadingPlatformDepth.fetch_sub(1);
+    }
     LoadingPlatformTransaction(const LoadingPlatformTransaction &) = delete;
     LoadingPlatformTransaction &operator=(const LoadingPlatformTransaction &) = delete;
 };

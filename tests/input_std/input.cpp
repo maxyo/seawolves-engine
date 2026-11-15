@@ -270,23 +270,31 @@ static void checkStockLoadingInput(storm::SDLInput &input)
     input.PumpEvents();
     assert(delivered == 2); // fresh input after loading still works
 #if defined(__ANDROID__) && defined(STORM_LOADING_RACE_CHECK)
-    delivered = 0;
-    loadingRacePhase.store(1);
-    // Invoke the real watch directly: pausing inside SDL_PushEvent would hold
-    // SDL's own watcher lock and prevent the cancellation producer from entering.
-    std::thread earlyProducer([&input] {
-        SDL_Event event{}; event.type=SDL_KEYDOWN; event.key.keysym.scancode=SDL_SCANCODE_E;
-        storm::SDLInput::SDLEventHandler(&input,&event);
-    });
-    while (loadingRacePhase.load() != 2) std::this_thread::yield();
-    {
-        storm::platform::LoadingPlatformTransaction loading;
-        storm::platform::CancelLoadingPlatformInput();
-        loadingRacePhase.store(3); // producer passed OUTER guard before cancellation
-        earlyProducer.join();
+    for (bool resumeAfterTransaction : {false, true}) {
+        delivered = 0;
+        loadingRacePhase.store(1);
+        // Invoke the real watch directly: pausing inside SDL_PushEvent would hold
+        // SDL's own watcher lock and prevent the cancellation producer from entering.
+        std::thread earlyProducer([&input] {
+            SDL_Event event{}; event.type=SDL_KEYDOWN; event.key.keysym.scancode=SDL_SCANCODE_E;
+            storm::SDLInput::SDLEventHandler(&input,&event);
+        });
+        while (loadingRacePhase.load() != 2) std::this_thread::yield();
+        {
+            storm::platform::LoadingPlatformTransaction loading;
+            storm::platform::CancelLoadingPlatformInput();
+            if (!resumeAfterTransaction) {
+                loadingRacePhase.store(3);
+                earlyProducer.join();
+            }
+        }
+        if (resumeAfterTransaction) {
+            loadingRacePhase.store(3); // both boundaries passed before mutex admission
+            earlyProducer.join();
+        }
+        input.PumpEvents();
+        assert(delivered == 0 && !input.KeyboardKeyState('E'));
     }
-    input.PumpEvents();
-    assert(delivered == 0 && !input.KeyboardKeyState('E'));
 #endif
     input.Unsubscribe(id);
 }
