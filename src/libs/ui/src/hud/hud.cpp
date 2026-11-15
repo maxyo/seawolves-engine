@@ -25,6 +25,10 @@ constexpr double kDialogueWait = 0.5; // s: a dialogue hides the HUD by then eve
 // the game's dialogue start in 0.1–0.6 s on the emulator (DialogMain, 3 frames, the dialogue file
 // compiled); 3 s leaves a slow phone's first dialogue load room.
 constexpr double kDialogueLost = 3.0;
+// s: a HUD component that threw is retried this long after its first failure, twice as late after
+// each further one, at most kRetryMost (Disable).
+constexpr double kRetryFirst = 2.0;
+constexpr double kRetryMost = 60.0;
 constexpr double kLeaveSeconds = 0.22; // a line animates out this long (pack time.toastLeave), then goes
 // The layout scene under the spyglass when no ported scene owns the mode (the platform still
 // draws the sea HUD): the overlay alone, no elements.
@@ -259,10 +263,17 @@ template <class Call> bool Hud::Guarded(const std::string &component, const char
 void Hud::Disable(const std::string &component, const char *where, const std::string &what)
 {
     const bool scene = entry_ && component == entry_->name;
-    mount_.Error("HUD " + component + " threw in " + where + ": " + what + "; it is off for the rest of the session" +
-                 (scene ? " (its modes show the game-menu button only)" : ""));
-    mount_.Alert(mount_.Text("ui.error.hud"));
-    disabled_.insert(component);
+    Failure &failure = failures_[component];
+    ++failure.count;
+    const double delay = std::min(kRetryMost, kRetryFirst * double(1u << std::min(failure.count - 1, 8)));
+    failure.retry_at = mount_.Now() + delay;
+    failure.waiting = true;
+    char retry[32];
+    std::snprintf(retry, sizeof retry, "%.0f", delay);
+    mount_.Error("HUD " + component + " threw in " + where + ": " + what + "; it is off, retried in " + retry + " s (failure " +
+                 std::to_string(failure.count) + ")" + (scene ? "; its modes show the game-menu button until then" : ""));
+    if (failure.count == 1)
+        mount_.Alert(mount_.Text("ui.error.hud"));
     if (scene)
     {
         // The throw has unwound out of the scene. Held controls end first (their cancel events
@@ -502,7 +513,7 @@ void Hud::Refresh()
     const SceneEntry *entry = nullptr;
     for (const SceneEntry &candidate : scenes_)
         for (const char *mode : candidate.modes)
-            if (states_.gameplay.mode == mode && !disabled_.count(candidate.name)) // a scene that threw stays off
+            if (states_.gameplay.mode == mode && !Off(candidate.name)) // a scene that threw waits for its retry
                 entry = &candidate;
     bool holds = false;
     if (!entry && scene_ && states_.gameplay.mode == "unknown")
@@ -588,7 +599,7 @@ void Hud::Refresh()
         Guarded(SceneName(), "Build", [&] { scene_->Build(states_, view, input); });
     else
         view.layout = kSpyglassLayout;
-    if (full && spyglass && !disabled_.count("spyglass"))
+    if (full && spyglass && !Off("spyglass"))
         Guarded("spyglass", "SpyglassProps", [&] {
             view.overlay_props = SpyglassProps(states_.spyglass, *this);
             view.overlay = "s-hud-spyglass";
@@ -639,6 +650,21 @@ double Hud::Tick()
                 Send("hudowner", entry.presents);
         Send("hudowner", "spyglass"); // the Hud lays the spyglass overlay over any scene
     }
+    // A component that threw comes back at its retry (Disable).
+    double retry = kIdle;
+    for (auto &[component, failure] : failures_)
+    {
+        if (!failure.waiting)
+            continue;
+        if (now >= failure.retry_at)
+        {
+            failure.waiting = false;
+            mount_.Log("HUD " + component + ": retried after failure " + std::to_string(failure.count));
+            changed_ = true;
+        }
+        else
+            retry = std::min(retry, failure.retry_at - now);
+    }
     const bool interface = mount_.InterfaceActive();
     if (interface != interface_)
     {
@@ -675,6 +701,7 @@ double Hud::Tick()
         if (line.held < 0.0)
             next = std::min(next, std::max(0.0, (line.leaving >= 0.0 ? line.leaving + kLeaveSeconds : line.until) - now));
     next = std::min(next, WatchDialogue(now));
+    next = std::min(next, retry);
     if (transition_until_ >= 0.0)
     {
         if (now >= transition_until_)

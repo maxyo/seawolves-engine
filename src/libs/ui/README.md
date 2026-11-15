@@ -108,8 +108,11 @@ exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, 
 `Back`, a text answer) that throws is an error line naming the screen, the interface, the call and
 the exception, the danger toast `ui.error.screen`, and the interface closes through the engine's
 back (no replacement layout is built; the generic layout throwing closes it the same way). A HUD
-scene or the spyglass overlay that throws is an error line, the toast `ui.error.hud`, and it is off
-for the rest of the session (its modes show the game-menu button only). A state consumer that throws drops that state with an error line. The game session goes on.
+scene or the spyglass overlay that throws is an error line, the toast `ui.error.hud` at its first
+failure, and it is off until its retry (its modes show the game-menu button meanwhile): 2 s after
+the first failure, twice as late after each further one, at most 60 s. The touch HUD is the only
+HUD on Android, so it recovers by itself. A state consumer that throws drops that state with an
+error line. The game session goes on.
 
 Over the game the platform asks `Host::WantsTouch` at pointer-down and gives the UI only
 the pointers that land on it; everything else stays the game's. Inside the UI each pointer

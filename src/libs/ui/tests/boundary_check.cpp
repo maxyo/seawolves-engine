@@ -2,7 +2,7 @@
 // or a HUD scene that throws must not end the game session. Each throw is an error line naming
 // the screen or component and the exception, a danger toast for the player, and a logged
 // recovery: a failed screen closes the interface through the engine's back immediately,
-// without constructing a generic replacement; a HUD scene goes off for the session.
+// without constructing a generic replacement; a HUD scene goes off until its retry and comes back.
 // Fake screens and scenes only; no GL context, no pack, no game data.
 #include "../src/hud/hud.h"
 
@@ -291,7 +291,7 @@ struct FakeMount final : Mount
 {
     View shown;
     bool visible = false;
-    std::vector<std::string> commands, errors, alerts;
+    std::vector<std::string> commands, errors, alerts, logs;
     double now = 0.0;
 
     bool Measure(const std::string &, const std::string &, Placement &) const override
@@ -319,8 +319,9 @@ struct FakeMount final : Mount
     {
         return "<" + key + ">";
     }
-    void Log(const std::string &) override
+    void Log(const std::string &line) override
     {
+        logs.push_back(line);
     }
     void Error(const std::string &line) override
     {
@@ -391,10 +392,9 @@ struct HudBench
     }
 };
 
-static void CheckHudComponent(const char *where, bool &flag, bool event)
+// Throws `flag` once (a build, a tick or an event), then clears it.
+static void ThrowOnce(HudBench &bench, bool &flag, bool event)
 {
-    HudBench bench;
-    Expect(bench.hud.Visible() && !bench.hud.MenuOnly() && bench.mount.shown.layout == "probe", std::string(where) + ": the scene draws the HUD");
     flag = true;
     if (event)
         bench.hud.OnEvent({"button", "click", ""});
@@ -402,15 +402,39 @@ static void CheckHudComponent(const char *where, bool &flag, bool event)
         bench.hud.Rebuild();
     bench.hud.Tick();
     flag = false;
-    Expect(Has(bench.mount.errors, std::string("HUD probe threw in ")) && Has(bench.mount.errors, "it is off for the rest of the session"),
-           std::string(where) + ": the error line names the component, the call and the exception");
+}
+
+static void CheckHudComponent(const char *where, bool &flag, bool event)
+{
+    HudBench bench;
+    Expect(bench.hud.Visible() && !bench.hud.MenuOnly() && bench.mount.shown.layout == "probe", std::string(where) + ": the scene draws the HUD");
+    ThrowOnce(bench, flag, event);
+    Expect(Has(bench.mount.errors, std::string("HUD probe threw in ")) && Has(bench.mount.errors, "it is off, retried in 2 s (failure 1)"),
+           std::string(where) + ": the error line names the component, the call, the exception and the retry");
     Expect(bench.mount.alerts.size() == 1 && bench.mount.alerts[0] == "<ui.error.hud>", std::string(where) + ": the player gets the localized danger toast");
     Expect(bench.hud.MenuOnly() && bench.mount.shown.layout == "menu", std::string(where) + ": the game-menu button stays");
-    // Off for the session: later states never make the scene again.
+    // Off until the retry: later states before it do not make the scene again.
     const int created = scenes_created;
     bench.hud.Edit().gameplay.revision = 2;
+    bench.mount.now += 1.0;
     bench.hud.Tick();
-    Expect(scenes_created == created && bench.hud.MenuOnly() && bench.mount.alerts.size() == 1, std::string(where) + ": the scene stays off");
+    Expect(scenes_created == created && bench.hud.MenuOnly(), std::string(where) + ": the scene stays off until its retry");
+    // The touch HUD is the only HUD: at the retry the scene comes back by itself, logged.
+    bench.mount.now += 1.5;
+    bench.hud.Tick();
+    Expect(scenes_created == created + 1 && bench.hud.Visible() && !bench.hud.MenuOnly() && bench.mount.shown.layout == "probe",
+           std::string(where) + ": the scene comes back at its retry");
+    Expect(Has(bench.mount.logs, "HUD probe: retried after failure 1"), std::string(where) + ": the retry is logged");
+    // Throwing again: an error line with a doubled delay, no second toast, and back again.
+    ThrowOnce(bench, flag, event);
+    Expect(Has(bench.mount.errors, "it is off, retried in 4 s (failure 2)") && bench.mount.alerts.size() == 1 && bench.hud.MenuOnly(),
+           std::string(where) + ": a repeated failure is logged with a longer delay and no new toast");
+    bench.mount.now += 3.0;
+    bench.hud.Tick();
+    Expect(bench.hud.MenuOnly(), std::string(where) + ": the doubled delay holds");
+    bench.mount.now += 1.5;
+    bench.hud.Tick();
+    Expect(!bench.hud.MenuOnly() && bench.mount.shown.layout == "probe", std::string(where) + ": back after the second failure too");
 }
 
 int main()

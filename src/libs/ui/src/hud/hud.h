@@ -576,9 +576,18 @@ class Hud
     // spyglass overlay. Runs `call`; a throw is reported by Disable and false returned.
     template <class Call> bool Guarded(const std::string &component, const char *where, Call &&call);
     // A HUD component threw: an error line naming it, the call and the exception, the player's
-    // danger toast (ui.error.hud), and the component is off for the rest of the session (a scene:
-    // its modes show the game-menu button only). A logged, explicit fallback, never a quiet one.
+    // danger toast (ui.error.hud, at its first failure), and the component is off until its retry
+    // (a scene: its modes show the game-menu button meanwhile). The retry comes kRetryFirst after
+    // the first failure, twice as late after each further one, at most kRetryMost: the touch HUD
+    // is the only HUD, so it recovers by itself, and a component that keeps throwing is logged
+    // at each failure without flooding the player.
     void Disable(const std::string &component, const char *where, const std::string &what);
+    // The component threw and waits for its retry (Disable).
+    bool Off(const std::string &component) const
+    {
+        const auto failure = failures_.find(component);
+        return failure != failures_.end() && failure->second.waiting;
+    }
     // The scene in use, or nothing; "?" when none.
     std::string SceneName() const
     {
@@ -606,7 +615,15 @@ class Hud
     std::vector<Line> lines_;
     unsigned next_line_key_ = 0;
     std::set<std::string> reported_;
-    std::set<std::string> disabled_; // HUD components that threw (Disable): scene names, "spyglass"
+    // HUD components that threw (Disable), by scene name or "spyglass": how often, and whether the
+    // component is off until retry_at (mount clock).
+    struct Failure
+    {
+        int count = 0;
+        double retry_at = 0.0;
+        bool waiting = false;
+    };
+    std::map<std::string, Failure> failures_;
     bool failing_ = false;
     bool disabling_ = false;         // Disable is ending the held controls of the scene it turns off           // a Disable happened in the current Refresh: it stops there
     std::string language_; // game language last given to the mount
