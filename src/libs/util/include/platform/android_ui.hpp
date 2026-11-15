@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #ifdef __ANDROID__
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_system.h>
@@ -304,6 +305,25 @@ inline void publishLoading(bool active) {
 }
 // Loading overlay consumer is supplied by the app. Synchronous cancel acknowledgement sets its restart reason
 // before the engine loop exits; the Activity marshals only view updates to its UI thread.
+// Selective mailbox read: no gameplay, shortcut, settings or stale-generation
+// command is consumed. Missing app support is distinct from an empty mailbox.
+inline std::optional<bool> pollLocationLoadCancel(uint64_t generation)
+{
+    auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
+    auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !activity) return std::nullopt;
+    const auto type = env->GetObjectClass(activity);
+    const auto method = type ? env->GetMethodID(type, "pollLocationLoadCancel", "(J)Z") : nullptr;
+    std::optional<bool> result;
+    if (method) {
+        const auto value = env->CallBooleanMethod(activity, method, static_cast<jlong>(generation));
+        if (!env->ExceptionCheck()) result = value == JNI_TRUE;
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (type) env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    return result;
+}
 inline bool publishLocationReadiness(const char *ack = "", bool cancelled = false) {
     const auto r = render::GetSceneLoadStatus();
     const std::string json = "{\"generation\":" + std::to_string(r.generation) +

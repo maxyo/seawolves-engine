@@ -1,6 +1,9 @@
 // Execute the real engine callback, with the synchronous AppState/audio boundary
 // advancing the clock. A focus event must reach the gate before either can block.
 #include <platform/android_worldmap.hpp>
+// The real loading boundary; its Android JNI/log implementation is not part of this check.
+#define STORM_INPUT_HOST_TEST
+#include <platform/host_hooks.hpp>
 #include <os_window.hpp>
 #include <cassert>
 #include <iostream>

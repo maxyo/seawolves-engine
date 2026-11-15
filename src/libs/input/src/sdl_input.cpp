@@ -1,4 +1,5 @@
 #include "sdl_input.hpp"
+#include "platform/host_hooks.hpp"
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_system.h>
@@ -20,18 +21,6 @@ namespace storm
 {
 namespace
 {
-#ifdef __ANDROID__
-Uint32 InputCancelEventType()
-{
-    static const Uint32 type = SDL_RegisterEvents(1);
-    return type;
-}
-
-bool IsInputEvent(const SDL_Event &event)
-{
-    return event.type >= SDL_KEYDOWN && event.type <= SDL_CONTROLLERDEVICEREMAPPED;
-}
-
 bool IsKeyboardMouseEvent(const SDL_Event &event)
 {
     return event.type >= SDL_KEYDOWN && event.type <= SDL_MOUSEWHEEL;
@@ -44,6 +33,19 @@ bool IsGameplayInputEvent(const SDL_Event &event)
         event.type==SDL_JOYAXISMOTION || event.type==SDL_JOYBALLMOTION || event.type==SDL_JOYHATMOTION ||
         event.type==SDL_JOYBUTTONDOWN || event.type==SDL_JOYBUTTONUP;
 }
+
+#ifdef __ANDROID__
+Uint32 InputCancelEventType()
+{
+    static const Uint32 type = SDL_RegisterEvents(1);
+    return type;
+}
+
+bool IsInputEvent(const SDL_Event &event)
+{
+    return event.type >= SDL_KEYDOWN && event.type <= SDL_CONTROLLERDEVICEREMAPPED;
+}
+
 bool MapModalInputBlocked() { return android::worldMapHud.modal.ownsInput(SDL_GetTicks()); }
 
 bool IsInputBoundary(const SDL_Event &event)
@@ -558,19 +560,24 @@ uint32_t SDLInput::GetWheelFactor() const
 int SDLInput::SDLEventHandler(void *userdata, SDL_Event *evt)
 {
     auto in = static_cast<SDLInput *>(userdata);
+    if (platform::LoadingPlatformTransactionActive() && IsGameplayInputEvent(*evt)) return 0;
 #ifdef __ANDROID__
     // JNI may push events from Android's UI thread. Dispatch game callbacks
     // only from PCS_CONTROLS::Update, never while holding this queue mutex.
     if (IsInputEvent(*evt) || IsInputBoundary(*evt)) {
         if(IsGameplayInputEvent(*evt)&&MapModalInputBlocked())return 0;
         std::lock_guard<std::mutex> guard(in->pendingMutex_);
+        // A producer may have passed the outer check before the transaction
+        // began and its cancellation drained the queue. Recheck under that lock.
+        if (platform::LoadingPlatformTransactionActive() && IsGameplayInputEvent(*evt)) return 0;
         if (IsInputBoundary(*evt))
         {
             // Also invalidate a batch already detached by PumpEvents and all
             // current-frame key/button reads, before the next engine update.
             in->inputGeneration_.fetch_add(1, std::memory_order_release);
             in->pendingEvents_.erase(std::remove_if(in->pendingEvents_.begin(), in->pendingEvents_.end(),
-                                                    IsKeyboardMouseEvent), in->pendingEvents_.end());
+                                                    platform::LoadingPlatformTransactionActive() ?
+                                                        IsGameplayInputEvent : IsKeyboardMouseEvent), in->pendingEvents_.end());
         }
         in->pendingEvents_.push_back(*evt);
     }
@@ -681,3 +688,13 @@ Java_org_stormengine_port_GameActivity_nativeCancelInput(JNIEnv *, jclass)
     storm::SDLInput::CancelPendingInput();
 }
 #endif
+
+namespace storm::platform
+{
+void CancelLoadingPlatformInput()
+{
+#ifdef __ANDROID__
+    SDLInput::CancelPendingInput();
+#endif
+}
+}

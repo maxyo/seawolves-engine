@@ -326,7 +326,8 @@ void SubscribeEngineToAppEvents()
             {
                 audioGate.foreground = false;
                 audioGate.apply();
-                if (event.immediate && core_private && core_private->initialized())
+                if (event.immediate && core_private && core_private->initialized() &&
+                    !storm::platform::LoadingPlatformTransactionActive())
                 {
                     // Hook for scripts (the app's background autosave). Runs between frames on
                     // the game thread. This handler runs before the renderer's (early handlers are
@@ -350,12 +351,13 @@ void SubscribeEngineToAppEvents()
         true);
     events.subscribe([](const storm::AppEvent &event) {
         const bool ready = core_private && core_private->initialized();
+        const bool scripts = ready && !storm::platform::LoadingPlatformTransactionActive();
         switch (event.type)
         {
         case storm::AppEventType::DidEnterForeground:
             audioGate.foreground = true;
             audioGate.apply();
-            if (ready)
+            if (scripts)
                 core_private->Event("AppDidEnterForeground");
             break;
         case storm::AppEventType::LowMemory:
@@ -369,12 +371,12 @@ void SubscribeEngineToAppEvents()
                 if (auto *animationService = static_cast<AnimationService *>(core.GetService("AnimationServiceImp")))
                     spdlog::warn("Low memory: released {} unused animations", animationService->TrimCaches());
                 storm::render::TrimRelief();
-                core_private->Event("AppLowMemory");
+                if (scripts) core_private->Event("AppLowMemory");
             }
             break;
         case storm::AppEventType::WindowResized:
             spdlog::info("Window resized to {}x{}", event.width, event.height);
-            if (ready)
+            if (scripts)
                 core_private->Event("AppWindowResized", "ll", event.width, event.height);
             break;
         default:
@@ -388,7 +390,7 @@ void HandleWindowEventInSdl(const storm::OSWindow::Event &event)
     if (event == storm::OSWindow::Closed)
     {
         isRunning = false;
-        if (core_private->initialized())
+        if (core_private->initialized() && !storm::platform::LoadingPlatformTransactionActive())
         {
             core_private->Event("DestroyWindow");
         }
@@ -684,6 +686,62 @@ int main(int argc, char *argv[])
     const auto loadingClock = [] { return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count()); };
     isRunning = true;
+    // This callback is used only inside the original synchronous loading stage.
+    // It pumps OS/lifecycle queues, not ui::tick/takeCommands, Controls or Core::Run.
+    uint64_t loadingCancelGeneration = 0;
+    bool loadingCancelPending = false;
+    storm::platform::LoadingPlatformRegistration loadingPlatform([&](uint64_t generation) {
+        using State = storm::platform::LoadingPlatformState;
+        if (loadingCancelGeneration != generation) {
+            loadingCancelGeneration = generation;
+            loadingCancelPending = false;
+            storm::platform::CancelLoadingPlatformInput();
+#ifdef __ANDROID__
+            storm::android::cancelAndroidCombatInput();
+            gameplayShortcuts.clear();
+#endif
+        }
+        SDL_PumpEvents();
+        window->PumpEvents();
+        RethrowCallbackError();
+        // Renderer early subscribers still detach/rebind the surface. The main
+        // subscribers suppress script callbacks while the transaction is active.
+        storm::AppEvents::instance().dispatch();
+        RethrowCallbackError();
+        audioGate.apply();
+#ifdef __ANDROID__
+        SDL_Event appEvent;
+        while (SDL_PeepEvents(&appEvent, 1, SDL_GETEVENT, SDL_APP_TERMINATING,
+                              SDL_APP_DIDENTERFOREGROUND) > 0)
+            androidLifecycle.consume(appEvent.type);
+        if (SDL_HasEvent(SDL_QUIT)) androidLifecycle.consume(SDL_QUIT);
+        if (androidLifecycle.terminating()) isRunning = false;
+#else
+        if (SDL_HasEvent(SDL_QUIT)) isRunning = false;
+#endif
+        // No loading-time mouse/key event may be replayed by the outer loop.
+        // SDLInput's separate event-watch queue is gated/cancelled independently.
+        SDL_FlushEvents(0, SDL_LASTEVENT);
+        if (!isRunning) return State::Quit;
+#ifdef __ANDROID__
+        const auto readiness = storm::render::GetSceneLoadStatus();
+        if (!readiness.active || readiness.generation != generation ||
+            !storm::android::publishLocationReadiness()) return State::Unavailable;
+        const auto cancel = storm::android::pollLocationLoadCancel(generation);
+        if (!cancel) return State::Unavailable;
+        loadingCancelPending = loadingCancelPending || *cancel;
+        if (loadingCancelPending) {
+            // A consumed request stays latched if JNI acknowledgement fails.
+            // No compiler return/reveal permission until the app has the exit reason.
+            if (!storm::android::publishLocationReadiness("cancel", true))
+                return State::Suspended;
+            isRunning = false;
+            return State::Cancel;
+        }
+        if (!androidLifecycle.canRun()) return State::Suspended;
+#endif
+        return bActive ? State::Continue : State::Suspended;
+    });
     // Exceptions escaping an iteration (the frame, script events raised by HUD input, lifecycle
     // and window handlers, the Android adapters) are reported and end the session in order
     // instead of reaching std::terminate; see ReportFatalError.
@@ -1217,6 +1275,8 @@ int main(int argc, char *argv[])
     }
     if (fatalError)
         exitCode = EXIT_FAILURE;
+
+    loadingPlatform.reset(); // No callback may retain stack captures during service teardown.
 
     // Release
 #ifdef __ANDROID__

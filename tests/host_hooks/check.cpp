@@ -19,6 +19,34 @@ static void expect(bool condition, const char *what)
 
 int main()
 {
+    {
+        using namespace storm::platform;
+        using S = LoadingPlatformState;
+        expect(PumpLoadingPlatform(1) == S::Unavailable, "missing transaction/hook fails closed");
+        {
+            LoadingPlatformTransaction transaction;
+            expect(PumpLoadingPlatform(1) == S::Unavailable, "transaction without host fails closed");
+            unsigned calls = 0;
+            LoadingPlatformRegistration hook([&](uint64_t generation) {
+                ++calls;
+                return generation == 42 ? S::Suspended : S::Cancel;
+            });
+            expect(PumpLoadingPlatform(42) == S::Suspended, "suspended is distinct from exit");
+            {
+                LoadingPlatformTransaction nested;
+                LoadingPlatformRegistration temporary([](uint64_t) { return S::Quit; });
+                expect(PumpLoadingPlatform(42) == S::Quit, "nested host scope");
+            }
+            expect(LoadingPlatformTransactionActive(), "nested transaction preserves outer active flag");
+            expect(PumpLoadingPlatform(43) == S::Cancel && calls == 2, "restores exact outer callback");
+            bool seen = false;
+            std::thread([&] { seen = LoadingPlatformTransactionActive(); }).join();
+            expect(seen, "input producer thread sees loading scope");
+            hook.reset(); hook.reset();
+            expect(PumpLoadingPlatform(42) == S::Unavailable, "idempotent host cleanup drops stack captures");
+        }
+        expect(!LoadingPlatformTransactionActive(), "transaction cleanup after scope");
+    }
     const FrameWorkClock::Clock::time_point t0{};
     {
         using storm::platform::presentWaited;

@@ -1,5 +1,6 @@
 #define SDL_MAIN_HANDLED
 #include "sdl_input.hpp"
+#include "platform/host_hooks.hpp"
 #ifdef __ANDROID__
 #include <platform/android_worldmap.hpp>
 #endif
@@ -227,9 +228,80 @@ static void checkMapModalPhysicalInput(storm::SDLInput &input)
     SDL_JoystickClose(joystick);assert(SDL_JoystickDetachVirtual(device)==0);SDL_PumpEvents();input.PumpEvents();
 }
 #endif
-int main()
+#if defined(__ANDROID__) && defined(STORM_LOADING_RACE_CHECK)
+static std::atomic<int> loadingRacePhase{0};
+void LoadingRaceOuterCheckpoint(const SDL_Event &event)
+{
+    if (event.type != SDL_KEYDOWN || loadingRacePhase.load() != 1) return;
+    loadingRacePhase.store(2);
+    while (loadingRacePhase.load() == 2) std::this_thread::yield();
+}
+#endif
+
+static void checkStockLoadingInput(storm::SDLInput &input)
+{
+    int delivered = 0;
+    const int id = input.Subscribe([&](const storm::InputEvent &) { ++delivered; });
+#ifdef __ANDROID__
+    pushKey(SDL_KEYDOWN, SDL_SCANCODE_E); // queued before transaction, must not replay
+#endif
+    {
+        storm::platform::LoadingPlatformTransaction loading;
+        storm::platform::CancelLoadingPlatformInput();
+        std::thread delayedProducer([] {
+            pushKey(SDL_KEYDOWN, SDL_SCANCODE_W);
+            pushKey(SDL_KEYUP, SDL_SCANCODE_W);
+            SDL_Event axis{}; axis.type = SDL_CONTROLLERAXISMOTION;
+            SDL_PushEvent(&axis);
+        });
+        delayedProducer.join();
+        // No Controls update is run by the transaction pump.
+        assert(delivered == 0);
+#ifdef __ANDROID__
+        pushBoundary(SDL_APP_WILLENTERBACKGROUND);
+        pushBoundary(SDL_APP_DIDENTERFOREGROUND);
+#endif
+    }
+    input.PumpEvents();
+    assert(delivered == 0);
+    assert(!input.KeyboardKeyState('E') && !input.KeyboardKeyState('W'));
+    pushKey(SDL_KEYDOWN, SDL_SCANCODE_B);
+    pushKey(SDL_KEYUP, SDL_SCANCODE_B);
+    input.PumpEvents();
+    assert(delivered == 2); // fresh input after loading still works
+#if defined(__ANDROID__) && defined(STORM_LOADING_RACE_CHECK)
+    delivered = 0;
+    loadingRacePhase.store(1);
+    // Invoke the real watch directly: pausing inside SDL_PushEvent would hold
+    // SDL's own watcher lock and prevent the cancellation producer from entering.
+    std::thread earlyProducer([&input] {
+        SDL_Event event{}; event.type=SDL_KEYDOWN; event.key.keysym.scancode=SDL_SCANCODE_E;
+        storm::SDLInput::SDLEventHandler(&input,&event);
+    });
+    while (loadingRacePhase.load() != 2) std::this_thread::yield();
+    {
+        storm::platform::LoadingPlatformTransaction loading;
+        storm::platform::CancelLoadingPlatformInput();
+        loadingRacePhase.store(3); // producer passed OUTER guard before cancellation
+        earlyProducer.join();
+    }
+    input.PumpEvents();
+    assert(delivered == 0 && !input.KeyboardKeyState('E'));
+#endif
+    input.Unsubscribe(id);
+}
+
+int main(int argc, char **argv)
 {
     SDL_SetMainReady();
+    if (argc == 2 && std::string_view(argv[1]) == "--loading-only") {
+        // Event-watch/queue contract requires no video device, window or GPU.
+        assert(SDL_Init(SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) == 0);
+        { storm::SDLInput input; checkStockLoadingInput(input); }
+        SDL_Quit();
+        std::cout << "PASS: stock loading SDL input admission and cancellation\n";
+        return 0;
+    }
     assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) == 0);
     SDL_Window *window = SDL_CreateWindow("input adapter integration", SDL_WINDOWPOS_UNDEFINED,
         SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_SHOWN);
@@ -302,6 +374,7 @@ int main()
         delta = std::get<storm::MousePos>(received[0].data);
         assert(delta.x == -6 && delta.y == 4);
         input.Unsubscribe(sub);
+        checkStockLoadingInput(input);
 #ifdef __ANDROID__
         checkFrameButtons(input);
         checkCancellationDuringPump(input);

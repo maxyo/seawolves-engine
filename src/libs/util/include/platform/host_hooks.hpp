@@ -8,8 +8,10 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <functional>
+#include <utility>
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_system.h>
 #include <android/log.h>
@@ -18,6 +20,52 @@
 
 namespace storm::platform
 {
+// Synchronous stock loading transaction: OS service only, never a game/script tick.
+// Registration and calls belong to the game thread. Input event watches may read
+// the active flag from a producer thread, so it is atomic.
+enum class LoadingPlatformState { Continue, Suspended, Cancel, Quit, Unavailable };
+// Input implementation drops pre-transaction pending presses without dispatching them.
+void CancelLoadingPlatformInput();
+using LoadingPlatformPump = std::function<LoadingPlatformState(uint64_t)>;
+inline LoadingPlatformPump loadingPlatformPump;
+inline std::atomic<unsigned> loadingPlatformDepth{0};
+inline bool LoadingPlatformTransactionActive()
+{
+    return loadingPlatformDepth.load(std::memory_order_acquire) != 0;
+}
+class LoadingPlatformTransaction
+{
+public:
+    LoadingPlatformTransaction() { loadingPlatformDepth.fetch_add(1, std::memory_order_acq_rel); }
+    ~LoadingPlatformTransaction() { loadingPlatformDepth.fetch_sub(1, std::memory_order_acq_rel); }
+    LoadingPlatformTransaction(const LoadingPlatformTransaction &) = delete;
+    LoadingPlatformTransaction &operator=(const LoadingPlatformTransaction &) = delete;
+};
+class LoadingPlatformRegistration
+{
+public:
+    explicit LoadingPlatformRegistration(LoadingPlatformPump callback)
+        : previous_(std::move(loadingPlatformPump)) { loadingPlatformPump = std::move(callback); }
+    ~LoadingPlatformRegistration() { reset(); }
+    void reset()
+    {
+        if (!registered_) return;
+        loadingPlatformPump = std::move(previous_);
+        registered_ = false;
+    }
+    LoadingPlatformRegistration(const LoadingPlatformRegistration &) = delete;
+    LoadingPlatformRegistration &operator=(const LoadingPlatformRegistration &) = delete;
+private:
+    LoadingPlatformPump previous_;
+    bool registered_ = true;
+};
+inline LoadingPlatformState PumpLoadingPlatform(uint64_t generation)
+{
+    if (!LoadingPlatformTransactionActive() || !loadingPlatformPump)
+        return LoadingPlatformState::Unavailable;
+    return loadingPlatformPump(generation);
+}
+
 // Time the game thread blocked in presents since the last FrameWorkClock lap: the frame pacing waiting for the
 // frame's vsync slot (renderer_bgfx shim/frame_pacing.cpp), which is not work. Game thread only.
 inline std::chrono::nanoseconds presentWait{0};
@@ -82,7 +130,7 @@ inline bool saveInProgress()
     return savesInProgress.load(std::memory_order_acquire) > 0;
 }
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
 // Feeds the app's ADPF PerformanceHint session through static methods of
 // org.stormengine.port.GamePerformance: reportFrameWork(long nanos) and updateTargetWork(long nanos), "(J)V", and
 // addThread(int tid), "(I)V", for the renderer's own thread (an app without it keeps the session on the game
@@ -236,7 +284,7 @@ inline FrameWorkHint &frameWorkHint()
 // Reports the CPU work of the last frame to the host's performance hint. Game thread only.
 inline void reportFrameWork(std::chrono::nanoseconds work)
 {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
     frameWorkHint().report(work);
 #else
     (void)work;
@@ -247,7 +295,7 @@ inline void reportFrameWork(std::chrono::nanoseconds work)
 // hint covers it too. Game thread only.
 inline void frameWorkThread(int tid)
 {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
     frameWorkHint().thread(tid);
 #else
     (void)tid;
@@ -257,7 +305,7 @@ inline void frameWorkThread(int tid)
 // The work duration the host's performance hint aims at: the frame pacing's preferred swap interval. Game thread only.
 inline void frameWorkTarget(std::chrono::nanoseconds target)
 {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
     frameWorkHint().target(target);
 #else
     (void)target;
