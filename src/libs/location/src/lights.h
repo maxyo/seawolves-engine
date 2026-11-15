@@ -174,7 +174,6 @@ class Lights : public Entity
     bool componentsDirty = true;
     std::vector<storm::location::LightComponent> components;
     std::shared_ptr<const storm::fx::AggregateSnapshot> aggregateSnapshot;
-    std::vector<std::vector<uint64_t>> reportedComponentMembers; // topology only: flicker/motion never spam the log
 
     // The camera of the last Realize: coronas are tested against a camera that stands still less often
     glm::vec3 lastCamera{0.0f};
