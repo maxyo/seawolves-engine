@@ -142,6 +142,19 @@ class BakeQueue
             Log(LogLevel::Info, "ray bakes: shut down, %zu queued not run, %d running cancelled", dropped, running);
     }
 
+    size_t outstanding()
+    {
+        std::lock_guard lock(mutex_);
+        size_t count = 0;
+        for (const Lane *lane : {&loads_, &bakes_})
+        {
+            for (const Task &task : lane->queue)
+                count += task.state->cancelled.load() ? 0 : 1;
+            count += lane->running ? 1 : 0;
+        }
+        return count;
+    }
+
   private:
     struct Task
     {
@@ -232,6 +245,11 @@ BakeTicket PostBake(std::string what, std::function<void()> work)
 BakeTicket PostBake(std::string what, BakeStep step)
 {
     return BakeQueue::instance().post(std::move(what), std::move(step), true);
+}
+
+size_t BakesOutstanding()
+{
+    return BakeQueue::instance().outstanding();
 }
 
 void ShutdownBakes()

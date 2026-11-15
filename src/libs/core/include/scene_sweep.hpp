@@ -18,12 +18,26 @@ void framePresented(uint32_t drawCalls);
 // The sweep restarts the window at each event and appends it to each capture.
 void setRendererWindow(std::function<std::string()> window);
 
-// Set by the renderer: applies one entry of STORM_SCENE_SWEEP_VARIANTS (graphics options "name=value,..."), so
-// every scene is captured once per variant (run.py --variants). `ready` tells when the applied variant draws
-// (the renderer prepares new settings over a few frames while the previous ones keep drawing).
+// What the renderer reports about the applied sweep variant (run.py --variants), polled every frame while the script
+// waits for it.
+struct VariantState
+{
+    // The variant's own settings and programs draw: the renderer prepares new settings (links their programs, runs
+    // its self-test) over many frames while the previous ones keep drawing.
+    bool active = false;
+    uint32_t programs = 0; // while not active: programs prepared for the pending settings so far
+    // Products that go on generating in the background after the settings are active. A variant waits for one only
+    // when it names it (wait=upscale, wait=relief, wait=bakes); otherwise the capture reports it as still busy.
+    bool upscale = false; // neural x2 textures still being read, uploaded or made
+    bool relief = false;  // a relief map (or the list of relief textures) being made
+    bool bakes = false;   // a bake (town light, visibility, bounce, AO volume, far LOD) queued or running
+};
+
+// Set by the renderer: `apply` applies the graphics options of one entry of STORM_SCENE_SWEEP_VARIANTS ("name=value,..."
+// without the sweep's own wait= items), so every scene is captured once per variant; `state` reports it.
 using VariantHook = void (*)(const char *options);
-using VariantReadyHook = bool (*)();
-void setVariantHook(VariantHook hook, VariantReadyHook ready);
+using VariantStateHook = VariantState (*)();
+void setVariantHook(VariantHook apply, VariantStateHook state);
 
 // Set by the renderer: a value that changes whenever a frame is presented with scene draws left out (Vulkan: draws
 // that wait for their pipelines, storm::render::LastIncompleteFrame). A capture window in which it changed did not

@@ -2,6 +2,7 @@
 #include "scene_sweep.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -40,10 +41,68 @@ Clock::time_point lastFrame = started;
 std::vector<float> windowFrameMs; // the window's frame times
 uint32_t lastDrawCalls = 0;
 std::function<std::string()> rendererWindow;
-std::vector<std::string> variants; // STORM_SCENE_SWEEP_VARIANTS split at ';'
+// Background products a variant may wait for (wait=<name>) before its capture.
+struct Product
+{
+    const char *name;
+    bool storm::scene_sweep::VariantState::*busy;
+};
+constexpr Product kProducts[] = {{"upscale", &storm::scene_sweep::VariantState::upscale},
+                                 {"relief", &storm::scene_sweep::VariantState::relief},
+                                 {"bakes", &storm::scene_sweep::VariantState::bakes}};
+constexpr size_t kProductCount = std::size(kProducts);
+
+struct Variant
+{
+    std::string options;                 // graphics options for the renderer
+    std::array<bool, kProductCount> waits{}; // wait=<product>
+};
+std::vector<Variant> variants; // STORM_SCENE_SWEEP_VARIANTS split at ';'
 int currentVariant = -1;
 storm::scene_sweep::VariantHook variantHook = nullptr;
-storm::scene_sweep::VariantReadyHook variantReadyHook = nullptr;
+storm::scene_sweep::VariantStateHook variantStateHook = nullptr;
+
+// Program preparation may go this long without a new program before the variant fails; the budget grows with the
+// measured preparation (kStallPrograms times the mean time per program so far: a slow device or a cold program cache
+// under VirtualGL links each program in about a second).
+constexpr double kStallFloorMs = 30000.0;
+constexpr double kStallPrograms = 10.0;
+// A product counts as done after it stayed idle this long (the bakes of a place follow each other: visibility, then
+// the bounce from it; the upscale plans twice a second).
+constexpr double kIdleMs = 1000.0;
+// While the script waits, the state is written to events.log this often (the runner's timeout counts from the last
+// event, and the time is in the log).
+constexpr double kReportMs = 10000.0;
+
+// The applied variant as the script waits for it.
+struct VariantRun
+{
+    Clock::time_point applied;
+    Clock::time_point progress;  // the last program prepared (or applied)
+    Clock::time_point reported;  // the last state event
+    uint32_t programs = 0;
+    bool active = false;
+    double prepare_ms = 0.0;     // from applied to active
+    bool settled = false;        // everything it waits for is done
+    double settle_ms = 0.0;      // from active to settled
+    std::array<Clock::time_point, kProductCount> idle_since{};
+    std::string problem;         // why it failed (SceneSweepVariantProblem)
+} variantRun;
+
+double msSince(Clock::time_point from, Clock::time_point to)
+{
+    return std::chrono::duration<double, std::milli>(to - from).count();
+}
+
+// The products still generating: "upscale+bakes", or "none".
+std::string busyProducts(const storm::scene_sweep::VariantState &state)
+{
+    std::string busy;
+    for (const Product &product : kProducts)
+        if (state.*product.busy)
+            busy += (busy.empty() ? "" : "+") + std::string(product.name);
+    return busy.empty() ? "none" : busy;
+}
 storm::scene_sweep::IncompleteFrameHook incompleteFrameHook = nullptr;
 uint32_t windowIncompleteMark = 0; // incompleteFrameHook() when the window started
 
@@ -107,6 +166,17 @@ uint32_t event(VS_STACK *stack)
     return IFUNCRESULT_OK;
 }
 
+// The capture's fields of the variant: its index, how long its preparation took and the background products still
+// generating (the variant did not ask to wait for them).
+std::string variantCaptureFields()
+{
+    char text[160];
+    std::snprintf(text, sizeof(text), " variant=%d prepare_ms=%.0f programs=%u settle_ms=%.0f background=%s", currentVariant,
+                  variantRun.prepare_ms, variantRun.programs, variantRun.settle_ms,
+                  busyProducts(variantStateHook()).c_str());
+    return text;
+}
+
 // Reports the frames rendered since the previous event and keeps the last frame on
 // screen until the runner acknowledges that it has captured it.
 uint32_t capture(VS_STACK *)
@@ -115,7 +185,7 @@ uint32_t capture(VS_STACK *)
     writeEvent("capture frames=" + std::to_string(windowFrames) + " frame_ms=" +
                std::to_string(windowFrames ? ms / windowFrames : 0.0) + windowFrameStats() +
                " draws=" + std::to_string(lastDrawCalls) +
-               (currentVariant >= 0 ? " variant=" + std::to_string(currentVariant) : std::string()) +
+               (currentVariant >= 0 ? variantCaptureFields() : std::string()) +
                (rendererWindow ? " renderer: " + rendererWindow() : std::string()));
     const auto ack = directory / "ack";
     const auto deadline = Clock::now() + std::chrono::seconds(60);
@@ -159,7 +229,10 @@ uint32_t variant(VS_STACK *stack)
         std::_Exit(EXIT_FAILURE);
     }
     currentVariant = value;
-    variantHook(variants[value].c_str());
+    const Clock::time_point now = Clock::now();
+    variantRun = {};
+    variantRun.applied = variantRun.progress = variantRun.reported = now;
+    variantHook(variants[value].options.c_str());
     return IFUNCRESULT_OK;
 }
 
@@ -173,12 +246,120 @@ uint32_t windowComplete(VS_STACK *stack)
     return IFUNCRESULT_OK;
 }
 
+int waitTimeoutMs();
+
+// 1: the applied variant draws and everything it waits for is done; 0: not yet; -1: failed (SceneSweepVariantProblem).
+// Readiness means the variant's own settings and programs are active. Program preparation fails only when it stops
+// progressing (kStallFloorMs, or kStallPrograms times the measured mean per program); the time is logged either way.
+int variantReadyNow()
+{
+    VariantRun &run = variantRun;
+    if (!run.problem.empty())
+        return -1;
+    if (run.settled)
+        return 1;
+    const storm::scene_sweep::VariantState state = variantStateHook();
+    const Clock::time_point now = Clock::now();
+    const bool report = msSince(run.reported, now) >= kReportMs;
+    if (report)
+        run.reported = now;
+    if (!run.active)
+    {
+        if (!state.active)
+        {
+            if (state.programs != run.programs)
+            {
+                run.programs = state.programs;
+                run.progress = now;
+            }
+            const double elapsed = msSince(run.applied, now);
+            const double budget = std::max(kStallFloorMs, run.programs ? kStallPrograms * elapsed / run.programs : 0.0);
+            const double idle = msSince(run.progress, now);
+            char text[256];
+            if (idle > budget)
+            {
+                std::snprintf(text, sizeof(text),
+                              "graphics variant %d: program preparation stalled: %u programs in %.0f ms, none for the "
+                              "last %.0f ms (budget %.0f ms)",
+                              currentVariant, run.programs, elapsed, idle, budget);
+                run.problem = text;
+                spdlog::error("Scene sweep: {}", run.problem);
+                return -1;
+            }
+            if (report)
+            {
+                std::snprintf(text, sizeof(text), "variant %d preparing ms=%.0f programs=%u", currentVariant, elapsed,
+                              run.programs);
+                writeEvent(text);
+            }
+            return 0;
+        }
+        run.active = true;
+        run.prepare_ms = msSince(run.applied, now);
+        run.programs = std::max(run.programs, state.programs);
+        run.reported = now;
+        char text[160];
+        std::snprintf(text, sizeof(text), "variant %d active ms=%.0f programs=%u background=%s", currentVariant,
+                      run.prepare_ms, run.programs, busyProducts(state).c_str());
+        writeEvent(text);
+        spdlog::info("Scene sweep: graphics variant {} active after {:.0f} ms ({} programs prepared)", currentVariant,
+                     run.prepare_ms, run.programs);
+    }
+    const Variant &variant = variants[currentVariant];
+    std::string waiting;
+    for (size_t i = 0; i < kProductCount; ++i)
+    {
+        if (!variant.waits[i])
+            continue;
+        if (state.*kProducts[i].busy || run.idle_since[i] == Clock::time_point{})
+            run.idle_since[i] = state.*kProducts[i].busy ? Clock::time_point{} : now;
+        if (run.idle_since[i] == Clock::time_point{} || msSince(run.idle_since[i], now) < kIdleMs)
+            waiting += (waiting.empty() ? "" : "+") + std::string(kProducts[i].name);
+    }
+    const double settling = msSince(run.applied, now) - run.prepare_ms;
+    char text[256];
+    if (waiting.empty())
+    {
+        run.settled = true;
+        run.settle_ms = settling;
+        if (std::any_of(variant.waits.begin(), variant.waits.end(), [](bool wait) { return wait; }))
+        {
+            std::snprintf(text, sizeof(text), "variant %d settled ms=%.0f", currentVariant, run.settle_ms);
+            writeEvent(text);
+        }
+        return 1;
+    }
+    if (settling > waitTimeoutMs())
+    {
+        std::snprintf(text, sizeof(text), "graphics variant %d: %s still generating %.0f ms after the settings became active "
+                      "(the variant waits for it)", currentVariant, waiting.c_str(), settling);
+        run.problem = text;
+        spdlog::error("Scene sweep: {}", run.problem);
+        return -1;
+    }
+    if (report)
+    {
+        std::snprintf(text, sizeof(text), "variant %d waiting %s ms=%.0f", currentVariant, waiting.c_str(), settling);
+        writeEvent(text);
+    }
+    return 0;
+}
+
 uint32_t variantReady(VS_STACK *stack)
 {
     auto *result = static_cast<VDATA *>(stack->Push());
     if (!result)
         return IFUNCRESULT_FAILED;
-    result->Set(static_cast<int32_t>(variantReadyHook && variantReadyHook() ? 1 : 0));
+    result->Set(static_cast<int32_t>(variantReadyNow()));
+    return IFUNCRESULT_OK;
+}
+
+uint32_t variantProblem(VS_STACK *stack)
+{
+    auto *result = static_cast<VDATA *>(stack->Push());
+    if (!result)
+        return IFUNCRESULT_FAILED;
+    result->Set(variantRun.problem);
     return IFUNCRESULT_OK;
 }
 
@@ -192,6 +373,13 @@ int runnerMs(const char *name)
         return 0;
     }
     return std::atoi(text);
+}
+
+// How long a variant may wait for the background products it names after its settings became active.
+int waitTimeoutMs()
+{
+    static const int value = runnerMs("STORM_SCENE_SWEEP_WAIT_TIMEOUT_MS");
+    return value;
 }
 
 uint32_t pushInt(VS_STACK *stack, int value)
@@ -226,6 +414,35 @@ void registerFunction(const char *name, const char *returns, uint32_t arguments,
     core.SetScriptFunction(&info);
 }
 
+// One entry of STORM_SCENE_SWEEP_VARIANTS: its wait=<product> items are the sweep's, the rest goes to the renderer.
+Variant parseVariant(const std::string &text)
+{
+    Variant variant;
+    for (size_t start = 0, end; start < text.size(); start = end + 1)
+    {
+        end = text.find(',', start);
+        if (end == std::string::npos)
+            end = text.size();
+        const std::string item = text.substr(start, end - start);
+        if (item.rfind("wait=", 0) != 0)
+        {
+            variant.options += (variant.options.empty() ? "" : ",") + item;
+            continue;
+        }
+        const std::string name = item.substr(5);
+        const auto product = std::find_if(std::begin(kProducts), std::end(kProducts),
+                                          [&](const Product &p) { return name == p.name; });
+        if (product == std::end(kProducts))
+        {
+            spdlog::critical("Scene sweep: variant '{}': unknown wait={} (upscale, relief or bakes)", text, name);
+            spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
+            std::_Exit(EXIT_FAILURE);
+        }
+        variant.waits[static_cast<size_t>(product - std::begin(kProducts))] = true;
+    }
+    return variant;
+}
+
 // Loaded by `#libriary "SceneSweepLibrary"` in tools/scene_sweep/scene_sweep.c.
 class SceneSweepLibrary : public SCRIPT_LIBRIARY
 {
@@ -248,6 +465,7 @@ class SceneSweepLibrary : public SCRIPT_LIBRIARY
         registerFunction("SceneSweepVariants", "int", 0, variantCount);
         registerFunction("SceneSweepVariant", "void", 1, variant);
         registerFunction("SceneSweepVariantReady", "int", 0, variantReady);
+        registerFunction("SceneSweepVariantProblem", "string", 0, variantProblem);
         registerFunction("SceneSweepWindowComplete", "int", 0, windowComplete);
         if (const char *list = std::getenv("STORM_SCENE_SWEEP_VARIANTS"); list && *list)
         {
@@ -258,7 +476,7 @@ class SceneSweepLibrary : public SCRIPT_LIBRIARY
                 if (end == std::string::npos)
                     end = text.size();
                 if (end > start)
-                    variants.push_back(text.substr(start, end - start));
+                    variants.push_back(parseVariant(text.substr(start, end - start)));
             }
         }
         return true;
@@ -278,10 +496,10 @@ void storm::scene_sweep::framePresented(uint32_t drawCalls)
     lastFrame = now;
 }
 
-void storm::scene_sweep::setVariantHook(VariantHook hook, VariantReadyHook ready)
+void storm::scene_sweep::setVariantHook(VariantHook apply, VariantStateHook state)
 {
-    variantHook = hook;
-    variantReadyHook = ready;
+    variantHook = apply;
+    variantStateHook = state;
 }
 
 void storm::scene_sweep::setIncompleteFrameHook(IncompleteFrameHook hook)

@@ -136,6 +136,8 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.bounce = on(v); }},
     {"fx_bounce_debug", "0 off, 1 lit and baked surfaces show the bounce's light over a dim grey picture",
      [](fx::Settings &s, int v) { s.bounce_debug = on(v); }},
+    {"fx_visibility", "0 off, 1 on: the location's visibility volume (sky visibility, rain shelter; the bounce lives in it)",
+     [](fx::Settings &s, int v) { s.visibility = on(v); }},
     {"fx_visibility_debug", "0 off, 1 lit and baked surfaces show the visibility volume (red sky, green open)",
      [](fx::Settings &s, int v) { s.visibility_debug = on(v); }},
     {"fx_town_light_debug", "0 off, 1 our town lightmaps show the sun's visibility",
@@ -420,6 +422,7 @@ void Host::apply()
         switch_started_ = std::chrono::steady_clock::now();
         switch_frames_ = 0;
         switch_programs_ = 0;
+        report_.prepared_programs = 0;
     }
     else if (target_ == settings_)
     {
@@ -601,6 +604,7 @@ void Host::advance_switch()
                        contact_.Prepare(target_, budget) &&
                        lighting_.prepare_programs(*device, target_, budget);
     switch_programs_ += per_frame - budget;
+    report_.prepared_programs = switch_programs_;
     if (!ready)
         return;
     // The effect path of the new settings on a known picture (views kPostViewBegin..), once per settings: a
@@ -683,8 +687,9 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     {
         // The visibility volume and the bounce in its second block, for the next frame's draws.
         // Read by the lit draws only (and through them by the bounce and the town walls, which need per-pixel
-        // lighting): Низкая has none, so it bakes none.
-        visibility_.set_enabled((settings_.lighting_flags & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0);
+        // lighting): Низкая has none, so it bakes none; fx_visibility=0 switches it off for comparisons.
+        visibility_.set_enabled(settings_.visibility &&
+                                (settings_.lighting_flags & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0);
         const Visibility::Bound *volume = visibility_.update();
         TownLight &town = lighting_.town_light();
         town.set_bounce_scene(settings_.bounce ? bounce_.scene() : nullptr);
@@ -1025,6 +1030,11 @@ void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path
 bool UpscaleSettled()
 {
     return effects::upscales().settled();
+}
+
+bool BakesBusy()
+{
+    return fx::BakesOutstanding() > 0;
 }
 
 void ConfigureRelief(const ReliefConfig &config)

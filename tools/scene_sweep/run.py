@@ -108,7 +108,9 @@ def parse_arguments():
     parser.add_argument('--fail-fast', action='store_true')
     parser.add_argument('--list', action='store_true')
     parser.add_argument('--size', default='1280x720', help='window size (default 1280x720)')
-    parser.add_argument('--timeout', type=int, default=240, help='seconds one scene may take before the engine is killed')
+    parser.add_argument('--timeout', type=int, default=240,
+                        help='seconds a scene may go without progress (loaded, a variant prepared or captured, the '
+                             "engine's periodic preparation report) before the engine is killed")
     parser.add_argument('--render', choices=RENDER_MODES, default=DEFAULT_RENDER,
                         help="gles-gpu: OpenGL ES on the host's GPU through VirtualGL (the phones' default backend); "
                              "vulkan: Vulkan on the host's GPU; llvmpipe: OpenGL ES on Mesa llvmpipe on the CPU, about "
@@ -507,6 +509,8 @@ class Shard(threading.Thread):
                            STORM_SCENE_SWEEP_SETTLE_MS=str(self.arguments.settle),
                            # The script fails a scene that does not load with its own reason before the kill.
                            STORM_SCENE_SWEEP_LOAD_TIMEOUT_MS=str(max(10, self.arguments.timeout - 30) * 1000),
+                           # ... and a variant whose wait=<product> is still generating, as long after it became active.
+                           STORM_SCENE_SWEEP_WAIT_TIMEOUT_MS=str(max(10, self.arguments.timeout - 30) * 1000),
                            STORM_SCENE_SWEEP_VARIANTS=self.arguments.variants)
         if self.arguments.render == 'llvmpipe':
             environment.update(LIBGL_ALWAYS_SOFTWARE='1', LP_NUM_THREADS=str(self.arguments.gl_threads))
@@ -537,6 +541,11 @@ class Shard(threading.Thread):
         current = None          # scene between its "begin" and "end"/"fail"
         # `ended`: when the last scene ended (or the engine started): the time between scenes counts from there.
         begun = loaded = ended = time.monotonic()
+        # The kill timeout counts from the scene's last event: a scene with many variants (each preparing its programs,
+        # a minute on a cold cache) is not a hung engine while the engine reports progress.
+        # The engine's "variant <i> preparing|active|waiting|settled" events are progress too (the capture carries the
+        # variant's preparation time and the background products still generating).
+        progress = begun
         booted = False
         finished = False
         pending = []            # log lines not yet attributed to a scene
@@ -563,6 +572,7 @@ class Shard(threading.Thread):
             for line in data.decode().splitlines():
                 stamp, kind, *rest = line.split(' ', 2)
                 rest = rest[0] if rest else ''
+                progress = time.monotonic()
                 if kind == 'begin':
                     current, begun, metrics = rest, time.monotonic(), {}
                 elif kind == 'loaded':
@@ -592,6 +602,13 @@ class Shard(threading.Thread):
                     status = Path(f'/proc/{engine.pid}/status').read_text()
                     metrics.setdefault('first_window', {k: float(values[k]) for k in ('frames', 'p50', 'p95', 'p99', 'max')})
                     measured = dict(frame_ms=round(float(values['frame_ms']), 1), draws=int(values['draws']),
+                                    **(dict(prepare_ms=round(float(values['prepare_ms'])),
+                                            programs=int(values['programs']),
+                                            settle_ms=round(float(values['settle_ms'])),
+                                            # Products still generating at the capture (the variant did not wait).
+                                            background=[] if values['background'] == 'none'
+                                            else values['background'].split('+'))
+                                       if variant is not None else {}),
                                     frame_p95_ms=float(values['p95']), frame_p99_ms=float(values['p99']),
                                     frame_max_ms=float(values['max']),
                                     rss_mb=int(re.search(r'VmRSS:\s+(\d+)', status)[1]) // 1024, shot=str(shot),
@@ -642,8 +659,8 @@ class Shard(threading.Thread):
                 fatal = FATAL.search(stdout.read_text(errors='replace')[-4000:])
                 if fatal:
                     problem = f'fatal engine error: {fatal[1]}'
-            if not problem and now - (begun if current else ended) > self.arguments.timeout:
-                problem = f'timeout: no result within {self.arguments.timeout} s'
+            if not problem and now - (progress if current else ended) > self.arguments.timeout:
+                problem = f'timeout: no progress within {self.arguments.timeout} s'
             if not problem and self.context['stop'].is_set():
                 return
             if problem:

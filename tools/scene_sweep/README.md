@@ -100,9 +100,10 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
 - `--variants 'fx_preset=0;fx_preset=2,fx_bloom=0'` captures every scene once per set of graphics
   options (applied at run time through the renderer, `STORM_SCENE_SWEEP_VARIANTS`): shots
   `<scene>@v<i>.jpg`, frame time and draws per variant in the report (`variants`), measured over
-  12 frames after a 4-frame warm-up that starts once the variant draws (the renderer prepares its programs
-  first: `SceneSweepVariantReady`); the boot scenes are captured once. Used for the per-effect cost of the fx presets. In locations the game's time stands still from the first variant on (`SetTimeScale(0)`;
-  the sweep's clock then counts 100 ms a frame), so every variant shows the same picture: camera, people, sea and sky.
+  12 frames after a 4-frame warm-up that starts once the variant draws; the boot scenes are captured once. Used for
+  the per-effect cost of the fx presets and the per-product A/B sheets (*Variants* below). In locations the game's time
+  stands still from the first variant on (`SetTimeScale(0)`; the sweep's clock then counts 100 ms a frame), so every
+  variant shows the same picture: camera, people, sea and sky.
 - `--failed` reruns the failures of the previous report in `--out`; `--changed` runs only
   scenes whose scripts or model folders changed since it, plus its failures (everything
   when the engine binary or `scene_sweep.c` changed: use `--smoke` or `--failed` then).
@@ -113,12 +114,60 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
 - `--program-cache DIR` keeps the engines' program and pipeline cache in DIR between runs (`--jobs 1`): the first
   sweep measures a cold cache, the next ones a warm one (Vulkan: the pipeline cache and the scenes' recorded pipelines,
   `src/libs/renderer_bgfx/src/shim/pipeline_sets.hpp`).
-- `--timeout S` seconds a scene may take before its engine is killed (default 240); the script fails a scene that
-  has not loaded 30 s before that with its own reason (`not loaded after ... ms`).
+- `--timeout S` seconds a scene may go without progress before its engine is killed (default 240): every event of
+  the scene counts (loaded, a variant active or captured, the engine's report every 10 s while it prepares a variant).
+  The script fails a scene that has not loaded 30 s before that with its own reason (`not loaded after ... ms`), and
+  a variant that waits for a background product (`wait=`) as long after its settings became active.
 - `--lossless` saves the shots as PNG (comparison sheets of fine texture detail; JPEG by default).
 - `--settle MS` how long each scene renders after its fader before the capture (default 300).
   Frame time and the renderer counters are means over this window: raise it (e.g. 5000) with
   `--only` on a few scenes and `--jobs 1` for performance measurements.
+
+## Variants
+A variant is ready when **its own settings and programs draw**. The renderer prepares new settings over many frames
+while the previous ones keep drawing: it links their programs (a few per frame; the first switch to «Высокая» on a cold
+program cache under VirtualGL links about 60 programs in about a minute) and runs its self-test. The engine times this
+(`src/libs/core/src/scene_sweep.cpp`, `variantReadyNow`): the event `variant <i> active ms=.. programs=..` in
+`events.log`, a log line, and every 10 s while it lasts `variant <i> preparing ms=.. programs=..`. Preparation fails the
+scene only when it stops progressing: no new program for 30 s, or for 10 times the measured mean time per program
+when that is longer (`graphics variant <i>: program preparation stalled: ...`).
+
+Products that go on generating in the background after the settings are active are **reported, not waited for**:
+each variant's entry in `report.json` has `prepare_ms`, `programs`, `settle_ms` and `background`, the products still
+generating at its capture. A variant waits for one only when it names it; the product must then stay idle for 1 s:
+
+| Item | Waits for |
+|---|---|
+| `wait=upscale` | the neural ×2 textures (`fx_upscale`): the last residency plan found every texture it chose resident |
+| `wait=relief` | the relief generation: no relief map (or list of relief textures) being made |
+| `wait=bakes` | the bake queue (`fx/bakes.hpp`: town light, visibility volume, bounce, AO volume, far LODs): none queued or running |
+
+`wait=` items may be repeated (`fx_preset=2,wait=upscale,wait=bakes`); an unknown name stops the engine. A product
+still generating `--timeout` - 30 s after the settings became active fails the scene with its name.
+
+A/B comparisons switch one product per variant over the same preset, e.g.
+`--variants 'fx_preset=2,wait=bakes;fx_preset=2,fx_shadows=0,wait=bakes'`. Every `fx_*` option of
+`EffectsOptionNames()` (`src/libs/renderer_bgfx/src/effects/effects.cpp`) can be set in a variant; an unknown name or
+value is logged as an error, which fails the scene. The products of the shadow and lighting work:
+
+| Product | Option (off / on) | Note |
+|---|---|---|
+| Sun shadow map | `fx_shadows=0` / `1` (one tap) / `2` (soft) | needs per-pixel lighting (Средняя, Высокая) |
+| Lamp shadows | `fx_lamp_shadows=0` / `8` / `16` | lamps that relight a location with their shadows |
+| Moving lamps (carried lanterns, torches) | `fx_lamp_moving=0` / `1` / `2` | their dynamic shadow faces |
+| Lamp shadow filter | `fx_lamp_soft=0` (3x3) / `1` (5x5) | |
+| Lamp shadow view | `fx_lamp_debug=2` | the shadow mask over the picture |
+| Contact blob under characters | `fx_contact_shadows=0` / `1` | |
+| Visibility volume | `fx_visibility=0` / `1` | sky visibility and rain shelter; the bounce lives in it (off with it) |
+| Bounce | `fx_bounce=0` / `1` | `fx_bounce_debug=1` shows it alone |
+| Interior AO volume | `fx_ao_volume=0` / `1`..`3` | |
+| Town light (our lightmaps for the live sun) | `fx_town_light=0` / `1` | `fx_town_light_debug=1` shows its sun visibility |
+| Relit town walls | `fx_town_walls=0` / `1` | with `fx_town_light=1` |
+| Relief self-shadow | `fx_parallax_shadow=0` / `1` | with `fx_parallax=2` |
+
+The baked products (visibility, bounce, AO, town light) are made in the background once switched on: compare them with
+`wait=bakes`, or the capture shows them still missing (its `background` says `bakes`). Options added for new products
+belong in `EffectsOptionNames()` and in this table.
 
 Output in `--out`: `report.json` (per-scene status, reasons, load time, `reveal_ms` (from loaded to the scene
 shown: the loading fader, which Vulkan holds while the scene's pipelines are created), frame time with its

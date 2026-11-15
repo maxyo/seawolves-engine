@@ -155,8 +155,8 @@ void Visibility::set_enabled(bool enabled)
     enabled_ = enabled;
     if (!enabled_ && state_ != State::None)
     {
-        shim::logf("effects: visibility of %s: dropped, nothing reads it with these settings (no per-pixel or point "
-                   "lighting): made again when they do",
+        shim::logf("effects: visibility of %s: dropped, off with these settings (fx_visibility=0, or no per-pixel or "
+                   "point lighting to read it): made again when they ask for it",
                    name_.c_str());
         restart();
     }

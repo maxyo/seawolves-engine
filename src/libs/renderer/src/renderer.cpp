@@ -531,7 +531,14 @@ void ConfigureGraphicsEffects(const std::function<int(const char *, int)> &iniVa
         ApplyEffectsOverrides(variant, preset, options);
         spdlog::info("graphics effects: sweep variant '{}'", variant);
         ApplyEffects(preset, effectsAutoHeight, options);
-    }, [] { return !storm::render::CurrentEffects().pending && storm::render::UpscaleSettled(); });
+    }, [] {
+        const storm::render::EffectsReport effects = storm::render::CurrentEffects();
+        return storm::scene_sweep::VariantState{.active = !effects.pending,
+                                                .programs = effects.prepared_programs,
+                                                .upscale = !storm::render::UpscaleSettled(),
+                                                .relief = storm::render::BackgroundWorkBusy(),
+                                                .bakes = storm::render::BakesBusy()};
+    });
     storm::scene_sweep::setIncompleteFrameHook([] { return storm::render::LastIncompleteFrame(); });
 #endif
 }

@@ -55,8 +55,9 @@ class Visibility
     // Main thread. A town's lightmapped ground (render::SetEffectsLightmaps: absolute world box): outdoors the cells
     // cover it (and the air above it) instead of the whole island, so they come out finer under the same budget.
     void set_focus(std::string_view name, const std::array<float, 3> &lo, const std::array<float, 3> &hi);
-    // Main thread: whether anything reads the volume (lit draws: per-pixel or point lighting; Низкая has none). Off:
-    // the volume and a bake still running go and nothing is baked; on: made again (from the cache when it is there).
+    // Main thread: whether the volume is wanted (fx_visibility and lit draws to read it: per-pixel or point lighting;
+    // Низкая has none). Off: the volume and a bake still running go and nothing is baked; on: made again (from the
+    // cache when it is there).
     void set_enabled(bool enabled);
     // Main thread, once per frame: starts the load or bake, uploads a finished one. The volume to bind, or nullptr
     // (also while it is disabled).

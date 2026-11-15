@@ -51,6 +51,7 @@ struct EffectsReport
     // The request does not draw yet: its shader programs are being linked (a few per frame) and its GPU self-test
     // run while the previous settings keep drawing. Becomes false at the Present that switches.
     bool pending = false;
+    uint32_t prepared_programs = 0; // while pending: the request's programs prepared so far
 };
 
 // Applies `preset` and `options` (overrides). Safe before the device exists: the request is kept and
@@ -315,9 +316,12 @@ struct ParallaxProbeState
 };
 const ParallaxProbeState &EffectsParallaxProbe();
 // The neural ×2 textures have settled (effects/upscale.hpp): with the option on, the last residency plan found every
-// texture it chose resident at ×2 (none still being read, uploaded or made). The scene sweep waits for it before it
-// captures a variant.
+// texture it chose resident at ×2 (none still being read, uploaded or made). The scene sweep reports it with each
+// variant's capture and waits for it when the variant asks (wait=upscale).
 bool UpscaleSettled();
+// A bake (town light, visibility, bounce, AO volume, far LOD) is queued or running (fx/bakes.hpp). Reported, and waited
+// for on request, by the scene sweep (wait=bakes).
+bool BakesBusy();
 // Before the renderer goes: stops the generator (the texture in progress is abandoned, its map made next time).
 void ShutdownRelief();
 // Any thread, the system low on memory (Android onTrimMemory / onLowMemory): the relief's models are released after

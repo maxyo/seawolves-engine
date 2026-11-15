@@ -32,6 +32,7 @@ native int SceneSweepLoadTimeoutMs();
 native int SceneSweepVariants();
 native void SceneSweepVariant(int index);
 native int SceneSweepVariantReady();
+native string SceneSweepVariantProblem();
 native int SceneSweepWindowComplete();
 #libriary "SceneSweepLibrary"
 
@@ -45,7 +46,6 @@ native int SceneSweepWindowComplete();
 
 #define SS_SETTLE_FRAMES	5	// after the fader is gone; scene loading is synchronous
 #define SS_VARIANT_WARM	4	// --variants: frames after the variant draws (it is prepared first) before the measured window
-#define SS_VARIANT_READY_TIMEOUT_MS	60000	// the renderer links the variant's programs and self-tests it first
 #define SS_VARIANT_FRAMES	12	// --variants: frames in the measured window
 #define SS_INCOMPLETE_TIMEOUT_MS	180000	// Vulkan: windows with draws still waiting for their pipelines, in all
 #define SS_FADE_TIMEOUT_MS	30000
@@ -63,6 +63,7 @@ int ssIncompleteTime = 0;	// this scene's windows that had draws waiting for the
 bool ssSteady = false;		// the fader is gone: the measured window has started
 bool ssFrozen = false;		// --variants in a location: the game's time stands still for every variant
 int ssVariant = 0;		// graphics settings variant of the next capture (--variants)
+int ssReady = 0;		// SceneSweepVariantReady() of this frame
 bool ssViaHome = false;
 string ssHome = "";
 string ssHomeGroup = "";
@@ -100,6 +101,7 @@ void SceneSweep_Begin(string scene)
 void SceneSweep_Fail(string reason)
 {
 	SceneSweepEvent("fail " + ssScene + " " + reason);
+	SceneSweep_Freeze(false); // the next scene runs in the game's own time
 	if(ssKind == "newgame")
 	{
 		// No game to load scenes into.
@@ -195,12 +197,22 @@ void SceneSweep_Frame()
 		}
 		if(!ssSteady)
 		{
-			if(SceneSweep_HasVariants() && !SceneSweepVariantReady())
+			if(SceneSweep_HasVariants())
 			{
-				// The previous settings draw while the renderer prepares the variant's programs.
-				if(ssTime > SS_VARIANT_READY_TIMEOUT_MS) SceneSweep_Fail("graphics variant " + ssVariant + " not active after " + ssTime + " ms");
-				ssFrames = 0;
-				break;
+				// The previous settings draw while the renderer prepares the variant's programs (and, when the variant
+				// asks, until the background products it names are done). The engine times it, logs it and fails a
+				// preparation that stopped progressing (src/libs/core/src/scene_sweep.cpp, variantReadyNow).
+				ssReady = SceneSweepVariantReady();
+				if(ssReady < 0)
+				{
+					SceneSweep_Fail(SceneSweepVariantProblem());
+					break;
+				}
+				if(ssReady == 0)
+				{
+					ssFrames = 0;
+					break;
+				}
 			}
 			if(SceneSweep_HasVariants() && ssFrames < SS_VARIANT_WARM) break; // target rebuilds
 			// Every variant of a location shows the same picture (SceneSweep_Freeze).

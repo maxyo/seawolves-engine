@@ -209,6 +209,9 @@ struct Settings
     // One bounce of indirect light (bounce.hpp, src/effects/bounce.hpp): the lit surfaces' light on what is around them,
     // in their colour (needs kLightingPerPixel).
     bool bounce = false;
+    // The location's visibility volume (fx/visibility.hpp: sky visibility, the wet surfaces' shelter, the bounce's
+    // carrier) for the lit draws (per-pixel or point lighting); off for A/B comparisons (option fx_visibility).
+    bool visibility = true;
     bool bounce_debug = false;    // lit and baked surfaces show the bounce's light over a dim grey picture
     bool visibility_debug = false; // lit and baked surfaces show the location's visibility volume (red sky, green open) // our town lightmaps show their sun visibility (grey) instead of the relit paint
     // Ambient-occlusion volume of interiors (ao_volume.hpp): 0 off, else one of the strengths AoVolumeLevel names.

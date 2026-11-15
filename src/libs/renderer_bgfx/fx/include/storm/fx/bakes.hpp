@@ -83,6 +83,8 @@ using BakeStep = std::function<bool(BakeStage)>;
 BakeTicket PostBake(std::string what, std::function<void()> work);
 // Main thread. `step(Load)` on the load thread, then, when it returns false, `step(Bake)` on the bake thread.
 BakeTicket PostBake(std::string what, BakeStep step);
+// Any thread: the bakes queued (not cancelled) or running on either lane, cache loads included.
+size_t BakesOutstanding();
 // Cancels every bake (queued or running, the thermal pause woken) and joins the bake thread; the next PostBake
 // starts it again. Also run when the program ends.
 void ShutdownBakes();
