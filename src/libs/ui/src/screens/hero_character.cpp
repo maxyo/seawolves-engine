@@ -336,6 +336,8 @@ class HeroScreen final : public Screen
             Section, // a section button once no window is open
         } kind = None;
         std::string node, row, verb;
+        std::string candidate_character; // Assign: identity shown at the tap, not a reusable row index
+        int candidate_post = -1;
         double since = 0.0;
     };
 
@@ -493,6 +495,18 @@ class HeroScreen final : public Screen
         case Intent::Assign: {
             if (window_ != Window::Assign)
                 return Drop(bindings, {}); // the chooser closed: assigned, or cancelled by the game
+            const Widget *post = Selected("CHARACTERS_SCROLL");
+            const Widget *candidate = nullptr;
+            for (const Widget *fact : a_->All("ANDROID_CANDIDATES"))
+                if (Field(fact, "index") == intent_.row)
+                    candidate = fact;
+            // Selection and acceptance span revisions. A newly filtered list can
+            // reuse the same row for someone else; a generic accept must never
+            // carry our old tap into that new candidate or another post.
+            if (intent_.candidate_character.empty() || intent_.candidate_post <= 0 || !post ||
+                post->index != intent_.candidate_post || !candidate ||
+                Field(candidate, "character") != intent_.candidate_character)
+                return Drop(bindings, "the post chooser candidate or post changed");
             const int index = std::atoi(intent_.row.c_str());
             const Widget *row = nullptr;
             for (const Widget *r : a_->All("PASSENGERSLIST"))
@@ -999,10 +1013,17 @@ class HeroScreen final : public Screen
             for (const Json &row : rows)
             {
                 const std::string index = row.value("id", "");
-                bindings.On("candidate-" + index, "", [this, &bindings, index](const Event &) {
+                std::string character;
+                for (const Widget *candidate : a_->All("ANDROID_CANDIDATES"))
+                    if (Field(candidate, "index") == index)
+                        character = Field(candidate, "character");
+                const int post_index = slot ? slot->index : -1;
+                bindings.On("candidate-" + index, "", [this, &bindings, index, character, post_index](const Event &) {
                     Intent intent;
                     intent.kind = Intent::Assign;
                     intent.row = index;
+                    intent.candidate_character = character;
+                    intent.candidate_post = post_index;
                     Start(bindings, intent);
                 });
             }

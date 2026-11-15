@@ -2122,7 +2122,8 @@ static void Hero(const std::string &models)
         model.widgets.push_back(row);
         Widget fact = Make("ANDROID_CANDIDATES", "fact", i ? "Mary Read" : "Ned Low");
         fact.index = i;
-        fact.context = {{"index", std::to_string(i)}, {"rank", "6"}, {"skill", "Grappling"}, {"skillvalue", "41"}, {"face", "30"}};
+        fact.context = {{"index", std::to_string(i)}, {"character", i ? "12" : "11"}, {"rank", "6"},
+                        {"skill", "Grappling"}, {"skillvalue", "41"}, {"face", "30"}};
         model.widgets.push_back(fact);
     }
     router.SetInterface(model);
