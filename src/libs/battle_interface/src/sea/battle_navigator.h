@@ -140,7 +140,7 @@ class BATTLE_NAVIGATOR
     mutable bool m_androidDrawn = false;
     mutable uint64_t m_androidLayoutId = 0;
     uint64_t m_navigatorGeneration = 1;
-    bool m_chargeSignalAvailable = false, m_islandExpected = false, m_islandTextureReady = false, m_renderLost = false;
+    bool m_chargeSignalAvailable = false, m_renderLost = false;
     std::array<storm::android::sea_nav::Bort, 4> m_androidBorts{};
     uint64_t m_speedShipId{};
     bool m_shipSpeedAvailable = false, m_windSpeedAvailable = false;
@@ -209,7 +209,7 @@ class BATTLE_NAVIGATOR
     int32_t m_idPowderTexture{-1}; // current gunpowder
     int32_t m_idWindTexture{-1};   // wind speed
     int32_t m_idSailTexture{-1};   // sail position / ship speed
-    int32_t m_islandTexture = -1; // renderer texture id of the island render target
+    int32_t m_islandTexture = -1; // the island seen from above; only the native compass draws it (the touch HUD disc draws BuildAndroidLand's field)
 
     uint32_t m_dwSeaColor{};                 // color of the sea on the minimap
     uint32_t m_dwFireZoneColor = 0x20FF0050; // color of the fire zone on the minimap

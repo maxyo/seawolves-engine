@@ -56,9 +56,9 @@ void BATTLE_NAVIGATOR::Draw() const
     m_androidDrawn = DrawAndroid();
     // Opt-in exact owner/readiness trace for APK acceptance, not a fake data source.
     static int previous=-1;
-    const int state=(AndroidAvailable()?1:0)|(m_androidDrawn?2:0)|(m_islandExpected?4:0)|(m_islandTextureReady?8:0);
+    const int state=(AndroidAvailable()?1:0)|(m_androidDrawn?2:0);
     if(previous!=state){previous=state;
-        storm::android::traceContextAction("navigator", "draw", "state(available=1,new=2,island=4,mapReady=8)="+std::to_string(state)+
+        storm::android::traceContextAction("navigator", "draw", "state(available=1,new=2)="+std::to_string(state)+
             " ship="+std::to_string(m_speedShipId)+" generation="+std::to_string(m_navigatorGeneration)+
             " scale="+std::to_string(m_fCurScale)+" windState="+std::to_string(m_curWindPic));}
 
@@ -1364,8 +1364,6 @@ void BATTLE_NAVIGATOR::SetIsland()
     ++m_navigatorGeneration;
     m_androidDrawn=false;m_androidLayoutId=0;
     storm::android::seaNavigator.clear();
-    m_islandExpected = false;
-    m_islandTextureReady = false;
     m_renderLost = false;
     TEXTURE_RELEASE(rs, m_islandTexture);
 #endif
@@ -1380,9 +1378,6 @@ void BATTLE_NAVIGATOR::SetIsland()
     }
     if (pM != nullptr)
     {
-#ifdef __ANDROID__
-        m_islandExpected = true;
-#endif
         pM->Update();
         // Get island size
         auto xMin = 0.f, yMin = 0.f, zMin = 0.f, xMax = 0.f, yMax = 0.f, zMax = 0.f;
@@ -1440,9 +1435,6 @@ void BATTLE_NAVIGATOR::SetIsland()
                 if (rs->TechniqueExecuteStart("battle_island_gettexture"))
                 {
                     pM->ProcessStage(Entity::Stage::realize, 1);
-#ifdef __ANDROID__
-                    m_islandTextureReady = true;
-#endif
                     while (rs->TechniqueExecuteNext())
                         ;
                 }

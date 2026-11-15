@@ -75,8 +75,6 @@ bool BATTLE_NAVIGATOR::AndroidAvailable() const {
     if(!rs||m_renderLost||!m_shipSpeedAvailable||!m_windSpeedAvailable||!m_chargeSignalAvailable||m_curWindPic!=61||
        !std::isfinite(m_fXPos)||!std::isfinite(m_fYPos)||!std::isfinite(m_fAngle)||!std::isfinite(m_fWindAngle)||!std::isfinite(m_fShipWindAgainst)||
        m_fWorldRad<=0||m_fCurScale<=0||m_fMinScale<=0||m_fMaxScale<m_fMinScale||m_fScaleStep<=0)return false;
-    // The island map is re-rendered after every change of scale: the disc goes on without it
-    // for those frames instead of handing the place back to the native compass.
     for(const auto &b:m_androidBorts)if(b.present&&!storm::android::sea_nav::valid(b))return false;
     return true;
 }
