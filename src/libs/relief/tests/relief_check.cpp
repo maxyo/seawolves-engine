@@ -108,6 +108,25 @@ void CheckDemandPrune(const std::filesystem::path &root)
     WriteTx(character, 128);
     CHECK(relief::Prune(root / "missing-texture-root", background, output, fx::kReliefMapSize) == -1);
     CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    const auto output_permissions = std::filesystem::status(output).permissions();
+    if (geteuid() != 0)
+    {
+        std::filesystem::permissions(output, std::filesystem::perms::none);
+        std::error_code denied;
+        std::filesystem::directory_iterator unreadable(output, denied);
+        CHECK(bool(denied));
+        CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+        std::filesystem::permissions(output, output_permissions);
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+        std::filesystem::permissions(output, std::filesystem::perms::owner_read |
+                                                std::filesystem::perms::owner_exec);
+        CHECK(!std::filesystem::remove(fx::ReliefFile(output, old), denied) && bool(denied));
+        CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+        std::filesystem::permissions(output, output_permissions);
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, old)));
+    }
+    CHECK(relief::Prune(textures, background, root / "missing-output", fx::kReliefMapSize) == -1);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 2);
     CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
     CHECK(!std::filesystem::exists(fx::ReliefFile(output, old)));
@@ -120,6 +139,15 @@ void CheckDemandPrune(const std::filesystem::path &root)
     std::ofstream(fx::ReliefFile(output, stone_key), std::ios::binary) << "background map";
     CHECK(relief::Prune(textures, {}, output, fx::kReliefMapSize) == 0);
     CHECK(std::filesystem::exists(fx::ReliefFile(output, stone_key)));
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 0);
+    // Deterministic removal failure even under root; no production fault-injection hook.
+    const auto blocked = output / "blocked.relief";
+    std::filesystem::create_directory(blocked);
+    std::ofstream(blocked / "child") << "not an empty stale entry";
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, stone_key)));
+    std::filesystem::remove_all(blocked);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 0);
     std::filesystem::remove(character);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);

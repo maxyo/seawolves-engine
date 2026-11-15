@@ -528,7 +528,7 @@ void ReliefGenerator::release_models(const char *why)
 void ReliefGenerator::prepare_rest()
 {
     const auto defer_prune = [this] {
-        shim::logf("effects: relief pruning deferred: source inventory unreadable; retry after quiet interval");
+        shim::logf("effects: relief pruning deferred: source inventory or cache I/O failure; retry after quiet interval");
         std::lock_guard lock(mutex_);
         rest_listed_ = false;
         rest_.clear();

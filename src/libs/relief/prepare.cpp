@@ -1121,14 +1121,20 @@ int Prune(const std::filesystem::path &textures, const std::vector<std::filesyst
     std::sort(current.begin(), current.end());
     int removed = 0;
     std::error_code error;
-    for (const auto &entry : std::filesystem::directory_iterator(output, error))
-        if ((entry.path().extension() == ".relief" || entry.path().extension() == ".gloss") &&
-            !std::binary_search(current.begin(), current.end(), entry.path()))
+    for (auto it = std::filesystem::directory_iterator(output, error);
+         !error && it != std::filesystem::directory_iterator(); it.increment(error))
+    {
+        const auto &path = it->path();
+        if ((path.extension() == ".relief" || path.extension() == ".gloss") &&
+            !std::binary_search(current.begin(), current.end(), path))
         {
-            std::filesystem::remove(entry.path(), error);
-            ++removed;
+            const bool erased = std::filesystem::remove(path, error);
+            if (error)
+                return -1; // Earlier stale entries may be gone; current keys are never removed.
+            removed += erased ? 1 : 0;
         }
-    return removed;
+    }
+    return error ? -1 : removed;
 }
 
 namespace
@@ -1251,7 +1257,7 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
         {
             result.removed = 0;
             result.status = 2;
-            result.error = "cache pruning deferred: texture inventory or source unreadable";
+            result.error = "cache pruning deferred: texture inventory, source read or cache I/O failure";
         }
         else
             MarkComplete(job.output, job.map_size, files.size());

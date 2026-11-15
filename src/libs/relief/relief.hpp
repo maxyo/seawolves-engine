@@ -111,7 +111,8 @@ class Session
 // game's own height maps stay while they are current. `files`: List(textures), the background generation queue.
 // Also discovers on-demand textures (characters) for cache validity, without adding them to that queue.
 // Reads each source's header and probe level only. Returns the removal count, or -1 on incomplete/unreadable
-// inventory (no maps removed). A caller must retry later and must not MarkComplete after -1.
+// source inventory (no maps removed) or output I/O failure (some stale maps may already be removed).
+// Current keys are preserved. A caller must retry later and must not MarkComplete after -1.
 int Prune(const std::filesystem::path &textures, const std::vector<std::filesystem::path> &files,
           const std::filesystem::path &output, int map_size);
 // The mark of a complete pass (Prune done): the method, the map size and how many relief textures the game had
