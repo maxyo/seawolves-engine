@@ -138,8 +138,12 @@ bool WriteMapFile(const std::filesystem::path &target, const NormalMap &map)
     }
     std::filesystem::rename(temporary, target, error);
     if (error)
-        std::filesystem::remove(temporary, error);
-    return !error;
+    {
+        std::error_code cleanup_error;
+        std::filesystem::remove(temporary, cleanup_error);
+        return false; // successful cleanup must not turn a failed publication into success
+    }
+    return true;
 }
 
 // `formats`: the formats a file of this kind may hold.

@@ -1248,6 +1248,19 @@ void CheckReliefModel()
     std::filesystem::resize_file(ReliefFile(dir, key), 40);
     std::string error;
     CHECK(!ReadReliefMap(dir, key, &error) && !error.empty() && !HasReliefMap(dir, key));
+    // Force rename to fail after the complete temporary file was written. Cleanup succeeds, but publication must
+    // still report failure and leave the obstructing target intact (both APIs share WriteMapFile).
+    for (const bool gloss : {false, true})
+    {
+        const auto blocked = gloss ? GlossFile(dir, key + 1) : ReliefFile(dir, key + 1);
+        std::filesystem::create_directories(blocked / "occupied");
+        CHECK(!(gloss ? WriteGlossMap(dir, key + 1, eac) : WriteReliefMap(dir, key + 1, eac)));
+        CHECK(std::filesystem::is_directory(blocked / "occupied"));
+        CHECK(!std::filesystem::exists(blocked.string() + ".tmp"));
+        std::filesystem::remove_all(blocked);
+        CHECK(gloss ? WriteGlossMap(dir, key + 1, eac) : WriteReliefMap(dir, key + 1, eac));
+        CHECK(gloss ? HasGlossMap(dir, key + 1) : HasReliefMap(dir, key + 1));
+    }
     std::filesystem::remove_all(dir);
 }
 
