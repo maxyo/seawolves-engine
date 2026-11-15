@@ -62,6 +62,8 @@ struct Job
 struct CacheTask
 {
     std::atomic<uint64_t> generation{0};
+    std::atomic<bool> cancelled{false};
+    std::shared_ptr<void> bytes; // read/ready payload reservation; released after consumer upload/discard
     std::chrono::steady_clock::time_point queued = std::chrono::steady_clock::now();
 };
 
@@ -90,9 +92,11 @@ class Service
     // src/effects/normal_maps.cpp): runs when no transcode is queued. Dropped unrun at shutdown. (The ray bakes
     // have a thread of their own: fx::PostBake.)
     void post(std::function<void()> task);
-    // Cache lookups/reads share the existing workers. Only tickets explicitly claimed during
-    // the current loading scope bypass transcodes, at most twice before ordinary work.
-    void post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task);
+    // One bounded IO lane, independent of CPU transcodes. False: caller must retry.
+    bool post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task);
+    enum class CacheBytes { Reserved, Busy, TooLarge };
+    // Actual validated file size, not an estimate of a callback's memory use.
+    CacheBytes reserve_cache_bytes(const std::shared_ptr<CacheTask> &ticket, uint64_t bytes);
     void promote_cache(const std::shared_ptr<CacheTask> &ticket);
     bool cache_scope_current(const std::shared_ptr<CacheTask> &ticket) const;
     // Game thread lifecycle: beginning/replacing/cancelling/revealing a scene revokes old priority.
@@ -108,6 +112,7 @@ class Service
   private:
     void start_workers();
     void worker(unsigned index);
+    void cache_worker();
     void report(const char *when);
 
     Config config_;
@@ -122,6 +127,10 @@ class Service
         std::string name;
     };
     std::deque<Task> tasks_;
+    std::deque<Task> cache_tasks_;
+    std::thread cache_worker_;
+    size_t cache_running_ = 0;
+    std::shared_ptr<std::atomic<uint64_t>> cache_ready_bytes_ = std::make_shared<std::atomic<uint64_t>>(0);
     std::atomic<uint64_t> loading_generation_{0};
     uint64_t next_loading_generation_ = 0; // game thread only
     unsigned foreground_streak_ = 0; // under mutex_; fairness across all workers

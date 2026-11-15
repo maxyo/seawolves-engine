@@ -159,7 +159,7 @@ void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
-    texture::Service::instance().post_cache(entry->cache_task, "normal lookup " + entry->name,
+    if (!texture::Service::instance().post_cache(entry->cache_task, "normal lookup " + entry->name,
         [entry, relief_dir = directory(), counters = counters_] {
         // Which map the texture takes, for the diagnostics: its key and the method it was (or will be) made with.
         const unsigned long long key = entry->key, method = fx::ReliefMethod(entry->relief);
@@ -178,6 +178,8 @@ void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
             ReliefGenerator::instance().request(entry, entry->file);
             return;
         }
+        // Only metadata runs on IO lane. Height derivation retains the existing CPU lane.
+        texture::Service::instance().post([entry, relief_dir, counters, key, method] {
         // A height map: derived from the top level of its game file (the game may have skipped top mips of the loaded
         // texture, texture_degradation: the map is the same on every device).
         const auto start = std::chrono::steady_clock::now();
@@ -224,23 +226,44 @@ void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
         }
         entry->map = std::move(map);
         entry->state = NormalMapEntry::Derived;
-    });
+        });
+    })) entry->state = NormalMapEntry::Unqueued;
 }
 
 void NormalMaps::read_stored(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
-    texture::Service::instance().post_cache(entry->cache_task, "normal/gloss read " + entry->name,
+    if (!texture::Service::instance().post_cache(entry->cache_task, "normal/gloss read " + entry->name,
         [weak = std::weak_ptr<NormalMapEntry>(entry), relief_dir = directory()] {
         const auto entry = weak.lock();
         if (!entry) return;
+        const auto file = entry->gloss != fx::GlossClass::None ? fx::GlossFile(relief_dir, entry->key) : fx::ReliefFile(relief_dir, entry->key);
+        std::error_code size_error;
+        const auto bytes = std::filesystem::file_size(file, size_error);
+        if (size_error) {
+            if (size_error != std::errc::no_such_file_or_directory)
+                shim::logf("ERROR: relief cache stat failed: %s: %s", entry->name.c_str(), size_error.message().c_str());
+            entry->state = size_error == std::errc::no_such_file_or_directory ? NormalMapEntry::Unqueued : NormalMapEntry::Failed;
+            return;
+        }
+        {
+            const auto admission = texture::Service::instance().reserve_cache_bytes(entry->cache_task, bytes);
+            if (admission != texture::Service::CacheBytes::Reserved) {
+                if (admission == texture::Service::CacheBytes::TooLarge)
+                    shim::logf("ERROR: relief cache read exceeds 256 MiB budget: %s", entry->name.c_str());
+                entry->state = admission == texture::Service::CacheBytes::Busy ? NormalMapEntry::Stored : NormalMapEntry::Failed;
+                return;
+            }
+        }
         std::string error;
         std::optional<fx::NormalMap> map = entry->gloss != fx::GlossClass::None
-                                               ? fx::ReadGlossMap(relief_dir, entry->key, &error)
-                                               : fx::ReadReliefMap(relief_dir, entry->key, &error);
+                                               ? fx::ReadGlossMap(relief_dir, entry->key, &error, bytes)
+                                               : fx::ReadReliefMap(relief_dir, entry->key, &error, bytes);
         if (!map)
         {
+            entry->cache_task->bytes.reset();
+            if (error == "cache read reservation changed") { entry->state = NormalMapEntry::Stored; return; }
             // Gone from the cache while the texture stayed loaded (the system evicted it, «Очистить кэш») or damaged
             // (deleted by the read): made again like a map that never was (the next draw looks it up).
             if (!error.empty())
@@ -254,7 +277,7 @@ void NormalMaps::read_stored(const std::shared_ptr<NormalMapEntry> &entry)
         entry->map = std::move(*map);
         entry->cache_ready = std::chrono::steady_clock::now();
         entry->state = NormalMapEntry::Derived;
-    });
+    })) entry->state = NormalMapEntry::Stored;
 }
 
 void NormalMaps::load_exclusions()
@@ -471,6 +494,7 @@ NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &ent
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - upload_start).count(),
                 entry->state == NormalMapEntry::Uploaded, texture::Service::instance().cache_scope_current(entry->cache_task));
         entry->cache_ready = {};
+        if (entry->cache_task) entry->cache_task->bytes.reset();
         break;
     }
     default:
@@ -541,7 +565,7 @@ void NormalMaps::look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
-    texture::Service::instance().post_cache(entry->cache_task, "gloss lookup " + entry->name,
+    if (!texture::Service::instance().post_cache(entry->cache_task, "gloss lookup " + entry->name,
         [entry, relief_dir = directory()] {
         if (fx::HasGlossMap(relief_dir, entry->key))
         {
@@ -553,7 +577,7 @@ void NormalMaps::look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry)
                    fx::GlossClassName(entry->gloss), static_cast<unsigned long long>(entry->key));
         entry->state = NormalMapEntry::Waiting;
         ReliefGenerator::instance().request(entry, entry->file);
-    });
+    })) entry->state = NormalMapEntry::Unqueued;
 }
 
 NormalMaps::Stats NormalMaps::stats()

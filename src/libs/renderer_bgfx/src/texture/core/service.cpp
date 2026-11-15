@@ -15,6 +15,9 @@ namespace storm::texture
 namespace
 {
 constexpr size_t kMaxQueuedJobs = 64;
+constexpr size_t kMaxCacheTasks = 256;
+constexpr uint64_t kCacheReadyBudget = 256ull << 20;
+constexpr uint64_t kCacheReadMaximum = kCacheReadyBudget;
 constexpr size_t kMaxQueuedBytes = 96u << 20;
 constexpr auto kReportInterval = std::chrono::seconds(10);
 constexpr uint32_t kEvictEveryWrites = 64;
@@ -57,12 +60,15 @@ void Service::shutdown()
             job->state = Job::Failed;
         queue_.clear();
         tasks_.clear();
+        for (auto &task : cache_tasks_) task.cache->cancelled = true;
+        cache_tasks_.clear();
         queued_bytes_ = 0;
     }
     wake_.notify_all();
     for (std::thread &thread : workers_)
         thread.join();
     workers_.clear();
+    if (cache_worker_.joinable()) cache_worker_.join();
     if (hits_ + misses_ > 0)
         report("shutdown");
     hits_ = misses_ = transcoded_ = 0;
@@ -88,6 +94,7 @@ bool Service::has_room() const
 std::shared_ptr<Job> Service::submit(const Layout &layout, uint64_t key, GpuFormat format, std::vector<uint8_t> input)
 {
     std::unique_lock lock(mutex_);
+    if (stopping_) return nullptr;
     if (auto it = in_flight_.find(key); it != in_flight_.end())
         if (auto job = it->second.lock(); job && !job->cancelled)
         {
@@ -108,7 +115,7 @@ std::shared_ptr<Job> Service::submit(const Layout &layout, uint64_t key, GpuForm
     if (workers_.empty())
         start_workers();
     lock.unlock();
-    wake_.notify_one();
+    wake_.notify_all();
     return job;
 }
 
@@ -116,22 +123,74 @@ void Service::post(std::function<void()> task)
 {
     {
         std::lock_guard lock(mutex_);
+        if (stopping_) return;
         tasks_.push_back({std::move(task), {}, {}});
         if (workers_.empty())
             start_workers();
     }
-    wake_.notify_one();
+    wake_.notify_all();
 }
 
-void Service::post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task)
+bool Service::post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task)
 {
     {
         std::lock_guard lock(mutex_);
-        tasks_.push_back({std::move(task), std::move(ticket), std::move(name)});
-        if (workers_.empty())
-            start_workers();
+        if (stopping_ || !ticket || ticket->cancelled || cache_tasks_.size() + cache_running_ >= kMaxCacheTasks)
+            return false;
+        ticket->queued = std::chrono::steady_clock::now();
+        cache_tasks_.push_back({std::move(task), std::move(ticket), std::move(name)});
+        if (!cache_worker_.joinable()) cache_worker_ = std::thread(&Service::cache_worker, this);
     }
-    wake_.notify_one();
+    wake_.notify_all();
+    return true;
+}
+
+Service::CacheBytes Service::reserve_cache_bytes(const std::shared_ptr<CacheTask> &ticket, uint64_t bytes)
+{
+    if (bytes > kCacheReadMaximum) return CacheBytes::TooLarge;
+    if (!ticket || ticket->cancelled) return CacheBytes::Busy;
+    auto token = std::make_unique<uint64_t>(bytes);
+    auto counter = cache_ready_bytes_;
+    uint64_t used = counter->load();
+    for (;;) {
+        const uint64_t limit = kCacheReadyBudget;
+        if (used > limit - bytes) return CacheBytes::Busy;
+        if (counter->compare_exchange_weak(used, used + bytes)) break;
+    }
+    ticket->bytes = std::shared_ptr<void>(token.release(), [counter](void *p) {
+        auto n = static_cast<uint64_t *>(p); counter->fetch_sub(*n); delete n;
+    });
+    return CacheBytes::Reserved;
+}
+
+void Service::cache_worker()
+{
+    lower_thread_priority();
+    std::unique_lock lock(mutex_);
+    while (!stopping_) {
+        if (cache_tasks_.empty()) {
+            wake_.wait(lock, [&] { return stopping_ || !cache_tasks_.empty(); });
+            continue;
+        }
+        const uint64_t generation = loading_generation_;
+        auto foreground = [&](const Task &task) { return generation && task.cache->generation.load() == generation; };
+        auto urgent = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), foreground);
+        auto ordinary = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), [&](const Task &t) { return !foreground(t); });
+        auto chosen = urgent != cache_tasks_.end() && (foreground_streak_ < 2 || ordinary == cache_tasks_.end()) ? urgent : ordinary;
+        const bool admitted_foreground = foreground(*chosen);
+        foreground_streak_ = admitted_foreground ? foreground_streak_ + 1 : 0;
+        Task task = std::move(*chosen); cache_tasks_.erase(chosen); ++cache_running_;
+        const auto ticket_generation = task.cache->generation.load();
+        lock.unlock();
+        const auto start = std::chrono::steady_clock::now();
+        if (!task.cache->cancelled) task.work();
+        if (ticket_generation && log_)
+            log_("loading cache: %s scope=%llu ticket=%llu foreground=%d queue=%.3f ms work=%.3f ms (IO lane; includes validation/read)",
+                 task.name.c_str(), static_cast<unsigned long long>(generation), static_cast<unsigned long long>(ticket_generation), admitted_foreground,
+                 std::chrono::duration<double, std::milli>(start - task.cache->queued).count(),
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+        lock.lock(); --cache_running_;
+    }
 }
 
 void Service::promote_cache(const std::shared_ptr<CacheTask> &ticket)
@@ -208,42 +267,9 @@ void Service::worker(unsigned index)
             lock.lock();
             continue;
         }
-        const uint64_t generation = loading_generation_;
-        const auto foreground = [&](const Task &task) {
-            return generation != 0 && task.cache && task.cache->generation.load() == generation;
-        };
-        auto urgent = std::find_if(tasks_.begin(), tasks_.end(), foreground);
-        auto ordinary = std::find_if(tasks_.begin(), tasks_.end(), [&](const Task &task) { return !foreground(task); });
-        const bool ordinary_available = !queue_.empty() || ordinary != tasks_.end();
-        auto chosen = tasks_.end();
-        if (urgent != tasks_.end() && (foreground_streak_ < 2 || !ordinary_available))
-        {
-            chosen = urgent;
-            ++foreground_streak_;
-        }
-        else if (queue_.empty() && ordinary != tasks_.end())
-        {
-            chosen = ordinary;
-            foreground_streak_ = 0;
-        }
-        if (chosen != tasks_.end())
-        {
-            const bool admitted_foreground = foreground(*chosen);
-            const uint64_t ticket_generation = chosen->cache ? chosen->cache->generation.load() : 0;
-            Task task = std::move(*chosen);
-            tasks_.erase(chosen);
-            ++running_;
-            lock.unlock();
-            const auto start = std::chrono::steady_clock::now();
-            task.work();
-            if (ticket_generation != 0 && log_)
-                log_("loading cache: %s scope=%llu ticket=%llu foreground=%d queue=%.3f ms work=%.3f ms (CPU; includes validation/read)",
-                     task.name.c_str(), static_cast<unsigned long long>(generation),
-                     static_cast<unsigned long long>(ticket_generation), admitted_foreground,
-                     std::chrono::duration<double, std::milli>(start - task.cache->queued).count(),
-                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
-            lock.lock();
-            --running_;
+        if (queue_.empty() && !tasks_.empty()) {
+            auto task = std::move(tasks_.front()); tasks_.pop_front(); ++running_;
+            lock.unlock(); task.work(); lock.lock(); --running_;
             continue;
         }
         if (queue_.empty())
@@ -258,7 +284,6 @@ void Service::worker(unsigned index)
             }
             continue;
         }
-        foreground_streak_ = 0;
         std::shared_ptr<Job> job = std::move(queue_.front());
         queue_.pop_front();
         queued_bytes_ -= job->input.size();

@@ -52,7 +52,7 @@ std::filesystem::path ReliefFile(const std::filesystem::path &directory, uint64_
 // Writes atomically (a temporary file renamed into place). False on an I/O error.
 bool WriteReliefMap(const std::filesystem::path &directory, uint64_t key, const NormalMap &map);
 // The map, or nothing when there is no file. A damaged file or one of another layout is deleted and reported in `error`.
-std::optional<NormalMap> ReadReliefMap(const std::filesystem::path &directory, uint64_t key, std::string *error = nullptr);
+std::optional<NormalMap> ReadReliefMap(const std::filesystem::path &directory, uint64_t key, std::string *error = nullptr, uint64_t max_bytes = UINT64_MAX);
 bool HasReliefMap(const std::filesystem::path &directory, uint64_t key);
 
 // The gloss maps (gloss_map.hpp) in the same directory: key ReliefKey(..., GlossMethod(class), kGlossMapSize), one file
@@ -60,7 +60,7 @@ bool HasReliefMap(const std::filesystem::path &directory, uint64_t key);
 // G the gloss: GlossMaterial); the same writing and checks as the relief maps.
 std::filesystem::path GlossFile(const std::filesystem::path &directory, uint64_t key);
 bool WriteGlossMap(const std::filesystem::path &directory, uint64_t key, const NormalMap &map);
-std::optional<NormalMap> ReadGlossMap(const std::filesystem::path &directory, uint64_t key, std::string *error = nullptr);
+std::optional<NormalMap> ReadGlossMap(const std::filesystem::path &directory, uint64_t key, std::string *error = nullptr, uint64_t max_bytes = UINT64_MAX);
 bool HasGlossMap(const std::filesystem::path &directory, uint64_t key);
 
 } // namespace storm::fx

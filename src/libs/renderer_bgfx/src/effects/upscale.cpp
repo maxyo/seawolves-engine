@@ -158,6 +158,7 @@ void Upscales::release(UpscaleEntry &entry)
     else if (entry.state == UpscaleEntry::Read)
     {
         std::vector<uint8_t>().swap(entry.ktx);
+        if (entry.cache_task) entry.cache_task->bytes.reset();
         entry.state = UpscaleEntry::Stored;
     }
 }
@@ -239,7 +240,7 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
 {
     entry->state = UpscaleEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
-    texture::Service::instance().post_cache(entry->cache_task, (read ? "x2 read " : "x2 lookup ") + entry->name,
+    if (!texture::Service::instance().post_cache(entry->cache_task, (read ? "x2 read " : "x2 lookup ") + entry->name,
         [weak = std::weak_ptr<UpscaleEntry>(entry), read, directory = directory_] {
         const auto entry = weak.lock();
         if (!entry) return;
@@ -253,10 +254,29 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
             entry->state = UpscaleEntry::Stored;
             return;
         }
+        std::error_code size_error;
+        const auto bytes = std::filesystem::file_size(fx::UpscaleFile(directory, entry->key), size_error);
+        if (size_error) {
+            if (size_error != std::errc::no_such_file_or_directory)
+                shim::logf("ERROR: x2 cache stat failed: %s: %s", entry->name.c_str(), size_error.message().c_str());
+            entry->state = size_error == std::errc::no_such_file_or_directory ? UpscaleEntry::Missing : UpscaleEntry::Failed;
+            return;
+        }
+        {
+            const auto admission = texture::Service::instance().reserve_cache_bytes(entry->cache_task, bytes);
+            if (admission != texture::Service::CacheBytes::Reserved) {
+                if (admission == texture::Service::CacheBytes::TooLarge)
+                    shim::logf("ERROR: x2 cache read exceeds 256 MiB budget: %s", entry->name.c_str());
+                entry->state = admission == texture::Service::CacheBytes::Busy ? UpscaleEntry::Stored : UpscaleEntry::Failed;
+                return;
+            }
+        }
         std::string error;
-        std::optional<std::vector<uint8_t>> ktx = fx::ReadUpscaled(directory, entry->key, &error);
+        std::optional<std::vector<uint8_t>> ktx = fx::ReadUpscaled(directory, entry->key, &error, bytes);
         if (!ktx)
         {
+            entry->cache_task->bytes.reset();
+            if (error == "cache read reservation changed") { entry->state = UpscaleEntry::Stored; return; }
             if (!error.empty())
                 shim::logf("ERROR: effects upscale: %s: %s (made again)", entry->name.c_str(), error.c_str());
             entry->state = UpscaleEntry::Missing;
@@ -265,7 +285,7 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
         entry->ktx = std::move(*ktx);
         entry->cache_ready = Clock::now();
         entry->state = UpscaleEntry::Read;
-    });
+    })) entry->state = read ? UpscaleEntry::Stored : UpscaleEntry::Unknown;
 }
 
 void Upscales::end_frame(LoadingUploadScope scope)
@@ -293,6 +313,7 @@ void Upscales::end_frame(LoadingUploadScope scope)
             bgfx::createTexture(bgfx::copy(entry->ktx.data(), static_cast<uint32_t>(entry->ktx.size())), BGFX_TEXTURE_NONE,
                                 0, &info);
         std::vector<uint8_t>().swap(entry->ktx);
+        if (entry->cache_task) entry->cache_task->bytes.reset();
         if (!bgfx::isValid(handle) || info.width != entry->width * 2 || info.height != entry->height * 2)
         {
             // A ×2 of another size: the game file is not the texture loaded (a smaller top level, texture_degradation).

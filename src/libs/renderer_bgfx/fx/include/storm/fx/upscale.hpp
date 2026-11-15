@@ -75,7 +75,7 @@ bool WriteUpscaled(const std::filesystem::path &directory, uint64_t key, std::sp
 // The KTX container, or nothing when there is no file. A damaged file is deleted and reported in `error`. A read
 // renews the file's time (the eviction removes the least recently used first).
 std::optional<std::vector<uint8_t>> ReadUpscaled(const std::filesystem::path &directory, uint64_t key,
-                                                 std::string *error = nullptr);
+                                                 std::string *error = nullptr, uint64_t max_bytes = UINT64_MAX);
 bool HasUpscaled(const std::filesystem::path &directory, uint64_t key);
 // Removes the least recently used files until the directory holds at most `max_bytes`; returns what it holds then.
 uint64_t TrimUpscaled(const std::filesystem::path &directory, uint64_t max_bytes);

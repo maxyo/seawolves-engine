@@ -121,19 +121,34 @@ bool WriteUpscaled(const std::filesystem::path &directory, uint64_t key, std::sp
             std::filesystem::remove(temporary, error);
             return false;
         }
+        out.close();
+        if (!out) {
+            std::filesystem::remove(temporary, error);
+            return false;
+        }
     }
     std::filesystem::rename(temporary, file, error);
-    if (error)
-        std::filesystem::remove(temporary, error);
-    return !error;
+    if (error) {
+        std::error_code cleanup_error;
+        std::filesystem::remove(temporary, cleanup_error);
+        return false;
+    }
+    return true;
 }
 
-std::optional<std::vector<uint8_t>> ReadUpscaled(const std::filesystem::path &directory, uint64_t key, std::string *error)
+std::optional<std::vector<uint8_t>> ReadUpscaled(const std::filesystem::path &directory, uint64_t key, std::string *error, uint64_t max_bytes)
 {
     const std::filesystem::path file = UpscaleFile(directory, key);
     std::ifstream in(file, std::ios::binary);
     if (!in)
         return std::nullopt;
+    in.seekg(0, std::ios::end);
+    const auto physical_size = in.tellg();
+    if (physical_size < 0 || static_cast<uint64_t>(physical_size) > max_bytes) {
+        if (error) *error = "cache read reservation changed";
+        return std::nullopt;
+    }
+    in.seekg(0);
     Header header{};
     std::vector<uint8_t> ktx;
     const char *problem = nullptr;
@@ -142,6 +157,19 @@ std::optional<std::vector<uint8_t>> ReadUpscaled(const std::filesystem::path &di
         problem = "a damaged header or another layout";
     else
     {
+        const auto payload_start = in.tellg();
+        in.seekg(0, std::ios::end);
+        const auto end = in.tellg();
+        if (payload_start < 0 || end < payload_start || static_cast<uint64_t>(end - payload_start) != header.payload)
+            problem = "a wrong size";
+        in.seekg(payload_start);
+        if (problem) {
+            in.close();
+            std::error_code ignored;
+            std::filesystem::remove(file, ignored);
+            if (error) *error = file.string() + " had a wrong size: deleted";
+            return std::nullopt;
+        }
         ktx.resize(static_cast<size_t>(header.payload));
         if (!in.read(reinterpret_cast<char *>(ktx.data()), static_cast<std::streamsize>(ktx.size())) || in.peek() != EOF)
             problem = "a wrong size";

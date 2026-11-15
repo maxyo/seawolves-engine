@@ -129,9 +129,9 @@ bool WriteMapFile(const std::filesystem::path &target, const NormalMap &map)
         out.write(reinterpret_cast<const char *>(map.rg.data()), static_cast<std::streamsize>(map.rg.size()));
         out.write(reinterpret_cast<const char *>(map.material.data()), static_cast<std::streamsize>(map.material.size()));
         out.write(reinterpret_cast<const char *>(map.trust.data()), static_cast<std::streamsize>(map.trust.size()));
-        if (!out.good())
+        out.close();
+        if (!out)
         {
-            out.close();
             std::filesystem::remove(temporary, error);
             return false;
         }
@@ -148,11 +148,18 @@ bool WriteMapFile(const std::filesystem::path &target, const NormalMap &map)
 
 // `formats`: the formats a file of this kind may hold.
 std::optional<NormalMap> ReadMapFile(const std::filesystem::path &path, std::initializer_list<NormalMapFormat> formats,
-                                     std::string *error)
+                                     std::string *error, uint64_t max_bytes)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in)
         return std::nullopt;
+    in.seekg(0, std::ios::end);
+    const auto physical_size = in.tellg();
+    if (physical_size < 0 || static_cast<uint64_t>(physical_size) > max_bytes) {
+        if (error) *error = "cache read reservation changed";
+        return std::nullopt; // no corruption claim or deletion on resource-budget rejection
+    }
+    in.seekg(0);
     Header header{};
     in.read(reinterpret_cast<char *>(&header), sizeof(header));
     NormalMap map;
@@ -176,6 +183,16 @@ std::optional<NormalMap> ReadMapFile(const std::filesystem::path &path, std::ini
     }
     if (ok)
     {
+        // Shape checks above bound each component; verify physical length before any allocation.
+        const uint64_t expected = header.payload + header.material_payload + header.trust_bytes;
+        const auto payload_start = in.tellg();
+        in.seekg(0, std::ios::end);
+        const auto end = in.tellg();
+        ok = payload_start >= 0 && end >= payload_start && static_cast<uint64_t>(end - payload_start) == expected;
+        in.seekg(payload_start);
+    }
+    if (ok)
+    {
         map.rg.resize(header.payload);
         in.read(reinterpret_cast<char *>(map.rg.data()), static_cast<std::streamsize>(map.rg.size()));
         ok = in.gcount() == static_cast<std::streamsize>(map.rg.size());
@@ -194,6 +211,7 @@ std::optional<NormalMap> ReadMapFile(const std::filesystem::path &path, std::ini
             ok = in.gcount() == static_cast<std::streamsize>(map.trust.size());
         }
     }
+    if (ok) ok = in.peek() == EOF;
     if (!ok)
     {
         in.close();
@@ -218,9 +236,9 @@ bool WriteReliefMap(const std::filesystem::path &directory, uint64_t key, const 
     return WriteMapFile(ReliefFile(directory, key), map);
 }
 
-std::optional<NormalMap> ReadReliefMap(const std::filesystem::path &directory, uint64_t key, std::string *error)
+std::optional<NormalMap> ReadReliefMap(const std::filesystem::path &directory, uint64_t key, std::string *error, uint64_t max_bytes)
 {
-    return ReadMapFile(ReliefFile(directory, key), {NormalMapFormat::Rg8, NormalMapFormat::EacRg11}, error);
+    return ReadMapFile(ReliefFile(directory, key), {NormalMapFormat::Rg8, NormalMapFormat::EacRg11}, error, max_bytes);
 }
 
 bool HasReliefMap(const std::filesystem::path &directory, uint64_t key)
@@ -233,9 +251,9 @@ bool WriteGlossMap(const std::filesystem::path &directory, uint64_t key, const N
     return WriteMapFile(GlossFile(directory, key), map);
 }
 
-std::optional<NormalMap> ReadGlossMap(const std::filesystem::path &directory, uint64_t key, std::string *error)
+std::optional<NormalMap> ReadGlossMap(const std::filesystem::path &directory, uint64_t key, std::string *error, uint64_t max_bytes)
 {
-    return ReadMapFile(GlossFile(directory, key), {NormalMapFormat::EacRg11}, error);
+    return ReadMapFile(GlossFile(directory, key), {NormalMapFormat::EacRg11}, error, max_bytes);
 }
 
 bool HasGlossMap(const std::filesystem::path &directory, uint64_t key)
