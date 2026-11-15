@@ -155,7 +155,7 @@ static void CheckSailing()
     Expect(ships[0]["texture"] == "battle_interface/ship_icons2" && ships[0]["uv"] == "0.5,0.125,0.5625,0.1875" && ships[1]["name"] == "Сокол" &&
                ships[3]["bars"][0]["value"] == 41 && ships[2]["name"] == "Ласточка" && ships[1]["tap"] == true,
            "then the companions, each the battle interface's ship picture: " + ships[1].dump());
-    Expect(shown["minimap"]["place"] == "Мартиника" && shown["minimap"]["date"] == "7 октября 1654 · 09:06" && shown["minimap"]["speed"] == "4" &&
+    Expect(shown["minimap"]["place"] == "Мартиника" && shown["minimap"]["date"] == "7 октября 1654 · 09:06" && shown["minimap"]["speed"] == "4common.decimal_mark2" &&
                !shown["minimap"].contains("wind") && !shown["minimap"].contains("time") && shown["minimap"]["native"] == true,
            "the minimap readouts: " + shown["minimap"].dump());
     Expect(shown["sail"]["value"] == 2 && shown["ammo"]["badge"] == "88" && shown["ammo"]["badgeTone"] == "gold" && shown["ammo"]["icon"] == "ammo" &&

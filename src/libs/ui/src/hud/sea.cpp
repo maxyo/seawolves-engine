@@ -91,12 +91,17 @@ int Percent(double share)
     return static_cast<int>(std::lround(std::clamp(share, 0.0, 1.0) * 100.0));
 }
 
-// Knots as the minimap reads them: whole numbers (V2-Sea-Sailing).
-std::string Knots(double value)
+// Knots as the minimap reads them: tenths, with the decimal mark of the game language's table
+// (owner 2026-11-16: «7,4 уз»).
+std::string Knots(double value, const std::string &decimal_mark)
 {
     char text[32];
-    std::snprintf(text, sizeof(text), "%.0f", value);
-    return text;
+    std::snprintf(text, sizeof(text), "%.1f", value);
+    std::string knots = text;
+    const size_t point = knots.find('.');
+    if (point != std::string::npos)
+        knots.replace(point, 1, decimal_mark);
+    return knots;
 }
 
 std::string Count(double value)
@@ -396,7 +401,7 @@ class SeaScene final : public Scene
         if (!ship.location.empty())
             minimap["place"] = ship.location;
         if (ship.speed >= 0.0)
-            minimap["speed"] = Knots(ship.speed);
+            minimap["speed"] = Knots(ship.speed, hud_.Text(StringKey("common.decimal_mark")));
         if (!ship.date_time.empty())
             minimap["date"] = DateLine(ship.date_time);
         view.elements["minimap"] = std::move(minimap);
