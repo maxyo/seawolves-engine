@@ -1670,6 +1670,18 @@ HRESULT Device::draw(const DrawCall &call)
         bgfx::setScissor(static_cast<uint16_t>(std::max<int32_t>(0, left)), static_cast<uint16_t>(std::max(0, y)),
                          static_cast<uint16_t>(std::max(0, w)), static_cast<uint16_t>(std::max(0, h)));
     }
+    // Keep discovery, material sync, lighting preparation and caster uniforms above intact.
+    // Only the game picture is hidden; producer/offscreen targets remain ordinary.
+    const bool hiddenBeauty = rt == back_color && !layout->rhw &&
+        render::HideSceneBeauty(Context::instance().Surface().generation,
+            held_color ? held_color->serial : back_color->store->serial);
+    if (hiddenBeauty) {
+        if (fx_draw.caster) fx_lighting.submit_caster(*this, s.world, layout->skinned);
+        else bgfx::discard(BGFX_DISCARD_ALL);
+        // Discard/caster copies consume encoder state. No beauty counter or opaque-submit acknowledgement.
+        invalidate_uniforms();
+        return D3D_OK;
+    }
     // Effects: the parallax probe (effects/parallax_probe.hpp) tests a relief draw of the game picture that writes depth
     // and lies on the centre ray again after the scene, at the centre pixel, against the scene's final depth.
     bgfx::OcclusionQueryHandle probe_query = BGFX_INVALID_HANDLE;
@@ -1685,6 +1697,7 @@ HRESULT Device::draw(const DrawCall &call)
     // Effects: a sun shadow caster keeps its buffers for the depth-only copy into the shadow view (effects/shadows.hpp),
     // and so does a probe draw for its copy.
     bgfx::submit(view_id, handle, 0, fx_draw.caster || bgfx::isValid(probe_query) ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+    if (rt == back_color && !layout->rhw) render::SceneBeautySubmitted();
     render::SceneOpaqueDrawSubmitted(opaqueCoverage, !s.rs[D3DRS_ALPHABLENDENABLE] || s.rs[D3DRS_BLENDOP] == D3DBLENDOP_ADD);
     if (bgfx::isValid(probe_query))
     {

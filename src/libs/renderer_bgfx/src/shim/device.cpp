@@ -485,6 +485,8 @@ HRESULT Device::ResizeBackBuffer(uint32_t width, uint32_t height)
 HRESULT Device::BeginScene()
 {
     Context::instance().begin_frame_if_needed();
+    render::BeginSceneWork(Context::instance().last_frame(), Context::instance().Surface().generation,
+        held_color ? held_color->serial : back_color->store->serial, !backbuffer_recreated);
     return D3D_OK;
 }
 
@@ -527,7 +529,8 @@ HRESULT Device::Present()
     // A frame whose scene never completed (no interface ended it) still has its probe draws placed after it; an
     // unused probe view goes back to its place (effects/parallax_probe.hpp).
     effects::ParallaxProbe &probe = effects.lighting().probe();
-    if (views_used > 0)
+    if (views_used > 0 && !render::HideSceneBeauty(context.Surface().generation,
+            held_color ? held_color->serial : back_color->store->serial))
         probe.place(static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used - 1));
     probe.before_frame();
     if (context.ready())
@@ -574,6 +577,12 @@ void Device::scene_complete()
     // once more per interface (three times in a town with its battle interface, log and perk icons).
     if (scene_done)
         return;
+    if (render::HideSceneBeauty(Context::instance().Surface().generation,
+            held_color ? held_color->serial : back_color->store->serial)) {
+        scene_done = true;
+        leave_scaled_picture(false); // retain display target for stock artwork; no hidden picture/depth copy
+        return;
+    }
     if (!scene_drawn)
     {
         // Nothing 3D in the game picture yet: the interface and the 3D drawn after it cannot be separated, so this
@@ -656,7 +665,8 @@ void Device::scene_complete()
     targets.first_view = static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used);
     memcpy(targets.view.data(), &scene_view.m[0][0], sizeof(float) * 16);
     memcpy(targets.projection.data(), &scene_proj.m[0][0], sizeof(float) * 16);
-    views_used += host.submit_post(targets);
+    const auto post_count = host.submit_post(targets);
+    views_used += post_count;
     // The interface is drawn on the processed picture, which is then presented.
     if (scaled)
     {

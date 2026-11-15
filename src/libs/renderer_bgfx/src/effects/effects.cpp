@@ -1,4 +1,5 @@
 #include "storm/render/loading_budget.hpp"
+#include "storm/render/loading_scene_work.hpp"
 #include "effects/scene_readiness.hpp"
 #include "storm/render/pipelines.hpp"
 #include "texture/core/service.hpp"
@@ -56,6 +57,7 @@ struct LocationLoad {
     uint64_t phase_polled_at = 0;
     bool cooling = false;
     render::LoadingOpaque opaque;
+    render::LoadingSceneWork scene_work;
     uint64_t timing_at = 0;
     double loading_gpu_ms = 0;
     int64_t timing_end = 0;
@@ -73,6 +75,7 @@ void BeginSceneResources(const char *scene)
     auto &load = location_load();
     render::SetSceneLoadingWindow(0, 0);
     load.opaque.invalidate();
+    load.scene_work.invalidate();
     load.timing_at = 0;
     load.loading_normal.clear(); load.loading_upscale.clear();
     load.textures.clear(); load.failed_textures.clear(); load.detail.clear(); load.scene = scene ? scene : "";
@@ -91,12 +94,12 @@ void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &texture)
 {
     auto &load = location_load();
     if (load.sealed || !texture || texture->render_target || texture->system_memory || !SceneTextureName(texture->name)) return;
-    if (load.textures.emplace(texture->serial, texture).second) load.gate.invalidate();
+    if (load.textures.emplace(texture->serial, texture).second) { load.gate.invalidate(); load.scene_work.demand(); }
 }
 void ScenePipelinesPending(bool pending)
 {
     auto &load = location_load();
-    if (!load.sealed && pending && !load.pipelines_pending) load.gate.invalidate();
+    if (!load.sealed && pending && !load.pipelines_pending) { load.gate.invalidate(); load.scene_work.demand(); }
     load.pipelines_pending = pending;
 }
 void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = true,
@@ -197,8 +200,10 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         load.phase_polled_at = now;
     }
     // Do not use the generator's whole-corpus queue or its Complete mark here.
-    if (completed) load.gate.frame(load.gate.generation(), frame, scene_frame, resources);
-    else load.gate.refresh(resources);
+    if (completed) {
+        const bool full = scene_frame && load.scene_work.complete(load.gate.generation(), load.gate.state() == SceneReadiness::State::Ready);
+        load.gate.frame(load.gate.generation(), frame, full, resources);
+    } else load.gate.refresh(resources);
 }
 bool HoldSceneResources()
 {
@@ -464,6 +469,7 @@ void Host::on_device_lost()
 {
     render::SetSceneLoadingWindow(0, 0);
     location_load().opaque.invalidate();
+    location_load().scene_work.invalidate();
     location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
     post_.OnDeviceLost();
@@ -520,6 +526,7 @@ render::EffectsReport Host::configure(int preset, const std::vector<render::Effe
 {
     render::SetSceneLoadingWindow(0, 0);
     location_load().opaque.invalidate();
+    location_load().scene_work.invalidate();
     location_load().timing_at = 0;
     if (!location_load().sealed) location_load().gate.invalidate();
     preset_ = std::clamp(preset, 0, 2);
@@ -950,6 +957,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     }
     // All next-frame producers have now pumped. Shadow preparation was captured before end_frame reset it.
     SampleSceneResources(scene_frame, frame, true, &draw_shadows);
+    location_load().scene_work.end();
     transform_view_ = UINT16_MAX; // the shim's views start again next frame
     times_ = {};
     if (!profile_)
@@ -1291,7 +1299,22 @@ void SceneOpaqueDrawSubmitted(bool full_coverage, bool additive_blend) {
 void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer) {
     auto &load = effects::location_load();
     load.opaque.frame(load.sealed ? 0 : load.gate.generation(), frame_advanced, stable_backbuffer);
+    load.scene_work.presented(frame_advanced, stable_backbuffer);
     if (!load.opaque.presented(load.gate.generation())) SetSceneLoadingWindow(0, 0);
+}
+void SceneBeautySubmitted() {
+    auto &load = effects::location_load();
+    if (!load.sealed) load.scene_work.beauty_submitted();
+}
+void BeginSceneWork(uint64_t frame, uint64_t surface, uint64_t target, bool stable_target) {
+    auto &load = effects::location_load();
+    const auto r = load.gate.resources();
+    load.scene_work.begin(frame, load.gate.generation(), surface, target, !load.sealed,
+        load.opaque.presented(load.gate.generation()), r.pending() || r.failed, stable_target);
+}
+bool HideSceneBeauty(uint64_t surface, uint64_t target) {
+    auto &load = effects::location_load();
+    return !load.sealed && load.scene_work.hidden(load.gate.generation(), surface, target);
 }
 SceneLoadingBudget GetSceneLoadingBudget() {
     const auto &load = effects::location_load();
