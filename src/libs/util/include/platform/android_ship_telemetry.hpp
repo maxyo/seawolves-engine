@@ -7,6 +7,7 @@
 #include <cctype>
 #include <limits>
 #include <cstdio>
+#include <tuple>
 
 namespace storm::android
 {
@@ -251,6 +252,7 @@ class ShipTelemetryState
     uint32_t lastPublishedTick_ = 0;
     bool published_ = false, forcePublish_ = true;
     std::string lastPublished_;
+    std::tuple<uint64_t, uint64_t, uint64_t> publishedKey_; // publicationKey() of lastPublished_
     struct SailTarget { uint64_t revision; int detent; uint32_t tick; };
     std::optional<SailTarget> target_;
     static std::optional<std::pair<uint64_t, uint32_t>> parse(std::string_view request)
@@ -425,16 +427,22 @@ public:
         }
         return result + '}';
     }
+    // Everything json() reads: every change of the frame advances the sequence.
+    auto publicationKey() const { return std::tie(revision_, sequence_, hudRevision_); }
+    // The JSON to publish now. It is built only when the state changed since the last publication
+    // and the 100 ms throttle (bypassed by a forced change) lets it go.
     std::optional<std::string> publication(uint32_t tick) const
     {
-        const auto value = json();
-        if (value.size() > 8192 || (published_ && value == lastPublished_)) return {};
+        if (published_ && publishedKey_ == publicationKey()) return {}; // the JSON last published
         if (published_ && !forcePublish_ && tick - lastPublishedTick_ < 100) return {};
+        auto value = json();
+        if (value.size() > 8192 || (published_ && value == lastPublished_)) return {};
         return value;
     }
     void published(const std::string &value, uint32_t tick)
     {
         lastPublished_ = value;
+        publishedKey_ = publicationKey();
         lastPublishedTick_ = tick;
         published_ = true;
         forcePublish_ = false;

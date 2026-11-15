@@ -11,6 +11,7 @@
 #include <platform/android_sea_orders.hpp>
 #include <platform/android_pistol_state.hpp>
 #include <platform/android_sea_quick_action.hpp>
+#include <platform/android_ship_telemetry.hpp>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -336,6 +337,59 @@ void gameplayChannel()
     twin.verify();
 }
 
+ShipTelemetryFrame shipFrame()
+{
+    ShipTelemetryFrame frame;
+    frame.valid = true;
+    frame.ship = {0, "11", "Flagship", "Frigate", shipMetric(50, 100), shipMetric(120, 200), shipMetric(80, 100), 3, {}};
+    frame.fleet = {frame.ship, {3, "12", "Companion", "Brig", shipMetric(10, 50), shipMetric(30, 60), shipMetric(5, 10), 5, {}}};
+    frame.ammo = "balls";
+    frame.ammoType = 0;
+    frame.ammoCount = 40;
+    frame.sailState = .5;
+    frame.captionsVisible = true;
+    frame.shipSpeedKnots = 7.5;
+    frame.dateTimeText = "1 May 1666";
+    return frame;
+}
+
+// The "ship" channel keeps its own publication (ShipTelemetryState::publication, its 100 ms
+// throttle and forced changes): an unchanged state returns nothing without building the JSON;
+// what it does publish is the state's JSON, at the moments the throttle allowed before.
+void shipChannel()
+{
+    ShipTelemetryState state;
+    auto frame = shipFrame();
+    state.update(1, frame);
+    auto first = state.publication(0);
+    assert(first && *first == state.json());
+    state.published(*first, 0);
+    frame.ship.hull = shipMetric(49, 100); // an ordinary HP change: throttled to 100 ms
+    state.update(1, frame);
+    assert(!state.publication(99));
+    const auto changed = state.publication(100);
+    assert(changed && *changed == state.json() && *changed != *first);
+    state.published(*changed, 100);
+    for (uint32_t tick = 101; tick < 5101; tick += 16)
+    {
+        state.update(1, frame); // the loop reads the same frame
+        assert(!state.publication(tick));
+    }
+    assert(!state.publication(5101));
+    frame.fleet.pop_back(); // another fleet: a forced change goes at once
+    state.update(1, frame);
+    const auto forced = state.publication(5102);
+    assert(forced && *forced == state.json());
+    state.published(*forced, 5102);
+    assert(!state.publication(5103));
+    state.resetActivity(); // a new UI host: republished at once
+    const auto again = state.publication(5104);
+    assert(again && *again == state.json());
+    state.published(*again, 5104);
+    assert(!state.publication(9000));
+    std::puts("  ship           unchanged loops publish nothing; changes go as the throttle allowed before");
+}
+
 template <class Run> double nanosPerLoop(int loops, Run &&run)
 {
     const auto start = std::chrono::steady_clock::now();
@@ -410,6 +464,15 @@ void bench()
         const double now = nanosPerLoop(loops, [&] { sink = sink + (channel.publish(state.publicationKey(), [&] { return state.json(); }) != nullptr); });
         std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "gameplay", old, now);
     }
+    {
+        ShipTelemetryState state;
+        state.update(1, shipFrame());
+        const auto first = state.publication(0);
+        state.published(*first, 0);
+        const double old = nanosPerLoop(loops, [&] { const auto j = state.json(); sink = sink + (j == *first); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + state.publication(1000).has_value(); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "ship", old, now);
+    }
 }
 } // namespace
 
@@ -421,5 +484,6 @@ int main(int argc, char **argv)
     seaQuickActionChannel();
     combatChannel();
     gameplayChannel();
+    shipChannel();
     std::puts("android_hud_channels: ok");
 }
