@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <mutex>
 
 #ifdef __ANDROID__
 #include <android/api-level.h>
@@ -62,17 +63,35 @@ bool device_hot()
 {
 #ifdef __ANDROID__
     static Thermal thermal; // thread-safe initialisation
-    static std::atomic<int64_t> asked{0};
+    static std::mutex sample_mutex;
+    static int64_t asked = 0, forecast_asked = 0, forecast_valid = 0;
+    static bool has_forecast_query = false, has_valid_forecast = false;
+    static float cached_headroom = std::nanf("");
     static std::atomic<bool> hot{false};
     static std::atomic<int> last_status{-1};
     const int64_t now =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    int64_t last = asked.load();
-    if (thermal.manager && now - last >= 1000 && asked.compare_exchange_strong(last, now))
+    // Do not overlap platform calls from the renderer and background workers.
+    // A busy caller uses the last decision; it never stalls drawing on a sensor.
+    std::unique_lock lock(sample_mutex, std::try_to_lock);
+    if (lock && thermal.manager && now - asked >= 1000)
     {
+        asked = now;
         const int status = thermal.api.status(thermal.manager);
-        const float headroom = thermal.api.headroom ? thermal.api.headroom(thermal.manager, kHeadroomForecastSeconds)
-                                                    : std::nanf("");
+        if (thermal.api.headroom && (!has_forecast_query || now - forecast_asked >= kHeadroomPollMilliseconds))
+        {
+            has_forecast_query = true;
+            forecast_asked = now;
+            const float sample = thermal.api.headroom(thermal.manager, kHeadroomForecastSeconds);
+            if (std::isfinite(sample) && sample >= 0.0f)
+            {
+                cached_headroom = sample;
+                forecast_valid = now;
+                has_valid_forecast = true;
+            }
+        }
+        const float headroom = has_valid_forecast && now - forecast_valid < kHeadroomValidMilliseconds
+                                   ? cached_headroom : std::nanf("");
         const bool was_hot = hot.load();
         const bool now_hot = thermal_hot(was_hot, status, headroom);
         // The forecast can pause work while the reported status stays LIGHT. Log that transition too: otherwise

@@ -58,6 +58,11 @@ constexpr int kThermalModerate = 2;
 constexpr int kHeadroomForecastSeconds = 10;
 constexpr float kHeadroomPause = 0.9f;
 constexpr float kHeadroomResume = 0.75f;
+// Older Android implementations rate-limit headroom more strictly than status.
+// Keep one failed refresh's forecast, but never turn an unavailable sensor into
+// an indefinite pause. The current thermal status is still sampled every second.
+constexpr int kHeadroomPollMilliseconds = 10000;
+constexpr int kHeadroomValidMilliseconds = 20000;
 
 // headroom is NaN when the platform cannot forecast (then the status alone decides).
 inline bool thermal_hot(bool was_hot, int status, float headroom)
