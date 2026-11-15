@@ -118,7 +118,7 @@ same('application setting (menu_settings.cpp Segment)', re.findall(r'\bSegment\(
 same('host fact (menu_settings.cpp, erased before «Готово» sends)', re.findall(r'settings\.erase\("(\w+)"\)', settings_screen),
      settings['host_facts'])
 debug = {key: [int(v) for v in values.split(',')]
-         for key, values in re.findall(r'DebugSegment\(bindings, debug, "(\w+)", "[^"]*", \{([^}]*)\}', settings_screen)}
+         for key, values in re.findall(r'DebugSegment\(bindings,\s*debug,\s*"(\w+)",\s*"[^"]*",\s*\{([^}]*)\}', settings_screen)}
 same('debug override (menu_settings.cpp DebugSegment)', debug, settings['debug'])
 for key, values in sorted(debug.items()):
     if key in settings['debug'] and settings['debug'][key] != values:

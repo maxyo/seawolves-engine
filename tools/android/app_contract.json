@@ -103,6 +103,7 @@
       "fx_gloss_strength": [-1, 50, 100, 200, 300],
       "fx_gloss_debug": [-1, 0, 1, 2, 3, 4, 5],
       "fx_character_relief": [-1, 0, 1, 2],
+      "fx_character_relief_strength": [-1, 25, 50, 75, 100],
       "fx_sea_waves": [-1, 0, 1],
       "fx_sea_waves_lift": [-1, 0, 1],
       "fx_sea_waves_debug": [-1, 0, 1, 2],
