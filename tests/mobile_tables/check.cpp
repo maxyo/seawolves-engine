@@ -1,4 +1,5 @@
 #include "mobile_inventory.hpp"
+#include "widget_json.hpp"
 #include <cassert>
 #include <cstdio>
 #include <iostream>

@@ -24,7 +24,8 @@ void ScriptStateChanged() noexcept;
 
 // While one exists on the game thread (an adapter runs), every attribute read notes the tree
 // (root object) it reads, and changes are not counted; when it ends, the trees it noted are added
-// to the ones whose changes count.
+// to the ones whose changes count. One made while another exists is part of it (the interface
+// model's collection runs the facts adapter): the outermost one adds the trees.
 class ScriptStateReads
 {
   public:
@@ -32,6 +33,9 @@ class ScriptStateReads
     ~ScriptStateReads();
     ScriptStateReads(const ScriptStateReads &) = delete;
     ScriptStateReads &operator=(const ScriptStateReads &) = delete;
+
+  private:
+    bool nested_;
 };
 
 // An interface opened or was released: the trees read so far stop counting until an adapter reads

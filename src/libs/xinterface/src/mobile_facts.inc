@@ -25,10 +25,8 @@ void XINTERFACE::MobileCollectFacts(std::vector<MobileWidget> &widgets)
     // A ref is read only once it points somewhere (GetAClass of an unset ref is a script error); a
     // global of a segment that is not loaded is not found.
     const auto character_of=[](const char *name){
-        if(auto *variable=static_cast<VDATA *>(core.GetScriptVariable(name)))
-            if(variable->GetReference())
-                if(auto *character=variable->GetAClass())
-                    if(const char *index=character->GetAttribute("index"))return std::atoi(index);
+        if(auto *character=MobileVariableObject(name))
+            if(const char *index=character->GetAttribute("index"))return std::atoi(index);
         return -1;
     };
     const int subject=character_of("xi_refCharacter");

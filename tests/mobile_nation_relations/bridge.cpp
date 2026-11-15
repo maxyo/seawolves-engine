@@ -19,7 +19,7 @@ struct CINODE {
 struct XINTERFACE {
  struct IMAGE_Entity {struct {int left,top;}position;const char *sImageName,*sImageListName,*sPicture;IMAGE_Entity *next=nullptr;};
  IMAGE_Entity *m_imgLists=nullptr;CINODE *m_pNodes=nullptr;Service *pPictureService=&service,*pStringService=&service;
- std::string m_mobileNationSignature;uint64_t m_mobileNationGeneration=0;
+ std::pair<uint64_t,std::vector<MobileWidget>> m_mobileNationSignature;uint64_t m_mobileNationGeneration=0;
  CINODE *FindNode(const char *name,void*){for(auto *n=m_pNodes;n;n=n->m_next)if(storm::iEquals(n->name,name))return n;return nullptr;}
  #include "collectors.inc"
  bool mobileLeft_=false;

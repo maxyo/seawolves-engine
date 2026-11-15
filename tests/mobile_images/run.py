@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sanitizer tests of the production picture registry and model JSON.
+"""Sanitizer tests of the production picture registry and the interface model.
 Compiles through the Storm ccache launcher (tools/ccache/README.md) in the kept build directory."""
 import argparse, os, pathlib, subprocess
 p=argparse.ArgumentParser(description=__doc__)

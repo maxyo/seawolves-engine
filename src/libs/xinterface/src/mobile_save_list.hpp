@@ -40,6 +40,7 @@ struct SaveListSnapshot
     // The rows: when loading every profile's records, newest first; when saving the current
     // profile's (a save goes to the profile of the game in progress).
     std::vector<SaveRecord> records;
+    bool operator==(const SaveListSnapshot &) const = default;
 };
 // The save list of the open save_load interface, read from the game script. The platform
 // host defines it, because only the host knows which interface is on screen and its

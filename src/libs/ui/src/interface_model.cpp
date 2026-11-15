@@ -82,7 +82,84 @@ std::vector<Cell> Cells(const Json &list)
     return out;
 }
 
+Json ImagesJson(const std::vector<ImageRef> &images)
+{
+    Json out = Json::array();
+    for (const ImageRef &image : images)
+    {
+        Json entry{{"handle", image.handle},
+                   {"imageRevision", image.revision},
+                   {"width", image.width},
+                   {"height", image.height},
+                   {"tintArgb", image.tint_argb}};
+        if (!image.kind.empty())
+        {
+            // The fields of its kind (what the engine sends), and any other one that is set.
+            Json source{{"kind", image.kind}};
+            const bool texture = image.kind == "texture", battle = image.kind == "battle_icon";
+            if (!image.group.empty() || image.kind == "atlas")
+                source["group"] = image.group;
+            if (!image.image.empty() || image.kind == "atlas" || image.kind == "portrait" || texture)
+                source["image"] = image.image;
+            if (!image.mode.empty() || battle)
+                source["mode"] = image.mode;
+            if (!image.atlas.empty() || battle)
+                source["atlas"] = image.atlas;
+            if (image.pic != -1 || battle)
+                source["pic"] = image.pic;
+            if (texture || image.uv[0] != 0.0f || image.uv[1] != 0.0f || image.uv[2] != 1.0f || image.uv[3] != 1.0f)
+                source["uv"] = {image.uv[0], image.uv[1], image.uv[2], image.uv[3]};
+            entry["source"] = std::move(source);
+        }
+        out.push_back(std::move(entry));
+    }
+    return out;
+}
+
+Json CellsJson(const std::vector<Cell> &cells)
+{
+    Json out = Json::array();
+    for (const Cell &cell : cells)
+        out.push_back({{"column", cell.column}, {"text", cell.text}, {"colorArgb", cell.color_argb}, {"images", ImagesJson(cell.images)}});
+    return out;
+}
+
 } // namespace
+
+std::string InterfaceModelJson(const InterfaceModel &model)
+{
+    Json widgets = Json::array();
+    for (const Widget &widget : model.widgets)
+    {
+        Json entry{{"node", widget.node},   {"type", widget.type},       {"label", widget.label},
+                   {"value", widget.value}, {"index", widget.index},     {"enabled", widget.enabled},
+                   {"rowId", widget.row_id}, {"images", ImagesJson(widget.images)}, {"actions", widget.actions}};
+        if (widget.type == "slider" || widget.min != 0 || widget.max != 0 || widget.step != 1)
+        {
+            entry["min"] = widget.min;
+            entry["max"] = widget.max;
+            entry["step"] = widget.step;
+        }
+        if (widget.type == "check" || widget.exclusive)
+            entry["exclusive"] = widget.exclusive;
+        if (!widget.unavailable_reason.empty())
+            entry["unavailableReason"] = widget.unavailable_reason;
+        if (!widget.column_headers.empty())
+            entry["columnHeaders"] = widget.column_headers;
+        if (widget.header_cells)
+            entry["headerCells"] = CellsJson(*widget.header_cells);
+        if (widget.text_color_argb)
+            entry["textColorArgb"] = *widget.text_color_argb;
+        if (!widget.context.empty())
+            entry["context"] = widget.context;
+        entry["cells"] = CellsJson(widget.cells);
+        widgets.push_back(std::move(entry));
+    }
+    const Json root{{"schemaVersion", 2},          {"language", model.language}, {"revision", model.revision},
+                    {"screenRevision", model.opening}, {"screen", model.screen},   {"widgets", std::move(widgets)}};
+    // Text the game gave in a broken encoding is written with U+FFFD, never dropped or thrown on.
+    return root.dump(-1, ' ', false, Json::error_handler_t::replace);
+}
 
 bool SameNode(std::string_view a, std::string_view b)
 {

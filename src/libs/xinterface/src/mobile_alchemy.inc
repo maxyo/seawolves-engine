@@ -4,16 +4,16 @@
 // «Результат»); the engine only fills in what a player would.
 namespace {
 ATTRIBUTES *AlchemyObject(const char *name, std::optional<uint32_t> index = std::nullopt){
+    if(!index)return MobileVariableObject(name);
     auto *v=static_cast<VDATA*>(core.GetScriptVariable(name));
-    return !v?nullptr:index?v->GetAClass(*index):v->GetAClass();
+    return v?v->GetAClass(*index):nullptr;
 }
 std::optional<int> AlchemyInteger(const char *name){
-    auto *v=static_cast<VDATA*>(core.GetScriptVariable(name));int32_t n;
-    return v&&v->Get(n)?std::optional<int>(n):std::nullopt;
+    const auto n=MobileVariableInteger(name);
+    return n?std::optional<int>(*n):std::nullopt;
 }
 std::string AlchemyString(const char *name){
-    auto *v=static_cast<VDATA*>(core.GetScriptVariable(name));const char *s=nullptr;
-    return v&&v->Get(s)&&s?s:"";
+    return MobileVariableText(name).value_or("");
 }
 const char *AlchemyAttr(ATTRIBUTES *root,const std::string &path){
     auto *a=root?root->FindAClass(root,path.c_str()):nullptr;return a?a->GetThisAttr():nullptr;

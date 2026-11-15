@@ -1,4 +1,5 @@
 #include "mobile_goods_transfer.hpp"
+#include "widget_json.hpp"
 #include <cassert>
 #include <cmath>
 #include <iostream>

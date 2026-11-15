@@ -1,13 +1,18 @@
 // Host checks for the parts of the UI runtime that need no GL context:
-// the template language and the .tx decoder (synthetic data only).
+// the template language, the .tx decoder (synthetic data only) and the interface model's JSON
+// codec (every model fixture of tests/models, given as the argument, written and read back).
 #include "../src/components.h"
 #include "../src/elements.h"
+#include "storm_ui/interface_model.h"
 #include "storm_ui/tx_texture.h"
 #include "../src/template.h"
 #include "../src/text_pages.h"
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 
 using storm::ui::Json;
 
@@ -76,9 +81,46 @@ static void Pages()
     Expect(storm::ui::WrapLines("", 9.0f, width) == std::vector<size_t>({0}), "wrap: no text, no lines");
 }
 
-int main()
+// InterfaceModelJson writes what ParseInterfaceModel reads back unchanged: the recordings of
+// StormUiModels and the fixtures share one codec with the in-process struct.
+static void ModelCodec(const char *models)
+{
+    int count = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(models))
+    {
+        if (entry.path().extension() != ".json")
+            continue;
+        std::ifstream in(entry.path(), std::ios::binary);
+        std::stringstream text;
+        text << in.rdbuf();
+        storm::ui::InterfaceModel model, again;
+        if (!storm::ui::ParseInterfaceModel(text.str(), model))
+            continue; // not an interface model (a state fixture)
+        ++count;
+        const std::string written = storm::ui::InterfaceModelJson(model);
+        const bool same = storm::ui::ParseInterfaceModel(written, again) && again == model;
+        if (!same)
+            std::fprintf(stderr, "model %s\n", entry.path().filename().string().c_str());
+        Expect(same, "interface model: written and read back unchanged");
+    }
+    Expect(count > 20, "interface model: the fixtures were found");
+    storm::ui::InterfaceModel model;
+    model.screen = "store";
+    model.widgets.push_back({});
+    model.widgets[0].type = "text";
+    model.widgets[0].label = "bad \xff text";
+    storm::ui::InterfaceModel back;
+    Expect(storm::ui::ParseInterfaceModel(storm::ui::InterfaceModelJson(model), back) && back.widgets.at(0).label == "bad \xEF\xBF\xBD text",
+           "interface model: broken text is written with U+FFFD");
+}
+
+int main(int argc, char **argv)
 {
     Pages();
+    if (argc > 1)
+        ModelCodec(argv[1]);
+    else
+        Expect(false, "interface model: the fixture directory argument is missing");
     const Json scope = Json::parse(R"({"label":"Купить <1>","n":1250000,"small":1250,"on":true,"off":false,"variant":"primary",
         "items":[{"label":"a","count":2},{"label":"b"}],"empty":[],"size":"md","spec":{"h":{"sm":40,"md":44}}})");
 

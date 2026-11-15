@@ -123,8 +123,8 @@ void XINTERFACE::MobileCollectShipyard(std::vector<MobileWidget> &widgets)
     ctx["ready"]=failure.empty()?"1":"0";state.unavailableReason=failure;
     if(!failure.empty())state.value="0";
     widgets.push_back(std::move(state));
-    const auto signature=MobileWidgetJson("shipyard",widgets,storm::android::mobileScreenRevision);
-    if(signature!=m_mobileShipyardSignature){m_mobileShipyardSignature=signature;++m_mobileShipyardGeneration;}
+    if(m_mobileShipyardSignature.first!=storm::android::mobileScreenRevision||m_mobileShipyardSignature.second!=widgets){
+        m_mobileShipyardSignature={storm::android::mobileScreenRevision,widgets};++m_mobileShipyardGeneration;}
     for(auto &w:widgets)if(w.enabled)for(auto &verb:w.actions)
         verb="yard@"+std::to_string(storm::android::mobileScreenRevision)+":"+std::to_string(m_mobileShipyardGeneration)+":"+verb;
 }

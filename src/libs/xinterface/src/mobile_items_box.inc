@@ -6,8 +6,8 @@
 namespace {
 // The chest or barrel kind of the screen (itemsbox.c sGetInterfaceType: sFaceID "" / "Barrel").
 bool ItemsBoxIsChest(){
-    auto *face=static_cast<VDATA*>(core.GetScriptVariable("sFaceID"));const char *id=nullptr;
-    return face&&face->Get(id)&&id&&(!*id||storm::iEquals(id,"Barrel"));
+    const auto id=MobileVariableText("sFaceID");
+    return id&&(id->empty()||storm::iEquals(*id,"Barrel"));
 }
 }
 

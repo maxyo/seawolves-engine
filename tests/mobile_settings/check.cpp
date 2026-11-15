@@ -1,4 +1,5 @@
 #include "mobile_widget.hpp"
+#include "widget_json.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cmath>

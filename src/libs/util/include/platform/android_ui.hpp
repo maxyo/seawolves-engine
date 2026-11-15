@@ -50,7 +50,6 @@ inline InterfacePresentation interfacePresentation;
 inline std::deque<std::string> dialogueActions;
 struct UiWidgetAction { std::string screen, node, value; int index; };
 inline std::deque<UiWidgetAction> uiWidgetActions;
-inline std::string lastWidgetSnapshot;
 inline std::string contextAction, requestedContextAction;
 // Opt-in, bounded diagnostics for the Android interaction bridge. Game thread only.
 inline void traceContextAction(const char *stage, const std::string &action, const std::string &detail)
@@ -398,13 +397,6 @@ inline void publishCinematic(bool active) {
 }
 
 
-inline void publishMobileWidgets(const std::string &json)
-{
-    if (lastWidgetSnapshot == json) return;
-    lastWidgetSnapshot = json;
-    ui::interfaceModel(json);
-}
-
 inline void showMobileScreen(const std::string &name, double release_ms = 0.0, double load_ms = 0.0)
 {
     auto screen = name;
@@ -421,7 +413,6 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
     ++mobileScreenRevision;
     interfacePresentation.begin(mobileScreenRevision, !screen.empty(), interfacePresentation.negotiated());
     uiWidgetActions.clear();
-    lastWidgetSnapshot.clear();
     ui::screen(screen, mobileScreenRevision, release_ms, load_ms);
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity = static_cast<jobject>(SDL_AndroidGetActivity());

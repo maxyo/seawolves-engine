@@ -2,8 +2,8 @@
 // (PROGRAM/interface/boal_dice.c, boal_cards.c) for mobile_table_game.hpp. All rules stay in script.
 namespace {
 std::optional<std::string> TableInteger(const char *name){
-    auto *v=static_cast<VDATA*>(core.GetScriptVariable(name));int32_t n;
-    return v&&v->Get(n)?std::optional<std::string>(std::to_string(n)):std::nullopt;
+    const auto n=MobileVariableInteger(name);
+    return n?std::optional<std::string>(std::to_string(*n)):std::nullopt;
 }
 std::optional<std::string> TableAttribute(ATTRIBUTES *root,const char *path){
     // An attribute the script set to "" (DiceState at the start of a game) is a fact; only an
@@ -47,15 +47,13 @@ void XINTERFACE::MobileCollectTableGame(std::vector<MobileWidget> &widgets)
     for(const auto &[key,name]:std::initializer_list<std::pair<const char*,const char*>>{
         {"rate","iRate"},{"moneyHero","iMoneyP"},{"moneyOpponent","iMoneyN"},{"bank","iChest"},{"open","openExit"},
         {"stage","bStartGame"},{"turn","dir_i"},{"first","dir_i_start"}})facts.emplace_back(key,TableInteger(name));
-    auto *npc=static_cast<VDATA*>(core.GetScriptVariable("npchar"));
-    auto *person=npc?npc->GetAClass():nullptr;
+    auto *person=MobileVariableObject("npchar");
     std::optional<std::string> name=TableAttribute(person,"name");
     if(name)for(const char *field:{"lastname"})if(auto part=TableAttribute(person,field);part&&!part->empty())*name+=" "+*part;
     facts.emplace_back("opponent",name);facts.emplace_back("opponentFace",TableAttribute(person,"FaceId"));
     if(storm::android::mobileScreen=="boal_dice"){
         facts.emplace_back("locked",TableInteger("bLockClick"));
-        auto *dice=static_cast<VDATA*>(core.GetScriptVariable("DiceState"));
-        auto *state=dice?dice->GetAClass():nullptr;
+        auto *state=MobileVariableObject("DiceState");
         TableDice(state,"Hero",facts);TableDice(state,"Comp",facts);
     }else facts.emplace_back("cardMove",TableInteger("cardMove"));
     storm::mobile::CollectTableGame(source,widgets);

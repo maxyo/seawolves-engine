@@ -17,9 +17,9 @@ with tempfile.TemporaryDirectory(prefix="storm-mobile-settings-") as directory:
     (build / "slider_methods.inc").write_text(methods)
     (build / "slider_conversion.inc").write_text(conversion)
     binary = build / "check"
-    subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-O1", "-g",
+    subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-O1", "-g",
                     "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
-                    "-I" + str(source), "-I" + str(build), str(here / "check.cpp"), "-o", str(binary)], check=True)
+                    "-I" + str(source), "-I" + str(root / "tests/mobile_common"), "-I" + str(build), str(here / "check.cpp"), "-o", str(binary)], check=True)
     data = json.loads(subprocess.check_output([str(binary)], text=True))
     assert data["schemaVersion"] == 2 and data["screenRevision"] == 7
     slider, radio = data["widgets"]

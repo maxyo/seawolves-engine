@@ -1,4 +1,4 @@
-# Host check of the mobile picture registry and model JSON (production sources). Configured by
+# Host check of the mobile picture registry and the interface model (production sources). Configured by
 # run.py next to this file.
 cmake_minimum_required(VERSION 3.21)
 project(storm_mobile_images_check LANGUAGES C CXX)
@@ -7,7 +7,8 @@ option(STORM_SANITIZE "Build the check with ASan/UBSan" ON)
 set(src "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/xinterface/src")
 add_executable(mobile_images_check check.cpp "${src}/mobile_image_cache.cpp")
 target_compile_features(mobile_images_check PRIVATE cxx_std_20)
-target_include_directories(mobile_images_check PRIVATE "${src}")
+target_include_directories(mobile_images_check PRIVATE "${src}" "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/ui/include"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/util/include")
 # The check asserts: keep assert() active in every build type.
 target_compile_options(mobile_images_check PRIVATE -UNDEBUG -O1 -g -fno-omit-frame-pointer)
 if(STORM_SANITIZE)

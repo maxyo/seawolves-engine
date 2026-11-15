@@ -13,6 +13,7 @@
 #include "mobile_alchemy.hpp"
 #include "mobile_interface_leaving.hpp"
 #include "mobile_facts_cache.hpp"
+#include "mobile_save_list.hpp"
 #include "script_state.hpp"
 #endif
 
@@ -338,6 +339,36 @@ class XINTERFACE : public XINTERFACE_BASE
 
 #ifdef __ANDROID__
     void MobileCollectWidgets(std::vector<MobileWidget> &widgets);
+    // The interface model (Realize): collected again only when an input of the last collection
+    // changed (MobileModelDue), published when the collection differs from the last one.
+    struct MobileModelInputs
+    {
+        uint64_t opening = 0;  // storm::android::mobileScreenRevision
+        uint64_t script = 0;   // storm::ScriptStateGeneration: the attribute trees a collection read
+        uint64_t changes = 0;  // mobileChanges_
+        std::string language;
+        std::optional<storm::mobile::SaveListSnapshot> saves; // save_load only
+        bool operator==(const MobileModelInputs &) const = default;
+    };
+    bool MobileModelDue(const std::optional<storm::mobile::SaveListSnapshot> &saves);
+    void MobilePublishModel(std::vector<MobileWidget> widgets, const std::optional<storm::mobile::SaveListSnapshot> &saves);
+    std::optional<MobileModelInputs> mobileModelInputs_; // of the last collection
+    std::vector<MobileWidget> mobileModelWidgets_;       // the last published collection
+    uint64_t mobileModelOpening_ = 0;                    // ... and its opening
+    uint64_t mobileModelRevision_ = 0;
+    // Messages to the interface and the touch UI's actions and touches: what changes a node's state.
+    uint64_t mobileChanges_ = 0;
+    // An action was applied: the model goes out again even unchanged (the UI's answer to it).
+    bool mobileModelResend_ = false;
+    // adb shell setprop log.tag.StormUiModelCheck DEBUG (read at each opening): every frame is
+    // collected, and a collection that differs although no input changed is an error.
+    bool mobileModelCheck_ = false;
+    bool mobileModelDue_ = false; // this frame's collection was due (MobileModelDue), not only checked
+    struct
+    {
+        uint64_t opening = 0, frames = 0, collections = 0, published = 0;
+    } mobileModelStats_; // of the opening, logged at the next one
+    std::string mobileModelScreen_; // of that opening
     void MobileKeepSaveProfile();
     std::string MobileNationScore(const std::string &nation) const;
     void MobileNationPickFailed(const std::string &target) const;
@@ -370,9 +401,9 @@ class XINTERFACE : public XINTERFACE_BASE
     int32_t m_mobileAlchemyStrings=-1;
     std::string m_mobileAlchemyLanguage;
     bool MobileApplyShipyard(const std::string &node,int index,const std::string &value);
-    std::string m_mobileShipyardSignature;
+    std::pair<uint64_t, std::vector<MobileWidget>> m_mobileShipyardSignature; // opening and widgets the generation belongs to
     uint64_t m_mobileShipyardGeneration=0;
-    std::string m_mobileNationSignature;
+    std::pair<uint64_t, std::vector<MobileWidget>> m_mobileNationSignature; // opening and widgets the generation belongs to
     uint64_t m_mobileNationGeneration = 0;
 #endif
 

@@ -49,14 +49,16 @@ void ScriptStateChanged() noexcept
     scriptStateGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
-ScriptStateReads::ScriptStateReads()
+ScriptStateReads::ScriptStateReads() : nested_(readTrees != nullptr)
 {
-    Assert(readTrees == nullptr);
-    readTrees = new std::unordered_set<const ATTRIBUTES *>;
+    if (!nested_)
+        readTrees = new std::unordered_set<const ATTRIBUTES *>;
 }
 
 ScriptStateReads::~ScriptStateReads()
 {
+    if (nested_)
+        return;
     watchedTrees.insert(readTrees->begin(), readTrees->end());
     watching = true;
     delete readTrees;

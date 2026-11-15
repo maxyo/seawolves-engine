@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="storm-mobile-tables-") as directory:
         "-Wno-deprecated-declarations", "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
         "-include", "memory", "-I" + str(root / "tests/mobile_inventory/stubs"),
         "-I" + str(root / "src/libs/core/include"), "-I" + str(root / "src/libs/util/include"),
-        "-I" + str(source), "-I" + str(build), str(here / "check.cpp"),
+        "-I" + str(source), "-I" + str(root / "tests/mobile_common"), "-I" + str(build), str(here / "check.cpp"),
         str(root / "src/libs/core/src/attributes.cpp"), "-o", str(binary),
     ], check=True)
     snapshots = [json.loads(line) for line in subprocess.check_output([str(binary)], text=True).splitlines()]

@@ -13,6 +13,7 @@
 
 #include "storm_ui/asset_files.h"
 #include "storm_ui/backend_bgfx.h"
+#include "storm_ui/interface_model.h"
 #include "storm_ui/ui.h"
 
 #include <storm/render/frame_owner.hpp>
@@ -34,6 +35,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -161,15 +163,15 @@ class EngineUi
             close_at_ = 1;
     }
 
-    void Interface(std::string json)
+    void Interface(storm::ui::InterfaceModel &&model)
     {
         if (screen_.empty())
-            return; // a late snapshot of a screen that closed
-        Record(json);
-        TraceInput("model", screen_ + ", " + std::to_string(json.size()) + " bytes");
+            return; // a late model of a screen that closed
+        Record(model);
+        TraceInput("model", screen_ + " revision " + std::to_string(model.revision) + ", " + std::to_string(model.widgets.size()) + " widgets");
         if (host_)
-            host_->SetInterface(json);
-        interface_ = std::move(json);
+            host_->SetInterface(model);
+        interface_ = std::move(model);
         PublishInterfaceActive();
     }
 
@@ -197,7 +199,7 @@ class EngineUi
         if (close_at_ && static_cast<int32_t>(SDL_GetTicks() - close_at_) >= 0)
         {
             close_at_ = 0;
-            interface_.clear();
+            interface_.reset();
             if (host_)
                 host_->CloseInterface();
             PublishInterfaceActive();
@@ -439,8 +441,8 @@ class EngineUi
         }
         for (const auto &[channel, json] : platform)
             host_->SetState(channel, json);
-        if (!interface_.empty())
-            host_->SetInterface(interface_);
+        if (interface_)
+            host_->SetInterface(*interface_);
         else if (!screen_.empty())
             host_->ExpectInterface();
         {
@@ -511,10 +513,11 @@ class EngineUi
 
     // adb shell setprop log.tag.StormUiModels DEBUG: the newest model of each screen goes to
     // <external files>/ui-models/<screen>.json, to record real models for the screen tests.
-    void Record(const std::string &json) const
+    void Record(const storm::ui::InterfaceModel &model) const
     {
         if (screen_.empty() || !Loggable("StormUiModels"))
             return;
+        const std::string json = storm::ui::InterfaceModelJson(model);
         const char *external = SDL_AndroidGetExternalStoragePath();
         if (!external)
             return;
@@ -596,7 +599,7 @@ class EngineUi
     std::map<std::string, std::string> states_;
     std::map<std::string, std::string> platform_states_; // guarded by inbox_mutex_
     std::string screen_;
-    std::string interface_;
+    std::optional<storm::ui::InterfaceModel> interface_; // the open interface's newest model (replayed to a new host)
     uint32_t close_at_ = 0; // SDL ticks; 0 = no close pending
     std::atomic<bool> interface_active_{false};
     std::vector<std::string> commands_;
@@ -628,9 +631,9 @@ void screen(const std::string &screen, uint64_t revision, double release_ms, dou
     EngineUi::Get().Screen(screen, revision, release_ms, load_ms);
 }
 
-void interfaceModel(std::string json)
+void interfaceModel(storm::ui::InterfaceModel &&model)
 {
-    EngineUi::Get().Interface(std::move(json));
+    EngineUi::Get().Interface(std::move(model));
 }
 
 void toast(std::string text, std::string target)

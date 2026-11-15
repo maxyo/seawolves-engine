@@ -178,6 +178,19 @@ int main()
     Expect(true, "earlier reads still count (one set per opening)", [&] { weather.SetAttribute("Speed", "6"); });
     storm::ScriptStateForget();
     Expect(false, "after ScriptStateForget nothing read counts", [&] { weather.SetAttribute("Speed", "7"); root.SetAttribute("m", "1"); });
+    // A scope inside another (the facts adapter inside the interface model's collection) is part of
+    // the outer one: its reads count once the outer one ends, its writes never.
+    Expect(false, "writes inside nested scopes", [&] {
+        const storm::ScriptStateReads outer;
+        {
+            const storm::ScriptStateReads inner;
+            (void)weather.GetAttribute("Speed");
+            root.SetAttribute("AndroidFacts", "nested rows");
+        }
+        weather.SetAttribute("Speed", "8"); // the outer scope still runs: an adapter's own write
+    });
+    Expect(true, "a tree read in a nested scope counts after the outer one", [&] { weather.SetAttribute("Speed", "9"); });
+    storm::ScriptStateForget();
     {
         const storm::ScriptStateReads reads;
         (void)root.GetAttributesNum();

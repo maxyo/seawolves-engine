@@ -27,7 +27,9 @@ struct ImageRef
         std::string kind, group, image, mode, atlas;
         int pic = -1;
         float uv[4] = {0.f, 0.f, 1.f, 1.f};
+        bool operator==(const Source &) const = default;
     } source;
+    bool operator==(const ImageRef &) const = default;
 };
 // Game-thread-only registry: one opaque handle per picture (texture path and rectangle) of a
 // screen lifetime. The interface model names pictures by their source; the portable UI draws

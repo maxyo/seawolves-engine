@@ -78,10 +78,8 @@ int main() {
     picture.m_pcGroupName=nullptr;picture.m_nodeName="PERK_PICTURE";
     picture.SetNewPictureByGroup("PERK_ENABLE","BasicDefense");
     w=read();assert(w.images.front().source.group=="PERK_ENABLE" && w.images.front().source.image=="BasicDefense");
-    assert(MobileImageJson(w.images.front()).find("\"image\":\"BasicDefense\"")!=std::string::npos);
     picture.SetNewPicture(false,"portraits/player.tga");
     w=read();assert(w.images.front().source.kind=="texture" && w.images.front().source.image=="portraits/player" && picture.m_mobilePictureName.empty());
-    assert(MobileImageJson(w.images.front()).find("\"kind\":\"texture\",\"image\":\"portraits/player\"")!=std::string::npos);
     picture.SetNewPictureByGroup("PERK_ENABLE","Alchemy");
     assert(read().images.front().source.image=="Alchemy");
     // An atlas picture with edited UVs is no longer that atlas entry: it is the texture and the

@@ -2,9 +2,10 @@
 // engine exports it: the screen id and its widgets in reading order. The UI routes this
 // model to a screen implementation; nothing here knows about JNI, Android or a renderer.
 //
-// Today the engine serialises the model as JSON (xinterface/mobile_widget.hpp) and the
-// platform host forwards those bytes to Host::SetInterface. Once the UI is drawn inside
-// the engine frame the engine fills the struct directly.
+// The engine fills the struct (xinterface) and hands it to the UI host in the same process
+// (Host::SetInterface(const InterfaceModel &)), only when it changed. JSON is its recording and
+// fixture format (InterfaceModelJson / ParseInterfaceModel): StormUiModels recordings, the host
+// checks' models and storm_ui_shot --interface.
 #pragma once
 
 #include <cstdint>
@@ -33,6 +34,8 @@ struct ImageRef
     std::string mode;  // battle_icon
     std::string atlas; // battle_icon
     int pic = -1;      // battle_icon
+
+    bool operator==(const ImageRef &) const = default;
 };
 
 struct Cell
@@ -41,6 +44,8 @@ struct Cell
     std::string text;
     uint32_t color_argb = 0xffffffff;
     std::vector<ImageRef> images;
+
+    bool operator==(const Cell &) const = default;
 };
 
 struct Widget
@@ -64,6 +69,8 @@ struct Widget
     std::map<std::string, std::string> context;
     std::optional<uint32_t> text_color_argb;
 
+    bool operator==(const Widget &) const = default;
+
     // True when the engine accepts `verb` for this widget now (enabled and offered).
     bool Offers(std::string_view verb) const;
     // Text of a table column: the cell with that column number, else the tab-separated label part.
@@ -79,11 +86,18 @@ struct InterfaceModel
     uint64_t revision = 0; // changes whenever the widgets change
     std::vector<Widget> widgets;
 
+    bool operator==(const InterfaceModel &) const = default;
+
     const Widget *Find(std::string_view node, std::string_view type = {}) const;
 };
 
-// Reads the engine's JSON wire format (schemaVersion 2). Unknown fields are ignored.
+// Reads the JSON format (schemaVersion 2). Unknown fields are ignored. Widgets get their
+// `order` from their position (the list is in reading order).
 bool ParseInterfaceModel(std::string_view json, InterfaceModel &out, std::string *error = nullptr);
+// Writes the model in that format: ParseInterfaceModel(InterfaceModelJson(m)) == m for a model in
+// reading order (order = position). Slider bounds and `exclusive` are written for sliders and
+// checks (and wherever they are set), an image's source with the fields of its kind.
+std::string InterfaceModelJson(const InterfaceModel &model);
 
 // Case-insensitive comparison of node names (the game's ini files are not consistent).
 bool SameNode(std::string_view a, std::string_view b);

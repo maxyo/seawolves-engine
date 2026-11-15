@@ -9,6 +9,11 @@
 #include <string_view>
 #include <vector>
 
+namespace storm::ui
+{
+struct InterfaceModel; // storm_ui/interface_model.h
+}
+
 namespace storm::android::ui
 {
 // A state channel of the portable UI: JSON as the UI host's SetState takes it ("null" =
@@ -18,8 +23,9 @@ void state(std::string_view channel, std::string json);
 // opening says how long the game took to make it: releasing the old interface and loading
 // the new one's INI with its nodes (milliseconds, logged with the opening).
 void screen(const std::string &screen, uint64_t revision, double release_ms = 0.0, double load_ms = 0.0);
-// Interface model (widget snapshot) of the open screen; the newest replaces older ones.
-void interfaceModel(std::string json);
+// The interface model of the open screen (xinterface), in the frame it changed; the newest
+// replaces older ones. Taken as the struct itself: nothing is serialised.
+void interfaceModel(storm::ui::InterfaceModel &&model);
 // A passing line of the game's log: a toast over the game; `target` is where a tap on it
 // leads (Host::GameMessage), "" = nowhere.
 void toast(std::string text, std::string target = {});

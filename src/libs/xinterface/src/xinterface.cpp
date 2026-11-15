@@ -37,6 +37,9 @@
 #include "mobile_sails_gerald.hpp"
 #include "mobile_alchemy.hpp"
 #include "mobile_owner_bridge.hpp"
+#include "mobile_interface_model.hpp"
+#include "mobile_variable_reads.hpp"
+#include <sys/system_properties.h>
 #include <chrono>
 static std::optional<storm::mobile::SaveListCapability::Target> deferredSaveAction;
 static std::chrono::steady_clock::time_point deferredSaveDeadline;
@@ -503,6 +506,133 @@ void XINTERFACE::MobileNationPickFailed(const std::string &target) const
     core.Trace("nationrelation: the flag %s was not reached by cycling the candidate", target.c_str());
 }
 
+// Script variables read by the model's collectors (mobile_variable_reads.hpp).
+static storm::mobile::VariableReads mobileVariableReads;
+using MobileVariableKind = storm::mobile::VariableReads::Kind;
+
+// What the variable `name` reads now as `kind`; nullopt when there is no such variable or it gives
+// nothing of that kind (an unset reference is not read: that would be a script error).
+static std::optional<std::string> MobileReadVariable(const char *name, MobileVariableKind kind)
+{
+    auto *variable = static_cast<VDATA *>(core.GetScriptVariable(name));
+    if (!variable)
+        return std::nullopt;
+    switch (kind)
+    {
+    case MobileVariableKind::Integer: {
+        int32_t value = 0;
+        return variable->Get(value) ? std::optional<std::string>(std::to_string(value)) : std::nullopt;
+    }
+    case MobileVariableKind::Text: {
+        const char *value = nullptr;
+        return variable->Get(value) ? std::optional<std::string>(value ? value : "") : std::nullopt;
+    }
+    case MobileVariableKind::Object: {
+        if (variable->IsReference() && !variable->GetReference())
+            return std::nullopt;
+        const ATTRIBUTES *object = variable->GetAClass();
+        return object ? std::optional<std::string>(std::to_string(reinterpret_cast<uintptr_t>(object))) : std::nullopt;
+    }
+    }
+    return std::nullopt;
+}
+
+// A collector's read of an integer, a text or the object of a script variable: noted as an input
+// of the model while it collects.
+static std::optional<int32_t> MobileVariableInteger(const char *name)
+{
+    const auto value = MobileReadVariable(name, MobileVariableKind::Integer);
+    mobileVariableReads.Note(name, MobileVariableKind::Integer, value);
+    return value ? std::optional<int32_t>(static_cast<int32_t>(std::stol(*value))) : std::nullopt;
+}
+static std::optional<std::string> MobileVariableText(const char *name)
+{
+    auto value = MobileReadVariable(name, MobileVariableKind::Text);
+    mobileVariableReads.Note(name, MobileVariableKind::Text, value);
+    return value;
+}
+static ATTRIBUTES *MobileVariableObject(const char *name)
+{
+    const auto value = MobileReadVariable(name, MobileVariableKind::Object);
+    mobileVariableReads.Note(name, MobileVariableKind::Object, value);
+    auto *variable = value ? static_cast<VDATA *>(core.GetScriptVariable(name)) : nullptr;
+    return variable ? variable->GetAClass() : nullptr;
+}
+
+// Whether the model must be collected this frame: an input of the last collection changed, or the
+// interface opened, or an action asks for the model again. The node state the collectors read
+// changes through the interface's messages and the touch UI (mobileChanges_), the attributes they
+// read through script writes (the script state generation), the variables they read by name
+// through the script (mobileVariableReads, read again here).
+bool XINTERFACE::MobileModelDue(const std::optional<storm::mobile::SaveListSnapshot> &saves)
+{
+    const uint64_t opening = storm::android::mobileScreenRevision;
+    if (opening != mobileModelStats_.opening)
+    {
+        // What the last opening cost: frames shown, collections, models published.
+        if (mobileModelStats_.opening)
+            spdlog::info("UI model {}: {} frames, collected {} times, {} models published", mobileModelScreen_, mobileModelStats_.frames,
+                         mobileModelStats_.collections, mobileModelStats_.published);
+        mobileModelStats_ = {};
+        mobileModelStats_.opening = opening;
+        mobileModelScreen_ = storm::android::mobileScreen;
+        char setting[PROP_VALUE_MAX] = {};
+        __system_property_get("log.tag.StormUiModelCheck", setting);
+        mobileModelCheck_ = std::string_view(setting) == "DEBUG";
+    }
+    ++mobileModelStats_.frames;
+    const char *language = pStringService ? pStringService->GetLanguage() : nullptr;
+    mobileModelDue_ = mobileModelResend_ || !mobileModelInputs_ || mobileModelInputs_->opening != opening ||
+                      mobileModelInputs_->changes != mobileChanges_ || mobileModelInputs_->script != storm::ScriptStateGeneration() ||
+                      mobileModelInputs_->language != (language ? language : "") || mobileModelInputs_->saves != saves ||
+                      mobileVariableReads.Changed(MobileReadVariable);
+    return mobileModelDue_;
+}
+
+// The collection of this frame (sorted) goes to the UI host when it differs from the last one
+// published, as a new revision, or again unchanged when an action asked for it.
+void XINTERFACE::MobilePublishModel(std::vector<MobileWidget> widgets, const std::optional<storm::mobile::SaveListSnapshot> &saves)
+{
+    const uint64_t opening = storm::android::mobileScreenRevision;
+    const char *gameLanguage = pStringService ? pStringService->GetLanguage() : nullptr;
+    std::string language = gameLanguage ? gameLanguage : "";
+    // Read after the collection: what the collectors' own script calls did is part of what they read.
+    mobileModelInputs_ = MobileModelInputs{opening, storm::ScriptStateGeneration(), mobileChanges_, language, saves};
+    // An interface whose script has ended publishes nothing more (mobile_interface_leaving.hpp).
+    if (mobileLeft_)
+        return;
+    const bool changed = opening != mobileModelOpening_ || widgets != mobileModelWidgets_;
+    if (changed && !mobileModelDue_)
+    {
+        // A collection made only for the check differs although no input of the model changed: the
+        // model would have stayed stale. Named by the first widget that differs.
+        size_t at = 0;
+        while (at < widgets.size() && at < mobileModelWidgets_.size() && widgets[at] == mobileModelWidgets_[at])
+            ++at;
+        const std::string node = at < widgets.size() ? widgets[at].node : at < mobileModelWidgets_.size() ? mobileModelWidgets_[at].node : "";
+        spdlog::error("UI model {}: changed without a change of its inputs (first differing widget {} of node {}): the model was stale",
+                      storm::android::mobileScreen, at, node);
+    }
+    const bool resend = mobileModelResend_;
+    mobileModelResend_ = false;
+    if (!changed && !resend)
+        return;
+    if (changed)
+    {
+        ++mobileModelRevision_;
+        mobileModelOpening_ = opening;
+        mobileModelWidgets_ = widgets;
+    }
+    STORM_PROFILE_ZONE("UI model: publish");
+    ++mobileModelStats_.published;
+    std::vector<std::string> repaired;
+    auto model = storm::mobile::MobileInterfaceModel(storm::android::mobileScreen, std::move(language), opening, mobileModelRevision_,
+                                                     std::move(widgets), &repaired);
+    for (const auto &node : repaired)
+        spdlog::error("UI model {}: node {} has text that is not valid UTF-8 (shown with U+FFFD)", storm::android::mobileScreen, node);
+    storm::android::ui::interfaceModel(std::move(model));
+}
+
 void XINTERFACE::MobileCollectWidgets(std::vector<MobileWidget> &widgets)
 {
     const auto collect = [&](const auto &self, CINODE *node) -> void {
@@ -594,8 +724,8 @@ void XINTERFACE::MobileCollectNations(std::vector<MobileWidget> &widgets)
     }
     widgets.push_back(std::move(marker));
     // All native text/source/control updates and owner changes revoke old capabilities.
-    const auto signature=MobileWidgetJson("nationrelation",widgets,storm::android::mobileScreenRevision);
-    if(signature!=m_mobileNationSignature){m_mobileNationSignature=signature;++m_mobileNationGeneration;}
+    if(m_mobileNationSignature.first!=storm::android::mobileScreenRevision||m_mobileNationSignature.second!=widgets){
+        m_mobileNationSignature={storm::android::mobileScreenRevision,widgets};++m_mobileNationGeneration;}
     for(auto &w:widgets) {
         auto *node=FindNode(w.node.c_str(),nullptr);
         if(!node||!node->m_bUse)continue;
@@ -656,11 +786,12 @@ void XINTERFACE::Realize(uint32_t)
     DrawNode(m_pNodes, Delta_Time, 0, 80);
 
 #ifdef __ANDROID__
-    // The interface model goes out in the frame it changes (publishMobileWidgets sends only a
-    // changed snapshot). A timer here made every change wait up to its period. The save screen's
-    // model is complete only once the script has filled its save list (ReadSaveList: an empty
-    // list is readable, a list not yet filled is not); before that nothing is sent, so the UI never
-    // gets a save screen without its saves.
+    // The interface model goes out in the frame it changes, as the struct itself (the UI host is in
+    // this process): collected again only when something it is made of may have changed
+    // (MobileModelInputs), published only when the collection differs from the last one. The save
+    // screen's model is complete only once the script has filled its save list (ReadSaveList: an
+    // empty list is readable, a list not yet filled is not); before that nothing is sent, so the UI
+    // never gets a save screen without its saves.
     if (storm::android::mobileScreen == "save_load")
         MobileKeepSaveProfile();
     const auto saves = storm::mobile::ReadSaveList();
@@ -676,10 +807,15 @@ void XINTERFACE::Realize(uint32_t)
             waitingSince = 0; // said once per opening
         }
     }
-    else
+    else if (MobileModelDue(saves) || mobileModelCheck_)
     {
         STORM_PROFILE_ZONE("UI model: collect");
+        ++mobileModelStats_.collections;
         std::vector<MobileWidget> widgets;
+        // Every attribute tree and script variable the collectors read is an input of the model from
+        // now (script_state.hpp, mobile_variable_reads.hpp).
+        std::optional<storm::ScriptStateReads> reads(std::in_place);
+        mobileVariableReads.Begin();
         MobileCollectWidgets(widgets);
         if (saves)
         {
@@ -736,9 +872,7 @@ void XINTERFACE::Realize(uint32_t)
         {
             // The items trade runs in coins or, for some merchants, in doubloons (script
             // TradeMode 1). The balance text alone does not say which in every language.
-            auto *mode = static_cast<VDATA *>(core.GetScriptVariable("TradeMode"));
-            int32_t value = 0;
-            if (mode && mode->Get(value) && value == 1)
+            if (MobileVariableInteger("TradeMode") == 1)
                 for (auto &widget : widgets)
                     if (storm::iEquals(widget.node, "OUR_GOLD"))
                         widget.context["currency"] = "doubloons";
@@ -750,19 +884,16 @@ void XINTERFACE::Realize(uint32_t)
             // remove the captain, a plain message); whether the other captain is still alive
             // decides what leaving means. Missing script state is reported, never guessed.
             MobileWidget marker{"ANDROID_TRANSFER", "transfer", "", "", -1, 0, false};
-            const char *mode = nullptr;
-            auto *modeVar = static_cast<VDATA *>(core.GetScriptVariable("sMessageMode"));
-            int32_t transfer = 0;
-            auto *transferVar = static_cast<VDATA *>(core.GetScriptVariable("bTransferMode"));
-            auto *other = static_cast<VDATA *>(core.GetScriptVariable("xi_refCharacter"));
-            ATTRIBUTES *captain = other ? other->GetAClass() : nullptr;
+            const auto mode = MobileVariableText("sMessageMode");
+            const auto transfer = MobileVariableInteger("bTransferMode");
+            ATTRIBUTES *captain = MobileVariableObject("xi_refCharacter");
             std::string missing;
-            if (modeVar && modeVar->Get(mode))
-                marker.context["mode"] = mode ? mode : "";
+            if (mode)
+                marker.context["mode"] = *mode;
             else
                 missing += " sMessageMode";
-            if (transferVar && transferVar->Get(transfer))
-                marker.context["exchange"] = transfer ? "1" : "0";
+            if (transfer)
+                marker.context["exchange"] = *transfer ? "1" : "0";
             else
                 missing += " bTransferMode";
             if (captain)
@@ -775,11 +906,11 @@ void XINTERFACE::Realize(uint32_t)
             // The crew limits of both ships as characterUtilite.c has them (GetMinCrewQuantity, GetMaxCrewQuantity:
             // RealShips[<character>.Ship.Type].MinCrew / MaxCrew): the crew window's slider marks the least crew each
             // ship sails with, and the most it takes. A character without a ship has none (the script's 0).
-            auto *index = static_cast<VDATA *>(core.GetScriptVariable("nMainCharacterIndex"));
+            const auto index = MobileVariableInteger("nMainCharacterIndex");
             auto *characters = static_cast<VDATA *>(core.GetScriptVariable("Characters"));
             auto *realShips = static_cast<VDATA *>(core.GetScriptVariable("RealShips"));
-            ATTRIBUTES *hero = index && characters && index->GetInt() >= 0 && static_cast<uint32_t>(index->GetInt()) < characters->GetElementsNum()
-                                   ? characters->GetAClass(index->GetInt())
+            ATTRIBUTES *hero = index && characters && *index >= 0 && static_cast<uint32_t>(*index) < characters->GetElementsNum()
+                                   ? characters->GetAClass(*index)
                                    : nullptr;
             const auto crew = [&](ATTRIBUTES *character, const char *suffix) {
                 int32_t minimum = 0, maximum = 0;
@@ -810,24 +941,9 @@ void XINTERFACE::Realize(uint32_t)
             inventoryEquipCapability.published(storm::android::mobileScreenRevision, widgets);
         else
             inventoryEquipCapability.invalidate();
-        static uint64_t snapshotRevision = 0;
-        static std::string previousPayload;
-        const char *gameLanguage = pStringService ? pStringService->GetLanguage() : nullptr;
-        const std::string language = gameLanguage ? gameLanguage : "";
-        auto payload = MobileWidgetJson(storm::android::mobileScreen, widgets, storm::android::mobileScreenRevision, 0, language);
-        // An interface whose script has ended publishes nothing more (mobile_interface_leaving.hpp).
-        const bool changed = !mobileLeft_ && payload != previousPayload;
-        if (changed)
-        {
-            previousPayload = std::move(payload);
-            ++snapshotRevision;
-        }
-        if (changed || (!mobileLeft_ && storm::android::lastWidgetSnapshot.empty())) // nothing new: nothing to build or send
-        {
-            STORM_PROFILE_ZONE("UI model: publish");
-            storm::android::publishMobileWidgets(MobileWidgetJson(storm::android::mobileScreen, widgets,
-                                                                  storm::android::mobileScreenRevision, snapshotRevision, language));
-        }
+        mobileVariableReads.End();
+        reads.reset();
+        MobilePublishModel(std::move(widgets), saves);
     }
 #endif
 
@@ -941,6 +1057,9 @@ int32_t oldCurNum = -1L;
 
 uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     auto cod = message.Long();
 
     switch (cod)
@@ -1860,6 +1979,9 @@ void XINTERFACE::LoadDialog(const char *sFileName)
 
 void XINTERFACE::CreateNode(const char *sFileName, const char *sNodeType, const char *sNodeName, int32_t priority)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     // there is already such a node
     if (m_pNodes && m_pNodes->FindNode(sNodeName))
         return;
@@ -2092,6 +2214,9 @@ CINODE *XINTERFACE::NewNode(const char *pcNodType)
 
 void XINTERFACE::DeleteNode(const char *pcNodeName)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     if (!pcNodeName)
         return;
     // looking for a node by name
@@ -2326,6 +2451,9 @@ void XINTERFACE::SetTooltip(const char *pcHeader, const char *pcText1, uint32_t 
 
 void XINTERFACE::ShowWindow(const char *pcWindowName, bool bShow)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     if (!m_pNodes)
         return;
     CINODE *pNod = m_pNodes->FindNode(pcWindowName);
@@ -2339,6 +2467,9 @@ void XINTERFACE::ShowWindow(const char *pcWindowName, bool bShow)
 
 void XINTERFACE::DisableWindow(const char *pcWindowName, bool bDisable)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     if (!m_pNodes)
         return;
     CINODE *pNod = m_pNodes->FindNode(pcWindowName);
@@ -2352,6 +2483,9 @@ void XINTERFACE::DisableWindow(const char *pcWindowName, bool bDisable)
 
 void XINTERFACE::AddNodeToWindow(const char *pcNodeName, const char *pcWindowName)
 {
+#ifdef __ANDROID__
+    ++mobileChanges_; // a node's state may change: the interface model is collected again
+#endif
     if (!m_pNodes)
     {
         core.Trace("Warning! Interface::AddNodeToWindow(%s,%s) : Empty node list", pcNodeName, pcWindowName);
@@ -2491,23 +2625,26 @@ void XINTERFACE::DoControl()
         auto action = storm::android::uiWidgetActions.front();
         storm::android::uiWidgetActions.pop_front();
         if (action.screen != storm::android::mobileScreen) continue;
+        // Whatever it does, the model is collected again and goes out (unchanged, it is the answer).
+        ++mobileChanges_;
+        mobileModelResend_ = true;
         const storm::mobile::UiAction::Scope programmatic(storm::mobile::uiAction); // silent: the UI clicked for the press
         if(action.screen=="goodstransfer"&&action.node=="ANDROID_GOODS_ORDER"){
-            storm::android::lastWidgetSnapshot.clear();MobileApplyGoodsTransfer(action.value);continue;
+            MobileApplyGoodsTransfer(action.value);continue;
         }
         if(action.screen=="alchemy"&&(action.node=="ANDROID_ALCHEMY"||action.node=="ANDROID_ALCHEMY_RECIPE")){
-            storm::android::lastWidgetSnapshot.clear();MobileApplyAlchemy(action.node,action.value);continue;
+            MobileApplyAlchemy(action.node,action.value);continue;
         }
         if(action.screen=="itemsbox"&&action.node=="ANDROID_TAKE_ALL"){
-            storm::android::lastWidgetSnapshot.clear();MobileApplyItemsBoxTakeAll(action.value);continue;
+            MobileApplyItemsBoxTakeAll(action.value);continue;
         }
         if(action.screen=="colonycapture"&&action.node=="ANDROID_LOOT"){
-            storm::android::lastWidgetSnapshot.clear();MobileApplyColonyLoot(action.value);continue;
+            MobileApplyColonyLoot(action.value);continue;
         }
         if(action.screen=="shipyard"&&action.value.rfind("yard@",0)==0){
             MobileApplyShipyard(action.node,action.index,action.value);continue;
         }
-        storm::android::lastWidgetSnapshot.clear();
+        
         deferredSaveAction.reset();
         if (action.screen == "selectcharacter" && action.node == "ANDROID_TUTORIAL_SKIP")
         {

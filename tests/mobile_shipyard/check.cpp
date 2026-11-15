@@ -12,7 +12,7 @@ enum {NODETYPE_WINDOW=1,ACTION_MOUSERCLICK=2,ACTION_MOUSECLICK=3,ACTION_ACTIVATE
 struct CINODE {std::string name;int m_nNodeType=0,m_nDoDelay=0,fired=0,code=0,selectedIndex=-1;bool m_bUse=true,m_bClickable=true,m_bSelected=true,m_bLockedNode=false,m_bLockStatus=false;std::vector<MobileWidget> model;std::string applied;
  bool CheckCommandUsed(int){return true;}CINODE *DoAction(int n,bool&,bool){fired++;code=n;return nullptr;}bool MobileApply(int index,std::string v){selectedIndex=index;applied=v;return true;}};
 struct CXI_WINDOW:CINODE {bool shown=false,active=false;CXI_WINDOW(){m_nNodeType=NODETYPE_WINDOW;}bool GetShow(){return shown;}bool GetActive(){return active;}};
-struct XINTERFACE {ATTRIBUTES *AttributesPointer;Service *pStringService=&service,*pPictureService=&service;std::vector<CINODE*> nodes;CINODE *focus=nullptr;std::string m_mobileShipyardSignature;uint64_t m_mobileShipyardGeneration=0;
+struct XINTERFACE {ATTRIBUTES *AttributesPointer;Service *pStringService=&service,*pPictureService=&service;std::vector<CINODE*> nodes;CINODE *focus=nullptr;std::pair<uint64_t,std::vector<MobileWidget>> m_mobileShipyardSignature;uint64_t m_mobileShipyardGeneration=0;
  CINODE*FindNode(const char*n,void*){for(auto *p:nodes)if(storm::iEquals(p->name,n))return p;return nullptr;}void SetCurNode(CINODE *p){focus=p;}
  void MobileCollectWidgets(std::vector<MobileWidget>&out){for(auto *n:nodes)if(n->m_bUse)for(auto w:n->model){w.enabled=w.enabled&&!n->m_bLockedNode;out.push_back(w);}MobileCollectShipyard(out);}
  void MobileCollectShipyard(std::vector<MobileWidget>&);bool MobileApplyShipyard(const std::string&,int,const std::string&);

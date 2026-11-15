@@ -1,4 +1,5 @@
 #include "mobile_sails_gerald.hpp"
+#include "widget_json.hpp"
 #include <cassert>
 #include <iostream>
 using namespace storm::mobile;
