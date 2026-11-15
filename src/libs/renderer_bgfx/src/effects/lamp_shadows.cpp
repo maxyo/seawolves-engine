@@ -751,6 +751,10 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
     const bool all = layout_dirty_;
     choose_slots(eye);
     choose_moving(eye);
+    // Slots, ship-local lights and atlas layout have settled for this frame. Do not carry projections across
+    // frames: a moving lantern, a changed range/layout or a restored device must use the current projection.
+    for (Slot &slot : slot_)
+        slot.dynamic_faces_ready = 0;
     layout_dirty_ = false;
     draw_static(device, all, casters);
     int used = 0;
@@ -1070,6 +1074,18 @@ void LampShadows::draw_static(shim::Device &device, bool all, Casters &casters)
     }
 }
 
+const std::array<float, 16> &LampShadows::dynamic_face_matrix(int index, int face, const fx::Lamp &in_faces)
+{
+    Slot &slot = slot_[index];
+    const uint8_t bit = static_cast<uint8_t>(1u << face);
+    if (!(slot.dynamic_faces_ready & bit))
+    {
+        slot.dynamic_faces[face] = face_matrix(in_faces, index, face, columns_, rows_);
+        slot.dynamic_faces_ready |= bit;
+    }
+    return slot.dynamic_faces[face];
+}
+
 void LampShadows::submit_caster(shim::Device &device, const float *world, bool skinned, const std::array<float, 3> &center,
                                 float radius, Casters &casters, const CasterMaterial &material)
 {
@@ -1106,7 +1122,7 @@ void LampShadows::submit_caster(shim::Device &device, const float *world, bool s
         {
             if (!fx::SphereInLampFace(in_faces.position, face, at, radius))
                 continue;
-            const std::array<float, 16> m = face_matrix(in_faces, s, face, columns_, rows_);
+            const std::array<float, 16> &m = dynamic_face_matrix(s, face, in_faces);
             std::array<float, 16> wm{};
             bx::mtxMul(wm.data(), to_faces.data(), m.data());
             // A lamp's own model (a street lantern's, a ship lantern's) and the hand that carries a lantern cast no

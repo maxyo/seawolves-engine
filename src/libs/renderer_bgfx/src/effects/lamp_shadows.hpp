@@ -161,6 +161,9 @@ class LampShadows
         bgfx::IndexBufferHandle triangles = BGFX_INVALID_HANDLE; // the solid still geometry within its radius
         std::vector<std::pair<std::shared_ptr<shim::TexStore>, bgfx::IndexBufferHandle>> cut; // ... and of each cut-out texture
         uint32_t casters = 0, last_casters = 0;                  // character draws this / the last frame
+        // Only the settled slot's projection is shared; each caster still supplies its current world transform.
+        std::array<std::array<float, 16>, 6> dynamic_faces{};
+        uint8_t dynamic_faces_ready = 0; // reset by prepare, never reused across frames
     };
 
     void ensure_targets();
@@ -168,6 +171,7 @@ class LampShadows
     void free_slot(Slot &slot);
     void draw_static(shim::Device &device, bool all, Casters &casters);
     void choose_moving(const std::array<float, 3> &eye);
+    const std::array<float, 16> &dynamic_face_matrix(int slot, int face, const fx::Lamp &in_faces);
     // The six still faces of `slot` (its row cleared first) from `triangles` / `cut` index buffers.
     void draw_faces(shim::Device &device, Casters &casters, int slot);
     static constexpr int kMovingLamp = -2;
