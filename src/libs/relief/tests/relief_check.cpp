@@ -149,6 +149,34 @@ void CheckDemandPrune(const std::filesystem::path &root)
     CHECK(std::filesystem::exists(fx::ReliefFile(output, stone_key)));
     std::filesystem::remove_all(blocked);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 0);
+    // Stock Ammo/EnvAmmo: a readable DXT1 cube is unsupported, not an I/O failure.
+    const auto cube = textures / "Ammo/EnvAmmo.tga.tx";
+    std::filesystem::create_directories(cube.parent_path());
+    const uint32_t cube_header[6] = {2, 32, 32, 4, 0x31545844, 512};
+    std::vector<uint8_t> cube_bytes(24 + 6 * (512 + 128 + 32 + 8), 0);
+    std::memcpy(cube_bytes.data(), cube_header, sizeof(cube_header));
+    std::ofstream(cube, std::ios::binary).write(reinterpret_cast<const char *>(cube_bytes.data()), cube_bytes.size());
+    CHECK(relief::List(textures).size() == background.size() + 1);
+    std::ofstream(fx::ReliefFile(output, old)) << "stale";
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, stone_key)));
+    CHECK(!std::filesystem::exists(fx::ReliefFile(output, old)));
+    // Unsupported must still be structurally complete: a truncated cube is uncertainty.
+    std::ofstream(fx::ReliefFile(output, old)) << "stale";
+    std::filesystem::resize_file(cube, cube_bytes.size() - 1);
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, old)));
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    // Compressed 2x2/1x1 mips still need a whole DXT1 block each, not quarter-sized bytes.
+    const uint32_t tiny_header[6] = {2, 4, 4, 3, 0x31545844, 8};
+    std::vector<uint8_t> tiny_cube(24 + 6 * (8 + 2), 0);
+    std::memcpy(tiny_cube.data(), tiny_header, sizeof(tiny_header));
+    std::ofstream(cube, std::ios::binary).write(reinterpret_cast<const char *>(tiny_cube.data()), tiny_cube.size());
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, old)));
+    std::filesystem::remove(cube);
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);
     std::filesystem::remove(character);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);
     CHECK(!std::filesystem::exists(fx::ReliefFile(output, key)));

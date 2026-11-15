@@ -70,12 +70,14 @@ double Seconds(Clock::time_point since)
 struct TxFile
 {
     uint32_t flags = 0, width = 0, height = 0, levels = 0, format = 0, top_bytes = 0;
+    bool unsupported_cube = false; // A completely readable, structurally valid cube has no relief key.
     int first = 0;             // the first level in `data`
     std::vector<uint8_t> data; // levels first .. levels - 1
 
     // The header alone.
     bool Header(std::ifstream &in)
     {
+        unsupported_cube = false;
         int32_t header[6];
         if (!in.read(reinterpret_cast<char *>(header), sizeof(header)))
             return false;
@@ -85,8 +87,27 @@ struct TxFile
         levels = static_cast<uint32_t>(header[3]);
         format = static_cast<uint32_t>(header[4]);
         top_bytes = static_cast<uint32_t>(header[5]);
-        return !(flags & (kTxFlagPalette | kTxFlagCubemap)) && texture::tx_format_known(format) && width > 0 && height > 0 &&
-               width <= 8192 && height <= 8192 && levels > 0 && top_bytes == texture::d3d_level_bytes(format, width, height);
+        if (!texture::tx_format_known(format) || width == 0 || height == 0 || width > 8192 || height > 8192 ||
+            levels == 0 || top_bytes != texture::d3d_level_bytes(format, width, height))
+            return false;
+        if (flags == kTxFlagCubemap)
+        {
+            // Stock Ammo/EnvAmmo is classified as metal, but its cube layout is intentionally unsupported.
+            // Distinguish that from a failed read only after validating all six faces' payload extent.
+            uint32_t max_levels = 1;
+            for (uint32_t side = width; side > 1; side >>= 1) ++max_levels;
+            if (width != height || levels > max_levels)
+                return false;
+            size_t face_bytes = 0;
+            for (uint32_t level = 0; level < levels; ++level)
+                face_bytes += texture::d3d_level_bytes(format, std::max(1u, width >> level),
+                                                       std::max(1u, height >> level));
+            in.seekg(0, std::ios::end);
+            const auto end = in.tellg();
+            unsupported_cube = in.good() && end >= std::streamoff(24 + 6 * face_bytes);
+            return false;
+        }
+        return !(flags & (kTxFlagPalette | kTxFlagCubemap));
     }
     // The header and the levels from the one `choose` picks (given the header) on.
     template <typename Choose> bool Load(const std::filesystem::path &path, Choose &&choose)
@@ -1093,6 +1114,8 @@ int Prune(const std::filesystem::path &textures, const std::vector<std::filesyst
         TxFile tx;
         if (!tx.LoadProbe(candidate.file))
         {
+            if (tx.unsupported_cube)
+                continue; // A valid cube cannot own a prepared relief/gloss key; it is not retryable I/O.
             // Missing after a successful root walk is a deleted source; unreadable/invalid is not.
             const bool exists = std::filesystem::exists(candidate.file, source_error);
             if (source_error || exists)
