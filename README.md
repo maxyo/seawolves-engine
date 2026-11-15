@@ -43,7 +43,8 @@ This repository builds the native engine library only, not an APK:
 ## Reporting bugs
 
 In the game, open About → Share log and attach the log to your report. If the bug involves a save, use
-Send a save on the same screen.
+Send a save on the same screen. Bugs go to this repository's
+[Issues](https://github.com/maxyo/storm-engine-android/issues) with the log attached.
 
 ## License and credits
 

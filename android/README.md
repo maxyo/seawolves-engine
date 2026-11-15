@@ -3,7 +3,7 @@
 This repository owns the ARM64 native engine, Android runtime/storage policy,
 open audio backend, pinned native dependency builds and native regression tests.
 The Android application, Java launcher/importer, touch controls, APK packaging
-and GitHub Releases live in https://github.com/maxyo/corsairs-android.
+and GitHub Releases live in a separate repository that is not public yet.
 
 Run `bash tools/android/ci_dependencies.sh`, then
 `bash tools/android/ci_engine.sh` with JDK 17, CMake, C++ compiler, Python venv,
