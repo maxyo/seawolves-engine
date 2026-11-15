@@ -41,7 +41,10 @@ LightSelection SelectLights(std::span<const PointLight> lights, Vec3 center, flo
         const float nearest = std::max(std::sqrt(dx * dx + dy * dy + dz * dz) - radius, 0.0f);
         // Brightness at the closest point of the object; attenuation is clamped so a light inside the object
         // does not win by an infinite margin.
-        const float score = Peak(light.color) * std::min(LightAttenuation(light, nearest), 4.0f);
+        Vec3 absolute = center;
+        for (int k = 0; k < 3; ++k) absolute[k] += light.aggregate_origin[k];
+        const float score = light.aggregate.get() ? AggregateScore(light.aggregate, absolute, radius) :
+                            Peak(light.color) * std::min(LightAttenuation(light, nearest), 4.0f);
         if (score > 1.0f / 512.0f)
             scored.push_back({score, &light});
     }
@@ -51,7 +54,10 @@ LightSelection SelectLights(std::span<const PointLight> lights, Vec3 center, flo
     LightSelection selection;
     selection.dropped = static_cast<int>(scored.size() - keep);
     for (size_t i = 0; i < keep; ++i)
+    {
+        selection.indices[selection.count] = static_cast<uint32_t>(scored[i].light - lights.data());
         selection.lights[selection.count++] = *scored[i].light;
+    }
     if (fade_rank && keep > 0 && scored.size() > keep)
     {
         // partial_sort leaves the rest unordered: the strongest left-out light is the largest of them.
@@ -60,6 +66,7 @@ LightSelection SelectLights(std::span<const PointLight> lights, Vec3 center, flo
             next = std::max(next, scored[i].score);
         const float last = scored[keep - 1].score;
         const float weight = std::clamp((last - next) / (kRankFade * last), 0.0f, 1.0f);
+        selection.lights[keep - 1].aggregate_scale *= weight;
         for (float &c : selection.lights[keep - 1].color)
             c *= weight;
     }
@@ -129,6 +136,29 @@ PointLightUniforms PackPointLights(const LightSelection &selection, const std::a
     u.u_fxPointCount = {static_cast<float>(selection.count), 0.0f, 0.0f, 0.0f};
     u.dropped = selection.dropped;
     return u;
+}
+
+PointLightFallback PackUnmergedPointLights(const LightSelection &selection, const std::array<float,16> &view,
+                                          uint8_t old_diffuse, uint8_t old_specular, uint8_t directional_mask)
+{
+    PointLightFallback out;
+    out.diffuse_off=old_diffuse & directional_mask;
+    out.specular_off=old_specular & directional_mask;
+    LightSelection independent;
+    for (int i=0;i<selection.count;++i)
+    {
+        const auto &light=selection.lights[i];
+        if (light.aggregate.get() && light.aggregate.get()->count>1) continue;
+        independent.lights[independent.count++]=light;
+        if (light.device_slot<kMaxPointLights)
+        {
+            const uint8_t mask=static_cast<uint8_t>(1u<<light.device_slot);
+            out.diffuse_off |= old_diffuse & mask;
+            out.specular_off |= old_specular & mask;
+        }
+    }
+    out.points=PackPointLights(independent,view);
+    return out;
 }
 
 } // namespace storm::fx

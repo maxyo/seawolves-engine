@@ -365,6 +365,51 @@ float fxLightFalloff(float dist, float radius, float intensity, float core2)
 #endif
 }
 
+#ifdef FX_FF_PIXEL_LIGHTING
+// Upgraded lit/baked variants only: cube variants own stage 6 and retain original-light vertex fallback.
+uniform mat4 u_fxLampView;
+SAMPLER2D(s_fxAggregate, 6);
+vec4 fxAggregateTexel(float address)
+{
+    return texture2DLod(s_fxAggregate, (vec2(mod(address, 32.0), floor(address / 32.0)) + vec2_splat(0.5)) / 32.0, 0.0);
+}
+// The same original-member kernel for shadowed lamps and shadows-off point fallback. All vectors absolute world.
+// `geometric` follows each path's singleton law (lamp rejects back-facing geometric normals; point fallback does not).
+void fxAggregateAdd(float group, vec3 P, vec3 Ng, vec3 N, vec3 V, vec2 spec, float scale, float geometric,
+                    inout vec4 diffuse, inout vec3 highlight)
+{
+    vec4 header = fxAggregateTexel(2.0 * (group - 1.0));
+    vec4 shape = fxAggregateTexel(2.0 * (group - 1.0) + 1.0);
+    for (int member = 0; member < 256; ++member)
+    {
+        if (float(member) >= header.y) break;
+        float address = header.x + 2.0 * float(member);
+        vec3 delta = fxAggregateTexel(address).xyz - P;
+        float distance = length(delta);
+        if (distance >= header.z) continue;
+        vec3 L = delta / max(distance, geometric > 0.5 ? 1e-4 : 1e-5);
+        float ndl = dot(N, L);
+        if (ndl <= 0.0 || (geometric > 0.5 && dot(Ng,L) <= 0.0)) continue;
+        vec3 rgb = fxLightColor(fxAggregateTexel(address+1.0).rgb);
+        float fade = scale; // one common ENERGY fade, never square a group gamma color
+#ifndef FX_LIGHT_LINEAR
+        fade = sqrt(max(fade,0.0));
+#endif
+        float falloff = fxLightFalloff(distance,header.z,header.w,shape.x) * fade;
+        diffuse.rgb += rgb * (ndl * falloff);
+        diffuse.a += dot(rgb,vec3(0.299,0.587,0.114)) * ndl * falloff;
+#ifdef FX_LIGHT_SPECULAR
+        if (spec.y > 0.0)
+        {
+            vec3 halfVector = L + V;
+            vec3 H = halfVector * inversesqrt(max(dot(halfVector,halfVector),1e-12));
+            highlight += rgb * (pow(max(dot(N,H),0.0),spec.x) * spec.y * clamp(ndl*4.0,0.0,1.0) * falloff);
+        }
+#endif
+    }
+}
+#endif
+
 #ifdef FX_LIGHT_POINT
 #ifndef FX_LIGHT_POINT_MAX
 #define FX_LIGHT_POINT_MAX 4
@@ -421,6 +466,41 @@ vec3 fxPointSpecular(vec3 N, vec3 P, vec3 V, vec2 spec)
 #endif
     return sum;
 }
+
+#ifdef FX_FF_PIXEL_LIGHTING
+// One transform and one exact member loop for both diffuse and specular, rather than fetching payload twice.
+void fxPointTerms(vec3 Ng, vec3 N, vec3 P, vec3 V, vec2 spec, out vec3 diffuse, out vec3 highlight)
+{
+    diffuse = vec3_splat(0.0);
+    highlight = vec3_splat(0.0);
+    vec3 Pw = mul(u_fxLampView,vec4(P,1.0)).xyz;
+    vec3 Nw = normalize(mul(u_fxLampView,vec4(N,0.0)).xyz);
+    vec3 Ngw = normalize(mul(u_fxLampView,vec4(Ng,0.0)).xyz);
+    vec3 Vw = normalize(mul(u_fxLampView,vec4(V,0.0)).xyz);
+    for (int i = 0; i < FX_LIGHT_POINT_MAX; ++i)
+    {
+        if (float(i) >= u_fxPointCount.x) break;
+        if (u_fxPoint[4*i+2].y > 0.5)
+        {
+            vec4 sum = vec4_splat(0.0);
+            fxAggregateAdd(u_fxPoint[4*i+2].y,Pw,Ngw,Nw,Vw,spec,u_fxPoint[4*i+3].w,0.0,sum,highlight);
+            diffuse += sum.rgb;
+        }
+        else
+        {
+            // Keep original singleton arithmetic, including the legacy epsilon and cone.
+            vec4 light = fxPointLight(i,P);
+            vec3 rgb = fxLightColor(u_fxPoint[4*i+1].rgb);
+            diffuse += rgb * (max(dot(N,light.xyz),0.0) * light.w);
+#ifdef FX_LIGHT_SPECULAR
+            vec3 H = normalize(light.xyz+V);
+            float ndl = clamp(dot(N,light.xyz)*4.0,0.0,1.0);
+            highlight += rgb * (pow(max(dot(N,H),0.0),spec.x) * spec.y * ndl * light.w);
+#endif
+        }
+    }
+}
+#endif
 #endif // FX_LIGHT_POINT
 
 #ifdef FX_LIGHT_SHADOW

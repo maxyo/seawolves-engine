@@ -1358,7 +1358,10 @@ HRESULT Device::GetMaterial(D3DMATERIAL9 *material)
 
 HRESULT Device::SetLight(DWORD index, const D3DLIGHT9 *light)
 {
-    if (index >= 256)
+    // Clear an existing slot even when this SetLight fails validation.
+    if (index < lights.size())
+        lights[index].aggregate = {};
+    if (index >= 256 || !light)
         return D3DERR_INVALIDCALL;
     if (index >= lights.size())
         lights.resize(index + 1);

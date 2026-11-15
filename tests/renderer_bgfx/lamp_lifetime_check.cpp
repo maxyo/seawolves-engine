@@ -1,6 +1,7 @@
 // CPU lifetime regression: the game releases texture wrappers after reporting geometry, while lamp caches still
 // need their alpha textures. No window/GPU: Noop only supplies buffer handles for reported ship geometry.
 #include "effects/lamp_shadows.hpp"
+#include "effects/lighting.hpp"
 #include "shim/device.hpp"
 #include "shim/shim.hpp"
 #include "storm/fx/cutout.hpp"
@@ -25,6 +26,45 @@ shim::Texture2D *make_cutout_texture()
     store->cutout = std::make_shared<fx::AlphaMask>();
     return new shim::Texture2D(std::move(store));
 }
+void aggregate_transport(shim::Device &device)
+{
+    auto snapshot=std::make_shared<fx::AggregateSnapshot>();
+    snapshot->members.push_back({10,{1,2,3},{2.2f,1.5f,.5f},{2.2f,1.5f,.5f},15,{.5f,0,1.5f}});
+    snapshot->groups.push_back({10,{1,2,3},0,1,15,3.6f,{.5f,0,1.5f},{3.6f,.25f,.4f},false});
+    D3DLIGHT9 light{};light.Type=D3DLIGHT_POINT;
+    expect(device.SetLight(5,&light)==D3D_OK,"raw point accepted before indexed aggregate metadata");
+    render::SetEffectsLightAggregate(5,{snapshot,0});
+    expect(device.lights[5].aggregate.snapshot==snapshot,"successful indexed bridge keeps exact immutable snapshot");
+    device.LightEnable(5,false);
+    expect(device.lights[5].aggregate.snapshot==snapshot,"LightEnable preserves aggregate identity");
+    shim::StateBlock state(&device);
+    auto newer=std::make_shared<fx::AggregateSnapshot>(*snapshot);newer->members[0].color={.1f,.2f,.3f};
+    device.SetLight(5,&light);render::SetEffectsLightAggregate(5,{newer,0});
+    expect(device.lights[5].aggregate.snapshot==newer,"new frame binds new snapshot without mutating old one");
+    state.Apply();
+    expect(device.lights[5].aggregate.snapshot==snapshot && device.lights[5].aggregate.snapshot->members[0].color[0]==2.2f,
+           "stateblock restores old immutable RGB and exact group index after a newer frame");
+    device.SetLight(5,&light);
+    expect(!device.lights[5].aggregate.get(),"plain SetLight clears old aggregate identity");
+    render::SetEffectsLightAggregate(5,{snapshot,0});
+    expect(device.SetLight(5,nullptr)==D3DERR_INVALIDCALL && !device.lights[5].aggregate.get(),
+           "failed null SetLight clears in-range stale metadata before validation");
+    render::SetEffectsLightAggregate(5,{snapshot,0});
+    expect(device.SetLight(256,&light)==D3DERR_INVALIDCALL && device.lights[5].aggregate.snapshot==snapshot,
+           "out-of-range SetLight cannot clear another slot");
+    render::SetEffectsLightAggregate(256,{snapshot,0});
+    expect(device.lights.size()==6,"out-of-range metadata bridge cannot grow device slots");
+    device.SetLight(5,&light);
+    effects::FfDraw draw;
+    draw.lamps=draw.room_light=draw.vertex_ambient_off=true;
+    draw.vertex_diffuse_off=draw.vertex_specular_off=0b101001;
+    draw.points.u_fxPointCount[0]=2;
+    draw.use_unmerged_lights(0b000001);
+    expect(draw.vertex_diffuse_off==1 && draw.vertex_specular_off==1 && !draw.lamps && !draw.room_light &&
+           draw.points.u_fxPointCount[0]==0 && !draw.vertex_ambient_off,
+           "capacity/allocation fallback preserves upgraded sun suppression and restores room-only ambient");
+}
+
 void component_shadows(shim::Device &device)
 {
     effects::LampShadows lamps;
@@ -102,6 +142,7 @@ int main()
     D3DPRESENT_PARAMETERS params{};
     params.BackBufferWidth = params.BackBufferHeight = 64;
     auto *device = new shim::Device(nullptr, params);
+    aggregate_transport(*device);
     component_shadows(*device);
     {
         effects::LampShadows lamps;

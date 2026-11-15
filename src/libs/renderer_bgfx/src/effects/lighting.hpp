@@ -120,18 +120,30 @@ class DrawSphereSource
     mutable bool computed_ = false;
 };
 
+struct AggregateUpload
+{
+    fx::AggregatePayload payload;
+    bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
+    ~AggregateUpload() { if (bgfx::isValid(texture)) bgfx::destroy(texture); }
+};
+
 struct FfDraw
 {
     bool active = false;      // a variant below replaces the legacy program
     uint32_t vs_id = 0, fs_id = 0;
     uint8_t vertex_diffuse_off = 0;  // enabled-light slots (order of apply_ff_uniforms) lit per pixel: no diffuse
     uint8_t vertex_specular_off = 0; // ... and no specular in the vertex sum
+    bool aggregate_fallback = false;
+    bool hemisphere_ambient = false; // ambient suppression that survives a room-light fallback
     bool vertex_ambient_off = false; // the global ambient is the per-pixel hemisphere
     uint64_t state = 0;              // extra bgfx state bits (alpha to coverage)
     // fragment uniforms, set by submit()
     bool lit = false; // FX_FF_LIT / FX_FF_BAKED program: u_fxLight, u_fxPoint, u_fxFf
     fx::LightingUniforms light{};
     fx::PointLightUniforms points{};
+    std::shared_ptr<const AggregateUpload> aggregate;
+    std::array<float, fx::kMaxShadowLamps> aggregate_lamps{};
+    std::array<fx::AggregateRef, fx::kMaxShadowLamps> aggregate_lamp_overrides{};
     std::array<float, 4> ff{};
     std::array<float, 4> coverage{};
     bgfx::TextureHandle normal_map = BGFX_INVALID_HANDLE; // FX_LIGHT_NORMALMAP variant: bound at stage 14
@@ -147,6 +159,18 @@ struct FfDraw
     // u_fxSkinTone (ff_fragment.sh ffSkinLikeness): a character's skin colour for the torso test (fx/skin_tone.hpp
     // PackSkinTone, [1].w the lod the test reads); zero: no test (not a character, no reference).
     std::array<float, 8> skin_tone{};
+    // Preserve sun suppression when only point/compound lighting falls back; the upgraded sun still runs.
+    void use_unmerged_lights(uint8_t directional_mask)
+    {
+        aggregate_fallback = true;
+        lamps = room_light = false;
+        vertex_ambient_off = hemisphere_ambient;
+        vertex_diffuse_off &= directional_mask;
+        vertex_specular_off &= directional_mask;
+        points = {};
+        aggregate.reset();
+        aggregate_lamps = {};
+    }
     bool parallax_variant = false; // the FX_LIGHT_PARALLAX variant: u_fxParallax is set
     // The parallax variant also carries cavity-only draws. Count UV displacement only when it is enabled.
     bool has_parallax() const { return parallax_variant && parallax[2] > 0.0f && parallax[0] > 0.0f && parallax[1] > 0.0f; }
@@ -182,6 +206,8 @@ class Lighting
 {
   public:
     void configure(const fx::Settings &settings, const fx::RendererState &state);
+    bool aggregate_available() const;
+    const std::array<float,3> &world_origin() const { return origin_; }
     // Creates the fixed-function programs the draws of `settings` can pick (lit / baked variants with and without
     // relief and shadow, their skinned twins, coverage, shadow casters), at most `budget` of them (reduced by the
     // number created; each is a shader link on the GPU driver). True once all exist. A settings switch calls it
@@ -283,6 +309,7 @@ class Lighting
         // Textured draws that drew without the parallax, by the reason (ParallaxMiss), so a parallax that never
         // reaches the screen shows in the "effects parallax:" line.
         std::array<uint32_t, kParallaxMisses> parallax_miss{};
+        uint32_t aggregate_uploads = 0, aggregate_bytes = 0, aggregate_members = 0, aggregate_fallbacks = 0;
         uint32_t gloss_yields = 0; // draws whose stage 0 gloss gave unit 7 to a stage 1 parallax
     };
     Counts last_frame() const { return last_frame_; }
@@ -299,6 +326,12 @@ class Lighting
         Character,
     };
 
+    std::vector<std::shared_ptr<AggregateUpload>> aggregate_cache_;
+    bgfx::UniformHandle s_aggregate_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle aggregate_open_ = BGFX_INVALID_HANDLE;
+    bool aggregate_failed_ = false, aggregate_reported_ = false;
+    std::shared_ptr<const AggregateUpload> aggregate_upload(std::span<const fx::AggregateRef> refs);
+    void prepare_aggregates(FfDraw &draw, const fx::LightSelection &selection, uint8_t directional_mask = 0);
     fx::Settings settings_{};
     uint32_t flags_ = 0;
     bool lighting_ = false; // per-pixel sun or point lights

@@ -109,6 +109,8 @@ class LampShadows
     // A point light at `position` is one of the place's lamps, or a moving light, that has a slot this frame: the
     // receivers light it per pixel with its shadow, so it leaves the draw's own light sums.
     bool relit(const fx::Vec3 &position) const;
+    bool relit(const fx::AggregateRef &ref) const;
+    std::array<fx::AggregateRef, fx::kMaxShadowLamps> aggregate_refs() const;
     // This frame's lit models take their ambient from the room light.
     bool room_light() const { return active_ && room_ready_; }
     // A lit draw (a character, a prop, a ship's hull, mast or sail: whatever is not part of the still geometry; its
@@ -118,7 +120,9 @@ class LampShadows
                        float radius, Casters &casters, const CasterMaterial &material);
     // Receiver uniforms and textures for a draw with the camera `view` (row-vector absolute world -> view);
     // `active` false: the open textures and no lamps. `room`: the draw's ambient is the room light.
-    void bind(bool active, const std::array<float, 16> &view, bool room);
+    void bind(bool active, const std::array<float, 16> &view, bool room,
+              const std::array<float, fx::kMaxShadowLamps> &aggregate = {},
+              const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides = {});
     int initial_state() const {
         if (!enabled()) return 0;
         if (!prepared_) return 1;

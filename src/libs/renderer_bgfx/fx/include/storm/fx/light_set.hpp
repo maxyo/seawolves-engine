@@ -6,6 +6,7 @@
 #pragma once
 
 #include "storm/fx/light_falloff.hpp"
+#include "storm/fx/aggregate_light.hpp"
 #include "storm/fx/sky_model.hpp"
 
 #include <array>
@@ -35,6 +36,10 @@ struct PointLight
     // True when the light is already in the baked vertex colours of static location geometry (the lighter
     // tool's output). Such lights must not be added again to geometry drawn with those colours.
     bool baked = false;
+    AggregateRef aggregate;
+    float aggregate_scale = 1.0f; // energy scale, uniform over every member
+    uint8_t device_slot = 0xff; // enabled device slot, 0xff for independent baked-frame lights
+    Vec3 aggregate_origin{}; // absolute world = point-light world + this origin
 };
 
 // The light's shape and its gamma-space falloff at `distance` (LightFalloffGammaAt; fxLightFalloff of fx_lighting.sh).
@@ -44,6 +49,7 @@ float LightAttenuation(const PointLight &light, float distance);
 struct LightSelection
 {
     std::array<PointLight, kMaxPointLights> lights{};
+    std::array<uint32_t, kMaxPointLights> indices{};
     int count = 0;
     int dropped = 0; // lights that reach the object but did not fit into the budget (the weakest ones)
 };
@@ -92,6 +98,15 @@ struct PointLightUniforms
     std::array<float, 4> u_fxPointCount{};
     int dropped = 0; // LightSelection::dropped, for Lighting's statistics
 };
+
+// Production failure policy: retain independent pixel lights and sun masks while compounds return to raw vertices.
+struct PointLightFallback
+{
+    PointLightUniforms points;
+    uint8_t diffuse_off = 0, specular_off = 0;
+};
+PointLightFallback PackUnmergedPointLights(const LightSelection &selection, const std::array<float,16> &view,
+                                          uint8_t old_diffuse, uint8_t old_specular, uint8_t directional_mask);
 
 // `view` is the world -> view matrix (row-vector convention, as D3DTS_VIEW / bx).
 PointLightUniforms PackPointLights(const LightSelection &selection, const std::array<float, 16> &view);

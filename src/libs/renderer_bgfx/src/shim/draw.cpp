@@ -474,10 +474,59 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
         uint32_t light_count = 0;
         if (lighting)
         {
+            // Original/cube/unsupported draw paths retain the raw authored light law. Never pass a summed
+            // center into ff_vertex. Each expanded source remembers its original enabled slot for the masks.
+            struct VertexLight { D3DLIGHT9 light; uint32_t slot; float score; };
+            std::array<VertexLight,kMaxLights> vertex_lights{};
+            size_t vertex_light_count=0;
+            const bool expand_raw = std::any_of(lights.begin(),lights.end(),[&](const auto &entry){
+                return entry.enabled && entry.aggregate.get() && entry.aggregate.get()->count>1;
+            });
+            const auto append_vertex_light = [&](VertexLight item) {
+                const auto &l=item.light;
+                if (expand_raw && l.Type != D3DLIGHT_DIRECTIONAL)
+                {
+                    const float dx=l.Position.x-s.world.m[3][0],dy=l.Position.y-s.world.m[3][1],dz=l.Position.z-s.world.m[3][2];
+                    const float d=std::sqrt(dx*dx+dy*dy+dz*dz);
+                    item.score = d<l.Range ? (item.score>0 ? item.score : std::max({l.Diffuse.r,l.Diffuse.g,l.Diffuse.b})) /
+                        std::max(l.Attenuation0+l.Attenuation1*d+l.Attenuation2*d*d,1e-6f) : 0.0f;
+                }
+                if (vertex_light_count<kMaxLights) vertex_lights[vertex_light_count++]=item;
+                else
+                {
+                    auto weakest=std::min_element(vertex_lights.begin(),vertex_lights.end(),[](const auto &a,const auto &b){return a.score<b.score;});
+                    if (item.score>weakest->score) *weakest=item;
+                }
+            };
+            uint32_t enabled_slot = 0;
+            const auto origin = effects::Host::instance().lighting().world_origin();
             for (const Light &entry : lights)
             {
-                if (!entry.enabled || light_count >= kMaxLights)
+                if (!entry.enabled || enabled_slot >= kMaxLights) continue;
+                const uint32_t source_slot = enabled_slot++;
+                const auto *g = entry.aggregate.get();
+                const bool evaluated = (fx.vertex_diffuse_off & (1u<<source_slot)) &&
+                    (!rs[D3DRS_SPECULARENABLE] || (fx.vertex_specular_off & (1u<<source_slot)));
+                if (!g || g->count == 1 || evaluated)
+                {
+                    append_vertex_light({entry.light,source_slot, entry.light.Type == D3DLIGHT_DIRECTIONAL ? 1e30f : 0.0f});
                     continue;
+                }
+                for (uint32_t i=0;i<g->count;++i)
+                {
+                    const auto &m=entry.aggregate.snapshot->members[g->first+i];
+                    D3DLIGHT9 raw=entry.light;
+                    raw.Position={m.position[0]-origin[0],m.position[1]-origin[1],m.position[2]-origin[2]};
+                    raw.Diffuse={m.color[0],m.color[1],m.color[2],1.0f};
+                    raw.Range=m.authored_range;
+                    raw.Attenuation0=m.attenuation[0];raw.Attenuation1=m.attenuation[1];raw.Attenuation2=m.attenuation[2];
+                    append_vertex_light({raw,source_slot,std::max({m.steady[0],m.steady[1],m.steady[2]})});
+                }
+            }
+            for (size_t vertex_index=0;vertex_index<vertex_light_count;++vertex_index)
+            {
+                const auto &entry=vertex_lights[vertex_index];
+                if (light_count >= kMaxLights) break;
                 const D3DLIGHT9 &l = entry.light;
                 const D3DMATRIX &v = s.view;
                 float *p = light_pos[light_count], *d = light_dir[light_count];
@@ -493,10 +542,10 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
                     d[0] /= length, d[1] /= length, d[2] /= length;
                 d[3] = l.Range;
                 // Effects: terms the fragment shader evaluates per pixel leave the vertex sum.
-                if (!(fx.vertex_diffuse_off & (1u << light_count)))
+                if (!(fx.vertex_diffuse_off & (1u << entry.slot)))
                     memcpy(light_diffuse[light_count], &l.Diffuse, sizeof(float) * 4);
                 memcpy(light_ambient[light_count], &l.Ambient, sizeof(float) * 4);
-                if (!(fx.vertex_specular_off & (1u << light_count)))
+                if (!(fx.vertex_specular_off & (1u << entry.slot)))
                     memcpy(light_specular[light_count], &l.Specular, sizeof(float) * 4);
                 light_att[light_count][0] = l.Attenuation0;
                 light_att[light_count][1] = l.Attenuation1;

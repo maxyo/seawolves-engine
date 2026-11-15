@@ -400,6 +400,37 @@ SurfelLight LampsOnSurfels(const Occluders &occluders, const BounceScene &scene,
             for (size_t i = 0; i < lamps.size(); ++i)
             {
                 const Lamp &lamp = lamps[i];
+                if (const auto *group=lamp.aggregate.get(); group && group->count>1)
+                {
+                    // The bounce consumes the same compound: original member irradiance, one center visibility.
+                    const Vec3 delta=Sub(group->center,scene.position[s]);
+                    const float center_reach=Length(delta);
+                    if (center_reach>=group->support) continue;
+                    if (center_reach>=1e-4f)
+                    {
+                        const Vec3 toward{delta[0]/center_reach,delta[1]/center_reach,delta[2]/center_reach};
+                        const float side=Dot(scene.normal[s],toward)>0.0f ? 1.0f : -1.0f;
+                        const Vec3 origin{scene.position[s][0]+scene.normal[s][0]*side*kSurfaceOffset,
+                                          scene.position[s][1]+scene.normal[s][1]*side*kSurfaceOffset,
+                                          scene.position[s][2]+scene.normal[s][2]*side*kSurfaceOffset};
+                        if (occluders.Occluded(origin,toward,center_reach,scratch,
+                            i<fixture.size()?std::span<const uint32_t>(fixture[i]):std::span<const uint32_t>{})) continue;
+                    }
+                    for (uint32_t m=0;m<group->count;++m)
+                    {
+                        const auto &member=lamp.aggregate.snapshot->members[group->first+m];
+                        const Vec3 l=Sub(member.position,scene.position[s]);
+                        const float reach=Length(l);
+                        if (reach>=group->shape.range || reach<1e-4f) continue;
+                        const Vec3 dir{l[0]/reach,l[1]/reach,l[2]/reach};
+                        const float d=Dot(scene.normal[s],dir);
+                        if (std::fabs(d)<=0.02f) continue; // original singleton bake law
+                        const float e=std::fabs(d)*LightFalloffGammaAt(group->shape,reach);
+                        Rgb &out=light[s*2+(d>0.0f?1:0)];
+                        for (int k=0;k<3;++k) out[k]+=member.color[k]*e;
+                    }
+                    continue;
+                }
                 const Vec3 l = Sub(lamp.position, scene.position[s]);
                 const float reach = Length(l);
                 if (reach >= lamp.range || reach < 1e-4f)

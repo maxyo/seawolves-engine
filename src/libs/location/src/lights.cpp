@@ -193,26 +193,14 @@ void Lights::Realize(uint32_t delta_time)
     rs->GetCamera(pos, ang, ang.x);
 
     RebuildComponents();
-    // Baked and carried sources are separate graph domains. Static lamps only go to relighting/shadows,
-    // never into the unbaked point-light path. Flames/coronas below still use the original sources.
-    std::vector<storm::render::EffectsPointLight> dynamic, lamps;
-    std::vector<storm::render::EffectsLampFlame> flames;
+    // Carried sources remain independent; static components share immutable original-member metadata.
+    std::vector<storm::render::EffectsPointLight> dynamic;
     for (const auto &g : components)
-    {
-        const storm::render::EffectsPointLight light{g.position, g.color, g.range,
-                                                     g.attenuation[0], g.attenuation[1], g.attenuation[2]};
         if (g.moving)
-            dynamic.push_back(light);
-        else
-        {
-            const uint32_t component = static_cast<uint32_t>(lamps.size());
-            lamps.push_back(light);
-            for (const size_t i : g.members)
-                flames.push_back({{lights[i].pos.x, lights[i].pos.y, lights[i].pos.z}, component});
-        }
-    }
+            dynamic.push_back({g.position, g.color, g.range,
+                               g.attenuation[0], g.attenuation[1], g.attenuation[2]});
     storm::render::SetEffectsDynamicLights(dynamic);
-    storm::render::SetEffectsLamps(lamps, flames);
+    storm::render::SetEffectsAggregateLamps(aggregateSnapshot);
 
     ////////////////
     // Draw coronas
@@ -508,6 +496,25 @@ void Lights::RebuildComponents()
                            {t.dxLight.Attenuation0, t.dxLight.Attenuation1, t.dxLight.Attenuation2}, moving[i]});
     }
     components = storm::location::BuildLightComponents(sources);
+    storm::fx::AggregateSnapshot snapshot;
+    for (const auto &g : components)
+    {
+        storm::fx::AggregateGroup group;
+        group.id = g.id;
+        group.center = g.position;
+        group.first = static_cast<uint32_t>(snapshot.members.size());
+        group.count = static_cast<uint32_t>(g.members.size());
+        group.moving = g.moving;
+        group.authored_range = sources[g.members.front()].range;
+        group.attenuation = g.attenuation;
+        for (const size_t i : g.members)
+        {
+            const auto &m = sources[i];
+            snapshot.members.push_back({m.id, m.position, m.color, m.steady, m.range, m.attenuation});
+        }
+        snapshot.groups.push_back(group);
+    }
+    aggregateSnapshot = storm::render::ShapeEffectsAggregates(std::move(snapshot));
     bool topologyChanged = components.size() != reportedComponentMembers.size();
     for (size_t n = 0; !topologyChanged && n < components.size(); ++n)
     {
@@ -562,32 +569,38 @@ void Lights::SetLightsAt(const glm::vec3 &pos)
     UnsetLights();
     uint32_t d3d_light_index = max_d3d_lights - max_d3d_custom_lights;
     RebuildComponents();
-    // Choose components, not individual flames, using steady RGB (never instantaneous flicker).
+    const bool compound = aggregateSnapshot && aggregateSnapshot->valid() &&
+                          storm::render::EffectsAggregateLightsAvailable();
+    // Raw baseline is explicit for capacity/device/Original failures. No summed centroid reaches that path.
     const auto strength = [&](size_t i) {
-        const auto &g = components[i];
-        const float dx = pos.x - g.position[0], dy = pos.y - g.position[1], dz = pos.z - g.position[2];
-        return storm::location::LightStrength(float(storm::location::LightLuminance(g.steady)),
-                                              g.attenuation[0], g.attenuation[1], g.attenuation[2], g.range,
-                                              std::sqrt(dx * dx + dy * dy + dz * dz));
+        if (compound)
+            return storm::fx::AggregateScore({aggregateSnapshot, static_cast<uint32_t>(i)}, {pos.x, pos.y, pos.z}, 0);
+        const auto &l = lights[i];
+        const auto &t = types[l.type];
+        return storm::location::LightStrength(float(storm::location::LightLuminance({t.color.r,t.color.g,t.color.b})),
+            t.dxLight.Attenuation0, t.dxLight.Attenuation1, t.dxLight.Attenuation2, t.dxLight.Range,
+            glm::length(pos - glm::vec3(l.pos.x,l.pos.y,l.pos.z)));
     };
-    for (const uint32_t index : storm::location::ChooseLights(components.size(), strength, max_d3d_custom_lights))
+    for (const uint32_t index : storm::location::ChooseLights(compound ? components.size() : numLights, strength, max_d3d_custom_lights))
     {
-        const auto &g = components[index];
-        D3DLIGHT9 light{};
-        light.Type = D3DLIGHT_POINT;
-        light.Diffuse = {g.color[0], g.color[1], g.color[2], 1.0f};
-        light.Position = {g.position[0], g.position[1], g.position[2]};
-        light.Range = g.range;
-        light.Attenuation0 = g.attenuation[0];
-        light.Attenuation1 = g.attenuation[1];
-        light.Attenuation2 = g.attenuation[2];
-
+        const size_t original = compound ? components[index].members.front() : index;
+        const auto &source = lights[original];
+        D3DLIGHT9 light = types[source.type].dxLight;
+        light.Diffuse = source.color;
+        light.Position = source.pos;
+        if (compound)
+        {
+            const auto &g = aggregateSnapshot->groups[index];
+            light.Position = {g.center[0], g.center[1], g.center[2]};
+            light.Range = g.authored_range;
+        }
         rs->SetLight(d3d_light_index, &light);
+        if (compound)
+            storm::render::SetEffectsLightAggregate(d3d_light_index, {aggregateSnapshot, index});
         rs->LightEnable(d3d_light_index, true);
         lt[d3d_light_index].light = index;
         lt[d3d_light_index].set = true;
-
-        d3d_light_index++;
+        ++d3d_light_index;
     }
 }
 

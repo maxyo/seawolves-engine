@@ -71,15 +71,97 @@ fx::LightSelection select(std::span<const fx::PointLight> lights, const fx::Vec3
     selection = fx::SelectLights(lights, center, radius, budget, true, fade);
     *picked = 0;
     for (int i = 0; i < selection.count; ++i)
-        for (size_t j = 0; j < lights.size(); ++j)
-            if (!(*picked & (1u << j)) && memcmp(&lights[j], &selection.lights[i], sizeof(fx::PointLight)) == 0)
-            {
-                *picked |= static_cast<uint8_t>(1u << j);
-                break;
-            }
+        *picked |= static_cast<uint8_t>(1u << selection.indices[i]);
     return selection;
 }
 } // namespace
+
+bool Lighting::aggregate_available() const
+{
+    const auto *caps = bgfx::getCaps();
+    return lighting_ && (flags_ & fx::kLightingPoint) && !aggregate_failed_ && caps &&
+           (caps->formats[bgfx::TextureFormat::RGBA32F] & BGFX_CAPS_FORMAT_TEXTURE_2D);
+}
+
+std::shared_ptr<const AggregateUpload> Lighting::aggregate_upload(std::span<const fx::AggregateRef> input)
+{
+    if (input.empty()) return {};
+    std::vector<fx::AggregateRef> refs;
+    // The common current-snapshot case uploads the whole immutable scene once, shared by all draws.
+    const auto snapshot = input.front().snapshot;
+    const bool one = std::all_of(input.begin(),input.end(),[&](const auto &r){return r.snapshot==snapshot;});
+    if (one)
+        for (uint32_t i=0; i<snapshot->groups.size(); ++i) refs.push_back({snapshot,i});
+    else
+        for (const auto &r : input)
+            if (std::find(refs.begin(),refs.end(),r)==refs.end()) refs.push_back(r);
+    for (const auto &cached : aggregate_cache_)
+        if (cached->payload.refs == refs) return cached;
+    const char *reason = nullptr;
+    if (!aggregate_available()) reason = "device/mode or prior allocation failure";
+    else if (aggregate_cache_.size() >= fx::kAggregateBundlesPerFrame) reason = "64 bundle variants per frame";
+    auto upload = std::make_shared<AggregateUpload>();
+    if (!reason && !upload->payload.pack(refs)) reason = "256 source/group capacity";
+    if (!reason)
+    {
+        upload->texture = bgfx::createTexture2D(fx::kAggregateTextureSide,fx::kAggregateTextureSide,false,1,
+            bgfx::TextureFormat::RGBA32F, BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP,
+            bgfx::copy(upload->payload.texels.data(),sizeof(upload->payload.texels)));
+        if (!bgfx::isValid(upload->texture)) { aggregate_failed_=true; reason="texture allocation failure"; }
+    }
+    if (reason)
+    {
+        if (!aggregate_reported_) shim::logf("compound lights: %s; original unmerged baseline draw, compound shadows disabled",reason);
+        aggregate_reported_=true;
+        return {};
+    }
+    ++frame_.aggregate_uploads;
+    frame_.aggregate_bytes += sizeof(upload->payload.texels);
+    aggregate_cache_.push_back(upload);
+    return upload;
+}
+
+void Lighting::prepare_aggregates(FfDraw &draw, const fx::LightSelection &selection, uint8_t directional_mask)
+{
+    std::vector<fx::AggregateRef> refs;
+    auto lamps = draw.lamps ? lamps_.aggregate_refs() : std::array<fx::AggregateRef,fx::kMaxShadowLamps>{};
+    for (size_t i=0;i<lamps.size();++i)
+        if (draw.aggregate_lamp_overrides[i].get()) lamps[i]=draw.aggregate_lamp_overrides[i];
+    for (const auto &r : lamps) if (r.get() && r.get()->count>1) refs.push_back(r);
+    for (int i=0; i<selection.count; ++i)
+        if (const auto &r=selection.lights[i].aggregate; r.get() && r.get()->count>1) refs.push_back(r);
+    if (refs.empty()) return; // singleton exact path has no payload reads/uploads
+    uint32_t evaluated_members = 0;
+    for (const auto &r : lamps) if (r.get()) evaluated_members += r.get()->count;
+    for (int i=0;i<selection.count;++i)
+        evaluated_members += selection.lights[i].aggregate.get() ? selection.lights[i].aggregate.get()->count : 1;
+    if (evaluated_members <= fx::kAggregateSources) draw.aggregate=aggregate_upload(refs);
+    else if (!aggregate_reported_)
+    {
+        shim::logf("compound lights: draw exceeds 256 evaluated members including ordinary lights; unmerged baseline fallback");
+        aggregate_reported_=true;
+    }
+    if (!draw.aggregate)
+    {
+        ++frame_.aggregate_fallbacks;
+        const auto fallback=fx::PackUnmergedPointLights(selection,draw.view,draw.vertex_diffuse_off,
+                                                       draw.vertex_specular_off,directional_mask);
+        draw.use_unmerged_lights(directional_mask); // compounds return to original vertex lights
+        draw.points=fallback.points;
+        draw.vertex_diffuse_off=fallback.diffuse_off;
+        draw.vertex_specular_off=fallback.specular_off;
+        return;
+    }
+    frame_.aggregate_members=std::max(frame_.aggregate_members,evaluated_members); // conservative selected-member bound
+    for (size_t i=0;i<lamps.size();++i)
+        if (lamps[i].get() && lamps[i].get()->count>1) draw.aggregate_lamps[i]=draw.aggregate->payload.index(lamps[i]);
+    for (int i=0;i<selection.count;++i)
+        if (const auto &r=selection.lights[i].aggregate; r.get() && r.get()->count>1)
+        {
+            draw.points.u_fxPoint[4*i+2][1]=draw.aggregate->payload.index(r);
+            draw.points.u_fxPoint[4*i+3][3]=selection.lights[i].aggregate_scale;
+        }
+}
 
 void Lighting::configure(const fx::Settings &settings, const fx::RendererState &state)
 {
@@ -380,7 +462,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                      {wet_.sky[0], wet_.sky[1], wet_.sky[2], 0.0f}}};
         ++frame_.wet;
     }
-    if (ao || lamp_on || visibility_ || wet)
+    // Compound fallback also needs absolute view-to-world with lamp shadows disabled.
     {
         memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
         draw.origin = origin_;
@@ -401,6 +483,14 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     uint8_t point_slot[shim::kMaxLights];
     size_t point_count = 0;
     int sun_slot = -1;
+    const auto lamp_refs = lamp_on ? lamps_.aggregate_refs() : std::array<fx::AggregateRef,fx::kMaxShadowLamps>{};
+    // A restored stateblock owns its RGB, not merely a live group ID. Reuse current faces only for unchanged geometry.
+    for (const auto &entry : device.lights)
+        if (entry.enabled && entry.aggregate.get())
+            for (const auto &ref : lamp_refs)
+                if (ref.get() && ref.get()->id==entry.aggregate.get()->id &&
+                    !fx::SameAggregateGeometry(ref,entry.aggregate))
+                    draw.lamps=false;
     uint32_t slot = 0;
     for (const shim::Light &entry : device.lights)
     {
@@ -419,9 +509,15 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                 input.sun_diffuse = rgb(l.Diffuse);
             }
         }
-        else if (lamp_on && l.Type == D3DLIGHT_POINT &&
-                 lamps_.relit({l.Position.x + origin_[0], l.Position.y + origin_[1], l.Position.z + origin_[2]}))
+        else if (draw.lamps && l.Type == D3DLIGHT_POINT &&
+                 (entry.aggregate.get() ? lamps_.relit(entry.aggregate) :
+                  lamps_.relit({l.Position.x + origin_[0], l.Position.y + origin_[1], l.Position.z + origin_[2]})))
         {
+            // A captured older flicker frame overrides this lamp's payload for this draw only.
+            if (entry.aggregate.get())
+                for (size_t i=0;i<lamp_refs.size();++i)
+                    if (lamp_refs[i].get() && lamp_refs[i].get()->id==entry.aggregate.get()->id)
+                        draw.aggregate_lamp_overrides[i]=entry.aggregate;
             // One of the room's lamps: the receiver lights it per pixel from the lamp grid, with its shadow.
             draw.vertex_diffuse_off |= static_cast<uint8_t>(1u << slot);
             draw.vertex_specular_off |= static_cast<uint8_t>(1u << slot);
@@ -429,6 +525,15 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         else
         {
             points[point_count] = point_light(l, settings_.light_falloff);
+            points[point_count].aggregate = entry.aggregate;
+            points[point_count].device_slot = static_cast<uint8_t>(slot);
+            points[point_count].aggregate_origin = origin_;
+            if (const auto *g = entry.aggregate.get())
+            {
+                points[point_count].range = g->support;
+                points[point_count].intensity = g->shape.intensity;
+                points[point_count].core = g->shape.core;
+            }
             point_slot[point_count++] = static_cast<uint8_t>(slot);
         }
         ++slot;
@@ -483,7 +588,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     }
     // Lit models of an interior stand in the room's own light (the baked colours around them, ff_fragment.sh
     // ffRoomLight) instead of the weather's ambient.
-    draw.room_light = lit && lamp_on && lamps_.room_light();
+    draw.hemisphere_ambient = hemisphere && lit;
+    draw.room_light = lit && draw.lamps && lamps_.room_light();
     if ((hemisphere || draw.room_light) && lit)
         draw.vertex_ambient_off = true;
     if (!hemisphere || !lit)
@@ -588,7 +694,9 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                 bounds_reported_ = true;
                 shim::logf("effects: a lit draw without vertex positions: its lights are chosen at the model origin");
             }
-            selection = select(std::span(points, point_count), center, sphere.valid ? sphere.radius : 0.0f, budget_, false,
+            const int exact_budget = std::any_of(points, points+point_count, [](const auto &p){return p.aggregate.get();}) ?
+                                     fx::kMaxPointLights : budget_;
+            selection = select(std::span(points, point_count), center, sphere.valid ? sphere.radius : 0.0f, exact_budget, false,
                                &picked);
             for (size_t i = 0; i < point_count; ++i)
                 if (picked & (1u << i))
@@ -600,6 +708,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
             selection.dropped = 0; // the rest is lit per vertex
         }
         draw.points = fx::PackPointLights(selection, input.view);
+        prepare_aggregates(draw, selection, sun_slot >= 0 ? static_cast<uint8_t>(1u<<sun_slot) : 0);
         // Sun shadows: lit draws into the game picture (the first one of a frame prepares the map with its camera).
         // Surfaces under a location lightmap carry the sun's shadows already (ours: the same sun, TownLight) and the
         // place's still geometry casts from its own tiles: they neither receive nor cast.
@@ -626,6 +735,16 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     else
     {
         draw.points = fx::PackPointLights(baked_lights, input.view);
+        prepare_aggregates(draw, baked_lights);
+        // Both geometry mismatch and upload failure can disable the lamps after the original carried-light filter.
+        // Reselect the complete independent list so a torch formerly represented by its own shadow slot survives.
+        if (lamp_on && !draw.lamps && budget_ > 0 && !dynamic_lights_.empty())
+            if (const DrawSphere &sphere=sphere_source.get(); sphere.valid)
+            {
+                uint8_t ignored=0;
+                const auto raw=select(device_dynamic_lights_,sphere.center,sphere.radius,budget_,true,&ignored);
+                draw.points=fx::PackPointLights(raw,input.view);
+            }
         int shadow = 0;
         if (town_wall)
         {
@@ -845,7 +964,17 @@ void Lighting::submit(const FfDraw &draw)
     bind_ao_volume(draw);
     bind_visibility(draw);
     bind_town_wall(draw);
-    lamps_.bind(draw.lamps, draw.world_view, draw.room_light);
+    lamps_.bind(draw.lamps, draw.world_view, draw.room_light, draw.aggregate_lamps, draw.aggregate_lamp_overrides);
+    if (!bgfx::isValid(s_aggregate_))
+        s_aggregate_ = bgfx::createUniform("s_fxAggregate", bgfx::UniformType::Sampler);
+    if (!bgfx::isValid(aggregate_open_))
+    {
+        const std::array<uint8_t,4> zero{};
+        aggregate_open_ = bgfx::createTexture2D(1,1,false,1,bgfx::TextureFormat::RGBA8,
+            BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP, bgfx::copy(zero.data(),sizeof(zero)));
+    }
+    bgfx::setTexture(6, s_aggregate_, draw.aggregate ? draw.aggregate->texture : aggregate_open_,
+                     BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP);
 }
 
 std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphereSource &draw_source)
@@ -1075,6 +1204,8 @@ bool Lighting::aerial_fog(const D3DMATRIX &view, bool vs_port, std::array<float,
 
 void Lighting::end_frame()
 {
+    caster_.aggregate.reset();
+    aggregate_cache_.clear(); // bgfx destroy is queued after all submissions referencing these immutable textures
     last_frame_ = frame_;
     frame_ = {};
     // Every 30 frames, when it changed: the parallax census of the last frame.
@@ -1113,6 +1244,12 @@ void Lighting::end_frame()
 
 void Lighting::shutdown()
 {
+    caster_.aggregate.reset();
+    aggregate_cache_.clear();
+    if (bgfx::isValid(aggregate_open_)) bgfx::destroy(aggregate_open_);
+    if (bgfx::isValid(s_aggregate_)) bgfx::destroy(s_aggregate_);
+    aggregate_open_ = BGFX_INVALID_HANDLE;
+    s_aggregate_ = BGFX_INVALID_HANDLE;
     probe_.shutdown();
     fx_.Shutdown();
     shadows_.shutdown();
@@ -1136,6 +1273,13 @@ void Lighting::shutdown()
 
 void Lighting::on_device_lost()
 {
+    for (auto &upload : aggregate_cache_) upload->texture = BGFX_INVALID_HANDLE;
+    if (caster_.aggregate) const_cast<AggregateUpload *>(caster_.aggregate.get())->texture = BGFX_INVALID_HANDLE;
+    caster_.aggregate.reset();
+    aggregate_cache_.clear();
+    aggregate_open_ = BGFX_INVALID_HANDLE;
+    s_aggregate_ = BGFX_INVALID_HANDLE;
+    aggregate_failed_ = aggregate_reported_ = false;
     probe_.on_device_lost();
     fx_.OnDeviceLost();
     shadows_.on_device_lost();

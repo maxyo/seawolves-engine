@@ -16,6 +16,7 @@
 #include "flame_flicker.hpp"
 #include "light_components.hpp"
 #include "renderer.h"
+#include "storm/fx/aggregate_light.hpp"
 
 class Lights : public Entity
 {
@@ -169,9 +170,10 @@ class Lights : public Entity
 
     // portable light sources
     std::vector<MovingLight> aMovingLight;
-    uint64_t nextLightIdentity = 0;
+    inline static uint64_t nextLightIdentity = 0; // game thread; unique across location lifetimes/stateblock restores
     bool componentsDirty = true;
     std::vector<storm::location::LightComponent> components;
+    std::shared_ptr<const storm::fx::AggregateSnapshot> aggregateSnapshot;
     std::vector<std::vector<uint64_t>> reportedComponentMembers; // topology only: flicker/motion never spam the log
 
     // The camera of the last Realize: coronas are tested against a camera that stands still less often

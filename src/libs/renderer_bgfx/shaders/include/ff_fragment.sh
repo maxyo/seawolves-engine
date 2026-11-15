@@ -178,7 +178,6 @@ vec3 ffBounce(vec3 P, vec3 Ng, vec3 Nw)
 // u_fxLampGrid[4]: x the first slot of the lights that move, y how many such slots (they are not in the grid),
 //                  z the share of a lamp's own colour in what it adds to baked surfaces (the rest: the bake's tone)
 // u_fxLampGrid[5..7], [8..10]: per such slot, the rows of the turn from the world into the space of its faces
-uniform mat4 u_fxLampView;
 uniform vec4 u_fxLamps[50];
 uniform vec4 u_fxLampGrid[11];
 SAMPLER3D(s_fxRoomLight, 8);
@@ -307,6 +306,23 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, inout 
     float reach = length(L);
     if (reach >= lamp.w)
         return;
+    vec4 aggregateShape = u_fxLamps[base+2];
+    if (aggregateShape.z > 0.5)
+    {
+        vec4 diffuse = vec4_splat(0.0);
+        vec3 highlight = vec3_splat(0.0);
+        fxAggregateAdd(aggregateShape.z,Pw,Ng,N,specV,spec,aggregateShape.w,1.0,diffuse,highlight);
+        // Exactly one visibility, including grazing-center normals. At the center the lookup direction is undefined.
+        float seen = 1.0;
+        if (reach > 1e-4)
+            seen = ffLampVisibility(slot,L,lamp.w,u_fxLamps[base+1].w,Ng,dot(Ng,-L/reach));
+        if (u_fxLampGrid[0].w > 0.5)
+            diffuse.rgb = ffLampDebugColor(slot) * diffuse.a;
+        sum.rgb += diffuse.rgb * seen;
+        sum.a += diffuse.a;
+        lampSpec += highlight * seen;
+        return;
+    }
     vec3 toLamp = -L / max(reach, 1e-4);
     float ngl = dot(Ng, toLamp);
     float ndl = dot(N, toLamp);
@@ -628,6 +644,8 @@ void main()
         ffLampSpecOf.y = 0.0;
 #endif
     // The place's lamps with their shadows (nothing where there are none).
+    vec3 ffPointDiffuse, ffPointSpecular;
+    fxPointTerms(Ng,N,P,V,ffSpec,ffPointDiffuse,ffPointSpecular);
     vec3 ffLampMoved;
     vec3 ffLampSpec;
     vec4 lamps = ffLampLight(Pw, Nw, normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz), ffSpecV, ffLampSpecOf, ffLampMoved, ffLampSpec);
@@ -674,7 +692,7 @@ void main()
     float lampShown = lampSeen <= 0.5 ? lampSeen : 0.5 + (lampSeen - 0.5) / (1.0 + 2.0 * (lampSeen - 0.5));
     vec3 lampLight = lamps.rgb * (lampShown / max(lampSeen, 1e-4)) * cavityDirect;
     vec4 ffDiffuse = vec4(clamp(fxLit(v_color0.rgb * (aoVolume * cavity), v_matDiffuse.rgb,
-                                 fxSunDiffuse(N, V) * sunShadow + (fxPointDiffuse(N, P) + ffLampMoved) * cavityDirect +
+                                 fxSunDiffuse(N, V) * sunShadow + (ffPointDiffuse + ffLampMoved) * cavityDirect +
                                      lampLight,
                                  v_matAmbient.rgb, ambient * (aoVolume * cavity)), 0.0, 1.0), v_color0.a);
 #else
@@ -705,7 +723,7 @@ void main()
 #endif
 #ifdef FX_FF_LIT
     // Highlights and the rim light.
-    current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * sunShadow + fxPointSpecular(N, P, V, ffSpec) +
+    current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * sunShadow + ffPointSpecular +
                                                          ffLampSpec) + fxRim(N, V));
 #ifdef FX_LIGHT_TRANSLUCENT
     // Sails and flags with the sun behind them: its light comes through the canvas (fx_lighting.sh). The visibility
@@ -772,7 +790,7 @@ void main()
         float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(seen.x);
         current.rgb *= clamp(now / max(then, 0.02), 0.33, 3.0);
     }
-    current.rgb = fxLit(current.rgb, tex0.rgb, (fxPointDiffuse(N, P) + ffLampMoved) * cavityDirect, vec3_splat(0.0),
+    current.rgb = fxLit(current.rgb, tex0.rgb, (ffPointDiffuse + ffLampMoved) * cavityDirect, vec3_splat(0.0),
                         vec3_splat(0.0));
 #ifdef FX_LIGHT_SPECULAR
     // Highlights the bake cannot hold: the sun's (outdoors: u_fxLight[1] is black indoors), the lamps' with their
@@ -785,7 +803,7 @@ void main()
         float lampGain = gain;
 #endif
         current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * bakedSun * skySeen.y + ffLampSpec * lampGain +
-                                                             fxPointSpecular(N, P, V, ffSpec)));
+                                                             ffPointSpecular));
     }
 #endif
 #endif

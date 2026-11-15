@@ -180,7 +180,10 @@ void LampShadows::place_lamps(std::vector<fx::Lamp> merged, std::vector<fx::Lamp
         if (raw_lamp_[j] >= 0)
         {
             const size_t i = static_cast<size_t>(raw_lamp_[j]);
-            holder_[i] = std::max(holder_[i], distance(raw_[j].position, lamps_[i].position) + fx::kLampHolderRadius);
+            // Exact compounds retain FindFixtures' per-original-flame triangle exclusions. A sphere enclosing
+            // the entire chandelier would also erase unrelated blockers/characters inside the source bound.
+            holder_[i] = lamps_[i].aggregate.get() && lamps_[i].aggregate.get()->count > 1 ? 0.0f :
+                std::max(holder_[i], distance(raw_[j].position, lamps_[i].position) + fx::kLampHolderRadius);
         }
     if (fixtures_dirty_ && !positions_.empty())
         find_fixtures();
@@ -376,7 +379,8 @@ void LampShadows::choose_slots(const std::array<float, 3> &eye)
     std::vector<std::pair<float, int>> order;
     for (int i = 0; i < count; ++i)
         if (const float d = distance(lamps_[i].position, {eye[0], eye[1], eye[2]}) - lamps_[i].range; d < kLampSight)
-            order.emplace_back(d, i);
+            order.emplace_back(lamps_[i].aggregate.get() ?
+                -fx::AggregateScore(lamps_[i].aggregate, {eye[0],eye[1],eye[2]}, kLampSight) : d, i);
     std::sort(order.begin(), order.end());
     std::vector<int> rank(static_cast<size_t>(count), count + slots);
     for (size_t r = 0; r < order.size(); ++r)
@@ -811,6 +815,29 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
     return true;
 }
 
+std::array<fx::AggregateRef, fx::kMaxShadowLamps> LampShadows::aggregate_refs() const
+{
+    std::array<fx::AggregateRef, fx::kMaxShadowLamps> refs{};
+    if (active_ && !layout_dirty_)
+        for (int i = 0; i < slots_; ++i)
+            if (slot_[i].lamp >= 0 && slot_[i].ready)
+                refs[i] = lamps_[slot_[i].lamp].aggregate;
+    return refs;
+}
+
+bool LampShadows::relit(const fx::AggregateRef &ref) const
+{
+    if (!ref.get() || !active_ || layout_dirty_) return false;
+    for (const auto &s : slot_)
+        if (s.lamp >= 0 && s.ready && !s.leaving)
+        {
+            const auto &other = lamps_[s.lamp].aggregate;
+            // prepare() supplies a per-draw snapshot override before suppressing this identity.
+            if (other.get() && other.get()->id == ref.get()->id) return true;
+        }
+    return false;
+}
+
 bool LampShadows::relit(const fx::Vec3 &position) const
 {
     if (!active_ || layout_dirty_)
@@ -1084,7 +1111,7 @@ void LampShadows::submit_caster(shim::Device &device, const float *world, bool s
             bx::mtxMul(wm.data(), to_faces.data(), m.data());
             // A lamp's own model (a street lantern's, a ship lantern's) and the hand that carries a lantern cast no
             // shadow of it.
-            const float caster[4] = {static_cast<float>(dynamic_face_size_), 1.0f / l.range, std::max(slot.holder, kLanternHolder),
+            const float caster[4] = {static_cast<float>(dynamic_face_size_), 1.0f / l.range, (slot.at.aggregate.get() && slot.at.aggregate.get()->count>1 ? 0.0f : std::max(slot.holder, kLanternHolder)),
                                      fx::kLampFaceGuard};
             scissor_tile(s, face, columns_, dynamic_face_size_);
             bgfx::setUniform(u_caster_, caster);
@@ -1106,7 +1133,9 @@ bool LampShadows::reaches(const std::array<float, 3> &center, float radius) cons
     });
 }
 
-void LampShadows::bind(bool active, const std::array<float, 16> &view, bool room)
+void LampShadows::bind(bool active, const std::array<float, 16> &view, bool room,
+                       const std::array<float, fx::kMaxShadowLamps> &aggregate,
+                       const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides)
 {
     ensure_targets();
     const bool on = active && active_;
@@ -1117,7 +1146,18 @@ void LampShadows::bind(bool active, const std::array<float, 16> &view, bool room
     }
     static const std::array<std::array<float, 4>, 2 + 3 * fx::kMaxShadowLamps> none{};
     bgfx::setUniform(u_view_, view_to_world_.data());
-    bgfx::setUniform(u_lamps_, on ? uniforms_.data() : none.data(), static_cast<uint16_t>(uniforms_.size()));
+    auto lamps = uniforms_;
+    for (int i = 0; i < fx::kMaxShadowLamps; ++i)
+    {
+        lamps[4 + 3*i][2] = aggregate[i];
+        lamps[4 + 3*i][3] = i < slots_ ? slot_[i].weight : 0.0f;
+        if (const auto *g=overrides[i].get(); g && g->count==1 && i<slots_)
+        {
+            const auto &rgb=overrides[i].snapshot->members[g->first].color;
+            for (int k=0;k<3;++k) lamps[3+3*i][k]=rgb[k]*slot_[i].weight;
+        }
+    }
+    bgfx::setUniform(u_lamps_, on ? lamps.data() : none.data(), static_cast<uint16_t>(uniforms_.size()));
     auto grid = grid_uniforms_;
     const bool room_on = on && room && room_ready_;
     grid[2][3] = room_on ? 1.0f + model_lift_ : 0.0f;

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "storm_render_types.h"
+#include "storm/fx/aggregate_light.hpp"
 
 #include <atomic>
 
@@ -376,6 +377,7 @@ struct Light
 {
     D3DLIGHT9 light{};
     bool enabled = false;
+    fx::AggregateRef aggregate;
 };
 
 struct StateBlock final : Object

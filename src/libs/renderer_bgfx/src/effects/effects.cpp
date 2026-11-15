@@ -1013,12 +1013,12 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                          profile_sum_rcas_ / profile_gpu_frames_);
             const Lighting::Counts counts = lighting_.last_frame();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u casters=%u ao_draws=%u lamp_draws=%u lamp_casters=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u casters=%u ao_draws=%u lamp_draws=%u lamp_casters=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.casters, counts.ao, counts.lamp_lit, counts.lamp_casters,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
-                       lighting_.shadows().last_static_casters()[0], lighting_.shadows().last_static_casters()[1], lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], counts.town_walls, counts.wet,
+                       lighting_.shadows().last_static_casters()[0], lighting_.shadows().last_static_casters()[1], lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
@@ -1196,6 +1196,64 @@ fx::Lamp ShapedLamp(const EffectsPointLight &l)
     return {l.position, l.color, shape.range, shape.intensity, shape.core};
 }
 } // namespace
+
+std::shared_ptr<const fx::AggregateSnapshot> ShapeEffectsAggregates(fx::AggregateSnapshot snapshot)
+{
+    static uint64_t generation = 0;
+    snapshot.generation = ++generation;
+    const auto &falloff = effects::Host::instance().settings().light_falloff;
+    for (auto &g : snapshot.groups)
+    {
+        g.shape = fx::ShapeOfGameLight(g.authored_range, g.attenuation[0], g.attenuation[1], g.attenuation[2], falloff);
+        g.support = 0;
+        for (uint32_t i = 0; i < g.count; ++i)
+            g.support = std::max(g.support, fx::AggregateDistance(g.center, snapshot.members[g.first+i].position) + g.shape.range);
+    }
+    return std::make_shared<const fx::AggregateSnapshot>(std::move(snapshot));
+}
+
+bool EffectsAggregateLightsAvailable()
+{
+    return effects::Host::instance().lighting().aggregate_available();
+}
+
+void SetEffectsLightAggregate(uint32_t index, const fx::AggregateRef &ref)
+{
+    if (auto *device = shim::Device::current; device && index < device->lights.size() && index < 256 &&
+        device->lights[index].light.Type == D3DLIGHT_POINT && ref.get() && ref.snapshot->valid())
+        device->lights[index].aggregate = ref;
+}
+
+void SetEffectsAggregateLamps(std::shared_ptr<const fx::AggregateSnapshot> snapshot)
+{
+    std::vector<fx::Lamp> lamps;
+    std::vector<EffectsLampFlame> flames;
+    const bool compound = snapshot && snapshot->valid() && EffectsAggregateLightsAvailable();
+    static bool reported = false;
+    if (snapshot && !compound && !reported)
+    {
+        shim::logf("compound lights: original unmerged baseline fallback (mode/device/capacity); compound shadows disabled");
+        reported = true;
+    }
+    if (snapshot)
+        for (uint32_t n = 0; n < snapshot->groups.size(); ++n)
+        {
+            const auto &g = snapshot->groups[n];
+            if (g.moving) continue;
+            if (compound)
+            {
+                const auto &m = snapshot->members[g.first];
+                fx::Lamp lamp{g.center, m.color, g.support, g.shape.intensity, g.shape.core};
+                lamp.aggregate = {snapshot, n};
+                const uint32_t index = static_cast<uint32_t>(lamps.size());
+                lamps.push_back(lamp);
+                for (uint32_t i = 0; i < g.count; ++i)
+                    flames.push_back({snapshot->members[g.first+i].position, index});
+            }
+        }
+    // Unsupported snapshots deliberately cast no compound shadows. Raw originals remain in D3D lighting.
+    effects::Host::instance().lighting().lamp_shadows().set_lamps(lamps, flames);
+}
 
 void SetEffectsLamps(std::span<const EffectsPointLight> lamps)
 {

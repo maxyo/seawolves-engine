@@ -60,6 +60,7 @@ std::vector<Lamp> ClusterLamps(std::span<const Lamp> lamps, float radius)
 
 LightShape ShapeOf(const Lamp &lamp)
 {
+    if (const auto *g=lamp.aggregate.get()) return g->shape;
     return {lamp.range, lamp.intensity, lamp.core};
 }
 
@@ -260,7 +261,19 @@ LampGrid BuildLampGrid(std::span<const Lamp> lamps, Vec3 lo, Vec3 hi, float cell
                     const float distance = std::sqrt(Dot(d, d));
                     if (distance >= lamps[i].range)
                         continue;
-                    reach.emplace_back(-Luminance(lamps[i].color) * LightFalloffGammaAt(ShapeOf(lamps[i]), distance), i);
+                    float score = Luminance(lamps[i].color) * LightFalloffGammaAt(ShapeOf(lamps[i]), distance);
+                    if (const auto *g = lamps[i].aggregate.get())
+                    {
+                        score = 0;
+                        for (uint32_t j = 0; j < g->count; ++j)
+                        {
+                            const auto &m = lamps[i].aggregate.snapshot->members[g->first+j];
+                            Vec3 at;
+                            for (int k = 0; k < 3; ++k) at[k] = std::clamp(m.position[k], a[k], a[k]+grid.cell[k]);
+                            score += Luminance(m.steady) * LightFalloffGammaAt(g->shape, AggregateDistance(at,m.position));
+                        }
+                    }
+                    if (score > 0) reach.emplace_back(-score, i);
                 }
                 std::sort(reach.begin(), reach.end());
                 grid.max_lamps = std::max(grid.max_lamps, static_cast<int>(reach.size()));

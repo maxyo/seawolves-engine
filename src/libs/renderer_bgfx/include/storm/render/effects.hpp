@@ -7,6 +7,8 @@
 // lowered silently later.
 #pragma once
 
+#include "storm/fx/aggregate_light.hpp"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -178,6 +180,11 @@ void SetEffectsDynamicLights(std::span<const EffectsPointLight> lights);
 // frame's flicker). The ones around the camera relight the location per pixel, each with its shadow
 // (fx_lamp_shadows).
 void SetEffectsLamps(std::span<const EffectsPointLight> lamps);
+// Raw immutable metadata is shaped by the renderer, using the current settings.
+std::shared_ptr<const fx::AggregateSnapshot> ShapeEffectsAggregates(fx::AggregateSnapshot snapshot);
+bool EffectsAggregateLightsAvailable();
+void SetEffectsLightAggregate(uint32_t index, const fx::AggregateRef &ref);
+void SetEffectsAggregateLamps(std::shared_ptr<const fx::AggregateSnapshot> snapshot);
 // Authoritative location components, already grouped before receiver budgets. Keep every original flame
 // with its exact component index for fixture self-shadow exclusions; do not reconstruct it from a centroid radius.
 struct EffectsLampFlame

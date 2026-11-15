@@ -59,7 +59,7 @@ inline std::vector<LightComponent> BuildLightComponents(std::span<const Componen
     const double r2 = double(std::max(radius, 0.0f)) * std::max(radius, 0.0f);
     for (size_t i = 0; i < order.size(); ++i)
         for (size_t j = 0; j < i; ++j)
-            if (sources[order[i]].moving == sources[order[j]].moving &&
+            if (!sources[order[i]].moving && !sources[order[j]].moving &&
                 sources[order[i]].attenuation == sources[order[j]].attenuation &&
                 sources[order[i]].range == sources[order[j]].range &&
                 LightDistanceSquared(sources[order[i]].position, sources[order[j]].position) <= r2)

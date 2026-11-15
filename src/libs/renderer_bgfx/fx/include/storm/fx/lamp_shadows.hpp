@@ -10,6 +10,7 @@
 #pragma once
 
 #include "storm/fx/light_falloff.hpp"
+#include "storm/fx/aggregate_light.hpp"
 #include "storm/fx/sky_model.hpp"
 
 #include <array>
@@ -39,6 +40,7 @@ struct Lamp
     float range = 10.0f;
     float intensity = 1.0f;
     float core = 0.4f;
+    AggregateRef aggregate;
 };
 LightShape ShapeOf(const Lamp &lamp);
 
