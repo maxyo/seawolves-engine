@@ -122,6 +122,24 @@ int main()
             ++failures, std::fputs("FAIL a move-constructed tree's child names the old tree\n", stderr);
     }
 
+    // Deletion is scoped to the receiver, follows moved ownership, and preserves sibling order.
+    {
+        ATTRIBUTES tree(codec), foreign(codec);
+        auto *branch = tree.CreateSubAClass(&tree, "sea.update");
+        auto *first = branch->CreateAttribute("first", "1");
+        auto *middle = branch->CreateAttribute("middle", "2");
+        auto *last = branch->CreateAttribute("last", "3");
+        if (foreign.DeleteAttributeClassX(middle) || branch->DeleteAttributeClassX(&tree)
+            || !tree.DeleteAttributeClassX(middle) || branch->GetAttributesNum() != 2
+            || branch->GetAttributeClass(0) != first || branch->GetAttributeClass(1) != last)
+            ++failures, std::fputs("FAIL scoped deletion or sibling order\n", stderr);
+        ATTRIBUTES moved(std::move(tree));
+        if (!moved.DeleteAttributeClassX(last) || branch->GetAttributesNum() != 1)
+            ++failures, std::fputs("FAIL deletion after ownership move\n", stderr);
+        if (branch->DeleteAttributeClassX(branch) || branch->GetAttributesNum() != 0)
+            ++failures, std::fputs("FAIL self deletion must clear children and retain legacy false result\n", stderr);
+    }
+
     // Only the trees read under ScriptStateReads count from then on.
     ATTRIBUTES weather(codec);
     weather.CreateSubAClass(&weather, "Wind.Angle");

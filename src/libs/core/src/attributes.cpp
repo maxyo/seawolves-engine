@@ -371,24 +371,22 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
     }
     else
     {
-        //            auto removed_it = std::remove_if(pAttributes.begin(), pAttributes.end(), [&](const auto&
-        //            item){
-        //                return item.get() == pA;
-        //            });
-        //            return removed_it != pAttributes.end();
-        for (uint32_t n = 0; n < attributes_.size(); n++)
+        // The target already knows its owner. Validate that it is below this receiver,
+        // then erase there instead of searching every unrelated character attribute.
+        auto *owner = pA->parent_;
+        auto *ancestor = owner;
+        while (ancestor && ancestor != this)
+            ancestor = ancestor->parent_;
+        if (!ancestor)
+            return false;
+        for (auto it = owner->attributes_.begin(); it != owner->attributes_.end(); ++it)
         {
-            if (attributes_[n].get() == pA)
+            if (it->get() == pA)
             {
-                for (auto i = n; i < attributes_.size() - 1; i++)
-                    attributes_[i] = std::move(attributes_[i + 1]);
-
-                attributes_.pop_back();
-                storm::TreeChanged(this);
+                owner->attributes_.erase(it);
+                storm::TreeChanged(owner);
                 return true;
             }
-            if (attributes_[n]->DeleteAttributeClassX(pA))
-                return true;
         }
     }
     return false;
