@@ -1,5 +1,6 @@
 #include "backend.hpp"
 #include "tile_recovery.hpp"
+#include "cpu_tiles.hpp"
 
 #include "relief.hpp"
 #include "storm/fx/gpu_crash_guard.hpp"
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <fstream>
 #include <mutex>
+#include <new>
 #include <thread>
 #include <vector>
 
@@ -102,8 +104,8 @@ bool RunTiles(const float *image, int width, int height, float *planes, int halo
     return true;
 }
 
-// The CPU path's memory by the device's RAM: the inference in tiles (its activations grow with the texels: a whole
-// 560² image held ~400 MB per network) and onnxruntime's arena capped, its memory returned after every run.
+// Bound activations on every device, independently of physical RAM: ORT's arena is shared with the other models
+// and its largest contiguous available block can be much smaller than the device's free RAM.
 struct CpuLimits
 {
     double ram_gb = 0.0;
@@ -117,19 +119,17 @@ const CpuLimits &Limits()
         CpuLimits l;
         const long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGE_SIZE);
         l.ram_gb = pages > 0 && page > 0 ? static_cast<double>(pages) * static_cast<double>(page) / 1073741824.0 : 0.0;
+        l.tile = DefaultCpuTile(l.ram_gb);
         if (l.ram_gb <= 4.5)
         {
-            l.tile = 128;
             l.arena = size_t{384} << 20;
         }
         else if (l.ram_gb <= 8.5)
         {
-            l.tile = 256;
             l.arena = size_t{768} << 20;
         }
         else
         {
-            l.tile = 0;
             l.arena = size_t{1536} << 20;
         }
         return l;
@@ -174,10 +174,38 @@ class CpuNetwork final : public Network
     bool Infer(const float *image, int width, int height, float *planes, std::string &error) override
     {
         cpu_timing_ = {true};
-        if (tile_ == 0 || (width - 2 * halo_ <= tile_ && height - 2 * halo_ <= tile_))
-            return Run(image, width, height, planes, error);
-        return RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error,
+        // Restart only allocation failures, at a strictly smaller shape. No partial result is reported successful;
+        // the existing tiler overwrites every inner output texel, with the same halo/model/scale.
+        for (unsigned attempt = 0;; ++attempt)
+        {
+            if (cancelled_) { error = "cancelled"; return false; }
+            bool allocation_failure = false;
+            try
+            {
+                const bool ok = tile_ == 0 || (width - 2 * halo_ <= tile_ && height - 2 * halo_ <= tile_)
+                    ? Run(image, width, height, planes, error)
+                    : RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error,
                         [&](const float *in, int w, int h, float *out, double &) { return Run(in, w, h, out, error); });
+                if (ok) {
+                    if (cancelled_) { error = "cancelled"; return false; }
+                    return true;
+                }
+                allocation_failure = CpuAllocationFailure(error);
+            }
+            catch (const std::bad_alloc &)
+            {
+                error = "CPU inference tile scratch allocation failed";
+                allocation_failure = true;
+            }
+            if (cancelled_ || !allocation_failure || attempt >= 4) return false;
+            const int next = SmallerCpuTile(tile_, width, height, halo_);
+            if (!next) return false;
+            Log("relief CPU allocation retry: image=%dx%d scale=%d halo=%d old=%d new=%d attempt=%u "
+                "(same model/output; restarting all tiles): %s", width, height, scale_, halo_, tile_, next,
+                attempt + 1, error.c_str());
+            tile_ = next; // keep the learned bound for subsequent images on this network
+            error.clear();
+        }
     }
 
     CpuInferenceTiming CpuTiming() const override { return cpu_timing_; }
