@@ -16,4 +16,8 @@ struct SceneLoadStatus {
 };
 SceneLoadStatus GetSceneLoadStatus();
 void CompleteSceneReveal();
+// Core lifecycle/transaction boundary; no renderer backend dependency.
+// Revocation is generation scoped; resume requires a new valid opaque Present.
+void SuspendSceneCpuBudget(uint64_t generation);
+void EndSceneCpuBudget(uint64_t generation);
 } // namespace storm::render
