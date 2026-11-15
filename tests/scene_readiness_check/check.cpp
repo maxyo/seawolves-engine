@@ -4,6 +4,11 @@
 using storm::effects::SceneReadiness;
 using storm::effects::SceneResources;
 int main() {
+ assert(storm::effects::SceneCooling(true,false,storm::effects::kThermalWaitReason));
+ assert(!storm::effects::SceneCooling(true,true,storm::effects::kThermalWaitReason)); // slow active job
+ assert(!storm::effects::SceneCooling(false,false,storm::effects::kThermalWaitReason)); // unrelated background pause
+ assert(!storm::effects::SceneCooling(true,false,"renderer measurement"));
+ assert(!storm::effects::SceneCooling(true,false,""));
  SceneReadiness r; const auto a=r.begin(0);
  r.frame(a,1,true,{0,1,0,0}); assert(r.hold(1)); // deque empty, inference in flight
  r.frame(a,2,true,{0,1,0,0}); assert(r.hold(2)); // Stored/read/upload still outstanding

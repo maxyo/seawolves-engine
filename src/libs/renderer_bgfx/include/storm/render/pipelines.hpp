@@ -20,7 +20,7 @@ void BeginScenePipelines(const char *scene);
 
 // Game thread, every frame of a fade-in (location/src/fader.cpp): true while the scene begun last still waits for
 // pipelines and current-location resources. Locations never expire into an incomplete reveal;
-// their deadline reports an error while rendering continues behind the closed fader.
+// explicit resource failures report an error while rendering continues behind the closed fader.
 // Other scene types retain the original bounded pipeline wait.
 bool HoldSceneReveal();
 // Location-scoped resources, independently of the Vulkan pipeline gate. Counts include jobs whose queues are empty
@@ -31,6 +31,7 @@ struct SceneLoadStatus {
     std::string state;
     uint32_t textures = 0, relief = 0, shadows = 0, failed = 0;
     std::string detail;
+    std::string phase; // preparing only: "generating" or "cooling"; UI localizes it, never displays detail
 };
 SceneLoadStatus GetSceneLoadStatus();
 void CompleteSceneReveal();
@@ -38,7 +39,7 @@ void CompleteSceneReveal();
 // failures use FailSceneTexture; optional probes and loading/interface pictures are excluded.
 void RequireSceneTexture(shim::BaseTexture *texture);
 void FailSceneTexture(const char *name);
-// Explicit retry keeps the same required assets but starts a new bounded attempt. No automatic timer-based reveal.
+// Explicit retry keeps the same required assets but starts a new generation. No automatic timer-based reveal.
 bool RetrySceneResources(uint64_t generation);
 
 

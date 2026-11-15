@@ -28,9 +28,10 @@ int main() {
     gloss_store.normal_map->relief = fx::ReliefClass::Stone;
     gloss_store.normal_map->state = effects::NormalMapEntry::Waiting;
     gloss_store.normal_map->material_gloss = fx::GlossClass::Stone;
-    assert(gloss_only.prepare_scene(gloss_store,lighting) == 1); // actual gloss-only consumer uses material
+    bool required_inference = false;
+    assert(gloss_only.prepare_scene(gloss_store,lighting,&required_inference) == 1 && required_inference); // actual gloss-only consumer
     gloss_store.normal_map->material_gloss = fx::GlossClass::None;
-    assert(gloss_only.prepare_scene(gloss_store,lighting) == 0); // disabled normal and no gloss: not applicable
+    assert(gloss_only.prepare_scene(gloss_store,lighting,&required_inference) == 0 && !required_inference); // disabled normal not a thermal wait
     puts("gloss-only normal-map material accounting: PASS");
     shim::TexStore store;
     store.normal_map = std::make_shared<effects::NormalMapEntry>();

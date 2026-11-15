@@ -52,6 +52,8 @@ struct LocationLoad {
     bool sealed = true, pipelines_pending = false;
     bool logged_error = false, logged_ready = false, logged_slow = false;
     uint32_t logged_pending = UINT32_MAX;
+    uint64_t phase_polled_at = 0;
+    bool cooling = false;
 };
 LocationLoad &location_load() { static LocationLoad load; return load; }
 uint64_t load_milliseconds() {
@@ -65,6 +67,7 @@ void BeginSceneResources(const char *scene)
     load.sealed = load.scene.rfind("location/", 0) != 0;
     load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
     load.failures = {}; load.pipelines_pending = false;
+    load.phase_polled_at = 0; load.cooling = false;
     if (!load.sealed) {
         load.gate.begin(load_milliseconds());
         upscales().begin_scene();
@@ -97,6 +100,7 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     // Order-independent per-resource stages: two different completions can leave total pending
     // unchanged. Neither render frames nor polling count constitute producer progress.
     uint64_t progress = resources.failed;
+    bool inference_pending = false;
     const auto mix = [](uint64_t x) { x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
         x ^= x >> 27; x *= 0x94d049bb133111ebULL; return x ^ (x >> 31); };
     load.detail.clear();
@@ -123,7 +127,8 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
             if (upscale == 2) ++load.failures.retryable; else ++load.failures.reload_required;
             name("x2 failed: " + store->name);
         }
-        const int relief = host.lighting().prepare_scene_texture(*store);
+        bool relief_inference = false;
+        const int relief = host.lighting().prepare_scene_texture(*store, &relief_inference);
         if (relief == 1) { ++resources.relief; name("normal/gloss: " + store->name); }
         else if (relief >= 2) {
             ++resources.failed;
@@ -137,6 +142,8 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
             if (entry) stage |= uint64_t(1 + entry->state.load(std::memory_order_acquire)) << shift;
         if (store->upscale) stage |= uint64_t(1 + store->upscale->state.load(std::memory_order_acquire)) << 24;
         progress ^= mix(store->serial ^ mix(stage));
+        inference_pending |= (relief == 1 && relief_inference) ||
+            (upscale == 1 && store->upscale && store->upscale->state == UpscaleEntry::Waiting);
     }
     const auto shadow = [&](int state, const char *what) {
         if (state == 1) { ++resources.shadows; name(what); }
@@ -153,6 +160,15 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     progress ^= mix(uint64_t(resources.shadows) | (uint64_t(resources.failed) << 32) |
                     (uint64_t(resources.switching) << 63));
     load.gate.observe_progress(progress, load_milliseconds());
+    const uint64_t now = load_milliseconds();
+    if (!inference_pending) load.cooling = false;
+    else if (!load.phase_polled_at || now - load.phase_polled_at >= 1000) {
+        // Observe the worker's actual pause, not a new thermal query or a renderer heartbeat.
+        // A slow running inference or a non-thermal diagnostic hold is not "waiting to cool".
+        const auto worker = ReliefGenerator::instance().stats();
+        load.cooling = SceneCooling(inference_pending, worker.working, worker.paused);
+        load.phase_polled_at = now;
+    }
     // Do not use the generator's whole-corpus queue or its Complete mark here.
     if (completed) load.gate.frame(load.gate.generation(), frame, scene_frame, resources);
     else load.gate.refresh(resources);
@@ -1220,7 +1236,7 @@ SceneLoadStatus GetSceneLoadStatus()
     const bool error = load.gate.state() == effects::SceneReadiness::State::Error || r.failed > 0;
     return {load.gate.generation(), !load.sealed, error, !load.sealed && error && load.failures.can_retry() && load.failed_textures.empty(),
             load.sealed ? "inactive" : error ? "error" : load.gate.state() == effects::SceneReadiness::State::Ready ? "ready" : "preparing",
-            r.textures, r.relief, r.shadows, r.failed, load.detail};
+            r.textures, r.relief, r.shadows, r.failed, load.detail, load.cooling ? "cooling" : "generating"};
 }
 void RequireSceneTexture(shim::BaseTexture *texture)
 {

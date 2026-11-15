@@ -346,8 +346,9 @@ void NormalMaps::retry_scene(shim::TexStore &store)
     }
 }
 
-int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting)
+int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting, bool *inference_pending)
 {
+    if (inference_pending) *inference_pending = false;
     // No entry was constructed when the required cache was not configured. That omission is
     // not evidence that the enabled method has no work for this location.
     if ((enabled_ || gloss_enabled_) && directory().empty()) return 3;
@@ -358,6 +359,7 @@ int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting)
         if (entry->relief == fx::ReliefClass::HeightMap) return;
         const Relief map = upload(entry, lighting, size);
         const int state = entry->state.load(std::memory_order_acquire);
+        if (inference_pending && state == NormalMapEntry::Waiting) *inference_pending = true;
         if (state == NormalMapEntry::Failed && (bgfx::isValid(entry->handle) || bgfx::isValid(entry->material)))
             reload_required = true; // partial upload: do not overwrite a still-owned handle on retry
         else if (state == NormalMapEntry::Failed || state == NormalMapEntry::Missing) failed = true;

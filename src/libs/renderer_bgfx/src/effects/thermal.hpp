@@ -5,6 +5,8 @@
 
 namespace storm::effects
 {
+inline constexpr const char *kThermalWaitReason =
+    "thermal protection (MODERATE status or forecast headroom; waiting to cool)";
 
 // True from ATHERMAL_STATUS_MODERATE up, the first level where the platform asks to cut load, or when the thermal
 // headroom forecast says it is about to (thermal_api.hpp; AThermal, Android 11+ / API 30, headroom API 31, through

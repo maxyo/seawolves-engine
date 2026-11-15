@@ -310,7 +310,8 @@ inline bool publishLocationReadiness(const char *ack = "", bool cancelled = fals
         ",\"active\":" + ((r.active && !cancelled) ? "true" : "false") + ",\"state\":" + uiJsonText(cancelled ? "cancelled" : r.state) +
         ",\"retryable\":" + ((r.retryable && !cancelled) ? "true" : "false") + ",\"textures\":" + std::to_string(r.textures) + ",\"relief\":" + std::to_string(r.relief) +
         ",\"shadows\":" + std::to_string(r.shadows) + ",\"failed\":" + std::to_string(r.failed) +
-        ",\"detail\":" + uiJsonText(r.detail) + ",\"actionAck\":" + uiJsonText(ack) + "}";
+        ",\"detail\":" + uiJsonText(r.detail) + ",\"phase\":" + uiJsonText(r.phase) +
+        ",\"actionAck\":" + uiJsonText(ack) + "}";
     static std::string previous;
     if (previous == json && !cancelled) return true;
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());

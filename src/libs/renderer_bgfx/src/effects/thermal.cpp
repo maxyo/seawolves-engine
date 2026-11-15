@@ -126,7 +126,7 @@ const char *background_wait_reason()
 {
     if (const char *held = g_hold.load())
         return held;
-    return device_hot() ? "thermal protection (MODERATE status or forecast headroom; waiting to cool)" : nullptr;
+    return device_hot() ? kThermalWaitReason : nullptr;
 }
 
 } // namespace storm::effects

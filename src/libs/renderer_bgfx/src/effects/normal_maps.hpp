@@ -179,7 +179,7 @@ class NormalMaps
     Stats stats();
     // Pump only a current-location texture, including off-first-frame maps. 0 ready/not applicable, 1 pending,
     // 2 retryable producer failure, 3 upload failure requiring scene reload. Stored is not ready.
-    int prepare_scene(shim::TexStore &store, fx::Lighting &lighting);
+    int prepare_scene(shim::TexStore &store, fx::Lighting &lighting, bool *inference_pending = nullptr);
     void retry_scene(shim::TexStore &store);
     // Every few seconds, when the stats changed: one "effects relief:" line.
     void end_frame();

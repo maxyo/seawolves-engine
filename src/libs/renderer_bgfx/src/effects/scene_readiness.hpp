@@ -3,8 +3,12 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include "effects/thermal.hpp"
 namespace storm::shim { struct TexStore; }
 namespace storm::effects {
+inline bool SceneCooling(bool inference_pending, bool worker_running, std::string_view pause) {
+    return inference_pending && !worker_running && pause == kThermalWaitReason;
+}
 struct SceneResources {
     uint32_t textures = 0, relief = 0, shadows = 0, failed = 0;
     bool switching = false;
