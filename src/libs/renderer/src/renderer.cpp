@@ -1097,6 +1097,7 @@ bool Renderer::Init()
 //################################################################################
 Renderer::~Renderer()
 {
+    ReleaseProgressView(); // teardown/cancel must not defer behind an unfinished scene
     storm::render::ShutdownRelief();
     storm::render::ShutdownTextureCache();
     // d3d9->SetRenderTarget(NULL, NULL); //~!~
@@ -3262,6 +3263,19 @@ void Renderer::RunEnd()
     DrawFrameStats();
     if (progressTexture >= 0)
     {
+        // Save restoration erases the script Fader. Keep the same stock artwork over LIVE
+        // world frames until their scoped resources settle; no extra Present/no fake frame.
+        if (storm::render::GetSceneLoadStatus().active)
+        {
+            if (storm::render::HoldSceneReveal())
+            {
+                DrawProgressView(false);
+                return; // neither requested end nor legacy 50-frame cleanup may reveal pending work
+            }
+            storm::render::CompleteSceneReveal();
+            if (progressEndRequested) { ReleaseProgressView(); return; }
+        }
+        if (progressEndRequested) { ReleaseProgressView(); return; } // cancelled/sealed generation
         const int32_t oldCnt = progressSafeCounter;
         ProgressView();
         progressSafeCounter = oldCnt;
@@ -4483,6 +4497,7 @@ char *Renderer::GetTipsImage()
 
 void Renderer::StartProgressView()
 {
+    progressEndRequested = false;
 #ifdef __ANDROID__
     storm::android::publishLoading(true);
 #endif
@@ -4501,8 +4516,12 @@ void Renderer::StartProgressView()
         }
         progressTexture = t;
     }
-    else
-        return;
+    // A new load may start while the previous generation still owns its artwork.
+    // Keep the common spinner, but replace all scene-specific images (including absent tips).
+    if (back0Texture >= 0) TextureRelease(back0Texture);
+    if (backTexture >= 0) TextureRelease(backTexture);
+    if (progressTipsTexture >= 0) TextureRelease(progressTipsTexture);
+    back0Texture = backTexture = progressTipsTexture = -1;
     // Loading an unscaled background image
     if (progressBackImage && progressBackImage[0])
     {
@@ -4546,6 +4565,11 @@ void Renderer::StartProgressView()
 
 void Renderer::ProgressView()
 {
+    DrawProgressView(true);
+}
+
+void Renderer::DrawProgressView(bool present)
+{
     // get the texture
     if (progressTexture < 0)
         return;
@@ -4553,13 +4577,13 @@ void Renderer::ProgressView()
         return;
     // Analyzing time
     const uint32_t time = SDL_GetTicks();
-    if (abs(static_cast<int32_t>(progressUpdateTime - time)) < 50)
+    if (present && abs(static_cast<int32_t>(progressUpdateTime - time)) < 50)
         return;
     progressUpdateTime = time;
     isInPViewProcess = true;
     progressSafeCounter = 0;
-    // Drawing mode
-    BeginScene();
+    // During asynchronous preparation this overlays the existing world frame.
+    if (present) BeginScene();
     // Filling the vertices of the texture
     struct LoadVertex
     {
@@ -4600,8 +4624,10 @@ void Renderer::ProgressView()
             v[i].color = 0;
     if (back0Texture >= 0)
     {
+        storm::render::ArmSceneOpaqueDraw(!present && vp.X == 0 && vp.Y == 0, true, 255);
         DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
                         "ProgressBackTech");
+        storm::render::ArmSceneOpaqueDraw(false, false, 0);
     }
 
     float dy = 0.0f;
@@ -4695,13 +4721,16 @@ void Renderer::ProgressView()
         DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
                         "ProgressTech");
     }
-    EndScene();
+    if (present)
+    {
+        EndScene();
 #ifdef __ANDROID__
-    // A progress/loading present is not the admitted world-map frame.
-    storm::android::worldMapHud.presented(false);
+        // A synchronous progress/loading present is not the admitted world-map frame.
+        storm::android::worldMapHud.presented(false);
 #endif
-    d3d9->Present();
-    BeginScene();
+        d3d9->Present();
+        BeginScene();
+    }
     // Next frame
     loadFrame++;
     if (loadFrame >= sizeX * sizeY)
@@ -4712,6 +4741,18 @@ void Renderer::ProgressView()
 
 void Renderer::EndProgressView()
 {
+    if (progressTexture >= 0 && storm::render::GetSceneLoadStatus().active)
+    {
+        progressEndRequested = true;
+        if (storm::render::HoldSceneReveal()) return;
+        storm::render::CompleteSceneReveal();
+    }
+    ReleaseProgressView();
+}
+
+void Renderer::ReleaseProgressView()
+{
+    progressEndRequested = false;
 #ifdef __ANDROID__
     storm::android::publishLoading(false);
 #endif

@@ -1645,15 +1645,15 @@ HRESULT Device::draw(const DrawCall &call)
     bgfx::setState(bits | (may_wait ? kPipelineMayWait : 0), factor);
     if (stencil)
         bgfx::setStencil(fstencil);
-    // Armed only by Fader; validate the actual destination, viewport, blend and scissor at submit.
+    // Armed only by stock Fader/progress artwork; validate the actual destination, viewport, blend and scissor at submit.
     bool opaqueCoverage = (bits & BGFX_STATE_WRITE_RGB) == BGFX_STATE_WRITE_RGB && view_color == back_color->store.get() && layout->rhw &&
         view_rect[0] == 0 && view_rect[1] == 0 && view_rect[2] == back_color->store->width &&
         view_rect[3] == back_color->store->height &&
-        s.tss[0][D3DTSS_ALPHAOP] == D3DTOP_SELECTARG1 && s.tss[0][D3DTSS_ALPHAARG1] == D3DTA_DIFFUSE &&
-        s.tss[1][D3DTSS_ALPHAOP] == D3DTOP_DISABLE && !s.rs[D3DRS_ALPHATESTENABLE] &&
-        !s.rs[D3DRS_ZENABLE] && !s.rs[D3DRS_STENCILENABLE] &&
-        s.rs[D3DRS_ALPHABLENDENABLE] && s.rs[D3DRS_SRCBLEND] == D3DBLEND_SRCALPHA &&
-        s.rs[D3DRS_DESTBLEND] == D3DBLEND_INVSRCALPHA;
+        (!s.rs[D3DRS_ALPHABLENDENABLE] || (s.tss[0][D3DTSS_ALPHAOP] == D3DTOP_SELECTARG1 && s.tss[0][D3DTSS_ALPHAARG1] == D3DTA_DIFFUSE &&
+        s.tss[1][D3DTSS_ALPHAOP] == D3DTOP_DISABLE &&
+        s.rs[D3DRS_SRCBLEND] == D3DBLEND_SRCALPHA &&
+        s.rs[D3DRS_DESTBLEND] == D3DBLEND_INVSRCALPHA)) &&
+        !s.rs[D3DRS_ALPHATESTENABLE] && !s.rs[D3DRS_ZENABLE] && !s.rs[D3DRS_STENCILENABLE];
     if (s.rs[D3DRS_SCISSORTESTENABLE])
     {
         // In the pixels the game addresses, like the viewport (new_view).
@@ -1685,7 +1685,7 @@ HRESULT Device::draw(const DrawCall &call)
     // Effects: a sun shadow caster keeps its buffers for the depth-only copy into the shadow view (effects/shadows.hpp),
     // and so does a probe draw for its copy.
     bgfx::submit(view_id, handle, 0, fx_draw.caster || bgfx::isValid(probe_query) ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
-    render::SceneOpaqueDrawSubmitted(opaqueCoverage, s.rs[D3DRS_BLENDOP] == D3DBLENDOP_ADD);
+    render::SceneOpaqueDrawSubmitted(opaqueCoverage, !s.rs[D3DRS_ALPHABLENDENABLE] || s.rs[D3DRS_BLENDOP] == D3DBLENDOP_ADD);
     if (bgfx::isValid(probe_query))
     {
         // The probe view runs elsewhere in the frame: every uniform of the program is set again for the copy (the

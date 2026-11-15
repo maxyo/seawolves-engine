@@ -176,7 +176,7 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         if (state == 1) { ++resources.shadows; name(what); }
         if (state == 2) { ++resources.failed; ++load.failures.reload_required; name(std::string(what) + " failed"); }
     };
-    shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(), "sun shadows");
+    shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(!host.lighting().lamp_shadows().interior()), "sun shadows");
     shadow(draw_shadows ? (*draw_shadows)[1] : host.lighting().lamp_shadows().initial_state(), "lamp shadows");
     shadow(host.lighting().town_light().initial_state(), "town initial maps");
     shadow(host.bounce().initial_state(host.visibility().state()), "initial bounce field");
@@ -886,7 +886,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     }
     weather_this_frame_ = false;
     sun_glare_ = sun_ghosts_ = 0.0f;
-    const std::array<int, 2> draw_shadows{lighting_.shadows().initial_state(), lighting_.lamp_shadows().initial_state()};
+    const std::array<int, 2> draw_shadows{lighting_.shadows().initial_state(!lighting_.lamp_shadows().interior()), lighting_.lamp_shadows().initial_state()};
     lighting_.probe().end_frame(scene_frame, lighting_.normal_maps());
     lighting_.end_frame();
     upscales().end_frame();

@@ -60,8 +60,8 @@ class SunShadows
     // Caster: the draw's buffers, textures and bone palette are still bound (submitted with BGFX_DISCARD_NONE);
     // `world` is its world matrix, `material` how it casts (effects/casters.hpp).
     void submit_caster(shim::Device &device, const float *world, bool skinned, Casters &casters, const CasterMaterial &material);
-    int initial_state() const {
-        if (!enabled() || !sun_present_ || fx::SunShadowStrength(sun_dir_[1]) <= 0.0f) return 0;
+    int initial_state(bool applicable = true) const {
+        if (!applicable || !enabled() || !sun_present_ || fx::SunShadowStrength(sun_dir_[1]) <= 0.0f) return 0;
         if (!prepared_) return 1;
         if (!active_) return 2;
         if (caster_indices_.empty()) return 0;
