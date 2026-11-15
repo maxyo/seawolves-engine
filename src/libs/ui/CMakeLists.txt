@@ -196,6 +196,12 @@ elseif(NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(storm_ui_tx PUBLIC storm_ui PRIVATE storm_bgfx_runtime)
     add_executable(storm_ui_shot tools/ui_shot.cpp)
     target_link_libraries(storm_ui_shot PRIVATE storm_ui_bgfx storm_ui_tx plutovg::plutovg ${CMAKE_DL_LIBS})
+    # The pack contract check (tools/pack_check.cpp): a real pack with the real adapters on the
+    # recorded fixtures. The application's host checks run it on its pack (tests/ui_pack_contract);
+    # here it runs when STORM_UI_PACK names a built pack.
+    add_executable(storm_ui_pack_check tools/pack_check.cpp)
+    target_link_libraries(storm_ui_pack_check PRIVATE storm_ui)
+    set(STORM_UI_PACK "" CACHE PATH "A built UI pack (the application's build.py --pack output) for the ui_pack_contract test")
     add_executable(storm_ui_unit tests/unit_check.cpp)
     target_link_libraries(storm_ui_unit PRIVATE storm_ui storm_ui_tx)
     enable_testing()
@@ -249,6 +255,12 @@ elseif(NOT CMAKE_CROSSCOMPILING)
     add_test(NAME ui_whole_frame COMMAND storm_ui_shot --pack "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack" --doc panels.rml --size 640x360 --density 1
              --views 12 --out "${CMAKE_CURRENT_BINARY_DIR}/whole-frame.png"
              --script "wait 0.2; mark; props panels {\"sizes\":[40,50,60,70,80,90]}; whole; wait 0.0166; whole; wait 0.0166; whole; wait 0.3; arrived")
+    if(STORM_UI_PACK)
+        add_test(NAME ui_pack_contract COMMAND storm_ui_pack_check --pack "${STORM_UI_PACK}" --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    endif()
+    add_executable(storm_ui_boundary_unit tests/boundary_check.cpp)
+    target_link_libraries(storm_ui_boundary_unit PRIVATE storm_ui)
+    add_test(NAME ui_boundary COMMAND storm_ui_boundary_unit)
     add_executable(storm_ui_modals_unit tests/modals_check.cpp)
     target_link_libraries(storm_ui_modals_unit PRIVATE storm_ui)
     add_test(NAME ui_modals COMMAND storm_ui_modals_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models" "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack"

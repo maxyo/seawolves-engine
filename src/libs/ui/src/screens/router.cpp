@@ -3,6 +3,7 @@
 #include "../hud/hud.h"
 
 #include <algorithm>
+#include <exception>
 
 namespace storm::ui
 {
@@ -414,7 +415,90 @@ double Bindings::Now() const
 
 // --- Router -----------------------------------------------------------------------------
 
-Router::Router(Surface &surface) : surface_(surface), bindings_(*this), consumers_(CreateStateConsumers())
+namespace
+{
+
+// Runs `call`; what it threw, or nothing.
+template <class Call> std::optional<std::string> Caught(Call &&call)
+{
+    try
+    {
+        call();
+        return std::nullopt;
+    }
+    catch (const std::exception &error)
+    {
+        return std::string(error.what());
+    }
+    catch (...)
+    {
+        return std::string("an exception that is not a std::exception");
+    }
+}
+
+} // namespace
+
+template <class Call> bool Router::Guarded(const std::string &where, Call &&call)
+{
+    const std::optional<std::string> what = Caught(std::forward<Call>(call));
+    if (what)
+        Failed(where, *what);
+    return !what;
+}
+
+bool Router::Consume(const std::string &channel, const char *what, const std::function<void()> &call)
+{
+    const std::optional<std::string> error = Caught(call);
+    if (error)
+        surface_.Error("state channel " + channel + ": its consumer threw in " + what + ": " + *error + "; the state is dropped");
+    return !error;
+}
+
+void Router::Failed(const std::string &where, const std::string &what)
+{
+    const std::string failed = using_.empty() ? model_.screen : using_;
+    // The generic layout, or anything once the ported screen has failed in this opening: no
+    // layout is left to draw the interface.
+    const bool generic = failed == "generic" || !failed_.empty();
+    surface_.Error("screen " + failed + " (interface " + (model_.screen.empty() ? std::string("-") : model_.screen) + " #" +
+                   std::to_string(model_.opening) + " revision " + std::to_string(model_.revision) + ") threw in " + where + ": " + what +
+                   (generic ? "; the interface is closed (the engine's back)" : "; the screen is closed, the generic layout draws the interface"));
+    surface_.Alert(surface_.Text("ui.error.screen"));
+    // Nothing of the failed build stays: its bindings may point into state the throw left half made.
+    bindings_.handlers_.clear();
+    modals_.clear();
+    screen_.reset();
+    using_.clear();
+    waiting_.clear();
+    pending_.clear();
+    edit_token_.clear();
+    edit_handler_ = nullptr;
+    extras_open_ = false;
+    reading_title_.clear();
+    reading_text_.clear();
+    current_ = nullptr;
+    rebuild_ = false;
+    rebuild_at_ = 0.0;
+    settle_until_ = 0.0;
+    if (!generic)
+    {
+        failed_ = failed;
+        Build(); // guarded: the generic layout throwing as well comes back here and closes
+        return;
+    }
+    Action back;
+    back.screen = model_.screen;
+    back.opening = model_.opening;
+    back.verb = "back";
+    failed_.clear();
+    rejection_.clear();
+    model_ = InterfaceModel();
+    surface_.Hide();
+    surface_.Send(back);
+}
+
+Router::Router(Surface &surface, std::span<const ScreenEntry> screens, std::unique_ptr<Screen> (*generic)())
+    : surface_(surface), screens_(screens), generic_(generic), bindings_(*this), consumers_(CreateStateConsumers())
 {
 }
 
@@ -451,6 +535,7 @@ void Router::SetInterface(const InterfaceModel &model)
     {
         opened_at_ = surface_.Now();
         screen_.reset();
+        failed_.clear();
         extras_open_ = false;
         reading_title_.clear();
         reading_text_.clear();
@@ -472,6 +557,7 @@ void Router::CloseInterface()
     screen_.reset();
     using_.clear();
     rejection_.clear();
+    failed_.clear();
     bindings_.handlers_.clear();
     modals_.clear();
     pending_.clear();
@@ -492,7 +578,7 @@ void Router::CloseGameInterface(const std::string &screen)
     }
     CloseInterface();
     for (const auto &consumer : consumers_)
-        consumer->Resume(*this);
+        Consume(consumer->Channel(), "Resume", [&] { consumer->Resume(*this); });
 }
 
 void Router::SetState(const std::string &channel, const Json &state)
@@ -501,7 +587,9 @@ void Router::SetState(const std::string &channel, const Json &state)
     for (const auto &consumer : consumers_)
         if (channel == consumer->Channel())
         {
-            consumer->OnState(state, *this);
+            // A consumer that throws: its state is dropped and reported (a screen it builds has
+            // the screen boundary of Build).
+            Consume(channel, "OnState", [&] { consumer->OnState(state, *this); });
             consumed = true;
         }
     if (!consumed)
@@ -526,6 +614,11 @@ void Router::Alert(const std::string &key, const std::string &subject)
 
 void Router::Build()
 {
+    Guarded("Build", [this] { BuildView(); });
+}
+
+void Router::BuildView()
+{
     notices_shown_ = std::move(notices_building_);
     notices_building_.clear();
     rebuild_ = false;
@@ -536,8 +629,8 @@ void Router::Build()
     // If its REQUIRED nodes are missing or mistyped the interface is still drawn, by the
     // generic layout, and that is reported as an error (never a quiet switch).
     const ScreenEntry *ported = nullptr;
-    for (const ScreenEntry &entry : PortedScreens())
-        if (model_.screen == entry.id)
+    for (const ScreenEntry &entry : screens_)
+        if (model_.screen == entry.id && failed_ != entry.id) // a screen that threw stays closed in this opening
             ported = &entry;
     Admission admitted;
     std::string rejection;
@@ -567,7 +660,7 @@ void Router::Build()
     {
         if (using_ != "generic" || !screen_)
         {
-            screen_ = CreateGenericScreen();
+            screen_ = generic_();
             using_ = "generic";
         }
         admitted = Admit(model_, screen_->Nodes());
@@ -582,7 +675,7 @@ void Router::Build()
         if (logged_.insert("rejected:" + model_.screen + ":" + nodes).second)
             surface_.Error("screen " + model_.screen + ": required nodes missing or mistyped: " + rejection + "; drawn by the generic layout");
     }
-    else if (!ported && logged_.insert("generic:" + model_.screen + ":" + nodes).second)
+    else if (!ported && failed_.empty() && logged_.insert("generic:" + model_.screen + ":" + nodes).second)
         surface_.Log("screen " + model_.screen + ": no ported screen, generic layout; nodes=" + (nodes.empty() ? std::string("none") : nodes.substr(1, nodes.size() - 2)));
     Json view = screen_->Build(admitted, bindings_);
     // The generic layout places every widget itself and hands over only its overflow rows.
@@ -676,7 +769,8 @@ bool Router::OnEvent(const Event &event)
     const Bindings::Handler handler = found->second; // a rebuild replaces the table
     current_ = &event;
     sent_in_event_ = false;
-    handler(event);
+    if (!Guarded("the handler of " + event.id + " " + event.verb, [&] { handler(event); }))
+        return true; // Failed rebuilt or closed the interface
     current_ = nullptr;
     if (sent_in_event_)
     {
@@ -709,7 +803,8 @@ void Router::Back()
     }
     if (screen_->OwnsBack())
     {
-        screen_->Back(bindings_);
+        if (!Guarded("Back", [this] { screen_->Back(bindings_); }))
+            return;
         if (rebuild_ && screen_)
             Build();
         return;
@@ -733,7 +828,8 @@ void Router::SubmitText(const std::string &token, const std::string &text, bool 
         return;
     if (handler)
     {
-        handler(text);
+        if (!Guarded("the text editor's answer", [&] { handler(text); }))
+            return;
         if (rebuild_ && screen_)
             Build();
         return;

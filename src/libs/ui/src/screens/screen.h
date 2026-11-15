@@ -253,7 +253,9 @@ class Surface
 class Router
 {
   public:
-    explicit Router(Surface &surface);
+    // `screens`: the ported screens by interface id, `generic`: the generic layout; unit tests give their own.
+    explicit Router(Surface &surface, std::span<const ScreenEntry> screens = PortedScreens(),
+                    std::unique_ptr<Screen> (*generic)() = CreateGenericScreen);
     ~Router();
 
     void SetInterface(const InterfaceModel &model);
@@ -328,12 +330,27 @@ class Router
         std::optional<Action> lead; // goes out right before `action`
     };
 
+    // The exception boundary of screen code (UI-1): one throw in a screen, a handler or a
+    // state consumer must not end the game session. Runs `call`; a std::exception (or anything
+    // else thrown) is reported by Failed and false returned.
+    template <class Call> bool Guarded(const std::string &where, Call &&call);
+    // A screen threw: an error line naming the screen, the interface, the call and the exception,
+    // the player's danger toast (ui.error.screen), and the ported screen is closed for the rest
+    // of this opening: the generic layout draws the interface. The generic layout throwing too
+    // closes the interface (the engine's back). A logged, explicit fallback, never a quiet one.
+    void Failed(const std::string &where, const std::string &what);
+    // The boundary of state consumer code: a throw is an error line and the state is dropped
+    // (the screen in use stays: a channel's data is not the screen's). False when it threw.
+    bool Consume(const std::string &channel, const char *what, const std::function<void()> &call);
     void Build();
+    void BuildView();
     void Emit(Action action);
     Json ExtrasView(const Admission &admitted, Json rows);
     Action Make(const Widget &widget, const std::string &verb, const std::string &value, const std::string &guard) const;
 
     Surface &surface_;
+    std::span<const ScreenEntry> screens_;
+    std::unique_ptr<Screen> (*generic_)();
     hud::Hud *hud_ = nullptr;
     InterfaceModel model_;
     std::unique_ptr<Screen> screen_;
@@ -348,6 +365,9 @@ class Router
     // it appears, not again at every build while it stays.
     std::set<std::string> notices_shown_, notices_building_;
     std::string rejection_;
+    // The ported screen that threw in this opening (Failed): the generic layout draws the
+    // interface until it is opened again. Empty = none.
+    std::string failed_;
     // Shared «Прочее» sheet and reading sheet.
     bool extras_open_ = false;
     std::string reading_title_, reading_text_;

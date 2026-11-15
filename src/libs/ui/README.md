@@ -21,6 +21,14 @@ ctest --test-dir build/ui-host --output-on-failure       # template language, .t
 build/ui-host/storm_ui_shot --pack <pack dir> --doc gallery/button.rml --out shot.png
 ```
 
+The pack contract check draws a real pack (the application's `mobile-ui/design`, built by its
+`build.py --pack DIR`) with the real screen and HUD adapters on every recorded model and state of
+`tests/` (cases and the screens without one: `tests/pack-contract.json`), without a GL context:
+`build/ui-host/storm_ui_pack_check --pack DIR --fixtures src/libs/ui/tests`. A case fails on any
+error line of the host and any element marked `ui-error`; a ported screen with no case and no
+listed reason fails too. The application runs it in its host checks (`tests/ui_pack_contract`);
+here it is the ctest `ui_pack_contract` when configured with `-DSTORM_UI_PACK=<built pack>`.
+
 The build pulls in `src/libs/renderer_bgfx` for bgfx, its shader build and the pinned sources
 (offline: `-DFETCHCONTENT_SOURCE_DIR_STORM_{BGFX,BX,BIMG,BGFX_CMAKE}=<checkouts>`, bgfx patched). `storm_ui_shot` renders
 off-screen through the UI's bgfx backend on bgfx's GLES 3.0 renderer (Mesa llvmpipe, headless,
@@ -94,8 +102,15 @@ Errors are loud, not defaults: an unknown `<c-…>` tag, an attribute a componen
 have, an enum value outside its options, a template or class expression error and an icon
 missing from the pack are logged with the element (`[ui 1] Component <c-button>
 (c-button#id …): …`) and drawn as the striped `ui-error` marker or a crossed red icon.
-The one documented fallback: with no game root and no picture loader, game pictures are
-"unavailable" (one info line) and keep their neutral placeholder.
+The documented fallbacks: with no game root and no picture loader, game pictures are
+"unavailable" (one info line) and keep their neutral placeholder. Code that throws is the
+exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, a handler, its
+`Back`, a text answer) that throws is an error line naming the screen, the interface, the call and
+the exception, the danger toast `ui.error.screen`, and the ported screen closes for the rest of the
+opening, the generic layout drawing the interface; the generic layout throwing closes the
+interface (the engine's back). A HUD scene or the spyglass overlay that throws is an error line, the
+toast `ui.error.hud`, and it is off for the rest of the session (its modes show the game-menu button
+only). A state consumer that throws drops that state with an error line. The game session goes on.
 
 Over the game the platform asks `Host::WantsTouch` at pointer-down and gives the UI only
 the pointers that land on it; everything else stays the game's. Inside the UI each pointer

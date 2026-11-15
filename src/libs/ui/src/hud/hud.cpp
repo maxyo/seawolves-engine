@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 
 namespace storm::ui::hud
 {
@@ -232,6 +233,51 @@ Hud::Hud(Mount &mount, std::span<const SceneEntry> scenes) : mount_(mount), scen
 {
 }
 
+template <class Call> bool Hud::Guarded(const std::string &component, const char *where, Call &&call)
+{
+    std::string what;
+    try
+    {
+        call();
+        return true;
+    }
+    catch (const std::exception &error)
+    {
+        what = error.what();
+    }
+    catch (...)
+    {
+        what = "an exception that is not a std::exception";
+    }
+    if (disabling_) // a held control of the scene being disabled threw while ending: said, nothing more to turn off
+        mount_.Error("HUD " + component + " threw in " + where + " while it was being turned off: " + what);
+    else
+        Disable(component, where, what);
+    return false;
+}
+
+void Hud::Disable(const std::string &component, const char *where, const std::string &what)
+{
+    const bool scene = entry_ && component == entry_->name;
+    mount_.Error("HUD " + component + " threw in " + where + ": " + what + "; it is off for the rest of the session" +
+                 (scene ? " (its modes show the game-menu button only)" : ""));
+    mount_.Alert(mount_.Text("ui.error.hud"));
+    disabled_.insert(component);
+    if (scene)
+    {
+        // The throw has unwound out of the scene. Held controls end first (their cancel events
+        // reach the scene's bindings, as on a scene change); then the scene goes.
+        disabling_ = true;
+        mount_.HideHud();
+        disabling_ = false;
+        scene_.reset();
+        entry_ = nullptr;
+        input_.handlers_.clear();
+    }
+    failing_ = true;
+    changed_ = true;
+}
+
 Hud::~Hud() = default;
 
 void Hud::Reject(const std::string &channel, const std::string &why)
@@ -340,7 +386,7 @@ bool Hud::OnEvent(const Event &event)
     }
     // The handler may ask for a rebuild, which replaces the handlers: keep this one alive.
     const Input::Handler handler = found->second;
-    handler(event);
+    Guarded(SceneName(), "the handler of event", [&] { handler(event); });
     return true;
 }
 
@@ -452,27 +498,31 @@ bool Hud::InTransition(double now)
 void Hud::Refresh()
 {
     changed_ = false;
+    failing_ = false;
     const SceneEntry *entry = nullptr;
     for (const SceneEntry &candidate : scenes_)
         for (const char *mode : candidate.modes)
-            if (states_.gameplay.mode == mode)
+            if (states_.gameplay.mode == mode && !disabled_.count(candidate.name)) // a scene that threw stays off
                 entry = &candidate;
-    if (!entry && scene_ && states_.gameplay.mode == "unknown" && scene_->Holds(states_))
+    bool holds = false;
+    if (!entry && scene_ && states_.gameplay.mode == "unknown")
+        Guarded(SceneName(), "Holds", [&] { holds = scene_->Holds(states_); });
+    if (holds)
         entry = entry_;
     if (entry != entry_)
     {
         if (scene_)
-        {
-            scene_->Released(states_);
-            // Removing held controls emits their cancel/up/change events. Keep the old scene
-            // and bindings alive until those pointers end; ShowHud below installs another map.
-            mount_.HideHud();
-            scene_->Suspended(states_);
-        }
+            Guarded(SceneName(), "Suspended", [&] {
+                scene_->Released(states_);
+                // Removing held controls emits their cancel/up/change events. Keep the old scene
+                // and bindings alive until those pointers end; ShowHud below installs another map.
+                mount_.HideHud();
+                scene_->Suspended(states_);
+            });
         scene_.reset();
         entry_ = entry;
         if (entry_)
-            scene_ = entry_->create(*this);
+            Guarded(entry_->name, "create", [&] { scene_ = entry_->create(*this); });
     }
 
     const Presentation &shown = states_.presentation;
@@ -483,10 +533,10 @@ void Hud::Refresh()
         transition_activation_ = {};
     }
     if (scene_ && live_ && !live)
-    {
-        scene_->Released(states_);
-        scene_->Suspended(states_);
-    }
+        Guarded(SceneName(), "Suspended", [&] {
+            scene_->Released(states_);
+            scene_->Suspended(states_);
+        });
     live_ = live;
 
     // The raised telescope is drawn over any scene, and also where no scene is ported yet.
@@ -522,8 +572,10 @@ void Hud::Refresh()
     if (!full && visible_ && !menu_only_ && scene_)
     {
         // The scene's HUD gives way to the menu button (a cut-scene starts): as when hidden.
-        scene_->Released(states_);
-        scene_->Hidden(states_);
+        Guarded(SceneName(), "Hidden", [&] {
+            scene_->Released(states_);
+            scene_->Hidden(states_);
+        });
     }
     Present(true, !full); // Build may read LogLines and send input
     if (!full)
@@ -533,14 +585,16 @@ void Hud::Refresh()
         input.On("pause", "click", [this](const Event &) { Send("shortcut", "mainmenu"); });
     }
     else if (scene_)
-        scene_->Build(states_, view, input);
+        Guarded(SceneName(), "Build", [&] { scene_->Build(states_, view, input); });
     else
         view.layout = kSpyglassLayout;
-    if (full && spyglass)
-    {
-        view.overlay = "s-hud-spyglass";
-        view.overlay_props = SpyglassProps(states_.spyglass, *this);
-    }
+    if (full && spyglass && !disabled_.count("spyglass"))
+        Guarded("spyglass", "SpyglassProps", [&] {
+            view.overlay_props = SpyglassProps(states_.spyglass, *this);
+            view.overlay = "s-hud-spyglass";
+        });
+    if (failing_)
+        return; // a component went off: the next Refresh builds the HUD without it (changed_ is set)
     input_ = std::move(input);
     if (!mount_.ShowHud(view))
     {
@@ -556,7 +610,7 @@ void Hud::Conceal()
     if (visible_)
     {
         if (scene_)
-            scene_->Released(states_);
+            Guarded(SceneName(), "Released", [&] { scene_->Released(states_); });
         mount_.HideHud();
     }
     Present(false, false);
@@ -564,7 +618,7 @@ void Hud::Conceal()
     lines_.clear();
     view_ = View();
     if (scene_)
-        scene_->Hidden(states_);
+        Guarded(SceneName(), "Hidden", [&] { scene_->Hidden(states_); });
 }
 
 double Hud::Tick()
@@ -602,7 +656,9 @@ double Hud::Tick()
     {
         if (changed_)
             Refresh();
-        next = scene_ ? scene_->Tick(states_, now) : kIdle;
+        next = kIdle;
+        if (scene_)
+            Guarded(SceneName(), "Tick", [&] { next = scene_->Tick(states_, now); });
         if (!changed_)
             break;
     }
@@ -673,7 +729,7 @@ double Hud::WatchDialogue(double now)
 void Hud::Drawn()
 {
     if (visible_ && !menu_only_ && scene_ && !changed_)
-        scene_->Drawn(states_);
+        Guarded(SceneName(), "Drawn", [&] { scene_->Drawn(states_); });
     // The spyglass overlay is on the screen, or not: said once per raise of the telescope (and
     // again when that changes); the engine keeps the word for the raise (android_spyglass.hpp).
     const Spyglass &spyglass = states_.spyglass;
@@ -695,12 +751,15 @@ void Hud::Drawn()
 void Hud::Released()
 {
     if (scene_)
-        scene_->Released(states_);
+        Guarded(SceneName(), "Released", [&] { scene_->Released(states_); });
 }
 
 bool Hud::Back()
 {
-    return visible_ && !menu_only_ && scene_ && scene_->Back(states_);
+    bool used = false;
+    if (visible_ && !menu_only_ && scene_)
+        Guarded(SceneName(), "Back", [&] { used = scene_->Back(states_); });
+    return used;
 }
 
 // --- layout -----------------------------------------------------------------------------

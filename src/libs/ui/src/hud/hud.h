@@ -572,6 +572,18 @@ class Hud
     };
     void Refresh();
     void Conceal();
+    // The exception boundary of HUD component code (UI-1): a scene's calls and handlers, the
+    // spyglass overlay. Runs `call`; a throw is reported by Disable and false returned.
+    template <class Call> bool Guarded(const std::string &component, const char *where, Call &&call);
+    // A HUD component threw: an error line naming it, the call and the exception, the player's
+    // danger toast (ui.error.hud), and the component is off for the rest of the session (a scene:
+    // its modes show the game-menu button only). A logged, explicit fallback, never a quiet one.
+    void Disable(const std::string &component, const char *where, const std::string &what);
+    // The scene in use, or nothing; "?" when none.
+    std::string SceneName() const
+    {
+        return entry_ ? entry_->name : "?";
+    }
     // The game is changing scenes now (its fader is up, a load), or a scene asked to wait for it.
     bool InTransition(double now);
     double WatchDialogue(double now); // seconds until it must look again
@@ -594,6 +606,9 @@ class Hud
     std::vector<Line> lines_;
     unsigned next_line_key_ = 0;
     std::set<std::string> reported_;
+    std::set<std::string> disabled_; // HUD components that threw (Disable): scene names, "spyglass"
+    bool failing_ = false;
+    bool disabling_ = false;         // Disable is ending the held controls of the scene it turns off           // a Disable happened in the current Refresh: it stops there
     std::string language_; // game language last given to the mount
     bool changed_ = true;
     std::string spyglass_answer_; // the last word said about the spyglass overlay

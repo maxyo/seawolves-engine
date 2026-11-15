@@ -24,9 +24,11 @@ class NoRenderer final : public Rml::RenderInterface
     void ReleaseGeometry(Rml::CompiledGeometryHandle) override
     {
     }
-    Rml::TextureHandle LoadTexture(Rml::Vector2i &, const Rml::String &) override
+    // Every pack image "loads" as a pixel: what is drawn does not matter, only that it exists.
+    Rml::TextureHandle LoadTexture(Rml::Vector2i &dimensions, const Rml::String &) override
     {
-        return 0;
+        dimensions = {1, 1};
+        return 1;
     }
     Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte>, Rml::Vector2i) override
     {
@@ -41,6 +43,35 @@ class NoRenderer final : public Rml::RenderInterface
     void SetScissorRegion(Rml::Rectanglei) override
     {
     }
+    // Layers, filters and shaders as every backend has them (RmlUi's box shadows and the
+    // runtime's filtered-layer cache need a saved layer): handles that are never drawn.
+    Rml::LayerHandle PushLayer() override
+    {
+        return ++layers_;
+    }
+    void PopLayer() override
+    {
+        --layers_;
+    }
+    Rml::TextureHandle SaveLayerAsTexture() override
+    {
+        return 1;
+    }
+    Rml::CompiledFilterHandle SaveLayerAsMaskImage() override
+    {
+        return 1;
+    }
+    Rml::CompiledFilterHandle CompileFilter(const Rml::String &, const Rml::Dictionary &) override
+    {
+        return 1;
+    }
+    Rml::CompiledShaderHandle CompileShader(const Rml::String &, const Rml::Dictionary &) override
+    {
+        return 1;
+    }
+
+  private:
+    Rml::LayerHandle layers_ = 0;
 };
 
 class NoBackend final : public storm::ui::RenderBackend
