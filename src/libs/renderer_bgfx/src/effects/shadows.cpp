@@ -58,12 +58,12 @@ void SunShadows::set_casters(const render::EffectsLocationGeometry &geometry)
         caster_uvs_.assign(geometry.uvs.begin(), geometry.uvs.end());
         for (const auto &surface : geometry.surfaces)
         {
-            const shim::TexStore *store = shim::store_of(surface.texture);
-            if (!store || !store->cutout || location_caster_material(store).cut <= 0.0f ||
+            const shim::TexStorePtr store = shim::shared_store_of(surface.texture);
+            if (!store || !store->cutout || location_caster_material(store.get()).cut <= 0.0f ||
                 surface.first_index + surface.index_count > caster_indices_.size())
                 continue;
             for (uint32_t i = surface.first_index / 3; i < (surface.first_index + surface.index_count) / 3; ++i)
-                caster_texture_[i] = surface.texture;
+                caster_texture_[i] = store;
         }
     }
     else
@@ -130,12 +130,9 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
             bgfx::submit(kShadowView, program);
         }
         // Foliage, nets, gratings: with their texture, so the shadow has their holes (the colour pass's rule).
-        for (const auto &[texture, triangles] : tile.cut)
+        for (const auto &[store, triangles] : tile.cut)
         {
-            shim::TexStore *store = shim::store_of(texture);
-            if (!store)
-                continue;
-            const bgfx::ProgramHandle program_cut = casters.program(device, Casters::Pass::Sun, false, location_caster_material(store));
+            const bgfx::ProgramHandle program_cut = casters.program(device, Casters::Pass::Sun, false, location_caster_material(store.get()));
             if (!bgfx::isValid(program_cut))
                 continue;
             store->sync();
@@ -171,7 +168,7 @@ void SunShadows::build_tiles()
     {
         fx::Vec3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
         std::vector<uint32_t> solid;
-        std::vector<std::pair<shim::BaseTexture *, std::vector<uint32_t>>> cut;
+        std::vector<std::pair<shim::TexStorePtr, std::vector<uint32_t>>> cut;
     };
     std::unordered_map<uint64_t, Cell> cells;
     for (size_t t = 0; t + 2 < caster_indices_.size(); t += 3)
@@ -186,7 +183,7 @@ void SunShadows::build_tiles()
                 cell.lo[d] = std::min(cell.lo[d], (*v)[d]);
                 cell.hi[d] = std::max(cell.hi[d], (*v)[d]);
             }
-        shim::BaseTexture *texture = caster_texture_[t / 3];
+        const shim::TexStorePtr &texture = caster_texture_[t / 3];
         std::vector<uint32_t> *into = &cell.solid;
         if (texture)
         {
@@ -277,6 +274,7 @@ void SunShadows::end_frame()
 void SunShadows::shutdown()
 {
     destroy_tiles();
+    caster_texture_.clear();
     shadows_.Shutdown();
 }
 

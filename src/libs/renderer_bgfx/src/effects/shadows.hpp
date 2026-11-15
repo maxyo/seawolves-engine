@@ -80,7 +80,9 @@ class SunShadows
     std::vector<fx::Vec3> casters_;
     std::vector<std::array<float, 2>> caster_uvs_;
     std::vector<uint32_t> caster_indices_;
-    std::vector<shim::BaseTexture *> caster_texture_; // per triangle: the cut-out texture, null when solid
+    // Per triangle: the cut-out texture, null when solid. Held: the game may release its texture wrapper while the
+    // place's geometry (and these tiles) live (effects.hpp: Surface::texture is alive only during the report).
+    std::vector<shim::TexStorePtr> caster_texture_;
     std::array<float, 3> sun_dir_{0.0f, 1.0f, 0.0f};
     bool sun_present_ = false;
     bool prepared_ = false; // prepare() ran this frame
@@ -90,7 +92,7 @@ class SunShadows
     {
         fx::Vec3 lo{}, hi{};
         bgfx::IndexBufferHandle solid = BGFX_INVALID_HANDLE;
-        std::vector<std::pair<shim::BaseTexture *, bgfx::IndexBufferHandle>> cut; // with their texture's holes
+        std::vector<std::pair<shim::TexStorePtr, bgfx::IndexBufferHandle>> cut; // with their texture's holes
         uint32_t triangles = 0;
     };
     bgfx::VertexBufferHandle tiles_vb_ = BGFX_INVALID_HANDLE; // positions and texture coordinates of every tile

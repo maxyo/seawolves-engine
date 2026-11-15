@@ -2,6 +2,7 @@
 // need their alpha textures. No window/GPU: Noop only supplies buffer handles for reported ship geometry.
 #include "effects/lamp_shadows.hpp"
 #include "effects/lighting.hpp"
+#include "effects/shadows.hpp"
 #include "shim/device.hpp"
 #include "shim/shim.hpp"
 #include "storm/fx/cutout.hpp"
@@ -179,6 +180,27 @@ int main()
         expect(!current.expired(), "replacement storage survives its wrapper");
         lamps.set_geometry({});
         expect(current.expired(), "clearing location geometry releases storage");
+
+        // The sun cascade's cut-out casters hold the same storage: a released wrapper never leaves a dangling pointer.
+        {
+            effects::SunShadows sun;
+            auto *cut = make_cutout_texture();
+            std::weak_ptr<shim::TexStore> sun_store = cut->store;
+            surface.texture = cut;
+            surface.first_index = 0;
+            sun.set_casters(location);
+            cut->Release();
+            expect(!sun_store.expired(), "sun casters keep storage after game releases texture wrapper");
+            sun.set_casters({});
+            expect(sun_store.expired(), "replacing the sun casters releases storage");
+            auto *again = make_cutout_texture();
+            sun_store = again->store;
+            surface.texture = again;
+            sun.set_casters(location);
+            again->Release();
+            sun.shutdown();
+            expect(sun_store.expired(), "sun shadow shutdown releases storage");
+        }
 
         auto *ship_texture = make_cutout_texture();
         std::weak_ptr<shim::TexStore> ship_old = ship_texture->store;
