@@ -17,6 +17,7 @@
 
 #include "storm/fx/bakes.hpp"
 #include "storm/fx/bounce.hpp"
+#include "storm/fx/bounce_field_cache.hpp"
 #include "storm/render/effects.hpp"
 
 #include <array>
@@ -35,9 +36,12 @@ class Bounce
     {
         fx::BounceScene scene;
         std::shared_ptr<const fx::Occluders> occluders; // the drawn geometry, its textures' holes cut
+        fx::bounce_cache::Key lamp_cache_scene{};
+        bool lamp_cache_eligible = false;
     };
 
     void set_enabled(bool enabled);
+    ~Bounce() { shutdown(); }
     // Main thread: the place's drawn still geometry (no triangles: no place).
     void set_geometry(const render::EffectsLocationGeometry &geometry);
     // Main thread, once per frame with what Visibility::update gave (null: no volume yet). `sun`: towards the hour's sun, `sun_color` the weather's,
@@ -82,11 +86,13 @@ class Bounce
         float lamp_share = 0.0f;
         float mean = 0.0f, p99 = 0.0f; // c's luminance over the cells
         double sun_ms = 0.0, lamps_ms = 0.0, write_ms = 0.0;
+        fx::bounce_cache::Publication publication;
     };
     void restart();
     void start_scene(const fx::BounceGrid &grid);
 
     bool enabled_ = false;
+    bool lamp_cache_eligible_ = false; // static location interior only; never the transient sea/ship API
     std::string name_;
     std::vector<fx::Vec3> positions_;
     std::vector<std::array<float, 2>> uvs_;

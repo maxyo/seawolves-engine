@@ -64,6 +64,9 @@ void Bounce::set_enabled(bool enabled)
 void Bounce::set_geometry(const render::EffectsLocationGeometry &geometry)
 {
     name_ = std::string(geometry.name);
+    // The sole producer is Location::ReportGeometry (still, collidable models). Sea/ship and dynamic world
+    // geometry has its own API. Start conservatively with interiors; sun fields are never persisted here.
+    lamp_cache_eligible_ = geometry.interior && !geometry.indices.empty();
     positions_.assign(geometry.positions.begin(), geometry.positions.end());
     uvs_.assign(geometry.uvs.begin(), geometry.uvs.end());
     indices_.assign(geometry.indices.begin(), geometry.indices.end());
@@ -100,6 +103,8 @@ void Bounce::set_geometry(const render::EffectsLocationGeometry &geometry)
 void Bounce::restart()
 {
     scene_job_.reset(); // a worker still running finishes into its own job, which nobody reads
+    if (light_job_)
+        light_job_->publication.cancel(); // no stale job may rename a completed cache entry
     light_job_.reset();
     scene_.reset();
     sun_field_.reset();
@@ -118,7 +123,8 @@ void Bounce::start_scene(const fx::BounceGrid &grid)
     texture::Service &service = texture::Service::instance();
     scene_job_.start("bounce scene of " + name_, job,
                  [job, name = name_, positions = positions_, uvs = uvs_, indices = indices_, triangle_texture = triangle_texture_,
-                  textures = textures_, cut = cut_, grid, directory = service.cache_directory()](fx::BakeStage stage) mutable {
+                  textures = textures_, cut = cut_, grid, cache_eligible = lamp_cache_eligible_,
+                  directory = service.cache_directory()](fx::BakeStage stage) mutable {
         const auto started = std::chrono::steady_clock::now();
         auto scene = std::make_shared<Scene>();
         // Built in the stage that finishes the scene (the load when it is in the cache, else the bake).
@@ -138,6 +144,11 @@ void Bounce::start_scene(const fx::BounceGrid &grid)
         const fx::BounceGeometry geometry{positions, uvs, indices, triangle_texture, images};
         const fx::BounceParams params = ParamsFor(grid);
         const uint64_t key = fx::BounceKey(geometry, grid, params);
+        auto identify_lamp_scene = [&] {
+            scene->lamp_cache_eligible = cache_eligible && !directory.empty();
+            if (scene->lamp_cache_eligible)
+                scene->lamp_cache_scene = fx::bounce_cache::SceneKey(scene->scene, positions, indices, uvs, cut);
+        };
         if (stage == fx::BakeStage::Load)
         {
             if (!directory.empty())
@@ -148,6 +159,7 @@ void Bounce::start_scene(const fx::BounceGrid &grid)
                     {
                         scene->scene = std::move(*decoded);
                         build_occluders();
+                        identify_lamp_scene();
                         char how[96];
                         std::snprintf(how, sizeof(how), "from the cache in %.0f ms", Since(started));
                         job->how = how;
@@ -166,6 +178,7 @@ void Bounce::start_scene(const fx::BounceGrid &grid)
             job->state = 2;
             return true;
         }
+        identify_lamp_scene();
         char how[160];
         std::snprintf(how, sizeof(how), "not in the cache: baked in %.0f ms on %u threads", Since(started), params.threads);
         job->how = how;
@@ -280,11 +293,29 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
     light_job_.start("bounce light of " + name_, job,
                                       [job, scene = scene_, sun_field = new_sun && light.town_sun ? given : sun_field_,
                                        lamp_field = lamp_field_, bake_sun, sun, new_lamps, lamps = std::move(lamps),
-                                       holders = std::move(holders), fixtures = std::move(fixtures), color = light.sun_color] {
+                                       holders = std::move(holders), fixtures = std::move(fixtures), color = light.sun_color,
+                                       directory = texture::Service::instance().cache_directory()] {
         const unsigned threads = Threads();
         const fx::BounceScene &s = scene->scene;
         std::shared_ptr<const fx::BounceField> sun_now = sun_field, lamps_now = lamp_field;
-        const bool combined = bake_sun && new_lamps;
+        const auto cache_key = new_lamps && scene->lamp_cache_eligible
+                                   ? fx::bounce_cache::LampKey(scene->lamp_cache_scene, lamps, holders, fixtures)
+                                   : std::optional<fx::bounce_cache::Key>{};
+        bool lamp_cache_hit = false;
+        if (cache_key)
+        {
+            const auto t = std::chrono::steady_clock::now();
+            if (auto cached = fx::bounce_cache::Read(directory, *cache_key, s))
+            {
+                job->lamps = std::make_shared<const fx::BounceField>(std::move(*cached));
+                lamps_now = job->lamps;
+                lamp_cache_hit = true;
+                job->lamps_ms = Since(t);
+            }
+            fx::Log(fx::LogLevel::Info, "bounce: static lamp field cache %s in %.1f ms (complete content key, v%u)",
+                    lamp_cache_hit ? "hit" : "miss", Since(t), fx::bounce_cache::kVersion);
+        }
+        const bool combined = bake_sun && new_lamps && !lamp_cache_hit;
         if (combined)
         {
             const auto t = std::chrono::steady_clock::now();
@@ -315,13 +346,24 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
         }
         else if (!combined && sun_field != nullptr)
             job->sun = sun_field; // the town light's, taken in
-        if (new_lamps && !combined)
+        if (new_lamps && !combined && !lamp_cache_hit)
         {
             const auto t = std::chrono::steady_clock::now();
             job->lamps = std::make_shared<const fx::BounceField>(
                 fx::GatherBounce(s, fx::LampsOnSurfels(*scene->occluders, s, lamps, holders, fixtures, threads), threads));
             job->lamps_ms = Since(t);
             lamps_now = job->lamps;
+        }
+        if (cache_key && !lamp_cache_hit && job->lamps)
+        {
+            // Also observes BakeTicket cancellation (e.g. shutdown) before cache IO. Scene/quality replacement
+            // revokes publication independently, including while serialization/temp-file writing is in flight.
+            fx::ParallelRanges(1, 1, [](size_t, size_t) {}, 1);
+            const auto t = std::chrono::steady_clock::now();
+            const bool stored = fx::bounce_cache::Write(directory, *cache_key, *job->lamps, job->publication,
+                                                       [] { fx::ParallelRanges(1, 1, [](size_t, size_t) {}, 1); });
+            fx::Log(fx::LogLevel::Info, "bounce: static lamp field cache %s in %.1f ms (bounded v%u namespace)",
+                    stored ? "stored" : "not stored", Since(t), fx::bounce_cache::kVersion);
         }
         const auto t = std::chrono::steady_clock::now();
         const size_t cells = static_cast<size_t>(s.grid.size[0]) * s.grid.size[1] * s.grid.size[2];
