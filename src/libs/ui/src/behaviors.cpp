@@ -180,7 +180,7 @@ class PressBehavior final : public Behavior
         tooltip_pending_ = HoldMode(self) == Hold::Tooltip;
         tooltip_open_ = false;
         if (holding_ || tooltip_pending_)
-            self.Host().RequestTicks(self, true);
+            self.RequestTicks(*this, true);
         return true;
     }
 
@@ -217,7 +217,7 @@ class PressBehavior final : public Behavior
             return true; // still shaking: the same refusal
         self.SetLive("refused", true);
         refused_until_ = self.Host().Now() + RefuseSeconds(self);
-        self.Host().RequestTicks(self, true);
+        self.RequestTicks(*this, true);
         return true;
     }
 
@@ -277,10 +277,13 @@ class PressBehavior final : public Behavior
     {
         // The inner tree is patched in place; a pressed part usually survives. If it was
         // replaced, the press is over.
-        if (part_ && part_ != &self && !part_alive_)
+        if (part_ && part_ != &self && (!part_alive_ || tooltip_pending_ || tooltip_open_))
         {
-            part_ = nullptr;
-            holding_ = false;
+            // A morph may reuse the anchor for another row. Tooltips belong to
+            // the old render even when the element itself survives.
+            if (!part_alive_)
+                part_ = nullptr;
+            Release(self);
         }
         if (part_ == &self && holding_)
             return;
@@ -351,7 +354,7 @@ class PressBehavior final : public Behavior
     void StopTicksWhenIdle(ComponentElement &self)
     {
         if (!part_ && done_until_ == 0.0 && refused_until_ == 0.0)
-            self.Host().RequestTicks(self, false);
+            self.RequestTicks(*this, false);
     }
 
     // Applies the optimistic local change the part asks for, then reports to the game.
@@ -994,7 +997,7 @@ class PanZoomBehavior final : public Behavior
         }
         const bool settled = !port || (Ready(self, port) && --settle_ <= 0);
         if (settled && !fling_[0].Active() && !fling_[1].Active())
-            self.Host().RequestTicks(self, false);
+            self.RequestTicks(*this, false);
     }
 
     void Rebuilt(ComponentElement &self) override
@@ -1010,7 +1013,7 @@ class PanZoomBehavior final : public Behavior
         if (ready_)
             Apply(self);
         settle_ = 3;
-        self.Host().RequestTicks(self, true); // fitted (again) once the viewport has its size
+        self.RequestTicks(*this, true); // fitted (again) once the viewport has its size
     }
 
     void Regions(ComponentElement &self, std::vector<Rml::Element *> &out) const override
@@ -1035,7 +1038,7 @@ class PanZoomBehavior final : public Behavior
                 thrown = true;
             }
         if (thrown)
-            self.Host().RequestTicks(self, true);
+            self.RequestTicks(*this, true);
     }
 
     struct Finger
@@ -1141,94 +1144,57 @@ template <typename T> std::unique_ptr<Behavior> Make()
 
 
 // Columns sized by their content. The cells must be flex columns that do not stretch
-// their children (align-items other than stretch), so each child keeps its natural width.
+// their children (align-items other than stretch), so each child keeps its natural width:
+// what the cells' minimum widths set here does not change what is measured. The layout
+// around the component decides its width (a table fills its place), not the columns.
+// Measured once a layout pass is over (LaidOut): the host lays the document out again in
+// the same frame when a width changed, so a resize, a density change or new rows are drawn
+// aligned from their first frame.
 class ColumnsBehavior final : public Behavior
 {
   public:
-    void Rebuilt(ComponentElement &self) override
+    bool LaidOut(ComponentElement &self) override
     {
-        attempts_ = 4; // layout happens after this call: measure on the following frames
-        self.Host().RequestTicks(self, true);
-    }
-
-    void LayoutChanged(ComponentElement &self) override
-    {
-        const Rml::Vector2f size(self.GetClientWidth(), self.GetClientHeight());
-        const float density = self.Host().Density();
-        if (size == size_ && density == density_)
-            return;
-        size_ = size;
-        density_ = density;
-        // These are our measured pixel overrides, not the stylesheet's dp minima.
-        // Drop them before measuring again so a smaller density can shrink columns.
-        if (Rml::Element *head = self.QuerySelector("[data-columns-head]"))
-            head->RemoveProperty(Rml::PropertyId::Width);
-        Rml::ElementList cells;
-        self.QuerySelectorAll(cells, "[data-col]");
-        for (Rml::Element *cell : cells)
-            cell->RemoveProperty(Rml::PropertyId::MinWidth);
-        attempts_ = 4;
-        wait_for_layout_ = true;
-        self.Host().RequestTicks(self, true);
-    }
-
-    void Tick(ComponentElement &self, double) override
-    {
-        if (attempts_ <= 0)
-            return;
-        // A dp-ratio notification can precede the context update. Let typography
-        // and media queries settle before reading natural child widths.
-        if (wait_for_layout_)
-        {
-            wait_for_layout_ = false;
-            return;
-        }
+        bool changed = false;
         // A vertical scrollbar narrows only the body. Match the header's layout width
         // to that viewport so its columns retain the same horizontal positions.
         Rml::Element *head = self.QuerySelector("[data-columns-head]");
         Rml::Element *body = self.QuerySelector("[data-columns-body]");
         if (head && body && body->GetClientWidth() > 0)
-            head->SetProperty(Rml::PropertyId::Width, Rml::Property(float(body->GetClientWidth()), Rml::Unit::PX));
+            changed = SetPixels(head, Rml::PropertyId::Width, body->GetClientWidth()) || changed;
         Rml::ElementList cells;
         self.QuerySelectorAll(cells, "[data-col]");
         std::unordered_map<int, float> widest;
         // Icon-only captions must not shrink the interactive columns below the design's
         // minimum. Apply it to the entire column so headers and numeric cells stay aligned.
         const float minimum = self.Spec().constants.value("colMin", 0.0f) * self.Host().Density();
-        bool laid_out = !cells.empty();
         for (Rml::Element *cell : cells)
         {
             float natural = 0.0f;
             for (int i = 0; i < cell->GetNumChildren(); ++i)
                 natural = std::max(natural, cell->GetChild(i)->GetBox().GetSize(Rml::BoxArea::Border).x);
+            // Not laid out (hidden): measured at the layout that shows it.
             if (cell->GetNumChildren() > 0 && natural <= 0.0f)
-                laid_out = false;
+                return changed;
             float &width = widest[cell->GetAttribute<int>("data-col", 0)];
             width = std::max({width, natural, minimum});
         }
-        if (laid_out)
-        {
-            for (Rml::Element *cell : cells)
-            {
-                const float width = std::ceil(widest[cell->GetAttribute<int>("data-col", 0)]);
-                const Rml::Property *current = cell->GetLocalProperty(Rml::PropertyId::MinWidth);
-                if (!current || std::fabs(current->Get<float>() - width) > 0.5f)
-                    cell->SetProperty(Rml::PropertyId::MinWidth, Rml::Property(width, Rml::Unit::PX));
-            }
-            attempts_ = 0;
-        }
-        else
-            --attempts_;
-        // Press shares these ticks for a header tooltip; its release will stop them.
-        if (attempts_ <= 0 && !self.QuerySelector("[data-action].pressed"))
-            self.Host().RequestTicks(self, false);
+        for (Rml::Element *cell : cells)
+            changed = SetPixels(cell, Rml::PropertyId::MinWidth, std::ceil(widest[cell->GetAttribute<int>("data-col", 0)])) ||
+                      changed;
+        return changed;
     }
 
   private:
-    int attempts_ = 0;
-    Rml::Vector2f size_ = {-1.0f, -1.0f};
-    float density_ = -1.0f;
-    bool wait_for_layout_ = false;
+    // Our measured pixel value, replaced (also by a smaller one) when it differs by half a pixel.
+    static bool SetPixels(Rml::Element *element, Rml::PropertyId id, float pixels)
+    {
+        const Rml::Property *current = element->GetLocalProperty(id);
+        if (current && current->unit == Rml::Unit::PX && std::fabs(current->Get<float>() - pixels) <= 0.5f)
+            return false;
+        element->SetProperty(id, Rml::Property(pixels, Rml::Unit::PX));
+        return true;
+    }
 };
 
 // A part that opens is brought into view: a key of data-reveal that was not in the previous
@@ -1254,13 +1220,12 @@ class RevealBehavior final : public Behavior
         for (auto it = pending_.begin(); it != pending_.end();)
             it = keys.count(*it) ? std::next(it) : pending_.erase(it);
         shown_ = std::move(keys);
-        if (!pending_.empty())
-            self.Host().RequestTicks(self, true);
+        self.RequestTicks(*this, !pending_.empty());
     }
 
     void Tick(ComponentElement &self, double) override
     {
-        if (pending_.empty()) // another behavior may be ticking for a held header
+        if (pending_.empty())
             return;
         std::vector<Rml::Element *> parts;
         AllWith(&self, "data-reveal", parts);
@@ -1268,8 +1233,7 @@ class RevealBehavior final : public Behavior
             if (pending_.erase(Attr(part, "data-reveal")))
                 Reveal(part);
         pending_.clear();
-        if (!self.QuerySelector("[data-action].pressed"))
-            self.Host().RequestTicks(self, false);
+        self.RequestTicks(*this, false);
     }
 
   private:

@@ -19,6 +19,7 @@
 #include <RmlUi/Core/TransformPrimitive.h>
 
 #include <nlohmann/json.hpp>
+#include "../src/components.h"
 
 #include <cmath>
 #include <cstdio>
@@ -30,6 +31,22 @@ using Json = nlohmann::json;
 namespace fs = std::filesystem;
 
 static int failures = 0;
+static int probe_ticks = 0;
+static bool probe_active = true;
+
+// A second independent owner must keep running after press/reveal/columns finish.
+class TickProbe final : public Behavior
+{
+    void Rebuilt(ComponentElement &self) override { self.RequestTicks(*this, probe_active); }
+    void Tick(ComponentElement &self, double) override
+    {
+        ++probe_ticks;
+        if (!probe_active)
+            self.RequestTicks(*this, false);
+    }
+};
+static std::unique_ptr<Behavior> MakeTickProbe() { return std::make_unique<TickProbe>(); }
+
 
 static void Expect(bool ok, const std::string &what)
 {
@@ -84,10 +101,11 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
     // Icon-only table headers: tap sorts, long press explains without sorting.
     components["components"].push_back(Json::parse(R"({
         "tag": "c-head", "behaviors": ["press", "columns", "reveal"], "constants": {"pressRoot": false},
-        "template": "<div data-action=\"sort\" data-value=\"2\" data-tip=\"Buy price\" style=\"width: 60dp; height: 40dp;\">icon</div><div data-action=\"\" data-tip=\"Our stock\" style=\"width: 60dp; height: 40dp;\">icon</div>"})"));
+        "props": {"show": {"type": "bool", "default": true}},
+        "template": "<div t-if=\"show\" data-action=\"sort\" data-value=\"2\" data-tip=\"Buy price\" style=\"width: 60dp; height: 40dp;\">icon</div><div data-action=\"\" data-tip=\"Our stock\" style=\"width: 60dp; height: 40dp;\">icon</div>"})"));
     // Column sizing must preserve the design minimum even when the headers are tiny icons.
     components["components"].push_back(Json::parse(R"({
-        "tag": "c-cols", "behaviors": ["columns"], "constants": {"colMin": 56},
+        "tag": "c-cols", "behaviors": ["press", "columns", "reveal", "tick-probe"], "constants": {"colMin": 56},
         "template": "<div data-columns-head=\"\" style=\"display: flex;\"><div style=\"flex: 1 1 0;\"></div><div id=\"h0\" data-col=\"0\" style=\"min-width: 56dp; min-height: 44dp; display: flex; align-items: flex-start;\"><span>x</span></div><div id=\"h1\" data-col=\"1\" style=\"min-width: 56dp; min-height: 44dp; display: flex; align-items: flex-start;\"><span>x</span></div></div><div data-columns-body=\"\" style=\"height: 30dp; overflow-y: auto;\"><div style=\"display: flex;\"><div style=\"flex: 1 1 0;\"></div><div id=\"v0\" data-col=\"0\" style=\"min-width: 56dp; display: flex; align-items: flex-start;\"><span>1</span></div><div id=\"v1\" data-col=\"1\" style=\"min-width: 56dp; display: flex; align-items: flex-start;\"><span>2</span></div></div><div style=\"height: 100dp;\"></div></div>"})"));
     Write(pack / "components.json", components.dump());
     Write(pack / "overlay.rml", "<rml><head><style>body { font-family: LatoLatin; width: 100%; height: 100%; pointer-events: none; z-index: 1000; } #tooltip { display: none; } #tooltip.open { display: block; position: absolute; }"
@@ -106,6 +124,11 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
                              "<c-fit id=\"cut\" style=\"top: 300dp;\" hold=\"1\" title=\"Mannschaft\"/>"
                              "<c-pz id=\"pz\" style=\"display: block; position: absolute; left: 400dp; top: 200dp; width: 400dp; height: 200dp;\"/>"
                              "</body></rml>");
+    Write(pack / "columns-only.rml", "<rml><head><style>body { font-family: LatoLatin; width: 100%; height: 100%; }</style></head>"
+          "<body><div style=\"display: flex; width: 100%;\"><c-cols id=\"columns\" style=\"display: block; flex: 1 1 0; min-width: 0; height: 100dp;\"/>"
+          "<div id=\"sibling\" style=\"width: 80px; height: 100dp; flex: 0 0 80px;\"/></div></body></rml>");
+    Write(pack / "columns-auto.rml", "<rml><head><style>body { font-family: LatoLatin; width: 100%; height: 100%; }</style></head>"
+          "<body><c-cols id=\"columns\" style=\"display: block; width: 60%;\"/><div id=\"following\" style=\"height: 32px;\"/></body></rml>");
     // A store-like component: a list of 20 rows, the deal's amount, its total and the buy button.
     components["components"].push_back(Json::parse(R"({
         "tag": "c-store",
@@ -233,6 +256,7 @@ int main(int argc, char **argv)
         std::fprintf(stderr, "usage: storm_ui_press_unit <tests/pack> <font.ttf>\n");
         return 2;
     }
+    RegisterBehavior("tick-probe", &MakeTickProbe);
     const fs::path pack = MakePack(argv[1], argv[2]);
     std::unique_ptr<FileSource> files = DirectoryFiles(pack.string());
     NoBackend backend;
@@ -269,6 +293,16 @@ int main(int argc, char **argv)
         }
     };
     frames(0.2);
+    const int before_release = probe_ticks;
+    host->Touch(TouchPhase::Down, 1, 230, 110);
+    host->Touch(TouchPhase::Up, 1, 230, 110);
+    frames(0.1);
+    Expect(probe_ticks >= before_release + 5, "press release and column completion cannot stop another tick owner");
+    probe_active = false;
+    frames(0.05);
+    const int stopped = probe_ticks;
+    frames(0.05);
+    Expect(probe_ticks == stopped, "the last tick owner stops independently");
     const auto hold = [&](float y, float x = 100) {
         clicks.clear();
         host->Touch(TouchPhase::Down, 1, x, y);
@@ -292,6 +326,8 @@ int main(int argc, char **argv)
                    "icon columns retain 56dp minimum and aligned numeric cells");
         }
     }
+    Expect(host->LoadDocument("columns-only.rml"), "isolated columns document loads without unrelated text clamps");
+    frames(0.2);
     // Resize the same mounted component: pixel measurements must not survive a
     // viewport/density change, and shrinking must release the old larger minima.
     {
@@ -307,8 +343,14 @@ int main(int argc, char **argv)
             Rml::Element *original_head = table->QuerySelector("#h0");
             const auto check = [&](int width, int height, float density) {
                 host->Resize(width, height, density);
-                frames(0.2);
+                host->Frame();
                 Expect(table->QuerySelector("#h0") == original_head, "resize preserves column element identity");
+                Rml::Element *sibling = table->GetParentNode()->QuerySelector("#sibling");
+                Expect(sibling && std::abs(sibling->GetClientWidth() - 80.f) < 0.01f &&
+                           std::abs(table->GetClientWidth() + 80.f - table->GetParentNode()->GetClientWidth()) < 0.01f &&
+                           std::abs(sibling->GetAbsoluteLeft() - table->GetAbsoluteLeft() -
+                                    table->GetBox().GetSize(Rml::BoxArea::Border).x) < 0.01f,
+                       "column relayout preserves flex allocation and the sibling box");
                 Rml::Element *head = table->QuerySelector("[data-columns-head]");
                 Rml::Element *body = table->QuerySelector("[data-columns-body]");
                 Expect(head && body && std::abs(head->GetClientWidth() - body->GetClientWidth()) < 0.01f,
@@ -330,10 +372,13 @@ int main(int argc, char **argv)
             // not measure the previous frame's larger glyphs and retain that width.
             Rml::Element *value = table->QuerySelector("#v0");
             value->GetChild(0)->SetInnerRML("123456789012345");
+            table->SetProperty("height", "100px");
+            table->SetProperty("width", "500px");
+            frames(0.1);
             for (float density : {1.5f, 1.f})
             {
                 host->Resize(1280, 720, density);
-                frames(0.2);
+                host->Frame();
                 const float natural = value->GetChild(0)->GetBox().GetSize(Rml::BoxArea::Border).x;
                 Expect(natural > 56.f * density &&
                            std::abs(value->GetBox().GetSize(Rml::BoxArea::Border).x - std::ceil(natural)) < 0.01f,
@@ -342,9 +387,30 @@ int main(int argc, char **argv)
             value->GetChild(0)->SetInnerRML("1");
             host->Resize(800, 400, 1.f);
             table->SetProperty("width", "160dp");
+            table->SetProperty("height", "100dp");
             frames(0.2);
         }
     }
+    Expect(host->LoadDocument("columns-auto.rml"), "automatic-height columns document loads");
+    frames(0.2);
+    for (float density : {1.5f, 1.f})
+    {
+        host->Resize(800, 400, density);
+        host->Frame();
+        Rml::Element *table = nullptr, *following = nullptr;
+        auto *context = Rml::GetContext("storm-ui");
+        for (int i = 0; i < context->GetNumDocuments(); ++i)
+        {
+            if (auto *found = context->GetDocument(i)->GetElementById("columns")) table = found;
+            if (auto *found = context->GetDocument(i)->GetElementById("following")) following = found;
+        }
+        Expect(table && following && std::abs(following->GetAbsoluteTop() - table->GetAbsoluteTop() -
+                   table->GetBox().GetSize(Rml::BoxArea::Border).y) < 0.01f,
+               "automatic-height column relayout keeps the following sibling in normal flow on its first frame");
+    }
+    host->Resize(800, 400, 1.f);
+    Expect(host->LoadDocument("rows.rml"), "rows document returns after isolated resize checks");
+    frames(0.2);
     hold(124);
     Expect(clicks.empty(), "a long press on a cut title opens its tooltip and sends nothing");
     hold(24);
@@ -369,6 +435,28 @@ int main(int argc, char **argv)
     Expect(clicks.empty(), "holding a non-sortable icon header sends no action");
     tap(300, 20);
     Expect(clicks.empty(), "a tooltip-only header has no tap action");
+    // A list rebuild can remove the tooltip anchor while the finger is still down.
+    const auto tooltip = [&]() -> Rml::Element * {
+        Rml::Context *context = Rml::GetContext("storm-ui");
+        for (int i = 0; context && i < context->GetNumDocuments(); ++i)
+            if (auto *tip = context->GetDocument(i)->GetElementById("tooltip"))
+                return tip;
+        return nullptr;
+    };
+    for (double held : {0.6, 0.1})
+    {
+        clicks.clear();
+        host->Touch(TouchPhase::Down, 1, 240, 20);
+        frames(held);
+        Expect(tooltip() && tooltip()->IsClassSet("open") == (held > 0.4), "tooltip opens only after its delay");
+        Expect(host->SetProps("headers", R"({"show": false})"), "rebuild removes the pressed tooltip anchor");
+        frames(0.6);
+        Expect(tooltip() && !tooltip()->IsClassSet("open"), "rebuild closes an open tooltip and cancels a pending tooltip");
+        host->Touch(TouchPhase::Up, 1, 240, 20);
+        Expect(clicks.empty(), "removed tooltip anchor cannot activate on release");
+        Expect(host->SetProps("headers", R"({"show": true})"), "tooltip anchor can be mounted again");
+        frames(0.1);
+    }
     tap(500, 300);
     Expect(clicks.size() == 1 && clicks[0] == "pz point 250.0,250.0", "a tap reports the picture point under it");
     tap(780, 220); // the zoom-in part: ×1.6 around the centre, nothing sent

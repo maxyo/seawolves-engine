@@ -118,9 +118,12 @@ class Behavior
     virtual void Tick(ComponentElement &, double /*now*/)
     {
     }
-    // The component layout or dp ratio changed; keep pixel measurements local to this layout.
-    virtual void LayoutChanged(ComponentElement &)
+    // After a layout pass that laid the component out or followed its rebuild: its boxes are
+    // final (SettleLaidOutComponents). True when the behaviour changed styles from them; the
+    // host lays the document out again before drawing, so the first frame shows the result.
+    virtual bool LaidOut(ComponentElement &)
     {
+        return false;
     }
     virtual void Rebuilt(ComponentElement &)
     {
@@ -191,6 +194,10 @@ class ComponentElement final : public Rml::Element
     void PointerMove(const Pointer &pointer);
     void PointerUp(const Pointer &pointer, bool cancelled);
     void Tick(double now);
+    // SettleLaidOutComponents: Behavior::LaidOut of every behaviour.
+    bool SettleLayout();
+    // Independent subscriptions: one behavior cannot stop another owner.
+    void RequestTicks(Behavior &owner, bool enable);
     void RebuildNow();
     // Makes the slot content equal to the children of `content` (taken from it), the
     // content a parent template passes now; content that appears or disappears rebuilds
@@ -201,7 +208,6 @@ class ComponentElement final : public Rml::Element
     void OnAttributeChange(const Rml::ElementAttributes &changed) override;
     void OnUpdate() override;
     void OnLayout() override;
-    void OnDpRatioChange() override;
 
   private:
     void ApplyClasses();
@@ -210,17 +216,21 @@ class ComponentElement final : public Rml::Element
     // A wrong prop, enum value or template: logged with the element and drawn as the
     // striped "ui-error" marker instead of a silent default.
     void ReportError(const std::string &what);
+    // Queued for SettleLaidOutComponents once per layout pass.
+    void NoteLaidOut();
 
     const ComponentSpec &spec_;
     Services &services_;
     Json props_ = Json::object();
     std::vector<std::unique_ptr<Behavior>> behaviors_;
+    std::set<Behavior *> ticking_behaviors_;
     std::vector<std::string> prop_classes_;
     std::vector<std::string> live_classes_;
     std::vector<std::string> applied_classes_;
     std::string extra_behavior_; // added by data-behavior
     float box_size_ = -2.0f;      // constants.boxSize applied (dp), -1 = none
     bool dirty_ = true;
+    bool laid_out_noted_ = false;
     bool built_ = false;
     bool built_children_ = false; // `children` of the last build
     std::string built_rml_;        // what the template gave at the last build
@@ -262,5 +272,9 @@ Rml::Element *ComponentSlot(ComponentElement &component);
 // with a behaviour that keeps the pointer for itself (drags, holds), else the closest one
 // with any behaviour.
 ComponentElement *InteractiveComponentAt(Rml::Element *element, const Pointer &pointer);
+
+// After a context update: Behavior::LaidOut of every component laid out (or rebuilt) in it.
+// True when one changed styles: the host updates the context again before drawing.
+bool SettleLaidOutComponents();
 
 } // namespace storm::ui

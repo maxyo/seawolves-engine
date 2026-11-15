@@ -892,19 +892,47 @@ void ComponentElement::OnUpdate()
         RebuildNow();
 }
 
+namespace
+{
+// Components laid out in the current context update (NoteLaidOut). A flex container formats
+// its items several times in one pass (trial widths), and a dp-ratio change reaches an element
+// before its descendants' styles: only the boxes once the pass is over are measured.
+std::vector<Rml::ObserverPtr<Rml::Element>> laid_out_components;
+} // namespace
+
 void ComponentElement::OnLayout()
 {
     Rml::Element::OnLayout();
     ++services_.Counters().laid_out;
-    for (const auto &behavior : behaviors_)
-        behavior->LayoutChanged(*this);
+    NoteLaidOut();
 }
 
-void ComponentElement::OnDpRatioChange()
+void ComponentElement::NoteLaidOut()
 {
-    Rml::Element::OnDpRatioChange();
+    if (laid_out_noted_)
+        return;
+    laid_out_noted_ = true;
+    laid_out_components.push_back(GetObserverPtr());
+}
+
+bool SettleLaidOutComponents()
+{
+    std::vector<Rml::ObserverPtr<Rml::Element>> laid = std::move(laid_out_components);
+    laid_out_components.clear();
+    bool changed = false;
+    for (const auto &entry : laid)
+        if (auto *component = static_cast<ComponentElement *>(entry.get()))
+            changed = component->SettleLayout() || changed;
+    return changed;
+}
+
+bool ComponentElement::SettleLayout()
+{
+    laid_out_noted_ = false;
+    bool changed = false;
     for (const auto &behavior : behaviors_)
-        behavior->LayoutChanged(*this);
+        changed = behavior->LaidOut(*this) || changed;
+    return changed;
 }
 
 void ComponentElement::RebuildNow()
@@ -928,6 +956,7 @@ void ComponentElement::RebuildNow()
     {
         for (const auto &behavior : behaviors_)
             behavior->Rebuilt(*this);
+        NoteLaidOut(); // a change inside a layout boundary may not lay the component itself out
         return;
     }
     // Counted for every re-render, also one whose output is unchanged: a behaviour may still
@@ -1087,6 +1116,7 @@ void ComponentElement::RebuildNow()
     ApplyClasses();
     for (const auto &behavior : behaviors_)
         behavior->Rebuilt(*this);
+    NoteLaidOut();
 }
 
 // constants.boxSize: the name of a prop that is the component's width and height in dp (C-Icon:
@@ -1455,10 +1485,22 @@ bool ComponentElement::Refuse()
     return shown;
 }
 
+void ComponentElement::RequestTicks(Behavior &owner, bool enable)
+{
+    const bool was_ticking = !ticking_behaviors_.empty();
+    if (enable)
+        ticking_behaviors_.insert(&owner);
+    else
+        ticking_behaviors_.erase(&owner);
+    if (was_ticking != !ticking_behaviors_.empty())
+        services_.RequestTicks(*this, !ticking_behaviors_.empty());
+}
+
 void ComponentElement::Tick(double now)
 {
     for (const auto &behavior : behaviors_)
-        behavior->Tick(*this, now);
+        if (ticking_behaviors_.count(behavior.get()))
+            behavior->Tick(*this, now);
 }
 
 class ComponentRegistry::Instancer final : public Rml::ElementInstancer

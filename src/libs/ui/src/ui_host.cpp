@@ -701,8 +701,17 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const bool clamps = TextClampsChanged() || edges;
         // What fell under a cutout with this layout moves out of it (SetCutouts).
         const bool cutouts = moved && AvoidCutouts();
-        if (clamps || cutouts) // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout
+        // Components that measure their layout (columns) set styles from it.
+        bool measured = SettleLaidOutComponents();
+        if (clamps || cutouts || measured) // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout
             UpdateContext();
+        // A measurement is drawn with the layout it makes. Measuring settles in one more pass
+        // (a scrollbar it adds: two); one that keeps changing is an error of the component.
+        for (int pass = 1; measured && pass <= 2; ++pass)
+            if ((measured = SettleLaidOutComponents()))
+                UpdateContext();
+        if (measured && SettleLaidOutComponents())
+            Rml::Log::Message(Rml::Log::LT_ERROR, "UI: a component's measured layout does not settle (it changes on every pass)");
         delay = context_->GetNextUpdateDelay();
         // What makes the shown frame out of date: input and host calls (changed_), component
         // rebuilds that changed elements (a render equal to the shown one changes nothing),
