@@ -206,6 +206,7 @@ class LampShadows
     std::vector<fx::Vec3> placed_; // per merged lamp: where it stood when the slots were laid out
     std::vector<float> holder_;   // per merged lamp: the size of its fixture
     uint32_t layout_ = 0;         // see layout()
+    uint32_t reported_component_layout_ = ~uint32_t{0}; // one consumer receipt per static topology/layout change
     std::vector<Slot> slot_;
     bool layout_dirty_ = true; // the lamps or the geometry changed: every slot is chosen and drawn again at once
     bool grid_dirty_ = true;

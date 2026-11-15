@@ -14,6 +14,7 @@
 #include "light_choice.hpp"
 
 #include <cmath>
+#include <string>
 
 #include "core.h"
 #include "storm/cosmetic_time.hpp"
@@ -507,6 +508,51 @@ void Lights::RebuildComponents()
                            {t.dxLight.Attenuation0, t.dxLight.Attenuation1, t.dxLight.Attenuation2}, moving[i]});
     }
     components = storm::location::BuildLightComponents(sources);
+    bool topologyChanged = components.size() != reportedComponentMembers.size();
+    for (size_t n = 0; !topologyChanged && n < components.size(); ++n)
+    {
+        const auto &members = components[n].members;
+        const auto &reported = reportedComponentMembers[n];
+        topologyChanged = members.size() != reported.size();
+        for (size_t j = 0; !topologyChanged && j < members.size(); ++j)
+            topologyChanged = sources[members[j]].id != reported[j];
+    }
+    if (topologyChanged)
+    {
+        size_t stationary = 0, movingCount = 0, flames = 0;
+        for (const auto &g : components)
+        {
+            g.moving ? ++movingCount : ++stationary;
+            flames += g.members.size();
+        }
+        core.Trace("light-components: input=%u effective=%zu static=%zu moving=%zu original-flames=%zu radius=%.3f",
+                   numLights, components.size(), stationary, movingCount, flames, storm::location::kLightComponentRadius);
+        for (size_t n = 0; n < components.size(); ++n)
+        {
+            const auto &g = components[n];
+            if (g.members.size() < 2)
+                continue;
+            std::string members;
+            for (const size_t i : g.members)
+            {
+                if (!members.empty()) members += ',';
+                members += std::to_string(sources[i].id);
+            }
+            core.Trace("light-components: component=%zu id=%llu members=[%s] type=%s moving=%d center=(%.6f,%.6f,%.6f) "
+                       "range=%.6f steady=(%.6f,%.6f,%.6f)", n, static_cast<unsigned long long>(g.id), members.c_str(),
+                       types[lights[g.members.front()].type].name, g.moving ? 1 : 0, g.position[0], g.position[1],
+                       g.position[2], g.range, g.steady[0], g.steady[1], g.steady[2]);
+        }
+        reportedComponentMembers.clear();
+        reportedComponentMembers.reserve(components.size());
+        for (const auto &g : components)
+        {
+            auto &ids = reportedComponentMembers.emplace_back();
+            ids.reserve(g.members.size());
+            for (const size_t i : g.members)
+                ids.push_back(sources[i].id);
+        }
+    }
     componentsDirty = false;
 }
 

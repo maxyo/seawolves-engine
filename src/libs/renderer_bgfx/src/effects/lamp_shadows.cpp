@@ -1016,6 +1016,31 @@ void LampShadows::draw_static(shim::Device &device, bool all, Casters &casters)
                    dynamic_face_size_, grid_.nx, grid_.ny, grid_.nz, grid_.max_lamps, grid_.overflow_cells, fx::kLampGridCapacity,
                    room_.nx, room_.ny, room_.nz, cut_.size(), cut_triangles);
     }
+    if (reported_component_layout_ != layout_)
+    {
+        reported_component_layout_ = layout_;
+        shim::logf("effects: lamp-components: effective=%zu original-flames=%zu layout=%u static-slots=%d",
+                   lamps_.size(), raw_.size(), layout_, static_slots());
+        for (size_t i = 0; i < lamps_.size(); ++i)
+        {
+            const size_t flames = std::count(raw_lamp_.begin(), raw_lamp_.end(), static_cast<int>(i));
+            if (flames < 2)
+                continue;
+            int index = -1;
+            bool ready = false;
+            for (size_t s = 0; s < slot_.size(); ++s)
+                if (slot_[s].lamp == static_cast<int>(i))
+                {
+                    index = static_cast<int>(s);
+                    ready = slot_[s].ready;
+                    break;
+                }
+            const auto &lamp = lamps_[i];
+            shim::logf("effects: lamp-components: lamp=%zu original-flames=%zu center=(%.6f,%.6f,%.6f) "
+                       "range=%.6f slot=%d ready=%d shadow-faces=%d", i, flames, lamp.position[0], lamp.position[1],
+                       lamp.position[2], lamp.range, index, ready ? 1 : 0, ready ? 6 : 0);
+        }
+    }
 }
 
 void LampShadows::submit_caster(shim::Device &device, const float *world, bool skinned, const std::array<float, 3> &center,

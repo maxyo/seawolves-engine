@@ -172,6 +172,7 @@ class Lights : public Entity
     uint64_t nextLightIdentity = 0;
     bool componentsDirty = true;
     std::vector<storm::location::LightComponent> components;
+    std::vector<std::vector<uint64_t>> reportedComponentMembers; // topology only: flicker/motion never spam the log
 
     // The camera of the last Realize: coronas are tested against a camera that stands still less often
     glm::vec3 lastCamera{0.0f};

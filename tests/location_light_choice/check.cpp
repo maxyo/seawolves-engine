@@ -3,6 +3,7 @@
 // candlesticks of three candles on the tables and along the walls, a fireplace.
 #include "light_choice.hpp"
 #include "light_components.hpp"
+#include "fixture_rooms.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -76,6 +77,38 @@ float LightAt(const std::vector<Lamp> &lamps, P at)
     return sum;
 }
 
+void FixtureComponents()
+{
+    using namespace storm::location;
+    const auto rooms = fixture_rooms::Rooms();
+    for (const auto &room : rooms)
+    {
+        std::vector<ComponentSource> sources;
+        for (size_t i = 0; i < room.candles.size(); ++i)
+            sources.push_back({i, room.candles[i].position, {2.2f, 1.5f, 0.5f}, {2.2f, 1.5f, 0.5f},
+                               15.0f, {0.5f, 0.0f, 1.5f}, false});
+        CHECK(BuildLightComponents(sources, 0.35f).size() == room.old_count);
+        const auto components = BuildLightComponents(sources);
+        CHECK(components.size() == room.count);
+        size_t represented = 0;
+        for (const auto &g : components)
+            for (const size_t i : g.members)
+            {
+                CHECK(g.id == room.candles[i].component); // complete membership, including all ring layers
+                ++represented;
+            }
+        CHECK(represented == sources.size());
+        std::printf("fixture components: %s %zu -> %zu (old radius: %zu)\n",
+                    room.name, sources.size(), components.size(), room.old_count);
+    }
+    // Negative controls of the mixed room: the nearby candles are farther than the radius from every ring candle,
+    // with the same attenuation and range, so distance alone keeps these independent fixtures separate.
+    const auto &mixed = rooms[2].candles;
+    for (size_t i = 0; i < 16; ++i)
+        for (size_t j : {size_t{16}, size_t{17}})
+            CHECK(std::sqrt(LightDistanceSquared(mixed[i].position, mixed[j].position)) > 1.8);
+}
+
 void Components()
 {
     using namespace storm::location;
@@ -94,12 +127,12 @@ void Components()
     boundary[1].position[0] = std::nextafter(kLightComponentRadius, 1.0f);
     CHECK(BuildLightComponents(boundary).size() == 2);
 
-    // Actual Tavern02_locators.gm candle03/04/05 (LE32 RDF_LABEL): adjacent .295/.269, ends .426 m.
+    // A three-candle holder: adjacent candles 0.30/0.29 m apart, the ends 0.46 m (farther than the old 0.35 m radius).
     std::vector<ComponentSource> candle{
-        source(10, {-3.7972877f, 2.9513531f, -3.2957470f}),
-        source(11, {-3.8667901f, 3.1466763f, -3.0857651f}),
-        source(12, {-3.7960980f, 2.9991667f, -2.8719416f})};
-    CHECK(std::sqrt(LightDistanceSquared(candle.front().position, candle.back().position)) > kLightComponentRadius);
+        source(10, {0.0f, 2.95f, 0.0f}),
+        source(11, {0.2f, 3.15f, 0.1f}),
+        source(12, {0.35f, 3.0f, 0.3f})};
+    CHECK(std::sqrt(LightDistanceSquared(candle.front().position, candle.back().position)) > 0.35f);
     const auto grouped = BuildLightComponents(candle);
     CHECK(grouped.size() == 1 && grouped[0].members.size() == 3);
     CHECK(close(grouped[0].color[0], 6.6) && close(grouped[0].color[1], 4.5) && close(grouped[0].color[2], 1.5));
@@ -151,7 +184,7 @@ void Components()
         CHECK(close(old_sum, new_sum));
     }
     // Spatial collapse is an approximation, not equality of irradiance everywhere. Bound the error for the actual
-    // .426 m fixture from receivers >=1m away, six directions, all tested distances safely inside the original range.
+    // 0.46 m holder from receivers >=1m away, six directions, all tested distances safely inside the original range.
     double largest_error = 0;
     for (const float distance : {1.0f, 2.0f, 5.0f, 10.0f})
         for (int axis = 0; axis < 3; ++axis)
@@ -167,7 +200,7 @@ void Components()
                 largest_error = std::max(largest_error, std::abs(effective / original - 1.0));
             }
     CHECK(largest_error < 0.08);
-    std::printf("components: actual Tavern02 common-type receiver error max %.6f %% at >=1m (24 controls)\n", 100 * largest_error);
+    std::printf("components: three-candle holder common-type receiver error max %.6f %% at >=1m (24 controls)\n", 100 * largest_error);
     // Explicit first moment, using steady RGB luminance; instantaneous RGB cannot move it.
     auto weighted = boundary; weighted[1].position = {0.3f, 0, 0};
     weighted[0].steady = {1, 0, 0}; weighted[1].steady = {0, 1, 0};
@@ -178,7 +211,7 @@ void Components()
 
     // Long chain: membership cannot be reconstructed by a radius around the centroid.
     std::vector<ComponentSource> chain;
-    for (int i = 0; i < 11; ++i) chain.push_back(source(i, {0.3f * i, 0, 0}));
+    for (int i = 0; i < 11; ++i) chain.push_back(source(i, {0.8f * i, 0, 0}));
     const auto long_group = BuildLightComponents(chain);
     CHECK(long_group.size() == 1 && long_group[0].members.size() == 11);
     CHECK(std::sqrt(LightDistanceSquared(chain[0].position, long_group[0].position)) > 4 * kLightComponentRadius);
@@ -186,7 +219,7 @@ void Components()
     CHECK(BuildLightComponents(chain).size() == 2);
     chain[5] = source(5, {100, 0, 0});
     CHECK(BuildLightComponents(chain).size() == 3);
-    chain[5] = source(5, {1.5f, 0, 0}); chain[5].moving = true;
+    chain[5] = source(5, {4.0f, 0, 0}); chain[5].moving = true;
     CHECK(BuildLightComponents(chain).size() == 3); // portable never merges with baked lights
     // Removing a portable source rebases all surviving indices but leaves caller-visible IDs intact.
     struct Moving { int32_t id, light; };
@@ -205,15 +238,16 @@ void Components()
     size_t represented = 0;
     for (auto i : selected) represented += components[i].members.size();
     CHECK(represented == 9); // old ungrouped seven-slot path represented only seven of these ten flames
-    // Independent stock churchInside1 chandeliers remain separate (4.921907m); each was already one locator.
-    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {-0.003869607f,4.559601f,-5.363743f}),
-                                                            source(2, {-0.003869607f,4.559601f,-0.4418358f})}).size() == 2);
-    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {0,0,0}), source(2,{0.5072124f,0,0})}).size() == 2);
+    // Two chandelier locators 4.9 m apart along a nave remain separate.
+    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {0.0f, 4.56f, -5.36f}),
+                                                            source(2, {0.0f, 4.56f, -0.44f})}).size() == 2);
+    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {0,0,0}), source(2,{0.5072124f,0,0})}).size() == 1);
 }
 } // namespace
 
 int main()
 {
+    FixtureComponents();
     Components();
     const std::vector<Lamp> lamps = Tavern();
     const P hero{-2.0f, 1.2f, 2.3f}; // a character next to a table, or a lit model of the location at its own place

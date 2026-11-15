@@ -11,11 +11,11 @@
 
 namespace storm::location
 {
-// Tavern02/04 three-candle locators have adjacent spacings 0.295/0.269 m and an end-to-end
-// spacing of 0.426 m. This joins that fixture transitively without joining Tavern01's 0.507 m pair.
-// A chandelier represented by a single locator is already one source (churchInside1: two, 4.92 m apart).
-// This conservative distance does not infer fixture ownership for the much larger residence candle rings.
-inline constexpr float kLightComponentRadius = 0.35f;
+// World-space graph edges, independent of model, locator name, texture or receiver budget. Stock Residence02's
+// 24-candle chandelier needs a 0.530106 m edge; Residence01's eight-candle rings need 0.861437 m. Connected
+// fixtures remain transitive even when their endpoints are farther apart. Separate stock fixtures have gaps
+// above this bound (Residence02's chandelier: 3.011533 m to the nearest other candle).
+inline constexpr float kLightComponentRadius = 0.9f;
 using LightVector = std::array<float, 3>;
 struct ComponentSource
 {
