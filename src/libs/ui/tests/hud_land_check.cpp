@@ -991,6 +991,58 @@ static void CheckTransitionFlash()
     bench.Frame(hud::Hud::kTransitionWait + 0.1);
     Expect(mount.visible && mount.errors.size() == errors + 1 && mount.errors.back().find("Таверна") != std::string::npos,
            "no transition came: the HUD is back after the wait, with an error line");
+    // Native refused the activation after revalidating its candidates. The HUD must
+    // release the speculative cover immediately and report this cause, not a reload timeout.
+    bench.Set("landCommands", Json(nullptr));
+    Json selected = State("land-commands-travel");
+    selected["selectedItemId"] = "t4";
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    bench.Press("item-t4");
+    Expect(!mount.visible, "activation awaiting native receipt covers the HUD");
+    Json receipt{{"serial", 1}, {"scene", 4}, {"revision", 999}, {"activity", 2}, {"id", "t4"},
+                 {"accepted", false}, {"reason", "candidates-changed-on-refresh"}};
+    selected["activation"] = receipt;
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    Expect(!mount.visible, "a late receipt for another request cannot release this transition");
+    receipt["revision"] = 13;
+    selected["activation"] = receipt;
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    Expect(mount.visible && mount.errors.back().find("candidates-changed-on-refresh") != std::string::npos,
+           "exact refusal releases the HUD with the native cause");
+    bench.Frame(hud::Hud::kTransitionWait + 0.1);
+    const size_t refusedErrors = mount.errors.size();
+    receipt["serial"] = 2;
+    receipt["accepted"] = true;
+    receipt["reason"] = "native-dispatched";
+    selected["activation"] = receipt;
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    Expect(mount.visible && mount.errors.size() == refusedErrors, "a late accepted receipt cannot revive a refused transition");
+
+    bench.Press("item-t4");
+    Expect(!mount.visible, "a new tap waits for its own later receipt");
+    receipt["serial"] = 3;
+    selected["activation"] = receipt;
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    Expect(!mount.visible, "native accepted: still wait for the game's fader");
+    selected["activations"] = Json::array({receipt});
+    receipt["serial"] = 4;
+    receipt["accepted"] = false;
+    receipt["reason"] = "stale-at-enqueue";
+    selected["activations"].push_back(receipt); // same-tuple duplicate must not downgrade acceptance
+    receipt["revision"] = 999;
+    selected["activation"] = receipt; // unrelated last receipt must not erase the matching answer
+    bench.Set("landCommands", selected);
+    bench.Frame();
+    Expect(!mount.visible, "accepted history beats duplicate and unrelated last refusals without a flash");
+    bench.Frame(hud::Hud::kTransitionWait + 0.1);
+    Expect(mount.visible && mount.errors.back().find("script started no transition") != std::string::npos,
+           "native acceptance alone never proves that the script changed the location");
+
 }
 
 // The talk hint's role icons against the game (with STORM_GAME_ROOT): every role the table names

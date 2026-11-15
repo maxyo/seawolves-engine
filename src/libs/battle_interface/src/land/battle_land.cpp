@@ -325,19 +325,32 @@ void refreshLandCommands(bool ready)
 }
 bool executeLandCommand(const LandCommandsRequest &request)
 {
-    if (request.scene != landCommands.sceneEpoch() || request.revision != landCommands.revision() ||
-        request.activity != landCommands.activityGeneration() || !landCommands.frame().available) return false;
-    auto *battle = landOwner(); if (!battle) return false;
+    const auto done = [&](bool accepted, const char *reason) {
+        landCommands.result(request, accepted, reason);
+        if (request.verb == "activateItem")
+            core.Trace("land activation scene=%llu revision=%llu activity=%llu id=%s accepted=%d reason=%s",
+                static_cast<unsigned long long>(request.scene), static_cast<unsigned long long>(request.revision),
+                static_cast<unsigned long long>(request.activity), request.id.c_str(), accepted, reason);
+        return accepted;
+    };
+    if (request.scene != landCommands.sceneEpoch()) return done(false, "scene-changed");
+    if (request.revision != landCommands.revision()) return done(false, "revision-changed");
+    if (request.activity != landCommands.activityGeneration()) return done(false, "activity-changed");
+    if (!landCommands.frame().available) return done(false, "unavailable");
+    auto *battle = landOwner(); if (!battle) return done(false, "no-land-owner");
     // Rebuild original predicates and child entries immediately before accepting an action.
     refreshLandCommands(true);
-    if (request.scene != landCommands.sceneEpoch() || request.revision != landCommands.revision()) return false;
+    if (request.scene != landCommands.sceneEpoch()) return done(false, "target-context-changed-on-refresh");
+    if (request.revision != landCommands.revision()) return done(false, "candidates-changed-on-refresh");
     const auto &frame = landCommands.frame();
     if (request.verb == "activateItem" && (request.id != frame.selectedItemId ||
-        std::none_of(frame.items.begin(), frame.items.end(), [&](const auto &item) { return item.id == request.id && item.enabled; }))) return false;
+        std::none_of(frame.items.begin(), frame.items.end(), [&](const auto &item) { return item.id == request.id && item.enabled; })))
+        return done(false, "selection-no-longer-enabled");
     const bool result = battle->ExecuteAndroidLand(request);
     landCommands.invalidate(); // the menu moved on: taps made for this revision are stale
-    return result;
+    return done(result, result ? "native-dispatched" : "native-refused");
 }
+
 void closeLandCommands()
 {
     if (auto *battle = landOwner()) battle->CloseAndroidLand();

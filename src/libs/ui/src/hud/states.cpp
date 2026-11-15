@@ -474,6 +474,29 @@ class LandCommandsConsumer final : public HudConsumer
             return "unknown stage '" + *stage + "'";
         if (!Token(*selected, true) || !Printable(*title, 1024, true) || items->size() > 256)
             return "bad selectedItemId, pendingLabel or item count";
+        const auto readReceipt = [](const Json &receipt, LandCommands::Activation &out) {
+            if (!receipt.is_object()) return false;
+            const auto serial = Whole(receipt, "serial"), scene = Whole(receipt, "scene"),
+                       revision = Whole(receipt, "revision"), activity = Whole(receipt, "activity");
+            const auto id = Text(receipt, "id"), reason = Text(receipt, "reason");
+            const auto accepted = Flag(receipt, "accepted");
+            if (!serial || !scene || !revision || !activity || !id || !reason || !accepted ||
+                !Token(*id, true) || !Printable(*reason, 128, true)) return false;
+            out = {*serial, *scene, *revision, *activity, *id, *reason, *accepted};
+            return true;
+        };
+        if (const auto receipt = state.find("activation"); receipt != state.end() && !readReceipt(*receipt, out.activation))
+            return "bad activation receipt";
+        if (const auto receipts = state.find("activations"); receipts != state.end())
+        {
+            if (!receipts->is_array() || receipts->size() > 8) return "bad activation history";
+            for (const auto &value : *receipts)
+            {
+                LandCommands::Activation receipt;
+                if (!readReceipt(value, receipt)) return "bad activation history receipt";
+                out.activations.push_back(std::move(receipt));
+            }
+        }
         bool drawable = true;
         int cancels = 0;
         std::set<std::string> ids;

@@ -67,6 +67,8 @@ class LandCommandsState
 {
     inline static std::atomic<uint64_t> nextEpoch_{0};
     LandCommandsFrame frame_;
+    struct Receipt { uint64_t serial = 0; LandCommandsRequest request; bool accepted = false; std::string reason; } receipt_;
+    std::deque<Receipt> receipts_;
     std::string sceneKey_;
     uint64_t scene_ = 0, revision_ = 1, activity_ = 0;
     // Whether the stock command list draws is not decided here: while the touch HUD presents the
@@ -80,6 +82,28 @@ class LandCommandsState
     }
 public:
     const LandCommandsFrame &frame() const { return frame_; }
+    // A receipt records native dispatch, never that the script began a reload.
+    void result(const LandCommandsRequest &request, bool accepted, const std::string &reason)
+    {
+        if (request.verb != "activateItem") return;
+        // A duplicate stale enqueue may not downgrade an accepted dispatch of this
+        // exact lease. Another tap's receipt must not erase it before the UI reads it.
+        for (const auto &old : receipts_)
+            if (old.accepted && old.request.scene == request.scene && old.request.revision == request.revision &&
+                old.request.activity == request.activity && old.request.id == request.id) return;
+        ++receipt_.serial;
+        receipt_.request = request; receipt_.accepted = accepted; receipt_.reason = reason;
+        receipts_.push_back(receipt_);
+        if (receipts_.size() > 8)
+        {
+            // Keep the newest accepted dispatch even through a burst of unrelated
+            // refusals. Only a later accepted action may retire that final answer.
+            const auto newestAccepted = std::find_if(receipts_.rbegin(), receipts_.rend(), [](const auto &r) { return r.accepted; });
+            auto drop = receipts_.begin();
+            if (newestAccepted != receipts_.rend() && &*drop == &*newestAccepted) ++drop;
+            receipts_.erase(drop);
+        }
+    }
     uint64_t sceneEpoch() const { return scene_; }
     uint64_t revision() const { return revision_; }
     uint64_t activityGeneration() const { return activity_; }
@@ -87,12 +111,15 @@ public:
     void invalidate()
     {
         ++revision_;
+        for (const auto &request : pending_) result(request, false, "invalidated-before-dispatch");
         pending_.clear();
     }
     void resetActivity()
     {
         activity_ = nextEpoch_.fetch_add(1, std::memory_order_relaxed) + 1;
         invalidate();
+        receipt_ = {};
+        receipts_.clear();
     }
     void update(std::string sceneKey, LandCommandsFrame frame)
     {
@@ -165,26 +192,38 @@ public:
         }
         LandCommandsRequest request;
         if (fields[0] != "1" || !number(fields[1], request.scene) || !number(fields[2], request.revision) ||
-            !number(fields[3], request.activity) || request.scene != scene_ || request.revision != revision_ ||
-            request.activity != activity_ || !activity_ || !frame_.available) return false;
+            !number(fields[3], request.activity)) return false;
         request.verb = fields[4]; request.id = fields[5]; request.tick = tick;
+        // Only a well-formed activation of this Activity receives a refusal receipt.
+        const auto refuse = [&](const char *reason) {
+            if (request.activity == activity_ && landCommandsTextValid(request.id, 128)) result(request, false, reason);
+            return false;
+        };
+        if (request.scene != scene_ || request.revision != revision_ || request.activity != activity_ || !activity_)
+            return refuse("stale-at-enqueue");
+        if (!frame_.available) return refuse("unavailable-at-enqueue");
         if (request.verb != "open" && request.verb != "selectItem" &&
             request.verb != "activateItem" && request.verb != "back" && request.verb != "close") return false;
         if ((request.verb == "back" || request.verb == "close") && !request.id.empty()) return false;
-        if (request.verb != "open" && !frame_.active) return false;
+        if (request.verb != "open" && !frame_.active) return refuse("menu-closed-at-enqueue");
         if (request.verb == "open" && frame_.active) return false;
-        // "open" with an id opens the menu straight into that root command (the touch HUD's
-        // transitions button: BI_FastReload); only a command offered now.
+        // "open" enters only a root command offered now; its id is a script event.
         if (request.verb == "open" && !request.id.empty() &&
             std::find(frame_.offered.begin(), frame_.offered.end(), request.id) == frame_.offered.end()) return false;
         if (request.verb == "selectItem" || request.verb == "activateItem")
         {
-            if (!frame_.complete) return false;
+            if (!frame_.complete) return refuse("incomplete-at-enqueue");
             if (std::none_of(frame_.items.begin(), frame_.items.end(), [&](const auto &item) {
                 return item.id == request.id && (request.verb != "activateItem" || (item.enabled && frame_.selectedItemId == request.id));
-            })) return false;
+            })) return refuse("selection-changed-at-enqueue");
         }
-        if (!pending_.empty()) return false;
+        if (!pending_.empty())
+        {
+            const auto &pending = pending_.front();
+            if (request.verb == pending.verb && request.scene == pending.scene && request.revision == pending.revision &&
+                request.activity == pending.activity && request.id == pending.id) return false;
+            return refuse("another-command-pending");
+        }
         pending_.push_back(std::move(request));
         return true;
     }
@@ -195,6 +234,7 @@ public:
             auto request = std::move(pending_.front()); pending_.pop_front();
             if (request.scene == scene_ && request.revision == revision_ && request.activity == activity_ &&
                 tick - request.tick <= 1500 && frame_.available) return request;
+            result(request, false, tick - request.tick > 1500 ? "expired-before-dispatch" : "owner-changed-before-dispatch");
         }
         return {};
     }
@@ -218,6 +258,15 @@ public:
         }
         out += "],\"offered\":[";
         for (size_t i = 0; i < frame.offered.size(); ++i) out += (i ? "," : "") + quote(frame.offered[i]);
+        const auto receiptJson = [&](const Receipt &receipt) {
+            const auto &r = receipt.request;
+            return "{\"serial\":" + std::to_string(receipt.serial) +
+                ",\"scene\":" + std::to_string(r.scene) + ",\"revision\":" + std::to_string(r.revision) +
+                ",\"activity\":" + std::to_string(r.activity) + ",\"id\":" + quote(r.id) +
+                ",\"accepted\":" + (receipt.accepted ? "true" : "false") + ",\"reason\":" + quote(receipt.reason) + "}";
+        };
+        out += "],\"activation\":" + receiptJson(receipt_) + ",\"activations\":[";
+        for (size_t i = 0; i < receipts_.size(); ++i) out += (i ? "," : "") + receiptJson(receipts_[i]);
         return out + "]}";
     }
     std::string json() const { return jsonFor(frame_); }

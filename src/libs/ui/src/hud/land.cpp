@@ -707,7 +707,7 @@ class LandScene final : public Scene
         choice_revision_ = commands.revision;
         choice_activated_ = commands.selected == choice_;
         if (choice_activated_ && item->kind == "travel")
-            hud_.ExpectTransition("the travel place '" + item->label + "'");
+            hud_.ExpectLandTransition("the travel place '" + item->label + "'", commands, choice_);
         Commands(choice_activated_ ? "activateItem" : "selectItem", choice_);
     }
 

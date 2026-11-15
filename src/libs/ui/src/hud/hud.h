@@ -136,6 +136,12 @@ struct LandCommands
     };
     bool known = false;
     uint64_t scene = 0, revision = 0, activity = 0;
+    struct Activation {
+        uint64_t serial = 0, scene = 0, revision = 0, activity = 0;
+        std::string id, reason;
+        bool accepted = false;
+    } activation;
+    std::vector<Activation> activations;
     std::vector<std::string> offered; // root command events the scripts enable now, open or not
     bool active = false, available = false, can_back = false, can_close = false;
     bool complete = false; // everything is known and drawable; otherwise the engine keeps its own menu
@@ -513,6 +519,7 @@ class Hud
     // fader. A change that does not come within kTransitionWait is logged and the HUD comes back.
     static constexpr double kTransitionWait = 1.5;
     void ExpectTransition(const std::string &what);
+    void ExpectLandTransition(const std::string &what, const LandCommands &commands, const std::string &id);
 
     // --- for the host ---
     // An event line for the top-centre log; false while no scene shows one. `target`: where a
@@ -573,6 +580,8 @@ class Hud
     void Present(bool visible, bool menu_only);
 
     Mount &mount_;
+    LandCommands::Activation transition_activation_;
+    bool transition_accepted_ = false;
     double transition_until_ = -1.0; // ExpectTransition: hidden until then at most (-1 = none)
     std::string transition_what_;
     std::optional<SubjectRequest> subject_;

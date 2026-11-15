@@ -55,7 +55,7 @@ int main() {
     f.offered={"BI_FastReload","BI_TalkSelf"};s.update("closed",f);
     assert(!s.offer(request(s,"open","BI_SelfRepair"),100));
     assert(s.offer(request(s,"open","BI_FastReload"),100));{auto open=s.take(101);assert(open&&open->verb=="open"&&open->id=="BI_FastReload");}
-    assert(s.json().find(",\"offered\":[\"BI_FastReload\",\"BI_TalkSelf\"]}")!=std::string::npos);
+    assert(s.json().find(",\"offered\":[\"BI_FastReload\",\"BI_TalkSelf\"],\"activation\":")!=std::string::npos);
     f=fixture();f.items[0].picture="landtarget_slb:2";s.update("picture",f);
     assert(s.json().find("\"source\":\"BI_OutDoor\",\"picture\":\"landtarget_slb:2\"")!=std::string::npos);
     f.items[0].picture=std::string(129,'a');s.update("picture-long",f);assert(!s.frame().complete);

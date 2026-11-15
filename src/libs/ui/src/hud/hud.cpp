@@ -383,9 +383,17 @@ void Hud::Present(bool visible, bool menu_only)
 
 void Hud::ExpectTransition(const std::string &what)
 {
+    transition_activation_ = {};
+    transition_accepted_ = false;
     transition_until_ = mount_.Now() + kTransitionWait;
     transition_what_ = what;
     changed_ = true;
+}
+
+void Hud::ExpectLandTransition(const std::string &what, const LandCommands &commands, const std::string &id)
+{
+    ExpectTransition(what);
+    transition_activation_ = {commands.activation.serial, commands.scene, commands.revision, commands.activity, id, {}, false};
 }
 
 // A scene change hides the HUD: nothing of it may show over the fader or between a closing
@@ -402,10 +410,41 @@ bool Hud::InTransition(double now)
     }
     if (transition_until_ < 0.0)
         return false;
+    if (!transition_activation_.id.empty())
+    {
+        const auto &commands = states_.land_commands;
+        const auto &sent = transition_activation_;
+        const LandCommands::Activation *answer = nullptr;
+        const auto consider = [&](const LandCommands::Activation &receipt) {
+            if (receipt.serial > sent.serial && receipt.scene == sent.scene && receipt.revision == sent.revision &&
+                receipt.activity == sent.activity && receipt.id == sent.id &&
+                (!answer || (!answer->accepted && (receipt.accepted || receipt.serial > answer->serial)))) answer = &receipt;
+        };
+        consider(commands.activation);
+        for (const auto &receipt : commands.activations) consider(receipt);
+        if (answer)
+        {
+            if (!answer->accepted)
+            {
+                Error("HUD: " + transition_what_ + " was refused before native dispatch: " + answer->reason);
+                transition_until_ = -1.0;
+                transition_activation_ = {};
+                return false;
+            }
+            transition_accepted_ = true; // dispatch is not proof that PlayerFastTravel started a reload
+        }
+        if (!commands.known || commands.activity != sent.activity || commands.scene != sent.scene)
+        {
+            transition_until_ = -1.0;
+            transition_activation_ = {};
+            return false; // a newer owner can never be hidden or released by this tap's late receipt
+        }
+    }
     if (now < transition_until_)
         return true;
-    Error("HUD: " + transition_what_ + " was to change the scene, but the game started no transition in " + std::to_string(kTransitionWait) +
-          " s; the HUD is back");
+    Error("HUD: " + transition_what_ + (transition_activation_.id.empty() ? " was to change the scene" :
+          transition_accepted_ ? " was dispatched natively, but its script started no transition" : " received no native activation receipt") +
+          " in " + std::to_string(kTransitionWait) + " s; the HUD is back");
     transition_until_ = -1.0;
     return false;
 }
@@ -438,6 +477,11 @@ void Hud::Refresh()
 
     const Presentation &shown = states_.presentation;
     const bool live = shown.known && shown.live;
+    if (!live || interface_ || !shown.screen.empty())
+    {
+        transition_until_ = -1.0;
+        transition_activation_ = {};
+    }
     if (scene_ && live_ && !live)
     {
         scene_->Released(states_);
