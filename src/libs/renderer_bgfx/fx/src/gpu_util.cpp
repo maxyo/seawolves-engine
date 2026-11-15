@@ -77,7 +77,7 @@ bgfx::ProgramHandle FindProgram(const char *vertex, const char *fragment)
 
 namespace storm::fx::detail
 {
-void SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64_t state, bool flip_v,
+bool SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64_t state, bool flip_v,
                           const std::array<std::array<float, 3>, 3> *corner_data)
 {
     static const bgfx::VertexLayout layout = [] {
@@ -86,7 +86,7 @@ void SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64
         return l;
     }();
     if (bgfx::getAvailTransientVertexBuffer(3, layout) < 3)
-        return;
+        return false;
     bgfx::TransientVertexBuffer buffer;
     bgfx::allocTransientVertexBuffer(&buffer, 3, layout);
     auto *v = reinterpret_cast<ScreenVertex *>(buffer.data);
@@ -119,6 +119,7 @@ void SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64
     bgfx::setVertexBuffer(0, &buffer);
     bgfx::setState(state);
     bgfx::submit(view, program);
+    return true;
 }
 
 namespace

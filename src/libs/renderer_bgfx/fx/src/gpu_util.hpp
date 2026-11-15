@@ -15,7 +15,8 @@ bgfx::ProgramHandle LoadProgram(const char *vertex, const char *fragment);
 // One triangle covering the view. `uv` (0..1 over the view, already oriented for sampling a render target)
 // goes to a_texcoord0 unless `corner_data` supplies three values per corner (bottom-left, bottom-right,
 // top-left of the view, extrapolated to the triangle). `flip_v` mirrors the image vertically.
-void SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64_t state, bool flip_v = false,
+// False means no draw was submitted (transient vertex capacity exhausted).
+bool SubmitScreenTriangle(bgfx::ViewId view, bgfx::ProgramHandle program, uint64_t state, bool flip_v = false,
                           const std::array<std::array<float, 3>, 3> *corner_data = nullptr);
 
 template <typename Handle> void Destroy(Handle &handle)

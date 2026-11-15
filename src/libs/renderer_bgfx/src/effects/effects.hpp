@@ -219,6 +219,7 @@ class Host
     // The capture of this frame: the target it was taken of and the view the sea continues in after it.
     uint32_t sea_depth_frame_ = UINT32_MAX;
     const void *sea_depth_target_ = nullptr;
+    const void *sea_depth_source_ = nullptr;
     bool sea_depth_logged_ = false;
     // Waves from objects: the sea's frame (set_sea_frame) and the simulation.
     void advance_sea_waves(shim::Device &device);

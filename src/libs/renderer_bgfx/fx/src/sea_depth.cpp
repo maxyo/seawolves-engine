@@ -52,8 +52,7 @@ bool SeaDepth::Capture(bgfx::ViewId view, bgfx::TextureHandle scene_depth, uint1
     const float capture[4] = {near_plane * far_plane, far_plane, far_plane - near_plane, 1.0f / far_plane};
     bgfx::setUniform(u_capture_, capture);
     bgfx::setTexture(1, s_depth_, scene_depth, kClampPoint);
-    SubmitScreenTriangle(view, program_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    return true;
+    return SubmitScreenTriangle(view, program_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
 }
 
 bgfx::TextureHandle SeaDepth::Texture() const

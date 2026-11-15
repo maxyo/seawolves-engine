@@ -30,7 +30,8 @@ SAMPLER2D(s_seaDepth, 14);
 // [0] x: band limit, y: soft edges, z: specular (each 0 or 1), w: far plane of the packed scene distance
 // [1] xyz: towards the sun (world), w: specular power   [2] rgb: sun colour * strength, w: 1 / edge depth (metres)
 // [3] rgb: current game water colour, w: extinction per metre (0 disables turbidity).
-uniform vec4 u_seaFx[4];
+// [4] xyz: actual shim camera forward (row-vector view third column).
+uniform vec4 u_seaFx[5];
 
 void main()
 {
@@ -80,8 +81,8 @@ void main()
     if (u_seaFx[3].w > 0.0 && gap >= 0.0 && u_seaWaves[2].x < 0.5)
     {
         // View-z distance to ray distance; neither surface normal nor wave strength changes.
-        vec3 viewRay = mul(u_view, vec4(e, 0.0)).xyz;
-        float transmission = seaOpticalTransmission(gap, viewRay.z, u_seaFx[3].w);
+        float rayCos = seaViewRayCos(e, u_seaFx[4].xyz);
+        float transmission = seaOpticalTransmission(gap, rayCos, u_seaFx[3].w);
         // Sea2 blends source + destination*alpha. Only the transmitted fraction
         // becomes water-colour scattering; reflection/Fresnel remain as calculated.
         float scattered = r0.a * (1.0 - transmission);
