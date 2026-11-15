@@ -77,6 +77,7 @@ struct Entity {
 } resource{true,0},dialog{false,1},weather{true,2};
 using entid_t=int;using entptr_t=Entity*;
 struct CoreImpl {
+ void Trace(const char*, ...) {} // diagnostic sink; actual production transaction remains extracted
  TIMER Timer;
  void PrepareLoadingScene();
  void *GetService(const char*s){return std::string(s)=="renderer"?static_cast<SERVICE*>(&renderer):static_cast<SERVICE*>(&animation);}

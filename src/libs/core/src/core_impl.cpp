@@ -297,6 +297,9 @@ void CoreImpl::PrepareLoadingScene()
     const auto initial = storm::render::GetSceneLoadStatus();
     if (!initial.active) return;
     storm::loading::Scope loading;
+    const auto loading_started = std::chrono::steady_clock::now();
+    uint64_t loading_frames = 0;
+    Trace("Stock loading transaction enter generation=%llu", static_cast<unsigned long long>(initial.generation));
     storm::platform::LoadingPlatformTransaction platform;
     struct TimerBaseline {
         TIMER &timer;
@@ -338,10 +341,17 @@ void CoreImpl::PrepareLoadingScene()
         for (auto id : ids) if (auto *entity = GetEntityPointerSafe(id))
             entity->ProcessStage(Entity::Stage::loading_realize, 0);
         renderer->RunEnd(); // stock artwork, actual Present, upload/shadow/resource pumps
+        ++loading_frames;
         storm::loading::first_frame = false;
         if (storm::loading::ready) {
             storm::render::CompleteSceneReveal();
-            if (!storm::render::GetSceneLoadStatus().active) return;
+            if (!storm::render::GetSceneLoadStatus().active) {
+                Trace("Stock loading transaction ready-exit generation=%llu frames=%llu elapsed-ms=%lld",
+                      static_cast<unsigned long long>(initial.generation), static_cast<unsigned long long>(loading_frames),
+                      static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now() - loading_started).count()));
+                return;
+            }
         }
     }
 }
