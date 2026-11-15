@@ -51,6 +51,8 @@ void Service::shutdown()
     {
         std::lock_guard lock(mutex_);
         stopping_ = true;
+        loading_generation_ = 0;
+        foreground_streak_ = 0;
         for (auto &job : queue_)
             job->state = Job::Failed;
         queue_.clear();
@@ -114,11 +116,44 @@ void Service::post(std::function<void()> task)
 {
     {
         std::lock_guard lock(mutex_);
-        tasks_.push_back(std::move(task));
+        tasks_.push_back({std::move(task), {}, {}});
         if (workers_.empty())
             start_workers();
     }
     wake_.notify_one();
+}
+
+void Service::post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task)
+{
+    {
+        std::lock_guard lock(mutex_);
+        tasks_.push_back({std::move(task), std::move(ticket), std::move(name)});
+        if (workers_.empty())
+            start_workers();
+    }
+    wake_.notify_one();
+}
+
+void Service::promote_cache(const std::shared_ptr<CacheTask> &ticket)
+{
+    if (ticket)
+        ticket->generation = loading_generation_.load();
+}
+
+bool Service::cache_scope_current(const std::shared_ptr<CacheTask> &ticket) const
+{
+    const uint64_t generation = loading_generation_;
+    return generation != 0 && ticket && ticket->generation.load() == generation;
+}
+
+void Service::begin_loading_cache_scope()
+{
+    loading_generation_ = ++next_loading_generation_;
+}
+
+void Service::end_loading_cache_scope()
+{
+    loading_generation_ = 0;
 }
 
 void Service::release(std::shared_ptr<Job> &job)
@@ -173,13 +208,40 @@ void Service::worker(unsigned index)
             lock.lock();
             continue;
         }
-        if (queue_.empty() && !tasks_.empty())
+        const uint64_t generation = loading_generation_;
+        const auto foreground = [&](const Task &task) {
+            return generation != 0 && task.cache && task.cache->generation.load() == generation;
+        };
+        auto urgent = std::find_if(tasks_.begin(), tasks_.end(), foreground);
+        auto ordinary = std::find_if(tasks_.begin(), tasks_.end(), [&](const Task &task) { return !foreground(task); });
+        const bool ordinary_available = !queue_.empty() || ordinary != tasks_.end();
+        auto chosen = tasks_.end();
+        if (urgent != tasks_.end() && (foreground_streak_ < 2 || !ordinary_available))
         {
-            std::function<void()> task = std::move(tasks_.front());
-            tasks_.pop_front();
+            chosen = urgent;
+            ++foreground_streak_;
+        }
+        else if (queue_.empty() && ordinary != tasks_.end())
+        {
+            chosen = ordinary;
+            foreground_streak_ = 0;
+        }
+        if (chosen != tasks_.end())
+        {
+            const bool admitted_foreground = foreground(*chosen);
+            const uint64_t ticket_generation = chosen->cache ? chosen->cache->generation.load() : 0;
+            Task task = std::move(*chosen);
+            tasks_.erase(chosen);
             ++running_;
             lock.unlock();
-            task();
+            const auto start = std::chrono::steady_clock::now();
+            task.work();
+            if (ticket_generation != 0 && log_)
+                log_("loading cache: %s scope=%llu ticket=%llu foreground=%d queue=%.3f ms work=%.3f ms (CPU; includes validation/read)",
+                     task.name.c_str(), static_cast<unsigned long long>(generation),
+                     static_cast<unsigned long long>(ticket_generation), admitted_foreground,
+                     std::chrono::duration<double, std::milli>(start - task.cache->queued).count(),
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
             lock.lock();
             --running_;
             continue;
@@ -196,6 +258,7 @@ void Service::worker(unsigned index)
             }
             continue;
         }
+        foreground_streak_ = 0;
         std::shared_ptr<Job> job = std::move(queue_.front());
         queue_.pop_front();
         queued_bytes_ -= job->input.size();

@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+namespace storm::texture { struct CacheTask; }
 namespace storm::shim
 {
 struct TexStore;
@@ -58,6 +59,8 @@ struct UpscaleEntry
     uint16_t queued_scene = 0;
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
     std::atomic<int> state{Unknown};
+    std::shared_ptr<texture::CacheTask> cache_task; // game thread; queued task retains its own ticket
+    std::chrono::steady_clock::time_point cache_ready{}; // worker, published before Derived/Read
     std::string name; // normalized texture path
     std::filesystem::path file;
     fx::UpscaleTarget target = fx::UpscaleTarget::None;
@@ -97,7 +100,7 @@ class Upscales
 
     struct Stats
     {
-        uint32_t entries = 0, resident = 0, reading = 0, waiting = 0, missing = 0, failed = 0;
+        uint32_t entries = 0, resident = 0, reading = 0, upload_pending = 0, waiting = 0, missing = 0, failed = 0;
         uint64_t bytes = 0, budget = 0;
         int limited = 0;
     };

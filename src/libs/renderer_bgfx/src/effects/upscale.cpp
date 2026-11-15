@@ -239,7 +239,11 @@ bgfx::TextureHandle Upscales::replacement(shim::TexStore &store, float distance)
 void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
 {
     entry->state = UpscaleEntry::Pending;
-    texture::Service::instance().post([entry, read, directory = directory_] {
+    entry->cache_task = std::make_shared<texture::CacheTask>();
+    texture::Service::instance().post_cache(entry->cache_task, (read ? "x2 read " : "x2 lookup ") + entry->name,
+        [weak = std::weak_ptr<UpscaleEntry>(entry), read, directory = directory_] {
+        const auto entry = weak.lock();
+        if (!entry) return;
         if (!fx::HasUpscaled(directory, entry->key))
         {
             entry->state = UpscaleEntry::Missing;
@@ -260,6 +264,7 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
             return;
         }
         entry->ktx = std::move(*ktx);
+        entry->cache_ready = Clock::now();
         entry->state = UpscaleEntry::Read;
     });
 }
@@ -279,6 +284,7 @@ void Upscales::end_frame()
         if (!entry || entry->state != UpscaleEntry::Read)
             continue;
         ++uploads;
+        const auto upload_start = Clock::now();
         bgfx::TextureInfo info{};
         const bgfx::TextureHandle handle =
             bgfx::createTexture(bgfx::copy(entry->ktx.data(), static_cast<uint32_t>(entry->ktx.size())), BGFX_TEXTURE_NONE,
@@ -297,6 +303,13 @@ void Upscales::end_frame()
         entry->bytes = info.storageSize;
         entry->handle = handle;
         entry->state = UpscaleEntry::Resident;
+        if (entry->cache_task && entry->cache_task->generation.load() != 0)
+            shim::logf("loading cache upload: x2 %s key=%016llx ready-to-submit=%.3f ms submit=%.3f ms bytes=%llu scope-active=%d (CPU; not GPU completion)",
+                entry->name.c_str(), static_cast<unsigned long long>(entry->key),
+                std::chrono::duration<double, std::milli>(upload_start - entry->cache_ready).count(),
+                std::chrono::duration<double, std::milli>(Clock::now() - upload_start).count(),
+                static_cast<unsigned long long>(entry->bytes), texture::Service::instance().cache_scope_current(entry->cache_task));
+        entry->cache_ready = {};
     }
     // The first plan after switching on waits for two frames of draws too (a slow frame is longer than the period).
     ++frames_since_on_;
@@ -310,15 +323,15 @@ void Upscales::end_frame()
     if (now >= next_log_)
     {
         const Stats s = stats();
-        if (s.resident != logged_.resident || s.bytes != logged_.bytes || s.waiting != logged_.waiting || s.reading != logged_.reading ||
+        if (s.resident != logged_.resident || s.bytes != logged_.bytes || s.waiting != logged_.waiting || s.reading != logged_.reading || s.upload_pending != logged_.upload_pending ||
             s.missing != logged_.missing || s.failed != logged_.failed || s.entries != logged_.entries)
         {
             logged_ = s;
             next_log_ = now + kLogPeriod;
-            shim::logf("effects upscale: %u textures at ×2 (%.1f MB of the %.0f MB budget); %u being read, %u queued for generation, %u not made yet, "
+            shim::logf("effects upscale: %u textures at ×2 (%.1f MB of the %.0f MB budget); %u being looked up/read, %u read awaiting upload, %u queued for generation, %u not made yet, "
                        "%u unusable (logged); %u loaded textures with a ×2 target",
                        s.resident, static_cast<double>(s.bytes) / 1048576.0, static_cast<double>(s.budget) / 1048576.0,
-                       s.reading, s.waiting, s.missing, s.failed, s.entries);
+                       s.reading, s.upload_pending, s.waiting, s.missing, s.failed, s.entries);
         }
     }
 }
@@ -405,6 +418,8 @@ int Upscales::prepare_scene(shim::TexStore &store)
     if (wanted_ && !supported_) return 3; // requested method unavailable, not silently ready
     if (!enabled_ || !store.upscale) return 0;
     const auto &entry = store.upscale;
+    auto &service = texture::Service::instance();
+    service.promote_cache(entry->cache_task);
     const int state = entry->state.load(std::memory_order_acquire);
     if (state == UpscaleEntry::Failed) return 2;
     if (state == UpscaleEntry::Unknown) look_up(entry, false);
@@ -412,6 +427,7 @@ int Upscales::prepare_scene(shim::TexStore &store)
         entry->state = UpscaleEntry::Waiting;
         if (!ReliefGenerator::instance().request_upscale(entry)) entry->state = UpscaleEntry::Missing;
     }
+    service.promote_cache(entry->cache_task);
     if (!planned_) return 1;
     if (entry->selected) return state == UpscaleEntry::Resident && bgfx::isValid(entry->handle) ? 0 : 1;
     return state == UpscaleEntry::Stored || state == UpscaleEntry::Read || state == UpscaleEntry::Resident ? 0 : 1;
@@ -440,8 +456,8 @@ Upscales::Stats Upscales::stats() const
                 s.bytes += entry->bytes;
                 break;
             case UpscaleEntry::Waiting: ++s.waiting; break;
-            case UpscaleEntry::Pending:
-            case UpscaleEntry::Read: ++s.reading; break;
+            case UpscaleEntry::Pending: ++s.reading; break;
+            case UpscaleEntry::Read: ++s.upload_pending; break;
             case UpscaleEntry::Missing: ++s.missing; break;
             case UpscaleEntry::Failed: ++s.failed; break;
             default: break;

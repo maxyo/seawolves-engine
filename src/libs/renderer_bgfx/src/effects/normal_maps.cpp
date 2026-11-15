@@ -158,7 +158,9 @@ void NormalMaps::on_texture_loaded(shim::TexStore &store, const char *path, cons
 void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
-    texture::Service::instance().post([entry, relief_dir = directory(), counters = counters_] {
+    entry->cache_task = std::make_shared<texture::CacheTask>();
+    texture::Service::instance().post_cache(entry->cache_task, "normal lookup " + entry->name,
+        [entry, relief_dir = directory(), counters = counters_] {
         // Which map the texture takes, for the diagnostics: its key and the method it was (or will be) made with.
         const unsigned long long key = entry->key, method = fx::ReliefMethod(entry->relief);
         if (fx::HasReliefMap(relief_dir, entry->key))
@@ -228,7 +230,11 @@ void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
 void NormalMaps::read_stored(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
-    texture::Service::instance().post([entry, relief_dir = directory()] {
+    entry->cache_task = std::make_shared<texture::CacheTask>();
+    texture::Service::instance().post_cache(entry->cache_task, "normal/gloss read " + entry->name,
+        [weak = std::weak_ptr<NormalMapEntry>(entry), relief_dir = directory()] {
+        const auto entry = weak.lock();
+        if (!entry) return;
         std::string error;
         std::optional<fx::NormalMap> map = entry->gloss != fx::GlossClass::None
                                                ? fx::ReadGlossMap(relief_dir, entry->key, &error)
@@ -246,6 +252,7 @@ void NormalMaps::read_stored(const std::shared_ptr<NormalMapEntry> &entry)
             return;
         }
         entry->map = std::move(*map);
+        entry->cache_ready = std::chrono::steady_clock::now();
         entry->state = NormalMapEntry::Derived;
     });
 }
@@ -356,7 +363,10 @@ int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting, boo
         if (!entry) return;
         // Authored grey bump maps are data, never a generated shading normal.
         if (entry->relief == fx::ReliefClass::HeightMap) return;
+        auto &service = texture::Service::instance();
+        service.promote_cache(entry->cache_task);
         const Relief map = upload(entry, lighting, size);
+        service.promote_cache(entry->cache_task);
         const int state = entry->state.load(std::memory_order_acquire);
         if (inference_pending && state == NormalMapEntry::Waiting) *inference_pending = true;
         if (state == NormalMapEntry::Failed && (bgfx::isValid(entry->handle) || bgfx::isValid(entry->material)))
@@ -422,6 +432,8 @@ NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &ent
         read_stored(entry);
         return {};
     case NormalMapEntry::Derived:
+    {
+        const auto upload_start = std::chrono::steady_clock::now();
         fx::RefreshReliefDepth(entry->map, entry->relief);
         fx::DropTopMips(entry->map, max_size);
         entry->handle = lighting.CreateNormalMap(entry->map); // logs why when it cannot
@@ -451,7 +463,16 @@ NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &ent
         entry->map = {};
         entry->state = bgfx::isValid(entry->handle) ? NormalMapEntry::Uploaded : NormalMapEntry::Failed;
         entry->uploaded = now_;
+        if (entry->cache_ready != std::chrono::steady_clock::time_point{} && entry->cache_task &&
+            entry->cache_task->generation.load() != 0)
+            shim::logf("loading cache upload: normal/gloss %s key=%016llx ready-to-submit=%.3f ms submit=%.3f ms valid=%d scope-active=%d (CPU; not GPU completion)",
+                entry->name.c_str(), static_cast<unsigned long long>(entry->key),
+                std::chrono::duration<double, std::milli>(upload_start - entry->cache_ready).count(),
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - upload_start).count(),
+                entry->state == NormalMapEntry::Uploaded, texture::Service::instance().cache_scope_current(entry->cache_task));
+        entry->cache_ready = {};
         break;
+    }
     default:
         break;
     }
@@ -519,7 +540,9 @@ void NormalMaps::add_gloss(shim::TexStore &store, const std::string &name, std::
 void NormalMaps::look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry)
 {
     entry->state = NormalMapEntry::Pending;
-    texture::Service::instance().post([entry, relief_dir = directory()] {
+    entry->cache_task = std::make_shared<texture::CacheTask>();
+    texture::Service::instance().post_cache(entry->cache_task, "gloss lookup " + entry->name,
+        [entry, relief_dir = directory()] {
         if (fx::HasGlossMap(relief_dir, entry->key))
         {
             entry->state = NormalMapEntry::Stored;

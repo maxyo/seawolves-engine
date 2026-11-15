@@ -73,6 +73,7 @@ uint64_t load_milliseconds() {
 void BeginSceneResources(const char *scene)
 {
     auto &load = location_load();
+    texture::Service::instance().end_loading_cache_scope();
     render::SetSceneLoadingWindow(0, 0);
     load.opaque.invalidate();
     load.scene_work.invalidate();
@@ -86,6 +87,7 @@ void BeginSceneResources(const char *scene)
     load.failures = {}; load.pipelines_pending = false;
     load.phase_polled_at = 0; load.cooling = false;
     if (!load.sealed) {
+        texture::Service::instance().begin_loading_cache_scope();
         load.gate.begin(load_milliseconds());
         upscales().begin_scene();
         shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
@@ -1421,7 +1423,10 @@ void FailSceneTexture(const char *name)
 }
 void CompleteSceneReveal() {
     auto &load = effects::location_load();
-    if (load.gate.state() == effects::SceneReadiness::State::Ready) load.sealed = true;
+    if (load.gate.state() == effects::SceneReadiness::State::Ready) {
+        load.sealed = true;
+        texture::Service::instance().end_loading_cache_scope();
+    }
 }
 bool RetrySceneResources(uint64_t generation)
 {

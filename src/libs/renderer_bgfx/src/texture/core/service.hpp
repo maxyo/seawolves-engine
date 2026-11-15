@@ -8,10 +8,12 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -55,6 +57,14 @@ struct Job
     std::atomic<int> holders{0};
 };
 
+// A queued cache operation can be claimed by the current location after it was posted.
+// The generation is the only cross-thread priority input; workers never inspect renderer state.
+struct CacheTask
+{
+    std::atomic<uint64_t> generation{0};
+    std::chrono::steady_clock::time_point queued = std::chrono::steady_clock::now();
+};
+
 class Service
 {
   public:
@@ -80,6 +90,14 @@ class Service
     // src/effects/normal_maps.cpp): runs when no transcode is queued. Dropped unrun at shutdown. (The ray bakes
     // have a thread of their own: fx::PostBake.)
     void post(std::function<void()> task);
+    // Cache lookups/reads share the existing workers. Only tickets explicitly claimed during
+    // the current loading scope bypass transcodes, at most twice before ordinary work.
+    void post_cache(std::shared_ptr<CacheTask> ticket, std::string name, std::function<void()> task);
+    void promote_cache(const std::shared_ptr<CacheTask> &ticket);
+    bool cache_scope_current(const std::shared_ptr<CacheTask> &ticket) const;
+    // Game thread lifecycle: beginning/replacing/cancelling/revealing a scene revokes old priority.
+    void begin_loading_cache_scope();
+    void end_loading_cache_scope();
     // The on-disk cache directory (empty: no disk cache). Fixed between configure() calls.
     const std::filesystem::path &cache_directory() const { return config_.directory; }
     // Bytes of temporary (pre-ETC2) textures alive on the GPU.
@@ -97,7 +115,16 @@ class Service
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     std::deque<std::shared_ptr<Job>> queue_;
-    std::deque<std::function<void()>> tasks_;
+    struct Task
+    {
+        std::function<void()> work;
+        std::shared_ptr<CacheTask> cache;
+        std::string name;
+    };
+    std::deque<Task> tasks_;
+    std::atomic<uint64_t> loading_generation_{0};
+    uint64_t next_loading_generation_ = 0; // game thread only
+    unsigned foreground_streak_ = 0; // under mutex_; fairness across all workers
     std::unordered_map<uint64_t, std::weak_ptr<Job>> in_flight_;
     size_t queued_bytes_ = 0;
     std::vector<std::thread> workers_;

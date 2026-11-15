@@ -47,6 +47,7 @@ namespace storm::fx
 {
 class Lighting;
 }
+namespace storm::texture { struct CacheTask; }
 namespace storm::shim
 {
 struct TexStore;
@@ -97,6 +98,8 @@ struct NormalMapEntry
     uint16_t queued_scene = 0;
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
     std::atomic<int> state{Unqueued};
+    std::shared_ptr<texture::CacheTask> cache_task; // game thread; queued task retains its own ticket
+    std::chrono::steady_clock::time_point cache_ready{}; // worker, published before Derived/Read
     std::atomic<bool> wanted{false}; // a draw asked for it: the worker keeps the map in memory for the upload
     std::atomic<uint32_t> drawn{0};  // the frame a draw last asked for it (the generator makes those on screen first)
     std::string name;                // normalized texture path, for the logs
