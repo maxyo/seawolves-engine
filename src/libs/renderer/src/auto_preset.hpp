@@ -26,8 +26,10 @@
 // kAutoPresetTitleSeconds of the title screen with settled effects and no background work in progress (a relief map
 // already started finishes first). Each rung then waits until its switch is active (EffectsReport::pending: programs
 // prepared and self-tested; a first switch to «Высокая» without a program cache prepared 60 programs in 67 s on the
-// host), at least kAutoPresetSettleSeconds (the switch rebuilds render targets; those frames are not counted; the
-// renderer logs when each rung's measurement starts) and is measured kAutoPresetMeasureSeconds, at least
+// host), then settles kAutoPresetSettleSeconds and kAutoPresetSettleFrames counted from that moment (activation
+// rebuilds render targets and sets up the lamps: the emulator's first frame after a 96 s switch to «Средняя» took 11 s;
+// a settle counted from the request was over by then and that frame was measured), those frames not counted; the
+// renderer logs when each rung's measurement starts. It is measured kAutoPresetMeasureSeconds, at least
 // kAutoPresetMinFrames frames. Leaving the title, the app going to the background (the lifecycle's own signal, not a
 // frame gap: a slow GPU may take a second per frame) or new settings from the player abort it; nothing is stored then
 // and the next start measures again.
@@ -56,7 +58,8 @@ constexpr double kAutoPresetHeadroom = 1.5; // town / title GPU time, see above
 constexpr uint32_t kAutoPresetPacingFps = 60;
 constexpr double kAutoPresetJitterMs = 2.0;
 constexpr double kAutoPresetTitleSeconds = 3.0;
-constexpr double kAutoPresetSettleSeconds = 1.5;
+constexpr double kAutoPresetSettleSeconds = 1.5;  // from the switch being active
+constexpr size_t kAutoPresetSettleFrames = 10;    // presented from the switch being active
 constexpr double kAutoPresetMeasureSeconds = 3.0;
 constexpr double kAutoPresetMaxMeasureSeconds = 8.0; // a very slow rung ends with fewer frames
 constexpr size_t kAutoPresetMinFrames = 30;
@@ -194,8 +197,10 @@ class AutoPresetBenchmark
     struct Step
     {
         int apply_rung = -1;   // >= 0: switch the effects to this rung of kAutoPresetRungs now
-        bool measuring = false; // the rung became active this frame (its switch prepared and settled): measured now
-        double prepared_s = 0.0; // with `measuring`: seconds from asking for the rung until it was active and settled
+        bool measuring = false; // the rung's switch is active and settled this frame: measured from now
+        double prepared_s = 0.0; // with `measuring`: seconds from asking for the rung until its switch was active
+        double settled_s = 0.0;  // with `measuring`: seconds it then settled (not measured)
+        size_t settled_frames = 0;
         bool finished = false; // Done this frame: chosen() and report() are final
         bool aborted = false;  // Aborted this frame: reason()
     };
@@ -233,10 +238,24 @@ class AutoPresetBenchmark
                 return abort("the game went to the background");
             if (phase_ == Phase::Settling)
             {
-                if (frame.effects_ready && frame.now_s - phase_since_ >= kAutoPresetSettleSeconds)
+                if (!frame.effects_ready)
+                {
+                    active_since_ = -1.0; // the switch is still prepared: the settle starts once it is active
+                    break;
+                }
+                if (active_since_ < 0.0)
+                {
+                    active_since_ = frame.now_s;
+                    settle_frames_ = 0;
+                    break;
+                }
+                settle_frames_ += frame.intervals_ms.size();
+                if (frame.now_s - active_since_ >= kAutoPresetSettleSeconds && settle_frames_ >= kAutoPresetSettleFrames)
                 {
                     step.measuring = true;
-                    step.prepared_s = frame.now_s - phase_since_;
+                    step.prepared_s = active_since_ - phase_since_;
+                    step.settled_s = frame.now_s - active_since_;
+                    step.settled_frames = settle_frames_;
                     phase_ = Phase::Measuring;
                     phase_since_ = frame.now_s;
                     intervals_.clear();
@@ -333,6 +352,7 @@ class AutoPresetBenchmark
         rung_ = rung;
         phase_ = Phase::Settling;
         phase_since_ = now;
+        active_since_ = -1.0;
         return rung;
     }
 
@@ -341,6 +361,8 @@ class AutoPresetBenchmark
     int chosen_ = kAutoPresetFirstRung;
     double title_since_ = -1.0;
     double phase_since_ = 0.0;
+    double active_since_ = -1.0; // Settling: when the rung's switch was first seen active, < 0: not yet
+    size_t settle_frames_ = 0;
     std::vector<float> intervals_;
     double gpu_sum_ = 0.0;
     size_t gpu_frames_ = 0;

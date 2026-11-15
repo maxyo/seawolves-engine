@@ -29,7 +29,15 @@ struct Run
     std::function<double(int rung)> prepare_s;
     double ready_at = 0.0;
     int asked = kAutoPresetFirstRung;
-    std::vector<std::pair<int, double>> measuring; // (rung, prepared_s) of every Step::measuring
+    float hitch_ms = 0.0f; // > 0: the first frame after a switch became active takes this long (lamps, render targets)
+    bool hitch_next = false;
+    struct Measuring
+    {
+        int rung;
+        double prepared_s, settled_s;
+        size_t settled_frames;
+    };
+    std::vector<Measuring> measuring; // every Step::measuring
     bool held_while_running = true;                // holds_background whenever the measurement ran
 
     // Frames until the machine ends or `limit` seconds pass; `title(now)` says whether the title is shown, `busy(now)`
@@ -41,14 +49,18 @@ struct Run
         const double end = now + limit;
         while (now < end)
         {
-            const float interval = pacing(rung, frame_index++);
+            const float interval = hitch_next ? hitch_ms : pacing(rung, frame_index++);
+            hitch_next = false;
             now += interval / 1000.0;
             const std::vector<float> intervals{interval};
             AutoPresetBenchmark::Frame frame;
             frame.now_s = now;
             frame.title = title ? title(now) : true;
             if (prepare_s && rung != asked && now >= ready_at)
+            {
                 rung = asked; // the switch is active: the new rung draws from the next frame
+                hitch_next = hitch_ms > 0.0f;
+            }
             frame.effects_ready = prepare_s ? rung == asked : pending_frames == 0;
             frame.background_busy = busy ? busy(now) : false;
             frame.intervals_ms = intervals;
@@ -59,7 +71,7 @@ struct Run
                 --pending_frames;
             step = benchmark.frame(frame);
             if (step.measuring)
-                measuring.emplace_back(benchmark.rung(), step.prepared_s);
+                measuring.push_back({benchmark.rung(), step.prepared_s, step.settled_s, step.settled_frames});
             if (step.apply_rung >= 0)
             {
                 applied.push_back(step.apply_rung);
@@ -271,6 +283,7 @@ int main()
         const std::vector<double> gpu{3.0, 5.0, 9.0, 13.0};
         Run run;
         run.prepare_s = [](int rung) { return rung == 3 ? 67.0 : rung == 2 ? 12.0 : 0.5; };
+        run.hitch_ms = 11000.0f; // the emulator's first frame after a 96 s switch to «Средняя» (2026-11-15)
         const auto step = run.drive([&](int rung, size_t) { return interval[static_cast<size_t>(rung)]; }, 300.0, {},
                                     Timers(gpu));
         const auto &results = run.benchmark.results();
@@ -287,12 +300,20 @@ int main()
             }
         }
         assert(run.applied == (std::vector<int>{1, 2, 3, 3}));
-        // The measurement of each rung started only after its preparation, and said so.
-        assert(run.measuring.size() == 3 && run.measuring[0].first == 1 && run.measuring[1].first == 2 &&
-               run.measuring[2].first == 3);
-        assert(run.measuring[0].second >= kAutoPresetSettleSeconds && run.measuring[0].second < kAutoPresetSettleSeconds + 0.1);
-        assert(run.measuring[1].second >= 12.0 && run.measuring[1].second < 12.1);
-        assert(run.measuring[2].second >= 67.0 && run.measuring[2].second < 67.1);
+        // Each rung settled after its switch became active (the hitch frame among the settle frames), then was
+        // measured; the log says how long each part took.
+        assert(run.measuring.size() == 3 && run.measuring[0].rung == 1 && run.measuring[1].rung == 2 &&
+               run.measuring[2].rung == 3);
+        // «Низкая» already draws when the measurement starts: no switch, no hitch.
+        assert(run.measuring[0].prepared_s < 0.1 && run.measuring[0].settled_s >= kAutoPresetSettleSeconds &&
+               run.measuring[0].settled_frames >= kAutoPresetSettleFrames);
+        const double prepared[] = {0.0, 12.0, 67.0};
+        for (size_t i = 1; i < 3; ++i)
+        {
+            const auto &m = run.measuring[i];
+            assert(m.prepared_s >= prepared[i] && m.prepared_s < prepared[i] + 0.1);
+            assert(m.settled_s >= 11.0 && m.settled_frames >= kAutoPresetSettleFrames);
+        }
         // The relief generation and ray bakes stay held through every preparation and measurement.
         assert(run.held_while_running && !run.benchmark.holds_background(true));
     }
@@ -301,6 +322,7 @@ int main()
         const std::vector<float> interval{25.0f, 45.0f, 60.0f, 90.0f};
         Run run;
         run.prepare_s = [](int) { return 2.0; };
+        run.hitch_ms = 5000.0f;
         const auto step = run.drive([&](int rung, size_t) { return interval[static_cast<size_t>(rung)]; }, 300.0, {},
                                     Timers({12.0, 19.0, 40.0, 60.0}));
         const auto &results = run.benchmark.results();
@@ -308,8 +330,17 @@ int main()
         assert(results[0].rung == 1 && !results[0].passes && results[0].p50_ms == 45.0f && results[0].gpu_ms == 19.0);
         assert(results[1].rung == 0 && results[1].passes && results[1].p50_ms == 25.0f && results[1].max_ms == 25.0f &&
                results[1].gpu_ms == 12.0);
-        assert(run.applied == (std::vector<int>{1, 0, 0}) && run.measuring.size() == 2 && run.measuring[1].first == 0);
+        assert(run.applied == (std::vector<int>{1, 0, 0}) && run.measuring.size() == 2 && run.measuring[1].rung == 0);
         assert(run.benchmark.report().find("\"chosen\":0,\"render_height\":720") != std::string::npos);
+    }
+    // The settle counts from the switch being active, not from the request: a preparation longer than the settle
+    // still leaves kAutoPresetSettleSeconds and kAutoPresetSettleFrames of the active rung unmeasured.
+    {
+        Run run;
+        run.prepare_s = [](int rung) { return rung == 2 ? 30.0 : 0.0; };
+        run.drive([](int rung, size_t) { return rung == 2 ? 20.0f : 10.0f; }, 300.0, {}, Timers({2, 2, 2, 2}));
+        assert(run.measuring.size() >= 2 && run.measuring[1].rung == 2 && run.measuring[1].prepared_s >= 30.0 &&
+               run.measuring[1].settled_s >= kAutoPresetSettleSeconds && run.measuring[1].settled_frames >= kAutoPresetSettleFrames);
     }
     // A switch that never becomes active keeps the measurement waiting on the title (still holding the background
     // work) without a result; leaving the title then aborts it loudly with the reason.

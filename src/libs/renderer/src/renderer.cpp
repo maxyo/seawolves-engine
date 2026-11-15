@@ -674,8 +674,9 @@ void AutoPresetFrame()
                      r.passes ? "holds the target" : "misses the target", r.why);
     }
     if (step.measuring)
-        spdlog::info("graphics auto preset: {} active after {:.1f} s (switch prepared and settled); measuring it",
-                     AutoPresetRungName(autoPreset->rung()), step.prepared_s);
+        spdlog::info("graphics auto preset: {} active after {:.1f} s (switch prepared), settled {:.1f} s ({} frames); "
+                     "measuring it", AutoPresetRungName(autoPreset->rung()), step.prepared_s, step.settled_s,
+                     step.settled_frames);
     if (step.aborted)
     {
         StopAutoPresetMeasurement();
