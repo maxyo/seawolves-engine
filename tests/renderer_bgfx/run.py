@@ -50,7 +50,7 @@ subprocess.run([str(warmth), 'begin', str(build)], check=True)
 subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'storm_eac_encoder_tests', 'perf_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
                 'preset_switch_check', 'sea_edge_check', 'program_cache_check', 'render_thread_check',
                 'storm_fx_core_check', 'storm_fx_wave_storage_check', 'storm_fx_wave_idle_check', 'storm_fx_wave_source_check', 'ao_volume_check',
-                'storm_relief_check', 'storm_relief_device_retry_check', 'grass_vertex_check', 'cutout_caster_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'texture_format_check', 'upscale_swap_check', 'backend_select_check',
+                'storm_relief_check', 'storm_relief_device_retry_check', 'storm_relief_finalizer_check', 'grass_vertex_check', 'cutout_caster_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'texture_format_check', 'upscale_swap_check', 'backend_select_check',
                 'buffer_pool_check', 'thumbnail_check', 'pipeline_prewarm_check', 'wet_surfaces_check'], check=True)
 subprocess.run([str(warmth), 'end', str(build)], check=True)
 # Every check is its own process: they run in parallel (STORM_CHECK_JOBS, default 6), the draws on OpenGL ES
@@ -67,7 +67,8 @@ plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 's
          ['ctest', '--test-dir', str(build), '--output-on-failure', '--no-tests=error',
           '-R', '^(scene_(post_handoff|nested_progress|hidden_work|stock_(transaction|scheduler|progress|consumers))|texture_cache_lane|texture_cache_codec)_check$'],
          [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text()],
-         [str(build / 'relief' / 'storm_relief_device_retry_check'), str(build / 'device-retry-fixture')]]
+         [str(build / 'relief' / 'storm_relief_device_retry_check'), str(build / 'device-retry-fixture')],
+         [str(build / 'relief' / 'storm_relief_finalizer_check'), str(build / 'finalizer-fixture')]]
 # The checks that draw, on OpenGL ES.
 gpu_checks = ['skinning_check', 'uniform_commit_check', 'point_sprite_check', 'preset_switch_check', 'sea_edge_check', 'program_cache_check',
               'render_thread_check', 'ao_volume_check', 'grass_vertex_check', 'cutout_caster_check', 'texture_format_check', 'upscale_swap_check', 'buffer_pool_check',
@@ -114,5 +115,5 @@ for name, done in failures:
     print(f'--- {name}: exit {done.returncode}\n{done.stdout[-6000:]}', flush=True)
 if failures:
     raise SystemExit('FAIL: ' + ', '.join(name for name, _ in failures))
-print('PASS: storm_bgfx builds; storm_texture_tests; perf_check; backend_select_check; fx core_check; relief_switch_check; relief_check; relief_device_retry_check; '
+print('PASS: storm_bgfx builds; storm_texture_tests; perf_check; backend_select_check; fx core_check; relief_switch_check; relief_check; relief_device_retry_check; relief_finalizer_check; '
       f'on OpenGL ES: {" ".join(gpu_checks)}; on Vulkan ({vulkan}): {" ".join(vulkan_checks)}', flush=True)

@@ -170,6 +170,10 @@ if(NOT ANDROID)
     # tests/renderer_bgfx/run.py: the preparation with the real models on a small synthetic game.
     add_executable(storm_relief_device_retry_check tests/device_retry_check.cpp)
     target_link_libraries(storm_relief_device_retry_check PRIVATE storm_relief_core)
+    # The finalization alone (finalizer.hpp) on synthetic planes: real encoders, writers and CPU admission, no models.
+    add_executable(storm_relief_finalizer_check tests/finalizer_check.cpp)
+    target_link_libraries(storm_relief_finalizer_check PRIVATE storm_relief_core)
+    set_target_properties(storm_relief_finalizer_check PROPERTIES BUILD_RPATH "${storm_onnxruntime_SOURCE_DIR}/lib")
     add_executable(storm_relief_check tests/relief_check.cpp)
     target_link_libraries(storm_relief_check PRIVATE storm_relief_core)
     set_target_properties(storm_relief_check PROPERTIES BUILD_RPATH "${storm_onnxruntime_SOURCE_DIR}/lib")
