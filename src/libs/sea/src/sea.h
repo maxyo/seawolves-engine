@@ -6,6 +6,7 @@
 #include "sea_base.h"
 #include "renderer.h"
 #include "vma.hpp"
+#include "wave_focus.hpp"
 #ifdef __ANDROID__
 #include "parallel_for.hpp"
 #endif
@@ -136,6 +137,7 @@ class SEA : public SEA_BASE
     bool bStop;
     // Waves from objects: what the Execute stage put on the water, handed to the renderer when the sea draws.
     std::vector<storm::render::EffectsWaveSource> waveSources_;
+    storm::sea::WaveFocus waveFocus_;
 
     float fFogSeaDensity, fFogStartDistance;
     glm::vec3 vFogColor;

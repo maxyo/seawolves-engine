@@ -1440,7 +1440,8 @@ void SEA::Realize(uint32_t dwDeltaTime)
                 reach = std::min(reach, std::max(vCamPos.y, 0.0f) / -look.y);
             const glm::vec3 flat = storm::math::normalizeOrZero(glm::vec3(look.x, 0.0f, look.z)) *
                                    (reach * std::sqrt(std::max(0.0f, 1.0f - look.y * look.y)));
-            waves.focus = {vCamPos.x + flat.x, 0.0f, vCamPos.z + flat.z};
+            waves.focus = waveFocus_.Update(waves.camera, {look.x, look.y, look.z},
+                {vCamPos.x + flat.x, 0.0f, vCamPos.z + flat.z}, waveSources_, fDeltaTime);
         }
         waves.dt = fDeltaTime;
         waves.fresnel = fFrenel;
