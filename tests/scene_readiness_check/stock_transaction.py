@@ -14,9 +14,9 @@ def extract(text, signature):
 core=(root/'src/libs/core/src/core_impl.cpp').read_text()
 renderer=(root/'src/libs/renderer/src/renderer.cpp').read_text()
 native=(root/'src/libs/location/src/location_script_lib.cpp').read_text()
-if len(sys.argv)>1 and sys.argv[1]=='--baseline':
-    native=subprocess.check_output(['git','show','e052f656:src/libs/location/src/location_script_lib.cpp'],cwd=root,text=True)
-method=extract(core,'void CoreImpl::PrepareLoadingScene()')
+method=extract(core,'bool CoreImpl::PrepareLoadingScene()')
+abort=extract(core,'bool CoreImpl::AbortLoadingTransaction(')
+assert 'throw' not in method and 'throw' not in abort
 assert 'Stage::realize' not in method and 'Stage::execute' not in method
 assert 'ProcessFrame(' not in method and 'ProcessExecute(' not in method and 'ProcessRealize(' not in method
 assert 'SetLayerFrozen' not in method and 'SetLayerHeld' not in method
@@ -33,6 +33,8 @@ source=r'''
 #include <string>
 #include <functional>
 #include <algorithm>
+#include <cstdarg>
+#include <cstdio>
 #include "loading_transaction.hpp"
 #include "platform/host_hooks.hpp"
 int frames=0,draws=0,presents=0,releases=0,pumps=0,pose=0,prime=0,danger=0;
@@ -40,7 +42,7 @@ int pendingUntil=4,suspendFor=0,cancelAt=0;bool error=false,ack=false,prepared=f
 int scheduledStarts=0,scheduledPresents=0,scheduledEnds=0,scheduledSuspends=0;
 int waitPolls=0,waits=0,cpuEnds=0,cpuSuspends=0;bool invalidateAfterPresent=false;
 namespace storm::render {
-struct Status {bool active=true;uint64_t generation=7;}; Status status;
+struct Status {bool active=true;uint64_t generation=7;std::string state,phase,detail;uint32_t textures=0,relief=0,shadows=0,failed=0;}; Status status;
 Status GetSceneLoadStatus(){return status;}
 bool HoldSceneReveal(){assert(prepared);return error||frames<pendingUntil;}
 void CompleteSceneReveal(){assert(!error&&frames>=pendingUntil);status.active=false;}
@@ -92,17 +94,24 @@ struct Entity {
  }
 } resource{true,0},dialog{false,1},weather{true,2};
 using entid_t=int;using entptr_t=Entity*;
+char last_trace[512];
+struct Vm {int aborts=0;void AbortExecution(){++aborts;}} vm;
 struct CoreImpl {
- void Trace(const char*, ...) {} // diagnostic sink; actual production transaction remains extracted
+ void Trace(const char *format, ...) {va_list a;va_start(a,format);std::vsnprintf(last_trace,sizeof(last_trace),format,a);va_end(a);}
  TIMER Timer;
- void PrepareLoadingScene();
+ Vm *Compiler=&vm;
+ bool Exit_flag=false;
+ static inline std::chrono::seconds kLoadingStall{300}; // the fixture can shorten it
+ bool PrepareLoadingScene();
+ bool AbortLoadingTransaction(storm::loading::Outcome outcome,uint64_t generation);
  void *GetService(const char*s){return std::string(s)=="renderer"?static_cast<SERVICE*>(&renderer):static_cast<SERVICE*>(&animation);}
  std::vector<int> GetEntityIds(layer_type_t){return {0,1};}
  Entity *GetEntityPointerSafe(int id){return id==2?&weather:id?&dialog:&resource;}
  void ForEachEntity(const std::function<void(Entity*)>&f){f(&resource);f(&dialog);f(&weather);}
 } core;
-struct VS_STACK{};constexpr unsigned IFUNCRESULT_OK=0;
+struct VS_STACK{};constexpr unsigned IFUNCRESULT_OK=0,IFUNCRESULT_FAILED=1;
 METHOD
+ABORT
 RENDER_END
 END_PROGRESS
 NATIVE
@@ -114,6 +123,13 @@ void reset(){
  storm::platform::loadingPlatformPump=hostPump;
  storm::platform::loadingSchedulePump=schedulePump;
  storm::render::status={true,7};renderer.progressTexture=1;
+ vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;
+}
+// An abort: no exception, the scripts unwound once, the engine exit requested, the outcome in the log.
+bool aborted(const char *outcome,bool error){
+ const std::string trace=last_trace;
+ return vm.aborts==1&&core.Exit_flag&&trace.find(std::string("outcome=")+outcome)!=std::string::npos&&
+        (trace.rfind("ERROR: ",0)==0)==error;
 }
 int main(){
  reset();slNativeReloadProgressEnd(nullptr);
@@ -126,28 +142,34 @@ int main(){
  assert(scheduledSuspends==3&&cpuSuspends==3&&scheduledEnds==1);
  reset();waitPolls=3;slNativeReloadProgressEnd(nullptr);
  assert(pumps==frames+3&&waits==3&&scheduledStarts==frames&&scheduledPresents==frames);
- reset();waitPolls=8;cancelAt=3;bool waitCancelled=false;
- try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){waitCancelled=a.outcome==storm::loading::Outcome::Cancel;}
- assert(waitCancelled&&ack&&frames==0&&waits==2&&scheduledEnds==1&&cpuEnds==1);
- reset();error=true;cancelAt=3;bool continued=false;
- try {slNativeReloadProgressEnd(nullptr);continued=true;}
- catch(const storm::loading::Aborted&a){assert(a.outcome==storm::loading::Outcome::Cancel&&ack);}
- assert(!continued&&releases==0&&frames==2&&draws==2&&presents==2&&!danger);
+ assert(vm.aborts==0&&!core.Exit_flag);
+ reset();waitPolls=8;cancelAt=3;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED);
+ assert(aborted("cancelled",false)&&ack&&frames==0&&waits==2&&scheduledEnds==1&&cpuEnds==1);
+ reset();error=true;cancelAt=3;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("cancelled",false)&&ack);
+ assert(releases==0&&frames==2&&draws==2&&presents==2&&!danger);
  assert(!storm::loading::active&&core.Timer.Carry==0);
  assert(scheduledEnds==1&&cpuEnds==1&&!storm::platform::LoadingPlatformTransactionActive());
- reset();invalidateAfterPresent=true;bool invalidated=false;
- try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){invalidated=a.outcome==storm::loading::Outcome::Invalidated;}
- assert(invalidated&&frames==1&&releases==0&&scheduledEnds==1&&cpuEnds==1);
- reset();renderer.progressTexture=-1;bool unavailable=false;
- try{slNativeReloadProgressEnd(nullptr);}catch(const storm::loading::Aborted&a){unavailable=a.outcome==storm::loading::Outcome::Unavailable;}
- assert(unavailable&&frames==1&&presents==0&&scheduledPresents==0&&scheduledEnds==1&&cpuEnds==1);
+ reset();invalidateAfterPresent=true;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("invalidated",true));
+ assert(frames==1&&releases==0&&scheduledEnds==1&&cpuEnds==1);
+ reset();renderer.progressTexture=-1;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("unavailable",true));
+ assert(frames==1&&presents==0&&scheduledPresents==0&&scheduledEnds==1&&cpuEnds==1&&!storm::loading::unavailable);
  assert(!storm::platform::LoadingPlatformTransactionActive());
- reset();storm::loading::active=true;bool reentrant=false;
- try{core.PrepareLoadingScene();}catch(const storm::loading::Aborted&a){reentrant=a.outcome==storm::loading::Outcome::Reentrant;}
- assert(reentrant&&frames==0&&scheduledEnds==0);storm::loading::active=false;
+ reset();storm::loading::active=true;
+ assert(!core.PrepareLoadingScene()&&aborted("reentrant",true)&&frames==0&&scheduledEnds==0);storm::loading::active=false;
+ // A preparation that stops progressing ends with an error after the bound; cooling does not count as a stall.
+ reset();pendingUntil=1000;CoreImpl::kLoadingStall=std::chrono::seconds(0);storm::render::status.phase="cooling";
+ suspendFor=0;cancelAt=6;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("cancelled",false)&&frames>=4);
+ reset();pendingUntil=1000;storm::render::status.phase="generating";
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("stalled",true)&&frames==1&&releases==0);
+ CoreImpl::kLoadingStall=std::chrono::seconds(300);
 }
 '''
-source=source.replace('METHOD',method).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))
+source=source.replace('METHOD',method).replace('ABORT',abort).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))
 with tempfile.TemporaryDirectory(prefix='stock-transaction-') as tmp:
     p=Path(tmp);(p/'check.cpp').write_text(source)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/util/include'),str(p/'check.cpp'),'-o',str(p/'check')],check=True)

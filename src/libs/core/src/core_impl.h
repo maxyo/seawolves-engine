@@ -3,6 +3,7 @@
 #include "core_private.h"
 
 #include "compiler.h"
+#include "loading_transaction.hpp"
 #include "entity_manager.h"
 #include "services_list.h"
 #include "timer.h"
@@ -24,7 +25,11 @@ class CoreImpl final : public CorePrivate
     bool Initialize();
     void ResetCore();
     bool Run();
-    void PrepareLoadingScene() override;
+    bool PrepareLoadingScene() override;
+    // Logs the outcome, unwinds the running scripts (COMPILER::AbortExecution) and requests the engine exit.
+    bool AbortLoadingTransaction(storm::loading::Outcome outcome, uint64_t generation);
+    // PrepareLoadingScene ends with an error after this long without any preparation progress.
+    static constexpr std::chrono::seconds kLoadingStall{300};
     bool LoadClassesTable();
 
     void ProcessExecute();

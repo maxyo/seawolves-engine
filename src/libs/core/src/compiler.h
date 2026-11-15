@@ -142,6 +142,13 @@ class COMPILER : public VIRTUAL_COMPILER
 
     void ExitProgram();
     void ClearEvents();
+    // From a native function the running script calls: every script frame of the current call stack returns at
+    // once (no further script statement runs); the outermost frame drops their stack values. No-op outside scripts.
+    void AbortExecution()
+    {
+        if (execute_depth_)
+            abort_execution_ = true;
+    }
 
     uint32_t GetIntFunctionCode(const char *func_name);
     void DeleteScriptEntity(DATA &object);
@@ -168,6 +175,8 @@ class COMPILER : public VIRTUAL_COMPILER
     S_TOKEN_TYPE BC_TokenGet();
 
     S_TOKEN_TYPE TokenLastReadResult;
+    uint32_t execute_depth_ = 0;  // nested BC_Execute frames
+    bool abort_execution_ = false; // AbortExecution: unwinding the current script call stack
     uint32_t TLR_DataOffset;
     const char *pRunCodeBase;
     bool TokenIs(S_TOKEN_TYPE test);

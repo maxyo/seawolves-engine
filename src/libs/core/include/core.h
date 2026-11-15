@@ -53,8 +53,9 @@ class Core
   public:
     virtual ~Core() = default;
 
-    // Complete resource preparation inside the original stock loading transaction.
-    virtual void PrepareLoadingScene() {}
+    // Complete resource preparation inside the original stock loading transaction. False: the transaction was
+    // aborted (cancel, quit, failure); the running scripts are unwound and the engine exits.
+    virtual bool PrepareLoadingScene() { return true; }
 
     // return application window
     virtual storm::OSWindow *GetWindow() = 0;

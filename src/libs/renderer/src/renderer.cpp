@@ -3261,8 +3261,10 @@ void Renderer::RunStart()
 void Renderer::RunEnd()
 {
     if (storm::loading::active) {
-        if (progressTexture < 0)
-            throw storm::loading::Aborted{storm::loading::Outcome::Unavailable};
+        if (progressTexture < 0) {
+            storm::loading::unavailable = true; // PrepareLoadingScene aborts the transaction
+            return;
+        }
         bInsideScene = false;
         storm::loading::ready = !storm::render::HoldSceneReveal();
         DrawProgressView(false);

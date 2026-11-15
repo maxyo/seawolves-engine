@@ -3836,6 +3836,19 @@ bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult
         }
     }
 
+    if (abort_execution_)
+    {
+        // A native function aborted the running scripts (AbortExecution): no stack check, the caller's frame
+        // returns too and the outermost one drops what the aborted frames left.
+        pRun_fi = mem_pfi;
+        InstructionPointer = mem_InstructionPointer;
+        ip = mem_ip;
+        if (pRun_fi)
+            RunningSegmentID = pRun_fi->segment_id;
+        pRunCodeBase = mem_codebase;
+        return false;
+    }
+
     if (pVResult)
     {
         if (check_sp != (SStack.GetDataNum() - 1))
@@ -3933,6 +3946,22 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
     //    int32_t array_index;
     //    DATA * pRef;
     DATA *pVar;
+    // AbortExecution unwinds every frame (CALL_FUNCTION returns false); the outermost one drops the stack values
+    // the aborted frames left and clears the request.
+    struct ExecuteDepth
+    {
+        COMPILER &compiler;
+        const FuncFrame &frame;
+        ~ExecuteDepth()
+        {
+            if (--compiler.execute_depth_ == 0 && compiler.abort_execution_)
+            {
+                compiler.abort_execution_ = false;
+                compiler.SStack.InvalidateFrom(frame.stack_offset);
+            }
+        }
+    } execute_depth{*this, frame};
+    ++execute_depth_;
     entid_t eid;
     //    ATTRIBUTES * pRoot;
     ATTRIBUTES *pLeftOperandAClass;

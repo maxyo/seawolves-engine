@@ -179,7 +179,7 @@ void CoreImpl::ReleaseBase()
     Compiler->Token.Release();
 }
 
-bool CoreImpl::Run() try
+bool CoreImpl::Run()
 {
     stopFrameProcessing_ = false;
 
@@ -284,18 +284,26 @@ bool CoreImpl::Run() try
 
     return true;
 }
-catch (const storm::loading::Aborted &abort) {
-    Trace("Stock loading transaction aborted outcome=%u", static_cast<unsigned>(abort.outcome));
-    // Imported-function failure alone does not unwind BC_Execute. This exception
-    // leaves the whole current script/OnLoad stack before ordinary engine exit.
+
+bool CoreImpl::AbortLoadingTransaction(storm::loading::Outcome outcome, uint64_t generation)
+{
+    using storm::loading::Outcome;
+    const bool user = outcome == Outcome::Cancel || outcome == Outcome::Quit;
+    Trace("%sStock loading transaction aborted generation=%llu outcome=%s: the engine exits", user ? "" : "ERROR: ",
+          static_cast<unsigned long long>(generation), storm::loading::OutcomeName(outcome));
+    // No exception crosses the script VM: the running scripts (the stock loader and whatever called it) return
+    // at once, and the frame ends with the ordinary engine exit.
+    if (Compiler)
+        Compiler->AbortExecution();
     Exit_flag = true;
     return false;
 }
 
-void CoreImpl::PrepareLoadingScene()
+bool CoreImpl::PrepareLoadingScene()
 {
     const auto initial = storm::render::GetSceneLoadStatus();
-    if (!initial.active) return;
+    if (!initial.active) return true;
+    if (storm::loading::active) return AbortLoadingTransaction(storm::loading::Outcome::Reentrant, initial.generation);
     storm::loading::Scope loading;
     struct CpuAdmissionReset { uint64_t generation; ~CpuAdmissionReset() { storm::render::EndSceneCpuBudget(generation); } } cpu_admission_reset{initial.generation};
     const auto loading_started = std::chrono::steady_clock::now();
@@ -318,11 +326,29 @@ void CoreImpl::PrepareLoadingScene()
     // GetService stores SERVICE pointers; avoid pulling renderer backend headers into core.
     auto *renderer = static_cast<SERVICE *>(GetService("renderer"));
     auto *animation = static_cast<SERVICE *>(GetService("AnimationServiceImp"));
-    if (!renderer) throw storm::loading::Aborted{storm::loading::Outcome::Unavailable};
+    if (!renderer) return AbortLoadingTransaction(storm::loading::Outcome::Unavailable, initial.generation);
+    // A bound for a preparation that stops progressing (no resource count, state or phase change; cooling waits
+    // for the device and does not count). It ends the transaction with an error instead of a silent spinner.
+    std::string progress_signature;
+    auto progress_at = loading_started;
     while (true) {
         const auto status = storm::render::GetSceneLoadStatus();
         if (!status.active || status.generation != initial.generation)
-            throw storm::loading::Aborted{storm::loading::Outcome::Invalidated};
+            return AbortLoadingTransaction(storm::loading::Outcome::Invalidated, initial.generation);
+        const std::string signature = status.state + '/' + status.phase + '/' + std::to_string(status.textures) + '/' +
+            std::to_string(status.relief) + '/' + std::to_string(status.shadows) + '/' + std::to_string(status.failed);
+        const auto now = std::chrono::steady_clock::now();
+        if (signature != progress_signature || status.phase == "cooling") {
+            progress_signature = signature;
+            progress_at = now;
+        }
+        else if (now - progress_at >= kLoadingStall) {
+            Trace("ERROR: Stock loading transaction made no progress for %lld s: state=%s textures=%u relief=%u "
+                  "shadows=%u failed=%u (%s)", static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(
+                      kLoadingStall).count()), status.state.c_str(), status.textures, status.relief, status.shadows,
+                  status.failed, status.detail.c_str());
+            return AbortLoadingTransaction(storm::loading::Outcome::Stalled, initial.generation);
+        }
         const auto host = storm::platform::PumpLoadingPlatform(initial.generation);
         if (host == storm::platform::LoadingPlatformState::Suspended) {
             storm::render::SuspendSceneCpuBudget(initial.generation);
@@ -331,9 +357,9 @@ void CoreImpl::PrepareLoadingScene()
             continue;
         }
         if (host != storm::platform::LoadingPlatformState::Continue)
-            throw storm::loading::Aborted{host == storm::platform::LoadingPlatformState::Cancel
+            return AbortLoadingTransaction(host == storm::platform::LoadingPlatformState::Cancel
                 ? storm::loading::Outcome::Cancel : host == storm::platform::LoadingPlatformState::Quit
-                ? storm::loading::Outcome::Quit : storm::loading::Outcome::Unavailable};
+                ? storm::loading::Outcome::Quit : storm::loading::Outcome::Unavailable, initial.generation);
         const auto wait = storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::Poll);
         if (wait) {
             // The next iteration pumps lifecycle/cancel again. No fake render
@@ -358,6 +384,8 @@ void CoreImpl::PrepareLoadingScene()
         for (auto id : ids) if (auto *entity = GetEntityPointerSafe(id))
             entity->ProcessStage(Entity::Stage::loading_realize, 0);
         renderer->RunEnd(); // stock artwork, actual Present, upload/shadow/resource pumps
+        if (storm::loading::unavailable)
+            return AbortLoadingTransaction(storm::loading::Outcome::Unavailable, initial.generation);
         storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::FramePresented);
         ++loading_frames;
         storm::loading::first_frame = false;
@@ -368,7 +396,7 @@ void CoreImpl::PrepareLoadingScene()
                       static_cast<unsigned long long>(initial.generation), static_cast<unsigned long long>(loading_frames),
                       static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
                           std::chrono::steady_clock::now() - loading_started).count()));
-                return;
+                return true;
             }
         }
     }

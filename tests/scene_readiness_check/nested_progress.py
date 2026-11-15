@@ -5,8 +5,6 @@ import subprocess, tempfile, sys, os
 root = Path(__file__).resolve().parents[2]
 path = 'src/libs/renderer/src/renderer.cpp'
 s = (root / path).read_text()
-if '--baseline' in sys.argv:
-    s = subprocess.check_output(['git', 'show', 'b393d23f:' + path], cwd=root, text=True)
 def body(signature):
     start = s.index(signature)
     opening = s.index('{', start)
@@ -22,7 +20,7 @@ fixture = r'''
 #include <cassert>
 #include <cstdint>
 namespace storm {
-namespace loading {bool active=false, ready=false; enum class Outcome {Unavailable}; struct Aborted{Outcome outcome;};}
+namespace loading {bool active=false, ready=false, unavailable=false;}
 namespace render {bool HoldSceneReveal(){return true;}}
 }
 struct Renderer {
@@ -54,9 +52,5 @@ with tempfile.TemporaryDirectory(prefix='nested-progress-') as tmp:
     source=Path(tmp)/'check.cpp';binary=Path(tmp)/'check';source.write_text(fixture)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O0',str(source),'-o',str(binary)],check=True)
     result=subprocess.run([str(binary)],capture_output=True,text=True)
-    if '--baseline' in sys.argv:
-        assert result.returncode != 0 and 'nested loading progress must not Present' in result.stderr, result.stderr
-        print('baseline expected nested-Present assertion PASS')
-    else:
-        assert result.returncode == 0, result.stderr
-        print('production nested/ordinary progress + loading RunEnd controls PASS')
+    assert result.returncode == 0, result.stderr
+    print('production nested/ordinary progress + loading RunEnd controls PASS')
