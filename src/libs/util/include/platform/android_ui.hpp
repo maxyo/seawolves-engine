@@ -15,6 +15,7 @@
 #include <sys/system_properties.h>
 #include <string>
 #include <vector>
+#include "android_hud_channel.hpp"
 #include "android_ship_telemetry.hpp"
 #include "android_spyglass.hpp"
 #include "android_sea_navigator.hpp"
@@ -137,14 +138,12 @@ inline void publishWorldMapHud(bool force=false)
     }
 }
 inline uint64_t seaOrdersHost = 0;
-inline std::string lastSeaOrders;
+inline HudChannel<decltype(seaOrders.publicationKey())> seaOrdersChannel;
 inline void publishSeaOrders()
 {
-    if (seaOrdersHost != ui::generation()) { seaOrdersHost = ui::generation(); lastSeaOrders.clear(); seaOrders.resetActivity(); }
-    const auto json = seaOrders.json();
-    if (json == lastSeaOrders) return;
-    lastSeaOrders = json;
-    ui::state("seaOrders", json);
+    if (seaOrdersHost != ui::generation()) { seaOrdersHost = ui::generation(); seaOrdersChannel.reset(); seaOrders.resetActivity(); }
+    if (const auto *json = seaOrdersChannel.publish(seaOrders.publicationKey(), [] { return seaOrders.json(); }))
+        ui::state("seaOrders", *json);
 }
 // The sea quick action (U1). A new UI host gets a new activity generation: nothing drawn or
 // tapped by the old one counts.

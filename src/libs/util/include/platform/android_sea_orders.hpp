@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <tuple>
 
 namespace storm::android
 {
@@ -227,7 +228,8 @@ public:
         return out + "]}";
     }
     std::string json() const { return jsonFor(frame_); }
-
+    // Everything json() reads (HudChannel, android_ui.hpp).
+    auto publicationKey() const { return std::tie(frame_, scene_, revision_, activity_); }
 };
 inline SeaOrdersState seaOrders;
 // When the touch HUD asks the scripts for the sea orders again (BIShipIcon::Recollect and the
