@@ -23,39 +23,149 @@ std::vector<bool> Shown(const std::vector<LabelBox> &boxes)
 }
 } // namespace
 
+#ifdef STORM_LABEL_PROJECTION_CHECK
+#include "storm_glm.h"
+#include "platform/android_worldmap.hpp"
+#include <limits>
+#include <string>
+
+namespace
+{
+// Compile the exact LRender projection/layout block, with only its renderer/core
+// plumbing replaced. The actual GLM transform, perspective divide, HUD mailbox,
+// label rectangles and collision layout are production code.
+struct ProjectionHarness
+{
+    struct Label
+    {
+        glm::vec3 pos{};
+        float width = 150, height = 30, heightView = 100000;
+        float l = 0, t = 0, r = 0, b = 0;
+        bool onScreen = false, placed = true;
+        std::string text = "Dominica";
+        int icon = -1;
+        uint32_t weight = 100;
+    };
+    struct Camera { float realHeight = 1; } camera;
+    struct Objects { Camera *camera; } objects{&camera};
+    struct Core { float GetDeltaTime() const { return 16; } } core;
+    Objects *wdmObjects = &objects;
+    std::vector<Label> labels{Label{}};
+    std::vector<int32_t> labelSort;
+    std::vector<LabelBox> labelBoxes;
+    LabelLayout labelLayout;
+    void Render(const glm::mat4 &mtx, float w, float h, float scale = 1)
+    {
+        const float pxPerDp = 1, outline = 1.5f;
+        constexpr float kLabelGapDp = 4, kLabelHoldDp = 3;
+#include "label_projection.inc"
+    }
+};
+
+int ProjectionChecks()
+{
+    int anchorFailures = 0, visibilityFailures = 0, samples = 0;
+    auto &hud = storm::android::worldMapHud;
+    storm::android::WorldMapFrame frame;
+    frame.available = true;
+    frame.owner = 19;
+    frame.gameplayRevision = 2;
+    hud.update(frame, 1);
+    hud.resetActivity();
+    const auto area = [&](const std::string &geometry) {
+        assert(hud.offer(std::to_string(hud.revision()) + "\t" + std::to_string(hud.owner().activity) +
+                         "\tlabelarea\t" + geometry, 2));
+    };
+    ProjectionHarness harness;
+    auto &label = harness.labels[0];
+    const auto anchored = [&](float x, float y, float scale = 1) {
+        ++samples;
+        const bool correct = std::abs((label.l + label.r) * 0.5f - x) < .003f &&
+                             std::abs(label.t - y) < .003f &&
+                             std::abs(label.r - label.l - label.width * scale) < .003f;
+        anchorFailures += !correct;
+    };
+    const auto visible = [&](bool expected) {
+        visibilityFailures += label.onScreen != expected || label.placed != expected;
+    };
+    // Same island projection in both captured viewports. Compass/date/days may
+    // overlap the caption; showing/hiding/moving/insetting HUD never moves it.
+    for (const auto viewport : {std::array<float, 2>{960, 540}, {1280, 720}})
+    {
+        const auto [w, h] = viewport;
+        const auto projection = storm::math::projectionMatrix(1.2f, w, h, 1, 10000);
+        const float x = w - 195, y = 150, z = 500;
+        label.pos = {(x * 2 / w - 1) * z / projection[0][0],
+                     (1 - y * 2 / h) * z / projection[1][1], z};
+        for (const auto &geometry : std::vector<std::string>{"none", std::to_string(int(w)) + ":" + std::to_string(int(h)) + ":" +
+                                    std::to_string(int(w - 258)) + ":15:240:219",
+                                    std::to_string(int(w)) + ":" + std::to_string(int(h)) + ":10:30:240:219",
+                                    std::to_string(int(w)) + ":" + std::to_string(int(h)) + ":" +
+                                    std::to_string(int(w - 290)) + ":40:240:219"})
+        {
+            area(geometry);
+            harness.Render(projection, w, h);
+            anchored(x, y);
+            visible(true);
+        }
+        // A caption partly outside the viewport exits naturally; no screen clamp.
+        area("none");
+        for (const float edgeX : {-40.0f, w + 40.0f, w + 160.0f})
+        {
+            label.pos.x = (edgeX * 2 / w - 1) * z / projection[0][0];
+            harness.Render(projection, w, h);
+            anchored(edgeX, y);
+            visible(edgeX < w + label.width / 2);
+        }
+    }
+    // Fixed world anchor through camera pan, pitch/yaw, distance and zoom changes.
+    // Independent screen oracle: transform to camera coordinates, then use the
+    // field-of-view tangent; do not copy label-box placement or projectPoints.
+    area("none");
+    label.pos = {100, 20, 1000};
+    for (const float yaw : {-0.2f, 0.0f, 0.2f})
+        for (const float pitch : {-0.15f, 0.0f, 0.15f})
+            for (const float pan : {-70.0f, 70.0f})
+                for (const float distance : {-200.0f, 200.0f})
+                    for (const float fov : {0.8f, 1.4f})
+                    {
+                        const float w = 1280, h = 720, scale = 1.5f;
+                        const auto view = glm::inverse(storm::math::eulerMatrix(pitch, yaw, 0, pan, 0, distance));
+                        const auto cameraPoint = view * glm::vec4(label.pos, 1);
+                        const float x = w / 2 + cameraPoint.x / cameraPoint.z / std::tan(fov / 2) * w / 2;
+                        const float y = h / 2 - cameraPoint.y / cameraPoint.z / std::tan(h / w * fov / 2) * h / 2;
+                        harness.Render(storm::math::projectionMatrix(fov, w, h, 1, 10000) * view, w, h, scale);
+                        anchored(x, y, scale);
+                        visible(true);
+                    }
+    // The D3D LH projection has clip.w=view.z. Behind-camera and camera-plane
+    // points must not produce mirrored captions, including visible -> behind ->
+    // visible: both state bits must clear even though the old rectangle survives.
+    const auto projection = storm::math::projectionMatrix(1.2f, 960, 540, 1, 10000);
+    for (const float z : {500.0f, -500.0f, 500.0f, 0.0f, 500.0f})
+    {
+        label.pos = {0, 0, z};
+        harness.Render(projection, 960, 540);
+        visible(z > 0);
+        if (z > 0) anchored(480, 270);
+    }
+    for (const float bad : {std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()})
+    {
+        label.pos = {bad, 0, 500};
+        harness.Render(projection, 960, 540);
+        visible(false);
+    }
+    std::printf("projection checks: %d anchored samples; anchor failures=%d; visibility failures=%d\n",
+                samples, anchorFailures, visibilityFailures);
+    return anchorFailures || visibilityFailures;
+}
+} // namespace
+#endif
+
 int main()
 {
     LabelLayout layout;
     constexpr float gap = 8.0f, hold = 6.0f;
-    // WM-UI-01: the projected Dominica caption was under the compass. Reserve the
-    // measured WHOLE component (date and days too), at both captured viewport sizes.
-    for (const auto &viewport : std::vector<std::array<float, 6>>{{960, 540, 702, 15, 240, 219}, {1280, 720, 1022, 15, 240, 219}})
-    {
-        const auto [w, h, x, y, cw, ch] = viewport;
-        const LabelBox compass{x, y, x + cw, y + ch};
-        LabelBox name{x - 12, 150, x + 138, 180, 100, true};
-        const float anchorX = x + 63, anchorY = 150;
-        assert(name.right > compass.left && name.top < compass.bottom); // reproduces the old overlap
-        assert(storm::worldmap::AvoidCompass(name, anchorX, anchorY, w, h, compass, gap));
-        assert(name.top == compass.bottom + gap && name.left == x - 12); // nearest clear position: below days
-        assert(name.bottom <= h && name.right <= w);
-        assert(!storm::worldmap::AvoidCompass(name, anchorX, anchorY, w, h, compass, gap));
-        // The moved caption still participates in normal weighted name collisions.
-        std::vector<LabelBox> boxes{name, Box(name.left, name.top, 50), Box(30, 300, 100)};
-        layout.Place(boxes, gap, hold);
-        assert((Shown(boxes) == std::vector<bool>{true, false, true}));
-        // An offscreen island's partly visible name keeps its projection; no global edge clamp.
-        LabelBox offscreen{w - 80, 150, w + 70, 180};
-        const auto before = offscreen;
-        assert(!storm::worldmap::AvoidCompass(offscreen, w + 10, 150, w, h, compass, gap));
-        assert(offscreen.left == before.left && offscreen.top == before.top);
-    }
-    // A caption close to the compass's left edge moves left when that is shorter.
-    {
-        LabelBox name{650, 150, 720, 180};
-        assert(storm::worldmap::AvoidCompass(name, 685, 150, 960, 540, {702, 15, 942, 234}, gap));
-        assert(name.right == 694 && name.top == 150);
-    }
     // Apart: all show.
     {
         std::vector<LabelBox> boxes{Box(0, 0, 1), Box(200, 0, 1), Box(0, 100, 50)};
@@ -112,5 +222,9 @@ int main()
         assert(Shown(a) == Shown(b));
         assert((Shown(a) == std::vector<bool>{true, false, false, true}));
     }
+#ifdef STORM_LABEL_PROJECTION_CHECK
+    return ProjectionChecks();
+#else
     return 0;
+#endif
 }
