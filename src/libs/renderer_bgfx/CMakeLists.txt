@@ -130,7 +130,9 @@ file(GLOB_RECURSE shim_sources CONFIGURE_DEPENDS src/*.cpp src/*.hpp)
 list(FILTER shim_sources EXCLUDE REGEX "/src/texture/core/")
 add_library(storm_bgfx STATIC ${shim_sources})
 target_compile_features(storm_bgfx PUBLIC cxx_std_20)
-target_include_directories(storm_bgfx PUBLIC include PRIVATE src)
+target_include_directories(storm_bgfx
+    PUBLIC include "${CMAKE_CURRENT_LIST_DIR}/../util/include"
+    PRIVATE src)
 target_link_libraries(storm_bgfx PUBLIC storm_bgfx_runtime PRIVATE storm_bgfx_shaders ${SDL2_LIBRARIES})
 if(ANDROID)
     target_link_libraries(storm_bgfx PRIVATE GLESv3) # driver string and limit queries next to bgfx

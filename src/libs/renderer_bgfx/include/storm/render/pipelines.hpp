@@ -6,7 +6,7 @@
 #pragma once
 
 #include <bgfx/bgfx.h>
-#include <string>
+#include "scene_load_status.hpp"
 
 namespace storm::shim { struct BaseTexture; }
 
@@ -25,15 +25,7 @@ void BeginScenePipelines(const char *scene);
 bool HoldSceneReveal();
 // Location-scoped resources, independently of the Vulkan pipeline gate. Counts include jobs whose queues are empty
 // because a worker has already taken them, disk-resident maps still needing upload, and initial shadow passes.
-struct SceneLoadStatus {
-    uint64_t generation = 0;
-    bool active = false, error = false, retryable = false;
-    std::string state;
-    uint32_t textures = 0, relief = 0, shadows = 0, failed = 0;
-    std::string detail;
-    std::string phase; // preparing only: "generating" or "cooling"; UI localizes it, never displays detail
-};
-SceneLoadStatus GetSceneLoadStatus();
+
 void CompleteSceneReveal();
 // Fader arms only its full-screen solid opaque rectangle. The shim acknowledges a successful submit.
 void ArmSceneOpaqueDraw(bool full_screen, bool solid, uint8_t alpha);

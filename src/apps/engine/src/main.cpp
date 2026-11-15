@@ -1,3 +1,4 @@
+#include "storm/render/pipelines.hpp"
 #include "storm/render/loading_budget.hpp"
 #include "storm/render/scene_load_action.hpp"
 #include <chrono>

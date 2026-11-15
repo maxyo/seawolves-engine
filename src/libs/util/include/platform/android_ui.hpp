@@ -23,7 +23,7 @@
 #include "android_worldmap.hpp"
 #include "android_interface_presentation.hpp"
 #include "android_ui_sink.hpp"
-#include "storm/render/pipelines.hpp"
+#include "scene_load_status.hpp"
 
 namespace storm::android
 {
