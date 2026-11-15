@@ -53,8 +53,11 @@ void aggregate_transport(shim::Device &device)
     render::SetEffectsLightAggregate(5,{snapshot,0});
     expect(device.SetLight(256,&light)==D3DERR_INVALIDCALL && device.lights[5].aggregate.snapshot==snapshot,
            "out-of-range SetLight cannot clear another slot");
+    // The device starts with kMaxLights slots; an index past them (and past D3D's 256) must not add any.
+    const size_t slots=device.lights.size();
     render::SetEffectsLightAggregate(256,{snapshot,0});
-    expect(device.lights.size()==6,"out-of-range metadata bridge cannot grow device slots");
+    render::SetEffectsLightAggregate(static_cast<uint32_t>(slots),{snapshot,0});
+    expect(device.lights.size()==slots,"out-of-range metadata bridge cannot grow device slots");
     device.SetLight(5,&light);
     effects::FfDraw draw;
     draw.lamps=draw.room_light=draw.vertex_ambient_off=true;

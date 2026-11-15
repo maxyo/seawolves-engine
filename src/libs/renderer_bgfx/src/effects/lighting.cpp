@@ -96,29 +96,44 @@ std::shared_ptr<const AggregateUpload> Lighting::aggregate_upload(std::span<cons
         for (const auto &r : input)
             if (std::find(refs.begin(),refs.end(),r)==refs.end()) refs.push_back(r);
     for (const auto &cached : aggregate_cache_)
-        if (cached->payload.refs == refs) return cached;
-    const char *reason = nullptr;
-    if (!aggregate_available()) reason = "device/mode or prior allocation failure";
-    else if (aggregate_cache_.size() >= fx::kAggregateBundlesPerFrame) reason = "64 bundle variants per frame";
+        if (cached->payload.refs == refs)
+        {
+            cached->used_frame = aggregate_frame_;
+            return cached;
+        }
+    const size_t used = static_cast<size_t>(std::count_if(aggregate_cache_.begin(), aggregate_cache_.end(),
+        [&](const auto &cached) { return cached->used_frame == aggregate_frame_; }));
+    uint8_t reason = 0;
+    if (!aggregate_available()) reason = 1;
+    else if (used >= fx::kAggregateBundlesPerFrame) reason = 2;
     auto upload = std::make_shared<AggregateUpload>();
-    if (!reason && !upload->payload.pack(refs)) reason = "256 source/group capacity";
+    if (!reason && !upload->payload.pack(refs)) reason = 4;
     if (!reason)
     {
         upload->texture = bgfx::createTexture2D(fx::kAggregateTextureSide,fx::kAggregateTextureSide,false,1,
             bgfx::TextureFormat::RGBA32F, BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP,
             bgfx::copy(upload->payload.texels.data(),sizeof(upload->payload.texels)));
-        if (!bgfx::isValid(upload->texture)) { aggregate_failed_=true; reason="texture allocation failure"; }
+        if (!bgfx::isValid(upload->texture)) { aggregate_failed_=true; reason=8; }
     }
     if (reason)
     {
-        if (!aggregate_reported_) shim::logf("compound lights: %s; original unmerged baseline draw, compound shadows disabled",reason);
-        aggregate_reported_=true;
+        report_aggregate_fallback(reason, reason == 1 ? "device/mode or prior allocation failure" :
+                                          reason == 2 ? "64 bundle variants per frame" :
+                                          reason == 4 ? "256 source/group capacity" : "texture allocation failure");
         return {};
     }
+    upload->used_frame = aggregate_frame_;
     ++frame_.aggregate_uploads;
     frame_.aggregate_bytes += sizeof(upload->payload.texels);
     aggregate_cache_.push_back(upload);
     return upload;
+}
+
+void Lighting::report_aggregate_fallback(uint8_t reason_bit, const char *text)
+{
+    if (aggregate_reported_ & reason_bit) return;
+    aggregate_reported_ |= reason_bit;
+    shim::logf("ERROR: compound lights: %s; original unmerged baseline draw, compound shadows disabled", text);
 }
 
 void Lighting::prepare_aggregates(FfDraw &draw, const fx::LightSelection &selection, uint8_t directional_mask)
@@ -136,11 +151,8 @@ void Lighting::prepare_aggregates(FfDraw &draw, const fx::LightSelection &select
     for (int i=0;i<selection.count;++i)
         evaluated_members += selection.lights[i].aggregate.get() ? selection.lights[i].aggregate.get()->count : 1;
     if (evaluated_members <= fx::kAggregateSources) draw.aggregate=aggregate_upload(refs);
-    else if (!aggregate_reported_)
-    {
-        shim::logf("compound lights: draw exceeds 256 evaluated members including ordinary lights; unmerged baseline fallback");
-        aggregate_reported_=true;
-    }
+    else
+        report_aggregate_fallback(16, "a draw exceeds 256 evaluated members including ordinary lights");
     if (!draw.aggregate)
     {
         ++frame_.aggregate_fallbacks;
@@ -1205,7 +1217,10 @@ bool Lighting::aerial_fog(const D3DMATRIX &view, bool vs_port, std::array<float,
 void Lighting::end_frame()
 {
     caster_.aggregate.reset();
-    aggregate_cache_.clear(); // bgfx destroy is queued after all submissions referencing these immutable textures
+    // Uploads this frame did not draw with are released (bgfx queues the destroy after the frame's submissions);
+    // the rest are reused by the next frame instead of being made again.
+    std::erase_if(aggregate_cache_, [&](const auto &cached) { return cached->used_frame != aggregate_frame_; });
+    ++aggregate_frame_;
     last_frame_ = frame_;
     frame_ = {};
     // Every 30 frames, when it changed: the parallax census of the last frame.
@@ -1279,7 +1294,8 @@ void Lighting::on_device_lost()
     aggregate_cache_.clear();
     aggregate_open_ = BGFX_INVALID_HANDLE;
     s_aggregate_ = BGFX_INVALID_HANDLE;
-    aggregate_failed_ = aggregate_reported_ = false;
+    aggregate_failed_ = false;
+    aggregate_reported_ = 0;
     probe_.on_device_lost();
     fx_.OnDeviceLost();
     shadows_.on_device_lost();

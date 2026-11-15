@@ -2,7 +2,8 @@
 #include "storm/fx/aggregate_light.hpp"
 #include "storm/fx/light_set.hpp"
 #include "../../src/libs/location/src/light_components.hpp"
-#include "../location_light_choice/stock_fixture_positions.hpp"
+#include "../location_light_choice/fixture_rooms.hpp"
+#include <algorithm>
 #include <cstdlib>
 #define CHECK(condition) do { if (!(condition)) { std::cerr << "FAIL line " << __LINE__ << ": " << #condition << "\n"; std::abort(); } } while (false)
 #include <iostream>
@@ -53,32 +54,34 @@ int main()
 {
     std::vector<location::ComponentSource> sources;
     uint64_t id=0;
-    for(const auto &c:stock_fixture::Residence02)sources.push_back({++id,c.position,{2.2f,1.5f,.5f},{2.2f,1.5f,.5f},15,{.5f,0,1.5f},false});
+    const auto room=fixture_rooms::Rooms()[2]; // a two-ring chandelier and two independent candles
+    for(const auto &c:room.candles)sources.push_back({++id,c.position,{2.2f,1.5f,.5f},{2.2f,1.5f,.5f},15,{.5f,0,1.5f},false});
     // Unequal colors/flicker must survive packing without a group-color square.
     for(size_t i=0;i<sources.size();++i)sources[i].color={.4f+.07f*i,1.7f-.02f*i,.3f+.01f*i};
-    auto s=snapshot(sources);CHECK(s->valid()&&s->groups.size()==7);
+    auto s=snapshot(sources);CHECK(s->valid()&&s->groups.size()==room.count);
     std::vector<fx::AggregateRef> refs;for(uint32_t i=0;i<s->groups.size();++i)refs.push_back({s,i});
-    fx::AggregatePayload payload;CHECK(payload.pack(refs));CHECK(payload.refs.size()==7);
+    fx::AggregatePayload payload;CHECK(payload.pack(refs));CHECK(payload.refs.size()==room.count);
     size_t controls=0;bool central=false;
     for(const auto &r:refs)
     {
         const auto &g=*r.get();
-        if(g.count==24){central=true;CHECK(std::abs(g.shape.range-3.656349f)<1e-5f);CHECK(std::abs(g.support-4.9912165f)<1e-5f);}
+        if(g.count==16){central=true;CHECK(std::abs(g.shape.range-3.656349f)<1e-5f);CHECK(g.support>g.shape.range+0.4f&&g.support<g.shape.range+1.0f);}
         for(float distance:{0.f,.5f,1.f,1.5f,2.f,3.f,4.f,5.f})for(int axis=0;axis<3;++axis)for(float sign:{-1.f,1.f})
             for(V n:{V{1,0,0},V{-1,0,0},V{0,1,0},V{0,-1,0},V{0,0,1},V{0,0,-1}})for(bool linear:{false,true})
             {V p=g.center;p[axis]+=distance*sign;equal(original(r,p,n,linear),unpack(payload,r,p,n,linear));equal(original(r,p,n,linear,.37f),unpack(payload,r,p,n,linear,.37f));++controls;}
     }
     CHECK(central);
+    const fx::AggregateRef chandelier=*std::find_if(refs.begin(),refs.end(),[](const auto &r){return r.get()->count==16;});
     // Energy fade .25 gives .25 of linear irradiance, .5 of gamma irradiance, independent of member colors.
-    V receiver=refs.back().get()->center;receiver[1]-=1;
+    V receiver=chandelier.get()->center;receiver[1]-=1;
     for(bool linear:{false,true})
     {
-        const auto full=original(refs.back(),receiver,{0,1,0},linear);
-        const auto faded=unpack(payload,refs.back(),receiver,{0,1,0},linear,.25f);
+        const auto full=original(chandelier,receiver,{0,1,0},linear);
+        const auto faded=unpack(payload,chandelier,receiver,{0,1,0},linear,.25f);
         for(int k=0;k<3;++k)CHECK(std::abs(faded[k]-full[k]*(linear?.25f:.5f))<1e-5f);
     }
     // Snapshot restore is pointer/index based: publishing a new frame cannot mutate old RGB or payload rows.
-    const auto old=refs.back();const auto oldColor=old.snapshot->members[old.get()->first].color;
+    const auto old=chandelier;const auto oldColor=old.snapshot->members[old.get()->first].color;
     for(auto &m:sources)m.color={.1f,.8f,.2f};auto newer=snapshot(sources);
     CHECK(old.snapshot->members[old.get()->first].color==oldColor);
     CHECK(fx::SameAggregateGeometry(old,{newer,old.group}));

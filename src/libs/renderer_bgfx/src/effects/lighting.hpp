@@ -124,6 +124,7 @@ struct AggregateUpload
 {
     fx::AggregatePayload payload;
     bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
+    uint64_t used_frame = 0; // Lighting's frame that last drew with it
     ~AggregateUpload() { if (bgfx::isValid(texture)) bgfx::destroy(texture); }
 };
 
@@ -326,10 +327,15 @@ class Lighting
         Character,
     };
 
+    // Immutable snapshots: an upload stays valid while the frames keep drawing with the same refs; one not used in
+    // a frame is released at its end (Lighting::end_frame).
     std::vector<std::shared_ptr<AggregateUpload>> aggregate_cache_;
+    uint64_t aggregate_frame_ = 1;
     bgfx::UniformHandle s_aggregate_ = BGFX_INVALID_HANDLE;
     bgfx::TextureHandle aggregate_open_ = BGFX_INVALID_HANDLE;
-    bool aggregate_failed_ = false, aggregate_reported_ = false;
+    bool aggregate_failed_ = false;
+    uint8_t aggregate_reported_ = 0; // one log line per fallback reason (bits of report_aggregate_fallback)
+    void report_aggregate_fallback(uint8_t reason_bit, const char *text);
     std::shared_ptr<const AggregateUpload> aggregate_upload(std::span<const fx::AggregateRef> refs);
     void prepare_aggregates(FfDraw &draw, const fx::LightSelection &selection, uint8_t directional_mask = 0);
     fx::Settings settings_{};
