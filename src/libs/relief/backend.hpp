@@ -12,6 +12,7 @@
 
 namespace storm::relief
 {
+struct LoadingRetry;
 
 // One network on one device. Not thread-safe (Cancel aside).
 class Network
@@ -24,6 +25,9 @@ class Network
     virtual bool Infer(const float *image, int width, int height, float *planes, std::string &error) = 0;
     // Any thread: the running inference stops as soon as it can, and every later one.
     virtual void Cancel() = 0;
+    // Worker only: exact current-location opaque loading permission; CPU networks ignore it.
+    // Revocation/deadline remain shared with the renderer. This grants no inference by itself.
+    virtual void SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
     // "CPU, 6 threads of 8 cores" / "GPU Adreno (TM) 740, Vulkan, 176 px tiles".
     virtual std::string Describe() const = 0;
 };

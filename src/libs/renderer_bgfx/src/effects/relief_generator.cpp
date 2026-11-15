@@ -449,7 +449,7 @@ void ReliefGenerator::loading_window(uint64_t generation, uint64_t deadline_ms,
     loading_retry_.reset(); loading_generation_ = generation;
     loading_normal_ = std::move(normal); loading_upscale_ = std::move(upscale);
     if (deadline_ms && (!loading_normal_.empty() || !loading_upscale_.empty()))
-        loading_retry_ = std::make_shared<relief::LoadingRetry>(deadline_ms);
+        loading_retry_ = std::make_shared<relief::LoadingRetry>(deadline_ms, generation);
     wake_.notify_all();
 }
 

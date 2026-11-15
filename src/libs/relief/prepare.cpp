@@ -474,6 +474,10 @@ struct Session::Impl
         if (gpu[2])
             if (std::unique_ptr<Network> upscale = LoadGpuNetwork(models.upscale_param, models.upscale_bin, fx::kUpscalePad, 4, error))
                 gpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
+        // Lazy GPU reopen must receive the same exact job scope as already-open networks.
+        for (const auto &network : gpu)
+            if (network) network->SetLoadingRetry(loading_retry);
+        if (gpu_upscaler) gpu_upscaler->SetLoadingRetry(loading_retry);
         return gpu_upscaler != nullptr;
     }
     bool EnsureCpu(std::string &error)
@@ -609,7 +613,13 @@ void Session::SetGpuFree(bool free)
     impl_->gpu_free = free;
 }
 
-void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry) { impl_->loading_retry = std::move(retry); }
+void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry)
+{
+    impl_->loading_retry = std::move(retry);
+    for (const auto &network : impl_->gpu)
+        if (network) network->SetLoadingRetry(impl_->loading_retry);
+    if (impl_->gpu_upscaler) impl_->gpu_upscaler->SetLoadingRetry(impl_->loading_retry);
+}
 
 bool Session::WaitsForGpu() const
 {

@@ -5,7 +5,13 @@
 using namespace storm::relief;
 void require(bool v,const char *s) { if(!v){std::fprintf(stderr,"FAIL: %s\n",s);std::exit(1);} }
 int main() {
+    LoadingRetry scoped(500,42), renewed(550,42), next(600,43);
+    require(scoped.generation==renewed.generation && next.generation!=scoped.generation,
+        "deadline renewal preserves loading generation; replacement scene changes it");
+    require(scoped.deadline_ms==500 && renewed.deadline_ms==550,
+        "generation identity does not extend an expired lease");
     LoadingRetry lease(500);
+    require(lease.generation==0,"legacy retry permission grants no tile-recovery epoch");
     require(!lease.take(100,true,false,0,0),"loading window cannot probe unmeasured x2");
     require(lease.take(100,true,false,1,0),"measured loading job can retry without gpu_free");
     require(!lease.take(101,true,false,1,0),"only one job consumes window");

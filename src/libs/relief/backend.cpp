@@ -1,4 +1,5 @@
 #include "backend.hpp"
+#include "tile_recovery.hpp"
 
 #include "relief.hpp"
 #include "storm/fx/gpu_crash_guard.hpp"
@@ -47,7 +48,7 @@ bool OrtOk(const OrtApi *api, OrtStatus *status, std::string &error)
 bool RunTiles(const float *image, int width, int height, float *planes, int halo, int scale, int &tile,
               const std::atomic<bool> &cancelled, std::string &error,
               const std::function<bool(const float *, int, int, float *, double &)> &infer,
-              const std::function<void(double)> &after = {})
+              const std::function<void(double)> &after = {}, std::vector<float> *initial_output = nullptr)
 {
     const int inner_w = width - 2 * halo, inner_h = height - 2 * halo;
     if (inner_w <= 0 || inner_h <= 0)
@@ -59,6 +60,8 @@ bool RunTiles(const float *image, int width, int height, float *planes, int halo
     const int out_w = width * scale;
     const size_t out_plane = static_cast<size_t>(out_w) * height * scale;
     std::vector<float> in, out;
+    if (initial_output)
+        out = std::move(*initial_output); // exact accepted first tile; no second x4 output allocation
     for (int y0 = 0; y0 < inner_h;)
     {
         const int th = std::min(tile > 0 ? tile : inner_h, inner_h - y0);
@@ -397,7 +400,8 @@ class GpuNetwork final : public Network
 
     bool Infer(const float *image, int width, int height, float *planes, std::string &error) override
     {
-        const auto infer = [&](const float *in, int iw, int ih, float *out, double &ms) {
+        const auto infer_network = [&](const float *in, int iw, int ih, float *out, double &ms, std::string &failure,
+                                       const std::function<bool()> &before_submit = {}) {
             ncnn::Mat tile(iw, ih, 3);
             for (int c = 0; c < 3; ++c)
                 for (int y = 0; y < ih; ++y)
@@ -406,10 +410,13 @@ class GpuNetwork final : public Network
             const Clock::time_point start = Clock::now();
             ncnn::Mat result;
             ncnn::Extractor ex = net_.create_extractor();
+            // A probe's final lease/budget check and attempt accounting must follow ALL input allocation/copy.
+            // Ordinary inference has no callback and retains its original behavior.
+            if (before_submit && !before_submit()) return false;
             if (ex.input("in0", tile) != 0 || ex.extract("out0", result) != 0 || result.c != 3 ||
                 result.w != iw * scale_ || result.h != ih * scale_)
             {
-                error = "ncnn inference failed";
+                failure = "ncnn inference failed";
                 return false;
             }
             ms = Ms(start);
@@ -419,6 +426,62 @@ class GpuNetwork final : public Network
                     std::memcpy(out + (static_cast<size_t>(c) * oh + y) * ow, result.channel(c).row(y),
                                 static_cast<size_t>(ow) * sizeof(float));
             return true;
+        };
+        const auto now_ms = [] {
+            return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                Clock::now().time_since_epoch()).count());
+        };
+        PrimedTile first;
+        const auto lease = loading_retry_; // renderer may revoke it, but never extends this captured deadline
+        const int previous = tile_;
+        const TileRecoveryPlan probe = recovery_.plan(lease, now_ms(), cancelled_, tile_, calibration_.tile, halo_,
+            width - 2 * halo_, height - 2 * halo_, calibration_.fixed_ms, calibration_.ms_per_texel);
+        bool attempted = false, adopted = false;
+        double probe_wall = 0.0, extra_wall = 0.0;
+        const char *reason = "not-submitted";
+        if (probe)
+        {
+            const Clock::time_point preparation = Clock::now();
+            const int size = probe.tile + 2 * halo_;
+            // Exact first real tile, including its original halo and planar layout. The input scratch and ncnn
+            // temporaries go before RunTiles; only accepted output is moved into its ordinary output scratch.
+            {
+                std::vector<float> input(static_cast<size_t>(size) * size * 3);
+                first.output.resize(input.size() * scale_ * scale_);
+                for (int c = 0; c < 3; ++c)
+                    for (int y = 0; y < size; ++y)
+                        std::memcpy(input.data() + (static_cast<size_t>(c) * size + y) * size,
+                            image + (static_cast<size_t>(c) * height + y) * width,
+                            static_cast<size_t>(size) * sizeof(float));
+                std::string probe_error; // a rejected larger tile must not poison the ordinary smaller inference
+                const bool valid = infer_network(input.data(), size, size, first.output.data(), probe_wall,
+                    probe_error, [&] {
+                        attempted = recovery_.begin(probe, lease, now_ms(), cancelled_);
+                        return attempted;
+                    });
+                if (attempted)
+                {
+                    reason = TileRecovery::decision(probe, lease, now_ms(), cancelled_, valid &&
+                        first.output.size() == static_cast<size_t>(3) * size * size * scale_ * scale_,
+                        probe_wall, calibration_.fixed_ms);
+                    adopted = std::strcmp(reason, "accepted") == 0;
+                    if (adopted)
+                    {
+                        tile_ = probe.tile; // before RunTiles captures the first row height
+                        first.width = first.height = size;
+                        first.wall_ms = probe_wall;
+                        first.expected_output = first.output.data();
+                        first.pending = true;
+                    }
+                }
+            }
+            extra_wall = Ms(preparation);
+            if (!adopted)
+                std::vector<float>().swap(first.output);
+        }
+        const auto infer = [&](const float *in, int iw, int ih, float *out, double &ms) {
+            if (first.consume(iw, ih, out, ms)) return true;
+            return infer_network(in, iw, ih, out, ms, error);
         };
         // The GPU slower than calibrated (another app, the GPU's clock down): the next tiles smaller.
         const auto guard = [&](double ms) {
@@ -443,10 +506,23 @@ class GpuNetwork final : public Network
                     calibration_.fixed_ms, ms - calibration_.fixed_ms, 1.5 * kSubmitMs, gpu_.c_str());
             }
         };
-        return RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error, infer, guard);
+        const bool ok = RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error, infer, guard,
+            adopted ? &first.output : nullptr);
+        if (probe)
+            Log("relief GPU tile recovery: model=%016llx generation=%llu old=%d candidate=%d resulting=%d "
+                "ceiling=%d attempted=%d adopted=%d reused=%d reason=%s wall=%.3f ms fixed=%.3f ms "
+                "adjusted=%.3f ms preparation-and-probe=%.3f ms deadline=%llu "
+                "(wall estimator, not GPU timestamp; provider=%s)",
+                static_cast<unsigned long long>(model_id_), static_cast<unsigned long long>(probe.generation),
+                previous, probe.tile, tile_, calibration_.tile, attempted, adopted, first.reused, reason, probe_wall,
+                calibration_.fixed_ms, probe_wall - calibration_.fixed_ms, extra_wall,
+                static_cast<unsigned long long>(lease->deadline_ms), gpu_.c_str());
+        return ok;
     }
 
     void Cancel() override { cancelled_ = true; }
+
+    void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry) override { loading_retry_ = std::move(retry); }
 
     std::string Describe() const override
     {
@@ -460,6 +536,8 @@ class GpuNetwork final : public Network
     int tile_ = kMinTile;
     uint64_t model_id_ = 0xcbf29ce484222325ull;
     bool floor_guard_logged_ = false;
+    std::shared_ptr<LoadingRetry> loading_retry_;
+    TileRecovery recovery_;
     Calibration calibration_;
     std::string param_;
     ncnn::Net net_;

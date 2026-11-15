@@ -14,6 +14,7 @@ namespace storm::relief
 {
 
 class Network; // backend.hpp
+struct LoadingRetry;
 
 class Upscaler
 {
@@ -25,6 +26,7 @@ class Upscaler
     bool Run(std::span<const uint8_t> rgba, int width, int height, bool wrap, std::vector<uint8_t> &out, std::string &error);
     // Any thread: the running inference stops with an error, and every later one.
     void Cancel();
+    void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry); // worker only; underlying network owns the lease
     double infer_ms() const { return infer_ms_; } // inference time of the last Run
 
   private:
