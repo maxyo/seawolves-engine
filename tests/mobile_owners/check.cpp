@@ -23,6 +23,53 @@ public:
 
 int main(){
  using namespace storm::mobile;Codec codec;ATTRIBUTES attrs(codec);
+ // Stock FillPassengerScroll: eligible passenger 7 followed by a rejected
+ // passenger (prisoned, not removable, occupied or already holding this post).
+ // makearef runs BEFORE those restrictions; m only advances for eligible rows.
+ // Thus the output is pic1.character=7, empty pic2, absent pic3, ListSize=m+2=3.
+ // Literal producer output, independent of OwnerRows' padding predicate.
+ {
+  ATTRIBUTES chooser(codec);
+  chooser.SetAttribute("ListSize","3");chooser.SetAttribute("current","0");
+  auto *eligible=chooser.CreateAttribute("pic1",nullptr);eligible->SetAttribute("character","7");
+  auto *padding=chooser.CreateAttribute("pic2",nullptr);
+  OfficerListIdentity identity;std::vector<MobileWidget> choices;OfficerSelection lease;
+  auto collectChooser=[&](const char *screen="lscchar_all",uint64_t revision=23,const char *profile="QA"){
+   return OwnerRows(screen,"PASSENGERSLIST",false,&chooser,4,revision,profile,true,10,
+    [](uint32_t id,bool){return id==7||id==8?"person:"+std::to_string(id):std::string();},"",identity,choices);
+  };
+  for(const char *screen:{"character","lscchar_all"}){
+   assert(collectChooser(screen)); // regression: old exporter drops candidate 0
+   assert(choices.size()==1&&choices[0].index==0&&choices[0].value=="1"&&choices[0].label=="person:7");
+   assert(identity.rows.size()==3&&identity.rows[1]=="padding"&&identity.rows[2]=="padding");
+  }
+  lease.publish(identity);const auto select="select@23:"+lease.rowId(0);
+  assert(lease.accepts(identity,0,select));
+  // MobileApply additionally requires a present enabled choice; padding is not
+  // exported at all, so neither the rejected passenger nor a blank row can act.
+  for(const auto &choice:choices)assert(choice.index==0);
+  eligible->SetAttribute("character","8");assert(collectChooser());assert(!lease.accepts(identity,0,select));
+  eligible->SetAttribute("character","7");assert(collectChooser("lscchar_all",24));assert(!lease.accepts(identity,0,select));
+  assert(collectChooser("lscchar_all",23,"Other"));assert(!lease.accepts(identity,0,select));
+  assert(collectChooser());assert(lease.accepts(identity,0,select));
+  // Missing owner on a nonempty row or an explicit malformed ID remains fatal.
+  for(const char *bad:{"-1","+7","7x","4294967296","","99"}){
+   padding->SetAttribute("character",bad);assert(!collectChooser());
+  }
+  padding->DeleteAttributeClassX(padding->GetAttributeClass("character"));
+  padding->SetAttribute("img1","face");assert(!collectChooser());
+  padding->DeleteAttributeClassX(padding->GetAttributeClass("img1"));
+  padding->SetValue("unexpected");assert(!collectChooser());padding->SetValue(nullptr);
+  // A middle hole with a later owner is NOT the stock compacted list shape.
+  auto *later=chooser.CreateAttribute("pic3",nullptr);later->SetAttribute("character","8");
+  assert(!collectChooser());chooser.DeleteAttributeClassX(later);
+  chooser.SetAttribute("ListSize","4");assert(!collectChooser());chooser.SetAttribute("ListSize","3");
+  for(const char *screen:{"ship","shipyard","transfer_main"})assert(!collectChooser(screen));
+  // No eligible passengers: an empty pic1 + absent pic2 must export no choice.
+  eligible->DeleteAttributeClassX(eligible->GetAttributeClass("character"));
+  chooser.DeleteAttributeClassX(padding);chooser.SetAttribute("ListSize","2");
+  assert(!collectChooser());assert(choices.empty());
+ }
  attrs.SetAttribute("ListSize","3");attrs.SetAttribute("current","0");
  auto *one=attrs.CreateAttribute("pic1",nullptr);one->SetAttribute("companionIndex","7");one->SetAttribute("character","7");
  auto *two=attrs.CreateAttribute("pic2",nullptr);two->SetAttribute("companionIndex","8");two->SetAttribute("character","8");

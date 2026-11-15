@@ -35,6 +35,17 @@ bool OwnerRows(std::string_view screen, std::string_view node, bool vertical,
     {
         auto *entry = attrs->GetAttributeClass("pic" + std::to_string(uint64_t(i) + 1));
         if (!entry) { state.rows.push_back("padding"); continue; }
+        // character_all.c FillPassengerScroll creates pic(m+1) before checking
+        // the passenger's eligibility, then publishes ListSize=m+2. A rejected
+        // last passenger leaves this empty penultimate slot and an absent last
+        // slot. It is padding, not an invalid owner (nor a selectable candidate).
+        if (node == "PASSENGERSLIST" && (screen == "character" || screen == "lscchar_all") &&
+            uint64_t(i) + 2 == *count && !entry->HasValue() && entry->GetAttributesNum() == 0 &&
+            !attrs->GetAttributeClass("pic" + std::to_string(uint64_t(i) + 2)))
+        {
+            state.rows.push_back("padding");
+            continue;
+        }
         const char *raw = entry->GetAttribute(field);
         const bool empty = screen == "shipyard" && node == "SHIPS_SCROLL" && raw && std::string(raw) == "-1";
         auto owner = InventoryNumber(raw);
