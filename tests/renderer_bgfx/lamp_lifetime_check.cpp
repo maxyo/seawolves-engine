@@ -4,6 +4,7 @@
 #include "shim/device.hpp"
 #include "shim/shim.hpp"
 #include "storm/fx/cutout.hpp"
+#include "../../src/libs/location/src/light_components.hpp"
 
 #include <cstdio>
 #include <memory>
@@ -24,6 +25,74 @@ shim::Texture2D *make_cutout_texture()
     store->cutout = std::make_shared<fx::AlphaMask>();
     return new shim::Texture2D(std::move(store));
 }
+void component_shadows(shim::Device &device)
+{
+    effects::LampShadows lamps;
+    effects::Casters casters;
+    const auto report = [&](const std::vector<fx::Lamp> &components, const std::vector<render::EffectsLampFlame> &flames) {
+#ifdef STORM_LIGHT_COMPONENT_NEGATIVE
+        // Old location->shadow route: individual flames, greedy merge, then nearest-centroid reconstruction.
+        std::vector<fx::Lamp> raw;
+        for (const auto &flame : flames)
+        {
+            auto lamp = components[flame.component];
+            lamp.position = flame.position;
+            raw.push_back(lamp);
+        }
+        lamps.set_lamps(raw);
+#else
+        lamps.set_lamps(components, flames);
+#endif
+    };
+    std::vector<location::ComponentSource> sources;
+    for (uint64_t i = 0; i < 11; ++i)
+        sources.push_back({i, {float(i)*.3f, 3, 0}, {1,1,1}, {1,1,1}, 10, {.5f,0,1.5f}, false});
+    const auto groups = location::BuildLightComponents(sources);
+    std::vector<fx::Lamp> effective;
+    std::vector<render::EffectsLampFlame> flames;
+    for (const auto &g : groups)
+    {
+        const auto index = static_cast<uint32_t>(effective.size());
+        effective.push_back(fx::Lamp{g.position, g.color});
+        for (const size_t i : g.members) flames.push_back({sources[i].position, index});
+    }
+    report(effective, flames);
+    expect(lamps.lamps().size() == 1, "shadow consumer keeps the same transitive component as model lighting");
+    expect(lamps.holders().size() == 1 && lamps.holders()[0] >= 1.5f + fx::kLampHolderRadius - 1e-5f,
+           "both far chain ends retain explicit fixture membership beyond the merge radius");
+    const auto layout = lamps.layout();
+    effective[0].color = {0,0,0};
+    report(effective, flames);
+    expect(lamps.lamps().size() == 1 && lamps.layout() == layout, "instantaneous dark flicker keeps component and shadow layout");
+    // Equal-centroid replacement must invalidate original flame geometry, not keep obsolete fixture exclusions.
+    flames.front().position[2] -= .1f; flames.back().position[2] += .1f;
+    report(effective, flames);
+    expect(lamps.layout() != layout, "changed member geometry invalidates fixture even at the same centroid");
+
+    const std::array<fx::Vec3,4> floor{{{-2,0,-2},{2,0,-2},{2,0,2},{-2,0,2}}};
+    const std::array<uint32_t,6> indices{{0,1,2,0,2,3}};
+    render::EffectsLocationGeometry geometry;
+    geometry.positions = floor; geometry.indices = indices;
+    lamps.set_geometry(geometry);
+    fx::Settings settings;
+    settings.lamp_shadows = 2; settings.lamp_moving = 0;
+    lamps.configure(settings);
+    effective = {fx::Lamp{{0,3,0}}, fx::Lamp{{.4f,3,0}}};
+    flames = {{{0,3,0},0}, {{.4f,3,0},1}};
+    report(effective, flames);
+    expect(lamps.lamps().size() == 2, "authoritative separate .4m components are not merged again at legacy .5m radius");
+    lamps.prepare(device, {0,3,2}, casters);
+    expect(lamps.relit({0,3,0}) && lamps.relit({.4f,3,0}), "prepared component positions disable duplicate model point contributions");
+    // Query in the interval BEFORE prepare/end_frame reconciles old slots. Shrink/clear must never index stale slots.
+    effective.resize(1); flames.resize(1);
+    report(effective, flames);
+    expect(!lamps.relit({.4f,3,0}), "shrink invalidates relit until slot reconciliation, no stale component index");
+    report({}, {});
+    expect(!lamps.relit({0,3,0}) && !lamps.relit({.4f,3,0}), "clear rejects stale relit before prepare/end_frame");
+    lamps.end_frame();
+    lamps.shutdown();
+}
+
 }
 
 int main()
@@ -33,6 +102,7 @@ int main()
     D3DPRESENT_PARAMETERS params{};
     params.BackBufferWidth = params.BackBufferHeight = 64;
     auto *device = new shim::Device(nullptr, params);
+    component_shadows(*device);
     {
         effects::LampShadows lamps;
         effects::Casters casters;

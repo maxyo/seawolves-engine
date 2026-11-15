@@ -14,6 +14,7 @@
 
 #include "collide.h"
 #include "flame_flicker.hpp"
+#include "light_components.hpp"
 #include "renderer.h"
 
 class Lights : public Entity
@@ -53,6 +54,7 @@ class Lights : public Entity
             D3DVECTOR lamp{};
         } ray;
 
+        uint64_t identity = 0; // survives backing-array compaction
         int32_t type; // Source type index
     };
 
@@ -140,6 +142,7 @@ class Lights : public Entity
   private:
 
     void PrintDebugInfo();
+    void RebuildComponents();
 
     constexpr static auto max_d3d_lights = 8U;
     constexpr static auto max_d3d_custom_lights = max_d3d_lights - 1;
@@ -166,6 +169,9 @@ class Lights : public Entity
 
     // portable light sources
     std::vector<MovingLight> aMovingLight;
+    uint64_t nextLightIdentity = 0;
+    bool componentsDirty = true;
+    std::vector<storm::location::LightComponent> components;
 
     // The camera of the last Realize: coronas are tested against a camera that stands still less often
     glm::vec3 lastCamera{0.0f};

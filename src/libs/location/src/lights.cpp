@@ -164,6 +164,7 @@ bool Lights::Init()
 // Execution
 void Lights::Execute(uint32_t delta_time)
 {
+    componentsDirty = true; // current RGB changed; rebuild at most once before receiver/shadow consumers
     if (core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState(VK_F11) < 0)
     {
         for (int32_t i = 0; i < numTypes; i++)
@@ -190,41 +191,27 @@ void Lights::Realize(uint32_t delta_time)
     glm::vec3 pos, ang;
     rs->GetCamera(pos, ang, ang.x);
 
-    // Graphics effects: carried lanterns are the only location lights not baked into the static models' colours
-    // (src/libs/lighter); the per-pixel lighting adds them to that geometry.
-    std::vector<storm::render::EffectsPointLight> dynamic;
-    dynamic.reserve(aMovingLight.size());
-    for (const MovingLight &moving : aMovingLight)
+    RebuildComponents();
+    // Baked and carried sources are separate graph domains. Static lamps only go to relighting/shadows,
+    // never into the unbaked point-light path. Flames/coronas below still use the original sources.
+    std::vector<storm::render::EffectsPointLight> dynamic, lamps;
+    std::vector<storm::render::EffectsLampFlame> flames;
+    for (const auto &g : components)
     {
-        if (moving.light < 0 || moving.light >= numLights)
-            continue;
-        const Light &l = lights[moving.light];
-        const D3DLIGHT9 &type = types[l.type].dxLight;
-        dynamic.push_back({{l.pos.x, l.pos.y, l.pos.z},
-                           {l.color.r, l.color.g, l.color.b},
-                           type.Range,
-                           type.Attenuation0,
-                           type.Attenuation1,
-                           type.Attenuation2});
+        const storm::render::EffectsPointLight light{g.position, g.color, g.range,
+                                                     g.attenuation[0], g.attenuation[1], g.attenuation[2]};
+        if (g.moving)
+            dynamic.push_back(light);
+        else
+        {
+            const uint32_t component = static_cast<uint32_t>(lamps.size());
+            lamps.push_back(light);
+            for (const size_t i : g.members)
+                flames.push_back({{lights[i].pos.x, lights[i].pos.y, lights[i].pos.z}, component});
+        }
     }
     storm::render::SetEffectsDynamicLights(dynamic);
-    // The other lights stand still: the strongest of them cast the lamp shadows of interiors.
-    std::vector<bool> moving(numLights, false);
-    for (const MovingLight &m : aMovingLight)
-        if (m.light >= 0 && m.light < numLights)
-            moving[m.light] = true;
-    std::vector<storm::render::EffectsPointLight> lamps;
-    for (int32_t i = 0; i < numLights; ++i)
-    {
-        const Light &l = lights[i];
-        if (moving[i])
-            continue;
-        // `color` carries the flicker.
-        const D3DLIGHT9 &type = types[l.type].dxLight;
-        lamps.push_back({{l.pos.x, l.pos.y, l.pos.z}, {l.color.r, l.color.g, l.color.b}, type.Range,
-                         type.Attenuation0, type.Attenuation1, type.Attenuation2});
-    }
-    storm::render::SetEffectsLamps(lamps);
+    storm::render::SetEffectsLamps(lamps, flames);
 
     ////////////////
     // Draw coronas
@@ -402,6 +389,8 @@ void Lights::AddLight(int32_t index, const glm::vec3 &pos)
         maxLights += 32;
         lights.resize(maxLights);
     }
+    componentsDirty = true;
+    lights[numLights].identity = nextLightIdentity++;
     lights[numLights].color = types[index].color;
     lights[numLights].pos.x = pos.x;
     lights[numLights].pos.y = pos.y;
@@ -435,6 +424,8 @@ void Lights::DelAllLights()
 {
     aMovingLight.clear();
     numLights = 0;
+    componentsDirty = true;
+    components.clear();
 }
 
 // Add portable source
@@ -471,7 +462,10 @@ void Lights::UpdateMovingLight(int32_t id, const glm::vec3 &pos)
         {
             const auto i = aMovingLight[n].light;
             if (i >= 0 && i < numLights)
+            {
                 lights[i].pos = *(D3DVECTOR *)&pos;
+                componentsDirty = true;
+            }
             return;
         }
     }
@@ -483,12 +477,37 @@ void Lights::DelMovingLight(int32_t id)
     for (int32_t n = 0; n < aMovingLight.size(); n++)
         if (aMovingLight[n].id == id)
         {
+            const auto erased = aMovingLight[n].light;
             numLights--;
-            for (auto i = aMovingLight[n].light; i < numLights; i++)
+            for (auto i = erased; i < numLights; i++)
                 lights[i] = lights[i + 1];
-            aMovingLight.erase(aMovingLight.begin() + n);
+            storm::location::RebaseMovingLights(aMovingLight, erased);
+            componentsDirty = true;
             return;
         }
+}
+
+// Shared by legacy model lights and effects/shadows; no per-model all-pairs graph construction.
+void Lights::RebuildComponents()
+{
+    if (!componentsDirty)
+        return;
+    std::vector<bool> moving(numLights, false);
+    for (const MovingLight &m : aMovingLight)
+        if (m.light >= 0 && m.light < numLights)
+            moving[m.light] = true;
+    std::vector<storm::location::ComponentSource> sources;
+    sources.reserve(numLights);
+    for (uint32_t i = 0; i < numLights; ++i)
+    {
+        const Light &l = lights[i];
+        const auto &t = types[l.type];
+        sources.push_back({l.identity, {l.pos.x, l.pos.y, l.pos.z}, {t.color.r, t.color.g, t.color.b},
+                           {l.color.r, l.color.g, l.color.b}, t.dxLight.Range,
+                           {t.dxLight.Attenuation0, t.dxLight.Attenuation1, t.dxLight.Attenuation2}, moving[i]});
+    }
+    components = storm::location::BuildLightComponents(sources);
+    componentsDirty = false;
 }
 
 // Set the light sources for a model at `pos` (a character, a lit model of the location)
@@ -496,23 +515,26 @@ void Lights::SetLightsAt(const glm::vec3 &pos)
 {
     UnsetLights();
     uint32_t d3d_light_index = max_d3d_lights - max_d3d_custom_lights;
-    // The sources that are strongest at `pos` (light_choice.hpp): the camera has no part in the choice.
+    RebuildComponents();
+    // Choose components, not individual flames, using steady RGB (never instantaneous flicker).
     const auto strength = [&](size_t i) {
-        // The type's steady colour: a flicker must not reorder the sources.
-        const D3DCOLORVALUE &c = types[lights[i].type].color;
-        const D3DLIGHT9 &l = types[lights[i].type].dxLight;
-        const float dx = pos.x - lights[i].pos.x, dy = pos.y - lights[i].pos.y, dz = pos.z - lights[i].pos.z;
-        return storm::location::LightStrength(0.299f * c.r + 0.587f * c.g + 0.114f * c.b,
-                                              l.Attenuation0, l.Attenuation1, l.Attenuation2, l.Range,
+        const auto &g = components[i];
+        const float dx = pos.x - g.position[0], dy = pos.y - g.position[1], dz = pos.z - g.position[2];
+        return storm::location::LightStrength(float(storm::location::LightLuminance(g.steady)),
+                                              g.attenuation[0], g.attenuation[1], g.attenuation[2], g.range,
                                               std::sqrt(dx * dx + dy * dy + dz * dz));
     };
-    for (const uint32_t index : storm::location::ChooseLights(numLights, strength, max_d3d_custom_lights))
+    for (const uint32_t index : storm::location::ChooseLights(components.size(), strength, max_d3d_custom_lights))
     {
-        D3DLIGHT9 light = types[lights[index].type].dxLight;
-        light.Diffuse.r = lights[index].color.r;
-        light.Diffuse.g = lights[index].color.g;
-        light.Diffuse.b = lights[index].color.b;
-        light.Position = lights[index].pos;
+        const auto &g = components[index];
+        D3DLIGHT9 light{};
+        light.Type = D3DLIGHT_POINT;
+        light.Diffuse = {g.color[0], g.color[1], g.color[2], 1.0f};
+        light.Position = {g.position[0], g.position[1], g.position[2]};
+        light.Range = g.range;
+        light.Attenuation0 = g.attenuation[0];
+        light.Attenuation1 = g.attenuation[1];
+        light.Attenuation2 = g.attenuation[2];
 
         rs->SetLight(d3d_light_index, &light);
         rs->LightEnable(d3d_light_index, true);
@@ -538,6 +560,7 @@ void Lights::UnsetLights()
 // Update source types
 void Lights::UpdateLightTypes(int32_t i)
 {
+    componentsDirty = true;
     auto ini = fio->OpenIniFile("RESOURCE\\Ini\\lights.ini");
     if (!ini)
         return;

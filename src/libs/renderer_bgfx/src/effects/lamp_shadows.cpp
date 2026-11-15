@@ -115,19 +115,55 @@ void LampShadows::configure(const fx::Settings &settings)
 
 void LampShadows::set_lamps(const std::vector<fx::Lamp> &lamps)
 {
-    raw_ = lamps;
-    // Lights without light of their own (the lighter tool's negative "inside" lights, switched-off types) are no lamps.
+    // Compatibility for callers without a location's authoritative component graph.
     std::vector<fx::Lamp> shining;
-    for (const fx::Lamp &lamp : raw_)
+    for (const fx::Lamp &lamp : lamps)
         if (0.299f * lamp.color[0] + 0.587f * lamp.color[1] + 0.114f * lamp.color[2] > 1e-3f)
             shining.push_back(lamp);
     std::vector<fx::Lamp> merged = fx::ClusterLamps(shining, kFixtureRadius);
-    // A fixture's merged position is weighted by its flames' brightness and wanders a little with their flicker: the
-    // lamps count as moved (new slots and faces) only beyond that, or when their shapes change (another falloff).
+    std::vector<int> membership(lamps.size(), -1);
+    for (size_t j = 0; j < lamps.size(); ++j)
+    {
+        float best = kFixtureRadius * 1.01f;
+        for (size_t i = 0; i < merged.size(); ++i)
+            if (const float d = distance(lamps[j].position, merged[i].position); d < best)
+            {
+                best = d;
+                membership[j] = static_cast<int>(i);
+            }
+    }
+    place_lamps(std::move(merged), lamps, std::move(membership));
+}
+
+void LampShadows::set_lamps(const std::vector<fx::Lamp> &components,
+                           std::span<const render::EffectsLampFlame> flames)
+{
+    // No second merge, flicker filter or nearest-centroid lookup: a long connected chain can extend well
+    // beyond its edge radius. Its original flames must ALL remain attached to the same fixture.
+    std::vector<fx::Lamp> raw;
+    std::vector<int> membership;
+    raw.reserve(flames.size());
+    membership.reserve(flames.size());
+    for (const auto &flame : flames)
+        if (flame.component < components.size())
+        {
+            raw.push_back(fx::Lamp{flame.position});
+            membership.push_back(static_cast<int>(flame.component));
+        }
+    place_lamps(components, std::move(raw), std::move(membership));
+}
+
+void LampShadows::place_lamps(std::vector<fx::Lamp> merged, std::vector<fx::Lamp> raw,
+                              std::vector<int> membership)
+{
     bool moved = merged.size() != placed_.size();
     for (size_t i = 0; !moved && i < merged.size(); ++i)
         moved = distance(merged[i].position, placed_[i]) > 0.1f || !(fx::ShapeOf(merged[i]) == fx::ShapeOf(lamps_[i]));
-    if (moved)
+    // Same centroid does not imply the same fixture: members may move symmetrically or be replaced.
+    bool flames_changed = membership != raw_lamp_ || raw.size() != raw_.size();
+    for (size_t i = 0; !flames_changed && i < raw.size(); ++i)
+        flames_changed = raw[i].position != raw_[i].position;
+    if (moved || flames_changed)
     {
         placed_.resize(merged.size());
         for (size_t i = 0; i < merged.size(); ++i)
@@ -137,22 +173,15 @@ void LampShadows::set_lamps(const std::vector<fx::Lamp> &lamps)
         ++layout_;
     }
     lamps_ = std::move(merged);
-    raw_lamp_.assign(raw_.size(), -1);
-    // A fixture is its flames, arms and glass, not a point: its own geometry casts nothing (the real flames fill each
-    // other's shadows of it in), and nothing is lit from nearer than its size. The size reaches past its farthest flame.
+    raw_ = std::move(raw);
+    raw_lamp_ = std::move(membership);
     holder_.assign(lamps_.size(), fx::kLampHolderRadius);
     for (size_t j = 0; j < raw_.size(); ++j)
-    {
-        float best = kFixtureRadius * 1.01f;
-        for (size_t i = 0; i < lamps_.size(); ++i)
-            if (const float d = distance(raw_[j].position, lamps_[i].position); d < best)
-            {
-                best = d;
-                raw_lamp_[j] = static_cast<int>(i);
-            }
         if (raw_lamp_[j] >= 0)
-            holder_[raw_lamp_[j]] = std::max(holder_[raw_lamp_[j]], best + fx::kLampHolderRadius);
-    }
+        {
+            const size_t i = static_cast<size_t>(raw_lamp_[j]);
+            holder_[i] = std::max(holder_[i], distance(raw_[j].position, lamps_[i].position) + fx::kLampHolderRadius);
+        }
     if (fixtures_dirty_ && !positions_.empty())
         find_fixtures();
 }
@@ -784,11 +813,17 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
 
 bool LampShadows::relit(const fx::Vec3 &position) const
 {
-    if (!active_)
+    if (!active_ || layout_dirty_)
         return false;
     for (const Slot &s : slot_)
         // (A ship's lantern is reported where its ship is drawn: the same place but for the camera-relative rounding.)
         if (s.lamp == kMovingLamp && s.ready && !s.leaving && distance(s.at.position, position) < 0.05f)
+            return true;
+    // SetLightsAt now reports the effective component position, while legacy callers still use a flame.
+    // Both denote the same relit lamp and must disable its old point-light contribution (no double lighting).
+    for (const Slot &s : slot_)
+        if (s.lamp >= 0 && static_cast<size_t>(s.lamp) < lamps_.size() && s.ready && !s.leaving &&
+            distance(lamps_[s.lamp].position, position) < 0.02f)
             return true;
     for (size_t j = 0; j < raw_.size(); ++j)
         if (raw_lamp_[j] >= 0 && distance(raw_[j].position, position) < 0.02f)

@@ -1206,6 +1206,15 @@ void SetEffectsLamps(std::span<const EffectsPointLight> lamps)
     effects::Host::instance().lighting().lamp_shadows().set_lamps(converted);
 }
 
+void SetEffectsLamps(std::span<const EffectsPointLight> lamps, std::span<const EffectsLampFlame> flames)
+{
+    std::vector<fx::Lamp> converted;
+    converted.reserve(lamps.size());
+    for (const EffectsPointLight &l : lamps)
+        converted.push_back(ShapedLamp(l));
+    effects::Host::instance().lighting().lamp_shadows().set_lamps(converted, flames);
+}
+
 void SetEffectsDynamicLights(std::span<const EffectsPointLight> lights)
 {
     fx::PointLight converted[fx::kMaxPointLights * 4];

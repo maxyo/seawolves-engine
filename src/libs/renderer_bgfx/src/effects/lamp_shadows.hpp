@@ -69,6 +69,7 @@ class LampShadows
     bool interior() const { return interior_ && !positions_.empty(); }
     // Main thread, every frame the location draws: its lamps (empty when it has none).
     void set_lamps(const std::vector<fx::Lamp> &lamps);
+    void set_lamps(const std::vector<fx::Lamp> &components, std::span<const render::EffectsLampFlame> flames);
     // The place's lamps as the relight lights them (merged fixtures, range = the radius it windows them to), their
     // fixtures' sizes, and a count that changes whenever they are laid out anew (they came, went, moved, their radii
     // changed; not their flicker): the bounce of their light (effects/bounce.hpp) follows it.
@@ -240,6 +241,7 @@ class LampShadows
     // Per merged lamp: the triangles of its own fixture (fx::FindFixtures, ascending): they cast no shadow of it.
     std::vector<std::vector<uint32_t>> fixtures_;
     bool fixtures_dirty_ = true;
+    void place_lamps(std::vector<fx::Lamp> merged, std::vector<fx::Lamp> raw, std::vector<int> membership);
     void find_fixtures();
     float model_lift_ = 0.0f;
     float tint_ = 0.25f; // Settings::lamp_tint

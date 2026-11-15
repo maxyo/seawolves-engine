@@ -178,6 +178,15 @@ void SetEffectsDynamicLights(std::span<const EffectsPointLight> lights);
 // frame's flicker). The ones around the camera relight the location per pixel, each with its shadow
 // (fx_lamp_shadows).
 void SetEffectsLamps(std::span<const EffectsPointLight> lamps);
+// Authoritative location components, already grouped before receiver budgets. Keep every original flame
+// with its exact component index for fixture self-shadow exclusions; do not reconstruct it from a centroid radius.
+struct EffectsLampFlame
+{
+    std::array<float, 3> position{};
+    uint32_t component = 0;
+};
+void SetEffectsLamps(std::span<const EffectsPointLight> lamps, std::span<const EffectsLampFlame> flames);
+
 
 // Location, once it is loaded: its still geometry (world space, triangle list), for everything the effects cast or
 // bake from it: the lamps' shadows, the room light, and in an interior the ambient-occlusion volume (read from the

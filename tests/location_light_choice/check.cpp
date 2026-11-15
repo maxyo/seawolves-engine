@@ -2,6 +2,7 @@
 // is, whatever the camera does, and without a jump while it walks. The room below is a tavern like the game's:
 // candlesticks of three candles on the tables and along the walls, a fireplace.
 #include "light_choice.hpp"
+#include "light_components.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -74,10 +75,146 @@ float LightAt(const std::vector<Lamp> &lamps, P at)
                                               Distance(lamps[i].pos, at));
     return sum;
 }
+
+void Components()
+{
+    using namespace storm::location;
+    const auto source = [](uint64_t id, LightVector position) {
+        return ComponentSource{id, position, {2.2f, 1.5f, 0.5f}, {2.2f, 1.5f, 0.5f},
+                               15.0f, {0.5f, 0.0f, 1.5f}, false};
+    };
+    const auto close = [](double a, double b) { return std::abs(a - b) < 1e-5; };
+    CHECK(BuildLightComponents({}).empty());
+    const auto one = source(17, {1.234567f, 2.5f, -3.7f});
+    const auto singleton = BuildLightComponents(std::span(&one, 1));
+    CHECK(singleton.size() == 1 && singleton[0].position == one.position && singleton[0].color == one.color &&
+          singleton[0].steady == one.steady && singleton[0].range == one.range && singleton[0].attenuation == one.attenuation);
+    std::vector<ComponentSource> boundary{source(0, {0, 0, 0}), source(1, {kLightComponentRadius, 0, 0})};
+    CHECK(BuildLightComponents(boundary).size() == 1);
+    boundary[1].position[0] = std::nextafter(kLightComponentRadius, 1.0f);
+    CHECK(BuildLightComponents(boundary).size() == 2);
+
+    // Actual Tavern02_locators.gm candle03/04/05 (LE32 RDF_LABEL): adjacent .295/.269, ends .426 m.
+    std::vector<ComponentSource> candle{
+        source(10, {-3.7972877f, 2.9513531f, -3.2957470f}),
+        source(11, {-3.8667901f, 3.1466763f, -3.0857651f}),
+        source(12, {-3.7960980f, 2.9991667f, -2.8719416f})};
+    CHECK(std::sqrt(LightDistanceSquared(candle.front().position, candle.back().position)) > kLightComponentRadius);
+    const auto grouped = BuildLightComponents(candle);
+    CHECK(grouped.size() == 1 && grouped[0].members.size() == 3);
+    CHECK(close(grouped[0].color[0], 6.6) && close(grouped[0].color[1], 4.5) && close(grouped[0].color[2], 1.5));
+    // Every input permutation has the same centroid, shape, RGB and stable identity; members still address its own input.
+    std::vector<int> perm{0, 1, 2};
+    do
+    {
+        const std::vector<ComponentSource> shuffled{candle[perm[0]], candle[perm[1]], candle[perm[2]]};
+        const auto g = BuildLightComponents(shuffled);
+        CHECK(g.size() == 1 && g[0].id == grouped[0].id && g[0].position == grouped[0].position &&
+              g[0].range == grouped[0].range && g[0].color == grouped[0].color);
+        for (size_t j = 0; j < 3; ++j)
+            CHECK(shuffled[g[0].members[j]].id == candle[j].id);
+    } while (std::next_permutation(perm.begin(), perm.end()));
+    auto flicker = candle;
+    flicker[0].color = {0, 0, 0};
+    flicker[1].color = {4.4f, 3.0f, 1.0f};
+    const auto flickered = BuildLightComponents(flicker);
+    CHECK(flickered[0].position == grouped[0].position && flickered[0].id == grouped[0].id &&
+          flickered[0].range == grouped[0].range && flickered[0].steady == grouped[0].steady &&
+          flickered[0].attenuation == grouped[0].attenuation);
+    for (auto &s : flicker) s.color = {0, 0, 0};
+    CHECK(BuildLightComponents(flicker)[0].members.size() == 3); // dark flicker does not destroy shadow identity
+
+    // Exact sum at coincident receivers for every RGB channel, with equal attenuation; no coefficient averaging.
+    auto coincident = candle;
+    for (auto &s : coincident) s.position = {0, 0, 0};
+    coincident[0].steady = coincident[0].color = {0.3f, 1.5f, 0.7f};
+    const auto merged = BuildLightComponents(coincident);
+    for (const float distance : {0.1f, 0.5f, 2.0f, 8.0f, 14.0f})
+        for (int k = 0; k < 3; ++k)
+        {
+            double expected = 0;
+            for (const auto &s : coincident)
+                expected += LightStrength(s.color[k], s.attenuation[0], s.attenuation[1], s.attenuation[2], s.range, distance);
+            CHECK(close(expected, LightStrength(merged[0].color[k], merged[0].attenuation[0], merged[0].attenuation[1],
+                                                merged[0].attenuation[2], merged[0].range, distance)));
+        }
+    auto mixed = coincident;
+    mixed[1].attenuation = {0.1f, 3.0f, 0.3f};
+    mixed[2].range = 5.0f;
+    const auto split = BuildLightComponents(mixed);
+    CHECK(split.size() == 3);
+    for (const float distance : {0.1f, 0.5f, 2.0f, 8.0f, 14.0f})
+    {
+        double old_sum = 0, new_sum = 0;
+        for (const auto &s : mixed) old_sum += LightStrength(float(LightLuminance(s.color)), s.attenuation[0], s.attenuation[1], s.attenuation[2], s.range, distance);
+        for (const auto &g : split) new_sum += LightStrength(float(LightLuminance(g.color)), g.attenuation[0], g.attenuation[1], g.attenuation[2], g.range, distance);
+        CHECK(close(old_sum, new_sum));
+    }
+    // Spatial collapse is an approximation, not equality of irradiance everywhere. Bound the error for the actual
+    // .426 m fixture from receivers >=1m away, six directions, all tested distances safely inside the original range.
+    double largest_error = 0;
+    for (const float distance : {1.0f, 2.0f, 5.0f, 10.0f})
+        for (int axis = 0; axis < 3; ++axis)
+            for (float direction : {-1.0f, 1.0f})
+            {
+                auto at = grouped[0].position; at[axis] += distance * direction;
+                double original = 0;
+                for (const auto &s : candle)
+                    original += LightStrength(float(LightLuminance(s.color)), s.attenuation[0], s.attenuation[1], s.attenuation[2], s.range,
+                                              float(std::sqrt(LightDistanceSquared(at, s.position))));
+                const auto &g = grouped[0];
+                const double effective = LightStrength(float(LightLuminance(g.color)), g.attenuation[0], g.attenuation[1], g.attenuation[2], g.range, distance);
+                largest_error = std::max(largest_error, std::abs(effective / original - 1.0));
+            }
+    CHECK(largest_error < 0.08);
+    std::printf("components: actual Tavern02 common-type receiver error max %.6f %% at >=1m (24 controls)\n", 100 * largest_error);
+    // Explicit first moment, using steady RGB luminance; instantaneous RGB cannot move it.
+    auto weighted = boundary; weighted[1].position = {0.3f, 0, 0};
+    weighted[0].steady = {1, 0, 0}; weighted[1].steady = {0, 1, 0};
+    const auto centroid = BuildLightComponents(weighted);
+    CHECK(close(centroid[0].position[0], 0.3 * .587 / (.299 + .587)));
+    for (size_t i : centroid[0].members)
+        CHECK(centroid[0].range + 1e-5 >= weighted[i].range + std::sqrt(LightDistanceSquared(centroid[0].position, weighted[i].position)));
+
+    // Long chain: membership cannot be reconstructed by a radius around the centroid.
+    std::vector<ComponentSource> chain;
+    for (int i = 0; i < 11; ++i) chain.push_back(source(i, {0.3f * i, 0, 0}));
+    const auto long_group = BuildLightComponents(chain);
+    CHECK(long_group.size() == 1 && long_group[0].members.size() == 11);
+    CHECK(std::sqrt(LightDistanceSquared(chain[0].position, long_group[0].position)) > 4 * kLightComponentRadius);
+    chain[5].steady = {0, 0, 0}; // dead/off middle source cannot bridge, original flames/coronas are not deleted here
+    CHECK(BuildLightComponents(chain).size() == 2);
+    chain[5] = source(5, {100, 0, 0});
+    CHECK(BuildLightComponents(chain).size() == 3);
+    chain[5] = source(5, {1.5f, 0, 0}); chain[5].moving = true;
+    CHECK(BuildLightComponents(chain).size() == 3); // portable never merges with baked lights
+    // Removing a portable source rebases all surviving indices but leaves caller-visible IDs intact.
+    struct Moving { int32_t id, light; };
+    std::vector<Moving> moving{{7, 2}, {8, 4}, {9, 1}};
+    RebaseMovingLights(moving, 2);
+    CHECK(moving.size() == 2 && moving[0].id == 8 && moving[0].light == 3 && moving[1].id == 9 && moving[1].light == 1);
+    RebaseMovingLights(moving, 1);
+    CHECK(moving.size() == 1 && moving[0].id == 8 && moving[0].light == 2);
+
+    // Budget comes AFTER grouping: the first fixture uses one of seven slots, never three.
+    auto room = candle;
+    for (uint64_t i = 0; i < 7; ++i) room.push_back(source(20+i, {float(i)*2, 0, 10}));
+    const auto components = BuildLightComponents(room);
+    const auto selected = ChooseLights(components.size(), [&](size_t i) { return float(LightLuminance(components[i].steady)); }, 7);
+    CHECK(components.size() == 8 && selected.size() == 7 && components[selected[0]].members.size() == 3);
+    size_t represented = 0;
+    for (auto i : selected) represented += components[i].members.size();
+    CHECK(represented == 9); // old ungrouped seven-slot path represented only seven of these ten flames
+    // Independent stock churchInside1 chandeliers remain separate (4.921907m); each was already one locator.
+    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {-0.003869607f,4.559601f,-5.363743f}),
+                                                            source(2, {-0.003869607f,4.559601f,-0.4418358f})}).size() == 2);
+    CHECK(BuildLightComponents(std::vector<ComponentSource>{source(1, {0,0,0}), source(2,{0.5072124f,0,0})}).size() == 2);
+}
 } // namespace
 
 int main()
 {
+    Components();
     const std::vector<Lamp> lamps = Tavern();
     const P hero{-2.0f, 1.2f, 2.3f}; // a character next to a table, or a lit model of the location at its own place
 
