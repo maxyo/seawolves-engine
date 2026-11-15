@@ -332,6 +332,7 @@ class SavesScreen final : public Screen
         // V2-Save-*: the location as the title, the hero under it.
         const bool located = !record.location.empty();
         return Json{{"title", located ? record.location : Name(bindings, record)},
+                    {"preview", record.fresh ? std::string() : Context(*row, "preview")},
                     {"sub", located ? (record.autosave ? Name(bindings, record) + (record.hero.empty() ? "" : " · " + record.hero) : record.hero) : ""},
                     {"facts", facts},
                     {"primary", primary},

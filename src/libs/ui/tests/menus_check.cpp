@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <string_view>
 
 using namespace storm::ui;
 using namespace storm::ui::screens;
@@ -220,7 +221,11 @@ static void Saves(const std::string &models)
 {
     FakeSurface surface;
     Router router(surface);
-    router.SetInterface(Load(models, "saves-load.json"));
+    auto with_previews = Load(models, "saves-load.json");
+    for (auto &widget : with_previews.widgets)
+        if (widget.node == "ANDROID_SAVE_LIST" && widget.index == 1)
+            widget.context["preview"] = "save-preview/9/123/706c61796572/6f6c64";
+    router.SetInterface(with_previews);
     ExpectEqual(router.Using(), "save_load", "saves is a ported screen");
     ExpectEqual(surface.tag, "s-saves", "saves mounted");
     Expect(surface.errors.empty() && surface.props["extras"]["rows"].empty() && surface.props["extras"]["note"] == "",
@@ -235,12 +240,14 @@ static void Saves(const std::string &models)
     Expect(surface.props["columns"].size() == 3 && surface.props["columns"][1]["w"] == "120px",
            "name, the dates in one column, the autosave mark: the name keeps its room beside the detail");
     const Json detail = surface.props["detail"];
+    ExpectEqual(detail.value("preview", std::string()), "save-preview/9/123/706c61796572/6f6c64", "selected record retains its actual embedded preview identity");
     Expect(detail["title"] == "Бухта Бета" && detail["sub"] == "Герой Альфа" && detail["delete"] == true && detail["primary"] == "<save.load>", "detail of the chosen record");
     Expect(detail["facts"].size() == 3 && detail["facts"][0]["v"] == "2 <common.month_10> 1654, 11:20" &&
                detail["facts"][1]["v"] == "6 <save.hours> 42 <save.minutes>" && detail["facts"][2]["v"] == "11 <common.month_3> 2001",
            "in-game date, play time, created");
 
     router.OnEvent({"saves", "row", "2"});
+    ExpectEqual(surface.props["detail"].value("preview", std::string()), "", "selecting a record without an image clears the previous preview");
     ExpectEqual(surface.props["detail"]["title"], "Остров Гамма", "a row tap chooses the record locally");
     Expect(surface.commands.empty() && surface.props["detail"]["facts"].size() == 3 && surface.props["detail"]["sub"] == "" &&
                surface.props["detail"]["facts"][1]["v"] == "25 <save.hours> 0 <save.minutes>",
@@ -722,6 +729,12 @@ static void LoadFailure()
 int main(int argc, char **argv)
 {
     const std::string models = argc > 1 ? argv[1] : "tests/models";
+    if (argc == 3 && std::string_view(argv[2]) == "--saves-only")
+    {
+        Saves(models);
+        if (!failures) std::printf("save menu checks passed\n");
+        return failures ? 1 : 0;
+    }
     GameMenu(models);
     GameOver(models);
     QuickSave(models);

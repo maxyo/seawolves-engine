@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include "options_parser.hpp"
 
@@ -11,6 +12,7 @@
 #include "load_watch.hpp"
 #include "save_autosave.hpp"
 #include "save_description.hpp"
+#include "save_thumbnail.hpp"
 #include <set>
 #include <spdlog/spdlog.h>
 #include "back_scene/back_scene.h"
@@ -688,13 +690,12 @@ void XINTERFACE::Realize(uint32_t)
                 return row.type == "save";
             }), widgets.end());
             const auto &state = *saves;
-            storm::mobile::saveListCapability.collect(state, enabled, widgets, [this, &state](size_t index) {
-                return storm::mobile::SaveRowContext(state, index, [this](const std::string &path) { return SaveDescription(path); });
+            storm::mobile::saveListCapability.collect(state, enabled, widgets, [&state](size_t index) {
+                return storm::mobile::SaveRowContext(state, index);
             });
         }
         if (storm::android::mobileScreen == "mainmenu")
-            if (auto newest = storm::mobile::ContinueWidget(storm::android::mobileScreenRevision,
-                                                            [this](const std::string &path) { return SaveDescription(path); }))
+            if (auto newest = storm::mobile::ContinueWidget(storm::android::mobileScreenRevision))
                 widgets.push_back(std::move(*newest));
         if (storm::android::mobileScreen == "game_menu")
         {
@@ -3518,38 +3519,45 @@ bool XINTERFACE::SFLB_DoSaveFileData(const char *saveName, const char *gameSaveD
     return true;
 }
 
-std::string XINTERFACE::SaveDescription(const std::string &saveName)
-{
-    char description[512] = {};
-    return SFLB_GetSaveFileData(saveName.c_str(), sizeof(description), description) ? std::string(description) : std::string();
-}
-
 bool XINTERFACE::SFLB_GetSaveFileData(const char *saveName, int32_t bufSize, char *buf)
 {
     if (buf == nullptr || bufSize <= 0)
         return false;
-    int32_t allDatSize = 0;
-    auto pdat = static_cast<char *>(core.GetSaveData(saveName, allDatSize));
-    if (pdat == nullptr)
+    buf[0] = 0;
+    if (saveName == nullptr)
         return false;
-
-    char *stringData = &pdat[sizeof(SAVE_DATA_HANDLE)];
-    if (!utf8::IsValidUtf8(stringData))
+    int32_t allDatSize = 0;
+    std::unique_ptr<char[]> data(static_cast<char *>(core.GetSaveData(saveName, allDatSize)));
+    if (!data || allDatSize <= 0)
+        return false;
+    const auto extension = storm::save::thumbnail::Decode(
+        {reinterpret_cast<const uint8_t *>(data.get()), static_cast<size_t>(allDatSize)});
+    if (!extension.valid)
     {
-        utf8::FixInvalidUtf8(stringData);
+        spdlog::error("Save '{}' has no readable description: it cannot be listed or loaded", saveName);
+        return false;
     }
+    if (extension.picture_problem)
+        spdlog::error("Save '{}': {}: shown without its picture, still loadable", saveName, extension.picture_problem);
 
-    int32_t strSize = ((SAVE_DATA_HANDLE *)pdat)->StringDataSize;
-    if (strSize >= bufSize)
+    // Validate the extension before any C-string operation. Work on a bounded copy;
+    // old description-only records remain readable and the saved bytes are unchanged.
+    std::string description(extension.description);
+    if (!utf8::IsValidUtf8(description.c_str()))
     {
-        buf[bufSize - 1] = 0;
-        strSize = bufSize - 1;
+        utf8::FixInvalidUtf8(description.data());
+        description.resize(std::strlen(description.c_str()));
     }
-    if (strSize > 0)
-        memcpy(buf, stringData, strSize);
-
-    delete[] pdat;
-    return strSize > 0;
+    size_t count = std::min(description.size(), static_cast<size_t>(bufSize - 1));
+    // A small script buffer must not cut a UTF-8 code point in half.
+    while (count < description.size() && count > 0 &&
+           (static_cast<unsigned char>(description[count]) & 0xc0) == 0x80)
+        --count;
+    std::memcpy(buf, description.data(), count);
+    buf[count] = 0;
+    // As before the decoder: a record with a description (even an empty one) reads, unless the buffer holds only
+    // the terminator.
+    return bufSize > 1;
 }
 
 void XINTERFACE::ReleaseSaveFindList()

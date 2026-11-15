@@ -5,6 +5,8 @@
 #include "v_file_service.h"
 
 #include "mobile_save_facts.hpp"
+#include "save_thumbnail.hpp"
+#include "utf8.h"
 
 #include <spdlog/spdlog.h>
 
@@ -13,6 +15,8 @@
 #include <ctime>
 #include <filesystem>
 #include <utility>
+#include <memory>
+#include <cstring>
 
 namespace storm::mobile
 {
@@ -51,30 +55,54 @@ namespace
 {
 class SaveFactsCache
 {
-    struct Entry { std::time_t written = 0; SaveFacts facts; };
+    struct Entry { uint64_t written = 0; bool present = false; SaveFacts facts; bool thumbnail = false; };
     std::map<std::string, Entry> entries_;
 public:
-    const SaveFacts &get(const std::string &path, const SaveDescriptionReader &readDescription)
+    const Entry &get(const std::string &path)
     {
-        const std::time_t written = fio->_FileOrDirectoryExists(path.c_str()) ? fio->_ToTimeT(fio->_GetLastWriteTime(path.c_str())) : 0;
+        const bool exists = fio->_FileOrDirectoryExists(path.c_str());
+        const auto stamp = exists ? fio->_GetLastWriteTime(path.c_str()) : std::filesystem::file_time_type{};
+        const uint64_t written = exists ? static_cast<uint64_t>(stamp.time_since_epoch().count()) : 0;
         auto found = entries_.find(path);
-        if (found != entries_.end() && found->second.written == written) return found->second.facts;
-        Entry entry{written, ParseSaveDescription(readDescription(path))};
-        if (written)
+        if (found != entries_.end() && found->second.written == written && found->second.present == exists) return found->second;
+        Entry entry{written, exists};
+        if (exists)
         {
+            int32_t size = 0;
+            const std::unique_ptr<char[]> data(static_cast<char *>(core.GetSaveData(path.c_str(), size)));
+            if (data && size > 0)
+            {
+                const auto extension = save::thumbnail::Decode({reinterpret_cast<const uint8_t *>(data.get()), static_cast<size_t>(size)});
+                if (extension.valid)
+                {
+                    std::string description(extension.description);
+                    if (!utf8::IsValidUtf8(description.c_str()))
+                    {
+                        utf8::FixInvalidUtf8(description.data());
+                        description.resize(std::strlen(description.c_str()));
+                    }
+                    entry.facts = ParseSaveDescription(description);
+                    entry.thumbnail = !extension.pixels.empty();
+                    if (extension.picture_problem)
+                        spdlog::error("Save '{}': {}: listed without its picture, still loadable", path, extension.picture_problem);
+                }
+                else
+                    spdlog::error("Save '{}' has no readable description: listed without its facts", path);
+            }
+            const std::time_t local_time = fio->_ToTimeT(stamp);
             std::tm local{};
-            localtime_r(&written, &local);
+            localtime_r(&local_time, &local);
             char created[24];
             std::strftime(created, sizeof(created), "%Y-%m-%d %H:%M", &local);
             entry.facts.created = created;
         }
-        return entries_[path] = std::move(entry), entries_[path].facts;
+        return entries_[path] = std::move(entry);
     }
 };
 SaveFactsCache saveFacts;
 } // namespace
 
-std::map<std::string, std::string> SaveRowContext(const SaveListSnapshot &state, size_t index, const SaveDescriptionReader &read)
+std::map<std::string, std::string> SaveRowContext(const SaveListSnapshot &state, size_t index)
 {
     std::map<std::string, std::string> context;
     if (index >= state.records.size())
@@ -90,10 +118,13 @@ std::map<std::string, std::string> SaveRowContext(const SaveListSnapshot &state,
         }
         return context;
     }
-    const SaveFacts &facts = saveFacts.get("SAVE\\" + state.records[index].profile + "\\" + state.records[index].file, read);
+    const std::string path = "SAVE\\" + state.records[index].profile + "\\" + state.records[index].file;
+    const auto &entry = saveFacts.get(path);
+    const SaveFacts &facts = entry.facts;
     for (const auto &[key, value] : {std::pair<const char *, const std::string &>{"hero", facts.hero}, {"location", facts.location},
                                      {"gameDate", facts.gameDate}, {"gameTime", facts.gameTime}, {"created", facts.created}})
         if (!value.empty()) context[key] = value;
+    if (entry.thumbnail) context["preview"] = save::thumbnail::Source(path, state.revision, entry.written);
     if (facts.playMinutes >= 0) context["playMinutes"] = std::to_string(facts.playMinutes);
     return context;
 }
@@ -134,7 +165,7 @@ std::vector<SaveRecord> SaveRecordsOfAllProfiles()
     return records;
 }
 
-std::optional<MobileWidget> ContinueWidget(uint64_t opening, const SaveDescriptionReader &read)
+std::optional<MobileWidget> ContinueWidget(uint64_t opening)
 {
     static std::pair<uint64_t, std::optional<SaveRecord>> newest{~0ull, {}};
     if (newest.first != opening)
@@ -143,7 +174,7 @@ std::optional<MobileWidget> ContinueWidget(uint64_t opening, const SaveDescripti
         newest = {opening, records.empty() ? std::nullopt : std::optional<SaveRecord>(records.front())};
     }
     if (!newest.second) return {};
-    const SaveFacts &facts = saveFacts.get("SAVE\\" + newest.second->profile + "\\" + newest.second->file, read);
+    const SaveFacts &facts = saveFacts.get("SAVE\\" + newest.second->profile + "\\" + newest.second->file).facts;
     // A record whose description cannot be read is still the one «Продолжить» loads: its file name names it.
     const std::string label = facts.location.empty() ? newest.second->file : facts.hero.empty() ? facts.location : facts.hero + " · " + facts.location;
     MobileWidget widget{"ANDROID_CONTINUE", "text", label, "", -1, -1, true};
