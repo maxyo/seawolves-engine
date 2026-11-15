@@ -146,6 +146,16 @@ target_compile_options(texture_format_check PRIVATE -fsigned-char)
 target_link_libraries(texture_format_check PRIVATE storm_bgfx storm_check_sdl)
 
 # Upscale swaps through the real draw binding: offscreen pixels on GLES/Vulkan, --noop for submission/state only.
+# Location reveal state, actual producer state chains and worker/cache retry. Noop only, no display/GPU.
+foreach(pair IN ITEMS "scene_readiness_check;check" "scene_resources_check;resources" "scene_retry_check;retry")
+    list(GET pair 0 target)
+    list(GET pair 1 source)
+    add_executable(${target} "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/${source}.cpp")
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+    target_compile_options(${target} PRIVATE -UNDEBUG)
+    target_link_libraries(${target} PRIVATE storm_bgfx storm_check_sdl)
+endforeach()
+
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
     "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")

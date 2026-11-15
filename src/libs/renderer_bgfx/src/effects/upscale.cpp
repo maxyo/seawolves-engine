@@ -355,6 +355,7 @@ void Upscales::plan()
         UpscaleEntry &entry = *alive[i];
         entry.nearest = -1.0f;
         const int state = entry.state;
+        entry.selected = plan.keep[i];
         if (!plan.keep[i])
         {
             release(entry);
@@ -388,6 +389,32 @@ void Upscales::plan()
             shim::logf("effects upscale: budget: every texture within %.0f m fits again", static_cast<double>(fx::kUpscaleNear));
         logged_limited_ = plan.limited;
     }
+}
+
+void Upscales::begin_scene()
+{
+    if (!enabled_) return;
+    planned_ = false; frames_since_on_ = 0; next_plan_ = Clock::now() + kPlanPeriod;
+    for (const auto &weak : entries_) if (auto entry = weak.lock()) {
+        entry->selected = false; entry->nearest = entry->last_distance = -1.0f; entry->last_drawn = {};
+    }
+}
+int Upscales::prepare_scene(shim::TexStore &store)
+{
+    if (wanted_ && !configured_) { reconfigure(); if (!configured_) return 1; }
+    if (wanted_ && !supported_) return 3; // requested method unavailable, not silently ready
+    if (!enabled_ || !store.upscale) return 0;
+    const auto &entry = store.upscale;
+    const int state = entry->state.load(std::memory_order_acquire);
+    if (state == UpscaleEntry::Failed) return 2;
+    if (state == UpscaleEntry::Unknown) look_up(entry, false);
+    else if (state == UpscaleEntry::Missing) {
+        entry->state = UpscaleEntry::Waiting;
+        if (!ReliefGenerator::instance().request_upscale(entry)) entry->state = UpscaleEntry::Missing;
+    }
+    if (!planned_) return 1;
+    if (entry->selected) return state == UpscaleEntry::Resident && bgfx::isValid(entry->handle) ? 0 : 1;
+    return state == UpscaleEntry::Stored || state == UpscaleEntry::Read || state == UpscaleEntry::Resident ? 0 : 1;
 }
 
 bool Upscales::settled() const

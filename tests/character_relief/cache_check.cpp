@@ -21,6 +21,7 @@ struct TexStore {
  std::shared_ptr<int> cutout,albedo;bool lightmap=false;
 };
 struct BaseTexture {TexStore *store;};TexStore *store_of(BaseTexture *t){return t->store;}
+std::shared_ptr<TexStore> shared_store_of(BaseTexture *t){return {std::shared_ptr<TexStore>{},t->store};}
 void logf(const char *,...){}
 }
 struct DrawVertices {const uint8_t *data=nullptr;uint32_t stride=0,count=0;};
@@ -36,6 +37,9 @@ struct Maps {void on_texture_loaded(shim::TexStore &,const std::string_view,cons
 struct EngineLighting {Maps maps;Maps &normal_maps(){return maps;}};
 struct Host {EngineLighting value;static Host &instance(){static Host h;return h;}EngineLighting &lighting(){return value;}};
 Maps &upscales(){static Maps m;return m;}
+// The scene readiness observer is not part of this check: no texture is a scene texture here.
+bool SceneTextureName(std::string_view){return false;}
+void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &){}
 }
 // Production functions inserted by cache_run.py here.
 PRODUCTION_FUNCTIONS

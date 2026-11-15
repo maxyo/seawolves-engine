@@ -1,3 +1,4 @@
+#include "storm/render/pipelines.hpp"
 #include "core.h"
 #include "fs.h"
 
@@ -244,7 +245,10 @@ GEOS::ID GEOM_SERVICE_R::CreateTexture(const char *fname)
     if (RenderService)
     {
         RenderService->ProgressView();
-        return RenderService->TextureCreate(tex.c_str());
+        const auto texture = RenderService->TextureCreate(tex.c_str());
+        // Mandatory model material, unlike optional interface probes through generic TextureCreate.
+        if (texture < 0) storm::render::FailSceneTexture(tex.c_str());
+        return texture;
     }
     return INVALID_TEXTURE_ID;
 }

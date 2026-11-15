@@ -1,3 +1,4 @@
+#include "storm/render/scene_load_action.hpp"
 #include <chrono>
 #include <exception>
 #include <mutex>
@@ -704,8 +705,26 @@ int main(int argc, char *argv[])
             auto mobileCommands = storm::android::ui::takeCommands();
             for (auto &command : storm::android::pollMobileActions())
                 mobileCommands.push_back(std::move(command));
+            storm::android::publishLocationReadiness();
             for (const auto &command : mobileCommands)
             {
+                if (command.starts_with("location-load:")) {
+                    const auto action = storm::render::ParseSceneLoadAction(command);
+                    const auto state = storm::render::GetSceneLoadStatus();
+                    if (!action || !state.active || action->generation != state.generation) {
+                        storm::android::publishLocationReadiness("stale");
+                    } else if (action->cancel) {
+                        if (storm::android::publishLocationReadiness("cancel", true)) {
+                            isRunning = false; // app accepted the menu restart; ordinary quit cleanup, no save
+                            break;
+                        }
+                    } else if (storm::render::RetrySceneResources(action->generation)) {
+                        storm::android::publishLocationReadiness("retry");
+                    } else {
+                        storm::android::publishLocationReadiness("reload-required");
+                    }
+                    continue;
+                }
                 if(storm::android::worldMapHud.modal.ownsInput(SDL_GetTicks()) &&
                     (command.starts_with("gameplay:") || command.starts_with("shortcut:") || command.starts_with("context:") ||
                      command.starts_with("move:") || command.starts_with("combat:") || command.starts_with("sails:") ||

@@ -53,6 +53,7 @@ struct UpscaleEntry
         Resident, // `handle` is valid
         Failed,   // logged; drawn at its own size
     };
+    bool selected = false; // actual current budget plan; queried only on the game thread
     GenerationPriority priority; // nearest player distance across observed instances
     uint16_t queued_scene = 0;
     uint64_t queued_after = 0; // generator admission counter, under its queue mutex
@@ -86,6 +87,10 @@ class Upscales
     bgfx::TextureHandle replacement(shim::TexStore &store, float distance);
     // Whether draws must report their distance (any entry and the option on).
     bool active() const { return enabled_; }
+    bool planned() const { return !enabled_ || planned_; }
+    void begin_scene();
+    // All current-location targets must exist on disk; only the budget-selected subset must be resident.
+    int prepare_scene(shim::TexStore &store);
     // On: the last plan (they run twice a second) found every texture it chose resident at ×2 (render::UpscaleSettled).
     bool settled() const;
     void end_frame();

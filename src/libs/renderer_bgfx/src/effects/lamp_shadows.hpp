@@ -118,6 +118,19 @@ class LampShadows
     // Receiver uniforms and textures for a draw with the camera `view` (row-vector absolute world -> view);
     // `active` false: the open textures and no lamps. `room`: the draw's ambient is the room light.
     void bind(bool active, const std::array<float, 16> &view, bool room);
+    int initial_state() const {
+        if (!enabled()) return 0;
+        if (!prepared_) return 1;
+        if (room_dirty_) return 1;
+        if (!room_.rgba.empty() && !bgfx::isValid(room_map_)) return 2;
+        if ((lamps_.empty() || positions_.empty()) && moving_.empty() && ship_lights_.empty() && room_.rgba.empty()) return 0;
+        if (!active_ || !bgfx::isValid(static_map_) || !bgfx::isValid(dynamic_map_) ||
+            !bgfx::isValid(static_fb_) || !bgfx::isValid(dynamic_fb_)) return 2;
+        if (layout_dirty_ || grid_dirty_ || room_dirty_) return 1;
+        if (!grid_.rgba.empty() && !bgfx::isValid(grid_map_)) return 2;
+        for (const auto &slot : slot_) if (slot.lamp != -1 && !slot.ready) return 1;
+        return 0;
+    }
     void end_frame();
     // Lamps with a slot and static faces drawn in the last frame (effects profile).
     int last_slots() const { return last_slots_; }

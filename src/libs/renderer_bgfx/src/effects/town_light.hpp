@@ -80,6 +80,16 @@ class TownLight
     std::array<uint32_t, 2> last_counts() const { return last_counts_; }
     bool active() const { return enabled_ && ready_; }
 
+    int initial_state() const {
+        if (!enabled_ || positions_.empty() || lightmaps_.empty()) return 0;
+        if ((place_job_ && place_job_->state.load() == 2) || (sun_job_ && sun_job_->state.load() == 2) ||
+            (wall_job_ && wall_job_->state.load() == 2)) return 2;
+        if (place_prepared_ && maps_.empty()) return 0; // calibration rejected all maps: method does not apply
+        if (!ready_ || sun_job_ || (wall_job_ && !wall_ready_) || blend_ < 1.0f) return 1;
+        if (bounce_scene_ && !sun_bounce_) return 1; // corrective bake after the scene arrives is part of entry
+        for (const auto &map : maps_) if (!bgfx::isValid(map.texture)) return 2;
+        return 0; // later sun motion remains asynchronous; only the initial maps gate entry
+    }
     void shutdown();
     void on_device_lost();
 
@@ -124,6 +134,7 @@ class TownLight
 
     bool enabled_ = false;
     bool ready_ = false;
+    bool place_prepared_ = false;
     std::string name_, occluders_name_;
     std::vector<fx::Vec3> positions_;
     std::vector<std::array<float, 2>> uvs_;

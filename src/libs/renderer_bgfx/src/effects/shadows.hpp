@@ -16,6 +16,7 @@
 
 #include "storm/fx/settings.hpp"
 #include "storm/fx/shadows.hpp"
+#include "storm/fx/shadow_model.hpp"
 #include "effects/casters.hpp"
 #include "storm/render/effects.hpp"
 
@@ -59,6 +60,14 @@ class SunShadows
     // Caster: the draw's buffers, textures and bone palette are still bound (submitted with BGFX_DISCARD_NONE);
     // `world` is its world matrix, `material` how it casts (effects/casters.hpp).
     void submit_caster(shim::Device &device, const float *world, bool skinned, Casters &casters, const CasterMaterial &material);
+    int initial_state() const {
+        if (!enabled() || !sun_present_ || fx::SunShadowStrength(sun_dir_[1]) <= 0.0f) return 0;
+        if (!prepared_) return 1;
+        if (!active_) return 2;
+        if (caster_indices_.empty()) return 0;
+        if (tiles_dirty_) return 1;
+        return !tiles_failed_ && bgfx::isValid(tiles_vb_) ? 0 : 2;
+    }
     void end_frame();
 
     void shutdown();
@@ -87,6 +96,7 @@ class SunShadows
     bgfx::VertexBufferHandle tiles_vb_ = BGFX_INVALID_HANDLE; // positions and texture coordinates of every tile
     std::vector<Tile> tiles_;
     bool tiles_dirty_ = false;
+    bool tiles_failed_ = false; // a required VB or (solid/cut) IB failed allocation
     void build_tiles();
     void destroy_tiles();
     uint32_t frame_tiles_ = 0, frame_tile_triangles_ = 0;

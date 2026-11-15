@@ -107,7 +107,7 @@ void Bounce::restart()
     color_written_ = {-1.0f, -1.0f, -1.0f};
     lamps_baked_ = 0xffffffffu;
     grid_ = {};
-    failed_ = false;
+    failed_ = unavailable_ = false;
     generation_ = 0;
 }
 
@@ -191,8 +191,12 @@ void Bounce::update(Visibility &visibility, const Visibility::Bound *bound, cons
         visibility.set_stacked(false);
         return;
     }
-    if (!visibility.set_stacked(true))
-        return; // too tall for both blocks (logged)
+    if (!visibility.set_stacked(true)) {
+        unavailable_ = true;
+        return;
+    }
+    unavailable_ = false; // the current volume supports the block again
+
     const fx::BounceGrid grid{bound->size, bound->origin, bound->cell};
     if (grid.size != grid_.size || grid.origin != grid_.origin || grid.cell != grid_.cell)
     {

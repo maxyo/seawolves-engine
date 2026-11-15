@@ -58,6 +58,13 @@ class Bounce
     // The scene (null until it is ready): our town light bakes the sun's field from it with its own sun steps.
     std::shared_ptr<const Scene> scene() const { return scene_; }
 
+    int initial_state(Visibility::State visibility) const {
+        if (!enabled_ || indices_.empty()) return 0;
+        if (failed_ || unavailable_ || visibility == Visibility::State::Failed) return 2;
+        if (visibility != Visibility::State::Ready) return 1;
+        if (!scene_ || scene_job_ || light_job_ || !sun_field_ || !lamp_field_) return 1;
+        return 0;
+    }
     void shutdown();
 
   private:
@@ -91,6 +98,7 @@ class Bounce
     fx::Bake<SceneJob> scene_job_;
     std::shared_ptr<const Scene> scene_;
     bool failed_ = false;
+    bool unavailable_ = false; // e.g. a visibility volume too tall for the bounce block
     fx::Bake<LightJob> light_job_;
     std::shared_ptr<const fx::BounceField> sun_field_, lamp_field_;
     std::array<float, 3> sun_baked_{0.0f, 0.0f, 0.0f}; // the direction sun_field_ is for (0: none)

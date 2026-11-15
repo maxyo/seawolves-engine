@@ -318,12 +318,16 @@ void Fader::Realize(uint32_t delta_time)
         }
     }
 
+    // Demand discovered during a warm frame can revoke readiness before the overlay is removed.
+    const bool resourceHold = fadeIn && !endFade && storm::render::HoldSceneReveal();
+    if (resourceHold) alpha = 0.0f;
     if (alpha >= 1.0f)
     {
         alpha = 1.0f;
         if (!endFade)
         {
             endFade = true;
+            if (fadeIn) storm::render::CompleteSceneReveal();
             eventEnd = true;
         }
     }
@@ -370,9 +374,9 @@ void Fader::Realize(uint32_t delta_time)
         }
     }
 
-    // Increase alpha. A fade-in stays closed (bounded) while the scene behind it still waits for Vulkan pipelines
-    // (storm/render/pipelines.hpp): it opens on a complete picture.
-    if (!endFade && !(fadeIn && storm::render::HoldSceneReveal()))
+    // Increase alpha only after current-location resources and submitted warm frames are ready.
+    // Preparation errors keep the responsive loading overlay closed; time alone never reveals it.
+    if (!endFade && !resourceHold)
     {
         if (fadeSpeed > 0.0f)
             alpha += delta_time * 0.001f * fadeSpeed;

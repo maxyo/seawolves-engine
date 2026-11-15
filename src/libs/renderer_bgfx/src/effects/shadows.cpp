@@ -96,6 +96,8 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
         return active_;
     if (tiles_dirty_)
         build_tiles();
+    if (tiles_failed_)
+        return false; // retain the loading error; never submit invalid required buffers
     // The place's still geometry the cascade reaches: tiles near the line through the focus along the sun, from
     // behind the focus up to the caster reach towards the sun. The tiles are absolute, the cascade in the device's world.
     const bgfx::ProgramHandle program = casters.program(device, Casters::Pass::Sun, false, CasterMaterial{});
@@ -154,6 +156,7 @@ void SunShadows::build_tiles()
 {
     destroy_tiles();
     tiles_dirty_ = false;
+    tiles_failed_ = false;
     if (caster_indices_.empty())
         return;
     float x0 = 1e30f, z0 = 1e30f;
@@ -205,8 +208,11 @@ void SunShadows::build_tiles()
     bgfx::VertexLayout layout;
     layout.begin().add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float).add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float).end();
     tiles_vb_ = bgfx::createVertexBuffer(bgfx::copy(vertices.data(), static_cast<uint32_t>(vertices.size() * sizeof(Vertex))), layout);
-    auto index_buffer = [](const std::vector<uint32_t> &indices) {
-        return bgfx::createIndexBuffer(bgfx::copy(indices.data(), static_cast<uint32_t>(indices.size() * 4)), BGFX_BUFFER_INDEX32);
+    tiles_failed_ = !bgfx::isValid(tiles_vb_);
+    auto index_buffer = [this](const std::vector<uint32_t> &indices) {
+        const auto handle = bgfx::createIndexBuffer(bgfx::copy(indices.data(), static_cast<uint32_t>(indices.size() * 4)), BGFX_BUFFER_INDEX32);
+        tiles_failed_ |= !bgfx::isValid(handle);
+        return handle;
     };
     size_t cut_triangles = 0;
     for (auto &[key, cell] : cells)
@@ -237,7 +243,7 @@ void SunShadows::destroy_tiles()
         if (bgfx::isValid(tile.solid))
             bgfx::destroy(tile.solid);
         for (auto &[texture, triangles] : tile.cut)
-            bgfx::destroy(triangles);
+            if (bgfx::isValid(triangles)) bgfx::destroy(triangles);
     }
     tiles_.clear();
     if (bgfx::isValid(tiles_vb_))

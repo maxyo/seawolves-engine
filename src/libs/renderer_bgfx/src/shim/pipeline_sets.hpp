@@ -52,7 +52,7 @@ class PipelineSets
     void unregister_program(bgfx::ProgramHandle program);
 
     void begin_scene(const char *scene);
-    bool hold_reveal();
+    bool hold_reveal(bool strict = false);
     // Device::Present, after the frame was handed to bgfx: the prewarms asked for go to bgfx; the reveal and the
     // measured window advance.
     void frame(Device &device, uint32_t presented_frame, bool scene_frame);

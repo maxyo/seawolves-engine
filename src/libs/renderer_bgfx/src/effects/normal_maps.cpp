@@ -336,6 +336,43 @@ bool NormalMaps::toggle_parallax(const std::string &name, bool &parallax_now)
     return true;
 }
 
+void NormalMaps::retry_scene(shim::TexStore &store)
+{
+    for (const auto &entry : {store.normal_map, store.gloss_map}) if (entry) {
+        const int state = entry->state.load();
+        if (state == NormalMapEntry::Failed || state == NormalMapEntry::Missing) {
+            entry->state = NormalMapEntry::Unqueued; entry->failure_reported = false;
+        }
+    }
+}
+
+int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting)
+{
+    // No entry was constructed when the required cache was not configured. That omission is
+    // not evidence that the enabled method has no work for this location.
+    if ((enabled_ || gloss_enabled_) && directory().empty()) return 3;
+    bool waiting = false, failed = false, reload_required = false;
+    const auto prepare = [&](const std::shared_ptr<NormalMapEntry> &entry, int size) {
+        if (!entry) return;
+        // Authored grey bump maps are data, never a generated shading normal.
+        if (entry->relief == fx::ReliefClass::HeightMap) return;
+        const Relief map = upload(entry, lighting, size);
+        const int state = entry->state.load(std::memory_order_acquire);
+        if (state == NormalMapEntry::Failed && (bgfx::isValid(entry->handle) || bgfx::isValid(entry->material)))
+            reload_required = true; // partial upload: do not overwrite a still-owned handle on retry
+        else if (state == NormalMapEntry::Failed || state == NormalMapEntry::Missing) failed = true;
+        else if (state != NormalMapEntry::Uploaded || map.fade < 1.0f) waiting = true;
+        else if (!bgfx::isValid(map.handle) ||
+                 (material_ && entry->depth > 0.0f && !entry->no_height_reported && !bgfx::isValid(map.material))) reload_required = true;
+    };
+    // Height-class gloss is carried by normal_map.material, even with normal shading disabled.
+    // Match Lighting::bind's consumer rather than assuming every gloss map has a separate entry.
+    if (enabled_ || (gloss_enabled_ && store.normal_map && store.normal_map->material_gloss != fx::GlossClass::None))
+        prepare(store.normal_map, max_size_);
+    if (gloss_enabled_) prepare(store.gloss_map, gloss_max_size_);
+    return reload_required ? 3 : failed ? 2 : waiting ? 1 : 0;
+}
+
 NormalMaps::Relief NormalMaps::handle(shim::TexStore &store, fx::Lighting &lighting)
 {
     // A grey bump texture supplies authored height data, not an authored RGB normal. Its Scharr-derived normal

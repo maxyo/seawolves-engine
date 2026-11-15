@@ -23,6 +23,7 @@
 #include "android_worldmap.hpp"
 #include "android_interface_presentation.hpp"
 #include "android_ui_sink.hpp"
+#include "storm/render/pipelines.hpp"
 
 namespace storm::android
 {
@@ -300,6 +301,37 @@ inline void publishLoading(bool active) {
     if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
     if (type) env->DeleteLocalRef(type);
     env->DeleteLocalRef(activity);
+}
+// Loading overlay consumer is supplied by the app. Synchronous cancel acknowledgement sets its restart reason
+// before the engine loop exits; the Activity marshals only view updates to its UI thread.
+inline bool publishLocationReadiness(const char *ack = "", bool cancelled = false) {
+    const auto r = render::GetSceneLoadStatus();
+    const std::string json = "{\"generation\":" + std::to_string(r.generation) +
+        ",\"active\":" + ((r.active && !cancelled) ? "true" : "false") + ",\"state\":" + uiJsonText(cancelled ? "cancelled" : r.state) +
+        ",\"retryable\":" + ((r.retryable && !cancelled) ? "true" : "false") + ",\"textures\":" + std::to_string(r.textures) + ",\"relief\":" + std::to_string(r.relief) +
+        ",\"shadows\":" + std::to_string(r.shadows) + ",\"failed\":" + std::to_string(r.failed) +
+        ",\"detail\":" + uiJsonText(r.detail) + ",\"actionAck\":" + uiJsonText(ack) + "}";
+    static std::string previous;
+    if (previous == json && !cancelled) return true;
+    auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
+    auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !activity) return false;
+    auto type = env->GetObjectClass(activity);
+    auto method = type ? env->GetMethodID(type, "onLocationReadiness", "(Ljava/lang/String;)V") : nullptr;
+    bool delivered = false;
+    if (method) {
+        auto text = env->NewStringUTF(json.c_str());
+        if (text) {
+            env->CallVoidMethod(activity, method, text);
+            delivered = !env->ExceptionCheck();
+            env->DeleteLocalRef(text);
+        }
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear(); // older app: no consumer, never permission to reveal
+    if (type) env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    if (delivered) previous = json;
+    return delivered;
 }
 // A state channel of the portable UI (JSON as is, "null" = nothing), for channels without a
 // publisher of their own here.

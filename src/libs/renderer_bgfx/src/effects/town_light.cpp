@@ -104,6 +104,7 @@ void TownLight::set_lightmaps(std::string_view name, std::span<const std::array<
     place_job_.reset();
     sun_job_.reset();
     ready_ = false;
+    place_prepared_ = false;
     waiting_reported_ = false;
     sun_bounce_.reset();
     wall_job_.reset();
@@ -170,6 +171,7 @@ void TownLight::set_enabled(bool enabled)
 
 void TownLight::start_place()
 {
+    place_prepared_ = false;
     auto job = std::make_shared<PlaceJob>();
     // The game's lightmaps' textures, looked up here (main thread): the draws are matched by them.
     std::vector<const shim::TexStore *> stores;
@@ -455,20 +457,13 @@ void TownLight::update(const std::array<float, 3> &sun, const std::array<float, 
                        m.tone.valid ? "" : ": not explained, keeps the game's");
         // A lightmap whose tone the game's does not explain keeps the game's.
         std::erase_if(maps_, [](const Map &m) { return !m.tone.valid; });
+        place_prepared_ = true;
         place_job_.reset();
     }
     if (maps_.empty())
         return;
-    if (!present && !ready_)
-    {
-        // The place's weather has not given its sun yet (the first frames after the load), or it is night: the game's
-        // lightmap stays until there is a sun to bake for.
-        if (!waiting_reported_)
-            shim::logf("effects: town light of %s: no sun in the sky yet: the game's lightmap until there is",
-                       name_.c_str());
-        waiting_reported_ = true;
-        return;
-    }
+    // Prepare the current night/indoor state too. Waiting for a future sunrise here
+    // leaves a legitimately sunless location permanently behind the readiness fader.
     const std::array<float, 3> target = present ? sun : std::array<float, 3>{0.0f, -1.0f, 0.0f};
     if (sun_job_ && sun_job_->state.load() == 1)
     {
@@ -641,6 +636,7 @@ void TownLight::shutdown()
     place_job_.reset();
     sun_job_.reset();
     ready_ = false;
+    place_prepared_ = false;
 }
 
 void TownLight::on_device_lost()

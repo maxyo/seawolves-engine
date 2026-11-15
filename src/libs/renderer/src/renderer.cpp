@@ -1,3 +1,4 @@
+#include "storm/render/pipelines.hpp"
 #include "renderer_impl.h"
 #include <platform/android_ui.hpp>
 #include <platform/android_runtime.hpp>
@@ -1731,6 +1732,7 @@ int32_t Renderer::TextureCreate(const char *fname)
                     if (Textures[t].hash == hf && storm::iEquals(Textures[t].name, _fname))
                     {
                         Textures[t].ref++;
+                        storm::render::RequireSceneTexture(Textures[t].d3dtex);
                         return t;
                     }
 
@@ -1747,8 +1749,10 @@ int32_t Renderer::TextureCreate(const char *fname)
         Textures[t].isCubeMap = false;
         Textures[t].loaded = false;
         Textures[t].ref++;
-        if (TextureLoad(t))
+        if (TextureLoad(t)) {
+            storm::render::RequireSceneTexture(Textures[t].d3dtex);
             return t;
+        }
         Textures[t].ref--;
         delete[] Textures[t].name;
         Textures[t].name = nullptr;

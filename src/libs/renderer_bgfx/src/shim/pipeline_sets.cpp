@@ -1,3 +1,4 @@
+#include "effects/scene_readiness.hpp"
 #include "shim/pipeline_sets.hpp"
 
 #include "shim/device.hpp"
@@ -414,10 +415,10 @@ void PipelineSets::begin_scene(const char *scene)
          recorded, to_prewarm_.size());
 }
 
-bool PipelineSets::hold_reveal()
+bool PipelineSets::hold_reveal(bool strict)
 {
     std::lock_guard lock(mutex_);
-    if (!vulkan_ || !reveal_.armed)
+    if (!vulkan_ || (!reveal_.armed && !strict))
         return false;
     const auto now = Clock::now();
     if (!reveal_.holding)
@@ -432,6 +433,9 @@ bool PipelineSets::hold_reveal()
     // scene under the closed fader and left nothing out.
     const bool complete = bgfx::getVkLastWaitingFrame() < presented_frame_;
     const bool ready = pending == 0 && complete && presented_frame_ >= reveal_.hold_frame + 2;
+    // Location resource preparation owns reveal now. Never expire its pipeline barrier and
+    // keep checking late programs until the fader actually seals that generation.
+    if (strict) return !ready;
     const bool bound = now - reveal_.hold_started >= kRevealBound;
     if (!ready && !bound)
         return true;
@@ -609,6 +613,7 @@ namespace storm::render
 {
 void BeginScenePipelines(const char *scene)
 {
+    effects::BeginSceneResources(scene);
     shim::PipelineSets::instance().begin_scene(scene);
 }
 
@@ -624,6 +629,9 @@ void UnregisterPipelineProgram(bgfx::ProgramHandle program)
 
 bool HoldSceneReveal()
 {
-    return shim::PipelineSets::instance().hold_reveal();
+    const bool pipelines = shim::PipelineSets::instance().hold_reveal(GetSceneLoadStatus().active);
+    effects::ScenePipelinesPending(pipelines);
+    const bool resources = effects::HoldSceneResources();
+    return pipelines || resources;
 }
 } // namespace storm::render

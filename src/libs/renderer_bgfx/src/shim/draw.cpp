@@ -1,3 +1,4 @@
+#include "effects/scene_readiness.hpp"
 #include "device.hpp"
 #include "effects/effects.hpp"
 #include "effects/upscale.hpp"
@@ -1503,6 +1504,8 @@ HRESULT Device::draw(const DrawCall &call)
             continue;
         if (!ps_port && s.tss[stage][D3DTSS_COLOROP] == D3DTOP_DISABLE)
             break;
+        if (rt == back_color && !layout->rhw && s.proj.m[2][3] != 0.0f)
+            effects::ObserveSceneTexture(shared_store_of(s.textures[stage]));
         store->sync();
         if (!bgfx::isValid(store->handle))
             continue;

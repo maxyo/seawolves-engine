@@ -1,3 +1,8 @@
+#include "effects/scene_readiness.hpp"
+#include "storm/render/pipelines.hpp"
+#include "texture/core/service.hpp"
+#include <unordered_map>
+#include <unordered_set>
 #include "effects/effects.hpp"
 #include "storm/render/far_lod.hpp"
 #include "effects/thermal.hpp"
@@ -37,6 +42,155 @@ extern std::atomic<float> g_stormMaxAnisotropy;
 
 namespace storm::effects
 {
+namespace {
+struct LocationLoad {
+    SceneReadiness gate;
+    SceneFailures failures;
+    std::string scene, detail;
+    std::unordered_map<uint64_t, std::weak_ptr<shim::TexStore>> textures;
+    std::unordered_set<std::string> failed_textures;
+    bool sealed = true, pipelines_pending = false;
+    bool logged_error = false, logged_ready = false, logged_slow = false;
+    uint32_t logged_pending = UINT32_MAX;
+};
+LocationLoad &location_load() { static LocationLoad load; return load; }
+uint64_t load_milliseconds() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+void BeginSceneResources(const char *scene)
+{
+    auto &load = location_load();
+    load.textures.clear(); load.failed_textures.clear(); load.detail.clear(); load.scene = scene ? scene : "";
+    load.sealed = load.scene.rfind("location/", 0) != 0;
+    load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
+    load.failures = {}; load.pipelines_pending = false;
+    if (!load.sealed) {
+        load.gate.begin(load_milliseconds());
+        upscales().begin_scene();
+        shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
+                   static_cast<unsigned long long>(load.gate.generation()));
+    }
+}
+void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &texture)
+{
+    auto &load = location_load();
+    if (load.sealed || !texture || texture->render_target || texture->system_memory || !SceneTextureName(texture->name)) return;
+    if (load.textures.emplace(texture->serial, texture).second) load.gate.invalidate();
+}
+void ScenePipelinesPending(bool pending)
+{
+    auto &load = location_load();
+    if (!load.sealed && pending && !load.pipelines_pending) load.gate.invalidate();
+    load.pipelines_pending = pending;
+}
+void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = true,
+                          const std::array<int, 2> *draw_shadows = nullptr)
+{
+    auto &load = location_load();
+    if (load.sealed) return;
+    Host &host = Host::instance();
+    SceneResources resources{};
+    resources.failed = static_cast<uint32_t>(load.failed_textures.size());
+    load.failures = {0, resources.failed};
+    resources.switching = host.switching() || load.pipelines_pending;
+    // Order-independent per-resource stages: two different completions can leave total pending
+    // unchanged. Neither render frames nor polling count constitute producer progress.
+    uint64_t progress = resources.failed;
+    const auto mix = [](uint64_t x) { x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
+        x ^= x >> 27; x *= 0x94d049bb133111ebULL; return x ^ (x >> 31); };
+    load.detail.clear();
+    const auto name = [&](const std::string &what) { if (load.detail.size() < 384) {
+        if (!load.detail.empty()) load.detail += "; "; load.detail += what;
+    }};
+    for (const auto &failed : load.failed_textures) name("texture failed: " + failed);
+    for (auto it = load.textures.begin(); it != load.textures.end();) {
+        auto store = it->second.lock();
+        if (!store) { // no scene owner remains; a dead resource is no longer required
+            it = load.textures.erase(it); load.gate.invalidate(); continue;
+        }
+        ++it;
+        store->sync(); // pumps completed transcodes, including textures outside the initial camera
+        if (store->fallback_bytes || store->transcode_job || store->any_dirty) {
+            ++resources.textures; name("texture upload: " + store->name);
+        } else if (!bgfx::isValid(store->handle) || (store->transcoded && !store->full_chain)) {
+            ++resources.failed; ++load.failures.reload_required; name("texture fallback: " + store->name);
+        }
+        const int upscale = upscales().prepare_scene(*store);
+        if (upscale == 1) { ++resources.textures; name("x2 data/residency: " + store->name); }
+        else if (upscale >= 2) {
+            ++resources.failed;
+            if (upscale == 2) ++load.failures.retryable; else ++load.failures.reload_required;
+            name("x2 failed: " + store->name);
+        }
+        const int relief = host.lighting().prepare_scene_texture(*store);
+        if (relief == 1) { ++resources.relief; name("normal/gloss: " + store->name); }
+        else if (relief >= 2) {
+            ++resources.failed;
+            if (relief == 2) ++load.failures.retryable; else ++load.failures.reload_required;
+            name("normal/gloss failed: " + store->name);
+        }
+        uint64_t stage = static_cast<uint64_t>(bgfx::isValid(store->handle)) |
+            (uint64_t(store->fallback_bytes != 0) << 1) | (uint64_t(bool(store->transcode_job)) << 2) |
+            (uint64_t(store->any_dirty) << 3) | (uint64_t(store->full_chain) << 4);
+        for (const auto &[entry, shift] : {std::pair{store->normal_map, 8}, std::pair{store->gloss_map, 16}})
+            if (entry) stage |= uint64_t(1 + entry->state.load(std::memory_order_acquire)) << shift;
+        if (store->upscale) stage |= uint64_t(1 + store->upscale->state.load(std::memory_order_acquire)) << 24;
+        progress ^= mix(store->serial ^ mix(stage));
+    }
+    const auto shadow = [&](int state, const char *what) {
+        if (state == 1) { ++resources.shadows; name(what); }
+        if (state == 2) { ++resources.failed; ++load.failures.reload_required; name(std::string(what) + " failed"); }
+    };
+    shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(), "sun shadows");
+    shadow(draw_shadows ? (*draw_shadows)[1] : host.lighting().lamp_shadows().initial_state(), "lamp shadows");
+    shadow(host.lighting().town_light().initial_state(), "town initial maps");
+    shadow(host.bounce().initial_state(host.visibility().state()), "initial bounce field");
+    shadow(host.ao_volumes().initial_state(host.settings().ao_volume > 0), "AO volume");
+    const auto visibility = host.visibility().state();
+    shadow(visibility == Visibility::State::Building ? 1 : visibility == Visibility::State::Failed ? 2 : 0,
+           "visibility volume");
+    progress ^= mix(uint64_t(resources.shadows) | (uint64_t(resources.failed) << 32) |
+                    (uint64_t(resources.switching) << 63));
+    load.gate.observe_progress(progress, load_milliseconds());
+    // Do not use the generator's whole-corpus queue or its Complete mark here.
+    if (completed) load.gate.frame(load.gate.generation(), frame, scene_frame, resources);
+    else load.gate.refresh(resources);
+}
+bool HoldSceneResources()
+{
+    auto &load = location_load();
+    if (load.sealed) return false;
+    // Producers can change state after the previous sample, even for an already registered texture.
+    // Revalidate now, before this Fader draw can remove the overlay; never earn a stable frame here.
+    SampleSceneResources(false, 0, false);
+    const auto now = load_milliseconds();
+    const bool hold = load.gate.hold(now);
+    const auto r = load.gate.resources();
+    const uint32_t pending = r.textures + r.relief + r.shadows + r.switching;
+    if (pending != load.logged_pending || (!hold && !load.logged_ready)) {
+        shim::logf("location readiness: %s generation=%llu textures=%u relief=%u shadows=%u failed=%u switching=%d: %s",
+                   hold ? "waiting" : "ready",
+                   static_cast<unsigned long long>(load.gate.generation()), r.textures, r.relief, r.shadows, r.failed,
+                   r.switching, load.detail.c_str());
+        load.logged_pending = pending;
+        load.logged_ready = !hold;
+    }
+    if (load.gate.state() == SceneReadiness::State::Error && !load.logged_error) {
+        shim::logf("ERROR: location readiness: %s resource preparation failed; overlay retained, no incomplete reveal: %s",
+                   load.scene.c_str(), load.detail.c_str());
+        load.logged_error = true;
+    }
+    if (load.gate.slow(now) && !load.logged_slow) {
+        shim::logf("location readiness: slow preparation %s elapsed=%llu ms observed stages unchanged=%llu ms; "
+                   "inference may still be running, overlay retained, Cancel available: %s", load.scene.c_str(),
+                   static_cast<unsigned long long>(load.gate.elapsed(now)),
+                   static_cast<unsigned long long>(load.gate.unchanged(now)), load.detail.c_str());
+        load.logged_slow = true;
+    }
+    return hold;
+}
+
 
 namespace
 {
@@ -265,6 +419,7 @@ void Host::on_device_created()
 
 void Host::on_device_lost()
 {
+    if (!location_load().sealed) location_load().gate.invalidate();
     post_.OnDeviceLost();
     self_test_.OnDeviceLost();
     lighting_.on_device_lost();
@@ -317,6 +472,7 @@ void Host::shutdown()
 
 render::EffectsReport Host::configure(int preset, const std::vector<render::EffectsOption> &options)
 {
+    if (!location_load().sealed) location_load().gate.invalidate();
     preset_ = std::clamp(preset, 0, 2);
     options_ = options;
     apply();
@@ -681,6 +837,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     }
     weather_this_frame_ = false;
     sun_glare_ = sun_ghosts_ = 0.0f;
+    const std::array<int, 2> draw_shadows{lighting_.shadows().initial_state(), lighting_.lamp_shadows().initial_state()};
     lighting_.probe().end_frame(scene_frame, lighting_.normal_maps());
     lighting_.end_frame();
     upscales().end_frame();
@@ -733,6 +890,8 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        kVisibilityStates[static_cast<int>(visibility_.state())]);
         }
     }
+    // All next-frame producers have now pumped. Shadow preparation was captured before end_frame reset it.
+    SampleSceneResources(scene_frame, frame, true, &draw_shadows);
     transform_view_ = UINT16_MAX; // the shim's views start again next frame
     times_ = {};
     if (!profile_)
@@ -885,6 +1044,9 @@ void SetEffectsLightmaps(std::string_view name, std::span<const std::array<float
 
 void SetEffectsLocationGeometry(const EffectsLocationGeometry &geometry)
 {
+    if (!effects::location_load().sealed) effects::location_load().gate.invalidate();
+    for (const auto &surface : geometry.surfaces)
+        effects::ObserveSceneTexture(shim::shared_store_of(surface.texture));
     effects::generation_focus().set_scene(geometry.name);
     effects::Host::instance().location_changed();
     effects::Host::instance().lighting().lamp_shadows().set_geometry(geometry);
@@ -1045,7 +1207,51 @@ void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path
         std::string lower(path ? path : "");
         std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         store->lightmap = lower.find("lighting") != std::string::npos && lower.find("shadow.tga") != std::string::npos;
+        // Interface/fader pictures do not belong to the new world's texture set.
+        if (effects::SceneTextureName(store->name))
+            effects::ObserveSceneTexture(shim::shared_store_of(texture));
     }
+}
+
+SceneLoadStatus GetSceneLoadStatus()
+{
+    const auto &load = effects::location_load();
+    const auto r = load.gate.resources();
+    const bool error = load.gate.state() == effects::SceneReadiness::State::Error || r.failed > 0;
+    return {load.gate.generation(), !load.sealed, error, !load.sealed && error && load.failures.can_retry() && load.failed_textures.empty(),
+            load.sealed ? "inactive" : error ? "error" : load.gate.state() == effects::SceneReadiness::State::Ready ? "ready" : "preparing",
+            r.textures, r.relief, r.shadows, r.failed, load.detail};
+}
+void RequireSceneTexture(shim::BaseTexture *texture)
+{
+    auto store = shim::shared_store_of(texture);
+    if (store && effects::SceneTextureName(store->name))
+        effects::ObserveSceneTexture(store);
+}
+void FailSceneTexture(const char *name)
+{
+    auto &load = effects::location_load();
+    const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
+    if (!load.sealed && effects::SceneTextureName(normalized) && load.failed_textures.emplace(normalized).second) load.gate.invalidate();
+}
+void CompleteSceneReveal() {
+    auto &load = effects::location_load();
+    if (load.gate.state() == effects::SceneReadiness::State::Ready) load.sealed = true;
+}
+bool RetrySceneResources(uint64_t generation)
+{
+    auto &load = effects::location_load();
+    if (load.sealed || generation != load.gate.generation() || !load.failed_textures.empty() || !load.failures.can_retry()) return false;
+    for (const auto &[serial, weak] : load.textures) if (auto store = weak.lock()) {
+        effects::Host::instance().lighting().normal_maps().retry_scene(*store);
+        if (store->upscale && store->upscale->state == effects::UpscaleEntry::Failed)
+            store->upscale->state = effects::UpscaleEntry::Unknown;
+    }
+    load.gate.begin(effects::load_milliseconds());
+    effects::upscales().begin_scene();
+    load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
+    load.failures = {};
+    return true;
 }
 
 bool UpscaleSettled()

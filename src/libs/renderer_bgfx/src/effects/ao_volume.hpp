@@ -39,6 +39,11 @@ class AoVolumes
     // one. The volume to sample this frame, or nullptr.
     const Bound *update(bool wanted);
 
+    int initial_state(bool wanted) const {
+        if (!wanted || positions_.empty()) return 0;
+        if (job_ && job_->state.load() == Job::Failed) return 2;
+        return bgfx::isValid(bound_.texture) ? 0 : 1;
+    }
     void shutdown();
     void on_device_lost();
 

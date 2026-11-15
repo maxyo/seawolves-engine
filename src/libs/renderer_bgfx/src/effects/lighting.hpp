@@ -230,6 +230,7 @@ class Lighting
     // The location's visibility volume for this frame's lit and baked draws (null: none yet, or no location).
     void set_visibility(const Visibility::Bound *volume) { visibility_ = volume; }
     NormalMaps &normal_maps() { return normal_maps_; }
+    int prepare_scene_texture(shim::TexStore &store) { return normal_maps_.prepare_scene(store, fx_); }
     ParallaxProbe &probe() { return probe_; }
     SunShadows &shadows() { return shadows_; }
     TownLight &town_light() { return town_light_; }
