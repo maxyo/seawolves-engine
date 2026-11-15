@@ -4,6 +4,7 @@
 #include "device_retry.hpp"
 
 #include "formats.hpp"
+#include "eac_encoder.hpp"
 #include "storm/fx/relief_model.hpp"
 #include "storm/fx/gloss_map.hpp"
 #include "storm/fx/height_map.hpp"
@@ -441,6 +442,7 @@ struct Session::Impl
     std::mutex networks_mutex;   // swaps against Cancel from another thread
     Stats stats;
     std::atomic<bool> cancelled{false};
+    std::unique_ptr<texture::EacEncoder> encoder; // one caller; helpers run only after inference has returned
 
     std::array<std::unique_ptr<Network>, 3> &Active() { return on_gpu ? gpu : cpu; }
     bool EnsureGpu(std::string &error)
@@ -553,6 +555,7 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     threads = threads > 0 ? threads : static_cast<int>(std::max(1u, std::thread::hardware_concurrency()));
     impl->models = models;
     impl->threads = threads;
+    impl->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(threads));
     impl->cache = cache;
     // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
     const bool gpu_models = !models.normal_param.empty() && !models.height_param.empty() && !models.roughness_param.empty() &&
@@ -580,6 +583,7 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
 
 void Session::ReleaseIdleModels()
 {
+    impl_->encoder.reset(); // helpers are idle here; release their stacks and thread-local encoding scratch too
     impl_->ReleaseCpu();
     {
         std::lock_guard lock(impl_->networks_mutex);
@@ -869,6 +873,25 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
                                      candidate->gloss);
     }
     const double gloss_ms = lap();
+    double encode_ms = 0.0, store_ms = 0.0;
+    unsigned encode_threads = 1;
+    const auto encode = [&](const fx::NormalMap &source, const std::vector<uint8_t> &texels,
+                            std::vector<uint8_t> &encoded) {
+        const auto begin = Clock::now();
+        if (!impl_->encoder)
+            impl_->encoder = std::make_unique<texture::EacEncoder>(static_cast<unsigned>(impl_->threads));
+        const bool ok = !texels.empty() && source.width > 0 && source.height > 0 && source.mip_count > 0 &&
+                       impl_->encoder->Encode(texture::EacFormat::Rg11, texels.data(), source.width, source.height,
+                                               source.mip_count, encoded, impl_->cancelled);
+        encode_ms += std::chrono::duration<double, std::milli>(Clock::now() - begin).count();
+        encode_threads = std::max(encode_threads, impl_->encoder->participants());
+        if (!ok)
+        {
+            failure = impl_->cancelled ? "cancelled" : "invalid EAC input";
+            Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
+        }
+        return ok;
+    };
     fx::NormalMap map;
     if (key)
     {
@@ -884,17 +907,26 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
                 !fx::AddReliefMaterial(rg8, relief, fx::ReliefModelHeight(height_planes, mw, mh), g, albedo))
                 Log("relief %s: flat, no height", candidate->name.c_str());
         }
-        map = {rg8.width, rg8.height, rg8.mip_count, fx::NormalMapFormat::EacRg11,
-               texture::encode_eac_chain(texture::EacFormat::Rg11, rg8.rg.data(), rg8.width, rg8.height, rg8.mip_count)};
+        map = {rg8.width, rg8.height, rg8.mip_count, fx::NormalMapFormat::EacRg11, {}};
+        if (!encode(rg8, rg8.rg, map.rg))
+            return Outcome::Failed;
         if (!rg8.material.empty())
         {
-            map.material = texture::encode_eac_chain(texture::EacFormat::Rg11, rg8.material.data(), rg8.width, rg8.height,
-                                                     rg8.mip_count);
+            if (!encode(rg8, rg8.material, map.material))
+                return Outcome::Failed;
             map.depth = rg8.depth;
             map.trust = std::move(rg8.trust);
             map.trust_coverage = rg8.trust_coverage;
         }
-        if (!fx::WriteReliefMap(output, *key, map))
+        if (impl_->cancelled)
+        {
+            failure = "cancelled";
+            return Outcome::Failed;
+        }
+        const auto store_start = Clock::now();
+        const bool written = fx::WriteReliefMap(output, *key, map);
+        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
+        if (!written)
         {
             failure = "cannot write " + fx::ReliefFile(output, *key).string();
             Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
@@ -904,10 +936,18 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
     if (gloss_key)
     {
         const fx::NormalMap rg = fx::GlossMaterial(gloss);
-        const fx::NormalMap stored{rg.width, rg.height, rg.mip_count, fx::NormalMapFormat::EacRg11,
-                                   texture::encode_eac_chain(texture::EacFormat::Rg11, rg.rg.data(), rg.width, rg.height,
-                                                             rg.mip_count)};
-        if (rg.rg.empty() || !fx::WriteGlossMap(output, *gloss_key, stored))
+        fx::NormalMap stored{rg.width, rg.height, rg.mip_count, fx::NormalMapFormat::EacRg11, {}};
+        if (!encode(rg, rg.rg, stored.rg))
+            return Outcome::Failed;
+        if (impl_->cancelled)
+        {
+            failure = "cancelled";
+            return Outcome::Failed;
+        }
+        const auto store_start = Clock::now();
+        const bool written = fx::WriteGlossMap(output, *gloss_key, stored);
+        store_ms += std::chrono::duration<double, std::milli>(Clock::now() - store_start).count();
+        if (!written)
         {
             failure = "cannot write " + fx::GlossFile(output, *gloss_key).string();
             Log("ERROR: no gloss map for %s: %s", candidate->name.c_str(), failure.c_str());
@@ -923,10 +963,12 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         mean_gloss += g;
     mean_gloss = gloss.gloss.empty() ? 0.0 : mean_gloss / static_cast<double>(gloss.gloss.size());
     Log("relief %s: %dx%d%s%s, gloss %s %dx%d (mean %.2f), %.0f ms (read %.0f, decode %.0f, ×2 %.0f, models %.0f of which "
-        "inference %.0f: %s; gloss %.0f, mips, material, encode and write %.0f; depth %.1f texels, parallax trust %.0f%%; %s)",
+        "inference %.0f: %s; gloss %.0f, mips and material %.0f, EAC %.0f on %u threads, write %.0f; "
+        "depth %.1f texels, parallax trust %.0f%%; %s)",
         candidate->name.c_str(), key ? mw : 0, key ? mh : 0, key ? "" : " (no relief)",
         model_scale > 1 ? " from its ×2" : "", fx::GlossClassName(candidate->gloss), gloss.width, gloss.height, mean_gloss,
-        ms, read_ms, decode_ms, upscale_ms, model_ms, infer_ms, per_model.c_str(), gloss_ms, write_ms,
+        ms, read_ms, decode_ms, upscale_ms, model_ms, infer_ms, per_model.c_str(), gloss_ms,
+        std::max(0.0, write_ms - encode_ms - store_ms), encode_ms, encode_threads, store_ms,
         static_cast<double>(map.depth), 100.0 * static_cast<double>(map.trust_coverage), impl_->stats.provider.c_str());
     return Outcome::Prepared;
 }

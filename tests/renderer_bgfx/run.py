@@ -47,7 +47,7 @@ for source in sorted((shim / 'shaders/ports').glob('vs_port_*.sc')):
 subprocess.run(configure, check=True, stdout=subprocess.DEVNULL)
 warmth = here.parents[1] / 'tools/ccache/warmth'
 subprocess.run([str(warmth), 'begin', str(build)], check=True)
-subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'perf_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
+subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'storm_eac_encoder_tests', 'perf_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
                 'preset_switch_check', 'sea_edge_check', 'program_cache_check', 'render_thread_check',
                 'storm_fx_core_check', 'storm_fx_wave_storage_check', 'storm_fx_wave_idle_check', 'storm_fx_wave_source_check', 'ao_volume_check',
                 'storm_relief_check', 'storm_relief_device_retry_check', 'grass_vertex_check', 'cutout_caster_check', 'lamp_lifetime_check', 'relief_switch_check', 'texture_format_check', 'upscale_swap_check', 'backend_select_check',
@@ -58,6 +58,7 @@ subprocess.run([str(warmth), 'end', str(build)], check=True)
 import concurrent.futures
 jobs = int(os.environ.get('STORM_CHECK_JOBS', '6'))
 plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 'storm_texture_tests')], [str(build / 'perf_check')], [str(build / 'backend_select_check')],
+         [str(build / 'renderer_bgfx' / 'storm_eac_encoder_tests')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_core_check')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_wave_storage_check')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_wave_idle_check')],
