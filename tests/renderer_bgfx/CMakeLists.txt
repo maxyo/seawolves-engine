@@ -166,6 +166,15 @@ add_test(NAME scene_post_handoff_check
 set_tests_properties(scene_post_handoff_check PROPERTIES
     LABELS "scene_readiness;cpu" TIMEOUT 60)
 
+# A lazy texture request during hidden rendering must not recursively Present or
+# replace the reflection target; the outer loading RunEnd remains authoritative.
+add_test(NAME scene_nested_progress_check
+    COMMAND "${CMAKE_COMMAND}" -E env
+        "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
+        "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/nested_progress.py")
+set_tests_properties(scene_nested_progress_check PROPERTIES
+    LABELS "scene_readiness;cpu" TIMEOUT 60)
+
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
     "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")

@@ -65,7 +65,7 @@ plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 's
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_wave_source_check')], [str(build / 'relief_switch_check')],
          *[[str(build / name)] for name in ('scene_readiness_check', 'scene_resources_check', 'scene_retry_check')],
          ['ctest', '--test-dir', str(build), '--output-on-failure', '--no-tests=error',
-          '-R', '^scene_post_handoff_check$'],
+          '-R', '^scene_(post_handoff|nested_progress)_check$'],
          [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text()],
          [str(build / 'relief' / 'storm_relief_device_retry_check'), str(build / 'device-retry-fixture')]]
 # The checks that draw, on OpenGL ES.

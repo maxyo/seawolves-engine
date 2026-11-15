@@ -4559,6 +4559,10 @@ void Renderer::StartProgressView()
 
 void Renderer::ProgressView()
 {
+    // TextureLoad can reenter here from an offscreen reflection/resource pass.
+    // The loading transaction presents artwork once, after all prepare/realize
+    // consumers restore their targets, in RunEnd. Never present a partial scene.
+    if (storm::loading::active) return;
     DrawProgressView(true);
 }
 
