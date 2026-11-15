@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""What a change can affect: the host checks (tests/*/run.py), the game-data checks (tools/game_checks)
-and the builds a gate runs (the UI host build, the Android engine build). Used by tools/ci/gate.py and
-`run_host_tests.py --changed-since`; every check or build it leaves out is reported with the reason.
+"""What a change can affect: the host checks (tests/*/run.py), the game-data checks (tools/game_checks),
+the builds a gate runs (the UI host build, the Android engine build) and the engine boot stage
+(tools/ci/boot_stage.py). Used by tools/ci/gate.py and `run_host_tests.py --changed-since`; every check or
+build it leaves out is reported with the reason.
 
   affected.py [--base origin/develop] [--head HEAD] [--json]
 
@@ -9,17 +10,26 @@ Rules (README.md here):
 - Markdown files (*.md) are documentation: they affect nothing.
 - A change to the host CI itself (.github, tools/ci, tools/ccache, cmake, the top-level CMakeLists.txt,
   tests/<file>) selects everything.
-- A host check is affected when its own directory changed, or when its files name a changed file, the
-  changed file's directory, or the changed file's component (src/<kind>/<name>/, <top>/<name>/).
-- A check that is a CMake project and has been built in --work is narrowed by its build graph: it stays
-  affected only when a changed file is an input of that build (Ninja's dependency log and build.ninja),
+- A host check that is a CMake project and has been built in --work is decided by its build graph: it
+  is affected when a changed file is an input of that build (Ninja's dependency log and build.ninja),
   a new file lies in a directory the build reads, or its own directory changed.
+- Any other host check is affected when its own directory changed, or when its files name a changed
+  file, the changed file's directory, or the changed file's component (src/libs/<name>, src/apps/<name>,
+  <top>/<name>), with or without the final slash (`src/libs/relief"`, `root/'src/libs/relief'`), but
+  never as the start of a longer name (src/libs/relief is not src/libs/relief_ui).
 - A build (UI host, Android engine) is affected the same way, from its build directory's graph; without
   a built directory it is affected ("no build graph yet").
-- A game-data check is affected when its own directory changed or a changed file is one of the headers
-  its check.cpp includes (the compiler's -MM list).
+- A game-data check is affected when its own directory changed, when its built graph (build/game-checks/
+  <name>) reads a changed file or, not built yet, its files name one as above, or when a changed file is
+  one of the headers its check.cpp includes (the compiler's -MM list).
+- The engine boot stage (a sanitizer host engine boots, loads a save and three scenes) is affected by every
+  change that can change what the engine does at run time: an input of its build graph (build/boot-asan;
+  not built yet: any file under src/ or android/), the run-time renderer input src/techniques, and the
+  sweep and boot tools themselves. A changed source file no host or game-data check selects selects the
+  boot stage ("owned by no check"), never nothing.
 """
 import argparse
+import functools
 import json
 import os
 from pathlib import Path
@@ -31,6 +41,16 @@ import sys
 root = Path(__file__).resolve().parents[2]
 EVERYTHING = ('.github/', 'tools/ci/', 'tools/ccache/', 'cmake/')
 TEXT_SUFFIXES = ('.py', '.txt', '.cpp', '.hpp', '.h', '.cmake', '.c', '.json', '.ini', '.sh')
+# Source files: what the engine builds compile or the engine reads at run time.
+SOURCE_ROOTS = ('src/', 'android/')
+SOURCE_SUFFIXES = ('.c', '.cpp', '.h', '.hpp', '.inc', '.inl', '.sc', '.sh', '.fx', '.json', '.txt', '.cmake',
+                   '.patch', '.java', '.def', '.rml', '.rcss')
+# Read by the engine at run time and by no build: the scene sweep lays the techniques over the game's, as the APK.
+RUNTIME_INPUTS = ('src/techniques/',)
+BOOT_TOOLS = ('tools/scene_sweep/', 'tools/ci/boot_stage.py')
+# Directories of libraries, not one component: their component is one level deeper.
+CONTAINERS = ('src/libs/', 'src/apps/')
+PATH_TOKEN = re.compile(r'[\w./-]+')
 
 
 def changed_files(base, head='HEAD', repo=root):
@@ -49,12 +69,48 @@ def changed_files(base, head='HEAD', repo=root):
     return files
 
 
+def is_source(path):
+    return path.startswith(SOURCE_ROOTS) and path.endswith(SOURCE_SUFFIXES)
+
+
 def component(path):
+    """src/libs/<name>, src/apps/<name>; otherwise <top>/<name> (src/techniques, tools/scene_sweep). None at the top."""
     parts = path.split('/')
-    if parts[0] == 'src' and len(parts) > 3:
-        return '/'.join(parts[:3]) + '/'
-    if len(parts) > 2:
-        return '/'.join(parts[:2]) + '/'
+    depth = 3 if path.startswith(CONTAINERS) else 2
+    return '/'.join(parts[:depth]) if len(parts) > depth else None
+
+
+def keys_of(path):
+    """What a check may spell to name a changed file: the file, its directory, its component."""
+    return [key for key in dict.fromkeys((path, os.path.dirname(path), component(path))) if key]
+
+
+@functools.cache
+def fragments(directory):
+    """Every path a check's text files spell, and each of its parts that starts and ends at a '/' or at the
+    spelling's ends: '../../src/libs/relief"' gives src/libs/relief, libs/relief, src/libs, ... but never a
+    prefix of a longer name."""
+    found = set()
+    for file in sorted(Path(directory).rglob('*')):
+        if not file.is_file() or file.suffix not in TEXT_SUFFIXES:
+            continue
+        for token in PATH_TOKEN.findall(file.read_text(errors='ignore')):
+            if '/' not in token:
+                continue
+            parts = token.split('/')
+            for start in range(len(parts)):
+                for end in range(start + 1, len(parts) + 1):
+                    found.add('/'.join(parts[start:end]))
+    return frozenset(found)
+
+
+def names(directory, files):
+    """(key, changed file) for the first changed file the check's files name, or None."""
+    spelled = fragments(str(directory))
+    for path in files:
+        for key in keys_of(path):
+            if key in spelled:
+                return key, path
     return None
 
 
@@ -102,6 +158,12 @@ class BuildGraph:
         return None
 
 
+@functools.cache
+def graph(build_dir):
+    """The build graph of a directory, read once per process."""
+    return BuildGraph(build_dir)
+
+
 def everything_reason(files):
     for path in files:
         if path.startswith(EVERYTHING) or path == 'CMakeLists.txt' or (path.startswith('tests/') and path.count('/') == 1):
@@ -109,18 +171,17 @@ def everything_reason(files):
     return None
 
 
+@functools.cache
+def check_directories(directory):
+    """((name, is a CMake project), ...) of the checks under a directory (tests, tools/game_checks)."""
+    return tuple((p.parent.name, (p.parent / 'CMakeLists.txt').exists()) for p in sorted(Path(directory).glob('*/run.py')))
+
+
 def host_checks(files, work=None, repo=root):
     """{name: (affected, reason)} for every tests/<name>/run.py."""
-    names = sorted(p.parent.name for p in (repo / 'tests').glob('*/run.py'))
     every = everything_reason(files)
     result = {}
-    keys = {}
-    for path in files:
-        keys[path] = path
-        keys[os.path.dirname(path) + '/'] = path
-        if component(path):
-            keys[component(path)] = path
-    for name in names:
+    for name, cmake in check_directories(str(repo / 'tests')):
         own = next((p for p in files if p.startswith(f'tests/{name}/')), None)
         if every:
             result[name] = (True, every)
@@ -128,21 +189,17 @@ def host_checks(files, work=None, repo=root):
         if own:
             result[name] = (True, f'its own {own} changed')
             continue
-        text = ''.join(f.read_text(errors='ignore') for f in (repo / 'tests' / name).rglob('*')
-                       if f.is_file() and f.suffix in TEXT_SUFFIXES)
-        key = next((k for k in keys if k in text), None)
-        if not key:
-            result[name] = (False, 'names no changed file, directory or component')
-            continue
-        reason = f'names {key} ({keys[key]})'
-        if work and (repo / 'tests' / name / 'CMakeLists.txt').exists():
-            graph = BuildGraph(Path(work) / 'build' / name)
-            if graph.inputs is not None:
-                hit = graph.hit(files, repo)
+        # A built CMake check: its build graph knows what it reads, whatever its files spell.
+        if work and cmake:
+            built = graph(str(Path(work) / 'build' / name))
+            if built.inputs is not None:
+                hit = built.hit(files, repo)
                 result[name] = (True, f'its build reads {hit}') if hit else (
-                    False, f'{reason}, but no changed file is an input of its build (ninja graph of build/{name})')
+                    False, f'no changed file is an input of its build (ninja graph of build/{name})')
                 continue
-        result[name] = (True, reason)
+        found = names(repo / 'tests' / name, files)
+        result[name] = (True, f'names {found[0]} ({found[1]})') if found else (
+            False, 'names no changed file, directory or component')
     return result
 
 
@@ -152,14 +209,30 @@ def build_affected(build_dir, files, label, repo=root):
         return True, every
     if any(p.startswith('tools/android/') for p in files):
         return True, 'tools/android changed'
-    graph = BuildGraph(build_dir)
-    if graph.inputs is None:
+    built = graph(str(build_dir))
+    if built.inputs is None:
         return True, f'{label}: no build graph yet in {build_dir}'
-    hit = graph.hit(files, repo)
+    hit = built.hit(files, repo)
     return (True, f'it reads {hit}') if hit else (False, f'no changed file is an input of {label} ({build_dir})')
 
 
-def game_checks(files, repo=root):
+@functools.cache
+def included_headers(check, repo, cxx):
+    """The headers a game check's check.cpp includes (the -I directories its run.py passes, compiler -MM), or the
+    compiler's error text."""
+    check, repo = Path(check), Path(repo)
+    includes = ['-I' + str(repo / m) for m in re.findall(r"'-I' \+ str\(root / '([^']+)'\)", check.read_text())]
+    dep = subprocess.run([cxx, '-std=c++20', '-MM', *includes, str(check.parent / 'check.cpp')],
+                         capture_output=True, text=True)
+    if dep.returncode != 0:
+        return dep.stderr.strip()[:200]
+    return frozenset(os.path.realpath(h) for h in dep.stdout.replace('\\\n', ' ').split()[1:])
+
+
+def game_checks(files, repo=root, builds=None):
+    """{name: (affected, reason)} for every tools/game_checks/<name>/run.py; builds: their build directories'
+    parent (default <repo>/build/game-checks)."""
+    builds = Path(builds or repo / 'build/game-checks')
     result = {}
     every = everything_reason(files)
     cxx = os.environ.get('STORM_CCACHE_CXX', 'c++')
@@ -169,17 +242,69 @@ def game_checks(files, repo=root):
         if every or own:
             result[name] = (True, every or f'its own {own} changed')
             continue
-        # The -I directories its run.py passes, then the headers check.cpp really includes.
-        includes = ['-I' + str(repo / m) for m in re.findall(r"'-I' \+ str\(root / '([^']+)'\)", check.read_text())]
-        dep = subprocess.run([cxx, '-std=c++20', '-MM', *includes, str(check.parent / 'check.cpp')],
-                             capture_output=True, text=True)
-        if dep.returncode != 0:
-            result[name] = (True, 'its include list could not be computed: ' + dep.stderr.strip()[:200])
+        # The libraries it links (its CMakeLists.txt): its build graph once built, else what its files name.
+        if (check.parent / 'CMakeLists.txt').exists():
+            built = graph(str(builds / name))
+            hit = built.hit(files, repo) if built.inputs is not None else None
+            found = names(check.parent, files) if built.inputs is None else None
+            if hit or found:
+                result[name] = (True, f'its build reads {hit}' if hit else f'names {found[0]} ({found[1]})')
+                continue
+        headers = included_headers(str(check), str(repo), cxx)
+        if isinstance(headers, str):
+            result[name] = (True, 'its include list could not be computed: ' + headers)
             continue
-        headers = {os.path.realpath(h) for h in dep.stdout.replace('\\\n', ' ').split()[1:]}
         hit = next((p for p in files if os.path.realpath(repo / p) in headers), None)
         result[name] = (True, f'check.cpp includes {hit}') if hit else (False, 'check.cpp includes no changed file')
     return result
+
+
+def boot_stage(files, build_dir, orphans=(), repo=root):
+    """(affected, reason) of the engine boot stage (tools/ci/boot_stage.py). orphans: the changed source files no
+    host or game-data check selects."""
+    every = everything_reason(files)
+    if every:
+        return True, every
+    tool = next((p for p in files if p.startswith(BOOT_TOOLS)), None)
+    if tool:
+        return True, f'{tool} changed (the boot stage itself)'
+    data = next((p for p in files if p.startswith(RUNTIME_INPUTS)), None)
+    if data:
+        return True, f'{data} is read by the engine at run time'
+    built = graph(str(build_dir))
+    if built.inputs is None:
+        engine = next((p for p in files if p.startswith(SOURCE_ROOTS)), None)
+        if engine:
+            return True, f'{engine} (the boot build {build_dir} has no build graph yet)'
+    else:
+        hit = built.hit(files, repo)
+        if hit:
+            return True, f'the boot build reads {hit}'
+    if orphans:
+        return True, f'{orphans[0]} is owned by no check'
+    return False, 'no changed file can change what the engine does at run time'
+
+
+def plan(files, work=None, repo=root, builds=None):
+    """Every check and stage of a change: {group: {name: (affected, reason)}} for host_checks and game_checks,
+    (affected, reason) for ui_host, android and boot. builds: the build directories' parent (default <repo>/build)."""
+    builds = Path(builds or repo / 'build')
+    work = work if work is not None else builds / 'host-ci'
+    host = host_checks(files, work, repo)
+    games = game_checks(files, repo, builds / 'game-checks')
+    orphans = []
+    for path in (p for p in files if is_source(p)):
+        alone = {path: files[path]}
+        if not any(run for run, _ in host_checks(alone, work, repo).values()) and \
+                not any(run for run, _ in game_checks(alone, repo, builds / 'game-checks').values()):
+            orphans.append(path)
+    return {
+        'host_checks': host,
+        'game_checks': games,
+        'ui_host': build_affected(builds / 'ui-host', files, 'the UI host build', repo),
+        'android': build_affected(builds / 'android-engine', files, 'the Android engine build', repo),
+        'boot': boot_stage(files, builds / 'boot-asan', orphans, repo),
+    }
 
 
 def main():
@@ -190,22 +315,16 @@ def main():
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     files = changed_files(args.base, args.head)
-    plan = {
-        'changed': files,
-        'host_checks': host_checks(files, args.work),
-        'game_checks': game_checks(files),
-        'ui_host': build_affected(root / 'build/ui-host', files, 'the UI host build'),
-        'android': build_affected(root / 'build/android-engine', files, 'the Android engine build'),
-    }
+    result = {'changed': files, **plan(files, args.work)}
     if args.json:
-        json.dump(plan, sys.stdout, indent=1)
+        json.dump(result, sys.stdout, indent=1)
         return
     print(f'{len(files)} changed files')
     for group in ('host_checks', 'game_checks'):
-        for name, (run, why) in plan[group].items():
+        for name, (run, why) in result[group].items():
             print(f'{"RUN " if run else "skip"} {group[:-1]} {name}: {why}')
-    for stage in ('ui_host', 'android'):
-        run, why = plan[stage]
+    for stage in ('ui_host', 'android', 'boot'):
+        run, why = result[stage]
         print(f'{"RUN " if run else "skip"} {stage}: {why}')
 
 

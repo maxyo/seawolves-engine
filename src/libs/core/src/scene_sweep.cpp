@@ -26,6 +26,9 @@
 //   events.log  "<ms since start> <text>" lines appended by SceneSweepEvent()/SceneSweepCapture()
 //   STORM_SCENE_SWEEP_SETTLE_MS  rendering time per scene before its capture (default 300)
 //   ack         created by the runner once it has taken the screenshot and read the logs
+//   STORM_SCENE_SWEEP_SAVE  the save the sweep boots into instead of a new game (run.py --save), read by SceneSweepSave()
+// A loaded save replaces the whole script state: COMPILER::OnLoad loads the segment again (SceneSweepLoads() counts the
+// loads, so the script knows it runs in the loaded game); the files and the scene queue stay where they were.
 namespace
 {
 
@@ -105,6 +108,7 @@ std::string busyProducts(const storm::scene_sweep::VariantState &state)
 }
 storm::scene_sweep::IncompleteFrameHook incompleteFrameHook = nullptr;
 uint32_t windowIncompleteMark = 0; // incompleteFrameHook() when the window started
+int segmentLoads = 0;              // times scene_sweep.c was loaded: 1 at the boot, +1 after every loaded save
 
 // The window's frame times: " p50=.. p95=.. p99=.. max=.." (milliseconds).
 std::string windowFrameStats()
@@ -443,12 +447,34 @@ Variant parseVariant(const std::string &text)
     return variant;
 }
 
-// Loaded by `#libriary "SceneSweepLibrary"` in tools/scene_sweep/scene_sweep.c.
+
+uint32_t save(VS_STACK *stack)
+{
+    auto *result = static_cast<VDATA *>(stack->Push());
+    if (!result)
+        return IFUNCRESULT_FAILED;
+    const char *name = std::getenv("STORM_SCENE_SWEEP_SAVE");
+    result->Set(std::string(name ? name : ""));
+    return IFUNCRESULT_OK;
+}
+
+uint32_t loads(VS_STACK *stack)
+{
+    return pushInt(stack, segmentLoads);
+}
+
+// Loaded by `#libriary "SceneSweepLibrary"` in tools/scene_sweep/scene_sweep.c, again after every loaded save (the
+// script's functions are registered anew; the files, the scene queue and the variants are opened and read once).
 class SceneSweepLibrary : public SCRIPT_LIBRIARY
 {
   public:
     bool Init() override
     {
+        registerFunction("SceneSweepSave", "string", 0, save);
+        registerFunction("SceneSweepLoads", "int", 0, loads);
+        registerFunctions();
+        if (events)
+            return true;
         scenes.open(directory / "scenes.txt");
         events = std::fopen((directory / "events.log").c_str(), "a");
         if (!scenes || !events)
@@ -457,16 +483,6 @@ class SceneSweepLibrary : public SCRIPT_LIBRIARY
             spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
             std::_Exit(EXIT_FAILURE);
         }
-        registerFunction("SceneSweepNext", "string", 0, next);
-        registerFunction("SceneSweepEvent", "void", 1, event);
-        registerFunction("SceneSweepCapture", "void", 0, capture);
-        registerFunction("SceneSweepSettleMs", "int", 0, settleMs);
-        registerFunction("SceneSweepLoadTimeoutMs", "int", 0, loadTimeoutMs);
-        registerFunction("SceneSweepVariants", "int", 0, variantCount);
-        registerFunction("SceneSweepVariant", "void", 1, variant);
-        registerFunction("SceneSweepVariantReady", "int", 0, variantReady);
-        registerFunction("SceneSweepVariantProblem", "string", 0, variantProblem);
-        registerFunction("SceneSweepWindowComplete", "int", 0, windowComplete);
         if (const char *list = std::getenv("STORM_SCENE_SWEEP_VARIANTS"); list && *list)
         {
             const std::string text = list;
@@ -480,6 +496,21 @@ class SceneSweepLibrary : public SCRIPT_LIBRIARY
             }
         }
         return true;
+    }
+
+  private:
+    static void registerFunctions()
+    {
+        registerFunction("SceneSweepNext", "string", 0, next);
+        registerFunction("SceneSweepEvent", "void", 1, event);
+        registerFunction("SceneSweepCapture", "void", 0, capture);
+        registerFunction("SceneSweepSettleMs", "int", 0, settleMs);
+        registerFunction("SceneSweepLoadTimeoutMs", "int", 0, loadTimeoutMs);
+        registerFunction("SceneSweepVariants", "int", 0, variantCount);
+        registerFunction("SceneSweepVariant", "void", 1, variant);
+        registerFunction("SceneSweepVariantReady", "int", 0, variantReady);
+        registerFunction("SceneSweepVariantProblem", "string", 0, variantProblem);
+        registerFunction("SceneSweepWindowComplete", "int", 0, windowComplete);
     }
 };
 
@@ -519,6 +550,9 @@ void COMPILER::LoadSceneSweep()
         return;
     directory = path;
     constexpr const char *segment = "scene_sweep.c";
+    if (BC_SegmentIsLoaded(segment))
+        return; // a save made by a sweep holds the segment already
+    ++segmentLoads;
     if (!BC_LoadSegment(segment))
     {
         spdlog::critical("Scene sweep: script segment '{}' did not load, see error.log", segment);

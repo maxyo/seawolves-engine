@@ -18,6 +18,7 @@ llvmpipe on the CPU (--render llvmpipe).
   --fail-fast         stop at the first failing scene
   --list              print the scene inventory and exit
   --render MODE       gles-gpu (default; needs --virtualgl or $STORM_VIRTUALGL), vulkan or llvmpipe
+  --save FILE         boot into this save (loaded from the main menu) instead of a new game
 """
 import argparse
 import collections
@@ -60,6 +61,8 @@ LOG_RULES = [
     (r'.', r'\[(critical|error)\]', 'engine error'),
     # The renderer's lines: in system.log once the engine set its log sink (storm/render/log.hpp), on stdout before.
     (r'.', r'(?i)\[storm-bgfx\].*(error|fail|trap|unsupported|missing|invalid)', 'renderer error'),
+    # An engine built with sanitizers (tools/ci/boot_stage.py): ASan stops the engine, UBSan reports and goes on.
+    (r'.', r'ERROR: AddressSanitizer|ERROR: LeakSanitizer|runtime error: ', 'sanitizer'),
 ]
 FATAL = re.compile(r'Engine stopped: (.*)')
 # The renderer each engine runs, from its log: the bgfx backend and the device the program cache is for.
@@ -131,12 +134,22 @@ def parse_arguments():
                         help='the engines keep their program and pipeline cache (ProgramCache) in DIR across runs and '
                              'sweeps (made if missing), instead of starting cold: for warm-cache measurements; '
                              'with --jobs 1')
+    parser.add_argument('--script-cache', type=Path, metavar='DIR',
+                        help="the engines keep their compiled-script cache (Cache) in DIR across runs and sweeps (made if "
+                             "missing): the boot skips compiling the game's scripts while they are unchanged; with --jobs 1")
     parser.add_argument('--techniques', type=Path, default=REPOSITORY / 'src/techniques',
                         help="the engine's techniques, laid over the game's as the APK build does")
     parser.add_argument('--keep-work', action='store_true', help='keep the per-engine game copies and logs')
+    parser.add_argument('--save', type=Path,
+                        help='a save file of this game: every engine loads it from the main menu (scene save:boot) '
+                             'instead of starting a new game; the hero must be on land (the sea scenes return there)')
     arguments = parser.parse_args()
     if not arguments.list and not (arguments.engine and arguments.out):
         parser.error('--engine and --out are required')
+    if arguments.save and not arguments.save.is_file():
+        parser.error(f'--save {arguments.save}: no such file')
+    if arguments.save:
+        arguments.save = arguments.save.resolve()
     if not arguments.list and arguments.render == 'gles-gpu':
         library = arguments.virtualgl and arguments.virtualgl.resolve() / 'usr/lib'
         if not library or not all((library / name).is_file() for name in ('libdlfaker.so', 'libvglfaker.so')):
@@ -469,6 +482,11 @@ class Shard(threading.Thread):
         # The player's profiles: a profile named like the sweep's new game stops it at "the profile exists" (and the
         # game would write into the player's hard-linked saves).
         shutil.rmtree(inside(game, inventory.find_case_insensitive(game, 'save') or game / 'save'), ignore_errors=True)
+        if self.arguments.save:
+            # Its own file in the copy (never a link to the player's save): the game may write next to it.
+            saves = game / 'save/sweep'
+            saves.mkdir(parents=True)
+            shutil.copyfile(self.arguments.save, inside(game, saves / 'boot'))
         if (source / 'options').exists():
             shutil.copy(source / 'options', own('options'))
         settings = inventory.read_script(source / 'engine.ini')
@@ -482,7 +500,8 @@ class Shard(threading.Thread):
         techniques = inside(game, inventory.find_case_insensitive(game, 'RESOURCE/techniques'))
         shutil.rmtree(techniques)
         shutil.copytree(self.arguments.techniques, techniques)
-        shutil.copy(HERE / 'scene_sweep.c', own('PROGRAM/scene_sweep.c'))
+        # copy2: its modification time stays, so the scripts' cache key (path, size, time of every file) holds.
+        shutil.copy2(HERE / 'scene_sweep.c', own('PROGRAM/scene_sweep.c'))
         os.link(self.context['engine'], own('engine'))  # resources are looked up next to the executable
         for written in ('engine.ini', 'options', 'PROGRAM/scene_sweep.c'):
             if (game / written).exists():
@@ -498,12 +517,15 @@ class Shard(threading.Thread):
         run = self.work / f'run-{self.runs}'
         run.mkdir()
         game, control = self.prepare(run)
+        # The engine's cache root on Linux is its SDL pref path, $XDG_DATA_HOME/Akella/Sea Dogs.
+        stash = run / 'data/Akella/Sea Dogs'
         if self.arguments.program_cache:
-            # The engine's cache root on Linux is its SDL pref path, $XDG_DATA_HOME/Akella/Sea Dogs.
-            stash = run / 'data/Akella/Sea Dogs'
-            stash.mkdir(parents=True)
+            stash.mkdir(parents=True, exist_ok=True)
             self.arguments.program_cache.mkdir(parents=True, exist_ok=True)
             (stash / 'ProgramCache').symlink_to(self.arguments.program_cache.resolve(), target_is_directory=True)
+        if self.arguments.script_cache and self.arguments.script_cache.is_dir():
+            # Copied in and out, not linked: the engine resets a stale cache by deleting its folder.
+            shutil.copytree(self.arguments.script_cache, stash / 'Cache')
         environment = dict(os.environ, DISPLAY=f':{self.display}', XDG_DATA_HOME=str(run / 'data'),
                            SDL_VIDEODRIVER='x11', SDL_AUDIODRIVER='dummy', STORM_SCENE_SWEEP_DIR=str(control),
                            STORM_SCENE_SWEEP_SETTLE_MS=str(self.arguments.settle),
@@ -511,7 +533,8 @@ class Shard(threading.Thread):
                            STORM_SCENE_SWEEP_LOAD_TIMEOUT_MS=str(max(10, self.arguments.timeout - 30) * 1000),
                            # ... and a variant whose wait=<product> is still generating, as long after it became active.
                            STORM_SCENE_SWEEP_WAIT_TIMEOUT_MS=str(max(10, self.arguments.timeout - 30) * 1000),
-                           STORM_SCENE_SWEEP_VARIANTS=self.arguments.variants)
+                           STORM_SCENE_SWEEP_VARIANTS=self.arguments.variants,
+                           STORM_SCENE_SWEEP_SAVE='SAVE\\sweep\\boot' if self.arguments.save else '')
         if self.arguments.render == 'llvmpipe':
             environment.update(LIBGL_ALWAYS_SOFTWARE='1', LP_NUM_THREADS=str(self.arguments.gl_threads))
         elif self.arguments.render == 'gles-gpu':
@@ -530,6 +553,9 @@ class Shard(threading.Thread):
             if engine.poll() is None:
                 os.killpg(engine.pid, signal.SIGKILL)
             engine.wait()
+            if self.arguments.script_cache and (stash / 'Cache/state').is_file():
+                shutil.rmtree(self.arguments.script_cache, ignore_errors=True)
+                shutil.copytree(stash / 'Cache', self.arguments.script_cache)
             if not self.arguments.keep_work:
                 shutil.rmtree(inside(run, game))
         check_game_unchanged(self.arguments.game, self.context['game'], f'during engine run {run}')
@@ -574,7 +600,8 @@ class Shard(threading.Thread):
                 rest = rest[0] if rest else ''
                 progress = time.monotonic()
                 if kind == 'begin':
-                    current, begun, metrics = rest, time.monotonic(), {}
+                    # begin_ms: when the scene began, in ms since its engine started (menu:main: the boot's time).
+                    current, begun, metrics = rest, time.monotonic(), {'begin_ms': int(stamp)}
                 elif kind == 'loaded':
                     loaded = time.monotonic()
                     metrics['load_ms'] = round((loaded - begun) * 1000)
@@ -633,7 +660,7 @@ class Shard(threading.Thread):
                     metrics['incomplete_ms'] = metrics.get('incomplete_ms', 0) + int(rest.rsplit(' ', 1)[1])
                 elif kind == 'end':
                     close(rest, [])
-                    booted = booted or rest == inventory.BOOT_SCENES[-1]
+                    booted = booted or rest == inventory.boot_scenes(self.arguments.save)[-1]
                 elif kind == 'fail':
                     scene, reason = rest.split(' ', 1)
                     pending += tail.collect()
@@ -715,7 +742,7 @@ class Shard(threading.Thread):
         """The engine died or was killed while `current` (or the boot) was running."""
         if not booted:
             self.boot_failures += 1
-        scene = current or (self.queue[0] if booted and self.queue else inventory.BOOT_SCENES[0])
+        scene = current or (self.queue[0] if booted and self.queue else inventory.boot_scenes(self.arguments.save)[0])
         if current is None:
             problem += ' (between scenes)'
         close(scene, [problem])
@@ -736,7 +763,7 @@ class Shard(threading.Thread):
             self.run_engine()
             if self.boot_failures >= 2:
                 for scene in self.queue:
-                    self.record(scene, ['not run: the engine failed twice before a new game was up'])
+                    self.record(scene, ['not run: the engine failed twice before the game was up'])
                 self.queue.clear()
 
 
@@ -826,7 +853,7 @@ def main():
         chosen = select(scenes, arguments, None, None)
         for category, count in sorted(collections.Counter(scene.category for scene in chosen).items(), key=lambda item: -item[1]):
             print(f'{count:>6}  {category}')
-        print(f'{len(chosen):>6}  total (+ {", ".join(inventory.BOOT_SCENES)} in every engine)')
+        print(f'{len(chosen):>6}  total (+ {", ".join(inventory.boot_scenes(arguments.save))} in every engine)')
         if arguments.only:
             print('\n'.join(scene.id for scene in chosen))
         return 0
@@ -842,14 +869,14 @@ def main():
     previous = json.loads(report_path.read_text()) if report_path.exists() else None
     # Pictures and frame times of the two renderers differ: a report of one is no previous report for the other.
     build = {'engine': file_digest(arguments.engine), 'script': file_digest(HERE / 'scene_sweep.c'),
-             'renderer': arguments.render}
+             'renderer': arguments.render, **({'save': file_digest(arguments.save)} if arguments.save else {})}
     chosen = select(scenes, arguments, previous, build)
     if not chosen:
         print('no scenes selected')
         return 0
     jobs = min(arguments.jobs or default_jobs(), len(chosen))
-    if arguments.program_cache and jobs != 1:
-        sys.exit('--program-cache: one engine at a time uses the cache (--jobs 1)')
+    if (arguments.program_cache or arguments.script_cache) and jobs != 1:
+        sys.exit('--program-cache, --script-cache: one engine at a time uses the cache (--jobs 1)')
     shutil.rmtree(inside(arguments.out, arguments.out / 'work'), ignore_errors=True)
     (arguments.out / 'work').mkdir()
     # One copy of the engine per sweep, hard-linked into every game copy: the build directory
@@ -921,13 +948,14 @@ def main():
                  'wall_seconds': round(time.monotonic() - started), 'jobs': jobs, 'size': arguments.size,
                  'cores': os.cpu_count(), 'load_average': round(os.getloadavg()[0], 1),
                  'engine': str(arguments.engine), 'game': str(arguments.game),
+                 'save': str(arguments.save) if arguments.save else None,
                  'render': ' / '.join(sorted(context['render']))},
         'build': build,
         'scenes': dict(sorted(results.items())),
     }
     report_path.write_text(json.dumps(report, indent=1, ensure_ascii=False) + '\n')
     baseline = json.loads(arguments.baseline.read_text()) if arguments.baseline else None
-    boot = [inventory.Scene(name, 'engine') for name in inventory.BOOT_SCENES]
+    boot = [inventory.Scene(name, 'engine') for name in inventory.boot_scenes(arguments.save)]
     summary, failing = summarize(report, boot + [scene for scene in scenes if scene.id in results], baseline)
     (arguments.out / 'summary.txt').write_text(summary)
     contact_sheets(arguments.out, boot + scenes, results)

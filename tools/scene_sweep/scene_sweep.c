@@ -2,14 +2,17 @@
 // into PROGRAM/ of a throw-away copy of the game; an engine built with
 // -DSTORM_SCENE_SWEEP=ON loads it after Main() when STORM_SCENE_SWEEP_DIR is set.
 //
-// It starts a new game through the main menu, then loads every scene the runner
+// It starts a new game through the main menu (or loads the save run.py --save gives), then loads every scene the runner
 // lists with the functions the game itself uses for reloads (quest reload to a
 // location, quest sea login, exit to the world map, world map storm, boarding),
 // lets each scene render and hands the frame to the runner.
 //
 // Scenes ("kind:id", one per line of scenes.txt):
 //   menu:main      main menu with its 3D back scene (always first, implicit)
-//   newgame:intro  new game up to the opening dialogue (always second, implicit)
+//   newgame:intro  new game up to the opening dialogue (always second, implicit; without run.py --save)
+//   save:boot      the save of run.py --save loaded from the main menu, its scene on screen (second instead of
+//                  newgame:intro). The load replaces the script state with this file: the engine loads it again and
+//                  SceneSweepLoads() tells the new copy that it runs in the loaded game.
 //   loc:<id>       location <id> at noon
 //   night:<id>     location <id> at midnight
 //   combat:<id>    location <id> with a sword fight against a spawned enemy
@@ -37,6 +40,8 @@ native void SceneSweepVariant(int index);
 native int SceneSweepVariantReady();
 native string SceneSweepVariantProblem();
 native int SceneSweepWindowComplete();
+native string SceneSweepSave();
+native int SceneSweepLoads();
 #libriary "SceneSweepLibrary"
 
 #event_handler("frame", "SceneSweep_Frame");
@@ -105,7 +110,7 @@ void SceneSweep_Fail(string reason)
 {
 	SceneSweepEvent("fail " + ssScene + " " + reason);
 	SceneSweep_Freeze(false); // the next scene runs in the game's own time
-	if(ssKind == "newgame")
+	if(ssKind == "newgame" || ssKind == "save")
 	{
 		// No game to load scenes into.
 		SceneSweepEvent("abort");
@@ -152,7 +157,7 @@ void SceneSweep_Freeze(bool frozen)
 // Graphics variants (--variants) apply to game scenes; the boot scenes (main menu, new game) are captured once.
 bool SceneSweep_HasVariants()
 {
-	if(ssKind == "menu" || ssKind == "newgame") return false;
+	if(ssKind == "menu" || ssKind == "newgame" || ssKind == "save") return false;
 	return SceneSweepVariants() > 0;
 }
 
@@ -165,6 +170,13 @@ void SceneSweep_Frame()
 	switch(ssState)
 	{
 	case SS_BOOT:
+		SceneSweep_SkipVideo();
+		if(SceneSweepLoads() > 1)
+		{
+			// This copy of the script was loaded with the save (SceneSweep_LoadSave): its scene goes on.
+			SceneSweep_Resume("save:boot");
+			break;
+		}
 		if(CurrentInterface == INTERFACE_MAINMENU)
 		{
 			if(sti(InterfaceStates.Launched)) SceneSweep_Begin("menu:main");
@@ -278,12 +290,37 @@ void SceneSweep_Frame()
 	}
 }
 
+// The videos before the main menu (seadogs.c Main_LogoVideo: 80 s) are broken off the game's own way, as the phone
+// does when it starts at the main menu (CAviPlayer::SkipForMainMenuStart): ICancel, once per video.
+int ssVideosSkipped = 0;
+int ssVideoFrames = 0;
+void SceneSweep_SkipVideo()
+{
+	if(!IsEntity(&aviVideoObj))
+	{
+		ssVideoFrames = 0;
+		return;
+	}
+	ssVideoFrames++;
+	if(ssVideoFrames != 2) return;	// the video's first frame is up
+	ssVideosSkipped++;
+	SceneSweepEvent("video skipped " + ssVideosSkipped);
+	Event("Control Activation", "s", "ICancel");
+	Event("Control Deactivation", "s", "ICancel");
+}
+
 // What follows a captured scene.
 void SceneSweep_Finish()
 {
 	switch(ssKind)
 	{
 	case "menu":
+		if(SceneSweepSave() != "")
+		{
+			SceneSweep_Begin("save:boot");
+			SceneSweep_LoadSave();
+			return;
+		}
 		Event("backgroundcommand", "s", "New");
 		SceneSweep_SetState(SS_NEWGAME);
 		return;
@@ -291,8 +328,40 @@ void SceneSweep_Finish()
 	case "newgame":
 		SceneSweep_PreparePlayer();
 		break;
+	case "save":
+		SceneSweep_PrepareSavedPlayer();
+		break;
 	}
 	SceneSweep_Next();
+}
+
+// Loads the save from the main menu as the game's own load does (interface.c MakeQuickLoad). The script state,
+// this file's with it, is replaced; the copy loaded with the save goes on in SceneSweep_Resume.
+void SceneSweep_LoadSave()
+{
+	SetEventHandler("evntLoad", "LoadGame", 0);
+	PostEvent("evntLoad", 0, "s", SceneSweepSave());
+}
+
+// The scene that was running when the save replaced the script state (its "begin" was written before the load).
+void SceneSweep_Resume(string scene)
+{
+	int split = findSubStr(scene, ":", 0);
+	ssScene = scene;
+	ssKind = strcut(scene, 0, split - 1);
+	ssId = strcut(scene, split + 1, strlen(scene) - 1);
+	ssStep = 0;
+	SceneSweep_SetState(SS_LOAD);
+}
+
+// The save's hero on land is where the sea scenes return to; he does not die in the sweep's fights.
+void SceneSweep_PrepareSavedPlayer()
+{
+	ssHome = pchar.location;
+	ssHomeGroup = pchar.location.group;
+	ssHomeLocator = pchar.location.locator;
+	chrDisableReloadToLocation = false;
+	LAi_SetImmortal(pchar, true);
 }
 
 // The opening dialogue is over for the sweep: free the hero and give him a ship,
@@ -467,6 +536,10 @@ bool SceneSweep_Loaded()
 	case "newgame":
 		if(FindLoadedLocation() < 0) return false;
 		return DialogRun;
+		break;
+	case "save":
+		if(SceneSweepLoads() < 2) return false;	// the game refused the save: the load timeout fails the boot
+		return FindLoadedLocation() >= 0;
 		break;
 	case "loc":		return SceneSweep_InLocationAtEntry();	break;
 	case "night":	return SceneSweep_InLocationAtEntry();	break;

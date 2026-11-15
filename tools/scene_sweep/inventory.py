@@ -16,6 +16,12 @@ LAND_KINDS = ('loc', 'night', 'combat', 'surface')
 # Kinds that are entered from land (see SceneSweep_StartSea in scene_sweep.c).
 SEA_KINDS = ('sea', 'battle', 'boarding', 'map', 'storm')
 BOOT_SCENES = ('menu:main', 'newgame:intro')
+# run.py --save: the main menu, then the save loaded from it instead of a new game.
+SAVE_BOOT_SCENES = ('menu:main', 'save:boot')
+
+
+def boot_scenes(save):
+    return SAVE_BOOT_SCENES if save else BOOT_SCENES
 
 
 @dataclass

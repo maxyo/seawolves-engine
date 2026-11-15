@@ -6253,6 +6253,9 @@ bool COMPILER::OnLoad()
 #else
     (void)executed;
 #endif
+#ifdef STORM_SCENE_SWEEP
+    LoadSceneSweep(); // a loaded save replaced the script state, the sweep's segment with it
+#endif
     return true;
 }
 

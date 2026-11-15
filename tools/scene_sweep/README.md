@@ -36,6 +36,8 @@ the sweep fails (`inventory:tables`) when they differ from what `inventory.py` p
   The hero enters a location where the game puts him: boarding decks and cabins at their
   `boarding.Loc.Hero` locator, other locations through their first door. A game day passes
   between locations so that phantom NPCs expire as in play.
+- The videos before the main menu (80 s) are broken off the game's own way, as the phone does when it starts at the
+  main menu: one `ICancel` per video (events `video skipped N`).
 - For each scene it waits until the scene is loaded and the loading fader is gone, renders
   at least 5 frames and 0.3 s, then asks the runner to capture the frame. On Vulkan a scene draw whose
   pipeline is still being created off the render thread is left out of its frames (it appears a few frames
@@ -114,6 +116,12 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
 - `--program-cache DIR` keeps the engines' program and pipeline cache in DIR between runs (`--jobs 1`): the first
   sweep measures a cold cache, the next ones a warm one (Vulkan: the pipeline cache and the scenes' recorded pipelines,
   `src/libs/renderer_bgfx/src/shim/pipeline_sets.hpp`).
+- `--script-cache DIR` keeps the engines' compiled-script cache in DIR between runs (`--jobs 1`; copied in and out of
+  the engine's cache folder): a boot skips compiling the game's scripts while they and the engine are unchanged.
+- `--save FILE` boots every engine into this save instead of a new game: the main menu loads it (scene `save:boot`,
+  captured like the others; the load replaces the script state, so the engine loads `scene_sweep.c` again after it,
+  `COMPILER::OnLoad`). The hero must be on land; the sea scenes return to where the save stands. Minutes faster than
+  the new game. Used by the gate's boot stage (`tools/ci/boot_stage.py`).
 - `--timeout S` seconds a scene may go without progress before its engine is killed (default 240): every event of
   the scene counts (loaded, a variant active or captured, the engine's report every 10 s while it prepares a variant).
   The script fails a scene that has not loaded 30 s before that with its own reason (`not loaded after ... ms`), and
@@ -169,7 +177,7 @@ The baked products (visibility, bounce, AO, town light) are made in the backgrou
 `wait=bakes`, or the capture shows them still missing (its `background` says `bakes`). Options added for new products
 belong in `EffectsOptionNames()` and in this table.
 
-Output in `--out`: `report.json` (per-scene status, reasons, load time, `reveal_ms` (from loaded to the scene
+Output in `--out`: `report.json` (per-scene status, reasons, load time, `begin_ms` (when the scene began, ms after its engine started; for `menu:main` the boot), `reveal_ms` (from loaded to the scene
 shown: the loading fader, which Vulkan holds while the scene's pipelines are created), frame time with its
 `frame_p95_ms` / `frame_p99_ms` / `frame_max_ms` over the window, `first_window` (frame-time percentiles of the first
 window after the fader, also when it was not captured because draws waited for pipelines), draw

@@ -5,6 +5,7 @@
 | `run_host_tests.py` | every `tests/*/run.py` (no NDK, device or game data) | CI on develop pushes and PRs; `--only`, `--changed-since REF` |
 | `affected.py` | what a change can affect: host checks, game-data checks, the UI host and Android builds | used by the two below; `affected.py --base REF` prints the plan |
 | `gate.py` | the push gate: builds and checks what the change affects, in parallel | before every push to develop (`--push`) |
+| `boot_stage.py` | the engine boot stage: an ASan+UBSan host engine boots, loads a save and three scenes | `gate.py --boot auto/on`, or alone |
 | `land.py` | the merge queue: several agents' commits rebased and gated together, then pushed | instead of `gate.py --push` when other agents land too |
 
 ## The gate (`gate.py`)
@@ -24,7 +25,24 @@ It plans from `git diff origin/develop...HEAD` and prints one line per stage, `R
 - **game_checks**: the affected `tools/game_checks/*` on the local game (`$STORM_GAME_DIR`, default
   `<workspace>/local-testing/extracted/app`; missing game = the gate fails, it is not skipped);
 - **ui_host**: `build/ui-host` (src/libs/ui) build + ctest;
-- **android**: `build/android-engine`, arm64 Release (LTO) `engine`, SDK/NDK from `$STORM_CI_WORK`.
+- **android**: `build/android-engine`, arm64 Release (LTO) `engine`, SDK/NDK from `$STORM_CI_WORK`;
+- **boot** (`--boot auto|on|off`, off by default until the owner approves it): `boot_stage.py`, below.
+
+## The engine boot stage (`boot_stage.py`)
+
+The host checks replace the engine's seams (script VM, entity lifetimes, renderer, techniques, save loader) with
+stubs; this stage starts the real engine. `build/boot-asan` (RelWithDebInfo, `-fsanitize=address,undefined`,
+`-DSTORM_SCENE_SWEEP=ON`, kept warm through ccache) runs the scene sweep with one engine on OpenGL ES on the host
+GPU through VirtualGL: main menu → the canonical save loaded from it (`save:boot`, the town Сен-Пьер) → `sea:Martinique`
+→ the town again → `loc:FortFrance_tavern` → exit. It fails on a crash, an ASan report, a UBSan `runtime error:`, a
+fatal engine error, script errors, missing resources, a black or HUD-less frame, or its time budget (`--budget`,
+`$STORM_BOOT_BUDGET`, default 300 s for the sweep; the build is logged separately). Three scenes from a save, selected
+only by changes that can affect the engine at run time; not the all-scenes sweep (`tools/scene_sweep/README.md`).
+
+Needs, else it fails loudly: `STORM_VIRTUALGL` (an unpacked VirtualGL, e.g. `<workspace>/local-testing/gpu-sweep/vgl`),
+the game (`$STORM_GAME_DIR`) and the save (`$STORM_BOOT_SAVE`, default `<workspace>/local-testing/boot-stage/saint-pierre-streets`,
+the Test Lab scenario 3 save «Сен-Пьер улицы»). Log: `build/gate/boot.log` (per scene: status, seconds, load time;
+build, sweep and total time), the sweep's report in `build/gate/boot/`.
 
 Rules of `affected.py` (also in its docstring):
 
@@ -35,7 +53,12 @@ Rules of `affected.py` (also in its docstring):
   `build/host-ci` is narrowed by its Ninja graph: only changed files the build reads count.
 - A build is affected when a changed file is in its Ninja graph (dependency log, inputs, configure inputs)
   or is a new file in a directory the build reads; without a built directory it always runs.
-- A game-data check is affected when a header its `check.cpp` includes changed (compiler `-MM`).
+- A game-data check is affected when a header its `check.cpp` includes changed (compiler `-MM`), or a file of a
+  library it links: its graph in `build/game-checks/<name>` once built, else what its files name.
+- Names match with or without the final slash (`src/libs/relief"`), never as the start of a longer name.
+- The boot stage: an input of `build/boot-asan` (not built yet: any change under `src/`, `android/`), `src/techniques`
+  (read at run time by no build), `tools/scene_sweep`, `boot_stage.py`. A source file that selects no host or
+  game-data check selects the boot stage ("owned by no check"): no change selects nothing (`tests/ci_affected`).
 
 Examples of what still runs (2026-11-14): a change of `src/libs/core/src/attributes.cpp` or `compiler.cpp`
 runs 28 checks including `script_state_generation` (ATTRIBUTES re-parenting) and `save_dangling_references`

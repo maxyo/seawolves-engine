@@ -1,0 +1,17 @@
+# UBSan reports the boot stage (boot_stage.py) does not fail on: known undefined behaviour in engine code that is
+# harmless on the ABIs we ship (arm64, x86_64) and waits for its own fix. Every entry names its cause; remove an
+# entry with its fix. A new report anywhere else, or of another kind, fails the stage.
+
+# The script VM reads its packed bytecode with typed loads at any byte offset (compiler.cpp, BC_Execute and the
+# segment loader); arm64 and x86_64 load unaligned words in one instruction. Fix: memcpy-based readers.
+alignment:src/libs/core/src/compiler.cpp
+# memcpy(dst, nullptr, 0) when a script segment or program buffer grows from empty (compiler.cpp:326, 1211).
+nonnull-attribute:src/libs/core/src/compiler.cpp
+# The technique parser steps a char pointer that is null for empty sources (technique.cpp:1487, 1625).
+pointer-overflow:src/libs/renderer/src/technique.cpp
+# The BSP ray test keeps its stack pointer one before the array and pre-increments it (collide.cpp:37-38).
+bounds:src/libs/geometry/src/collide.cpp
+# bimg's KTX writer advances its source pointer while it measures a texture with no pixel data (texture/core/cache.cpp
+# write_ktx with a sizer; bimg image.cpp
+# imageWriteKtx; third-party, pinned in renderer_bgfx/cmake/bgfx_pin.cmake).
+pointer-overflow:storm_bimg-*/src/image.cpp

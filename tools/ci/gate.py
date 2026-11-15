@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """The push gate of engine develop: build and check what the change can affect, on the tree being pushed.
 
-  tools/ci/gate.py [--rebase] [--push] [--full] [--tests NAME ...] [--base origin/develop]
+  tools/ci/gate.py [--rebase] [--push] [--full] [--tests NAME ...] [--base origin/develop] [--boot auto|on|off]
 
 Steps (README.md here):
 1. fetch; with --rebase, rebase HEAD onto origin/develop;
 2. plan from the diff base...HEAD (tools/ci/affected.py): the host checks, the game-data checks
-   (tools/game_checks, on the local game), the UI host build + ctest and the Android arm64 engine
-   build. Everything left out is printed with the reason (SKIP lines); --full runs everything
-   (before a release) and --tests adds host checks by name;
+   (tools/game_checks, on the local game), the UI host build + ctest, the Android arm64 engine
+   build and the engine boot stage (tools/ci/boot_stage.py: an ASan+UBSan host engine loads a save
+   and three scenes; --boot auto runs it when the change can affect the engine at run time, on
+   always, off never; off is the default until the owner has approved it). Everything left out is
+   printed with the reason (SKIP lines); --full runs everything (before a release) and --tests adds
+   host checks by name;
 3. the stages run in parallel, each logging to build/gate/<stage>.log; a summary with the times;
 4. with --push: push HEAD to develop only if every stage passed and origin/develop has not moved
    since the plan (exit 3 when it moved: rebase and run again; the builds are incremental).
@@ -87,6 +90,10 @@ def stage_game_checks(names):
                       env)
 
 
+def stage_boot():
+    return run_logged('boot', [[sys.executable, root / 'tools/ci/boot_stage.py']])
+
+
 def stage_android():
     build = root / 'build/android-engine'
     env = dict(os.environ, PATH=f'{ci_work / "python/bin"}:{os.environ["PATH"]}')
@@ -119,6 +126,9 @@ def main():
     parser.add_argument('--tests', nargs='*', default=[], help='host checks to run in addition')
     parser.add_argument('--jobs', type=int, default=6, help='host checks in parallel')
     parser.add_argument('--no-fetch', action='store_true')
+    # Off by default until the owner has seen its timing and a sample run (WP-2); then the default becomes auto.
+    parser.add_argument('--boot', choices=('auto', 'on', 'off'), default='off',
+                        help='the engine boot stage: auto = when the change can affect the engine at run time')
     args = parser.parse_args()
     logs.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -138,11 +148,12 @@ def main():
     files = affected.changed_files(args.base)
     if args.full:
         files = {'.github/full-gate': 'M'}  # selects everything, reason below
-    work = root / 'build/host-ci'
-    checks = affected.host_checks(files, work)
-    games = affected.game_checks(files)
-    ui = affected.build_affected(root / 'build/ui-host', files, 'the UI host build')
-    android = affected.build_affected(root / 'build/android-engine', files, 'the Android engine build')
+    selection = affected.plan(files, root / 'build/host-ci')
+    checks, games = selection['host_checks'], selection['game_checks']
+    ui, android = selection['ui_host'], selection['android']
+    boot = {'auto': selection['boot'], 'on': (True, 'on (--boot on)'),
+            'off': (False, f'off (--boot off, the default until approved); auto would {"RUN" if selection["boot"][0] else "SKIP"}: '
+                           f'{selection["boot"][1]}')}[args.boot]
     reason = (lambda why: 'full gate (--full)') if args.full else (lambda why: why)
     names = sorted({n for n, (run, _) in checks.items() if run} | set(args.tests))
     plan_lines = [f'GATE {git("rev-parse", "--short", "HEAD")} over {args.base} {base_sha[:8]}: {len(files)} changed files']
@@ -152,7 +163,7 @@ def main():
     for name, (run, why) in games.items():
         plan_lines.append(f'{"RUN " if run else "SKIP"} game check {name}: {reason(why)}')
     plan_lines.append(f'{"RUN " if names else "SKIP"} host checks ({len(names)}): {" ".join(names) or "none affected"}')
-    for label, (run, why) in (('ui_host', ui), ('android', android)):
+    for label, (run, why) in (('ui_host', ui), ('android', android), ('boot', boot)):
         plan_lines.append(f'{"RUN " if run else "SKIP"} {label}: {reason(why)}')
     (logs / 'plan.txt').write_text('\n'.join(plan_lines) + '\n')
     skipped = sum(1 for line in plan_lines if line.startswith('SKIP host check'))
@@ -176,6 +187,10 @@ def main():
         if not (ci_work / 'tools/ndk').is_dir():
             sys.exit(f'GATE: the Android build needs the shared SDK/NDK in {ci_work} (STORM_CI_WORK)')
         stages['android'] = stage_android
+    if boot[0]:
+        if not os.environ.get('STORM_VIRTUALGL'):
+            sys.exit('GATE: the boot stage renders through VirtualGL: set STORM_VIRTUALGL (tools/scene_sweep/README.md)')
+        stages['boot'] = stage_boot
     results = {}
     with concurrent.futures.ThreadPoolExecutor(max(1, len(stages))) as pool:
         futures = {}
