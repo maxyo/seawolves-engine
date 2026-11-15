@@ -656,9 +656,6 @@ void Device::scene_complete()
     }
     effects::Host::PostTargets targets;
     targets.scene_color = scene->handle;
-    // A multisampled depth is resolved into the texture with the colour only when an effect reads it.
-    if (!(back_depth->store->target_flags & BGFX_TEXTURE_RT_WRITE_ONLY))
-        targets.scene_depth = back_depth->store->handle;
     targets.width = static_cast<uint16_t>(scene->width);
     targets.height = static_cast<uint16_t>(scene->height);
     targets.target_width = static_cast<uint16_t>(out->width);

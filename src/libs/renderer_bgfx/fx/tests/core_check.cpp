@@ -181,7 +181,6 @@ void CheckSettings()
           high.gloss && !original.gloss && medium.gloss_map_size == 128 && high.gloss_map_size == 256 &&
           original.gloss_strength == 1.0f && medium.gloss_strength == 0.70f && high.gloss_strength == 0.70f);
     CHECK(medium.shadows == ShadowQuality::Low && high.shadows == ShadowQuality::Soft && original.shadows == ShadowQuality::Off);
-    CHECK(!medium.ssao && high.ssao && !original.ssao);
     CHECK(original.ao_volume == 0 && medium.ao_volume == 2 && high.ao_volume == 2); // Низкая: no shadows, as the original
     CHECK(original.lamp_shadows == 0 && medium.lamp_shadows == 8 && high.lamp_shadows == 16);
     CHECK(original.wet_surfaces == 0 && medium.wet_surfaces == 1 && high.wet_surfaces == 2);
@@ -452,17 +451,17 @@ void CheckSupport()
     }
     const Settings high = Settings::FromPreset(QualityPreset::High);
 
-    // No sampleable scene depth: occlusion and the sea's soft edges off.
+    // No sampleable scene depth: the sea's soft edges off.
     Support no_depth = all;
     no_depth.scene_depth = false;
     // ... and the render scale: the 3D drawn after the scene needs the scene depth on the display-size picture;
     // the sea's turbidity reads the optical depth from it too.
-    CHECK(ValidateSettings(high, no_depth).size() == 4);
+    CHECK(ValidateSettings(high, no_depth).size() == 3);
     std::vector<std::string> changes;
     Settings constrained = ConstrainSettings(high, no_depth, changes);
-    CHECK(!constrained.ssao && !constrained.sea_soft_edges && constrained.sea_band_limit && constrained.render_height == 0);
+    CHECK(!constrained.sea_soft_edges && constrained.sea_band_limit && constrained.render_height == 0);
     CHECK(high.sea_turbidity && !constrained.sea_turbidity);
-    CHECK(changes.size() == 4);
+    CHECK(changes.size() == 3);
     CHECK(constrained.shadows == high.shadows && constrained.bloom && constrained.lighting_flags == high.lighting_flags);
     CHECK(ValidateSettings(constrained, no_depth).empty());
 
@@ -590,7 +589,7 @@ void CheckSupport()
     no_lut.lut_3d = false;
     changes.clear();
     constrained = ConstrainSettings(high, no_lut, changes);
-    CHECK(!constrained.tonemap && !constrained.bloom && !constrained.sun_shafts && !constrained.ssao && !constrained.dither);
+    CHECK(!constrained.tonemap && !constrained.bloom && !constrained.sun_shafts && !constrained.dither);
     CHECK(constrained.msaa == 4 && constrained.PostIsIdentity());
     CHECK(ValidateSettings(constrained, no_lut).empty());
 
@@ -599,8 +598,8 @@ void CheckSupport()
     no_msaa_depth.msaa_depth = false;
     changes.clear();
     constrained = ConstrainSettings(high, no_msaa_depth, changes);
-    CHECK(constrained.msaa == 4 && !constrained.ssao && !constrained.sea_soft_edges && constrained.render_height == 0 &&
-          !constrained.sea_turbidity && changes.size() == 4);
+    CHECK(constrained.msaa == 4 && !constrained.sea_soft_edges && constrained.render_height == 0 &&
+          !constrained.sea_turbidity && changes.size() == 3);
     // Only 2x for the scene target formats (per-format caps): 4x is lowered to 2x, reported, alpha to coverage stays.
     Support msaa_x2 = all;
     msaa_x2.msaa_samples = 2;
@@ -614,7 +613,7 @@ void CheckSupport()
     no_msaa.msaa_samples = 1;
     changes.clear();
     constrained = ConstrainSettings(high, no_msaa, changes);
-    CHECK(constrained.msaa == 1 && !constrained.alpha_to_coverage && constrained.ssao && constrained.sea_soft_edges);
+    CHECK(constrained.msaa == 1 && !constrained.alpha_to_coverage && constrained.sea_soft_edges);
     // ... and SMAA takes over the anti-aliasing, reported (PowerVR, minimal GLES, a failed MSAA self-test).
     CHECK(constrained.smaa && !high.smaa);
     CHECK(std::find(changes.begin(), changes.end(), std::string("MSAA unavailable: SMAA instead")) != changes.end());

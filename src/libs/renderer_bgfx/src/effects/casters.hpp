@@ -7,7 +7,7 @@
 //   * a blended material that does not write depth (glass, water, particles, flares) is light, not a surface: it
 //     casts nothing;
 //   * a blended material that writes depth (sails, fading characters) is a surface: it casts like any other.
-// The passes that read the scene's own depth (the sea's soft edges, SSAO) need none of this: that depth was written
+// The pass that reads the scene's own depth (the sea's soft edges) needs none of this: that depth was written
 // by the colour pass itself, with its alpha test. There is no depth prepass.
 //
 // The caster programs live here as well, so no pass keeps a copy: vs_ff_caster[_cut][_skin] with fs_ff_caster[_cut]

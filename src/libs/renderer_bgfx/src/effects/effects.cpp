@@ -302,7 +302,6 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.far_lod_pixels = v <= 0 ? 0.f : static_cast<float>(std::clamp(v, 5, 40)) / 10.f; }},
     {"fx_sharpness", "0..100 % RCAS strength (100 = the reference's maximum)",
      [](fx::Settings &s, int v) { s.sharpness = static_cast<float>(std::clamp(v, 0, 100)) / 100.0f; }},
-    {"fx_ssao", "0 off, 1 on", [](fx::Settings &s, int v) { s.ssao = on(v); }},
     {"fx_dither", "0 off, 1 on", [](fx::Settings &s, int v) { s.dither = on(v); }},
     {"fx_lens_flare", "0 off, 1 on", [](fx::Settings &s, int v) { s.lens_flare = on(v); }},
     {"fx_scene_grading", "0 off, 1 on", [](fx::Settings &s, int v) { s.scene_grading = on(v); }},
@@ -449,11 +448,11 @@ std::string describe(const fx::Settings &s)
 {
     char text[512];
     snprintf(text, sizeof(text),
-             "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) ssao=%d dither=%d flare=%d scene_grading=%d "
+             "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) dither=%d flare=%d scene_grading=%d "
              "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d turbidity=%d waves=%d%d shadows=%d "
              "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) wet=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
-             static_cast<double>(s.sharpness), s.ssao, s.dither,
+             static_cast<double>(s.sharpness), s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
              s.alpha_to_coverage, s.anisotropy, s.sea_band_limit, s.sea_soft_edges, s.sea_specular, s.sea_turbidity,
              s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
@@ -638,8 +637,6 @@ void Host::apply()
             report_.disabled.push_back("fx_msaa");
         if (possible.anisotropy <= 1)
             report_.disabled.push_back("fx_anisotropy");
-        if (!possible.ssao)
-            report_.disabled.push_back("fx_ssao");
         if (!possible.sea_waves_lift)
             report_.disabled.push_back("fx_sea_waves_lift");
         if (!possible.smaa && !possible.PostIsIdentity())
@@ -796,15 +793,6 @@ uint16_t Host::submit_post(const PostTargets &targets)
     last_post_size_ = {targets.width, targets.height, targets.target_width, targets.target_height};
     frame.first_view = targets.first_view;
     frame.flip_v = false; // the target is the game's next offscreen picture, same row order as the scene
-    frame.scene_depth = targets.scene_depth;
-    // D3D perspective: _33 = f / (f - n), _43 = -n f / (f - n).
-    const auto &p = targets.projection;
-    if (p[10] != 0.0f && p[10] != 1.0f)
-    {
-        frame.near_plane = -p[14] / p[10];
-        frame.far_plane = p[14] / (1.0f - p[10]);
-    }
-    frame.projection_scale = {p[0], p[5]};
     frame.wobble = {.on = wobble_.on, .amplitude = wobble_.amplitude, .phase = wobble_.phase};
 
     // A frame without weather has no sky (interiors).
@@ -813,6 +801,7 @@ uint16_t Host::submit_post(const PostTargets &targets)
     {
         // Sun on the screen (lens flare, shafts): the direction through the camera rotation and the projection.
         const auto &v = targets.view;
+        const auto &p = targets.projection;
         const auto &d = weather_.sun_dir;
         float e[3];
         for (int c = 0; c < 3; ++c)

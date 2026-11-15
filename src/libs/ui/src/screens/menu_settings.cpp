@@ -197,11 +197,10 @@ class SettingsScreen final : public Screen
             // A debuggable app reports single fx overrides (GraphicsSettings.DEBUG_KEYS): rows to bisect
             // rendering problems on a phone, applied with «Готово» like the preset. Development only, so
             // the texts are not translated.
-            if (Known("fx_ssao"))
+            if (Known("fx_msaa"))
             {
                 Column debug{"Отладка эффектов"};
                 const Json onOff = Json::array({"пресет", "выкл", "вкл"});
-                DebugSegment(bindings, debug, "fx_ssao", "SSAO", {-1, 0, 1}, onOff);
                 DebugSegment(bindings, debug, "fx_msaa", "MSAA", {-1, 1, 2, 4}, {"пресет", "выкл", "2x", "4x"});
                 DebugSegment(bindings, debug, "fx_bloom", "Свечение (bloom)", {-1, 0, 1}, onOff);
                 DebugSegment(bindings, debug, "fx_grade", "Цветокоррекция", {-1, 0, 1, 2}, {"пресет", "выкл", "Карибы", "Пасмурно"});

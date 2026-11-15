@@ -23,7 +23,7 @@ build/fx-preview/fx_preview <output directory> [name filter]
 - Write the images outside the repository (or into an ignored directory); they are review evidence, not sources.
 
 Scenes: open sea with a ship and an island in four weathers × the three quality presets; colour grades; tone
-curve and bloom alone; a quay with a ship and a figure (sun lighting flags, sun shadows, ambient occlusion); a
+curve and bloom alone; a quay with a ship and a figure (sun lighting flags, sun shadows); a
 night harbour with torches and lanterns (town with baked vertex lighting, figure and ship lit dynamically: point
 lights, bloom); a broadside at dusk (flash lights); a wall, a boulder, a plank deck and a sail with height textures (derived normal maps under the sun
 from two sides and under a torch); before / after pairs for the cheap upgrades (anisotropic filtering, MSAA and

@@ -23,7 +23,7 @@ namespace
 {
 using namespace detail;
 
-// The composite pass changes the picture (bloom, tone curve, grades, occlusion, dither): otherwise the scene goes
+// The composite pass changes the picture (bloom, tone curve, grades, dither): otherwise the scene goes
 // straight to SMAA / the upscale («Низкая» with FSR 1).
 bool NeedsComposite(const Settings &s)
 {
@@ -39,9 +39,8 @@ enum ProgramIndex
     kBloomDown,
     kBloomUp,
     kShafts,
-    kSsao,
-    kComposite, // + 1 bloom, + 2 tone curve, + 4 ambient occlusion
-    kSmaaEdges = kComposite + 8, // vs_fx_smaa_* + fs_fx_smaa_*
+    kComposite, // + 1 bloom, + 2 tone curve
+    kSmaaEdges = kComposite + 4, // vs_fx_smaa_* + fs_fx_smaa_*
     kSmaaWeights,
     kSmaaBlend,
     kEasu,
@@ -52,9 +51,7 @@ enum ProgramIndex
 
 constexpr const char *kFragmentNames[] = {
     "fs_fx_copy",        "fs_fx_bloom_prefilter", "fs_fx_bloom_down",  "fs_fx_bloom_up", "fs_fx_shafts",
-    "fs_fx_ssao",
     "fs_fx_composite",   "fs_fx_composite_b",     "fs_fx_composite_t", "fs_fx_composite_bt",
-    "fs_fx_composite_a", "fs_fx_composite_ab",    "fs_fx_composite_at", "fs_fx_composite_abt",
     "fs_fx_smaa_edges",  "fs_fx_smaa_weights",    "fs_fx_smaa_blend",  "fs_fx_easu",     "fs_fx_rcas",
     "fs_fx_wobble",      "fs_fx_sprite",
 };
@@ -88,13 +85,12 @@ void PostChain::Shutdown()
     Destroy(upscaled_.fb);
     Destroy(smaa_area_);
     Destroy(smaa_search_);
-    Destroy(occlusion_.fb);
     Destroy(wobbled_.fb);
     Destroy(lut_);
     Destroy(u_dither_);
     Destroy(u_wobble_);
     for (bgfx::UniformHandle *uniform :
-         {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_, &s_ao_, &s_depth_, &u_ao_,
+         {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_,
           &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_})
         Destroy(*uniform);
     lut_strength_ = -1.0f;
@@ -115,13 +111,12 @@ void PostChain::OnDeviceLost()
     antialiased_ = {};
     upscaled_ = {};
     smaa_area_ = smaa_search_ = BGFX_INVALID_HANDLE;
-    occlusion_ = {};
     wobbled_ = {};
     lut_ = BGFX_INVALID_HANDLE;
     u_dither_ = BGFX_INVALID_HANDLE;
     u_wobble_ = BGFX_INVALID_HANDLE;
     for (bgfx::UniformHandle *uniform :
-         {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_, &s_ao_, &s_depth_, &u_ao_,
+         {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_,
           &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_})
         *uniform = BGFX_INVALID_HANDLE;
     lut_strength_ = -1.0f;
@@ -140,9 +135,6 @@ void PostChain::EnsureUniforms()
         u_shafts_ = bgfx::createUniform("u_fxShafts", bgfx::UniformType::Vec4);
         u_tone_ = bgfx::createUniform("u_fxTone", bgfx::UniformType::Vec4);
         u_lut_ = bgfx::createUniform("u_fxLut", bgfx::UniformType::Vec4);
-        s_ao_ = bgfx::createUniform("s_fxAoTex", bgfx::UniformType::Sampler);
-        s_depth_ = bgfx::createUniform("s_fxSceneDepth", bgfx::UniformType::Sampler);
-        u_ao_ = bgfx::createUniform("u_fxAo", bgfx::UniformType::Vec4, 3);
         u_dither_ = bgfx::createUniform("u_fxDither", bgfx::UniformType::Vec4);
         u_wobble_ = bgfx::createUniform("u_fxWobble", bgfx::UniformType::Vec4, 2);
         u_smaa_ = bgfx::createUniform("u_fxSmaa", bgfx::UniformType::Vec4);
@@ -190,8 +182,6 @@ bool PostChain::Prepare(const Settings &settings, int &budget)
     }
     if (!settings.PostIsIdentity() && SupportsLut3d())
     {
-        if (settings.ssao)
-            needed.set(kSsao);
         if (settings.bloom)
         {
             needed.set(kBloomPrefilter);
@@ -201,7 +191,7 @@ bool PostChain::Prepare(const Settings &settings, int &budget)
                 needed.set(kShafts);
         }
         if (NeedsComposite(settings))
-            needed.set(kComposite + (settings.bloom ? 1 : 0) + (settings.tonemap ? 2 : 0) + (settings.ssao ? 4 : 0));
+            needed.set(kComposite + (settings.bloom ? 1 : 0) + (settings.tonemap ? 2 : 0));
         if (settings.smaa)
         {
             needed.set(kSmaaEdges);
@@ -338,34 +328,8 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
         return 1;
     }
 
-    // ---- ambient occlusion (half resolution) ----
-    const bool occlusion = settings.ssao && bgfx::isValid(frame.scene_depth);
-    if (settings.ssao && !occlusion)
-        STORM_FX_ERROR_ONCE(reported_depth_, "ambient occlusion is on but PostChain::Frame::scene_depth is not set");
     if (settings.sun_shafts && !settings.bloom)
         STORM_FX_ERROR_ONCE(reported_shafts_, "sun shafts are on but bloom, which carries them, is off");
-    float ao[3][4] = {};
-    if (occlusion)
-    {
-        EnsureTarget(occlusion_, frame.scene_width / 2, frame.scene_height / 2);
-        ao[0][0] = frame.near_plane * frame.far_plane;
-        ao[0][1] = frame.far_plane;
-        ao[0][2] = frame.far_plane - frame.near_plane;
-        ao[0][3] = settings.ssao_radius;
-        ao[1][0] = 1.0f / frame.projection_scale[0];
-        ao[1][1] = 1.0f / frame.projection_scale[1];
-        ao[1][2] = settings.ssao_intensity;
-        ao[1][3] = 1.0f / frame.far_plane;
-        ao[2][0] = 1.0f / frame.scene_width;
-        ao[2][1] = 1.0f / frame.scene_height;
-        ao[2][2] = 1.0f / occlusion_.width;
-        ao[2][3] = 1.0f / occlusion_.height;
-        SetupView(view, "fx ambient occlusion", occlusion_.fb, occlusion_.width, occlusion_.height, true);
-        const bgfx::ProgramHandle program = Program(kSsao);
-        bgfx::setUniform(u_ao_, ao, 3);
-        bgfx::setTexture(4, s_depth_, frame.scene_depth, kClampPoint);
-        SubmitScreenTriangle(view++, program, kWriteColor);
-    }
 
     // ---- bloom ----
     int levels = 0;
@@ -440,7 +404,7 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
         SetupView(view, "fx composite", out, composite_is_final ? frame.target_width : frame.scene_width,
                   composite_is_final ? frame.target_height : frame.scene_height, true);
         const bgfx::ProgramHandle composite =
-            Program(kComposite + (levels > 0 ? 1 : 0) + (settings.tonemap ? 2 : 0) + (occlusion ? 4 : 0));
+            Program(kComposite + (levels > 0 ? 1 : 0) + (settings.tonemap ? 2 : 0));
         const float tone[4] = {settings.exposure * TonemapExposureBias(), std::clamp(settings.tonemap_strength, 0.0f, 1.0f),
                                settings.bloom_intensity, settings.exposure};
         const float lut[4] = {static_cast<float>(kDefaultLutSize - 1) / kDefaultLutSize, 0.5f / kDefaultLutSize, 0.0f, 0.0f};
@@ -453,12 +417,6 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
         if (levels > 0)
             bgfx::setTexture(1, s_bloom_, bgfx::getTexture(bloom_[0].fb), kClampLinear);
         bgfx::setTexture(2, s_lut_, lut_, kClampLinear);
-        if (occlusion)
-        {
-            bgfx::setUniform(u_ao_, ao, 3);
-            bgfx::setTexture(3, s_ao_, bgfx::getTexture(occlusion_.fb), kClampLinear);
-            bgfx::setTexture(4, s_depth_, frame.scene_depth, kClampPoint);
-        }
         SubmitScreenTriangle(view++, composite, kWriteColor, composite_is_final && frame.flip_v);
     }
     bgfx::TextureHandle current = frame.scene_color;

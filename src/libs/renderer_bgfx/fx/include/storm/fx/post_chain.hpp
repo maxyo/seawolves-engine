@@ -1,10 +1,10 @@
-// Post-processing chain: ambient occlusion, bloom, sun shafts, tone curve, colour grades, dither, SMAA, the FSR 1
+// Post-processing chain: bloom, sun shafts, tone curve, colour grades, dither, SMAA, the FSR 1
 // upscale and sharpening, lens flare. Reads the game's offscreen colour target and writes the final image into a
 // frame buffer or the back buffer.
 //
 //   scene ─► [wobble] ─┬─────────────────────────────► composite ─► [SMAA] ─► [EASU] ─► [RCAS] ─► target
-//                      ├► bright pass ► down… ► up… ──┤ (bloom,     edges,     (scene     (target
-//   depth ─────────────┴► ambient occlusion (half) ───┘  + shafts)  weights,    → target   size)
+//                      └► bright pass ► down… ► up… ──┘ (bloom,     edges,     (scene     (target
+//                                                        + shafts)  weights,    → target   size)
 //                                                                   blend       size)
 // Everything before EASU runs at the scene's (internal) size; EASU runs when the scene is smaller than the target
 // (Settings::render_height), RCAS and the lens flare at the target size.
@@ -42,14 +42,6 @@ class PostChain
         uint16_t target_height = 0;
         bgfx::ViewId first_view = 0;
         bool flip_v = false; // mirror the final image vertically (when the caller's own blit would)
-        // Ambient occlusion only (settings.ssao): the scene's depth attachment as a sampleable texture
-        // (BGFX_TEXTURE_RT, not write-only; D16, D24 or D24S8), the planes of the scene projection and its
-        // x / y scale (projection[0], projection[5]). settings.ssao without a valid depth texture is an error:
-        // it is logged once and the frame is composed without occlusion (a frame has to be presented).
-        bgfx::TextureHandle scene_depth = BGFX_INVALID_HANDLE;
-        float near_plane = 0.1f;
-        float far_plane = 4000.0f;
-        std::array<float, 2> projection_scale{1.0f, 1.0f};
         // Sun shafts and lens flare: sun position in scene uv (0..1, origin top-left), 0..1 visibility (0 when
         // the sun is behind the camera, below the horizon or under clouds) and the sun's colour (0..1, the game's).
         std::array<float, 3> sun_color{1.0f, 0.9f, 0.7f};
@@ -69,7 +61,7 @@ class PostChain
         bool scene_cut = false;
         // The game's underwater screen wobble (Render.SeaEffect), on every preset: the legacy look. amplitude is
         // the wave height as a fraction of the picture size (the game's SeaEffectSize), phase in radians. The
-        // rest of the chain processes the wobbled picture (ambient occlusion reads the unwobbled depth).
+        // rest of the chain processes the wobbled picture.
         struct Wobble
         {
             bool on = false;
@@ -123,7 +115,7 @@ class PostChain
     // destroyed with the last chain that uses them.
     struct Programs
     {
-        static constexpr int kCount = 21;
+        static constexpr int kCount = 16;
         std::array<bgfx::ProgramHandle, kCount> handles{};
         Programs() { handles.fill(BGFX_INVALID_HANDLE); }
         ~Programs();
@@ -140,7 +132,6 @@ class PostChain
     Target upscaled_{};    // EASU output when sharpening follows, target size
     bgfx::TextureHandle smaa_area_ = BGFX_INVALID_HANDLE;   // the reference's precomputed tables (RG8, R8)
     bgfx::TextureHandle smaa_search_ = BGFX_INVALID_HANDLE;
-    Target occlusion_{};   // half resolution: occlusion + packed depth
     Target wobbled_{};     // the wobbled scene when more passes follow
     bgfx::TextureHandle lut_ = BGFX_INVALID_HANDLE;
     GradePreset lut_grade_ = GradePreset::Original;
@@ -159,9 +150,6 @@ class PostChain
     bgfx::UniformHandle u_shafts_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_tone_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_lut_ = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle s_ao_ = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle s_depth_ = BGFX_INVALID_HANDLE;
-    bgfx::UniformHandle u_ao_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_smaa_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_smaa_edges_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_smaa_area_ = BGFX_INVALID_HANDLE;
@@ -169,7 +157,6 @@ class PostChain
     bgfx::UniformHandle s_smaa_weights_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fsr_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fsr_out_ = BGFX_INVALID_HANDLE;
-    bool reported_depth_ = false;
     bool reported_shafts_ = false;
     bool reported_lut_ = false;
 };

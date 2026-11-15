@@ -145,9 +145,6 @@ struct Settings
     bool lens_flare = false;      // procedural sun glare and flare ghosts (switch the legacy flare sprites off)
     float lens_flare_intensity = 0.5f;
     bool scene_grading = false;   // PostChain::Frame::scene_grade (mood of the place and hour) is applied
-    bool ssao = false;            // high end only; needs the scene depth texture
-    float ssao_radius = 0.6f;     // metres
-    float ssao_intensity = 0.8f;
 
     // ---- renderer state (the renderer applies these; see RendererState()) ----
     uint8_t msaa = 1;             // samples of the scene target: 1 (off), 2 or 4. The primary anti-aliasing on tile GPUs
@@ -316,13 +313,13 @@ struct Support
     // The depth format of the lamps' shadow faces (lamp_shadows.hpp): a perspective depth over 1 cm..the lamp's
     // radius needs 24 bits or a float (16 bits resolve 15 cm at 10 m). None: Settings::lamp_shadows is switched off.
     LampDepth lamp_depth = LampDepth::None;
-    bool scene_depth = false;   // the scene's depth attachment can be sampled: Settings::ssao, Settings::sea_soft_edges
+    bool scene_depth = false;   // the scene's depth attachment can be sampled: Settings::sea_soft_edges, render scale
     bool normal_map = false;    // EAC RG11 textures (the derived maps): kLightingNormalMap, Settings::gloss
     uint8_t msaa_samples = 1;   // the highest MSAA sample count (1 = none, 2 or 4) the scene target renders with,
                                 // RGBA8 colour and D24S8 depth both (per-format bgfx caps): Settings::msaa
     bool smaa = false;          // R8 and RG8 textures (the SMAA search and area tables): Settings::smaa
     bool msaa_depth = false;    // the scene depth can still be sampled when the scene target is multisampled
-                                // (renderer knowledge, like scene_depth): msaa together with ssao / sea soft edges
+                                // (renderer knowledge, like scene_depth): msaa together with sea soft edges / render scale
     bool anisotropy = false;    // anisotropic texture filtering
     bool ao_volume = false;     // RGBA8 3D textures with linear filtering: Settings::ao_volume
     bool sea_waves_vertex = false; // RGBA8 textures can be sampled in a vertex shader: Settings::sea_waves_lift

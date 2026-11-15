@@ -110,8 +110,6 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.lamp_moving = 2;
     s.lamp_soft = true;
     s.lamp_per_pixel = 4; // frame.md budget: the flagship class
-    s.ssao = true;
-    s.ssao_intensity = 0.35f;
     s.wet_surfaces = 2;
     return s;
 }
@@ -119,7 +117,7 @@ Settings Settings::FromPreset(QualityPreset preset)
 bool Settings::PostIsIdentity() const
 {
     const bool graded = grade != GradePreset::Original && grade_strength > 0.0f;
-    return !tonemap && !graded && !bloom && !smaa && !sun_shafts && !ssao && !dither && !lens_flare && !scene_grading;
+    return !tonemap && !graded && !bloom && !smaa && !sun_shafts && !dither && !lens_flare && !scene_grading;
 }
 
 BackgroundProducts BackgroundProductsFor(const Settings &s)
@@ -219,7 +217,7 @@ struct Rule
 constexpr Rule kRules[] = {
     {[](const Settings &s, const Support &c) { return !c.lut_3d && (!s.PostIsIdentity() || s.render_height); },
      [](Settings &s) {
-         s.tonemap = s.bloom = s.ssao = s.sun_shafts = s.scene_grading = s.dither = s.lens_flare = s.smaa = s.sharpen = false;
+         s.tonemap = s.bloom = s.sun_shafts = s.scene_grading = s.dither = s.lens_flare = s.smaa = s.sharpen = false;
          s.grade = GradePreset::Original;
          s.render_height = 0;
      },
@@ -248,8 +246,6 @@ constexpr Rule kRules[] = {
      "alpha to coverage works only with MSAA: switched off"},
     {[](const Settings &s, const Support &c) { return s.anisotropy > 1 && !c.anisotropy; }, [](Settings &s) { s.anisotropy = 1; },
      "anisotropic filtering is not available: switched off"},
-    {[](const Settings &s, const Support &c) { return s.msaa > 1 && !c.msaa_depth && s.ssao; }, [](Settings &s) { s.ssao = false; },
-     "ambient occlusion cannot read the depth of a multisampled scene on this renderer: switched off (or turn MSAA off)"},
     // At a render scale the scene depth is carried to the display-size picture for the 3D drawn after the scene
     // (DepthCopy): it must be readable.
     {[](const Settings &s, const Support &c) { return s.msaa > 1 && !c.msaa_depth && s.render_height > 0; },
@@ -272,8 +268,6 @@ constexpr Rule kRules[] = {
      "linear-light lighting needs per-pixel lighting or per-pixel point lights: switched off"},
     {[](const Settings &s, const Support &) { return s.sun_shafts && !s.bloom; }, [](Settings &s) { s.sun_shafts = false; },
      "sun shafts are part of the bloom chain and bloom is off: sun shafts switched off"},
-    {[](const Settings &s, const Support &c) { return s.ssao && !c.scene_depth; }, [](Settings &s) { s.ssao = false; },
-     "ambient occlusion needs a sampleable scene depth texture: switched off"},
     {[](const Settings &s, const Support &c) { return s.sea_soft_edges && !c.scene_depth; }, [](Settings &s) { s.sea_soft_edges = false; },
      "soft sea edges need a sampleable scene depth texture: switched off"},
     {[](const Settings &s, const Support &c) { return s.sea_waves_lift && !c.sea_waves_vertex; },

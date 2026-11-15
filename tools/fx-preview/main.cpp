@@ -617,10 +617,6 @@ class Preview
         post.scene_width = scene_w;
         post.scene_height = scene_h;
         post.target = output_fb_;
-        post.scene_depth = bgfx::getTexture(scene_fb_, 1);
-        post.near_plane = kNear;
-        post.far_plane = kFar;
-        post.projection_scale = {proj[0], proj[5]};
         post.sun_color = weather.sun_color;
         post.scene_grade = fx::SceneGrade(sky_state, weather.overcast, shot.interior);
         post.scene_cut = true; // every shot is a new scene
@@ -875,10 +871,9 @@ std::vector<Shot> AllShots(const fx::Support &support, bool game_height_maps)
     add("broadside_dusk_2_medium", Content::Broadside, medium, preview::Weather::Sunset);
     add("broadside_dusk_3_high", Content::Broadside, high, preview::Weather::Sunset);
 
-    // Sun lighting flags, without shadows and occlusion so only the shading changes.
+    // Sun lighting flags, without shadows so only the shading changes.
     fx::Settings lit = basic;
     lit.shadows = fx::ShadowQuality::Off;
-    lit.ssao = false;
     lit.ao_volume = 0;    // the interior AO volume and lamp shadows need per-pixel lighting (and an interior)
     lit.lamp_shadows = 0;
     lit.lighting_flags = fx::kLightingNone;
@@ -890,17 +885,14 @@ std::vector<Shot> AllShots(const fx::Support &support, bool game_height_maps)
     add("lighting_2_specular_translucent", Content::Deck, lit);
     add("lighting_sunset_2_full", Content::Deck, lit, preview::Weather::Sunset);
 
-    // Sun shadows and ambient occlusion on the quay.
+    // Sun shadows on the quay.
     fx::Settings shadowed = basic;
-    shadowed.ssao = false;
     shadowed.shadows = fx::ShadowQuality::Off;
     add("shadows_0_off", Content::Deck, shadowed);
     shadowed.shadows = fx::ShadowQuality::Low;
     add("shadows_1_low", Content::Deck, shadowed);
     shadowed.shadows = fx::ShadowQuality::Soft;
     add("shadows_2_soft", Content::Deck, shadowed);
-    add("ssao_0_off", Content::Deck, shadowed);
-    add("ssao_1_on", Content::Deck, basic);
 
     // ---- the cheap upgrades, each against `basic` ----
     // Anisotropic filtering: the plank deck at a grazing angle.
@@ -911,7 +903,7 @@ std::vector<Shot> AllShots(const fx::Support &support, bool game_height_maps)
     // MSAA with alpha to coverage on foliage and rigging; wind sway at two moments.
     one_more = basic;
     one_more.smaa = false;
-    one_more.ssao = one_more.sea_soft_edges = false; // depth-based effects and MSAA exclude each other on this renderer
+    one_more.sea_soft_edges = false; // depth-based effects and MSAA exclude each other on this renderer
     add("a2c_0_no_aa_alpha_test", Content::Garden, one_more).sun_turn = 215.0f;
     one_more.msaa = 4;
     add("a2c_1_msaa_alpha_test", Content::Garden, one_more).sun_turn = 215.0f;
