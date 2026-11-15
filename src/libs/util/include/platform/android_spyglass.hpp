@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 namespace storm::android
 {
@@ -158,6 +159,12 @@ class SpyglassState
         if (!skills.empty())
             out += ",\"skills\":{" + skills.substr(1) + "}";
         return out + "}}";
+    }
+
+    // Everything json() reads (HudChannel, android_ui.hpp): its every change advances the revision.
+    auto publicationKey() const
+    {
+        return std::tie(revision_);
     }
 
   private:

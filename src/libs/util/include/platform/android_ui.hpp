@@ -22,6 +22,7 @@
 #include "android_sea_orders.hpp"
 #include "android_sea_quick_action.hpp"
 #include "android_land_commands.hpp"
+#include "android_land_vitals.hpp"
 #include "android_worldmap.hpp"
 #include "android_interface_presentation.hpp"
 #include "android_ui_sink.hpp"
@@ -179,14 +180,24 @@ inline void publishLandCommands()
     if (const auto *json = landCommandsChannel.publish(landCommands.publicationKey(), [] { return landCommands.json(); }))
         ui::state("landCommands", *json);
 }
-inline std::string lastVitals;
+// The land hero's bars and status (android_land_vitals.hpp), nothing when the engine draws no land
+// hero; a change goes at most every 100 ms, the hero's disappearance at once. `picture` gives the
+// JSON of a portrait's picture (battle_interface land_status.hpp); the JSON is built only for a
+// changed state.
+inline HudChannel<std::tuple<const std::optional<LandVitals> &>> vitalsChannel;
 inline uint32_t lastVitalsTick=0;
-inline void publishVitals(const std::string &json) {
+template <class Picture> inline void publishVitals(const std::optional<LandVitals> &vitals, Picture &&picture) {
     const auto now=SDL_GetTicks();
-    if(lastVitals==json || (!json.empty() && now-lastVitalsTick<100))return;
-    lastVitals=json;lastVitalsTick=now;
+    const auto key=std::tie(vitals);
+    if(vitalsChannel.same(key) || (vitals && now-lastVitalsTick<100))return;
+    const auto *json=vitalsChannel.publish(key,[&]{return vitals?landVitalsJson(*vitals,picture):std::string();});
+    if(!json)return;
+    lastVitalsTick=now;
     // Nothing at all when the engine draws no land hero: JSON null for the UI.
-    ui::state("vitals",json.empty()?std::string("null"):json);
+    ui::state("vitals",json->empty()?std::string("null"):*json);
+}
+inline void publishVitals(std::nullopt_t) {
+    publishVitals(std::optional<LandVitals>(), [](const LandPortrait &) { return std::string("null"); });
 }
 inline std::string lastWorldInfo;
 inline void publishWorldInfo(const std::string &text) {
@@ -270,12 +281,12 @@ inline void reportRenderBackend(const std::string &backend, const std::string &r
 }
 // The door the hero stands at (the touch HUD's bottom hint): where its reload locator leads and
 // whether it is locked now (the game's "Closed" quick action), null = at no door with a name.
-inline std::string lastReloadPlace = "\x01";
+inline HudChannel<std::tuple<const std::string &, const bool &>> reloadPlaceChannel;
 inline void publishReloadPlace(const std::string &place, bool locked) {
-    const std::string json = place.empty() ? "null" : "{\"place\":" + uiJsonText(place) + ",\"locked\":" + (locked ? "true" : "false") + "}";
-    if (lastReloadPlace == json) return;
-    lastReloadPlace = json;
-    ui::state("reloadPlace", json);
+    const auto *json = reloadPlaceChannel.publish(std::tie(place, locked), [&] {
+        return place.empty() ? std::string("null") : "{\"place\":" + uiJsonText(place) + ",\"locked\":" + (locked ? "true" : "false") + "}";
+    });
+    if (json) ui::state("reloadPlace", *json);
 }
 inline void publishContextAction(const std::string &name) {
     if (contextAction == name) return;
@@ -376,12 +387,10 @@ inline void publishUiState(const char *channel, const std::string &json) {
     ui::state(channel,json);
 }
 // Channel "spyglass" (android_spyglass.hpp): sent through the generic state channel when it changes.
-inline std::string lastSpyglass;
+inline HudChannel<decltype(spyglass.publicationKey())> spyglassChannel;
 inline void publishSpyglass() {
-    const std::string json=spyglass.json();
-    if(lastSpyglass==json)return;
-    lastSpyglass=json;
-    publishUiState("spyglass",json);
+    if(const auto *json=spyglassChannel.publish(spyglass.publicationKey(),[]{return spyglass.json();}))
+        publishUiState("spyglass",*json);
 }
 // Channel "video": {"fullscreen": true} while a game video plays over the whole screen (the
 // scripts' StartVideo player), null when it ends. A player embedded in an interface node

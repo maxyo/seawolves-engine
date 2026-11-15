@@ -29,6 +29,7 @@
 #include "v_data.h"
 #include "v_file_service.h"
 #include <platform/android_gameplay.hpp>
+#include <platform/android_land_vitals.hpp>
 #include <platform/android_ship_telemetry.hpp>
 
 #include <cstdio>
@@ -92,33 +93,34 @@ inline int healthPotions(ATTRIBUTES *hero)
 // For a character without a FaceId: the picture the land interface draws instead (the icon's
 // texture and uv, landinterface.c: battle_interface\two.tga), as JSON; null when the character
 // has a FaceId (the UI shows the game's 128 px face), or when that file is not in the game's data
-// (TEHO ships no two.tga: the game itself has no picture then).
-inline std::string landIconPicture(ATTRIBUTES *character, ATTRIBUTES *icon)
+// (TEHO ships no two.tga: the game itself has no picture then). Asked only when the vitals JSON
+// is built (a change), not every frame.
+inline std::string landPortraitPicture(const LandPortrait &portrait)
 {
-    if (!landText(character, "FaceId").empty()) return "null";
+    if (!portrait.face.empty()) return "null";
     std::array<float, 4> uv{0.f, 0.f, 1.f, 1.f};
-    const std::string rect = landText(icon, "uv"), file = landText(icon, "texture");
-    if (!rect.empty() && std::sscanf(rect.c_str(), "%f,%f,%f,%f", &uv[0], &uv[1], &uv[2], &uv[3]) != 4) return "null";
-    if (file.empty() || !fio->_FileOrDirectoryExists(("resource\\textures\\" + file + ".tx").c_str())) return "null";
-    const auto picture = shipPicture(file, uv);
+    if (!portrait.uv.empty() && std::sscanf(portrait.uv.c_str(), "%f,%f,%f,%f", &uv[0], &uv[1], &uv[2], &uv[3]) != 4) return "null";
+    if (portrait.texture.empty() || !fio->_FileOrDirectoryExists(("resource\\textures\\" + portrait.texture + ".tx").c_str())) return "null";
+    const auto picture = shipPicture(portrait.texture, uv);
     return picture ? shipPictureJson(*picture) : "null";
 }
 
+inline LandPortrait landPortrait(int index, ATTRIBUTES *character, ATTRIBUTES *icon)
+{
+    const std::string name = landText(character, "name"), last = landText(character, "lastname");
+    return {index, last.empty() ? name : name + " " + last, landText(character, "FaceId"), landText(icon, "texture"),
+            landText(icon, "uv")};
+}
+
 // `icons` is data.icons of the land interface; id0 is the hero.
-inline std::string landStatusJson(ATTRIBUTES *icons)
+inline void readLandStatus(ATTRIBUTES *icons, LandVitals &v)
 {
     auto *heroIcon = icons ? icons->GetAttributeClass("id0") : nullptr;
     ATTRIBUTES *hero = heroIcon ? landCharacter(static_cast<int>(heroIcon->GetAttributeAsDword("chrindex", -1))) : nullptr;
-    std::string effects;
     for (const auto &[name, path] : {std::pair{"poison", "chr_ai.poison"}, {"drunk", "chr_ai.drunk"}, {"healing", "chr_ai.hp_bottle"}})
-        if (landNumber(hero, path) > 0.f) effects += std::string(effects.empty() ? "" : ",") + "\"" + name + "\"";
-    const std::string heroName = landText(hero, "name"), heroLast = landText(hero, "lastname");
-    std::string json = ",\"id\":" + std::to_string(heroIcon ? static_cast<int>(heroIcon->GetAttributeAsDword("chrindex", -1)) : -1) +
-                       ",\"name\":" + gameplayJsonString(heroLast.empty() ? heroName : heroName + " " + heroLast) +
-                       ",\"face\":" + gameplayJsonString(landText(hero, "FaceId")) + ",\"picture\":" + landIconPicture(hero, heroIcon) +
-                       ",\"effects\":[" + effects +
-                       "],\"potions\":" + std::to_string(healthPotions(hero)) + ",\"officers\":[";
-    bool first = true;
+        if (landNumber(hero, path) > 0.f) v.effects.emplace_back(name);
+    v.hero = landPortrait(heroIcon ? static_cast<int>(heroIcon->GetAttributeAsDword("chrindex", -1)) : -1, hero, heroIcon);
+    v.potions = healthPotions(hero);
     for (size_t i = 0; icons && i < icons->GetAttributesNum(); ++i)
     {
         auto *icon = icons->GetAttributeClass(static_cast<uint32_t>(i));
@@ -126,17 +128,11 @@ inline std::string landStatusJson(ATTRIBUTES *icons)
         const int index = static_cast<int>(icon->GetAttributeAsDword("chrindex", -1));
         auto *officer = landCharacter(index);
         if (!officer) continue;
-        const std::string name = landText(officer, "name"), last = landText(officer, "lastname");
         const float health = std::clamp(icon->GetAttributeAsFloat("health", 0.f), 0.f, 1.f);
         const float energy = std::clamp(icon->GetAttributeAsFloat("energy", 0.f), 0.f, 1.f);
-        json += std::string(first ? "" : ",") + "{\"id\":" + std::to_string(index) +
-                ",\"name\":" + gameplayJsonString(last.empty() ? name : name + " " + last) +
-                ",\"face\":" + gameplayJsonString(landText(officer, "FaceId")) + ",\"picture\":" + landIconPicture(officer, icon) +
-                ",\"health\":" + std::to_string(std::isfinite(health) ? health : 0.f) +
-                ",\"energy\":" + std::to_string(std::isfinite(energy) ? energy : 0.f) + "}";
-        first = false;
+        v.officers.push_back({landPortrait(index, officer, icon), std::isfinite(health) ? health : 0.f,
+                              std::isfinite(energy) ? energy : 0.f});
     }
-    json += "]";
     for (const auto id : core.GetEntityIds("NPCharacter"))
     {
         auto *entity = core.GetEntityPointer(id);
@@ -145,17 +141,15 @@ inline std::string landStatusJson(ATTRIBUTES *icons)
         const float hp = landNumber(captain, "chr_ai.hp"), max = landNumber(captain, "chr_ai.hp_max");
         if (hp <= 0.f || max <= 0.f) continue;
         const std::string name = landText(captain, "name"), last = landText(captain, "lastname");
-        json += ",\"opponent\":{\"name\":" + gameplayJsonString(last.empty() ? name : name + " " + last) +
-                ",\"health\":" + std::to_string(std::clamp(hp / max, 0.f, 1.f)) + "}";
+        v.opponent = LandOpponent{last.empty() ? name : name + " " + last, std::clamp(hp / max, 0.f, 1.f)};
         break;
     }
     const auto player = core.GetEntityId("Player");
     if (player != invalid_entity && core.Send_Message(player, "ls", MSG_CHARACTER_EX_MSG, "IsFightMode"))
     {
         const auto wait = core.Send_Message(player, "ls", MSG_CHARACTER_EX_MSG, "RecoilWait");
-        json += ",\"dash\":" + std::to_string(std::clamp(static_cast<float>(wait) / 800.f, 0.f, 1.f));
+        v.dash = std::clamp(static_cast<float>(wait) / 800.f, 0.f, 1.f);
     }
-    return json;
 }
 
 } // namespace storm::android

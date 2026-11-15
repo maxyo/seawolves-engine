@@ -8,10 +8,12 @@
 #include <platform/android_gameplay.hpp>
 #include <platform/android_hud_channel.hpp>
 #include <platform/android_land_commands.hpp>
+#include <platform/android_land_vitals.hpp>
 #include <platform/android_sea_orders.hpp>
 #include <platform/android_pistol_state.hpp>
 #include <platform/android_sea_quick_action.hpp>
 #include <platform/android_ship_telemetry.hpp>
+#include <platform/android_spyglass.hpp>
 #include <cassert>
 #include <chrono>
 #include <cstdio>
@@ -390,6 +392,136 @@ void shipChannel()
     std::puts("  ship           unchanged loops publish nothing; changes go as the throttle allowed before");
 }
 
+void spyglassChannel()
+{
+    std::mt19937 random(23);
+    SpyglassState state;
+    Twin<decltype(state.publicationKey())> twin{"spyglass"};
+    const auto json = [&] { return state.json(); };
+    SpyglassTarget target;
+    for (int i = 0; i < 4000; ++i)
+    {
+        switch (random() % 12)
+        {
+        case 0: state.turn(random() % 3 != 0); break;
+        case 1: target.name = random() % 2 ? "Black \"Pearl\"" : "Interceptor"; target.hull = random() % 100; break;
+        case 2: target.distance = (random() % 1000) / 7.0; break;
+        case 3: state.clear(); break;
+        case 4: state.acknowledge(std::to_string(state.generation()) + (random() % 2 ? "\t1" : "\t0")); break;
+        default: break;
+        }
+        if (state.on() && random() % 2) state.target(target); // the telescope's per-frame read
+        twin.step(json, state.publicationKey());
+    }
+    twin.verify();
+}
+
+// publishReloadPlace (android_ui.hpp) keyed on the place and the lock.
+std::string reloadPlaceJson(const std::string &place, bool locked)
+{
+    return place.empty() ? std::string("null") : "{\"place\":" + gameplayJsonString(place) + ",\"locked\":" + (locked ? "true" : "false") + "}";
+}
+void reloadPlaceChannel()
+{
+    std::mt19937 random(29);
+    Twin<std::tuple<const std::string &, const bool &>> twin{"reloadPlace"};
+    std::string place;
+    bool locked = false;
+    for (int i = 0; i < 4000; ++i)
+    {
+        if (random() % 8 == 0) place = random() % 3 ? "Tavern" : "";
+        if (random() % 8 == 0) locked = !locked;
+        twin.step([&] { return reloadPlaceJson(place, locked); }, std::tie(place, std::as_const(locked)));
+    }
+    twin.verify();
+}
+
+// The old vitals text, field by field as battle_man_sign.cpp and landStatusJson concatenated it.
+std::string oldVitalsJson(const LandVitals &v)
+{
+    const auto picture = [](const LandPortrait &p) { return p.face.empty() && !p.texture.empty() ? "{\"texture\":\"" + p.texture + "\"}" : std::string("null"); };
+    std::string effects;
+    for (const auto &name : v.effects) effects += std::string(effects.empty() ? "" : ",") + "\"" + name + "\"";
+    std::string json = ",\"id\":" + std::to_string(v.hero.id) + ",\"name\":" + gameplayJsonString(v.hero.name) +
+                       ",\"face\":" + gameplayJsonString(v.hero.face) + ",\"picture\":" + picture(v.hero) +
+                       ",\"effects\":[" + effects + "],\"potions\":" + std::to_string(v.potions) + ",\"officers\":[";
+    bool first = true;
+    for (const auto &o : v.officers)
+    {
+        json += std::string(first ? "" : ",") + "{\"id\":" + std::to_string(o.who.id) + ",\"name\":" + gameplayJsonString(o.who.name) +
+                ",\"face\":" + gameplayJsonString(o.who.face) + ",\"picture\":" + picture(o.who) +
+                ",\"health\":" + std::to_string(o.health) + ",\"energy\":" + std::to_string(o.energy) + "}";
+        first = false;
+    }
+    json += "]";
+    if (v.opponent) json += ",\"opponent\":{\"name\":" + gameplayJsonString(v.opponent->name) + ",\"health\":" + std::to_string(v.opponent->health) + "}";
+    if (v.dash) json += ",\"dash\":" + std::to_string(*v.dash);
+    return "{\"health\":" + std::to_string(v.health) + ",\"energy\":" + std::to_string(v.energy) + ",\"loaded\":" +
+           std::to_string(v.loaded) + ",\"capacity\":" + std::to_string(v.capacity) + ",\"reload\":" + std::to_string(v.reload) + json + "}";
+}
+
+LandVitals landVitals(std::mt19937 &random)
+{
+    LandVitals v;
+    v.health = (random() % 5) * .25f;
+    v.energy = (random() % 3) * .5f;
+    v.capacity = 3;
+    v.loaded = random() % 4;
+    v.reload = (random() % 2) * .5f;
+    v.hero = {0, "Charles de Maure", random() % 2 ? "201" : "", "battle_interface\\two", "0,0,0.5,0.5"};
+    if (random() % 2) v.effects = {"poison", "healing"};
+    v.potions = random() % 3;
+    if (random() % 2) v.officers.push_back({{12, "Tichingitu", "", "battle_interface\\two", ""}, .5f, 1.f});
+    if (random() % 3 == 0) v.opponent = LandOpponent{"Captain \"Bones\"", (random() % 4) * .25f};
+    if (random() % 2) v.dash = (random() % 3) * .5f;
+    return v;
+}
+
+// publishVitals (android_ui.hpp): the old text compare with its 100 ms throttle beside the typed one.
+void vitalsChannel()
+{
+    std::mt19937 random(31);
+    const auto picture = [](const LandPortrait &p) { return p.face.empty() && !p.texture.empty() ? "{\"texture\":\"" + p.texture + "\"}" : std::string("null"); };
+    std::string lastText;
+    uint32_t lastTextTick = 0, lastTick = 0;
+    HudChannel<std::tuple<const std::optional<LandVitals> &>> channel;
+    std::vector<std::string> oldSent, newSent;
+    size_t builds = 0, unchanged = 0, loops = 0;
+    std::optional<LandVitals> vitals;
+    uint32_t tick = 0;
+    for (int i = 0; i < 6000; ++i)
+    {
+        tick += 1 + random() % 40;
+        switch (random() % 10)
+        {
+        case 0: vitals = landVitals(random); break;
+        case 1: vitals.reset(); break;
+        default: break;
+        }
+        ++loops;
+        // old
+        const std::string text = vitals ? oldVitalsJson(*vitals) : std::string();
+        if (!(lastText == text || (!text.empty() && tick - lastTextTick < 100)))
+        {
+            lastText = text; lastTextTick = tick;
+            oldSent.push_back(text.empty() ? "null" : text);
+        }
+        // new, as publishVitals
+        const auto key = std::tie(vitals);
+        if (channel.same(key)) { ++unchanged; continue; }
+        if (vitals && tick - lastTick < 100) continue;
+        if (const auto *json = channel.publish(key, [&] { ++builds; return vitals ? landVitalsJson(*vitals, picture) : std::string(); }))
+        {
+            lastTick = tick;
+            newSent.push_back(json->empty() ? "null" : *json);
+        }
+    }
+    assert(oldSent == newSent);
+    assert(builds + unchanged <= loops);
+    std::printf("  %-14s %5zu loops, %4zu publications identical, %5zu JSON builds (old: %zu)\n", "vitals", loops,
+                newSent.size(), builds, loops);
+}
+
 template <class Run> double nanosPerLoop(int loops, Run &&run)
 {
     const auto start = std::chrono::steady_clock::now();
@@ -473,6 +605,17 @@ void bench()
         const double now = nanosPerLoop(loops, [&] { sink = sink + state.publication(1000).has_value(); });
         std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns\n", "ship", old, now);
     }
+    {
+        const auto picture = [](const LandPortrait &) { return std::string("null"); };
+        std::optional<LandVitals> vitals = landVitals(random);
+        vitals->officers.push_back({{13, "Mary Casper", "", "two", ""}, .75f, .5f});
+        const std::string last = landVitalsJson(*vitals, picture);
+        HudChannel<std::tuple<const std::optional<LandVitals> &>> channel;
+        channel.publish(std::tie(vitals), [&] { return landVitalsJson(*vitals, picture); });
+        const double old = nanosPerLoop(loops, [&] { const auto j = landVitalsJson(*vitals, picture); sink = sink + (j == last); });
+        const double now = nanosPerLoop(loops, [&] { sink = sink + channel.same(std::tie(vitals)); });
+        std::printf("  bench %-14s unchanged loop: old %7.1f ns, new %6.1f ns (JSON part only; reading the attributes is unchanged)\n", "vitals", old, now);
+    }
 }
 } // namespace
 
@@ -485,5 +628,8 @@ int main(int argc, char **argv)
     combatChannel();
     gameplayChannel();
     shipChannel();
+    spyglassChannel();
+    reloadPlaceChannel();
+    vitalsChannel();
     std::puts("android_hud_channels: ok");
 }

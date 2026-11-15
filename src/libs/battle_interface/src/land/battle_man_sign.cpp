@@ -90,11 +90,15 @@ void BIManSign::Draw()
     auto *icons=allIcons ? allIcons->GetAttributeClass("id0") : nullptr;
     if(icons && icons->GetAttribute("health") && icons->GetAttribute("energy")) {
         const auto ratio=[icons](const char *key){const float n=icons->GetAttributeAsFloat(key);return std::isfinite(n)?std::clamp(n,0.f,1.f):0.f;};
-        const int capacity=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootMax",0)),0,100000);
-        const int loaded=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootCur",0)),0,capacity);
-        storm::android::publishVitals("{\"health\":"+std::to_string(ratio("health"))+",\"energy\":"+std::to_string(ratio("energy"))+
-            ",\"loaded\":"+std::to_string(loaded)+",\"capacity\":"+std::to_string(capacity)+",\"reload\":"+std::to_string(ratio("gunprogress"))+storm::android::landStatusJson(allIcons)+"}");
-    } else storm::android::publishVitals("");
+        std::optional<storm::android::LandVitals> vitals(std::in_place);
+        vitals->health=ratio("health");
+        vitals->energy=ratio("energy");
+        vitals->capacity=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootMax",0)),0,100000);
+        vitals->loaded=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootCur",0)),0,vitals->capacity);
+        vitals->reload=ratio("gunprogress");
+        storm::android::readLandStatus(allIcons, *vitals);
+        storm::android::publishVitals(vitals, storm::android::landPortraitPicture);
+    } else storm::android::publishVitals(std::nullopt);
 #else
     if (m_nVBufID != -1 && m_nIBufID != -1)
     {

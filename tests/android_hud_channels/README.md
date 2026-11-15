@@ -8,4 +8,7 @@ differs from the last one sent. `check.cpp` drives each channel's real state cla
 random walk of its mutations, new UI hosts included, and runs the old publisher (build the JSON every loop,
 compare the text) beside the new one: both must publish the same byte-identical sequence, and a loop whose
 typed state did not change must not build the JSON. `run.py` checks that the production publishers use the
-keys the check drives. Not a device check.
+keys the check drives. `ship` keeps its own publication (100 ms throttle, forced changes) and returns before
+building when its key is the one last published; `vitals` compares the typed `LandVitals`
+(`platform/android_land_vitals.hpp`), and the check also proves its JSON byte-identical to the old
+concatenation. Not a device check.

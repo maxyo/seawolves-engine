@@ -170,7 +170,7 @@ void BATTLE_LAND_INTERFACE::Release()
 {
 #ifdef __ANDROID__
     storm::android::publishWorldInfo("");
-    storm::android::publishVitals("");
+    storm::android::publishVitals(std::nullopt);
 #endif
     m_pRS = nullptr;
     STORM_DELETE(m_pManSign);
