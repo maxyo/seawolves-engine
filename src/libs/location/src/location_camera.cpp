@@ -9,6 +9,7 @@
 //============================================================================================
 
 #include "location_camera.h"
+#include <cmath>
 #ifdef __ANDROID__
 #include <platform/android_camera.hpp>
 #include <platform/android_camera_zoom.hpp>
@@ -352,7 +353,7 @@ void LocationCamera::Realize(uint32_t delta_time)
 
 #ifdef __ANDROID__
     // Keep a stable horizontal camera heading even before the movement stick is held.
-    MovementViewDirection();
+    UpdateMovementHeading();
 #endif
     rs->SetCamera(realPos, lookTo, vUp);
 
@@ -361,6 +362,19 @@ void LocationCamera::Realize(uint32_t delta_time)
     rs->SetCamera(camPos, lookTo, vUp);
 #endif
 }
+
+#ifdef __ANDROID__
+void LocationCamera::UpdateMovementHeading()
+{
+    const auto view = lookTo - camPos;
+    const float horizontal = std::hypot(view.x, view.z);
+    // At the vertical pole screen-forward has no horizontal direction. Keep
+    // the last camera heading, never the actor heading (which the stick turns).
+    if (std::isfinite(horizontal) && std::isfinite(view.y) &&
+        horizontal > .001f && horizontal > .001f * std::fabs(view.y))
+        movementForward = glm::vec3(view.x / horizontal, 0.0f, view.z / horizontal);
+}
+#endif
 
 #ifndef LOCATIONCAMERA_DEBUG
 void LocationCamera::Realize(uint32_t delta_time)

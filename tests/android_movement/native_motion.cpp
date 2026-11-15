@@ -2,6 +2,7 @@
 #include "storm_glm.h"
 #include <cassert>
 #include <iostream>
+#include <limits>
 using namespace storm::android;
 // The production fragments compute with GLM vectors directly.
 using Vec3 = glm::vec3;
@@ -31,9 +32,11 @@ struct Camera {
     Vec3 lookTo{0,0,1},camPos{},pos{},fromLook{};
     float lheight=1;
     void ExecuteTopos(float);
-    mutable Vec3 movementForward{0,0,1};
+    void UpdateMovementHeading();
+    Vec3 movementForward{0,0,1};
 #include "camera_interface.inc"
 } camera;
+#include "camera_heading.inc"
 #include "camera_topos.inc"
 struct Motion
 {
@@ -101,6 +104,29 @@ struct Player:Motion
 #include "stop.inc"
 int main()
 {
+    // Reading the published heading (including diagnostics) never changes it.
+    // Only the completed camera update publishes a new basis, even without input.
+    {
+        Camera observed;
+        const Camera &readOnly = observed;
+        observed.lookTo = {3,-4,0};
+        same(readOnly.MovementViewDirection(), {0,0,1});
+        same(readOnly.MovementViewDirection(), {0,0,1});
+        observed.UpdateMovementHeading();
+        same(readOnly.MovementViewDirection(), {1,0,0});
+        for (const Vec3 invalid : {Vec3(0,-10,0), Vec3(.00001f,-10,.00001f),
+                                  Vec3(std::numeric_limits<float>::infinity(),0,1),
+                                  Vec3(1,std::numeric_limits<float>::quiet_NaN(),0)})
+        {
+            observed.lookTo = invalid;
+            observed.UpdateMovementHeading();
+            same(readOnly.MovementViewDirection(), {1,0,0});
+        }
+        observed.lookTo = {0,-4,-3};
+        same(readOnly.MovementViewDirection(), {1,0,0});
+        observed.UpdateMovementHeading();
+        same(readOnly.MovementViewDirection(), {0,0,-1});
+    }
     Player slow;
     slow.step(); same(slow.curPos,{.02f,0,0}); // full native speed=2, touch target=.2
     slow.release(std::nullopt); slow.androidMotion=false;
@@ -132,7 +158,7 @@ int main()
     // change between walking and swimming (it used to be dropped in water: the waves carried
     // the hero one way and the stick could not change it).
     {
-        Player swimmer; swimmer.androidCameraRelative=true; camera.lookTo={0,0,1};
+        Player swimmer; swimmer.androidCameraRelative=true; camera.lookTo={0,0,1};camera.UpdateMovementHeading();
         swimmer.isSwim=true; swimmer.isMove=false; swimmer.androidRunTier=true;
         swimmer.analog(MovementAxes{1,0,1,true}); // pushed right
         assert(swimmer.isMove && !swimmer.lastRun && !swimmer.androidRunTier && swimmer.strafeMove==0 && !swimmer.androidMotion);
@@ -202,6 +228,7 @@ int main()
     {
         const float c=cam*.017453292519943295f,a=angle*.017453292519943295f;
         camera.lookTo={std::sin(c),0,std::cos(c)};
+        camera.UpdateMovementHeading();
         Player moving;
         moving.analog({std::sin(a),std::cos(a),.5f,true});moving.step();
         assert(!moving.lastBack&&!moving.lastRun);
@@ -229,6 +256,7 @@ int main()
                 camera.pos=camera.lookTo-Vec3(0,camera.lheight,0);
                 camera.ExecuteTopos(.1f); // real locator camera tracks the actor position
             }
+            camera.UpdateMovementHeading(); // publish the completed camera frame, independent of input
             const Vec3 before=moving.curPos;
             moving.analog(*held.read());moving.step(); // no new pointer/MOVE packet
             assert(moving.androidCameraRelative && "live locator camera must own movement basis");
@@ -237,14 +265,14 @@ int main()
         }
         // A pitched/vertical view keeps the last camera heading independently
         // of character yaw; leaving the pole picks up the new camera immediately.
-        camera.lookTo={3,-4,0};moving.analog({0,1,.5f,true});moving.step();
+        camera.lookTo={3,-4,0};camera.UpdateMovementHeading();moving.analog({0,1,.5f,true});moving.step();
         for(Vec3 pole : {Vec3(0,-10,0),Vec3(.00001f,-10,.00001f)})
         {
-            camera.lookTo=pole;moving.ay=2;
+            camera.lookTo=pole;camera.UpdateMovementHeading();moving.ay=2;
             moving.analog({1,0,.5f,true});
             same(moving.androidMotionDirection,{0,0,-1});
         }
-        camera.lookTo={0,-4,-3};moving.analog({0,1,.5f,true});
+        camera.lookTo={0,-4,-3};camera.UpdateMovementHeading();moving.analog({0,1,.5f,true});
         same(moving.androidMotionDirection,{0,0,-1});
         moving.release(std::nullopt);moving.androidMotion=false;
         const Vec3 stopped=moving.curPos;
@@ -276,7 +304,7 @@ int main()
     assert(!eyes.androidCameraRelative&&eyes.lastBack&&eyes.ay==0&&eyes.curPos.z<0);
     eyes.analog({1,0,.5f,true});eyes.step();
     assert(eyes.ay==0&&eyes.androidMotionDirection.x==1&&eyes.androidMotionDirection.z==0);
-    camera.isLookMode=false;camera.lookTo={0,0,1};
+    camera.isLookMode=false;camera.lookTo={0,0,1};camera.UpdateMovementHeading();
     Player tiers;
     for(float radius : {.2f,.4f,.79f}) {tiers.analog({0,1,radius,true});assert(tiers.androidMotionSpeed==2&&!tiers.lastRun);}
     for(float radius : {.8f,1.f,.7f,.65f}) {tiers.analog({0,1,radius,true});assert(tiers.androidMotionSpeed==5&&tiers.lastRun);}

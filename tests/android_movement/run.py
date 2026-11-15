@@ -37,6 +37,8 @@ with tempfile.TemporaryDirectory(prefix="storm-movement-") as d:
     camera_start = camera_header.index("    // Use the actual camera")
     (Path(d)/"camera_interface.inc").write_text(camera_header[camera_start:camera_header.index("#endif", camera_start)])
     camera_source = (source_root/"src/libs/location/src/location_camera.cpp").read_text()
+    camera_start = camera_source.index("void LocationCamera::UpdateMovementHeading()")
+    (Path(d)/"camera_heading.inc").write_text(camera_source[camera_start:camera_source.index("#endif", camera_start)].replace("LocationCamera::", "Camera::"))
     camera_start = camera_source.index("void LocationCamera::ExecuteTopos(")
     camera_end = camera_source.index("// Free flying camera execution", camera_start)
     (Path(d)/"camera_topos.inc").write_text(camera_source[camera_start:camera_end].replace("LocationCamera::", "Camera::"))
