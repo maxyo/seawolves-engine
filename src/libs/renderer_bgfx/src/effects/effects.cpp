@@ -144,7 +144,7 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         } else if (!bgfx::isValid(store->handle) || (store->transcoded && !store->full_chain)) {
             ++resources.failed; ++load.failures.reload_required; name("texture fallback: " + store->name);
         }
-        const int upscale = upscales().prepare_scene(*store);
+        const int upscale = upscales().prepare_scene(*store, load.gate.generation());
         if (upscale == 1) { ++resources.textures; name("x2 data/residency: " + store->name); }
         else if (upscale >= 2) {
             ++resources.failed;
@@ -900,7 +900,9 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     const std::array<int, 2> draw_shadows{lighting_.shadows().initial_state(!lighting_.lamp_shadows().interior()), lighting_.lamp_shadows().initial_state()};
     lighting_.probe().end_frame(scene_frame, lighting_.normal_maps());
     lighting_.end_frame();
-    upscales().end_frame();
+    const auto &upload_load = location_load();
+    upscales().end_frame(LoadingUploadScope::for_frame(upload_load.gate.generation(),
+        !upload_load.sealed && upload_load.gate.state() == SceneReadiness::State::Warming, upload_load.opaque));
     {
         const auto now = std::chrono::steady_clock::now();
         const float dt = last_frame_end_ == std::chrono::steady_clock::time_point{}

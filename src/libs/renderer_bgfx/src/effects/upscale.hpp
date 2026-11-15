@@ -16,6 +16,7 @@
 #pragma once
 
 #include "effects/generation_priority.hpp"
+#include "effects/loading_upload.hpp"
 
 #include "storm/fx/upscale.hpp"
 
@@ -54,6 +55,7 @@ struct UpscaleEntry
         Resident, // `handle` is valid
         Failed,   // logged; drawn at its own size
     };
+    uint64_t upload_generation = 0; // game thread: claimed by prepare_scene for the current location
     bool selected = false; // actual current budget plan; queried only on the game thread
     GenerationPriority priority; // nearest player distance across observed instances
     uint16_t queued_scene = 0;
@@ -93,10 +95,10 @@ class Upscales
     bool planned() const { return !enabled_ || planned_; }
     void begin_scene();
     // All current-location targets must exist on disk; only the budget-selected subset must be resident.
-    int prepare_scene(shim::TexStore &store);
+    int prepare_scene(shim::TexStore &store, uint64_t generation = 0);
     // On: the last plan (they run twice a second) found every texture it chose resident at ×2 (render::UpscaleSettled).
     bool settled() const;
-    void end_frame();
+    void end_frame(LoadingUploadScope scope = {});
 
     struct Stats
     {

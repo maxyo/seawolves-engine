@@ -22,7 +22,6 @@ using Clock = std::chrono::steady_clock;
 constexpr auto kPlanPeriod = std::chrono::milliseconds(500);
 constexpr auto kLogPeriod = std::chrono::seconds(5);
 constexpr auto kForget = std::chrono::seconds(5);
-constexpr int kUploadsPerFrame = 2; // a 2048² ×2 is ~3 MB: two per frame keep the frame time flat
 
 std::mutex directory_mutex;
 std::filesystem::path upscale_directory;
@@ -269,22 +268,26 @@ void Upscales::look_up(const std::shared_ptr<UpscaleEntry> &entry, bool read)
     });
 }
 
-void Upscales::end_frame()
+void Upscales::end_frame(LoadingUploadScope scope)
 {
     if (!enabled_)
         return;
     const Clock::time_point now = Clock::now();
     // The uploads of the ×2 read since (the plan chose them; it may have dropped them meanwhile: release()).
-    int uploads = 0;
+    UploadBatch batch(scope.active());
+    const auto batch_start = Clock::now();
     for (const std::weak_ptr<UpscaleEntry> &weak : entries_)
     {
-        if (uploads >= kUploadsPerFrame)
-            break;
         const std::shared_ptr<UpscaleEntry> entry = weak.lock();
         if (!entry || entry->state != UpscaleEntry::Read)
             continue;
-        ++uploads;
+        if (scope.active() && !scope.accepts(entry->upload_generation, entry->selected))
+            continue; // opaque loading admits only this location's budget-selected ready bytes
         const auto upload_start = Clock::now();
+        const double elapsed = std::chrono::duration<double, std::milli>(upload_start - batch_start).count();
+        if (!batch.allows(entry->ktx.size(), elapsed))
+            break;
+        batch.submitted(entry->ktx.size());
         bgfx::TextureInfo info{};
         const bgfx::TextureHandle handle =
             bgfx::createTexture(bgfx::copy(entry->ktx.data(), static_cast<uint32_t>(entry->ktx.size())), BGFX_TEXTURE_NONE,
@@ -310,6 +313,14 @@ void Upscales::end_frame()
                 std::chrono::duration<double, std::milli>(Clock::now() - upload_start).count(),
                 static_cast<unsigned long long>(entry->bytes), texture::Service::instance().cache_scope_current(entry->cache_task));
         entry->cache_ready = {};
+    }
+    if (scope.active() && batch.uploads() != 0)
+    {
+        const double elapsed = std::chrono::duration<double, std::milli>(Clock::now() - batch_start).count();
+        shim::logf("loading x2 upload batch: generation=%llu uploads=%u bytes=%llu submit-span=%.3f ms singleton-or-submit-overrun=%d (CPU; not GPU completion)",
+            static_cast<unsigned long long>(scope.generation), batch.uploads(),
+            static_cast<unsigned long long>(batch.bytes()), elapsed,
+            batch.bytes() > UploadBatch::kLoadingBytes || elapsed > UploadBatch::kLoadingMilliseconds);
     }
     // The first plan after switching on waits for two frames of draws too (a slow frame is longer than the period).
     ++frames_since_on_;
@@ -409,15 +420,17 @@ void Upscales::begin_scene()
     if (!enabled_) return;
     planned_ = false; frames_since_on_ = 0; next_plan_ = Clock::now() + kPlanPeriod;
     for (const auto &weak : entries_) if (auto entry = weak.lock()) {
+        entry->upload_generation = 0;
         entry->selected = false; entry->nearest = entry->last_distance = -1.0f; entry->last_drawn = {};
     }
 }
-int Upscales::prepare_scene(shim::TexStore &store)
+int Upscales::prepare_scene(shim::TexStore &store, uint64_t generation)
 {
     if (wanted_ && !configured_) { reconfigure(); if (!configured_) return 1; }
     if (wanted_ && !supported_) return 3; // requested method unavailable, not silently ready
     if (!enabled_ || !store.upscale) return 0;
     const auto &entry = store.upscale;
+    entry->upload_generation = generation;
     auto &service = texture::Service::instance();
     service.promote_cache(entry->cache_task);
     const int state = entry->state.load(std::memory_order_acquire);

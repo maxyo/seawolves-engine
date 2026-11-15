@@ -314,6 +314,51 @@ void run(shim::Device &device, bool noop)
     }
     require(entry->state != effects::UpscaleEntry::Resident && !bgfx::isValid(entry->handle), "real residency plan evicts far upscale");
     expect(harness.draw(base, 1000.0f), base_handle, original.pixels, 0, "eviction returns to patterned base without blank frame");
+    // Real Read -> Resident publication under the loading batch policy. Container encoding,
+    // bgfx allocation/dimension validation and state transitions remain production operations.
+    // The permission is seeded here; loading_upload/check.cpp exercises the actual opacity receipt.
+    effects::Upscales batcher;
+    batcher.configure(true, 16);
+    std::vector<std::shared_ptr<effects::UpscaleEntry>> batch_entries;
+    for (int i = 0; i < 6; ++i)
+    {
+        batcher.on_texture_loaded(*base->store, "locations/stone_swap", "fixture/stone_swap.tga.tx");
+        auto ready = base->store->upscale;
+        require(bool(ready), "batch registration has a real upscale entry");
+        stage_upload(*ready, format, kSize * 2);
+        ready->selected = i != 5;
+        ready->nearest = 0.0f;
+        batcher.prepare_scene(*base->store, i == 4 ? 42 : 43);
+        batch_entries.push_back(std::move(ready));
+    }
+    batcher.end_frame({43, true});
+    unsigned published = 0;
+    for (size_t i = 0; i < 4; ++i)
+        if (batch_entries[i]->state == effects::UpscaleEntry::Resident)
+        {
+            ++published;
+            require(bgfx::isValid(batch_entries[i]->handle), "loading batch publishes only valid GPU handles");
+        }
+    // A driver submit can itself exceed the 4ms limit. Progress is required, a fixed
+    // minimum batch throughput is not: policy byte/time/count boundaries are deterministic CPU controls.
+    require(published > 0 && published <= 4, "opaque current-generation batch makes bounded real upload progress");
+    require(batch_entries[4]->state == effects::UpscaleEntry::Read &&
+            batch_entries[5]->state == effects::UpscaleEntry::Read,
+            "old generation and nonselected Read entries receive no loading upload");
+    batcher.end_frame({44, true});
+    require(batch_entries[4]->state == effects::UpscaleEntry::Read &&
+            batch_entries[5]->state == effects::UpscaleEntry::Read,
+            "replacement scene receives no stale Read upload allowance");
+    unsigned before = 0;
+    for (const auto &ready : batch_entries) before += ready->state == effects::UpscaleEntry::Resident;
+    batcher.end_frame(); // reveal/cancel: exact legacy two-upload policy
+    unsigned after = 0;
+    for (const auto &ready : batch_entries) after += ready->state == effects::UpscaleEntry::Resident;
+    require(after - before == 2, "ordinary Read upload remains two per frame after loading scope ends");
+    std::printf("PASS: real loading batch publication %u handles; old/nonselected scope excluded, gameplay cap retained\n", published);
+    batcher.configure(false, 16);
+    batch_entries.clear();
+
     upscales.configure(false, 16);
     base->store->upscale.reset();
     entry.reset();
