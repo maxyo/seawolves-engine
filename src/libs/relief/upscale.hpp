@@ -4,6 +4,8 @@
 // is stretched bilinearly. Contract: README.md.
 #pragma once
 
+#include "backend.hpp"
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -29,10 +31,12 @@ class Upscaler
     void Cancel();
     void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry); // worker only; underlying network owns the lease
     void SetCpuAdmission(std::function<std::shared_ptr<void>()> admission); // worker only
+    CpuInferenceTiming CpuTiming() const { return cpu_timing_; }
     double infer_ms() const { return infer_ms_; } // inference time of the last Run
 
   private:
     std::unique_ptr<Network> network_;
+    CpuInferenceTiming cpu_timing_;
     double infer_ms_ = 0.0;
 };
 

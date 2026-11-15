@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
  # method with inert ORT/model teardown doubles (not an inference speed test).
  if '--baseline' not in sys.argv:
   backend=(root/'src/libs/relief/backend.cpp').read_text()
-  start=backend.index('        auto cpu_lease =')
+  start=backend.index('        const auto admission_started =')
   prefix=backend[start:backend.index('        const int64_t shape[4]',start)]
   prepare=(root/'src/libs/relief/prepare.cpp').read_text()
   start=prepare.index('void Session::SetCpuBudget(')
@@ -63,8 +63,11 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
 namespace fx=storm::fx;
 using Clock=std::chrono::steady_clock;
 void Log(const char*,...){}
+double Ms(Clock::time_point t){return std::chrono::duration<double,std::milli>(Clock::now()-t).count();}
+struct Timing {double admission_wall_ms=0;};
 int active=0;
 struct CpuRun {
+ Timing cpu_timing_;
  std::function<std::shared_ptr<void>()> cpu_admission_;
  bool Run(std::string &error) {
  PREFIX

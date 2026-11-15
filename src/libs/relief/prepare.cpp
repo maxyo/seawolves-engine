@@ -60,6 +60,17 @@ void Log(const char *format, ...)
 namespace
 {
 using Clock = std::chrono::steady_clock;
+void LogCpuTiming(const char *texture, const char *model, const CpuInferenceTiming &timing, bool ok)
+{
+    if (!timing.applicable) {
+        Log("relief timing %s %s: CPU admission/ORT wall N/A (no CPU sample; GPU not applicable), success=%d", texture, model, ok);
+        return;
+    }
+    Log("relief timing %s %s: CPU admission wall %.3f ms, ORT Run wall %.3f ms, %llu tiles, success=%d (wall, not CPU time)",
+        texture, model, timing.admission_wall_ms, timing.ort_wall_ms,
+        static_cast<unsigned long long>(timing.tiles), ok);
+}
+
 constexpr uint32_t kTxFlagPalette = 1, kTxFlagCubemap = 2;
 
 double Seconds(Clock::time_point since)
@@ -751,7 +762,9 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
         // The crash guard around the GPU's first texture (backend.hpp MarkGpuRunning): the ×2 is its first network.
         if (use_gpu && impl_->gpu_unproven)
             MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-        if (!upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure))
+        const bool upscaled = upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure);
+        LogCpuTiming(candidate->name.c_str(), "upscale", upscaler.CpuTiming(), upscaled);
+        if (!upscaled)
         {
             if (impl_->cancelled)
                 failure = "cancelled";
@@ -787,6 +800,7 @@ Outcome Session::PrepareFile(const std::filesystem::path &textures, const std::f
             const Clock::time_point infer_start = Clock::now();
             const bool ok = model.Infer(image, pw, ph, out, failure);
             const double ms = std::chrono::duration<double, std::milli>(Clock::now() - infer_start).count();
+            LogCpuTiming(candidate->name.c_str(), &model == nets[0].get() ? "normal" : &model == nets[1].get() ? "height" : "roughness", model.CpuTiming(), ok);
             infer_ms += ms;
             infer_texels += static_cast<double>(pw) * ph;
             char part[64];
@@ -1074,8 +1088,9 @@ Outcome Session::Upscale(const std::filesystem::path &textures, const std::files
     Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
     if (use_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
-    if (!upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2,
-                              failure))
+    const bool upscaled = upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2, failure);
+    LogCpuTiming(name.c_str(), "upscale", upscaler.CpuTiming(), upscaled);
+    if (!upscaled)
     {
         if (impl_->cancelled)
             failure = "cancelled";

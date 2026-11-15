@@ -70,6 +70,7 @@ bool Upscaler::Run(std::span<const uint8_t> rgba, int width, int height, bool wr
 {
     using Clock = std::chrono::steady_clock;
     infer_ms_ = 0.0;
+    cpu_timing_ = {};
     if (width <= 0 || height <= 0 || rgba.size() < static_cast<size_t>(width) * height * 4)
     {
         error = "no image";
@@ -100,8 +101,9 @@ bool Upscaler::Run(std::span<const uint8_t> rgba, int width, int height, bool wr
             }
             output.resize(plane * 16 * 3);
             const Clock::time_point start = Clock::now();
-            if (!network_->Infer(input.data(), pw, ph, output.data(), error))
-                return false;
+            const bool inferred = network_->Infer(input.data(), pw, ph, output.data(), error);
+            cpu_timing_.Add(network_->CpuTiming());
+            if (!inferred) return false;
             infer_ms_ += std::chrono::duration<double, std::milli>(Clock::now() - start).count();
             // The tile's ×4 without its padding, each 2x2 averaged in linear light.
             const size_t big = plane * 16;
