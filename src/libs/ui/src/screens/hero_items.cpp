@@ -506,7 +506,7 @@ class ItemsScreen final : public Screen
     // items.c EquipPress): put on / take off with the game's own words; use, open a map, load ammunition with
     // ours (the game writes «Взять» on all of them); nothing for an item the game has no use for (a jewel, a
     // potion drunk in the field). Taking off a timed artefact uses it up (RemoveCharacterArtefactEquip): the
-    // game's removal, with an explicit consumption warning and held to confirm. Quest items keep their action: a letter is read, a quest map opened.
+    // game's removal, marked in red and held to confirm. Quest items keep their action: a letter is read, a quest map opened.
     Json Action(Bindings &bindings, const Widget &row, const Widget *fact, bool worn)
     {
         const Widget *equip = a_->One("EQUIP_BUTTON");
@@ -527,10 +527,7 @@ class ItemsScreen final : public Screen
         else if (kind == "amulet" && worn)
         {
             destroys = !Field(fact, "days").empty();
-            if (destroys)
-                label = bindings.Text("items.delete_hold");
-            if (!destroys) // an artefact without a term stays in the bag (the game still writes «Удалить»)
-                label = bindings.Text("items.take_off");
+            label = bindings.Text("items.take_off");
         }
         else if (kind != "equip" && kind != "amulet")
         {
@@ -544,8 +541,6 @@ class ItemsScreen final : public Screen
         const std::string reason = UnavailableReason(bindings, *equip, fact);
         Json action{{"id", "item-equip"}, {"label", label}, {"variant", destroys ? "danger" : "primary"}, {"hold", destroys},
                     {"disabled", !ready}, {"reason", reason}, {"busy", bindings.Pending("item-equip")}};
-        if (destroys)
-            action["sub"] = bindings.Text("items.remove_consumes");
         const Widget *target = equip;
         bindings.On("item-equip", "", [this, &bindings, target, ready](const Event &) {
             sent_revision_ = 0;

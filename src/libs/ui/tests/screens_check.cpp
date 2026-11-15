@@ -2379,7 +2379,7 @@ static void ItemCategories(const std::string &models)
         {"a weapon in the bag", {{"slot", "blade"}, {"worn", "0"}, {"action", "equip"}}, "Equip", true,
          {{"label", "Equip"}, {"variant", "primary"}, {"hold", false}, {"disabled", false}}},
         {"a worn timed artefact: taking it off uses it up, held to confirm", {{"slot", "amulet"}, {"worn", "1"}, {"action", "amulet"}, {"days", "70"}, {"remain", "64"}},
-         "Delete", true, {{"label", "<items.delete_hold>"}, {"sub", "<items.remove_consumes>"}, {"variant", "danger"}, {"hold", true}, {"disabled", false}}},
+         "Delete", true, {{"label", "<items.take_off>"}, {"variant", "danger"}, {"hold", true}, {"disabled", false}}},
         {"a worn artefact without a term stays in the bag: taken off", {{"slot", "amulet"}, {"worn", "1"}, {"action", "amulet"}}, "Delete", true,
          {{"label", "<items.take_off>"}, {"variant", "primary"}, {"hold", false}, {"disabled", false}}},
         {"an artefact in the bag goes on", {{"slot", "amulet"}, {"worn", "0"}, {"action", "amulet"}, {"days", "70"}}, "Equip", true,
@@ -2430,6 +2430,8 @@ static void ItemCategories(const std::string &models)
         for (const auto &[key, value] : c.action.items())
             fields = fields && action.contains(key) && action[key] == value;
         Expect(fields, std::string(c.what) + ": " + action.dump());
+        if (c.fact.count("action") && c.fact.at("action") == "amulet")
+            Expect(!action.contains("sub"), "amulet action has no extra consumption caption");
         if (c.fact.count("action") && c.fact.at("action") == "amulet" && !c.fact.count("days"))
         {
             bool has_term = false;
