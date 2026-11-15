@@ -142,7 +142,8 @@ inline bool isPatchTargetPath(const fs::path &relative)
     const auto extension = android::resourceKey(relative.extension());
     if (extension != ".c" && extension != ".h")
         return false;
-    if (key == "program/dialog.c")
+    // Reviewed world-map pirate-frequency patch; keep the rest of Encounters closed.
+    if (key == "program/dialog.c" || key == "program/encounters/encounters_map.c")
         return true;
     // Dialog texts are per language: program/dialogs/<language>/..., each
     // language file is a target of its own.
