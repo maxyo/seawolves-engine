@@ -327,27 +327,29 @@ bool CoreImpl::PrepareLoadingScene()
     auto *renderer = static_cast<SERVICE *>(GetService("renderer"));
     auto *animation = static_cast<SERVICE *>(GetService("AnimationServiceImp"));
     if (!renderer) return AbortLoadingTransaction(storm::loading::Outcome::Unavailable, initial.generation);
-    // A bound for a preparation that stops progressing (no resource count, state or phase change; cooling waits
-    // for the device and does not count). It ends the transaction with an error instead of a silent spinner.
+    // A preparation that stops progressing (no change of what the reveal waits for) is reported loudly once; the
+    // loading screen shows it as slow (SceneReadiness::slow) with its Cancel. It never ends the game by itself.
     std::string progress_signature;
     auto progress_at = loading_started;
+    bool stall_reported = false;
     while (true) {
         const auto status = storm::render::GetSceneLoadStatus();
         if (!status.active || status.generation != initial.generation)
             return AbortLoadingTransaction(storm::loading::Outcome::Invalidated, initial.generation);
-        const std::string signature = status.state + '/' + status.phase + '/' + std::to_string(status.textures) + '/' +
-            std::to_string(status.relief) + '/' + std::to_string(status.shadows) + '/' + std::to_string(status.failed);
+        const std::string signature = status.state + '/' + std::to_string(status.textures) + '/' +
+            std::to_string(status.shadows) + '/' + std::to_string(status.failed);
         const auto now = std::chrono::steady_clock::now();
-        if (signature != progress_signature || status.phase == "cooling") {
+        if (signature != progress_signature) {
             progress_signature = signature;
             progress_at = now;
+            stall_reported = false;
         }
-        else if (now - progress_at >= kLoadingStall) {
-            Trace("ERROR: Stock loading transaction made no progress for %lld s: state=%s textures=%u relief=%u "
-                  "shadows=%u failed=%u (%s)", static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(
-                      kLoadingStall).count()), status.state.c_str(), status.textures, status.relief, status.shadows,
-                  status.failed, status.detail.c_str());
-            return AbortLoadingTransaction(storm::loading::Outcome::Stalled, initial.generation);
+        else if (!stall_reported && now - progress_at >= kLoadingStall) {
+            stall_reported = true;
+            Trace("ERROR: Stock loading transaction made no progress for %lld s: state=%s textures=%u shadows=%u "
+                  "failed=%u (%s); still waiting, the player can cancel", static_cast<long long>(
+                      std::chrono::duration_cast<std::chrono::seconds>(kLoadingStall).count()),
+                  status.state.c_str(), status.textures, status.shadows, status.failed, status.detail.c_str());
         }
         const auto host = storm::platform::PumpLoadingPlatform(initial.generation);
         if (host == storm::platform::LoadingPlatformState::Suspended) {
@@ -384,8 +386,6 @@ bool CoreImpl::PrepareLoadingScene()
         for (auto id : ids) if (auto *entity = GetEntityPointerSafe(id))
             entity->ProcessStage(Entity::Stage::loading_realize, 0);
         renderer->RunEnd(); // stock artwork, actual Present, upload/shadow/resource pumps
-        if (storm::loading::unavailable)
-            return AbortLoadingTransaction(storm::loading::Outcome::Unavailable, initial.generation);
         storm::platform::PumpLoadingSchedule(initial.generation, storm::platform::LoadingSchedulePhase::FramePresented);
         ++loading_frames;
         storm::loading::first_frame = false;

@@ -54,7 +54,6 @@ struct LocationLoad {
     std::unordered_set<std::string> failed_textures;
     bool sealed = true, pipelines_pending = false;
     bool logged_error = false, logged_ready = false, logged_slow = false;
-    uint32_t logged_pending = UINT32_MAX;
     uint64_t phase_polled_at = 0;
     bool cooling = false;
     render::LoadingOpaque opaque;
@@ -90,7 +89,7 @@ void BeginSceneResources(const char *scene)
     // Stock completion covers both on-land loading and SEA_AI's explicit sea scene.
     // Other scene names are not silently admitted to this resource contract.
     load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea";
-    load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
+    load.logged_error = load.logged_ready = load.logged_slow = false;
     load.failures = {}; load.pipelines_pending = false;
     load.phase_polled_at = 0; load.cooling = false;
     if (load.sealed) fx::SharedCpuAdmission().begin(0, false);
@@ -148,26 +147,21 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         }
         ++it;
         store->sync(); // pumps completed transcodes, including textures outside the initial camera
-        if (store->fallback_bytes || store->transcode_job || store->any_dirty) {
-            ++resources.textures; name("texture upload: " + store->name);
-        } else if (!bgfx::isValid(store->handle) || (store->transcoded && !store->full_chain)) {
-            ++resources.failed; ++load.failures.reload_required; name("texture fallback: " + store->name);
-        }
+        // A texture with a handle draws (its fallback while the transcode runs, or the previous upload while new
+        // contents wait for the next sync): only one without any GPU copy yet holds the reveal.
+        const bool drawable = bgfx::isValid(store->handle);
+        const bool working = store->fallback_bytes || store->transcode_job || store->any_dirty;
+        const bool uploading = !drawable && working;
+        // Failed only when no work is left: no GPU copy, or a finished transcode without its full mip chain.
+        const bool undrawable = !working && (!drawable || (store->transcoded && !store->full_chain));
+        if (uploading) name("texture upload: " + store->name);
+        else if (undrawable) name("texture fallback: " + store->name);
+        // The x2 and the relief/gloss maps are prepared with loading priority while the transaction runs, but the
+        // reveal never waits for them (AccountSceneTexture).
         const int upscale = upscales().prepare_scene(*store, load.gate.generation());
-        if (upscale == 1) { ++resources.textures; name("x2 data/residency: " + store->name); }
-        else if (upscale >= 2) {
-            ++resources.failed;
-            if (upscale == 2) ++load.failures.retryable; else ++load.failures.reload_required;
-            name("x2 failed: " + store->name);
-        }
         bool relief_inference = false;
         const int relief = host.lighting().prepare_scene_texture(*store, &relief_inference);
-        if (relief == 1) { ++resources.relief; name("normal/gloss: " + store->name); }
-        else if (relief >= 2) {
-            ++resources.failed;
-            if (relief == 2) ++load.failures.retryable; else ++load.failures.reload_required;
-            name("normal/gloss failed: " + store->name);
-        }
+        AccountSceneTexture(resources, load.failures, uploading, undrawable, relief == 1);
         // Match NormalMaps::prepare_scene's actual consumers; old disabled Waiting entries get no token.
         if (relief == 1 && relief_inference) {
             if (store->normal_map && store->normal_map->state == NormalMapEntry::Waiting &&
@@ -194,12 +188,8 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     };
     shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(!host.lighting().lamp_shadows().interior()), "sun shadows");
     shadow(draw_shadows ? (*draw_shadows)[1] : host.lighting().lamp_shadows().initial_state(), "lamp shadows");
-    shadow(host.lighting().town_light().initial_state(), "town initial maps");
-    shadow(host.bounce().initial_state(host.visibility().state()), "initial bounce field");
-    shadow(host.ao_volumes().initial_state(host.settings().ao_volume > 0), "AO volume");
-    const auto visibility = host.visibility().state();
-    shadow(visibility == Visibility::State::Building ? 1 : visibility == Visibility::State::Failed ? 2 : 0,
-           "visibility volume");
+    // The town light, bounce and AO bakes and the visibility volume are quality products made in the background:
+    // they fill in after the reveal and never hold it.
     progress ^= mix(uint64_t(resources.shadows) | (uint64_t(resources.failed) << 32) |
                     (uint64_t(resources.switching) << 63));
     load.gate.observe_progress(progress, load_milliseconds());
@@ -226,15 +216,12 @@ bool HoldSceneResources()
     SampleSceneResources(false, 0, false);
     const auto now = load_milliseconds();
     const bool hold = load.gate.hold(now);
-    const auto r = load.gate.resources();
-    const uint32_t pending = r.textures + r.relief + r.shadows + r.switching;
-    if (pending != load.logged_pending || (!hold && !load.logged_ready)) {
-        shim::logf("location readiness: %s generation=%llu textures=%u relief=%u shadows=%u failed=%u switching=%d: %s",
-                   hold ? "waiting" : "ready",
-                   static_cast<unsigned long long>(load.gate.generation()), r.textures, r.relief, r.shadows, r.failed,
-                   r.switching, load.detail.c_str());
-        load.logged_pending = pending;
-        load.logged_ready = !hold;
+    // One line when the location is revealed; waiting is reported only as slow or failed below (no line per change).
+    if (!hold && !load.logged_ready) {
+        shim::logf("location readiness: ready generation=%llu after %llu ms (%u relief/gloss maps still being made)",
+                   static_cast<unsigned long long>(load.gate.generation()),
+                   static_cast<unsigned long long>(load.gate.elapsed(now)), load.gate.resources().relief);
+        load.logged_ready = true;
     }
     if (load.gate.state() == SceneReadiness::State::Error && !load.logged_error) {
         shim::logf("ERROR: location readiness: %s resource preparation failed; overlay retained, no incomplete reveal: %s",
@@ -1472,7 +1459,7 @@ bool RetrySceneResources(uint64_t generation)
     load.gate.begin(effects::load_milliseconds());
     fx::SharedCpuAdmission().begin(load.gate.generation(), true);
     effects::upscales().begin_scene();
-    load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
+    load.logged_error = load.logged_ready = load.logged_slow = false;
     load.failures = {};
     return true;
 }

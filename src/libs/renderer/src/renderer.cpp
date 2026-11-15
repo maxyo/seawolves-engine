@@ -3261,10 +3261,10 @@ void Renderer::RunStart()
 void Renderer::RunEnd()
 {
     if (storm::loading::active) {
-        if (progressTexture < 0) {
-            storm::loading::unavailable = true; // PrepareLoadingScene aborts the transaction
-            return;
-        }
+        // Without the stock artwork (Loading\\progress.tga failed, StartProgressView logged why) the location still
+        // loads: the frames present without it.
+        if (progressTexture < 0 && storm::loading::first_frame)
+            core.Trace("ERROR: the stock loading artwork is missing: the location loads without it");
         bInsideScene = false;
         storm::loading::ready = !storm::render::HoldSceneReveal();
         DrawProgressView(false);
@@ -4507,7 +4507,7 @@ void Renderer::StartProgressView()
         isInPViewProcess = false;
         if (t < 0)
         {
-            core.Trace("Progress error!");
+            core.Trace("ERROR: the loading artwork Loading\\progress.tga cannot be loaded: loading screens show none");
             return;
         }
         progressTexture = t;

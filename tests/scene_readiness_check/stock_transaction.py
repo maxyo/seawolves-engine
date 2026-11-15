@@ -94,10 +94,10 @@ struct Entity {
  }
 } resource{true,0},dialog{false,1},weather{true,2};
 using entid_t=int;using entptr_t=Entity*;
-char last_trace[512];
+char last_trace[512];std::string all_traces;
 struct Vm {int aborts=0;void AbortExecution(){++aborts;}} vm;
 struct CoreImpl {
- void Trace(const char *format, ...) {va_list a;va_start(a,format);std::vsnprintf(last_trace,sizeof(last_trace),format,a);va_end(a);}
+ void Trace(const char *format, ...) {va_list a;va_start(a,format);std::vsnprintf(last_trace,sizeof(last_trace),format,a);va_end(a);all_traces+=last_trace;all_traces+='\n';}
  TIMER Timer;
  Vm *Compiler=&vm;
  bool Exit_flag=false;
@@ -123,7 +123,7 @@ void reset(){
  storm::platform::loadingPlatformPump=hostPump;
  storm::platform::loadingSchedulePump=schedulePump;
  storm::render::status={true,7};renderer.progressTexture=1;
- vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;
+ vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;all_traces.clear();
 }
 // An abort: no exception, the scripts unwound once, the engine exit requested, the outcome in the log.
 bool aborted(const char *outcome,bool error){
@@ -154,18 +154,17 @@ int main(){
  reset();invalidateAfterPresent=true;
  assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("invalidated",true));
  assert(frames==1&&releases==0&&scheduledEnds==1&&cpuEnds==1);
+ // Missing loading artwork: loudly logged, the location still loads.
  reset();renderer.progressTexture=-1;
- assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("unavailable",true));
- assert(frames==1&&presents==0&&scheduledPresents==0&&scheduledEnds==1&&cpuEnds==1&&!storm::loading::unavailable);
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&vm.aborts==0&&!core.Exit_flag);
+ assert(frames>=4&&presents==frames&&scheduledEnds==1&&cpuEnds==1&&all_traces.find("ERROR: the stock loading artwork is missing")!=std::string::npos);
  assert(!storm::platform::LoadingPlatformTransactionActive());
  reset();storm::loading::active=true;
  assert(!core.PrepareLoadingScene()&&aborted("reentrant",true)&&frames==0&&scheduledEnds==0);storm::loading::active=false;
- // A preparation that stops progressing ends with an error after the bound; cooling does not count as a stall.
- reset();pendingUntil=1000;CoreImpl::kLoadingStall=std::chrono::seconds(0);storm::render::status.phase="cooling";
- suspendFor=0;cancelAt=6;
+ // A preparation that stops progressing is reported once as an ERROR and keeps waiting: never an exit by itself.
+ reset();pendingUntil=1000;CoreImpl::kLoadingStall=std::chrono::seconds(0);cancelAt=8;
  assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("cancelled",false)&&frames>=4);
- reset();pendingUntil=1000;storm::render::status.phase="generating";
- assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("stalled",true)&&frames==1&&releases==0);
+ {size_t at=all_traces.find("made no progress");assert(at!=std::string::npos&&all_traces.find("made no progress",at+1)==std::string::npos);}
  CoreImpl::kLoadingStall=std::chrono::seconds(300);
 }
 '''

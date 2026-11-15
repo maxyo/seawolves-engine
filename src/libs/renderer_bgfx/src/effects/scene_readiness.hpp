@@ -10,9 +10,11 @@ inline bool SceneCooling(bool inference_pending, bool worker_running, std::strin
     return inference_pending && !worker_running && pause == kThermalWaitReason;
 }
 struct SceneResources {
+    // relief: the location's relief/gloss maps still being made. Reported only (the loading screen shows the
+    // count); never pending() and never a failure: the reveal does not wait for quality products.
     uint32_t textures = 0, relief = 0, shadows = 0, failed = 0;
     bool switching = false;
-    bool pending() const { return textures || relief || shadows || switching; }
+    bool pending() const { return textures || shadows || switching; }
 };
 // Only producer failures with an implemented retry transition offer Retry. Allocation,
 // mandatory missing materials and unsupported scene resources require a fresh scene load.
@@ -20,6 +22,16 @@ struct SceneFailures {
     uint32_t retryable = 0, reload_required = 0;
     bool can_retry() const { return retryable > 0 && reload_required == 0; }
 };
+// One scene texture's states for the reveal. Only what the scene cannot be drawn without holds the reveal: the
+// texture's own upload, and a texture that cannot be drawn fails the location. Its relief/gloss maps and its x2
+// (`relief_pending`: NormalMaps::prepare_scene_texture said 1) are quality products that fill in after the reveal,
+// flat or the original texture meanwhile; their owners log their failures.
+inline void AccountSceneTexture(SceneResources &r, SceneFailures &f, bool uploading, bool undrawable,
+                                bool relief_pending) {
+    if (uploading) ++r.textures;
+    else if (undrawable) { ++r.failed; ++f.reload_required; }
+    if (relief_pending) ++r.relief;
+}
 inline bool SceneTextureName(std::string_view normalized) {
     return !normalized.empty() && !normalized.starts_with("interfaces/") && !normalized.starts_with("loading/");
 }

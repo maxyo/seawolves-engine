@@ -20,6 +20,24 @@ int main() {
  opaque.arm(2,true,true,255);opaque.submitted(2);opaque.frame(2,true,false);assert(!opaque.presented(2)); // replaced surface/backbuffer
  opaque.arm(2,true,true,255);opaque.submitted(2,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // actual scissor/viewport partial
  opaque.arm(2,true,true,255);opaque.submitted(2,true,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // MAX/MIN/SUBTRACT can retain destination despite alpha255
+ // A slow relief generator never delays the reveal: a texture whose relief/gloss (or x2) is still being made counts
+ // only in the report; once the textures are uploaded the gate becomes ready after its stable frames.
+ {
+  SceneReadiness gate; const uint64_t g=gate.begin(0);
+  storm::effects::SceneFailures failures;
+  for(uint64_t frame=1;frame<=4;++frame){
+   SceneResources r{};
+   for(int texture=0;texture<3;++texture)
+    storm::effects::AccountSceneTexture(r,failures,frame==1&&texture==0,false,true); // relief pending throughout
+   assert(r.relief==3&&!r.failed);
+   gate.frame(g,frame,true,r);
+  }
+  assert(gate.state()==SceneReadiness::State::Ready&&!gate.hold(0)&&gate.resources().relief==3);
+  // A texture that cannot be drawn still fails the location; an upload still holds it.
+  SceneResources r{};storm::effects::AccountSceneTexture(r,failures,false,true,false);
+  assert(r.failed==1&&failures.reload_required==1);
+  r={};storm::effects::AccountSceneTexture(r,failures,true,false,false);assert(r.pending());
+ }
  storm::render::LoadingBudget pacing;
  assert(pacing.deadline(100,true,20,100)==100); // no prior real frame
  pacing.frame_started(100);

@@ -28,7 +28,7 @@ class CoreImpl final : public CorePrivate
     bool PrepareLoadingScene() override;
     // Logs the outcome, unwinds the running scripts (COMPILER::AbortExecution) and requests the engine exit.
     bool AbortLoadingTransaction(storm::loading::Outcome outcome, uint64_t generation);
-    // PrepareLoadingScene ends with an error after this long without any preparation progress.
+    // PrepareLoadingScene reports a preparation without progress for this long (an ERROR line; it keeps waiting).
     static constexpr std::chrono::seconds kLoadingStall{300};
     bool LoadClassesTable();
 
