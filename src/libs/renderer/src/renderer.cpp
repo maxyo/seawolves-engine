@@ -3260,32 +3260,30 @@ void Renderer::RunStart()
 void Renderer::RunEnd()
 {
     bInsideScene = false;
-    DrawFrameStats();
+    // DrawFrameStats also ends/presents the frame and resets per-frame shadow readiness.
+    // Sample the live scene and composite its stock loading artwork BEFORE that boundary.
     if (progressTexture >= 0)
     {
-        // Save restoration erases the script Fader. Keep the same stock artwork over LIVE
-        // world frames until their scoped resources settle; no extra Present/no fake frame.
+        bool held = false;
         if (storm::render::GetSceneLoadStatus().active)
         {
-            if (storm::render::HoldSceneReveal())
-            {
-                DrawProgressView(false);
-                return; // neither requested end nor legacy 50-frame cleanup may reveal pending work
-            }
-            storm::render::CompleteSceneReveal();
-            if (progressEndRequested) { ReleaseProgressView(); return; }
+            held = storm::render::HoldSceneReveal();
+            if (!held) storm::render::CompleteSceneReveal();
         }
-        if (progressEndRequested) { ReleaseProgressView(); return; } // cancelled/sealed generation
-        const int32_t oldCnt = progressSafeCounter;
-        ProgressView();
-        progressSafeCounter = oldCnt;
-        if (progressSafeCounter >= 50)
-        {
+        if (!held && progressEndRequested)
+            ReleaseProgressView();
+        else if (held)
+            DrawProgressView(false);
+        else if (progressSafeCounter >= 50)
             EndProgressView();
-        }
         else
-            progressSafeCounter++;
+        {
+            const int32_t oldCnt = progressSafeCounter;
+            DrawProgressView(false);
+            progressSafeCounter = oldCnt + 1;
+        }
     }
+    DrawFrameStats(); // exactly one ordinary Present on every path, including a held/error load
 }
 
 char Buff_4k[4096];
