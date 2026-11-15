@@ -447,6 +447,10 @@ struct Session::Impl
         return true;
     }
     bool gpu_unproven = false; // the GPU's first texture: the crash guard's marker is written around it
+    // Controlled GPU model/calibration failures in this session (EnsureDevice): the session gives up the GPU only
+    // after kGpuInitAttempts of them; before that the next GPU retry of the device policy tries again.
+    static constexpr int kGpuInitAttempts = 3;
+    int gpu_init_failures = 0;
     std::unique_ptr<CpuRuntime> runtime; // before the networks: released after them
     std::array<std::unique_ptr<Network>, 3> gpu, cpu; // normal, height, roughness
     std::unique_ptr<Upscaler> gpu_upscaler, cpu_upscaler; // the 4x upscaler (fx/upscale.hpp), on each device
@@ -526,12 +530,19 @@ struct Session::Impl
         if (!use_gpu)
             return EnsureCpu(error);
         if (EnsureGpu(error))
+        {
+            gpu_init_failures = 0; // consecutive failures count
             return true;
+        }
         if (cancelled)
             return false;
-        // A controlled model-load/calibration error is not a driver crash. Preserve this texture on the CPU;
-        // avoid repeating the same failed GPU initialization for every request in this session.
-        Log("ERROR: relief GPU model initialization failed (%s); this session continues on the CPU", error.c_str());
+        // A controlled model-load/calibration error is not a driver crash. Preserve this texture on the CPU; a
+        // transient failure (a lazy Vulkan reopen during a retry) leaves the GPU to the device policy's next retry,
+        // repeated failures end GPU use for this session.
+        ++gpu_init_failures;
+        const bool give_up = gpu_init_failures >= kGpuInitAttempts;
+        Log("ERROR: relief GPU model initialization failed (%s, attempt %d of %d); %s", error.c_str(), gpu_init_failures,
+            kGpuInitAttempts, give_up ? "this session continues on the CPU" : "this texture on the CPU, the GPU again later");
         {
             std::lock_guard lock(networks_mutex);
             gpu_upscaler.reset();
@@ -540,7 +551,8 @@ struct Session::Impl
         ClearGpuRunning(cache);
         gpu_unproven = false;
         ReleaseGpu();
-        gpu_possible = stats.gpu_possible = false;
+        if (give_up)
+            gpu_possible = stats.gpu_possible = false;
         on_gpu = use_gpu = false;
         error.clear();
         const bool opened = EnsureCpu(error);

@@ -110,8 +110,12 @@ int main(int argc,char**argv) {
  expect(run(*session,15,"partial")==Outcome::Prepared,"same Session recovers after both transient CPU load failures");
  session.reset();fail_gpu_load=true;start_gpu=true;
  session=Session::Open(models,1,root,error);
- expect(bool(session) && !session->stats().gpu && !session->stats().gpu_possible,"controlled first GPU model error opens CPU session");
+ // One controlled GPU model error: the CPU now, the GPU left to the device policy's next retry.
+ expect(bool(session) && !session->stats().gpu && session->stats().gpu_possible,"controlled first GPU model error opens CPU session");
  expect(run(*session,0,"load-failure")==Outcome::Prepared,"first texture survives controlled GPU initialization error");
+ // The retries fail too: after three consecutive failures the session gives the GPU up and stops waiting for it.
+ for(int i=1;i<40&&session->stats().gpu_possible;++i){session->SetGpuFree(true);expect(run(*session,i,"load-failure")==Outcome::Prepared,"texture survives a repeated GPU initialization error");}
+ expect(!session->stats().gpu && !session->stats().gpu_possible,"repeated controlled GPU model errors end GPU use for the session");
  expect(!session->WaitsForGpu(),"known failed GPU does not starve CPU background work");
  std::puts("production Session x2 CPU/GPU return: PASS");
 }
