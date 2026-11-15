@@ -221,11 +221,8 @@ static void Saves(const std::string &models)
 {
     FakeSurface surface;
     Router router(surface);
-    auto with_previews = Load(models, "saves-load.json");
-    for (auto &widget : with_previews.widgets)
-        if (widget.node == "ANDROID_SAVE_LIST" && widget.index == 1)
-            widget.context["preview"] = "save-preview/9/123/706c61796572/6f6c64";
-    router.SetInterface(with_previews);
+    // The second record carries an embedded thumbnail: the pack contract draws the detail column with it.
+    router.SetInterface(Load(models, "saves-load.json"));
     ExpectEqual(router.Using(), "save_load", "saves is a ported screen");
     ExpectEqual(surface.tag, "s-saves", "saves mounted");
     Expect(surface.errors.empty() && surface.props["extras"]["rows"].empty() && surface.props["extras"]["note"] == "",
