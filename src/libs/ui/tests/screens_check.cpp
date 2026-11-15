@@ -2444,6 +2444,18 @@ static void ItemCategories(const std::string &models)
         Expect(action.value("variant", "") != "danger" || action.value("hold", false) == true, std::string(c.what) + ": a destroying action is held");
     }
     {
+        // A selected row the adapter did not describe: reported, and no guessed action.
+        FakeSurface surface;
+        Router router(surface);
+        InterfaceModel model = Load(models, "items.json");
+        std::erase_if(model.widgets, [](const Widget &widget) { return widget.node == "ANDROID_ITEMS" && widget.row_id == "tr1"; });
+        router.SetInterface(model);
+        Expect(surface.props["detail"].is_object() && surface.props["detail"]["action"].is_null(),
+               "a row without its adapter fact shows no action: " + surface.props["detail"].dump());
+        Expect(surface.errors.size() == 1 && surface.errors[0].find("items: no adapter row for '") != std::string::npos,
+               "a row without its adapter fact is an error, not a guessed equip: " + Json(surface.errors).dump());
+    }
+    {
         // The worn timed artefact: its term in the facts, the days it has left as its slot's caption.
         FakeSurface surface;
         surface.texts = {{"items.term", "Срок"}, {"items.days", "{1} дн."}, {"items.days_left", "{1} из {2} дн."}};

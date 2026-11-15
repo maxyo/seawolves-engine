@@ -512,8 +512,13 @@ class ItemsScreen final : public Screen
         const Widget *equip = a_->One("EQUIP_BUTTON");
         if (!equip)
             return nullptr;
-        // Without the adapter's row the game's button is shown as the game labels it.
-        const std::string kind = fact ? Field(fact, "action") : std::string("equip");
+        // The adapter describes every TABLE_ITEMS row; without its row the screen cannot tell what the button does.
+        if (!fact)
+        {
+            bindings.Error("items: no adapter row for '" + row.row_id + "'");
+            return nullptr;
+        }
+        const std::string kind = Field(fact, "action");
         if (kind.empty())
             return nullptr;
         std::string label = Trim(equip->label);
