@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 //============================================================================================
 //    Spirenkov Maxim, 2001
 //--------------------------------------------------------------------------------------------
@@ -463,7 +464,7 @@ void Location::Realize(uint32_t delta_time)
         }
     }
     // Updating characters
-    if (isDebugView)
+    if (isDebugView && !storm::loading::active)
         Update(delta_time);
     // Rendering messages
     auto i = curMessage;

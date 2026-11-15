@@ -27,6 +27,7 @@ source = r'''
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "loading_transaction.hpp"
 bool prepared=true, presented=false; int presents=0;
 namespace storm::render {
 struct Status { bool active=false; }; Status status;
@@ -75,22 +76,22 @@ int main(){
  using namespace storm::render;
  Renderer r;r.StartProgressView();status.active=true;pending=true;
  const int sprite=r.progressTexture,oldBack=r.backTexture,oldTip=r.progressTipsTexture;
- r.EndProgressView();assert(r.progressTexture==sprite&&r.progressEndRequested);
+ storm::loading::active=true;
  for(int i=0;i<80;++i)r.WorldFrame();
- assert(r.overlay==80&&r.synchronous==0&&seals==0&&r.released.empty()); // no Fader; both legacy exits blocked
- // Resource changes/failure remain a real hold, never a timeout reveal.
+ assert(r.overlay==80&&r.synchronous==0&&seals==0&&r.released.empty());
+ assert(!storm::loading::ready); // pending/error never runs the legacy 50-frame cleanup
  r.WorldFrame();assert(r.progressTexture>=0&&seals==0);
  std::string("second").copy(r.image,7);r.tips[0]=0;r.StartProgressView();
- assert(!r.progressEndRequested&&r.progressTexture==sprite&&r.progressTipsTexture==-1);
+ assert(r.progressTexture==sprite&&r.progressTipsTexture==-1);
  assert(std::find(r.released.begin(),r.released.end(),oldBack)!=r.released.end());
  assert(std::find(r.released.begin(),r.released.end(),oldTip)!=r.released.end());
- assert(r.created.back()=="second"); // new generation artwork, no stale old tip
- r.EndProgressView();pending=false;r.WorldFrame();assert(seals==1&&r.progressTexture==-1);
+ assert(r.created.back()=="second");
+ pending=false;r.WorldFrame();assert(storm::loading::ready&&r.progressTexture>=0);
+ CompleteSceneReveal();storm::loading::active=false;r.EndProgressView();
+ assert(seals==1&&r.progressTexture==-1); // only original transaction completion releases art
  Renderer empty;const int before=presents;empty.WorldFrame();assert(presents==before+1);
- Renderer cancel;cancel.StartProgressView();status.active=true;pending=true;cancel.EndProgressView();
- status.active=false;cancel.WorldFrame();assert(cancel.progressTexture==-1&&cancel.synchronous==0); // sealed cancel
  Renderer teardown;teardown.StartProgressView();status.active=true;pending=true;teardown.ReleaseProgressView();
- assert(teardown.progressTexture==-1&&teardown.backTexture==-1); // unconditional destruction despite pending
+ assert(teardown.progressTexture==-1&&teardown.backTexture==-1);
  Renderer legacy;status.active=false;legacy.StartProgressView();for(int i=0;i<51;++i)legacy.WorldFrame();
  assert(legacy.progressTexture==-1&&legacy.synchronous==0&&legacy.overlay==50);
  Sun sun;assert(sun.initial_state(false)==0);assert(sun.initial_state(true)==1); // indoor daylight vs outdoor required
@@ -102,6 +103,6 @@ int main(){
 '''.replace('SUN_METHOD',sun).replace('METHODS',methods).replace('PRESENT_TAIL',present_tail).replace('LAMP_RESET',lamp_reset)
 with tempfile.TemporaryDirectory(prefix='stock-progress-check-') as tmp:
     p=Path(tmp);(p/'check.cpp').write_text(source)
-    subprocess.run(['c++','-std=c++17','-O0','-fsanitize=address,undefined',str(p/'check.cpp'),'-o',str(p/'check')],check=True)
+    subprocess.run(['c++','-std=c++17','-O0','-fsanitize=address,undefined','-I'+str(root/'src/libs/util/include'),str(p/'check.cpp'),'-o',str(p/'check')],check=True)
     subprocess.run([str(p/'check')],check=True)
 print('Stock progress lifecycle and indoor/outdoor sun controls PASS')

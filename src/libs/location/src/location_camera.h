@@ -50,6 +50,7 @@ class LocationCamera : public Entity
     // Execution
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
+    void PrimeLoadingCamera();
     // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
@@ -59,6 +60,9 @@ class LocationCamera : public Entity
     {
         switch (stage)
         {
+        case Stage::loading_prepare:
+            PrimeLoadingCamera();
+            break;
         case Stage::execute:
             Execute(delta);
             break;

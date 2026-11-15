@@ -1,4 +1,6 @@
 #include "load_watch.hpp"
+#include "loading_transaction.hpp"
+#include "scene_load_status.hpp"
 #ifdef __ANDROID__
 #include "android_newgame.hpp"
 #include "platform/android_ui.hpp"
@@ -177,7 +179,7 @@ void CoreImpl::ReleaseBase()
     Compiler->Token.Release();
 }
 
-bool CoreImpl::Run()
+bool CoreImpl::Run() try
 {
     stopFrameProcessing_ = false;
 
@@ -281,6 +283,67 @@ bool CoreImpl::Run()
     }
 
     return true;
+}
+catch (const storm::loading::Aborted &abort) {
+    Trace("Stock loading transaction aborted outcome=%u", static_cast<unsigned>(abort.outcome));
+    // Imported-function failure alone does not unwind BC_Execute. This exception
+    // leaves the whole current script/OnLoad stack before ordinary engine exit.
+    Exit_flag = true;
+    return false;
+}
+
+void CoreImpl::PrepareLoadingScene()
+{
+    const auto initial = storm::render::GetSceneLoadStatus();
+    if (!initial.active) return;
+    storm::loading::Scope loading;
+    storm::platform::LoadingPlatformTransaction platform;
+    struct TimerBaseline {
+        TIMER &timer;
+        ~TimerBaseline() {
+            timer.Current = timer.Previous = std::chrono::high_resolution_clock::now();
+            timer.Carry = 0;
+        }
+    } baseline{Timer};
+    // GetService stores SERVICE pointers; avoid pulling renderer backend headers into core.
+    auto *renderer = static_cast<SERVICE *>(GetService("renderer"));
+    auto *animation = static_cast<SERVICE *>(GetService("AnimationServiceImp"));
+    if (!renderer) throw storm::loading::Aborted{storm::loading::Outcome::Unavailable};
+    while (true) {
+        const auto status = storm::render::GetSceneLoadStatus();
+        if (!status.active || status.generation != initial.generation)
+            throw storm::loading::Aborted{storm::loading::Outcome::Invalidated};
+        const auto host = storm::platform::PumpLoadingPlatform(initial.generation);
+        if (host == storm::platform::LoadingPlatformState::Suspended) {
+            SDL_Delay(2);
+            continue;
+        }
+        if (host != storm::platform::LoadingPlatformState::Continue)
+            throw storm::loading::Aborted{host == storm::platform::LoadingPlatformState::Cancel
+                ? storm::loading::Outcome::Cancel : host == storm::platform::LoadingPlatformState::Quit
+                ? storm::loading::Outcome::Quit : storm::loading::Outcome::Unavailable};
+        renderer->RunStart();
+        // Animation service explicitly builds the already-selected pose in this context.
+        if (animation) animation->RunStart();
+        // Preparation is opt-in and unique across all loaded entities: WEATHER
+        // can be execute-only, and cameras need their configured transform before
+        // drawing. Never call ordinary Execute or change any layer's frozen flag.
+        std::vector<entid_t> prepare_ids;
+        ForEachEntity([&](entptr_t entity) { prepare_ids.push_back(entity->GetId()); });
+        for (auto id : prepare_ids) if (auto *entity = GetEntityPointerSafe(id))
+            entity->ProcessStage(Entity::Stage::loading_prepare, 0);
+        // Render only the original eligible realize layers (including SEA_REALIZE).
+        // Copy the shared scratch vector before any consumer can reuse it.
+        const auto ids = GetEntityIds(layer_type_t::realize);
+        for (auto id : ids) if (auto *entity = GetEntityPointerSafe(id))
+            entity->ProcessStage(Entity::Stage::loading_realize, 0);
+        renderer->RunEnd(); // stock artwork, actual Present, upload/shadow/resource pumps
+        storm::loading::first_frame = false;
+        if (storm::loading::ready) {
+            storm::render::CompleteSceneReveal();
+            if (!storm::render::GetSceneLoadStatus().active) return;
+        }
+    }
 }
 
 void CoreImpl::ProcessControls()
@@ -878,12 +941,12 @@ void CoreImpl::SetDeltaTime(int32_t delta_time)
 
 uint32_t CoreImpl::GetDeltaTime()
 {
-    return Timer.GetDeltaTime();
+    return storm::loading::active ? 0 : Timer.GetDeltaTime();
 }
 
 uint32_t CoreImpl::GetRDeltaTime()
 {
-    return Timer.rDelta_Time;
+    return storm::loading::active ? 0 : Timer.rDelta_Time;
 }
 
 ATTRIBUTES *CoreImpl::Entity_GetAttributeClass(entid_t id_PTR, const char *name)

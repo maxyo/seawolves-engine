@@ -24,6 +24,7 @@ class CoreImpl final : public CorePrivate
     bool Initialize();
     void ResetCore();
     bool Run();
+    void PrepareLoadingScene() override;
     bool LoadClassesTable();
 
     void ProcessExecute();

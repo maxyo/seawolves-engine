@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 //============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
 //--------------------------------------------------------------------------------------------
@@ -12,7 +13,6 @@
 #include "core.h"
 #include "entity.h"
 #include "shared/messages.h"
-#include "storm/render/pipelines.hpp"
 
 // ============================================================================================
 // Construction, destruction
@@ -295,6 +295,8 @@ void Fader::Execute(uint32_t delta_time)
 
 void Fader::Realize(uint32_t delta_time)
 {
+    if (storm::loading::active) return; // original progress artwork owns the synchronous stage
+
     if (!isWork)
         return;
     if (isStart)
@@ -318,16 +320,12 @@ void Fader::Realize(uint32_t delta_time)
         }
     }
 
-    // Demand discovered during a warm frame can revoke readiness before the overlay is removed.
-    const bool resourceHold = fadeIn && !endFade && storm::render::HoldSceneReveal();
-    if (resourceHold) alpha = 0.0f;
     if (alpha >= 1.0f)
     {
         alpha = 1.0f;
         if (!endFade)
         {
             endFade = true;
-            if (fadeIn) storm::render::CompleteSceneReveal();
             eventEnd = true;
         }
     }
@@ -345,17 +343,9 @@ void Fader::Realize(uint32_t delta_time)
     drawbuf_back[4].color = color;
     drawbuf_back[5].color = color;
 
-    // Fader selects diffuse alpha directly (texture alpha is not multiplied into it).
-    // The shim validates the actual viewport/scissor and acknowledges only a successful submit.
-    D3DVIEWPORT9 opaqueViewport{};
-    rs->GetViewport(&opaqueViewport);
-    const bool fullScreen = opaqueViewport.X == 0 && opaqueViewport.Y == 0 &&
-        static_cast<float>(opaqueViewport.Width) == w && static_cast<float>(opaqueViewport.Height) == h;
-    storm::render::ArmSceneOpaqueDraw(resourceHold && fullScreen, true, static_cast<uint8_t>(color >> 24));
     rs->TextureSet(0, textureBackID);
     rs->DrawPrimitiveUP(D3DPT_TRIANGLELIST, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2, 2,
                         drawbuf_back, sizeof(drawbuf_back[0]), "Fader");
-    storm::render::ArmSceneOpaqueDraw(false, false, 0);
 
     if (textureID >= 0)
     {
@@ -384,7 +374,7 @@ void Fader::Realize(uint32_t delta_time)
 
     // Increase alpha only after current-location resources and submitted warm frames are ready.
     // Preparation errors keep the responsive loading overlay closed; time alone never reveals it.
-    if (!endFade && !resourceHold)
+    if (!endFade)
     {
         if (fadeSpeed > 0.0f)
             alpha += delta_time * 0.001f * fadeSpeed;

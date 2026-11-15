@@ -103,6 +103,7 @@ class Grass : public Entity
     // Work
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
+    void PrepareLoadingPose();
     //
     uint64_t ProcessMessage(MESSAGE &message) override;
 
@@ -114,6 +115,12 @@ class Grass : public Entity
         {
         case Stage::execute:
             Execute(delta);
+            break;
+        case Stage::loading_prepare:
+            PrepareLoadingPose();
+            break;
+        case Stage::loading_realize:
+            Realize(0);
             break;
         case Stage::realize:
             Realize(delta);

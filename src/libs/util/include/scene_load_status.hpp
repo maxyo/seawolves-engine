@@ -15,4 +15,5 @@ struct SceneLoadStatus {
     std::string phase; // preparing only: "generating" or "cooling"; UI localizes it, never displays detail
 };
 SceneLoadStatus GetSceneLoadStatus();
+void CompleteSceneReveal();
 } // namespace storm::render

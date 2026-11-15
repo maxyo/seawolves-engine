@@ -251,6 +251,7 @@ uint32_t slNativeReloadProgressUpdate(VS_STACK *pS)
 
 uint32_t slNativeReloadProgressEnd(VS_STACK *pS)
 {
+    core.PrepareLoadingScene();
     auto *rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (rs)
         rs->EndProgressView();

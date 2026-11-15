@@ -39,7 +39,9 @@ class Entity
         execute,
         realize,
         lost_render,
-        restore_render
+        restore_render,
+        loading_realize, // explicitly admitted resource-only render, default ignored
+        loading_prepare // current pose/camera only; never Execute or animation time
     };
 
     ATTRIBUTES *AttributesPointer = nullptr; // TODO: CHANGE!

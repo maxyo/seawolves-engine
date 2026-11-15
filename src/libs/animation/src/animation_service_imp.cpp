@@ -9,6 +9,7 @@
 // ============================================================================================
 
 #include "animation_service_imp.h"
+#include "loading_transaction.hpp"
 #include "skin_bones.hpp"
 
 #include "core.h"
@@ -94,6 +95,11 @@ uint32_t AnimationServiceImp::RunSection()
 // Execution functions
 void AnimationServiceImp::RunStart()
 {
+    if (storm::loading::active) {
+        for (auto *animation : animations)
+            if (animation) animation->BuildAnimationMatrices();
+        return; // no action selection, Execute, events, downtime or time advancement
+    }
     if (core.Controls->GetDebugAsyncKeyState(VK_F4))
         return;
     auto dltTime = core.GetDeltaTime();

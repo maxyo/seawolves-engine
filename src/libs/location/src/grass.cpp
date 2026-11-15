@@ -442,7 +442,12 @@ void Grass::Execute(uint32_t delta_time)
     for (int32_t i = 0; i < sizeof(phase) / sizeof(phase[0]); i++)
         if (phase[i] > pi2 * 256.0f)
             phase[i] -= pi2 * 256.0f;
-    // Coefficients for calculating deviations
+    PrepareLoadingPose();
+}
+
+void Grass::PrepareLoadingPose()
+{
+    // Current wind/phase only: no script query, time advance or input.
     cosPh1 = 0.4f + 0.15f * cosf(phase[1]);
     sinPh2 = 0.51f + 0.09f * sinf(phase[2]);
     sinPh5 = 0.1f * sinf(phase[5]);

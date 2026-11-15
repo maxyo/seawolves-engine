@@ -79,7 +79,9 @@ void BeginSceneResources(const char *scene)
     load.timing_at = 0;
     load.loading_normal.clear(); load.loading_upscale.clear();
     load.textures.clear(); load.failed_textures.clear(); load.detail.clear(); load.scene = scene ? scene : "";
-    load.sealed = load.scene.rfind("location/", 0) != 0;
+    // Stock completion covers both on-land loading and SEA_AI's explicit sea scene.
+    // Other scene names are not silently admitted to this resource contract.
+    load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea";
     load.logged_error = load.logged_ready = load.logged_slow = false; load.logged_pending = UINT32_MAX;
     load.failures = {}; load.pipelines_pending = false;
     load.phase_polled_at = 0; load.cooling = false;

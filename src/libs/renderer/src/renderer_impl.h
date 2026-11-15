@@ -345,7 +345,6 @@ class Renderer : public VRenderer
     void EndProgressView() override;
     void DrawProgressView(bool present);
     void ReleaseProgressView();
-    bool progressEndRequested = false;
 
     static const uint32_t rectsVBuffer_SizeInRects;
     storm::shim::VertexBuffer *rectsVBuffer;

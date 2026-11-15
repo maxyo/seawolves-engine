@@ -53,6 +53,9 @@ class Core
   public:
     virtual ~Core() = default;
 
+    // Complete resource preparation inside the original stock loading transaction.
+    virtual void PrepareLoadingScene() {}
+
     // return application window
     virtual storm::OSWindow *GetWindow() = 0;
     // set time scale; affect on std entity functions DeltaTime parameter

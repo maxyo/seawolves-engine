@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 //============================================================================================
 //    Spirenkov Maxim
 //--------------------------------------------------------------------------------------------
@@ -120,6 +121,24 @@ bool LocationCamera::Init()
 }
 
 // Execution
+// Apply the already-configured stock camera before resource discovery. No controls,
+// character locks, track events, morph time, dynamic-FOV time or Execute(0).
+void LocationCamera::PrimeLoadingCamera()
+{
+    if (!storm::loading::active || isSleep || !Set()) return;
+    if (storm::loading::first_frame) {
+        if (wmode == cwm_follow && !isLookMode && !isLockFPMode) {
+            cf.Update(0.0f); // BornCamera if needed; MoveCamera(0) has no integration/input
+        } else if (wmode == cwm_topos) {
+            lookTo = pos + glm::vec3(0.0f, lheight, 0.0f);
+            camPos = fromLook;
+        } else if (wmode == cwm_follow) {
+            ExecuteLook(0.0f); // pure current bone/locator transform; no input/time integration
+        }
+    }
+    rs->SetCamera(camPos, lookTo, glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
 #ifndef LOCATIONCAMERA_DEBUG
 void LocationCamera::Execute(uint32_t delta_time)
 #else

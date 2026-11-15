@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "storm/render/pipelines.hpp"
 #include "renderer_impl.h"
 #include <platform/android_ui.hpp>
@@ -3200,7 +3201,7 @@ void Renderer::RunStart()
     // The pause menu covers a paused game: its last 3D frame is presented again instead of drawing the scene every
     // frame (perf audit F11). The hold begins once the renderer kept a full frame and ends with the menu; a settings
     // or size change while it lasts is drawn in one full frame, which is kept in its turn.
-    storm::render::HoldGamePicture(storm::android::mobileScreen == "game_menu");
+    storm::render::HoldGamePicture(!storm::loading::active && storm::android::mobileScreen == "game_menu");
     storm::core::HoldSceneRealize(storm::render::GamePictureHeld());
 #endif
     // The GPU self-test switched an effect stage off on this device: tell the player once (also logged).
@@ -3243,7 +3244,7 @@ void Renderer::RunStart()
     // if (TechniqueExecuteStart("default")) do{} while (TechniqueExecuteNext());
 
     // boal del_cheat
-    if (core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState(VK_F11) < 0)
+    if (!storm::loading::active && core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState(VK_F11) < 0)
     {
         InvokeEntitiesLostRender();
         pTechnique = std::make_unique<CTechnique>(this);
@@ -3251,33 +3252,29 @@ void Renderer::RunStart()
         InvokeEntitiesRestoreRender();
     }
 
-    SetRenderState(D3DRS_FILLMODE, (core.Controls->GetDebugAsyncKeyState('F') < 0) ? D3DFILL_WIREFRAME : D3DFILL_SOLID);
+    SetRenderState(D3DRS_FILLMODE, (!storm::loading::active && core.Controls->GetDebugAsyncKeyState('F') < 0) ? D3DFILL_WIREFRAME : D3DFILL_SOLID);
     // SetRenderState(D3DRS_FILLMODE, D3DFILL_SOLID); eddy
 
-    PlayToTexture();
+    if (!storm::loading::active) PlayToTexture();
 }
 
 void Renderer::RunEnd()
 {
+    if (storm::loading::active) {
+        if (progressTexture < 0)
+            throw storm::loading::Aborted{storm::loading::Outcome::Unavailable};
+        bInsideScene = false;
+        storm::loading::ready = !storm::render::HoldSceneReveal();
+        DrawProgressView(false);
+        DrawFrameStats(); // one Present; never release artwork from inside the warm loop
+        return;
+    }
     bInsideScene = false;
-    // DrawFrameStats also ends/presents the frame and resets per-frame shadow readiness.
-    // Sample the live scene and composite its stock loading artwork BEFORE that boundary.
-    if (progressTexture >= 0)
-    {
-        bool held = false;
-        if (storm::render::GetSceneLoadStatus().active)
-        {
-            held = storm::render::HoldSceneReveal();
-            if (!held) storm::render::CompleteSceneReveal();
-        }
-        if (!held && progressEndRequested)
-            ReleaseProgressView();
-        else if (held)
-            DrawProgressView(false);
-        else if (progressSafeCounter >= 50)
-            EndProgressView();
-        else
-        {
+    // Ordinary legacy retention only. Readiness is completed synchronously inside
+    // NativeReloadProgressEnd, before scripts may activate the new world.
+    if (progressTexture >= 0) {
+        if (progressSafeCounter >= 50) EndProgressView();
+        else {
             const int32_t oldCnt = progressSafeCounter;
             DrawProgressView(false);
             progressSafeCounter = oldCnt + 1;
@@ -4495,7 +4492,6 @@ char *Renderer::GetTipsImage()
 
 void Renderer::StartProgressView()
 {
-    progressEndRequested = false;
 #ifdef __ANDROID__
     storm::android::publishLoading(true);
 #endif
@@ -4739,18 +4735,11 @@ void Renderer::DrawProgressView(bool present)
 
 void Renderer::EndProgressView()
 {
-    if (progressTexture >= 0 && storm::render::GetSceneLoadStatus().active)
-    {
-        progressEndRequested = true;
-        if (storm::render::HoldSceneReveal()) return;
-        storm::render::CompleteSceneReveal();
-    }
     ReleaseProgressView();
 }
 
 void Renderer::ReleaseProgressView()
 {
-    progressEndRequested = false;
 #ifdef __ANDROID__
     storm::android::publishLoading(false);
 #endif

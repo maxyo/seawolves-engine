@@ -1,3 +1,4 @@
+#include "loading_transaction.hpp"
 #include "model_realizer.h"
 
 #include "core.h"
@@ -58,7 +59,7 @@ void LocModelRealizer::Realize(uint32_t delta_time) const
             rs->LightEnable(0, TRUE);
         }
 
-        pE->ProcessStage(Stage::realize, delta_time);
+        pE->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, delta_time);
         if (lights)
         {
             lights->UnsetLights();
@@ -92,7 +93,7 @@ void LocModelRealizer::Realize(uint32_t delta_time) const
 
             // draw caustics
             gs->SetCausticMode(true);
-            pE->ProcessStage(Stage::realize, 0);
+            pE->ProcessStage(storm::loading::active ? Stage::loading_realize : Stage::realize, 0);
             gs->SetCausticMode(false);
         }
     }
