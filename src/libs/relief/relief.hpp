@@ -108,8 +108,9 @@ class Session
 
 // Removes the maps of textures this game no longer has and every map of another method (another game, an older build,
 // model or options; fx::ReliefMethod), and the gloss maps (fx/gloss_map.hpp) of textures it no longer has; the
-// game's own height maps stay while they are current. `files`: List(textures) (one walk of the game's folders serves
-// the listing, the mark and the pruning). Reads each file's header and probe level only. Returns how many.
+// game's own height maps stay while they are current. `files`: List(textures), the background generation queue.
+// Also discovers on-demand textures (characters) for cache validity, without adding them to that queue.
+// Reads each source's header and probe level only. Returns how many.
 int Prune(const std::filesystem::path &textures, const std::vector<std::filesystem::path> &files,
           const std::filesystem::path &output, int map_size);
 // The mark of a complete pass (Prune done): the method, the map size and how many relief textures the game had

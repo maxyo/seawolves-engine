@@ -1061,8 +1061,16 @@ std::vector<UpscaleCandidate> UpscaleCandidates(const std::filesystem::path &tex
 int Prune(const std::filesystem::path &textures, const std::vector<std::filesystem::path> &files,
           const std::filesystem::path &output, int map_size)
 {
+    // List is a generation queue, not the complete cache inventory: character maps are
+    // prepared only on demand. Keep their current keys too, without scheduling inference.
+    std::vector<std::filesystem::path> sources = files;
+    for (const Candidate &candidate : Candidates(textures))
+        if (!candidate.background)
+            sources.push_back(candidate.file);
+    std::sort(sources.begin(), sources.end());
+    sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
     std::vector<std::filesystem::path> current;
-    for (const std::filesystem::path &file : files)
+    for (const std::filesystem::path &file : sources)
     {
         const std::optional<Candidate> found = Classify(textures, file);
         if (!found)

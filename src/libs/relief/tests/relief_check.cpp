@@ -62,11 +62,54 @@ std::vector<uint8_t> WriteTx(const std::filesystem::path &path, int size)
     std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char *>(file.data()), static_cast<std::streamsize>(file.size()));
     return probe;
 }
+
+// Pruning validates cache ownership without inference or loading model files.
+void CheckDemandPrune(const std::filesystem::path &root)
+{
+    using namespace storm;
+    const auto textures = root / "textures", output = root / "maps";
+    const auto character = textures / "Characters/Sharl1.tga.tx";
+    const auto deleted = textures / "Characters/Removed.tga.tx";
+    const auto probe = WriteTx(character, 128);
+    WriteTx(deleted, 128);
+    WriteTx(textures / "StoneWall.tga.tx", 64);
+    std::filesystem::create_directories(output);
+    const auto method = fx::ReliefMethod(fx::ReliefClass::Character);
+    const auto key = fx::ReliefKey("characters/sharl1", probe, 64, 64, method, fx::kReliefMapSize);
+    const auto old = fx::ReliefKey("characters/sharl1", probe, 64, 64, method ^ 1, fx::kReliefMapSize);
+    const auto gone = fx::ReliefKey("characters/removed", probe, 64, 64, method, fx::kReliefMapSize);
+    for (const auto k : {key, old, gone})
+        std::ofstream(fx::ReliefFile(output, k), std::ios::binary) << "existing demand map";
+    std::filesystem::remove(deleted);
+    const auto background = relief::List(textures);
+    CHECK(background.size() == 1 && background.front().filename() == "StoneWall.tga.tx");
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 2);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    CHECK(!std::filesystem::exists(fx::ReliefFile(output, old)));
+    CHECK(!std::filesystem::exists(fx::ReliefFile(output, gone)));
+    std::ifstream kept(fx::ReliefFile(output, key), std::ios::binary);
+    CHECK(std::string(std::istreambuf_iterator<char>(kept), {}) == "existing demand map");
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 0);
+    std::filesystem::remove(character);
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);
+    CHECK(!std::filesystem::exists(fx::ReliefFile(output, key)));
+    CHECK(relief::List(textures) == background);
+}
 } // namespace
 
 int main(int argc, char **argv)
 {
     using namespace storm;
+    if (argc == 2 && std::strcmp(argv[1], "--prune-only") == 0)
+    {
+        const auto root = std::filesystem::temp_directory_path() /
+                          ("storm_relief_prune_check-" + std::to_string(getpid()));
+        std::filesystem::remove_all(root);
+        CheckDemandPrune(root);
+        std::filesystem::remove_all(root);
+        std::printf("demand prune checks: %d failures\n", failures);
+        return failures ? 1 : 0;
+    }
     if (argc < 2)
     {
         std::printf("usage: %s <model dir>\n", argv[0]);
@@ -84,6 +127,7 @@ int main(int argc, char **argv)
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("storm_relief_check-" + std::to_string(getpid()));
     std::filesystem::remove_all(root);
+    CheckDemandPrune(root / "demand-prune");
     const std::filesystem::path textures = root / "RESOURCE/Textures", output = root / "relief";
     const std::vector<uint8_t> probe = WriteTx(textures / "Locations/StoneWall.tga.tx", 128);
     const std::vector<uint8_t> bottle_probe = WriteTx(textures / "Locations/WindowGlass.tga.tx", 64); // glass: gloss only, no relief

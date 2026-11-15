@@ -531,7 +531,7 @@ void ReliefGenerator::prepare_rest()
     {
         rest_listed_ = true;
         const Clock::time_point start = Clock::now();
-        // One walk of the game's folders (names only) for the listing, the mark and the pruning.
+        // Background listing (names only) for the queue and mark. Pruning also inventories on-demand textures.
         rest_ = relief::List(setup_.textures);
         rest_at_ = 0;
         const double list_ms = Ms(start);
