@@ -323,6 +323,10 @@ class GpuNetwork final : public Network
 
     bool Open(std::span<const uint8_t> param, std::span<const uint8_t> bin, std::string &error)
     {
+        // Stable model attribution, including weights: the three relief graphs can share a calibration.
+        for (const auto bytes : {param, bin})
+            for (const uint8_t byte : bytes)
+                model_id_ = (model_id_ ^ byte) * 0x100000001b3ull;
         // ncnn reads the param text up to its end: a terminated copy.
         param_.assign(reinterpret_cast<const char *>(param.data()), param.size());
         if (net_.load_param_mem(param_.c_str()) != 0 || net_.load_model(bin.data()) <= 0)
@@ -419,7 +423,25 @@ class GpuNetwork final : public Network
         // The GPU slower than calibrated (another app, the GPU's clock down): the next tiles smaller.
         const auto guard = [&](double ms) {
             if (ms - calibration_.fixed_ms > 1.5 * kSubmitMs && tile_ > kMinTile)
+            {
+                const int previous = tile_;
                 tile_ = std::max(kMinTile, tile_ / 2 / 32 * 32);
+                Log("relief GPU tile guard: model=%016llx scale=%d halo=%d image=%dx%d old=%d new=%d "
+                    "ceiling=%d wall=%.3f ms fixed=%.3f ms adjusted=%.3f ms limit=%.3f ms "
+                    "(wall estimator, not GPU timestamp; provider=%s)",
+                    static_cast<unsigned long long>(model_id_), scale_, halo_, width, height, previous, tile_,
+                    calibration_.tile, ms, calibration_.fixed_ms, ms - calibration_.fixed_ms, 1.5 * kSubmitMs,
+                    gpu_.c_str());
+            }
+            else if (ms - calibration_.fixed_ms > 1.5 * kSubmitMs && !floor_guard_logged_)
+            {
+                floor_guard_logged_ = true; // one floor observation per network, never a per-tile log flood
+                Log("relief GPU tile guard floor: model=%016llx scale=%d halo=%d tile=%d ceiling=%d "
+                    "wall=%.3f ms fixed=%.3f ms adjusted=%.3f ms limit=%.3f ms "
+                    "(wall estimator, not GPU timestamp; provider=%s)",
+                    static_cast<unsigned long long>(model_id_), scale_, halo_, tile_, calibration_.tile, ms,
+                    calibration_.fixed_ms, ms - calibration_.fixed_ms, 1.5 * kSubmitMs, gpu_.c_str());
+            }
         };
         return RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error, infer, guard);
     }
@@ -436,6 +458,8 @@ class GpuNetwork final : public Network
     int halo_, scale_;
     std::string gpu_;
     int tile_ = kMinTile;
+    uint64_t model_id_ = 0xcbf29ce484222325ull;
+    bool floor_guard_logged_ = false;
     Calibration calibration_;
     std::string param_;
     ncnn::Net net_;
