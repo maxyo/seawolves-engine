@@ -807,7 +807,20 @@ class SeaScene final : public Scene
             return;
         if (verb == "open")
             Released(hud_.Current()); // the panel takes the screen: the helm is let go first
+        if (verb == "selectRecipient")
+        {
+            // A delayed selection reply from the old ship must not activate its
+            // pending item while the recipient change is still in flight.
+            choice_.clear();
+            hud_.Rebuild();
+        }
         hud_.Send("orders", Owner(orders) + "\t" + verb + "\t" + id);
+    }
+
+    bool SameChoiceContext(const SeaOrders &orders) const
+    {
+        return orders.scene == choice_scene_ && orders.activity == choice_activity_ &&
+               orders.recipient == choice_recipient_ && orders.stage == choice_stage_;
     }
 
     // A tap acts at once. The engine wants the item selected first and activated second,
@@ -816,14 +829,17 @@ class SeaScene final : public Scene
     {
         const SeaOrders &orders = hud_.Current().sea_orders;
         const SeaOrders::Item *item = orders.Find(id);
-        if (!choice_.empty() && orders.stage != choice_stage_)
-            choice_.clear(); // a tap of the last stage is over
+        if (!choice_.empty() && !SameChoiceContext(orders))
+            choice_.clear(); // the tap belonged to the previous menu context
         // A tap while another waits replaces it unless that one is being activated already: a
         // tap is never swallowed by an earlier one that the engine has not answered yet.
         if (!item || !item->enabled || (!choice_.empty() && (choice_activated_ || choice_ == id)))
             return;
         choice_ = id;
         choice_stage_ = orders.stage;
+        choice_recipient_ = orders.recipient;
+        choice_scene_ = orders.scene;
+        choice_activity_ = orders.activity;
         choice_until_ = hud_.Now() + kChoiceSeconds;
         choice_revision_ = 0;
         choice_activated_ = false;
@@ -833,10 +849,10 @@ class SeaScene final : public Scene
 
     void Follow(const SeaOrders &orders)
     {
-        if (!choice_.empty() && orders.stage != choice_stage_)
+        if (!choice_.empty() && !SameChoiceContext(orders))
         {
-            // The menu went on to another stage (its items reuse the ids): the tap belonged to
-            // the last one. Nothing of the new stage is pressed, and its first tap acts.
+            // Item ids are reused across recipients and stages. A new revision
+            // must not turn an old tap into a fresh order for another context.
             choice_.clear();
             hud_.Rebuild();
             return;
@@ -926,7 +942,7 @@ class SeaScene final : public Scene
                           {"title", item.label},
                           {"image", object ? Json{{"icon", ItemIcon(item)}, {"enamel", "iron"}} : Json{{"icon", ItemIcon(item)}}},
                           {"disabled", !item.enabled},
-                          {"pressed", item.id == choice_ && orders.stage == choice_stage_},
+                          {"pressed", item.id == choice_ && SameChoiceContext(orders)},
                           {"cooldown", item.enabled ? 0 : std::lround((1.0 - item.cooldown) * 100.0)}};
             // Commands and their options are tiles; abilities and targets are rows.
             const bool tile = item.kind == "command" || item.kind == "charge" || item.kind == "option";
@@ -1006,7 +1022,8 @@ class SeaScene final : public Scene
     double choice_until_ = 0.0;
     uint64_t choice_revision_ = 0;
     bool choice_activated_ = false;
-    std::string choice_stage_; // the menu stage the tapped row belongs to
+    std::string choice_stage_, choice_recipient_;
+    uint64_t choice_scene_ = 0, choice_activity_ = 0; // context of the original tap, not its selection reply
 };
 
 } // namespace

@@ -616,6 +616,45 @@ static void CheckOrders()
     Expect(mount.shown.sheet.empty() && !mount.shown.modal && mount.Has("helm") && mount.Has("orders") && mount.shown.layout == "sea", "the panel closed");
 }
 
+// Selection and activation are separate replies. A recipient switch must cancel the
+// pending tap, even if the next ship reuses the same item id and menu stage.
+static void CheckOrderRecipientChange()
+{
+    for (const bool explicit_switch : {false, true})
+    {
+        Bench bench;
+        FakeMount &mount = bench.mount;
+        Sail(bench);
+        bench.Feed("seaOrders", "sea-orders-root");
+        bench.Feed("gameplay", "gameplay-orders");
+        bench.Feed("ship", "ship-orders");
+        bench.Frame();
+        bench.Press("item-i1");
+        Expect(mount.Last().find("\tselectItem\ti1") != std::string::npos, "pending order selects before activation");
+        if (explicit_switch)
+            bench.Press("recipient-r502_7");
+        mount.commands.clear();
+        Json reply = State("sea-orders-root-selected");
+        if (!explicit_switch)
+            reply["recipientId"] = "r502_7";
+        // Explicit switch: even a delayed old-recipient selection reply must not
+        // finish the cancelled action while selectRecipient is in flight.
+        bench.Set("seaOrders", reply);
+        bench.Frame();
+        bool action = false;
+        for (const auto &command : mount.commands)
+            action |= command.find("\tselectItem\t") != std::string::npos || command.find("\tactivateItem\t") != std::string::npos;
+        Expect(!action, explicit_switch ? "recipient tap cancels pending order before delayed reply" :
+                                        "recipient replacement cannot inherit pending item activation");
+        Expect(mount.shown.sheet_props["tiles"][1]["pressed"] == false, "cancelled recipient order is not pressed");
+        mount.commands.clear();
+        bench.Press("item-i1");
+        Expect(mount.Last().find("\tactivateItem\ti1") != std::string::npos,
+               "a fresh tap in the current recipient still acts normally");
+        Expect(mount.errors.empty(), "recipient change controls have no channel errors");
+    }
+}
+
 static void CheckEmptyCategory()
 {
     Bench bench;
@@ -776,6 +815,7 @@ int main(int argc, char **argv)
     CheckBattle();
     CheckEmptyAmmo();
     CheckOrders();
+    CheckOrderRecipientChange();
     CheckEmptyCategory();
     CheckTouches(pack);
     CheckDeckTouches(pack);
