@@ -256,13 +256,8 @@ class LandScene final : public Scene
     double Tick(const States &states, double now) override
     {
         double next = kIdle;
-        if (moving_)
-        {
-            if (!states.gameplay.analog_movement || !hud_.Interactive())
-                moving_ = false; // the owner is gone: the engine has dropped the stick already
-            else if (states.gameplay.input_owner != move_owner_ || states.gameplay.movement_generation != move_generation_)
-                Move(states.gameplay, true); // a new movement session (owner, generation): the held stick goes on in it
-        }
+        if (moving_ || x_ != 0 || y_ != 0)
+            SyncMove(states.gameplay);
         if (!choice_.empty() && now >= choice_until_)
         {
             choice_.clear();
@@ -294,11 +289,8 @@ class LandScene final : public Scene
 
     void Released(const States &states) override
     {
-        if (moving_)
-        {
-            x_ = y_ = 0;
-            Move(states.gameplay, false);
-        }
+        x_ = y_ = 0;
+        SyncMove(states.gameplay);
         wheel_open_ = false;
         move_.clear();
         if (states.combat.known && states.combat.mode != "unknown")
@@ -627,21 +619,40 @@ class LandScene final : public Scene
         // The stick reports ±100 with y growing downwards; the engine takes ±1000, forward up.
         x_ = static_cast<int>(std::clamp(std::strtod(value.c_str(), nullptr), -100.0, 100.0) * 10.0);
         y_ = static_cast<int>(std::clamp(std::strtod(value.c_str() + comma + 1, nullptr), -100.0, 100.0) * -10.0);
-        const States &states = hud_.Current();
-        if (!states.gameplay.analog_movement || !hud_.Interactive())
-            return;
-        Move(states.gameplay, x_ != 0 || y_ != 0);
+        SyncMove(hud_.Current().gameplay);
     }
 
-    void Move(const Gameplay &gameplay, bool active)
+    // The engine holds a stick from its "1" packet until its "0" packet (events, no clock). So
+    // every run of "1" packets ends with exactly one "0" in the session it was said in, whatever
+    // the HUD does meanwhile: the thumb lifted while the HUD is not interactive, the HUD stopping
+    // being interactive under a held thumb (a fader, a dialogue), a new movement session and the
+    // scene's release all say it. (A session the engine has already ended drops it as stale.)
+    // A thumb still down is said again once the HUD is interactive in a live session.
+    void SyncMove(const Gameplay &gameplay)
     {
-        if (!active && !moving_)
-            return;
-        moving_ = active;
-        move_owner_ = gameplay.input_owner;
-        move_generation_ = gameplay.movement_generation;
+        const bool held = x_ != 0 || y_ != 0;
+        const bool live = gameplay.analog_movement && hud_.Interactive();
+        const bool same = gameplay.input_owner == move_owner_ && gameplay.movement_generation == move_generation_;
+        if (moving_ && (!held || !live || !same))
+        {
+            moving_ = false;
+            SendMove(false);
+        }
+        if (held && live && (!moving_ || x_ != said_x_ || y_ != said_y_))
+        {
+            moving_ = true;
+            move_owner_ = gameplay.input_owner;
+            move_generation_ = gameplay.movement_generation;
+            said_x_ = x_;
+            said_y_ = y_;
+            SendMove(true);
+        }
+    }
+
+    void SendMove(bool active)
+    {
         hud_.Send("move",
-                  "1\t" + gameplay.input_owner + "\t" + std::to_string(gameplay.movement_generation) + "\t" + std::to_string(++move_sequence_) + "\t" +
+                  "1\t" + move_owner_ + "\t" + std::to_string(move_generation_) + "\t" + std::to_string(++move_sequence_) + "\t" +
                       (active ? "1" : "0") + "\t" + std::to_string(active ? x_ : 0) + "\t" + std::to_string(active ? y_ : 0),
                   "move");
     }
@@ -778,7 +789,8 @@ class LandScene final : public Scene
     Hud &hud_;
     // movement
     bool moving_ = false;
-    int x_ = 0, y_ = 0;
+    int x_ = 0, y_ = 0;           // the thumb now (0, 0: up)
+    int said_x_ = 0, said_y_ = 0; // what the engine was last told while moving_
     // The stick is said on change only (event model): the engine holds it until its release.
     std::string move_owner_;
     uint64_t move_generation_ = 0;

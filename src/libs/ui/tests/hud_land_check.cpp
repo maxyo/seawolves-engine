@@ -286,6 +286,20 @@ static void CheckExplore()
     Expect(!mount.Has("move") && !mount.errors.empty() && mount.errors.back().find("no analog movement") != std::string::npos, "no analog movement: no stick, an error");
 }
 
+// The sequence field of the last move command sent.
+static unsigned long move_seq(const FakeMount &mount)
+{
+    for (auto it = mount.commands.rbegin(); it != mount.commands.rend(); ++it)
+        if (it->rfind("move:", 0) == 0)
+        {
+            size_t at = 0;
+            for (int field = 0; field < 3; ++field)
+                at = it->find('\t', at) + 1;
+            return std::stoul(it->substr(at));
+        }
+    return 0;
+}
+
 static void CheckMovement()
 {
     Bench bench;
@@ -307,15 +321,18 @@ static void CheckMovement()
     bench.Melee();
     bench.Frame(0.11);
     Expect(mount.commands.size() == count, "the stick survives the stance change without a word");
-    // a new movement session (the engine's generation moved on) while the stick is held: said again in it
+    // a new movement session (the engine's generation moved on) while the stick is held: the old
+    // session gets its release, the held stick goes on in the new one
     Json renewed = State("gameplay-melee");
     renewed["movementGeneration"] = 4;
     bench.Set("gameplay", renewed);
     bench.Frame();
-    ExpectEqual(mount.Last(), "move:1\ttown:42\t4\t3\t1\t500\t-500", "the held stick goes on in the new generation");
+    Expect(mount.commands.size() == count + 2 && mount.commands[count] == "move:1\ttown:42\t3\t3\t0\t0\t0",
+           "the old session's stick is released: " + mount.commands[count]);
+    ExpectEqual(mount.Last(), "move:1\ttown:42\t4\t4\t1\t500\t-500", "the held stick goes on in the new generation");
 
     bench.Press("move", "change", "0,0");
-    ExpectEqual(mount.Last(), "move:1\ttown:42\t4\t4\t0\t0\t0", "release stops the hero");
+    ExpectEqual(mount.Last(), "move:1\ttown:42\t4\t5\t0\t0\t0", "release stops the hero");
     const size_t stopped = mount.commands.size();
     bench.Frame(0.5);
     Expect(mount.commands.size() == stopped, "no heartbeat after the release");
@@ -323,8 +340,86 @@ static void CheckMovement()
     // the platform cancels input while the stick is held
     bench.Press("move", "change", "100,0");
     bench.hud.Released();
-    Expect(mount.commands.size() >= 2 && mount.commands[mount.commands.size() - 2] == "move:1\ttown:42\t4\t6\t0\t0\t0", "cancelled input stops the hero");
+    Expect(mount.commands.size() >= 2 && mount.commands[mount.commands.size() - 2] == "move:1\ttown:42\t4\t7\t0\t0\t0", "cancelled input stops the hero");
     ExpectEqual(mount.Last(), "combat:2\t6\t0\t1\tall\tcancel", "… and cancels every combat hold");
+    bench.Frame();
+
+    // Owner bug «убрал оружие на бегу — не остановиться»: every stick that is down ends with exactly
+    // one release, whatever the HUD does between the push and the lift.
+    const auto releases = [&](size_t from) {
+        return std::count_if(mount.commands.begin() + static_cast<std::ptrdiff_t>(from), mount.commands.end(),
+                             [](const std::string &c) { return c.rfind("move:", 0) == 0 && c.ends_with("\t0\t0\t0"); });
+    };
+    const auto presses = [&](size_t from) {
+        return std::count_if(mount.commands.begin() + static_cast<std::ptrdiff_t>(from), mount.commands.end(),
+                             [](const std::string &c) { return c.rfind("move:", 0) == 0 && !c.ends_with("\t0\t0\t0"); });
+    };
+    Json live = State("gameplay-melee");
+    live["movementGeneration"] = 4;
+    // holster while the stick is held (melee → explore), keep holding, then lift
+    {
+        bench.Set("gameplay", live);
+        bench.Feed("combat", "combat-melee");
+        const size_t from = mount.commands.size();
+        bench.Press("move", "change", "0,-100");
+        bench.Frame(0.2);
+        Json explore = State("gameplay-explore");
+        explore["movementGeneration"] = 4;
+        bench.Set("gameplay", explore);
+        bench.Feed("combat", "combat-explore");
+        bench.Frame(0.5);
+        bench.Frame(1.0);
+        Expect(presses(from) == 1 && releases(from) == 0, "holster under a held stick: it stays held, said once");
+        bench.Press("move", "change", "0,0");
+        Expect(releases(from) == 1 && mount.Last() == "move:1\ttown:42\t4\t" + std::to_string(move_seq(mount)) + "\t0\t0\t0",
+               "holster, then lift: one release: " + mount.Last());
+    }
+    // draw while the stick is held (explore → melee), then lift
+    {
+        const size_t from = mount.commands.size();
+        bench.Press("move", "change", "0,-100");
+        bench.Set("gameplay", live);
+        bench.Feed("combat", "combat-melee");
+        bench.Frame(0.5);
+        bench.Press("move", "change", "0,0");
+        Expect(presses(from) == 1 && releases(from) == 1, "draw under a held stick, then lift: one press, one release");
+    }
+    // the HUD stops being interactive under a held thumb (a scene fader): the stop is said at
+    // once, the thumb lifted meanwhile says nothing more, and nothing resumes by itself after it
+    // (the hidden HUD let go of the pointer: a new push moves the hero again)
+    {
+        const size_t from = mount.commands.size();
+        bench.Press("move", "change", "0,-100");
+        bench.Feed("presentation", "presentation-loading");
+        Expect(releases(from) == 1 && std::find(mount.commands.begin(), mount.commands.end(), "presence:hidden") != mount.commands.end(),
+               "a fader under a held stick: the hero stops at once");
+        bench.Press("move", "change", "0,0"); // lifted under the fader
+        bench.Feed("presentation", "presentation-game");
+        bench.Frame();
+        Expect(presses(from) == 1 && releases(from) == 1, "after the fader: nothing more, nothing resumes");
+        bench.Press("move", "change", "0,-100");
+        bench.Press("move", "change", "0,0");
+        Expect(presses(from) == 2 && releases(from) == 2, "a new push after the fader: one press, one release");
+    }
+    // the movement session ends under a held thumb (a dialogue, a scripted move: the engine
+    // reports no owner, the land scene goes) and a new one starts
+    {
+        const size_t from = mount.commands.size();
+        bench.Press("move", "change", "0,-100");
+        bench.Set("gameplay", State("gameplay-orders"));
+        bench.Frame();
+        Expect(presses(from) == 1 && releases(from) == 1, "the session ends under a held stick: its release is said");
+        Json back = State("gameplay-explore");
+        back["movementGeneration"] = 5;
+        bench.Set("gameplay", back);
+        bench.Feed("combat", "combat-explore");
+        bench.Frame();
+        Expect(presses(from) == 1, "the new session starts with the stick up");
+        bench.Press("move", "change", "0,-100");
+        ExpectEqual(mount.Last(), "move:1\ttown:42\t5\t1\t1\t0\t1000", "a push is said in the new session");
+        bench.Press("move", "change", "0,0");
+        Expect(presses(from) == 2 && releases(from) == 2, "… and its lift too");
+    }
 
     // in the background nothing moves
     bench.Feed("presentation", "presentation-background");
@@ -765,6 +860,25 @@ static void CheckTouches(const std::string &pack)
     run.Frame(0.12);
     Expect(run.Last().rfind("move:1\ttown:42\t3\t", 0) == 0 && run.Last().find("\t1\t1000\t0") != std::string::npos, "the stick survives melee → explore: " + run.Last());
     host.Touch(TouchPhase::Up, 3, 130, 320);
+    Expect(run.Last().rfind("move:1\ttown:42\t3\t", 0) == 0 && run.Last().ends_with("\t0\t0\t0"),
+           "the thumb lifted after melee → explore stops the hero: " + run.Last());
+
+    // a fader under a held thumb: the hidden HUD lets the pointer go and the hero stops
+    host.Touch(TouchPhase::Down, 3, 90, 320);
+    host.Touch(TouchPhase::Move, 3, 130, 320);
+    const size_t pushed = run.commands.size();
+    run.Feed("presentation", "presentation-loading");
+    run.Frame();
+    Expect(run.Sent("presence:hidden") && std::count_if(run.commands.begin() + static_cast<std::ptrdiff_t>(pushed), run.commands.end(), [](const std::string &c) {
+               return c.rfind("move:", 0) == 0 && c.ends_with("\t0\t0\t0"); }) == 1,
+           "a fader under a held stick stops the hero, once");
+    const size_t faded = run.commands.size();
+    host.Touch(TouchPhase::Up, 3, 130, 320);
+    run.Feed("presentation", "presentation-game");
+    run.Frame();
+    Expect(std::none_of(run.commands.begin() + static_cast<std::ptrdiff_t>(faded), run.commands.end(),
+                        [](const std::string &c) { return c.rfind("move:", 0) == 0; }),
+           "the thumb lifted under the fader says nothing more");
 
     // an open sheet is modal: every touch and the back key are the UI's
     run.Feed("landCommands", "land-commands-root");
