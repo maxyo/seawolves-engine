@@ -83,12 +83,43 @@ void CheckDemandPrune(const std::filesystem::path &root)
     std::filesystem::remove(deleted);
     const auto background = relief::List(textures);
     CHECK(background.size() == 1 && background.front().filename() == "StoneWall.tga.tx");
+    // Real permission failures, not a missing source: never delete any map on uncertainty.
+    const auto permissions = std::filesystem::status(character).permissions();
+    std::filesystem::permissions(character, std::filesystem::perms::none);
+    if (geteuid() != 0)
+    {
+        CHECK(!std::ifstream(character, std::ios::binary).good());
+        CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, old)));
+    }
+    std::filesystem::permissions(character, permissions);
+    const auto directory_permissions = std::filesystem::status(character.parent_path()).permissions();
+    std::filesystem::permissions(character.parent_path(), std::filesystem::perms::none);
+    if (geteuid() != 0)
+    {
+        CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+        CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    }
+    std::filesystem::permissions(character.parent_path(), directory_permissions);
+    std::filesystem::resize_file(character, 24 + 128 * 128 / 2 + 1); // incomplete 64px probe
+    CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == -1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
+    WriteTx(character, 128);
+    CHECK(relief::Prune(root / "missing-texture-root", background, output, fx::kReliefMapSize) == -1);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 2);
     CHECK(std::filesystem::exists(fx::ReliefFile(output, key)));
     CHECK(!std::filesystem::exists(fx::ReliefFile(output, old)));
     CHECK(!std::filesystem::exists(fx::ReliefFile(output, gone)));
     std::ifstream kept(fx::ReliefFile(output, key), std::ios::binary);
     CHECK(std::string(std::istreambuf_iterator<char>(kept), {}) == "existing demand map");
+    const auto stone_probe = WriteTx(textures / "StoneWall.tga.tx", 64);
+    const auto stone_key = fx::ReliefKey("stonewall", stone_probe, 64, 64,
+                                       fx::ReliefMethod(fx::ReliefClass::Stone), fx::kReliefMapSize);
+    std::ofstream(fx::ReliefFile(output, stone_key), std::ios::binary) << "background map";
+    CHECK(relief::Prune(textures, {}, output, fx::kReliefMapSize) == 0);
+    CHECK(std::filesystem::exists(fx::ReliefFile(output, stone_key)));
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 0);
     std::filesystem::remove(character);
     CHECK(relief::Prune(textures, background, output, fx::kReliefMapSize) == 1);

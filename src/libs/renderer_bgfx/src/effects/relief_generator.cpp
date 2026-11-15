@@ -527,6 +527,14 @@ void ReliefGenerator::release_models(const char *why)
 
 void ReliefGenerator::prepare_rest()
 {
+    const auto defer_prune = [this] {
+        shim::logf("effects: relief pruning deferred: source inventory unreadable; retry after quiet interval");
+        std::lock_guard lock(mutex_);
+        rest_listed_ = false;
+        rest_.clear();
+        rest_at_ = 0;
+        last_request_ = Clock::now(); // Existing kRestQuiet pacing; demand requests still take priority.
+    };
     if (!rest_listed_)
     {
         rest_listed_ = true;
@@ -555,6 +563,11 @@ void ReliefGenerator::prepare_rest()
         // again, and their room is the new maps'.
         const Clock::time_point prune_start = Clock::now();
         const int stale = relief::Prune(setup_.textures, rest_, setup_.directory, fx::kReliefMapSize);
+        if (stale < 0)
+        {
+            defer_prune();
+            return;
+        }
         if (stale > 0)
             shim::logf("effects: relief generation: %d maps of another method or game removed", stale);
         shim::logf("effects: relief generation: %zu relief and gloss textures of the game to make in the background (listed in "
@@ -564,6 +577,11 @@ void ReliefGenerator::prepare_rest()
     if (rest_at_ >= rest_.size())
     {
         const int removed = relief::Prune(setup_.textures, rest_, setup_.directory, fx::kReliefMapSize);
+        if (removed < 0)
+        {
+            defer_prune();
+            return;
+        }
         relief::MarkComplete(setup_.directory, fx::kReliefMapSize, rest_.size());
         shim::logf("effects: relief generation: every relief texture of the game has its map (%d stale maps removed)",
                    removed);

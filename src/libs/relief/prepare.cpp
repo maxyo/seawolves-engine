@@ -149,14 +149,17 @@ std::string Lower(std::string text)
 }
 
 // A relief or gloss texture: the rules give it relief or gloss, or its name says "bump" (its pixels decide).
-std::optional<Candidate> Classify(const std::filesystem::path &textures, const std::filesystem::path &file)
+std::optional<Candidate> Classify(const std::filesystem::path &textures, const std::filesystem::path &file, std::error_code *failure = nullptr)
 {
     std::error_code error;
     if (Lower(file.extension().string()) != ".tx")
         return std::nullopt;
     const std::string name = fx::NormalizeTexturePath(std::filesystem::relative(file, textures, error).generic_string());
     if (error)
+    {
+        if (failure) *failure = error;
         return std::nullopt;
+    }
     const fx::ReliefVerdict verdict = fx::ClassifyTextureName(name);
     const bool bump = fx::NameSuggestsHeightMap(name) && !(verdict.by_folder && verdict.relief == fx::ReliefClass::None);
     const fx::GlossClass gloss = fx::ClassifyGlossName(name).gloss;
@@ -165,15 +168,20 @@ std::optional<Candidate> Classify(const std::filesystem::path &textures, const s
     return Candidate{file, name, verdict.relief, gloss, verdict.relief != fx::ReliefClass::Character};
 }
 
-std::vector<Candidate> Candidates(const std::filesystem::path &textures)
+std::vector<Candidate> Candidates(const std::filesystem::path &textures, std::error_code *failure = nullptr)
 {
     std::vector<Candidate> list;
     std::error_code error;
     for (auto it = std::filesystem::recursive_directory_iterator(textures, error);
          !error && it != std::filesystem::recursive_directory_iterator(); it.increment(error))
+    {
         if (it->is_regular_file(error))
-            if (std::optional<Candidate> candidate = Classify(textures, it->path()))
+            if (std::optional<Candidate> candidate = Classify(textures, it->path(), &error))
                 list.push_back(std::move(*candidate));
+        if (error)
+            break; // increment(error) must not clear a classification/status error.
+    }
+    if (failure) *failure = error;
     return list;
 }
 
@@ -1064,21 +1072,37 @@ int Prune(const std::filesystem::path &textures, const std::vector<std::filesyst
     // List is a generation queue, not the complete cache inventory: character maps are
     // prepared only on demand. Keep their current keys too, without scheduling inference.
     std::vector<std::filesystem::path> sources = files;
-    for (const Candidate &candidate : Candidates(textures))
-        if (!candidate.background)
-            sources.push_back(candidate.file);
+    std::error_code inventory_error;
+    const auto inventory = Candidates(textures, &inventory_error);
+    if (inventory_error)
+        return -1; // A partial walk cannot establish which source textures were deleted.
+    for (const Candidate &candidate : inventory)
+        sources.push_back(candidate.file); // Also repair a possibly incomplete earlier background List.
     std::sort(sources.begin(), sources.end());
     sources.erase(std::unique(sources.begin(), sources.end()), sources.end());
     std::vector<std::filesystem::path> current;
     for (const std::filesystem::path &file : sources)
     {
-        const std::optional<Candidate> found = Classify(textures, file);
+        std::error_code source_error;
+        const std::optional<Candidate> found = Classify(textures, file, &source_error);
+        if (source_error)
+            return -1;
         if (!found)
             continue;
         const Candidate &candidate = *found;
         TxFile tx;
         if (!tx.LoadProbe(candidate.file))
+        {
+            // Missing after a successful root walk is a deleted source; unreadable/invalid is not.
+            const bool exists = std::filesystem::exists(candidate.file, source_error);
+            if (source_error || exists)
+                return -1;
             continue;
+        }
+        const int probe = TxFile::ProbeLevel(tx);
+        if (probe >= 0 && tx.Level(probe).size() !=
+                              texture::d3d_level_bytes(tx.format, tx.width >> probe, tx.height >> probe))
+            return -1; // A truncated read is uncertainty, not a deleted or unsupported texture.
         fx::ReliefClass relief;
         // A texture's own gloss map (fx/gloss_map.hpp): a gloss class without a relief height.
         if (const std::optional<uint64_t> gloss_key = GlossKey(candidate, tx))
@@ -1223,7 +1247,14 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
     if (result.status == 0)
     {
         result.removed = Prune(job.textures, files, job.output, job.map_size);
-        MarkComplete(job.output, job.map_size, files.size());
+        if (result.removed < 0)
+        {
+            result.removed = 0;
+            result.status = 2;
+            result.error = "cache pruning deferred: texture inventory or source unreadable";
+        }
+        else
+            MarkComplete(job.output, job.map_size, files.size());
     }
     result.seconds = Seconds(start);
     result.infer_seconds = session->stats().infer_seconds;
