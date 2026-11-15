@@ -6,6 +6,16 @@
 
 namespace storm::ship
 {
+// Keep the stock near/far lift ramp; the observer and emitter are world positions.
+template<class Position>
+inline float TrackElevation(const Position &camera, const Position &ship, float near_height, float far_height)
+{
+    const float dx = camera.x - ship.x, dy = camera.y - ship.y, dz = camera.z - ship.z;
+    const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    const float blend = std::clamp(distance / 10000.0f, 0.0f, 1.0f);
+    return near_height + blend * (far_height - near_height);
+}
+
 struct TrackSpacing
 {
     double remainder = 0;

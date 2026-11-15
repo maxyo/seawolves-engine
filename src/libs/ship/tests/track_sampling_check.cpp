@@ -51,6 +51,28 @@ int main()
     CHECK(TrackWidth(3, 2, 5, 10) == 10.5f);
     CHECK(TrackWidth(3, 2, 100, 10) == 13); // bounded integral through expiry
     CHECK(TrackWidth(3, 2, 0, 0) == 0);
+    // Translating both the camera and hull must not lift/sink the same foam strip.
+    // Stock AIShip near/far heights are .2/.9 m; a 10 km world offset exposed the origin bug.
+    struct Position { float x, y, z; };
+    const Position origin{0, 0, 0}, eye{30, 40, 0};
+    const float close = storm::ship::TrackElevation(eye, origin, .2f, .9f);
+    CHECK(std::abs(close - .2035f) < 1e-6f); // unchanged at world origin
+    for (const Position shift : {Position{10000, 0, 0}, Position{-8000, 0, 6000}})
+    {
+        const Position shifted_eye{eye.x + shift.x, eye.y + shift.y, eye.z + shift.z};
+        const float translated = storm::ship::TrackElevation(shifted_eye, shift, .2f, .9f);
+        std::printf("foam world translation: original=%.6f shifted=%.6f\n", close, translated);
+        CHECK(std::abs(translated - close) < 1e-6f);
+        // Both production ribbons share this lift: Track1 transverse .4..1.4 profile,
+        // Track2 uniform 1.0. Hold WaveXZ fixed to isolate the erroneous camera factor.
+        for (float profile : {.4f, 1.4f, 1.0f})
+            CHECK(std::abs((2.0f + translated * profile) - (2.0f + close * profile)) < 1e-6f);
+    }
+    const Position hull{10000, 0, -2000};
+    CHECK(storm::ship::TrackElevation(hull, hull, .2f, .9f) == .2f);
+    CHECK(std::abs(storm::ship::TrackElevation(Position{13000, 4000, -2000}, hull, .2f, .9f) - .55f) < 1e-6f);
+    CHECK(std::abs(storm::ship::TrackElevation(Position{22000, 0, -2000}, hull, .2f, .9f) - .9f) < 1e-6f);
+    CHECK(storm::ship::TrackElevation(eye, origin, .2f, .2f) == .2f);
     std::printf("foam turn/stop/reset/width checks: %s\n", failed ? "FAIL" : "PASS");
     return failed ? 1 : 0;
 }

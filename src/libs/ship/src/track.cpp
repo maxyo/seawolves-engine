@@ -277,10 +277,8 @@ void ShipTracks::ShipTrack::Execute(float fDeltaTime)
     float fFov;
     glm::vec3 vCamPos, vCamAng;
     pRS->GetCamera(vCamPos, vCamAng, fFov);
-    const auto fCamDist = Clamp(sqrtf(storm::math::lengthSquared(vCamPos)) / 10000.0f);
-    const auto fWaveUP = fUP1 + fCamDist * (fUP2 - fUP1);
-
     const auto vCurPos = pShip->GetPos();
+    const auto fWaveUP = storm::ship::TrackElevation(vCamPos, vCurPos, fUP1, fUP2);
     const auto vCurAng = pShip->GetAng();
 
     const auto vBoxSize = pShip->GetBoxsize();
