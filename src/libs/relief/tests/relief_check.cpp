@@ -509,6 +509,23 @@ int main(int argc, char **argv)
             provider = open();
             CHECK(relief::GpuCrash(cache).empty() && !running());
             std::printf("after another GPU's crash: %s\n", provider.c_str());
+            // A crash recorded by an earlier version of the GPU path (its label without kGpuPath): tried again.
+            std::ofstream(cache / "relief-gpu-crashed.txt", std::ios::trunc)
+                << relief::Gpu().name << ", driver " << relief::Gpu().driver << "\n";
+            open();
+            CHECK(relief::GpuCrash(cache).empty() && !running());
+            // A marker left by a process the system killed for memory (the app's previous-exit.txt in the cache root):
+            // no crash recorded, the GPU stays possible; a native crash is kept as one.
+            const std::filesystem::path exit_file = cache.parent_path() / "previous-exit.txt";
+            std::ofstream(exit_file, std::ios::trunc) << "low_memory 1763300000000 critical_mem_pressure\n";
+            relief::MarkGpuRunning(cache, gpu);
+            open();
+            CHECK(relief::GpuCrash(cache).empty() && !running());
+            CHECK(logged.find("the system ended the process (low_memory) while it ran: not a crash") != std::string::npos);
+            std::ofstream(exit_file, std::ios::trunc) << "crash_native 1763300000000 signal 11\n";
+            relief::MarkGpuRunning(cache, gpu);
+            CHECK(open().rfind("CPU", 0) == 0 && relief::GpuCrash(cache) == gpu);
+            std::filesystem::remove(exit_file);
         }
     }
     std::filesystem::remove_all(root);

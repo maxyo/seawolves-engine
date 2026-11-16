@@ -38,7 +38,7 @@ void GpuCrashGuard::clear() const
         std::filesystem::remove(marker_, ignored);
 }
 
-GpuCrashGuard::Record GpuCrashGuard::take_leftover() const
+GpuCrashGuard::Record GpuCrashGuard::take_leftover(std::string_view previous_exit) const
 {
     if (!enabled())
         return {};
@@ -48,10 +48,30 @@ GpuCrashGuard::Record GpuCrashGuard::take_leftover() const
         if (!std::getline(in, leftover.what) || leftover.what.empty())
             return {};
     }
+    clear();
+    if (!ExitMayBeCrash(previous_exit))
+    {
+        leftover.counted = false;
+        leftover.why = "the system ended the process (" + std::string(previous_exit) + ") while it ran: not a crash";
+        return leftover;
+    }
     leftover.why = kProcessDied;
     record(leftover.what, leftover.why);
-    clear();
     return leftover;
+}
+
+std::string PreviousExit(const std::filesystem::path &cache_root)
+{
+    std::ifstream in(cache_root / "previous-exit.txt");
+    std::string reason;
+    in >> reason;
+    return reason;
+}
+
+bool ExitMayBeCrash(std::string_view reason)
+{
+    return reason.empty() || reason == "unknown" || reason == "crash" || reason == "crash_native" || reason == "anr" ||
+           reason == "signaled" || reason == "initialization_failure";
 }
 
 GpuCrashGuard::Record GpuCrashGuard::crashed() const

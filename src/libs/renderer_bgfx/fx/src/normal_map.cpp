@@ -447,6 +447,9 @@ std::string NormalizeTexturePath(std::string_view path)
     for (char c : path)
         if (!std::isspace(static_cast<unsigned char>(c)) || !out.empty())
             out.push_back(c == '\\' ? '/' : static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    // A leading separator ("\\WorldMap\\sea\\ani\\wave_0000": how the world map names its textures) is no part of the
+    // path: left in, no folder rule matched and the world map's sea frames and clouds fell to the last rule (a prop).
+    out.erase(0, out.find_first_not_of('/') == std::string::npos ? out.size() : out.find_first_not_of('/'));
     for (std::string_view prefix : {"resource/textures/", "textures/"})
         if (out.compare(0, prefix.size(), prefix) == 0)
             out.erase(0, prefix.size());

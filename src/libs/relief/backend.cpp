@@ -642,7 +642,7 @@ std::string CacheLine(const GpuDevice &gpu, std::span<const uint8_t> param, std:
             digest = (digest ^ b) * 0x100000001b3ull;
     char hex[24];
     std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(digest));
-    return gpu.name + " | " + gpu.driver + " | " + hex + " | " + std::to_string(threads) + " threads | v3 ncnn CPU";
+    return gpu.name + " | " + gpu.driver + " | " + hex + " | " + std::to_string(threads) + " threads | v4 staged GPU submissions";
 }
 } // namespace
 
@@ -732,7 +732,7 @@ fx::GpuCrashGuard Guard(const std::filesystem::path &cache)
 
 std::string GpuLabel(const GpuDevice &gpu)
 {
-    return gpu.name + ", driver " + gpu.driver;
+    return gpu.name + ", driver " + gpu.driver + ", " + kGpuPath;
 }
 
 void MarkGpuRunning(const std::filesystem::path &cache, const std::string &what)
@@ -756,8 +756,13 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
     // The crash guard: the marker of GPU work (MarkGpuRunning) left from the last run means the process died in it.
     // That GPU and driver take the CPU from then on (relief-gpu-crashed.txt; «Очистить кэш» clears it); a crash before
     // the GPU was known keeps Vulkan closed altogether.
+    // The system's word on how the previous process ended (the app writes it into the cache root, the relief
+    // directory's parent): a marker left by a process the system killed for memory or stopped is not a crash.
     std::error_code ignored;
-    if (const fx::GpuCrashGuard::Record left = Guard(cache).take_leftover(); !left.empty())
+    if (const fx::GpuCrashGuard::Record left = Guard(cache).take_leftover(fx::PreviousExit(cache.parent_path()));
+        !left.empty() && !left.counted)
+        Log("relief GPU work was running when the previous run ended, but %s: the GPU stays possible", left.why.c_str());
+    else if (!left.empty())
     {
         if (left.what == kGpuOpening)
             Log("ERROR: relief GPU inference crashed the previous run while Vulkan opened: using the CPU");

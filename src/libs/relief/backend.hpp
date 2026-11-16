@@ -87,10 +87,14 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
 
 // The crash guard of the GPU work (ChooseDevice), on the shared storm/fx/gpu_crash_guard.hpp: `cache`'s marker holds
 // GpuLabel of the GPU (kGpuOpening while Vulkan opens), written before GPU work starts and cleared after it succeeded.
-// One left behind at the next start means the process died in the driver: logged at error, that GPU and driver take
-// the CPU («Очистить кэш» clears it).
-inline constexpr const char *kGpuOpening = "opening Vulkan";
-std::string GpuLabel(const GpuDevice &gpu); // "<name>, driver <version>"
+// One left behind at the next start means the process died in the driver, unless the system says it ended the
+// process itself (fx::PreviousExit: killed for memory, stopped by the user or the system, updated; logged, not kept):
+// logged at error, that GPU and driver take the CPU («Очистить кэш» clears it).
+// The version of our GPU inference code in every label: a crash recorded by another version of it (or another driver)
+// is not this one's, so an update tries the GPU again (measured, and guarded the same way).
+inline constexpr const char *kGpuPath = "relief GPU path 2 (staged submissions)";
+inline constexpr const char *kGpuOpening = "opening Vulkan, relief GPU path 2 (staged submissions)";
+std::string GpuLabel(const GpuDevice &gpu); // "<name>, driver <version>, <kGpuPath>"
 void MarkGpuRunning(const std::filesystem::path &cache, const std::string &what);
 void ClearGpuRunning(const std::filesystem::path &cache);
 // The GPU (GpuLabel) or kGpuOpening that crashed a previous run, or empty.

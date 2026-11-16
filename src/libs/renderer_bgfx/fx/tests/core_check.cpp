@@ -1732,6 +1732,10 @@ void CheckReliefRules()
 {
     CHECK(NormalizeTexturePath("Locations\\Bump_City.tga.tx") == "locations/bump_city");
     CHECK(NormalizeTexturePath("resource\\textures\\Ships\\Brig1\\Hull1\\bortoutbrig.TGA") == "ships/brig1/hull1/bortoutbrig");
+    // The world map names its textures with a leading separator (owner's log 1655: its sea frames asked for relief).
+    CHECK(NormalizeTexturePath("\\WorldMap\\sea\\ani\\wave_0000") == "worldmap/sea/ani/wave_0000");
+    CHECK(NormalizeTexturePath("/worldmap/clouds") == "worldmap/clouds");
+    CHECK(ClassifyTextureName(NormalizeTexturePath("/worldmap/sea/ani/wave_0017")).relief == ReliefClass::None);
     CHECK(NameSuggestsHeightMap("bump_houses") && NameSuggestsHeightMap("ships/sailbumpu1") && NameSuggestsHeightMap("sph2_bump2"));
     CHECK(!NameSuggestsHeightMap("bumpy_folder/wall") && !NameSuggestsHeightMap("deckplanksu2"));
 

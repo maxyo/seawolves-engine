@@ -107,8 +107,8 @@ size_t NormalMapBytes(int width, int height, NormalMapFormat format = NormalMapF
 
 // ---- which textures get relief ----
 
-// "Resource\\Textures\\Locations\\Bump_City.tga.tx" -> "locations/bump_city": lower case, '/', without the
-// textures folder and the extensions.
+// "Resource\\Textures\\Locations\\Bump_City.tga.tx" -> "locations/bump_city": lower case, '/', without a leading
+// separator, the textures folder and the extensions.
 std::string NormalizeTexturePath(std::string_view path);
 // The height-map name rule: the file name contains "bump".
 bool NameSuggestsHeightMap(std::string_view normalized_path);
