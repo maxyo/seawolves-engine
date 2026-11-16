@@ -24,7 +24,7 @@ $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, 
 
 SAMPLER3D(s_vol1, 9);
 
-// One frame of the sea's heights at uv, 0..1 as SEA::CalculateHeightMap scales the bytes (1 / 255).
+// One frame of the sea's heights at uv, 0..1 as SEA::FrameBlend scales the bytes (1 / 255).
 float seaFrame(vec2 uv, float frame)
 {
     float slice = floor(frame / 4.0);
@@ -33,7 +33,7 @@ float seaFrame(vec2 uv, float frame)
     return dot(texel, vec4(equal(vec4_splat(channel), vec4(0.0, 1.0, 2.0, 3.0))));
 }
 
-// SEA::CalculateHeightMap: the frame blended with the next one (frames wrap), the blend linear like the bilinear
+// SEA::FrameBlend: the frame blended with the next one (frames wrap), the blend linear like the bilinear
 // sample, so blending two bilinear samples is the same surface.
 float seaHeight(vec2 uv, float frame)
 {

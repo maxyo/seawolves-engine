@@ -39,11 +39,9 @@ void check(HRESULT result, const char *what)
     }
 }
 
-struct SeaVertex
+struct SeaVertex // the sea's flat grid (sea.cpp); the vertex port displaces it by the height field
 {
     float x, y, z;
-    float nx, ny, nz;
-    float u, v;
 };
 
 struct PostVertex
@@ -91,6 +89,12 @@ class Scene
                     *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(box.pBits) + z * box.SlicePitch + y * box.RowPitch + x * 4) =
                         0x8080FF80;
         bump_->UnlockBox(0);
+        // The height field (sea_surface_gpu.hpp): one texel; the sea is beyond its reach, flat.
+        check(d_.CreateVolumeTexture(1, 1, 1, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &field_, nullptr),
+              "CreateVolumeTexture(field)");
+        check(field_->LockBox(0, &box, nullptr, 0), "LockBox(field)");
+        *static_cast<uint32_t *>(box.pBits) = 0;
+        field_->UnlockBox(0);
         // The reflected scene: one sky colour.
         check(d_.CreateCubeTexture(4, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &env_, nullptr), "CreateCubeTexture");
         for (int face = 0; face < 6; ++face)
@@ -110,6 +114,7 @@ class Scene
         vs_->Release();
         ps_->Release();
         bump_->Release();
+        field_->Release();
         env_->Release();
     }
 
@@ -158,6 +163,7 @@ class Scene
         d_.SetPixelShader(ps_);
         d_.SetTexture(0, bump_);
         d_.SetTexture(3, env_);
+        d_.SetTexture(D3DVERTEXTEXTURESAMPLER0, field_);
         float c[59][4] = {};
         const auto set = [&](int r, float x, float y, float z, float w) {
             c[r][0] = x, c[r][1] = y, c[r][2] = z, c[r][3] = w;
@@ -165,10 +171,18 @@ class Scene
         set(0, 0.0f, 1.0f, 0.5f, -0.04f);
         set(1, 2.0f, -1.0f, 0.00036621652552071f, 0.0f); // no fog
         set(2, 0.0f, 0.0f, 0.0f, 0.0f);
-        set(23, 0.0f, 0.0f, 0.0f, 1.0f); // camera
-        // World-view-projection as the vertex shader reads it (m4x4 with c24..c27: the columns of the D3D matrix).
+        // The sea's surface (c4..c8, sea_surface_gpu.hpp): the camera beyond its reach (reach 0), a flat sea at y = 0.
+        set(4, 1.0f, 0.0f, 0.0f, 0.0f);
+        set(5, 1.0f, 0.0f, 0.0f, 0.0f);
+        set(6, 0.0f, 0.0f, 3.6f, 1.0f / 800.0f);
+        set(8, 0.0f, 0.0f, 0.0f, 0.0f);
+        // The camera 3 m above the water.
+        set(23, 0.0f, 3.0f, 0.0f, 1.0f);
+        // World-view-projection as the vertex shader reads it (m4x4 with c24..c27: the columns of the D3D matrix), the
+        // view moving the water 3 m down.
         for (int r = 0; r < 4; ++r)
-            set(24 + r, projection.m[0][r], projection.m[1][r], projection.m[2][r], projection.m[3][r]);
+            set(24 + r, projection.m[0][r], projection.m[1][r], projection.m[2][r],
+                projection.m[3][r] - 3.0f * projection.m[1][r]);
         set(28, 0.2f, 0.7f, 0.6f, 0.0f);  // Sea2 attenuation, reflection, transparency
         set(29, 0.04f, 0.22f, 0.39f, 1.0f); // water colour
         set(30, 1.0f, 1.0f, 1.0f, 1.0f);  // sky colour
@@ -180,16 +194,14 @@ class Scene
         set(58, 0.0f, 1.0f, 0.0f, 1.0f);
         d_.SetVertexShaderConstantF(0, &c[0][0], 59);
         // A calm sea 3 m below the camera, from 1 m ahead to the far plane.
-        const float y = -3.0f;
-        const SeaVertex sea[6] = {{-400, y, 1, 0, 1, 0, 0, 0},   {400, y, 1, 0, 1, 0, 1, 0},
-                                  {-400, y, 450, 0, 1, 0, 0, 1}, {-400, y, 450, 0, 1, 0, 0, 1},
-                                  {400, y, 1, 0, 1, 0, 1, 0},    {400, y, 450, 0, 1, 0, 1, 1}};
-        d_.SetFVF(D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1);
+        const SeaVertex sea[6] = {{-400, 0, 1}, {400, 0, 1}, {-400, 0, 450}, {-400, 0, 450}, {400, 0, 1}, {400, 0, 450}};
+        d_.SetFVF(D3DFVF_XYZ);
         check(d_.DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, sea, sizeof(SeaVertex)), "draw (sea)");
         d_.SetVertexShader(nullptr);
         d_.SetPixelShader(nullptr);
         d_.SetTexture(0, nullptr);
         d_.SetTexture(3, nullptr);
+        d_.SetTexture(D3DVERTEXTEXTURESAMPLER0, nullptr);
         render::EffectsSceneComplete();
         check(d_.EndScene(), "EndScene");
         check(d_.GetRenderTargetData(back_, readback_), "GetRenderTargetData");
@@ -209,6 +221,7 @@ class Scene
     shim::VertexShader *vs_ = nullptr;
     shim::PixelShader *ps_ = nullptr;
     shim::VolumeTexture *bump_ = nullptr;
+    shim::VolumeTexture *field_ = nullptr;
     shim::CubeTexture *env_ = nullptr;
 };
 

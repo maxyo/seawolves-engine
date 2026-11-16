@@ -27,7 +27,6 @@ struct SeaBlockData
     int32_t iLOD;
     int32_t iIStart;
     int32_t iIFirst, iILast;
-    bool bInProgress, bDone;
 };
 } // namespace
 
@@ -82,7 +81,7 @@ int failures = 0;
         }                                                                                                              \
     } while (false)
 
-// A stand-in for the sea's heights: a function of the world position only, like SSE_WaveXZ.
+// A stand-in for the sea's heights: a function of the world position only, like the sea's surface (sea_surface.sh).
 double Height(double x, double z)
 {
     return 1.5 * std::sin(0.031 * x + 0.7) * std::cos(0.023 * z) + 0.6 * std::sin(0.11 * x - 0.07 * z) +
@@ -102,7 +101,7 @@ template <typename Sea> Sample Find(const Sea &sea, double px, double pz)
     Sample sample;
     for (const SeaBlockData &b : sea.aBlocks)
     {
-        // The block's extent and vertices as SSE_WaveXZBlock places them.
+        // The block's extent and vertices as SEA::WriteBlockVertices places them.
         const double step = static_cast<double>(sea.fGridStep) * (1 << b.iLOD);
         const double x1 = static_cast<double>(b.iTX) * b.iSize * sea.fGridStep + sea.vSeaCenterPos.x;
         const double z1 = static_cast<double>(b.iTY) * b.iSize * sea.fGridStep + sea.vSeaCenterPos.z;

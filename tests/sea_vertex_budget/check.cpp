@@ -44,7 +44,6 @@ struct SeaBlockData
     int32_t iLOD;
     int32_t iIStart;
     int32_t iIFirst, iILast;
-    bool bInProgress, bDone;
 };
 } // namespace
 

@@ -4,7 +4,8 @@
 //   and (lift) the vertices. The pixel shaders read it as a cubic B-spline (four linear taps): the slopes, and with
 //   them the reflection, are smooth across the 0.5 m texels instead of showing their bilinear facets. A ship's wake is
 //   the simulation's own: the waves its hull pushed stay where they were made, in the water.
-// Positions are those of the sea's vertices (a_position: world minus the sea's own camera offset, small numbers).
+// Positions are those of the sea's displaced vertices (sea_surface.sh: world minus the sea's own camera offset, small
+// numbers).
 #ifndef SEA_WAVES_SH
 #define SEA_WAVES_SH
 #include "fx_waves_surface_storage.sh"

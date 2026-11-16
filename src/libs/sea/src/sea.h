@@ -8,9 +8,6 @@
 #include "renderer.h"
 #include "vma.hpp"
 #include "wave_focus.hpp"
-#ifdef __ANDROID__
-#include "parallel_for.hpp"
-#endif
 
 
 class SEA : public SEA_BASE
@@ -23,11 +20,11 @@ class SEA : public SEA_BASE
 
     storm::render::VertexDeclarationId vertexDecl_;
 
+    // A point of the flat grid, metres from the mesh's origin (MeshOrigin); the vertex shader displaces it
+    // (sea_surface_gpu.hpp).
     struct SeaVertex
     {
-        glm::vec3 vPos;
-        glm::vec3 vNormal;
-        float tu, tv;
+        float x, y, z;
     };
 
     struct SeaBlock
@@ -41,7 +38,6 @@ class SEA : public SEA_BASE
         int32_t iIStart;
         int32_t iIFirst, iILast;
 
-        bool bInProgress, bDone;
     };
 
     struct SeaTrash
@@ -94,7 +90,6 @@ class SEA : public SEA_BASE
 
     bool bSimpleSea;
 
-    SeaVertex *pVSea;
     uint16_t *pTriangles;
     uint32_t *pIndices;
     int32_t iVStart, iTStart, iIStart;
@@ -117,14 +112,43 @@ class SEA : public SEA_BASE
     std::vector<uint32_t *> aNormals;
     std::vector<uint8_t *> aBumps;
     std::vector<SeaBlock> aBlocks;
-#ifdef __ANDROID__
-    storm::ParallelFor waveWorkers_; // per-block wave evaluation, see Realize()
-#endif
+    // The grid in the buffers: the blocks it was built from (iTX, iTY, iSize, iLOD each), its tree's place and step.
+    // Rebuilt only when one of them changes (BuildMesh).
+    std::vector<int32_t> aMeshBlocks;
+    glm::vec3 vMeshTree{};
+    float fMeshGridStep = 0.0f;
+    bool bMeshBuilt = false;
+    // The height field the vertex shader reads (sea_gpu::pack_field), D3DVERTEXTEXTURESAMPLER0
+    int32_t iFieldTexture = -1;
 
     glm::vec4 v4SeaColor, v4SkyColor, v4SeaParameters;
 
 
-    float *pSeaFrame1, *pSeaFrame2, *pSeaNormalsFrame1, *pSeaNormalsFrame2;
+    // A wave's two frames and the blend between them this frame: a texel's height (0..1, the bytes / 255) and normal
+    // (x, z of aNormals), blended as WaveXZ samples them.
+    struct FrameBlend
+    {
+        const uint8_t *h1 = nullptr, *h2 = nullptr;
+        const uint32_t *n1 = nullptr, *n2 = nullptr;
+        float delta = 0.0f;
+
+        float Height(uint32_t texel) const
+        {
+            const float f1 = h1[texel], f2 = h2[texel];
+            return (1.0f / 255.0f) * (f1 + (f2 - f1) * delta);
+        }
+        void Normal(uint32_t texel, float &nx, float &nz) const
+        {
+            const float nx1 = static_cast<float>(static_cast<short>(n1[texel])) / 32767.5f;
+            const float nx2 = static_cast<float>(static_cast<short>(n2[texel])) / 32767.5f;
+            const float nz1 = static_cast<float>(static_cast<short>(n1[texel] >> 0x10)) / 32767.5f;
+            const float nz2 = static_cast<float>(static_cast<short>(n2[texel] >> 0x10)) / 32767.5f;
+            nx = nx1 + (nx2 - nx1) * delta;
+            nz = nz1 + (nz2 - nz1) * delta;
+        }
+    };
+    FrameBlend waveBlend_[2];
+    FrameBlend WaveBlend(float fFrame) const;
 
     glm::vec3 vMove1, vMove2;
     float fFrame1, fFrame2;
@@ -153,7 +177,6 @@ class SEA : public SEA_BASE
 
     glm::mat4 mTexProjection;
 
-    void SSE_WaveXZ(SeaVertex **pArray);
     bool HeightField(SeaHeightField &field) const override;
     float WaveXZ(float x, float z, glm::vec3 *pNormal = nullptr) override;
     void AddWaveSource(const storm::render::EffectsWaveSource &source) override;
@@ -162,21 +185,19 @@ class SEA : public SEA_BASE
     uint32_t TreeDim() const;
     void PlaceTree();
     void BuildTree(int32_t iTX, int32_t iTY, int32_t iLev);
-    void SetBlock(uint32_t dwBlockIndex);
 
     bool isVisibleBBox(const glm::vec3 &vCenter, const glm::vec3 &v1, const glm::vec3 &v2);
     void CalculateLOD(const glm::vec3 &v1, const glm::vec3 &v2, int32_t &iMaxLOD, int32_t &iMinLOD);
     inline float CalcLod(const float &x, const float &y, const float &z);
-    [[deprecated]] void WaveXZBlock(SeaBlock &pB);
-    void SSE_WaveXZBlock(SeaBlock &pB);
-    SeaBlock *GetUndoneBlock();
     void FitBlocksToBuffer();
     void PrepareIndicesForBlock(uint32_t dwBlockIndex);
+    void WriteBlockVertices(const SeaBlock &block, SeaVertex *pVertices) const;
+    bool BuildMesh();
+    glm::dvec2 MeshOrigin() const;
+    void BuildFieldTexture();
 
     int32_t VisCode(const glm::vec3 &vP);
 
-    void CalculateHeightMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint8_t *> &aFrames);
-    void CalculateNormalMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint32_t *> &aFrames);
 
     bool SunRoad_Render2();
     bool EnvMap_Render2();

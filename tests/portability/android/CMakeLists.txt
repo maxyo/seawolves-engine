@@ -7,5 +7,5 @@ add_executable(storm-math-check ../smoke.cpp)
 target_link_libraries(storm-math-check PRIVATE glm::glm-header-only)
 target_compile_features(storm-math-check PRIVATE cxx_std_17)
 target_include_directories(storm-math-check PRIVATE
-    ../../../src/libs/math/include ../../../src/libs/sea/src)
+    ../../../src/libs/math/include)
 target_compile_options(storm-math-check PRIVATE -ffp-contract=off)

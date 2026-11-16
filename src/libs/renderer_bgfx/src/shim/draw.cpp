@@ -1305,6 +1305,29 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
                           : "skinned draw without a bone palette in D3DVERTEXTEXTURESAMPLER0");
         return false;
     }
+    if (vs_port && s.vs->port->vertex_texture)
+    {
+        // The port samples D3DVERTEXTEXTURESAMPLER0 texel by texel (texelFetch: the sea's height field).
+        TexStore *texture = store_of(s.vertex_texture);
+        if (Context::instance().device_info().vertex_texture_units <= 0)
+        {
+            skip_draw("a vertex port that samples a texture on a device without vertex texture fetch");
+            return false;
+        }
+        if (!texture)
+        {
+            skip_draw("a vertex port that samples D3DVERTEXTEXTURESAMPLER0 without a texture there");
+            return false;
+        }
+        texture->sync();
+        if (!bgfx::isValid(texture->handle))
+        {
+            skip_draw("a vertex port's D3DVERTEXTEXTURESAMPLER0 texture has no GPU texture");
+            return false;
+        }
+        bgfx::setTexture(13, Context::instance().vertex_port_sampler(), texture->handle,
+                         BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+    }
     // Without lighting the unlit variant leaves the lights out of the program (see ff_vertex.sh).
     const bool lit = s.rs[D3DRS_LIGHTING] != 0 && !layout->rhw;
     // Effects: a plain draw under a moving caster's sun shadow takes the pair with the dynamic layer's tap (FfDraw::ground).

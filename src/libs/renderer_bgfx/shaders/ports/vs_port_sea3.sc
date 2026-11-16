@@ -1,14 +1,19 @@
-$input a_position, a_normal, a_texcoord0
+$input a_position
 $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v_texcoord4, v_fog
 // Port of the technique shader sea_sea3_vertex_shader (vs_1_1) of src/techniques/weather/sea.fx, one D3D9 instruction per line.
 #define PORT_VSC_COUNT 59 // registers c0..c58 (the GL program uploads exactly these)
 #include "port_vs.sh"
+#include "sea_surface.sh"
 
 void main()
 {
-    vec4 v0 = a_position; // dcl_position0 v0
-    vec4 v1 = vec4(a_normal, 1.0); // dcl_normal0 v1
-    vec4 v2 = a_texcoord0; // dcl_texcoord0 v2
+    // dcl_position0 v0, dcl_normal0 v1, dcl_texcoord0 v2: the sea's surface on its flat grid (sea_surface.sh)
+    vec4 v0;
+    vec3 normal;
+    vec2 uv;
+    seaSurface(a_position.xz, v0, normal, uv);
+    vec4 v1 = vec4(normal, 1.0);
+    vec4 v2 = vec4(uv, 0.0, 1.0);
     vec4 r0 = vec4_splat(0.0);
     vec4 r1 = vec4_splat(0.0);
     vec4 r2 = vec4_splat(0.0);
