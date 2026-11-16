@@ -329,7 +329,7 @@ class LauncherScreen final : public Screen
                 if (stage == "installing" && Num(import, "files") > 0)
                     status += (status.empty() ? "" : " · ") +
                               Fill(bindings.Text("launcher.files_count"), {std::to_string(static_cast<long long>(Num(import, "files")))});
-                view["cancel"] = Json{{"label", bindings.Text("launcher.cancel")}, {"disabled", !Flag(import, "canCancel")},
+                view["cancel"] = Json{{"label", bindings.Text("common.cancel")}, {"disabled", !Flag(import, "canCancel")},
                                       {"busy", bindings.Pending("cancel")}};
                 bindings.On("cancel", "", [send](const Event &) { send("cancel"); });
                 const Json &password = Obj(import, "password");
