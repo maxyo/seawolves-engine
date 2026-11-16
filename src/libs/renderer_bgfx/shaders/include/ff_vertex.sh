@@ -33,6 +33,12 @@ uniform vec4 u_ffLightSpecular[8];
 uniform vec4 u_ffLightAtt[8];      // att0, att1, att2, unused
 #endif
 // x: texcoord index  y: texgen (0 vertex, 1 normal, 2 position, 3 reflection)  z: transform count (0 off)  w: projected
+#ifdef FX_FF_DYN
+// The moving casters' sun shadows on this draw (fx_sun_map.sh): the static layer's uv and depth, and how far the
+// surface faces the sun, go to the fragment shader.
+uniform mat4 u_fxShadowMtx;
+uniform vec4 u_fxShadow[4];
+#endif
 uniform vec4 u_ffTexCfg[5];
 uniform mat4 u_ffTexMtx[5];
 
@@ -91,6 +97,9 @@ void main()
         vec4 clip = mul(u_ffProj, vec4(a_position.xyz, 1.0));
         gl_Position = clip * w;
         v_fog = vec4(0.0, 1.0, 0.0, 0.0);
+#ifdef FX_FF_DYN
+        v_shadow = vec4(0.0, 0.0, 0.0, 0.0);
+#endif
 #ifdef FX_FF_LIT
         v_normal = vec4(0.0, 0.0, -1.0, 0.0);
         v_position = vec4_splat(0.0);
@@ -113,6 +122,13 @@ void main()
         float clipDist = dot(u_ffClipPlane.xyz, P) + u_ffClipPlane.w;
         if (dot(u_ffClipPlane, u_ffClipPlane) == 0.0) clipDist = 1.0;
         v_fog = vec4(fogDepth, clipDist, 0.0, dot(P, u_fxAerialUp.xyz));
+#ifdef FX_FF_DYN
+        // Facing the sun; a vertex without a usable normal (none, or a zero one) counts as facing it.
+        float facing = 1.0;
+        if (u_ffVs[1].w > 0.5 && dot(N, N) > 1e-8)
+            facing = clamp(mul(u_fxShadowMtx, vec4(normalize(N), 0.0)).z * u_fxShadow[2].w, 0.0, 1.0);
+        v_shadow = vec4(mul(u_fxShadowMtx, vec4(P, 1.0)).xyz, facing);
+#endif
 #ifdef FX_FF_LIT
         v_normal = vec4(N, skinWeight); // w: the skin weight (ff_fragment.sh ffSkin)
         v_position = vec4(P, torsoWeight); // w: the torso weight (ff_fragment.sh)

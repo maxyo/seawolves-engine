@@ -1,7 +1,7 @@
 # Graphics effects package for the bgfx renderer
 
 Upgrades on top of the legacy look: post-processing (ambient occlusion, tone curve, colour grades by place and
-hour, bloom, sun shafts, lens flare, dither, SMAA, the FSR 1 upscale and sharpening), improvements of the game's own sea (`SeaDepth`), contact shadows, and per-pixel lighting for the fixed-function emulator: sun, point and spot lights, sun
+hour, bloom, sun shafts, lens flare, dither, SMAA, the FSR 1 upscale and sharpening), improvements of the game's own sea (`SeaDepth`), and per-pixel lighting for the fixed-function emulator: sun, point and spot lights, sun
 shadows, an ambient-occlusion volume of interiors, rim light, linear-light sums, relief from derived normal maps
 and aerial perspective. MSAA, alpha to coverage and anisotropic filtering are renderer state: fx decides them
 (`RendererStateFor`), the renderer applies them.
@@ -35,7 +35,7 @@ On every preset the post chain also draws the game's underwater screen wobble (`
 `PostChain::Frame::wobble`, `fs_fx_wobble.sc`): the legacy look, which the D3D9 engine's dead post-process chain
 never showed on this port.
 - **Средняя**: faint bloom on the brightest highlights, MSAA 4x + alpha to coverage (on the internal picture,
-  before the upscale), dither, contact shadows,
+  before the upscale), dither,
   a gentle Caribbean grade, anisotropy 4, the sea's band limit, per-pixel lighting with 4 point lights and normal
   maps, sun shadows (low), the ambient-occlusion volume of interiors, the AgX tone curve on the luminance
   (strength 0.6), the grade of the place and hour (hue and warmth only), aerial perspective and height fog, rim light,
@@ -63,7 +63,7 @@ The internal height (`Settings::render_height`, option `fx_render_height`, `fx::
 the display, FSR 1's range) applies to 3D frames: the shim
 (`src/shim/device.cpp`) draws them into internal-size scene stores while the game keeps addressing display pixels
 (viewports, scissors, `GetDesc`), the post chain runs at the internal size (ambient occlusion, bloom, grade, SMAA;
-the sea's soft edges and contact shadows draw into the internal scene) and EASU writes the display-size picture the
+the sea's soft edges draw into the internal scene) and EASU writes the display-size picture the
 interfaces then draw on. Frames without 3D (menus, loading screens) are drawn at the display size; the change is
 logged as "effects: render scale ...: the 3D scene at WxH (internal height H), upscaled by FSR 1 to WxH" (or "the 3D
 scene at the display size"). Without post effects the chain is EASU + RCAS alone. RCAS runs only after an upscale. With `fx_gpu_profile=1` the
@@ -95,8 +95,8 @@ is not wired into the game. `Shadows::CasterProgram`,
 | `include/storm/fx/upscale.hpp` | the neural ×2 textures (PBRify's 4x upscaler boxed to ×2, made by src/libs/relief): which textures, their cache files, the GPU budget from the RAM and the choice of the resident ones by distance |
 | `include/storm/fx/height_map.hpp` | the relief's material texture: PBRify's height (normalised per atlas region) for the parallax and the cavity, the gloss beside it |
 | `include/storm/fx/normal_map.hpp` | normal maps of the grey "bump" heights; the path/name rules table that gives each texture its relief class |
-| `include/storm/fx/shadows.hpp` | `Shadows`: sun shadow map |
-| `include/storm/fx/contact_shadows.hpp` | `ContactShadows`: soft blobs under characters and objects |
+| `include/storm/fx/shadows.hpp` | `Shadows`: the sun's shadow maps, two layers of one array: the still geometry (drawn when `SunLayerTracker` asks) and the moving casters (every frame that has any) |
+| `include/storm/fx/sun_relight.hpp` | `SunRelight`: the place's sun map and the GPU compose of the towns' relit lightmaps |
 | `include/storm/fx/wetness.hpp` | the rain's wetness outdoors: rise and drying over time, the puddle pattern's wrapped origin (the shader: `renderer_bgfx/shaders/include/ff_wet.sh`; option `fx_wet_force` forces a wetness for review) |
 | `include/storm/fx/ao_volume.hpp` | ambient-occlusion volume of interiors: CPU bake from the static geometry, disk-cache format (the renderer side: `src/effects/ao_volume.hpp`) |
 | `shaders/include/fx_aerial.sh`, `fx_wind.sh`, `fx_coverage.sh` | aerial perspective, wind sway (not wired), alpha to coverage for the emulator |
@@ -129,14 +129,13 @@ const fx::RendererState state = fx::RendererStateFor(settings); // MSAA, alpha t
 sky.Update(weather, time, camera_height);        // every frame, also when only the lighting uses it
 if (settings.sea_soft_edges)                     // before the game's sea draws; its shader samples Texture()
     sea_depth.Capture(capture_view, scene_depth, w, h, near, far);
-contact_shadows.Submit(scene_view, settings);    // after Add() for each character
 post_frame.scene_grade = fx::SceneGrade(sky.State(), overcast, interior);
 post.Submit(settings, post_frame);               // scene colour (+ depth for occlusion) -> back buffer
 
 // Per lit draw call of the fixed-function emulator (variant compiled with fx::LightingDefines(settings)):
 lighting.Apply(fx::ComputeLighting(input, fx::LightingMaterial::Hull(), &sky.State()));
 lighting.Apply(fx::PackPointLights(fx::SelectLights(lights, center, radius, fx::PointLightBudget(settings)), view));
-shadows.Bind(view);
+shadows.Bind(view, fx::SunReceiver{});          // both layers; SunReceiver::ground: the moving casters only
 ```
 
 ## No silent fallbacks

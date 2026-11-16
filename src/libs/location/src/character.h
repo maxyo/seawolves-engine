@@ -651,7 +651,6 @@ class Character : public Entity
     // Character model
     entid_t mdl;
     // Shadow
-    entid_t shadow;
     // Saber
     entid_t blade;
     bool isBladeSet;

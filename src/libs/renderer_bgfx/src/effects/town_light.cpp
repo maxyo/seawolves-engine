@@ -1,8 +1,11 @@
 #include "effects/town_light.hpp"
 
 #include "effects/occluder_log.hpp"
+#include "effects/casters.hpp"
+#include "effects/shadows.hpp"
 
 #include "shim/shim.hpp"
+#include "storm/render/frame_owner.hpp"
 #include "texture/core/cache.hpp"
 #include "texture/core/formats.hpp"
 #include "texture/core/service.hpp"
@@ -19,9 +22,10 @@ namespace storm::effects
 
 namespace
 {
-constexpr float kSunStepDegrees = 2.0f; // the sun's visibility is baked again when the hour's sun moved this far
-constexpr float kBlendSeconds = 3.0f;   // ... and the lightmap turns to it over this time
-constexpr float kUploadSeconds = 0.2f;  // a blending lightmap is composed and uploaded this often
+constexpr float kBounceStepDegrees = 2.0f; // the sun's bounce is baked again when the hour's sun moved this far
+constexpr float kTexelMetres = 0.3f;       // the footprint the hour's sun is read over on a texel (fx::SunVisibility's)
+constexpr bgfx::ViewId kPlaceView = render::kPreGameViewBegin + 4;   // the place's sun map
+constexpr bgfx::ViewId kComposeView = render::kPreGameViewBegin + 5; // one lightmap a frame
 constexpr size_t kFitSamples = 1500;
 // A place's bake on disk, in two entries (the app's cache: an entry that is gone is baked again):
 //   * its geometry's: per lightmap the sky's visibility on its texels, keyed by the geometry alone (the heavy part,
@@ -75,37 +79,19 @@ unsigned Threads()
     return fx::BakeThreads();
 }
 
-// The level `src` (w x h, RGBA8) halved by a box filter.
-std::vector<uint8_t> Half(const std::vector<uint8_t> &src, int w, int h)
-{
-    const int hw = std::max(1, w / 2), hh = std::max(1, h / 2);
-    std::vector<uint8_t> out(static_cast<size_t>(hw) * hh * 4);
-    for (int y = 0; y < hh; ++y)
-        for (int x = 0; x < hw; ++x)
-            for (int c = 0; c < 4; ++c)
-            {
-                int sum = 0;
-                for (int dy = 0; dy < 2; ++dy)
-                    for (int dx = 0; dx < 2; ++dx)
-                        sum += src[(static_cast<size_t>(std::min(h - 1, 2 * y + dy)) * w + std::min(w - 1, 2 * x + dx)) * 4 + c];
-                out[(static_cast<size_t>(y) * hw + x) * 4 + c] = static_cast<uint8_t>((sum + 2) / 4);
-            }
-    return out;
-}
-
 } // namespace
 
 void TownLight::set_lightmaps(std::string_view name, std::span<const std::array<float, 3>> positions,
                               std::span<const std::array<float, 2>> uvs, std::span<const uint32_t> indices,
                               std::span<const uint32_t> triangle_lightmap, std::span<const render::EffectsLightmap> lightmaps)
 {
-    destroy_textures();
+    relight_.ClearMaps();
     maps_.clear();
+    place_sun_ = bounce_sun_ = {0.0f, 0.0f, 0.0f};
     place_job_.reset();
     sun_job_.reset();
     ready_ = false;
     place_prepared_ = false;
-    waiting_reported_ = false;
     sun_bounce_.reset();
     wall_job_.reset();
     wall_volume_.reset();
@@ -330,48 +316,35 @@ void TownLight::start_place()
     });
 }
 
-void TownLight::start_sun(const std::array<float, 3> &sun)
+void TownLight::start_bounce(const std::array<float, 3> &sun)
 {
     auto job = std::make_shared<SunJob>();
     job->sun = sun;
-    shim::logf("effects: town light of %s: baking the sun's visibility for (%.3f, %.3f, %.3f), %.1f° up", name_.c_str(),
-               sun[0], sun[1], sun[2], std::asin(std::clamp(sun[1], -1.0f, 1.0f)) * 57.29578f);
-    std::shared_ptr<const fx::Occluders> occluders = occluders_;
     std::vector<std::shared_ptr<const fx::LightmapTexels>> texels;
     for (const Map &m : maps_)
         texels.push_back(m.texels);
-    std::vector<float> texel_metres;
-    for (const Map &m : maps_)
-        texel_metres.push_back(0.3f);
-    job->baked_bounce = bounce_scene_ && !maps_.empty() && maps_.front().bounce_baked.empty();
-    sun_job_.start("town sun of " + name_, job,
-                   [job, occluders, texels, texel_metres, scene = bounce_scene_, bake = bake_dir_] {
-        const auto started = std::chrono::steady_clock::now();
+    job->baked_bounce = !maps_.empty() && maps_.front().bounce_baked.empty();
+    ++sun_counters_.bounce_bakes;
+    sun_job_.start("town sun bounce of " + name_, job, [job, texels, scene = bounce_scene_, bake = bake_dir_] {
+        // The sun's bounce for the direction (a white sun: our lightmaps' sun term is relative to it), read one cell
+        // off the texels as the shader reads the volume; once per place the bake's sun's too.
+        const auto t = std::chrono::steady_clock::now();
         const fx::Vec3 dir{job->sun[0], job->sun[1], job->sun[2]};
+        const fx::BounceScene &s = scene->scene;
+        auto gather = [&](const fx::Vec3 &towards) {
+            return std::make_shared<const fx::BounceField>(fx::GatherBounce(
+                s, fx::SunOnSurfels(*scene->occluders, s, towards, {1.0f, 1.0f, 1.0f}, Threads()), Threads()));
+        };
+        job->field = gather(dir);
         for (size_t m = 0; m < texels.size(); ++m)
-            job->visibility.push_back(fx::SunVisibility(*occluders, *texels[m], dir, texel_metres[m], 4, Threads()));
-        job->ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-        if (scene)
+            job->bounce.push_back(fx::TexelBounce(*texels[m], *job->field, s.grid.cell, Threads()));
+        if (job->baked_bounce)
         {
-            // The sun's bounce for the same direction (a white sun: our lightmaps' sun term is relative to it), read
-            // one cell off the texels as the shader reads the volume; once per place the bake's sun's too.
-            const auto t = std::chrono::steady_clock::now();
-            const fx::BounceScene &s = scene->scene;
-            auto gather = [&](const fx::Vec3 &towards) {
-                return std::make_shared<const fx::BounceField>(fx::GatherBounce(
-                    s, fx::SunOnSurfels(*scene->occluders, s, towards, {1.0f, 1.0f, 1.0f}, Threads()), Threads()));
-            };
-            job->field = gather(dir);
+            const std::shared_ptr<const fx::BounceField> baked = gather(bake);
             for (size_t m = 0; m < texels.size(); ++m)
-                job->bounce.push_back(fx::TexelBounce(*texels[m], *job->field, s.grid.cell, Threads()));
-            if (job->baked_bounce)
-            {
-                const std::shared_ptr<const fx::BounceField> baked = gather(bake);
-                for (size_t m = 0; m < texels.size(); ++m)
-                    job->bounce_baked.push_back(fx::TexelBounce(*texels[m], *baked, s.grid.cell, Threads()));
-            }
-            job->bounce_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
+                job->bounce_baked.push_back(fx::TexelBounce(*texels[m], *baked, s.grid.cell, Threads()));
         }
+        job->bounce_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count();
         job->state = 1;
     });
 }
@@ -410,7 +383,7 @@ void TownLight::set_volume(const fx::VisibilityVolume *volume)
     });
 }
 
-void TownLight::update(const std::array<float, 3> &sun, const std::array<float, 3> &sun_color, bool present, float seconds)
+void TownLight::update(const std::array<float, 3> &sun, const std::array<float, 3> &sun_color, bool present)
 {
     sun_present_ = present;
     live_sun_ = sun;
@@ -464,104 +437,160 @@ void TownLight::update(const std::array<float, 3> &sun, const std::array<float, 
         return;
     // Prepare the current night/indoor state too. Waiting for a future sunrise here
     // leaves a legitimately sunless location permanently behind the readiness fader.
+    // The hour's sun itself is render()'s. Here its bounce: a job per kBounceStepDegrees while the place has a scene.
     const std::array<float, 3> target = present ? sun : std::array<float, 3>{0.0f, -1.0f, 0.0f};
     if (sun_job_ && sun_job_->state.load() == 1)
     {
-        const bool first = !ready_;
-        for (size_t m = 0; m < maps_.size() && m < sun_job_->visibility.size(); ++m)
+        for (size_t m = 0; m < maps_.size() && m < sun_job_->bounce.size(); ++m)
         {
             Map &map = maps_[m];
-            if (first || map.sun_to.empty())
-                map.sun_from = sun_job_->visibility[m];
-            else
+            if (m < sun_job_->bounce_baked.size())
             {
-                // From where the blend stands now.
-                for (size_t i = 0; i < map.sun_from.size(); ++i)
-                    map.sun_from[i] = static_cast<uint8_t>(std::lround((1.0f - blend_) * map.sun_from[i] + blend_ * map.sun_to[i]));
+                map.bounce_baked = std::move(sun_job_->bounce_baked[m]);
+                if (map.relight != fx::SunRelight::kNoMap)
+                    upload_map(map); // the bake's sun's bounce is one of its static inputs
             }
-            map.sun_to = std::move(sun_job_->visibility[m]);
-            if (m < sun_job_->bounce.size())
-            {
-                if (m < sun_job_->bounce_baked.size())
-                    map.bounce_baked = std::move(sun_job_->bounce_baked[m]);
-                if (first || map.bounce_to.size() != sun_job_->bounce[m].size())
-                    map.bounce_from = sun_job_->bounce[m];
-                else
-                    for (size_t i = 0; i < map.bounce_from.size(); ++i)
-                        map.bounce_from[i] =
-                            static_cast<uint8_t>(std::lround((1.0f - blend_) * map.bounce_from[i] + blend_ * map.bounce_to[i]));
-                map.bounce_to = std::move(sun_job_->bounce[m]);
-            }
+            map.bounce = std::move(sun_job_->bounce[m]);
+            upload_bounce(map);
+            map.compose_due = true;
         }
-        if (sun_job_->field)
-            sun_bounce_ = sun_job_->field;
-        sun_baked_ = sun_job_->sun;
-        if (bounce_scene_ && !sun_job_->field)
-            sun_baked_ = {0.0f, 0.0f, 0.0f}; // baked before the bounce scene came: again, with it
+        sun_bounce_ = sun_job_->field;
+        bounce_sun_ = sun_job_->sun;
         ++generation_;
-        shim::logf("effects: town light of %s: sun bake %u for (%.3f, %.3f, %.3f), %.1f° up, in %.0f ms on %u threads (all but 2 "
-                   "of the cores)%s",
-                   name_.c_str(), generation_, sun_baked_[0], sun_baked_[1], sun_baked_[2],
-                   std::asin(std::clamp(sun_baked_[1], -1.0f, 1.0f)) * 57.29578f, sun_job_->ms, Threads(),
-                   sun_job_->field ? (", its bounce in " + std::to_string(std::lround(sun_job_->bounce_ms)) + " ms" +
-                                      (sun_job_->baked_bounce ? " (with the bake's sun's)" : ""))
-                                         .c_str()
-                                   : "");
+        shim::logf("effects: town light of %s: sun bounce %u for (%.3f, %.3f, %.3f), %.1f° up, in %.0f ms on %u threads%s",
+                   name_.c_str(), generation_, bounce_sun_[0], bounce_sun_[1], bounce_sun_[2],
+                   std::asin(std::clamp(bounce_sun_[1], -1.0f, 1.0f)) * 57.29578f, sun_job_->bounce_ms, Threads(),
+                   sun_job_->baked_bounce ? " (with the bake's sun's)" : "");
         sun_job_.reset();
-        blend_ = first ? 1.0f : 0.0f;
-        ready_ = true;
-        compose_and_upload();
     }
-    if (!sun_job_ && occluders_ && (!ready_ || Angle(target, sun_baked_) > kSunStepDegrees))
-        start_sun(target);
-    if (ready_ && blend_ < 1.0f)
-    {
-        blend_ = std::min(1.0f, blend_ + seconds / kBlendSeconds);
-        since_upload_ += seconds;
-        if (since_upload_ >= kUploadSeconds || blend_ >= 1.0f)
-            compose_and_upload();
-        if (blend_ >= 1.0f)
-            shim::logf("effects: town light of %s: sun bake %u blended in", name_.c_str(), generation_);
-    }
+    if (!sun_job_ && bounce_scene_ && Angle(target, bounce_sun_) > kBounceStepDegrees)
+        start_bounce(target);
 }
 
-void TownLight::compose_and_upload()
+void TownLight::upload_map(Map &map)
 {
-    since_upload_ = 0.0f;
-    for (Map &map : maps_)
+    // The texels' static inputs as full grids (the gutter takes its covered texel's): what the compose pass reads.
+    const fx::LightmapTexels &texels = *map.texels;
+    const size_t count = static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height);
+    std::vector<float> position(count * 4, 0.0f);
+    std::vector<uint8_t> normal_sky(count * 4, 0), baked(count * 4, 0);
+    const bool bounced = map.bounce_baked.size() == texels.texel.size() * 3;
+    for (size_t i = 0; i < texels.texel.size(); ++i)
     {
-        if (map.sun_from.size() != map.texels->texel.size() || map.sun_to.size() != map.texels->texel.size())
-            continue;
-        const int w = map.texels->width, h = map.texels->height;
-        if (map.rgba.empty())
-            map.rgba = map.game; // texels outside every triangle and the gutter keep the game's
-        fx::ComposeTownLight(*map.texels, map.tone, map.game, map.baked, map.sun_from, map.sun_to, blend_, map.sky, map.rgba,
-                             {map.bounce_from, map.bounce_to, map.bounce_baked, blend_});
-        if (debug_)
-            for (size_t i = 0; i < map.texels->texel.size(); ++i)
-            {
-                const uint8_t v = static_cast<uint8_t>(std::lround((1.0f - blend_) * map.sun_from[i] + blend_ * map.sun_to[i]));
-                uint8_t *px = &map.rgba[static_cast<size_t>(map.texels->texel[i]) * 4];
-                px[0] = px[1] = px[2] = static_cast<uint8_t>(32 + v * 3 / 4); // MODULATE2X: 0.25..1.0 of the paint x2
-            }
-        int levels = 1;
-        for (int s = std::max(w, h); s > 1; s /= 2)
-            ++levels;
-        if (!bgfx::isValid(map.texture))
-            map.texture = bgfx::createTexture2D(static_cast<uint16_t>(w), static_cast<uint16_t>(h), true, 1,
-                                                bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_NONE | BGFX_SAMPLER_NONE);
-        std::vector<uint8_t> level = map.rgba;
-        int lw = w, lh = h;
-        for (int l = 0; l < levels; ++l)
+        const size_t at = static_cast<size_t>(texels.texel[i]) * 4;
+        for (int k = 0; k < 3; ++k)
         {
-            bgfx::updateTexture2D(map.texture, 0, static_cast<uint8_t>(l), 0, 0, static_cast<uint16_t>(lw), static_cast<uint16_t>(lh),
-                                  bgfx::copy(level.data(), static_cast<uint32_t>(level.size())));
-            if (lw == 1 && lh == 1)
-                break;
-            level = Half(level, lw, lh);
-            lw = std::max(1, lw / 2);
-            lh = std::max(1, lh / 2);
+            position[at + k] = texels.position[i][k];
+            normal_sky[at + k] = static_cast<uint8_t>(std::lround(std::clamp(texels.normal[i][k] * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f));
+            baked[at + k] = bounced ? map.bounce_baked[i * 3 + k] : 0;
         }
+        position[at + 3] = 1.0f;
+        normal_sky[at + 3] = map.sky[i];
+        baked[at + 3] = map.baked[i];
+    }
+    for (size_t g = 0; g + 1 < texels.gutter.size(); g += 2)
+    {
+        const size_t to = static_cast<size_t>(texels.gutter[g]) * 4, from = static_cast<size_t>(texels.gutter[g + 1]) * 4;
+        std::copy_n(&position[from], 4, &position[to]);
+        std::copy_n(&normal_sky[from], 4, &normal_sky[to]);
+        std::copy_n(&baked[from], 4, &baked[to]);
+    }
+    if (map.relight == fx::SunRelight::kNoMap)
+        map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, baked, map.game});
+    else
+        relight_.SetBakedBounce(map.relight, baked);
+    map.compose_due = true;
+}
+
+void TownLight::upload_bounce(Map &map)
+{
+    const fx::LightmapTexels &texels = *map.texels;
+    if (map.relight == fx::SunRelight::kNoMap)
+        return;
+    if (map.bounce.size() != texels.texel.size() * 3 || map.bounce_baked.size() != map.bounce.size())
+    {
+        relight_.SetBounce(map.relight, {});
+        return;
+    }
+    std::vector<uint8_t> grid(static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height) * 4, 0);
+    for (size_t i = 0; i < texels.texel.size(); ++i)
+        std::copy_n(&map.bounce[i * 3], 3, &grid[static_cast<size_t>(texels.texel[i]) * 4]);
+    for (size_t g = 0; g + 1 < texels.gutter.size(); g += 2)
+        std::copy_n(&grid[static_cast<size_t>(texels.gutter[g + 1]) * 4], 4, &grid[static_cast<size_t>(texels.gutter[g]) * 4]);
+    relight_.SetBounce(map.relight, grid);
+}
+
+void TownLight::compose_all()
+{
+    for (Map &map : maps_)
+        map.compose_due = true;
+}
+
+void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &casters)
+{
+    if (!enabled_ || maps_.empty())
+        return;
+    // Without a sun (night, or the first frames before the weather) the maps are composed for the night: waiting for a
+    // sunrise would keep a sunless place behind the readiness fader. A sun that arrives later composes them again.
+    if (!fx::SunRelight::Supported())
+    {
+        if (!unsupported_reported_)
+            shim::logf("ERROR: effects: town light of %s: this device has no D16 array / RGBA32F texture / RGBA8 target: the "
+                       "town's lightmaps are not relit (the game's stay)", name_.c_str());
+        unsupported_reported_ = true;
+        return;
+    }
+    for (Map &map : maps_)
+        if (map.relight == fx::SunRelight::kNoMap)
+        {
+            upload_map(map);
+            upload_bounce(map);
+            if (map.relight == fx::SunRelight::kNoMap)
+            {
+                shim::logf("ERROR: effects: town light of %s: a lightmap of %dx%d could not be set up for the relight: "
+                           "the game's stays", name_.c_str(), map.texels->width, map.texels->height);
+                map.compose_due = false;
+            }
+        }
+    // The place's sun map: when the sun moved a step, or what it was drawn with changed.
+    const bool up = sun_present_ && live_sun_[1] > 0.0f;
+    const uint64_t cut = shadows.cut_signature();
+    const bool place_void = place_sun_ == std::array<float, 3>{0.0f, 0.0f, 0.0f} || !relight_.PlaceDrawn() || cut != place_cut_signature_;
+    if (up && (place_void || Angle(live_sun_, place_sun_) > fx::kSunStepDegrees))
+    {
+        const fx::SunPlace place = fx::ComputeSunPlace({live_sun_[0], live_sun_[1], live_sun_[2]}, positions_, fx::kSunRayReach,
+                                                       fx::SunRelight::kPlaceSize);
+        relight_.BeginPlace(kPlaceView, place, {0.0f, 0.0f, 0.0f});
+        shadows.draw_tiles(device, casters, kPlaceView, {0.0f, 0.0f, 0.0f},
+                           [&place](const fx::Vec3 &center, float radius) { return place.Reaches(center, radius); });
+        place_sun_ = live_sun_;
+        place_cut_signature_ = shadows.cut_signature();
+        ++sun_counters_.place_draws;
+        compose_all();
+    }
+    if (up == night_)
+    {
+        night_ = !up;
+        compose_all();
+    }
+    // One lightmap a frame (one view): a town has one to four.
+    for (Map &map : maps_)
+        if (map.compose_due && map.relight != fx::SunRelight::kNoMap)
+        {
+            fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
+            std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
+            relight_.Compose(kComposeView, map.relight, tone, up, 0.35f * kTexelMetres, debug_);
+            map.compose_due = false;
+            ++sun_counters_.composes;
+            break;
+        }
+    // Ours replace the game's once every lightmap has been composed (the textures exist from the next frame on).
+    if (!ready_ && std::none_of(maps_.begin(), maps_.end(), [](const Map &m) { return m.compose_due; }))
+    {
+        ready_ = true;
+        shim::logf("effects: town light of %s: %zu lightmaps relit for the sun at (%.3f, %.3f, %.3f), %.1f° up", name_.c_str(),
+                   maps_.size(), live_sun_[0], live_sun_[1], live_sun_[2],
+                   std::asin(std::clamp(live_sun_[1], -1.0f, 1.0f)) * 57.29578f);
     }
 }
 
@@ -571,16 +600,19 @@ void TownLight::set_bounce_scene(std::shared_ptr<const Bounce::Scene> scene)
         return;
     bounce_scene_ = std::move(scene);
     sun_bounce_.reset();
+    sun_job_.reset(); // of the scene that went
     for (Map &map : maps_)
     {
+        const bool had = !map.bounce_baked.empty();
         map.bounce_baked.clear();
-        map.bounce_from.clear();
-        map.bounce_to.clear();
+        map.bounce.clear();
+        if (had && map.relight != fx::SunRelight::kNoMap)
+        {
+            upload_map(map);
+            upload_bounce(map);
+        }
     }
-    // The next sun bake gathers the bounce (at once: a bake running now has none).
-    sun_baked_ = {0.0f, 0.0f, 0.0f};
-    if (ready_)
-        compose_and_upload();
+    bounce_sun_ = {0.0f, 0.0f, 0.0f}; // the next update() bakes the new scene's
 }
 
 void TownLight::set_debug(bool debug)
@@ -588,12 +620,7 @@ void TownLight::set_debug(bool debug)
     if (debug == debug_)
         return;
     debug_ = debug;
-    if (ready_)
-    {
-        for (Map &map : maps_)
-            map.rgba.clear(); // the game's again under the gutter and outside the triangles
-        compose_and_upload();
-    }
+    compose_all();
 }
 
 bgfx::TextureHandle TownLight::replacement(const shim::TexStore *store)
@@ -602,12 +629,36 @@ bgfx::TextureHandle TownLight::replacement(const shim::TexStore *store)
     if (!active() || !store)
         return BGFX_INVALID_HANDLE;
     for (const Map &map : maps_)
-        if (map.store == store && bgfx::isValid(map.texture))
+        if (map.store == store)
         {
-            ++counts_[1];
-            return map.texture;
+            const bgfx::TextureHandle ours = relight_.Texture(map.relight);
+            counts_[1] += bgfx::isValid(ours) ? 1 : 0;
+            return ours;
         }
     return BGFX_INVALID_HANDLE;
+}
+
+bool TownLight::relit(const shim::TexStore *store) const
+{
+    if (!active() || !store)
+        return false;
+    for (const Map &map : maps_)
+        if (map.store == store)
+            return bgfx::isValid(relight_.Texture(map.relight));
+    return false;
+}
+
+float TownLight::sun_shade(const shim::TexStore *store, float unmeasured) const
+{
+    if (!active() || !store)
+        return unmeasured;
+    for (const Map &map : maps_)
+        if (map.store == store && bgfx::isValid(relight_.Texture(map.relight)))
+        {
+            const float sky = map.tone.a + map.tone.c;
+            return sky / std::max(sky + map.tone.b * std::max(live_sun_[1], 0.0f), 1e-3f);
+        }
+    return unmeasured;
 }
 
 void TownLight::end_frame()
@@ -616,19 +667,9 @@ void TownLight::end_frame()
     counts_ = {};
 }
 
-void TownLight::destroy_textures()
-{
-    for (Map &map : maps_)
-        if (bgfx::isValid(map.texture))
-        {
-            bgfx::destroy(map.texture);
-            map.texture = BGFX_INVALID_HANDLE;
-        }
-}
-
 void TownLight::shutdown()
 {
-    destroy_textures();
+    relight_.Shutdown();
     maps_.clear();
     wall_job_.reset();
     wall_volume_.reset();
@@ -641,13 +682,14 @@ void TownLight::shutdown()
 
 void TownLight::on_device_lost()
 {
+    relight_.OnDeviceLost();
     for (Map &map : maps_)
     {
-        map.texture = BGFX_INVALID_HANDLE; // went with the device
-        map.rgba.clear();
+        map.relight = fx::SunRelight::kNoMap; // went with the device: render() uploads and composes them again
+        map.compose_due = true;
     }
-    if (ready_)
-        compose_and_upload();
+    place_sun_ = {0.0f, 0.0f, 0.0f};
+    ready_ = false; // the game's lightmaps until ours are composed again
 }
 
 } // namespace storm::effects

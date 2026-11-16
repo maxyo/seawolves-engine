@@ -9,7 +9,7 @@
 //   FX_LIGHT_TRANSLUCENT  sunlight passing through thin two-sided surfaces (sails, flags): fxSunTransmission
 //   FX_LIGHT_POINT        the enabled D3D point / spot lights evaluated per pixel;
 //                         FX_LIGHT_POINT_MAX = 4 or 8 lights per draw call
-//   FX_LIGHT_SHADOW       sun shadow map; FX_LIGHT_SHADOW_SOFT = four taps instead of one
+//   FX_LIGHT_SHADOW       sun shadow maps (fx_sun_map.sh); FX_LIGHT_SHADOW_SOFT = four taps of the still geometry's layer instead of one
 //   FX_LIGHT_RIM          rim light on silhouettes seen against the sun (characters, ships)
 //   FX_LIGHT_LINEAR       lights are summed in linear light: overlapping lights no longer burn out and
 //                         the terminator is soft. Combine with fxLit() / fxAddSpecular().
@@ -504,34 +504,48 @@ void fxPointTerms(vec3 Ng, vec3 N, vec3 P, vec3 V, vec2 spec, out vec3 diffuse, 
 #endif // FX_LIGHT_POINT
 
 #ifdef FX_LIGHT_SHADOW
-// Sampler stage 15 (fx::kShadowMapStage) is reserved for the shadow map in every shader that defines FX_LIGHT_SHADOW.
-SAMPLER2DSHADOW(s_fxShadowMap, 15);
-uniform mat4 u_fxShadowMtx; // view space -> shadow map uv and depth
-uniform vec4 u_fxShadow;    // x: one texel in uv, y: shadow strength, z: normal offset in view units, w: depth bias
+#include "fx_sun_map.sh"
 
-// 1 = fully lit by the sun, 1 - strength = fully shadowed. P and N in view space.
+// 1 = fully lit by the sun, 1 - strength = fully shadowed. P and N in view space. The still geometry's layer with
+// the preset's filter, the moving casters' with one tap; each only where it holds something for this draw.
 float fxSunShadow(vec3 P, vec3 N)
 {
-    vec4 c = mul(u_fxShadowMtx, vec4(P + N * u_fxShadow.z, 1.0));
-    vec3 coord = vec3(c.xy, c.z - u_fxShadow.w);
+    vec3 base = mul(u_fxShadowMtx, vec4(P, 1.0)).xyz;
+    vec3 along = mul(u_fxShadowMtx, vec4(N, 0.0)).xyz; // the map moves this far per view unit along the normal
+    float lit = 1.0;
+    if (u_fxShadow[2].y > 0.5)
+    {
+        vec3 coord = base + along * u_fxShadow[0].z;
+        coord.z -= u_fxShadow[0].w;
 #ifdef FX_LIGHT_SHADOW_SOFT
-    // Four hardware-filtered taps on a rotated square: a 4x4 texel soft edge.
-    vec2 o = u_fxShadow.xx;
-    float lit = shadow2D(s_fxShadowMap, coord + vec3(-1.1 * o.x, -0.4 * o.y, 0.0));
-    lit += shadow2D(s_fxShadowMap, coord + vec3(0.4 * o.x, -1.1 * o.y, 0.0));
-    lit += shadow2D(s_fxShadowMap, coord + vec3(1.1 * o.x, 0.4 * o.y, 0.0));
-    lit += shadow2D(s_fxShadowMap, coord + vec3(-0.4 * o.x, 1.1 * o.y, 0.0));
-    lit *= 0.25;
+        // Four hardware-filtered taps on a rotated square: a 4x4 texel soft edge.
+        vec2 o = u_fxShadow[0].xx;
+        lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-1.1 * o.x, -0.4 * o.y), 0.0, coord.z));
+        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(0.4 * o.x, -1.1 * o.y), 0.0, coord.z));
+        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(1.1 * o.x, 0.4 * o.y), 0.0, coord.z));
+        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-0.4 * o.x, 1.1 * o.y), 0.0, coord.z));
+        lit *= 0.25;
 #else
-    float lit = shadow2D(s_fxShadowMap, coord);
+        lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy, 0.0, coord.z));
 #endif
-    // Outside the map (and beyond its far plane) everything is lit; fade out over the last tenth.
-    vec2 edge = abs(coord.xy - vec2_splat(0.5)) * 2.0;
-    float inside = clamp((1.0 - max(max(edge.x, edge.y), coord.z)) * 10.0, 0.0, 1.0);
-    lit = 1.0 - (1.0 - lit) * inside;
-    return 1.0 - (1.0 - lit) * u_fxShadow.y;
+    }
+    vec3 moving = base + along * u_fxShadow[2].x;
+    vec2 uvDynamic = moving.xy * u_fxShadow[1].x + u_fxShadow[1].yz;
+    if (u_fxShadow[2].z > 0.5)
+        lit = min(lit, shadow2DArray(s_fxShadowMap, vec4(uvDynamic, 1.0, moving.z - u_fxShadow[1].w)));
+    // Outside the shadowed region (and beyond the far plane) everything is lit.
+    return 1.0 - (1.0 - lit) * fxSunInside(uvDynamic, moving.z) * u_fxShadow[0].y;
+}
+// A baked surface under the moving casters (fxSunGround): 1 unless this draw is a ground receiver.
+float fxSunGroundAt(vec3 P, vec3 N)
+{
+    if (u_fxShadow[3].w < 0.5)
+        return 1.0;
+    vec3 c = mul(u_fxShadowMtx, vec4(P, 1.0)).xyz;
+    return fxSunGround(c, clamp(mul(u_fxShadowMtx, vec4(N, 0.0)).z * u_fxShadow[2].w, 0.0, 1.0));
 }
 #else
 #define fxSunShadow(P, N) 1.0
+#define fxSunGroundAt(P, N) 1.0
 #endif
 #endif

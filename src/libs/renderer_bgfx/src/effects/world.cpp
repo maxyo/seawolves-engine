@@ -1,4 +1,4 @@
-// World passes of the graphics effects: the analytic sky, contact shadows and the improvements of the game's own sea.
+// World passes of the graphics effects: the analytic sky and the improvements of the game's own sea.
 // The consumer entities (SKY, shadow) call them where they would draw their legacy passes; the draws go into the shim's current game
 // view in submission order, with the D3D camera of that moment as the bgfx view transform.
 #include "effects/effects.hpp"
@@ -69,9 +69,7 @@ render::EffectsWorld Host::world() const
     render::EffectsWorld world;
     if (!device_ready_)
         return world;
-    world.contact_shadows = settings_.contact_shadows;
     world.lens_flare = settings_.lens_flare;
-    world.lamp_character_shadows = settings_.lamp_shadows > 0 && lighting_.lamp_shadows().interior();
     return world;
 }
 
@@ -298,17 +296,6 @@ void Host::set_sea_waves_uniforms()
         bgfx::setTexture(fx::kShadowMapStage, s_sea_waves_, sea_waves_.Surface(), BGFX_SAMPLER_UVW_CLAMP);
 }
 
-void Host::contact_shadow(const std::array<float, 3> &ground, const render::EffectsMatrix &view)
-{
-    if (!settings_.contact_shadows)
-        return;
-    WorldPass pass;
-    if (!begin_world_pass(pass, view))
-        return;
-    contact_.Add(ground, 0.45f, 0.5f);
-    contact_.Submit(pass.view, settings_);
-}
-
 } // namespace storm::effects
 
 namespace storm::render
@@ -316,10 +303,5 @@ namespace storm::render
 EffectsWorld CurrentEffectsWorld()
 {
     return effects::Host::instance().world();
-}
-
-void EffectsContactShadow(const std::array<float, 3> &ground, const EffectsMatrix &view)
-{
-    effects::Host::instance().contact_shadow(ground, view);
 }
 } // namespace storm::render

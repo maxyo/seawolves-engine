@@ -1305,7 +1305,9 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     }
     // Without lighting the unlit variant leaves the lights out of the program (see ff_vertex.sh).
     const bool lit = s.rs[D3DRS_LIGHTING] != 0 && !layout->rhw;
-    uint32_t vs_id = vs_port ? s.vs->port->shader_id() : fx_draw.active ? fx_draw.vs_id : id_vs_ff[lit ? 0 : 1];
+    // Effects: a plain draw under a moving caster's sun shadow takes the pair with the dynamic layer's tap (FfDraw::ground).
+    uint32_t vs_id = vs_port ? s.vs->port->shader_id()
+                             : fx_draw.active ? fx_draw.vs_id : fx_draw.ground ? fx_lighting.ground_vs(lit) : id_vs_ff[lit ? 0 : 1];
     if (layout->skinned)
     {
         vs_id = skinned_variant(vs_id);
@@ -1315,7 +1317,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             return false;
         }
     }
-    uint32_t fs_id = ps_port ? s.ps->port->shader_id() : fx_draw.active ? fx_draw.fs_id : id_fs_ff[fs_variant];
+    uint32_t fs_id = ps_port ? s.ps->port->shader_id()
+                             : fx_draw.active ? fx_draw.fs_id : fx_draw.ground ? fx_lighting.ground_fs() : id_fs_ff[fs_variant];
     // Nothing of this draw can be discarded (no user clip plane, no alpha test): its shader's opaque twin, which
     // keeps early depth and the tile GPUs' hidden-surface removal (ff_finish.sh FF_OPAQUE).
     if (!ps_port && !(s.rs[D3DRS_CLIPPLANEENABLE] & 1) &&
@@ -1460,6 +1463,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
     if (fx_draw.active)
         fx_lighting.submit(fx_draw);
+    else if (fx_draw.ground)
+        fx_lighting.submit_ground(fx_draw);
 
     bool stencil = false;
     uint32_t fstencil = 0;
@@ -1549,6 +1554,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
         apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
         if (fx_draw.active)
             fx_lighting.submit(fx_draw);
+        else if (fx_draw.ground)
+            fx_lighting.submit_ground(fx_draw);
         constexpr uint64_t kKept = BGFX_STATE_PT_MASK | BGFX_STATE_CULL_MASK | BGFX_STATE_MSAA | BGFX_STATE_BLEND_ALPHA_TO_COVERAGE;
         bgfx::setState((bits & kKept) | BGFX_STATE_DEPTH_TEST_EQUAL);
         bgfx::setStencil(BGFX_STENCIL_NONE); // the scene's stencil is not the one this draw saw

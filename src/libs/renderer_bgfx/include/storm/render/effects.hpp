@@ -361,28 +361,18 @@ bool BackgroundWorkBusy();
 // that holds it: such a location is refused and logged as an error.
 void RemoveOldReliefStores(const std::vector<std::filesystem::path> &directories, const std::filesystem::path &live);
 
-// ---- World passes: contact shadows ----
-// The consumer entities (shadow, SUNGLOW) ask which parts are on and then either call the fx pass below
-// or keep their legacy drawing. Changes only at the Present that switches settings (EffectsReport::pending);
-// everything false in «Низкая».
+// ---- World passes ----
+// The consumer entity (SUNGLOW) asks which parts are on and then either leaves its own drawing to the fx pass or
+// keeps it. Changes only at the Present that switches settings (EffectsReport::pending); everything false in «Низкая».
 struct EffectsWorld
 {
-    bool contact_shadows = false; // a soft blob under each character
-    bool lens_flare = false;      // the post chain draws the sun glare: SUNGLOW leaves its glow, overflow and flare
-                                  // sprites of the sun out and reports the sun's visibility (SetEffectsSunGlare)
-    // An interior with lamp shadows: the characters' shadows come from the room's lamps; the shadow entity leaves
-    // its projected shadow (cast along the outdoor sun) out.
-    bool lamp_character_shadows = false;
+    bool lens_flare = false; // the post chain draws the sun glare: SUNGLOW leaves its glow, overflow and flare
+                             // sprites of the sun out and reports the sun's visibility (SetEffectsSunGlare)
 };
 EffectsWorld CurrentEffectsWorld();
 
-// The world passes below draw into the current render target with the current D3D projection, in submission
-// order. `view` is the world -> view matrix as the engine sees it (VRenderer::GetTransform(D3DTS_VIEW)): the
-// device itself holds a camera-relative view, because Renderer moves the camera translation into the world matrix.
+// `view` of the world passes is the world -> view matrix as the engine sees it (VRenderer::GetTransform(D3DTS_VIEW)):
+// the device itself holds a camera-relative view, because Renderer moves the camera translation into the world matrix.
 using EffectsMatrix = std::array<float, 16>;
-
-// A contact shadow on the floor at `ground` (a character's feet), drawn at once. Call it after the floor is drawn.
-// Only while CurrentEffectsWorld().contact_shadows.
-void EffectsContactShadow(const std::array<float, 3> &ground, const EffectsMatrix &view);
 
 } // namespace storm::render

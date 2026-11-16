@@ -155,7 +155,6 @@ struct Settings
     uint8_t anisotropy = 1;       // 1 (off), 4 or 8: anisotropic filtering of world textures
 
     // ---- world passes ----
-    bool contact_shadows = false; // soft blobs under characters and objects (ContactShadows)
     // The game's own sea (the ported Sea2 technique, shaders/ports/fs_port_sea2.sc) with improvements on top; the
     // reflected ray is clamped to the horizon always, these are optional:
     bool sea_band_limit = false;  // the bump detail fades with the pixel footprint: no shimmer towards the horizon

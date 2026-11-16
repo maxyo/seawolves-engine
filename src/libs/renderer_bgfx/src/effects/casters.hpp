@@ -1,4 +1,4 @@
-// How a material is drawn in a pass that renders depth or coverage instead of the material's colour: the sun cascade,
+// How a material is drawn in a pass that renders depth or coverage instead of the material's colour: the sun's shadow layers,
 // the lamp atlases (characters and the still location geometry), the AO volume's bake. One rule for all of them:
 //   * what the colour pass's alpha test (or alpha to coverage) discards is cut out of the caster too: the product of
 //     the alphas of the texture stages the material's alpha chain multiplies, against the draw's own alpha
@@ -11,7 +11,7 @@
 // by the colour pass itself, with its alpha test. There is no depth prepass.
 //
 // The caster programs live here as well, so no pass keeps a copy: vs_ff_caster[_cut][_skin] with fs_ff_caster[_cut]
-// (plain depth: the sun cascade and the lamp faces) or fs_ff_lamp_caster[_cut] (lamp faces, discarding what lies
+// (plain depth: the sun layers and the lamp faces) or fs_ff_lamp_caster[_cut] (lamp faces, discarding what lies
 // inside the lamp's holder sphere). None of them writes its depth: early depth testing stays on.
 #pragma once
 
@@ -49,7 +49,7 @@ class Casters
   public:
     enum class Pass
     {
-        Sun,        // depth of the sun cascade
+        Sun,        // depth of the sun's layers
         Lamp,       // depth of a lamp face
         LampHolder, // depth of a lamp face, nothing inside the lamp's holder sphere (u_fxLampCaster)
     };

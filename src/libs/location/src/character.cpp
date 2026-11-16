@@ -659,7 +659,6 @@ Character::~Character()
     //
     if (location && !isDeleted)
         location->supervisor.DelCharacter(this);
-    core.EraseEntity(shadow);
     core.EraseEntity(waterrings);
     core.EraseEntity(mdl);
     core.EraseEntity(blade);
@@ -2407,12 +2406,11 @@ void Character::Update(float dltTime)
     noBlendTime -= dltTime;
     if (noBlendTime <= 0.0f)
         noBlendTime = 0.0f;
-    // Blending weapons and shadows
+    // Blending weapons
     {
         const float alpha = tuner.GetAlpha() * 255.0f;
         const uint32_t blendColor = (static_cast<uint32_t>(alpha) << 24) | 0x00ffffff;
         core.Send_Message(blade, "ll", MSG_BLADE_ALPHA, blendColor);
-        core.Send_Message(shadow, "ll", MSG_BLADE_ALPHA, blendColor);
     }
     //
     PtcData &ptc = location->GetPtcData();
@@ -3195,7 +3193,6 @@ void Character::ReleaseSound(int32_t id)
 bool Character::zLoadModel(MESSAGE &message)
 {
     char mpath[300];
-    core.EraseEntity(shadow);
     core.EraseEntity(waterrings);
     core.EraseEntity(mdl);
     const std::string &name = message.String();
@@ -3244,14 +3241,6 @@ bool Character::zLoadModel(MESSAGE &message)
     m->SetRenderTuner(&tuner);
     core.AddToLayer(REALIZE, mdl, 20);
     core.AddToLayer(SUN_TRACE, mdl, 10);
-    if (shadow = core.CreateEntity("shadow"))
-    {
-        core.Send_Message(shadow, "li", 0, mdl);
-    }
-    else
-    {
-        core.Trace("Shadow not created!");
-    }
     if (!core.GetEntityId("waterrings"))
     {
         waterrings = core.CreateEntity("waterrings");

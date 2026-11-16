@@ -120,6 +120,23 @@ target_compile_definitions(cutout_caster_check PRIVATE NOMINMAX)
 target_compile_options(cutout_caster_check PRIVATE -fsigned-char)
 target_link_libraries(cutout_caster_check PRIVATE storm_bgfx storm_check_sdl)
 
+# sun_layers_check: the sun's two shadow layers through the shim (an X display, like cutout_caster_check): the static
+# layer is kept inside its band and step, the dynamic layer shades lit and baked receivers.
+add_executable(sun_layers_check sun_layers_check.cpp)
+target_include_directories(sun_layers_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+target_compile_definitions(sun_layers_check PRIVATE NOMINMAX)
+target_compile_options(sun_layers_check PRIVATE -fsigned-char)
+target_link_libraries(sun_layers_check PRIVATE storm_bgfx storm_check_sdl)
+
+# sun_relight_check: a town's lightmap relit from the place's sun map on the GPU, through the shim (an X display).
+add_executable(sun_relight_check sun_relight_check.cpp)
+target_include_directories(sun_relight_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+target_compile_definitions(sun_relight_check PRIVATE NOMINMAX)
+target_compile_options(sun_relight_check PRIVATE -fsigned-char)
+target_link_libraries(sun_relight_check PRIVATE storm_bgfx storm_check_sdl)
+
 # shadow_casters_check: the lights collect their casters (src/effects/shadow_casters.hpp): the rules of the shadow
 # volumes without a GPU, then through the shim: a caster off screen shadows a visible receiver, a caster is submitted
 # into a volume once and only when it reaches it, skinned casters are included, still geometry stays out of the

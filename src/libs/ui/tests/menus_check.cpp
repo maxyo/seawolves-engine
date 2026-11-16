@@ -417,7 +417,7 @@ static void Settings(const std::string &models)
         FakeSurface debug_surface;
         Router debug(debug_surface);
         Json reported{{"fx_preset", 1}, {"texture_degradation", 0}};
-        for (const char *key : {"fx_ssao", "fx_msaa", "fx_bloom", "fx_grade", "fx_dither", "fx_contact_shadows", "fx_shadows", "fx_sea_band_limit",
+        for (const char *key : {"fx_ssao", "fx_msaa", "fx_bloom", "fx_grade", "fx_dither", "fx_shadows", "fx_sea_band_limit",
                                 "fx_sea_soft_edges", "fx_sea_specular", "fx_light_per_pixel", "fx_light_point", "fx_light_specular",
                                 "fx_light_normal_map", "fx_alpha_to_coverage", "fx_anisotropy", "fx_ao_volume", "fx_smaa", "fx_sharpen",
                                 "fx_render_height", "fx_gpu_profile", "fx_lamp_shadows", "fx_lamp_soft", "fx_lamp_model_lift",

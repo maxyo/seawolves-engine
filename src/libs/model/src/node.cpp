@@ -3,7 +3,6 @@
 #include "entity.h"
 #include "core.h"
 #include "modelr.h"
-#include "clip_visit.hpp"
 #include <storm/render/far_lod.hpp>
 #include <storm/render/shadow_casters.hpp>
 #include "string_compare.hpp"
@@ -88,7 +87,6 @@ bool NODER::Clip()
         gc.z = cnt.z;
 
         bestTraceNode = this;
-        storm::geometry::clipVisit.owner = this;
         retval = geo->Clip(clip_gp, clip_nps, gc, clip_r, clip_geosap);
     }
 

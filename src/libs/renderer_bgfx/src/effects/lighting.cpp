@@ -16,6 +16,10 @@ namespace storm::effects
 
 namespace
 {
+// A surface's light without the sun over its light with it, where no relit lightmap of ours says (the game's own
+// lightmaps, baked vertex colours): about half of a sunlit bake is the direct sun (the towns' lightmaps measure
+// shade / sun 0.4-0.6, fx/shadow_model.hpp SunShadowStrength). An assumption, not a measurement of the surface.
+constexpr float kUnmeasuredSunShade = 0.5f;
 
 // Absolute world -> view from the device's camera-relative world -> view (row vectors): (p - origin) * view.
 std::array<float, 16> AbsoluteView(const std::array<float, 16> &view, const std::array<float, 3> &origin)
@@ -222,6 +226,16 @@ void Lighting::find_shaders()
     }
 }
 
+void Lighting::find_ground_shaders()
+{
+    if (fs_ground_)
+        return;
+    vs_ground_[0] = shim::shader_id_by_name("vs_ff_dyn");
+    vs_ground_[1] = shim::shader_id_by_name("vs_ff_unlit_dyn");
+    fs_ground_ = shim::shader_id_by_name("fs_ff_dyn");
+    fs_ground_coverage_ = shim::shader_id_by_name("fs_ff_dyn_coverage");
+}
+
 bool Lighting::prepare_programs(shim::Device &device, const fx::Settings &settings, int &budget)
 {
     find_shaders();
@@ -253,17 +267,25 @@ bool Lighting::prepare_programs(shim::Device &device, const fx::Settings &settin
                 if (n <= character && !device.prepare_program(vs_lit_skin_, fs_lit_[specular][n][linear][h], budget))
                     return false;
             }
-            // The town's walls take the shadowed twin (settings.town_light); baked draws with a gloss map (or every one
-            // under the gloss debug view) or wet in the rain the specular one.
-            for (const int h : {0, settings.town_walls ? shadow : 0})
+            // Baked draws outdoors take the shadowed twin (the town's walls: both layers; the others the moving casters'
+            // shadows); those with a gloss map (or every one under the gloss debug view) or wet in the rain the specular one.
+            for (const int h : {0, shadow})
                 for (int s = 0; s <= (specular && (settings.gloss || settings.wet_surfaces) ? 1 : 0); ++s)
                     if (!device.prepare_program(vs_lit_, fs_baked_[s][n][linear][h], budget))
                         return false;
         }
     if (per_pixel && settings.lamp_shadows && !casters_.prepare_programs(device, Casters::Pass::Lamp, budget))
         return false;
-    return !per_pixel || settings.shadows == fx::ShadowQuality::Off ||
-           casters_.prepare_programs(device, Casters::Pass::Sun, budget);
+    if (!per_pixel || settings.shadows == fx::ShadowQuality::Off)
+        return true;
+    // The plain fixed-function ground under moving casters (FfDraw::ground), lit per vertex or not.
+    find_ground_shaders();
+    for (const uint32_t vs : vs_ground_)
+        if (!device.prepare_program(vs, fs_ground_, budget))
+            return false;
+    if (fx::RendererStateFor(settings).alpha_to_coverage && !device.prepare_program(vs_ground_[0], fs_ground_coverage_, budget))
+        return false;
+    return casters_.prepare_programs(device, Casters::Pass::Sun, budget);
 }
 
 void Lighting::set_technique(const char *name)
@@ -403,10 +425,36 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     baked |= !lit_state && ao;
     // Under a location lightmap (ours in its place: the shim binds TownLight::replacement): no cascade, see below.
     bool lightmapped = false;
+    const shim::TexStore *lightmap = nullptr;
     for (int stage = 0; stage < 4 && !lightmapped; ++stage)
         if (device.s.tss[stage][D3DTSS_COLOROP] != D3DTOP_DISABLE)
             if (const shim::TexStore *store = shim::store_of(device.s.textures[stage]); store && store->lightmap)
+            {
                 lightmapped = true;
+                lightmap = store;
+            }
+    // The moving casters' sun shadows on a surface with its own static light (a lightmap, baked colours): an opaque
+    // unskinned draw into the game picture outdoors that a caster's shadow can reach. Under our relit lightmap its
+    // tone says how much of an open texel's light is the sun's; elsewhere kUnmeasuredSunShade stands in. The static
+    // layer keeps the shadow out of the place's own shade.
+    const auto ground_receiver = [&]() {
+        if (!shadows_.enabled() || !weather_sun_.present || !target || target != picture || lamps_.interior() ||
+            layout.skinned || cube_variant != 0 || !rs[D3DRS_ZWRITEENABLE] || rs[D3DRS_ALPHABLENDENABLE] ||
+            device.s.proj.m[2][3] == 0.0f)
+            return false;
+        memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
+        if (!shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_, shadow_casters_) ||
+            !shadows_.casting())
+            return false; // before the draw's bounds: nothing moves under the sun in most frames of most places
+        const DrawSphere &sphere = sphere_source.get();
+        if (!sphere.valid || !shadows_.shaded(sphere.center, sphere.radius))
+            return false;
+        draw.shadow = true;
+        draw.sun_receiver.ground = true;
+        draw.sun_receiver.shade = town_light_.sun_shade(lightmap, kUnmeasuredSunShade);
+        ++frame_.ground;
+        return true;
+    };
     // A town's walls and props without a lightmap, drawn with the game's baked colours into the game picture: our
     // sun, sky and bounce relight them as our lightmaps relight the ground (town_light.hpp TownWallTone).
     const bool town_wall = per_pixel && lighting_ && layout.has_normal && !lit_state && !lightmapped && target &&
@@ -419,7 +467,10 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                      !(lit && (material_ == Material::Character || material_ == Material::Sail));
     baked |= !lit_state && wet;
     if (!lit && !baked && !coverage)
+    {
+        draw.ground = ground_receiver(); // the plain program's twin with the dynamic layer's tap
         return;
+    }
     if (cube_variant != 0)
     {
         if (!cube_reported_)
@@ -442,6 +493,14 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     {
         draw.vs_id = vs_ff_;
         draw.fs_id = fs_coverage_;
+        // The game draws its location geometry with the alpha test on: the ground under a moving caster is here.
+        if (ground_receiver())
+        {
+            find_ground_shaders();
+            draw.ground = true;
+            draw.vs_id = vs_ground_[0];
+            draw.fs_id = fs_ground_coverage_;
+        }
         return;
     }
     draw.lit = true;
@@ -741,16 +800,21 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         {
             draw.town_wall = true;
             ++frame_.town_walls;
-            // They receive the cascade (the place's still geometry casts into it from its tiles).
-            if (settings_.shadows != fx::ShadowQuality::Off && sun_slot >= 0)
+            // They receive both layers (the place's still geometry casts into the static one from its tiles).
+            if (settings_.shadows != fx::ShadowQuality::Off && weather_sun_.present)
             {
                 memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
                 draw.shadow = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_, shadow_casters_);
-                shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
+                const DrawSphere &sphere = sphere_source.get();
+                draw.sun_receiver.dynamic_reaches = draw.shadow && (!sphere.valid || shadows_.shaded(sphere.center, sphere.radius));
             }
             if (draw.view == std::array<float, 16>{})
                 memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
         }
+        else
+            ground_receiver();
+        shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
+        frame_.shadowed += draw.shadow ? 1 : 0;
         draw.fs_id = fs_baked_[baked_specular ? 1 : 0][relief][linear][shadow];
         ++frame_.baked;
     }
@@ -932,7 +996,11 @@ void Lighting::submit(const FfDraw &draw)
     }
     bgfx::setUniform(u_coverage_, draw.coverage.data());
     if (!draw.lit)
+    {
+        if (draw.ground)
+            shadows_.bind(draw.view, draw.sun_receiver); // the coverage twin of the ground variant
         return;
+    }
     bgfx::setUniform(u_ff_, draw.ff.data());
     bgfx::setUniform(u_wet_, draw.wet.data(), 2);
     fx_.Apply(draw.light);
@@ -950,7 +1018,7 @@ void Lighting::submit(const FfDraw &draw)
     if (draw.parallax_variant)
         fx_.SetParallax(draw.parallax);
     if (draw.shadow)
-        shadows_.bind(draw.view);
+        shadows_.bind(draw.view, draw.sun_receiver);
     bind_ao_volume(draw);
     bind_visibility(draw);
     bind_town_wall(draw);
@@ -1040,6 +1108,11 @@ std::array<float, 8> Lighting::skin_tone(shim::TexStore &atlas, const DrawSphere
     const float top = static_cast<float>(std::max(atlas.width, atlas.height));
     packed[7] = std::max(0.0f, std::log2(top / static_cast<float>(fx::kSkinTestTexels)));
     return packed;
+}
+
+void Lighting::submit_ground(const FfDraw &draw)
+{
+    shadows_.bind(draw.view, draw.sun_receiver);
 }
 
 bool Lighting::shadow_volumes(shim::Device &device)

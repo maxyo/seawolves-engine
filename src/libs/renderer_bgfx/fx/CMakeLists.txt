@@ -54,8 +54,8 @@ target_link_libraries(storm_bgfx_fx_core PUBLIC Threads::Threads) # the AO bake'
 set_target_properties(storm_bgfx_fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(storm_bgfx_fx STATIC
-    src/gpu_util.cpp src/post_chain.cpp src/sea_depth.cpp src/sea_waves.cpp src/depth_copy.cpp src/sky.cpp src/lighting.cpp src/shadows.cpp src/capabilities.cpp
-    src/contact_shadows.cpp src/self_test.cpp)
+    src/gpu_util.cpp src/post_chain.cpp src/sea_depth.cpp src/sea_waves.cpp src/depth_copy.cpp src/sky.cpp src/lighting.cpp src/shadows.cpp src/sun_relight.cpp src/capabilities.cpp
+    src/self_test.cpp)
 target_link_libraries(storm_bgfx_fx PUBLIC storm_bgfx_fx_core storm_bgfx_runtime PRIVATE storm_fx_shaders)
 target_include_directories(storm_bgfx_fx SYSTEM PRIVATE "${storm_smaa_SOURCE_DIR}/Textures" "${storm_fidelityfx_fsr_SOURCE_DIR}/ffx-fsr")
 # storm/render/shader_blob.hpp (header only): the embedded blob of the running backend; also for the tools that

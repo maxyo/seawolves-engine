@@ -15,17 +15,17 @@ int main() {
     assert(town.initial_state() == 1); // registration is not the first completed bake
     town.place_prepared_ = true;
     assert(town.initial_state() == 0); // all calibrated maps rejected: genuinely inapplicable
-    town.maps_.resize(1); town.maps_[0].texture = {1}; town.ready_ = true;
+    town.maps_.resize(1); town.maps_[0].relight = 0; town.ready_ = true;
     town.bounce_scene_ = std::make_shared<effects::Bounce::Scene>();
     assert(town.initial_state() == 1); // first sun map lacks the scene's bounce
     town.sun_job_.job_ = std::make_shared<effects::TownLight::SunJob>();
     town.sun_bounce_ = std::make_shared<fx::BounceField>();
     assert(town.initial_state() == 1); // ready_ true cannot hide corrective bake in flight
-    town.sun_job_.job_.reset(); town.blend_ = 0.5f;
-    assert(town.initial_state() == 1); // upload/blend is part of initial completion
-    town.blend_ = 1.0f; assert(town.initial_state() == 0);
-    town.maps_[0].texture = BGFX_INVALID_HANDLE; assert(town.initial_state() == 2);
-    town.maps_[0].texture = {1};
+    town.sun_job_.job_.reset(); assert(town.initial_state() == 0);
+    town.maps_[0].relight = fx::SunRelight::kNoMap; assert(town.initial_state() == 2); // its GPU setup failed
+    town.maps_[0].relight = 0;
+    town.unsupported_reported_ = true; assert(town.initial_state() == 0); // no relight on this device: not held
+    town.unsupported_reported_ = false;
     town.wall_job_.job_ = std::make_shared<effects::TownLight::WallJob>();
     town.wall_job_->state = 2; assert(town.initial_state() == 2);
 

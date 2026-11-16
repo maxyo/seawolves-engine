@@ -206,7 +206,6 @@ class SettingsScreen final : public Screen
                 DebugSegment(bindings, debug, "fx_bloom", "Свечение (bloom)", {-1, 0, 1}, onOff);
                 DebugSegment(bindings, debug, "fx_grade", "Цветокоррекция", {-1, 0, 1, 2}, {"пресет", "выкл", "Карибы", "Пасмурно"});
                 DebugSegment(bindings, debug, "fx_dither", "Дизеринг", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_contact_shadows", "Контактные тени", {-1, 0, 1}, onOff);
                 DebugSegment(bindings, debug, "fx_shadows", "Тени солнца", {-1, 0, 1, 2}, {"пресет", "выкл", "низк", "мягк"});
                 DebugSegment(bindings, debug, "fx_sea_band_limit", "Море: мягкая даль", {-1, 0, 1}, onOff);
                 DebugSegment(bindings, debug, "fx_sea_soft_edges", "Море: мягкие края", {-1, 0, 1}, onOff);

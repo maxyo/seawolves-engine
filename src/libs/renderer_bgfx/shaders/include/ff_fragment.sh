@@ -24,8 +24,11 @@
 //                   dark blue; 4 the metal mask (cyan).
 //   FX_LIGHT_PARALLAX   with FX_LIGHT_NORMALMAP (a stage 0 map whose material, stage 7, has a height): parallax occlusion mapping;
 //                   stage 0's colour and the normal map are read where the eye's ray meets the relief.
-//   FX_LIGHT_SHADOW[_SOFT]  with FX_FF_LIT: the sun's diffuse and specular terms are scaled by the sun shadow map
-//                   (stage 15, src/effects/shadows.hpp).
+//   FX_LIGHT_SHADOW[_SOFT]  with FX_FF_LIT: the sun's diffuse and specular terms are scaled by the sun shadow maps
+//                   (stage 15, src/effects/shadows.hpp); with FX_FF_BAKED: a town's walls likewise, other baked
+//                   surfaces take the moving casters' shadows on the sun's part of their bake (u_fxShadow[3].w).
+//   FX_FF_DYN       the plain combiner plus the moving casters' sun shadows (fs_ff_dyn with vs_ff[_unlit]_dyn: the
+//                   lightmapped and baked ground under characters and ships; fx_sun_map.sh fxSunGround).
 //   AO volume       FX_FF_LIT / FX_FF_BAKED: the interior's ambient occlusion (ffAoVolume, off per draw by
 //                   u_fxAoParams.x = 0): darkens the ambient of lit draws and the baked colours.
 //   wet surfaces    FX_FF_LIT / FX_FF_BAKED: in the rain, outdoor surfaces where the sky's rain reaches them (the
@@ -36,6 +39,9 @@
 //   FX_FF_COVERAGE  alpha to coverage instead of the alpha-test discard (fx_coverage.sh); in the FX_FF_LIT /
 //                   FX_FF_BAKED variants it is switched per draw by u_fxCoverage.z.
 #include "ff_finish.sh"
+#ifdef FX_FF_DYN
+#include "fx_sun_map.sh"
+#endif
 
 #if defined(FX_FF_LIT) || defined(FX_FF_BAKED)
 #define FX_FF_PIXEL_LIGHTING 1
@@ -797,6 +803,9 @@ void main()
     FF_STAGE(2, STAGE2_SAMPLE)
     FF_STAGE(3, STAGE3_SAMPLE)
     FF_STAGE(4, STAGE4_SAMPLE)
+#ifdef FX_FF_DYN
+    current.rgb *= fxSunGround(v_shadow.xyz, v_shadow.w);
+#endif
 #ifdef FX_FF_PIXEL_LIGHTING
     // The rain's water in the pores (ff_wet.sh): the surface's colour darker, before any highlight is added.
     current.rgb *= ffWet.w;
@@ -859,11 +868,17 @@ void main()
     vec3 lampTone = mix(vec3_splat(dot(lampAdded, vec3(0.299, 0.587, 0.114))), lampAdded, u_fxLampGrid[4].z);
     // The baked colour holds the sky, the bounce and the sun together: three quarters of the cavity.
     aoVolume *= mix(1.0, cavity, 0.75);
+    // The moving casters' shadows (characters, ships) take the sun's part of the bake, not the lamps' light.
+#ifdef FX_LIGHT_SHADOW
+    float movingShade = fxSunGroundAt(P, Ng);
+#else
+    float movingShade = 1.0;
+#endif
 #ifdef FX_LIGHT_LINEAR
-    current.rgb *= aoVolume * sqrt((vec3_splat(baked * baked) + gain * gain * lampTone) /
+    current.rgb *= aoVolume * sqrt((vec3_splat(baked * baked * movingShade * movingShade) + gain * gain * lampTone) /
                                    (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a));
 #else
-    current.rgb *= aoVolume * (vec3_splat(baked) + gain * lampTone) / (baked + u_fxLamps[0].w * gain * lamps.a);
+    current.rgb *= aoVolume * (vec3_splat(baked * movingShade) + gain * lampTone) / (baked + u_fxLamps[0].w * gain * lamps.a);
 #endif
     if (u_fxTownWall[0].w > 0.5)
     {

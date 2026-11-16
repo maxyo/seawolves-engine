@@ -35,7 +35,6 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.msaa = 4; // the primary anti-aliasing; SMAA replaces it where MSAA is unavailable (ConstrainSettings)
     s.alpha_to_coverage = true;
     s.dither = true; // ±0.5/255: invisible, removes banding of the bloom
-    s.contact_shadows = true;
     s.tonemap = true;
     // The grade of the place and hour shifts hue and warmth only (color_lut.cpp SceneGrade), no saturation.
     s.scene_grading = true;

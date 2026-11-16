@@ -311,7 +311,6 @@ const Option kOptions[] = {
     {"fx_msaa", "1, 2, 4", [](fx::Settings &s, int v) { s.msaa = static_cast<uint8_t>(std::clamp(v, 1, 4)); }},
     {"fx_alpha_to_coverage", "0 off, 1 on", [](fx::Settings &s, int v) { s.alpha_to_coverage = on(v); }},
     {"fx_anisotropy", "1, 4, 8", [](fx::Settings &s, int v) { s.anisotropy = static_cast<uint8_t>(std::clamp(v, 1, 16)); }},
-    {"fx_contact_shadows", "0 off, 1 on", [](fx::Settings &s, int v) { s.contact_shadows = on(v); }},
     {"fx_sea_band_limit", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_band_limit = on(v); }},
     {"fx_sea_soft_edges", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_soft_edges = on(v); }},
     {"fx_sea_specular", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_specular = on(v); }},
@@ -452,7 +451,7 @@ std::string describe(const fx::Settings &s)
     snprintf(text, sizeof(text),
              "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) ssao=%d dither=%d flare=%d scene_grading=%d "
              "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d turbidity=%d waves=%d%d shadows=%d "
-             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) contact=%d wet=%u",
+             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) wet=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
              static_cast<double>(s.sharpness), s.ssao, s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
@@ -460,7 +459,7 @@ std::string describe(const fx::Settings &s)
              s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
              static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity,
              static_cast<int>(s.character_relief), static_cast<double>(s.character_relief_strength),
-             s.contact_shadows, s.wet_surfaces);
+             s.wet_surfaces);
     return text;
 }
 } // namespace
@@ -518,7 +517,6 @@ void Host::on_device_lost()
     sea_waves_idle_ = {};
     u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
     sea_waves_frame_ = UINT32_MAX;
-    contact_.OnDeviceLost();
     ao_.on_device_lost();
     ao_bound_ = nullptr;
     lighting_.set_ao_volume(nullptr);
@@ -545,7 +543,6 @@ void Host::shutdown()
             *uniform = BGFX_INVALID_HANDLE;
         }
     sea_depth_frame_ = UINT32_MAX;
-    contact_.Shutdown();
     ao_.shutdown();
     ao_bound_ = nullptr;
     lighting_.set_ao_volume(nullptr);
@@ -867,7 +864,6 @@ void Host::advance_switch()
     const bool ready = post_.Prepare(target_, budget) && (!(target_.sea_soft_edges || target_.sea_turbidity) || sea_depth_.Prepare(budget)) &&
                        (!target_.sea_waves || sea_waves_.Prepare(budget)) &&
                        (target_.render_height == 0 || depth_copy_.Prepare(budget)) &&
-                       contact_.Prepare(target_, budget) &&
                        lighting_.prepare_programs(*device, target_, budget);
     switch_programs_ += per_frame - budget;
     report_.prepared_programs = switch_programs_;
@@ -941,16 +937,10 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     const auto &upload_load = location_load();
     upscales().end_frame(LoadingUploadScope::for_frame(upload_load.gate.generation(),
         !upload_load.sealed && upload_load.gate.state() == SceneReadiness::State::Warming, upload_load.opaque));
-    {
-        const auto now = std::chrono::steady_clock::now();
-        const float dt = last_frame_end_ == std::chrono::steady_clock::time_point{}
-                             ? 0.0f
-                             : std::chrono::duration<float>(now - last_frame_end_).count();
-        last_frame_end_ = now;
-        // Our lightmaps for the hour's sun, for the next frame's draws.
-        lighting_.town_light().update(weather_.sun_dir, weather_.sun_color, weather_last_frame_ && weather_.sun_present,
-                                      std::min(dt, 0.25f));
-    }
+    // Our lightmaps for the hour's sun, for the next frame's draws (the pre-game views of the next frame).
+    lighting_.town_light().update(weather_.sun_dir, weather_.sun_color, weather_last_frame_ && weather_.sun_present);
+    if (shim::Device *device = shim::Device::current; device && device_ready_)
+        lighting_.relight_town(*device);
     ao_bound_ = ao_.update(products_.ao_volume); // for the next frame's draws
     lighting_.set_ao_volume(ao_bound_);
     {
@@ -1058,13 +1048,18 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                          profile_sum_smaa_ / profile_gpu_frames_, profile_sum_easu_ / profile_gpu_frames_,
                          profile_sum_rcas_ / profile_gpu_frames_, profile_sum_sea_waves_ / profile_gpu_frames_);
             const Lighting::Counts counts = lighting_.last_frame();
+            // The sun's layers over the kProfileFrames frames of this line: how often the static one was drawn (and
+            // with how much), in how many frames the dynamic one, its casters.
+            const SunShadows::Counters sun = lighting_.shadows().take_counters();
+            // The towns' relight since the start: the place's sun map drawn, lightmaps composed, bounce bakes started.
+            const TownLight::SunCounters town = lighting_.town_light().sun_counters();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_tiles=%u sun_static_triangles=%u lightmapped_draws=%u town_relit_draws=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_bounce_bakes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
-                       last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ao, counts.lamp_lit,
+                       last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
-                       lighting_.shadows().last_static_casters()[0], lighting_.shadows().last_static_casters()[1], lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
+                       sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, town.bounce_bakes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;

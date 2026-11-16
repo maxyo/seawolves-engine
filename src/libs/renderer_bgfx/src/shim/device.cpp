@@ -534,6 +534,7 @@ HRESULT Device::Present()
             held_color ? held_color->serial : back_color->store->serial))
         probe.place(static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used - 1));
     probe.before_frame();
+    effects.lighting().shadows().before_frame();
     if (context.ready())
         copy_frame(shown_store);
     const uint32_t presented = context.last_frame();

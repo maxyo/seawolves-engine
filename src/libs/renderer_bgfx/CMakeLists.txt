@@ -109,7 +109,7 @@ endforeach()
 # Opaque twins (FF_OPAQUE, ff_finish.sh without its discards) of every fixed-function fragment shader the shim
 # chooses: draw.cpp uses "<name>_opaque" when the draw has no clip plane and no alpha test, so early depth stays on.
 set(ff_opaque_variants)
-foreach(base fs_ff fs_ff_cube0 fs_ff_cube1 fs_ff_cube2 fs_ff_lit fs_ff_baked)
+foreach(base fs_ff fs_ff_dyn fs_ff_cube0 fs_ff_cube1 fs_ff_cube2 fs_ff_lit fs_ff_baked)
     list(APPEND ff_opaque_variants "${base}_opaque|${CMAKE_CURRENT_SOURCE_DIR}/shaders/${base}.sc|FF_OPAQUE")
 endforeach()
 foreach(variant ${ff_fx_variants})

@@ -25,9 +25,12 @@
 //     the vertices' skin weight (ff_fragment.sh ffSkin); their parallax is shallow and has no self-shadow.
 //   * parallax (Settings::parallax): a relief draw whose map follows stage 0 (not projected) and has a height takes the
 //     FX_LIGHT_PARALLAX variant with the height at stage 7 (stage 0's sampler flags) and u_fxParallax.
-//   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture receive
-//     (FX_LIGHT_SHADOW[_SOFT] variants). What casts is not decided here: the lights publish their shadow volumes
-//     (shadow_volumes()) and the shim's caster entry offers every draw to them (effects/shadow_casters.hpp).
+//   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture receive both layers
+//     (FX_LIGHT_SHADOW[_SOFT] variants), as the towns' relit walls do. Surfaces with their own static light
+//     (lightmapped and baked ground, decks) under a moving caster take its shadow from the dynamic layer alone:
+//     baked draws in the shadowed variant's ground mode, plain ones through fs_ff_dyn (FfDraw::ground). What casts
+//     is not decided here: the lights publish their shadow volumes (shadow_volumes()) and the shim's caster entry
+//     offers every draw to them (effects/shadow_casters.hpp).
 //   * alpha to coverage (RendererState::alpha_to_coverage): alpha-tested (GREATER / GREATEREQUAL), non-blended draws
 //     into a multisampled target: BGFX_STATE_BLEND_ALPHA_TO_COVERAGE and fxCoverageAlpha() instead of the discard.
 //   * wet surfaces (Settings::wet_surfaces, fx/wetness.hpp): in the rain, lit and baked draws into the game picture
@@ -179,8 +182,13 @@ struct FfDraw
     bool has_parallax() const { return parallax_variant && parallax[2] > 0.0f && parallax[0] > 0.0f && parallax[1] > 0.0f; }
     bool parallax_untrusted = false; // ... but the texture's mask or a list takes the parallax from it (the cavity still draws)
     const NormalMapEntry *relief_entry = nullptr; // the relief texture's entry (its map ready or not): the parallax probe
-    bool shadow = false;           // FX_LIGHT_SHADOW variant: submit() binds the map for `view`
-    std::array<float, 16> view{};  // the draw's device world -> view (the sun cascade's receivers)
+    bool shadow = false;           // reads the sun's shadow maps: submit() / submit_ground() bind them for `view`
+    // A plain fixed-function draw that receives the moving casters' sun shadows. Not `active`: the shim picks
+    // vs_ff[_unlit]_dyn / fs_ff_dyn and calls submit_ground(). `active` (alpha to coverage): vs_id / fs_id are the
+    // ground variant's coverage twin and submit() binds the maps.
+    bool ground = false;
+    fx::SunReceiver sun_receiver{}; // how it receives (fx/shadows.hpp)
+    std::array<float, 16> view{};  // the draw's device world -> view (the sun's layers' receivers)
     // Absolute world -> view: the device's world is camera-relative (the game's Renderer moves the camera translation
     // into every world matrix and light: set_world_origin); the effects' own world data (AO volume, lamps and their
     // atlases, the location's geometry) is absolute.
@@ -212,12 +220,25 @@ class Lighting
     // while the previous settings still draw (Host::advance_switch).
     bool prepare_programs(shim::Device &device, const fx::Settings &settings, int &budget);
     // Nothing to decide per draw (preset «Низкая»): the shim skips prepare().
-    bool idle() const { return !lighting_ && !coverage_; }
+    bool idle() const { return !lighting_ && !coverage_ && !shadows_.enabled(); }
 
     // Fixed-function draw (no shader ports). `cube_variant` = the fs_ff_cube* variant the shim picked (0 = none).
     void prepare(const shim::Device &device, const shim::LayoutInfo &layout, uint32_t cube_variant,
                  const DrawSphereSource &sphere_source, FfDraw &draw);
     void submit(const FfDraw &draw);
+    // A plain fixed-function draw with FfDraw::ground: the sun map and its uniforms.
+    void submit_ground(const FfDraw &draw);
+    // The plain program pair of a draw with FfDraw::ground (`vertex_lit`: D3DRS_LIGHTING on).
+    uint32_t ground_vs(bool vertex_lit)
+    {
+        find_ground_shaders();
+        return vs_ground_[vertex_lit ? 0 : 1];
+    }
+    uint32_t ground_fs()
+    {
+        find_ground_shaders();
+        return fs_ground_;
+    }
     // Fog of a draw with fog enabled in D3DFOG_EXP mode (the game's): true when it takes the aerial perspective (fog
     // mode 5); u_fxAerialUp is then set for that draw and `haze` goes where fog mode 5 reads it (the fog start and end
     // slots of u_ffFs, unused by exp fog). `view`: the draw's world -> view.
@@ -261,6 +282,8 @@ class Lighting
     ParallaxProbe &probe() { return probe_; }
     SunShadows &shadows() { return shadows_; }
     TownLight &town_light() { return town_light_; }
+    // After TownLight::update(): the hour's sun on our lightmaps (the place's sun map, the lightmaps' compose).
+    void relight_town(shim::Device &device) { town_light_.render(device, shadows_, casters_); }
     // The shadow volumes of the frame for the picture the device is drawing now: on the first call of a frame the
     // lights prepare their maps for the device's camera and publish them (effects/shadow_casters.hpp). False: this
     // is not the game picture, or no light has a shadow map this frame.
@@ -311,7 +334,7 @@ class Lighting
     // Draws of the last presented frame that used a lit / baked / coverage variant (effects profile).
     struct Counts
     {
-        uint32_t lit = 0, baked = 0, coverage = 0, relief = 0, parallax = 0, glossy = 0, shadowed = 0, aerial = 0,
+        uint32_t lit = 0, baked = 0, coverage = 0, relief = 0, parallax = 0, glossy = 0, shadowed = 0, ground = 0, aerial = 0,
                  ao = 0, lamp_lit = 0, town_walls = 0, wet = 0;
         // Textured draws that drew without the parallax, by the reason (ParallaxMiss), so a parallax that never
         // reaches the screen shows in the "effects parallax:" line.
@@ -374,12 +397,14 @@ class Lighting
     // [specular][relief: none, normal map, normal map + parallax][linear][shadow: none, one tap, soft]
     uint32_t fs_lit_[2][3][2][3] = {};
     uint32_t fs_baked_[2][3][2][3] = {}; // [specular][relief][linear][sun shadow: none, one tap, soft]
+    uint32_t vs_ground_[2] = {}, fs_ground_ = 0, fs_ground_coverage_ = 0; // FfDraw::ground: [lit per vertex, unlit]
+    void find_ground_shaders();
     NormalMaps normal_maps_;
     ParallaxProbe probe_;
     SunShadows shadows_;
     TownLight town_light_;
     LampShadows lamps_;
-    Casters casters_; // the caster programs and material rule of the sun cascade and the lamp atlases
+    Casters casters_; // the caster programs and material rule of the sun's layers and the lamp atlases
     ShadowCasters shadow_casters_; // the frame's shadow volumes and the casters collected into them
     bool shadow_volumes_prepared_ = false; // shadow_volumes() asked the lights this frame
     bool cube_reported_ = false;

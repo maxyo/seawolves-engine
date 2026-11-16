@@ -2,6 +2,15 @@ cmake_minimum_required(VERSION 3.19.0)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+# The storm modules of this configure run: every STORM_SETUP(TYPE storm_module) adds itself and the executable
+# links them all. The list lives in the cache (the modules' directories are siblings of the executable's), so it is
+# emptied once per run: a module removed from the sources must not stay in an existing build directory's list.
+get_property(_storm_modules_started GLOBAL PROPERTY STORM_MODULES_STARTED)
+if(NOT _storm_modules_started)
+  set_property(GLOBAL PROPERTY STORM_MODULES_STARTED TRUE)
+  set(global_modules_list "" CACHE INTERNAL "global_modules_list")
+endif()
+
 # ##############################################################################
 # add all subdirs using add_subdirectory
 # ##############################################################################

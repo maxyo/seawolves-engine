@@ -8,7 +8,6 @@ Comments:
 trace and clip functions
 ******************************************************************************/
 #include "geom.h"
-#include "clip_visit.hpp"
 #include <cstring>
 
 //---------------------------------------------------------------------------
@@ -324,14 +323,6 @@ rec_loop:;
                 // mark the triangle added
                 trgclip[face] = attempt;
 
-                if (storm::geometry::clipVisit.collect)
-                {
-                    storm::geometry::clipVisit.collect->push_back(
-                        storm::geometry::clipFaceKey(storm::geometry::clipVisit.owner, face));
-                    pface += 3;
-                    continue;
-                }
-
                 // copy vertices to poly container
                 for (int32_t v = 0; v < 3; v++)
                 {
@@ -353,7 +344,6 @@ rec_loop:;
                 if (nverts > 0)
                 {
                     traceid = face;
-                    storm::geometry::clipVisit.face = face;
                     // if test only
                     if (addpoly == nullptr)
                         return true;

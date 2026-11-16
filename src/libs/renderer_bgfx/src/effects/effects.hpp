@@ -7,7 +7,6 @@
 #include "effects/bounce.hpp"
 #include "effects/visibility.hpp"
 #include "effects/lighting.hpp"
-#include "storm/fx/contact_shadows.hpp"
 #include "storm/fx/capabilities.hpp"
 #include "storm/fx/post_chain.hpp"
 #include "storm/fx/self_test.hpp"
@@ -137,7 +136,6 @@ class Host
     // (sea_waves.sh): runs the ripple simulation once per frame (views of its own) and binds its surface.
     void prepare_sea(shim::Device &device);
     void set_sea_frame(const render::EffectsSeaFrame &frame);
-    void contact_shadow(const std::array<float, 3> &ground, const render::EffectsMatrix &view);
 
   private:
     static constexpr int kProgramsPerFrame = 1;
@@ -210,12 +208,10 @@ class Host
     fx::Sky sky_;
     fx::SeaDepth sea_depth_;
     fx::DepthCopy depth_copy_;
-    fx::ContactShadows contact_;
     AoVolumes ao_;
     Visibility visibility_;
     Bounce bounce_;
     const AoVolumes::Bound *ao_bound_ = nullptr;
-    std::chrono::steady_clock::time_point last_frame_end_{}; // the lightmaps' sun turns with the time between frames
     float camera_height_ = 0.0f; // of the last world pass
     bgfx::UniformHandle u_sea_fx_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_sea_depth_ = BGFX_INVALID_HANDLE;

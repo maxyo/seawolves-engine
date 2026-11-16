@@ -46,10 +46,10 @@ storm_fx_add_shader(fx_shaders fs_fx_waves_step "${fx_sc}/fs_fx_waves_step.sc")
 storm_fx_add_shader(fx_shaders fs_fx_waves_surface "${fx_sc}/fs_fx_waves_surface.sc")
 
 storm_fx_add_shader(fx_shaders vs_fx_sprite "${fx_sc}/vs_fx_sprite.sc")
-storm_fx_add_shader(fx_shaders vs_fx_sprite_world "${fx_sc}/vs_fx_sprite.sc" DEFINES FX_SPRITE_WORLD)
 storm_fx_add_shader(fx_shaders fs_fx_sprite "${fx_sc}/fs_fx_sprite.sc")
 storm_fx_add_shader(fx_shaders vs_fx_shadow_caster "${fx_sc}/vs_fx_shadow_caster.sc")
 storm_fx_add_shader(fx_shaders fs_fx_shadow_caster "${fx_sc}/fs_fx_shadow_caster.sc")
+storm_fx_add_shader(fx_shaders fs_fx_sun_relight "${fx_sc}/fs_fx_sun_relight.sc")
 
 storm_fx_build_shaders(TARGET storm_fx_shaders NAMESPACE storm_fx_shaders VARYING "${fx_sc}/varying.def.sc"
     INCLUDES "${fx_sc}/include" "${storm_smaa_SOURCE_DIR}" "${storm_fidelityfx_fsr_SOURCE_DIR}/ffx-fsr" SHADERS ${fx_shaders})

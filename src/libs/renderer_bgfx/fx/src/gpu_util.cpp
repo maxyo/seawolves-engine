@@ -143,7 +143,10 @@ bool SupportsAoVolume()
 bool SupportsShadowMap()
 {
     // Compare samplers have no capability bit of their own: every backend bgfx offers for this engine has them.
-    return Format(bgfx::TextureFormat::D16, BGFX_CAPS_FORMAT_TEXTURE_2D | BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER);
+    // The sun's two layers are slices of one D16 array (fx/shadows.hpp); the lamp atlases plain D16 targets.
+    return Format(bgfx::TextureFormat::D16, BGFX_CAPS_FORMAT_TEXTURE_2D | BGFX_CAPS_FORMAT_TEXTURE_FRAMEBUFFER) &&
+           bgfx::getCaps()->limits.maxTextureLayers >= 2 &&
+           bgfx::isTextureValid(0, false, 2, bgfx::TextureFormat::D16, BGFX_TEXTURE_RT | BGFX_SAMPLER_COMPARE_LEQUAL);
 }
 
 LampDepth LampDepthFormat()

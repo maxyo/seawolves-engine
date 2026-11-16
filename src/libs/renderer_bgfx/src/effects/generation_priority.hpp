@@ -117,6 +117,13 @@ class GenerationFocus
         scene_.fetch_add(1, std::memory_order_relaxed);
     }
     void set_origin(const std::array<float, 3> &origin) { origin_ = origin; }
+    // The controlled character's or main ship's position (absolute world); false: none is known.
+    bool player(std::array<float, 3> &position) const
+    {
+        if (valid_)
+            position = player_;
+        return valid_;
+    }
     void set_scene(std::string_view name)
     {
         if (name != name_ || name.empty())

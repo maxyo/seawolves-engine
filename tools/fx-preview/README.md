@@ -28,7 +28,7 @@ night harbour with torches and lanterns (town with baked vertex lighting, figure
 lights, bloom); a broadside at dusk (flash lights); a wall, a boulder, a plank deck and a sail with height textures (derived normal maps under the sun
 from two sides and under a torch); before / after pairs for the cheap upgrades (anisotropic filtering, MSAA and
 alpha to coverage on palms, a hedge and rigging, wind sway at two moments, linear-light sums, rim light, aerial
-perspective, contact shadows, scene grades by hour, weather and interior, lens flare, dither); an aliasing
+perspective, scene grades by hour, weather and interior, lens flare, dither); an aliasing
 chart (SMAA, RCAS sharpening, MSAA, the FSR 1 upscale from 75 %). CPU products (sky
 panoramas, grading tables) are written as images too.
 

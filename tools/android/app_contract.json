@@ -67,7 +67,6 @@
       "fx_bloom": [-1, 0, 1],
       "fx_grade": [-1, 0, 1, 2],
       "fx_dither": [-1, 0, 1],
-      "fx_contact_shadows": [-1, 0, 1],
       "fx_shadows": [-1, 0, 1, 2],
       "fx_sea_band_limit": [-1, 0, 1],
       "fx_sea_soft_edges": [-1, 0, 1],

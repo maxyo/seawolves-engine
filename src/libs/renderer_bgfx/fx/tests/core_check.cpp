@@ -947,33 +947,147 @@ void CheckShadows()
     // A shadow takes the whole direct sun away (only the ambient stays); it fades as the sun sets.
     CHECK(SunShadowStrength(0.7f) == 1.0f && SunShadowStrength(0.125f) == 1.0f);
     CHECK(Near(SunShadowStrength(0.0625f), 0.5f, 1e-6f) && SunShadowStrength(0.0f) == 0.0f && SunShadowStrength(-0.3f) == 0.0f);
-    CHECK(ShadowMapSize(ShadowQuality::Off) == 0 && ShadowMapSize(ShadowQuality::Low) == 1024 && ShadowMapSize(ShadowQuality::Soft) == 2048);
+    // The device classes' budget: none on Низкая, 1024 with one tap each on Средняя, 2048 with four static taps on Высокая.
+    CHECK(SunShadowBudgetFor(ShadowQuality::Off).size == 0);
+    CHECK(SunShadowBudgetFor(ShadowQuality::Low).size == 1024 && SunShadowBudgetFor(ShadowQuality::Low).static_taps == 1 &&
+          SunShadowBudgetFor(ShadowQuality::Low).dynamic_taps == 1);
+    CHECK(SunShadowBudgetFor(ShadowQuality::Soft).size == 2048 && SunShadowBudgetFor(ShadowQuality::Soft).static_taps == 4 &&
+          SunShadowBudgetFor(ShadowQuality::Soft).dynamic_taps == 1);
+
+    using Redraw = SunLayerTracker::Redraw;
     const Vec3 sun{0.48f, 0.64f, 0.6f};
-    const Vec3 focus{100.0f, 5.0f, -40.0f};
-    const ShadowSetup setup = ComputeShadowSetup(sun, focus, 50.0f, 120.0f, 1024);
-    CHECK(Near(setup.texel_world, 100.0f / 1024.0f, 1e-6f));
-    // The focus is at the centre of the map (within a texel), half way through the receiver depth range.
-    const auto centre = ShadowCoord(setup, focus);
+    const Vec3 focus{1100.0f, 5.0f, -640.0f};
+    SunLayerTracker tracker;
+    const auto first = tracker.Advance(sun, focus, 1024);
+    CHECK(first.redraw == Redraw::First && tracker.valid());
+    const SunLayers &layers = first.layers;
+    CHECK(Near(layers.static_texel, 80.0f / 1024.0f, 1e-6f) && Near(layers.dynamic_texel, 60.0f / 1024.0f, 1e-6f));
+    // The focus is at the centre of the static layer (within a texel), inside the depth range.
+    const auto centre = layers.StaticCoord(focus);
     CHECK(Near(centre[0], 0.5f, 1.0f / 1024.0f) && Near(centre[1], 0.5f, 1.0f / 1024.0f));
-    CHECK(Near(centre[2], 170.0f / 220.0f, 1e-3f));
-    // Moving towards the sun: same texel, smaller depth. A caster 100 m up the sun ray is still inside.
-    const auto nearer = ShadowCoord(setup, {focus[0] + sun[0] * 100.0f, focus[1] + sun[1] * 100.0f, focus[2] + sun[2] * 100.0f});
+    CHECK(Near(centre[2], 160.0f / 200.0f, 1e-3f));
+    // A caster 100 m up the sun ray: same texel, smaller depth, still inside.
+    const auto nearer = layers.StaticCoord({focus[0] + sun[0] * 100.0f, focus[1] + sun[1] * 100.0f, focus[2] + sun[2] * 100.0f});
     CHECK(Near(nearer[0], centre[0], 1e-3f) && Near(nearer[1], centre[1], 1e-3f) && nearer[2] < centre[2] && nearer[2] > 0.0f);
-    // Points on the edge of the sphere stay inside the map.
-    for (Vec3 offset : {Vec3{49.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, -49.0f}, Vec3{-30.0f, 20.0f, 30.0f}})
+
+    // The camera stays in the band: the static layer is not drawn again, however many frames pass, and the whole
+    // shadowed sphere stays inside both layers.
+    int redraws = 0;
+    for (int frame = 0; frame < 600; ++frame)
     {
-        const auto c = ShadowCoord(setup, {focus[0] + offset[0], focus[1] + offset[1], focus[2] + offset[2]});
-        CHECK(c[0] > 0.0f && c[0] < 1.0f && c[1] > 0.0f && c[1] < 1.0f && c[2] > 0.0f && c[2] < 1.0f);
+        const float a = 0.05f * static_cast<float>(frame);
+        const Vec3 at{focus[0] + 5.0f * std::cos(a), focus[1] + 2.0f * std::sin(0.3f * a), focus[2] + 5.0f * std::sin(a)};
+        const auto step = tracker.Advance(sun, at, 1024);
+        redraws += step.redraw != Redraw::None ? 1 : 0;
+        const auto k = step.layers.DynamicFromStatic();
+        for (Vec3 offset : {Vec3{29.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, -29.0f}, Vec3{-17.0f, 17.0f, 17.0f}, Vec3{0.0f, -29.0f, 0.0f}})
+        {
+            const auto c = step.layers.StaticCoord({at[0] + offset[0], at[1] + offset[1], at[2] + offset[2]});
+            CHECK(c[0] > 0.0f && c[0] < 1.0f && c[1] > 0.0f && c[1] < 1.0f && c[2] > 0.0f && c[2] < 1.0f);
+            const float du = c[0] * k[0] + k[1], dv = c[1] * k[0] + k[2];
+            CHECK(du > 0.0f && du < 1.0f && dv > 0.0f && dv < 1.0f);
+        }
+        // The dynamic layer is centred on the focus (within a texel) and its uv comes from the static one's.
+        const auto f = step.layers.StaticCoord(at);
+        CHECK(Near(f[0] * k[0] + k[1], 0.5f, 1.5f / 1024.0f) && Near(f[1] * k[0] + k[2], 0.5f, 1.5f / 1024.0f));
     }
-    // Texel snapping: a small camera move does not shift the map by a fraction of a texel.
-    const ShadowSetup moved = ComputeShadowSetup(sun, {focus[0] + 0.013f, focus[1], focus[2] + 0.021f}, 50.0f, 120.0f, 1024);
-    const Vec3 probe{90.0f, 3.0f, -35.0f};
-    const float shift_u = (ShadowCoord(moved, probe)[0] - ShadowCoord(setup, probe)[0]) * 1024.0f;
-    const float shift_v = (ShadowCoord(moved, probe)[1] - ShadowCoord(setup, probe)[1]) * 1024.0f;
-    CHECK(Near(shift_u, std::round(shift_u), 2e-2f) && Near(shift_v, std::round(shift_v), 2e-2f));
+    CHECK(redraws == 0);
+    // A sun that moved less than the step: still nothing. More: drawn again, with the new direction.
+    const float tilt = 0.2f * 0.01745329f;
+    const Vec3 near_sun = [&] { Vec3 v{sun[0] + tilt, sun[1], sun[2]}; const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); return Vec3{v[0] / l, v[1] / l, v[2] / l}; }();
+    CHECK(tracker.Advance(near_sun, focus, 1024).redraw == Redraw::None);
+    const float step_tilt = 0.6f * 0.01745329f;
+    const Vec3 far_sun = [&] { Vec3 v{sun[0] + step_tilt, sun[1], sun[2]}; const float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); return Vec3{v[0] / l, v[1] / l, v[2] / l}; }();
+    const auto stepped = tracker.Advance(far_sun, focus, 1024);
+    CHECK(stepped.redraw == Redraw::Sun && Near(stepped.layers.sun[0], far_sun[0], 1e-6f) && Near(stepped.layers.sun[2], far_sun[2], 1e-6f));
+    CHECK(tracker.Advance(far_sun, focus, 1024).redraw == Redraw::None);
+    // Leaving the band: drawn again around the new place, with the same sun; then quiet again.
+    const Vec3 away{focus[0] + 14.0f, focus[1], focus[2] + 9.0f};
+    const auto left = tracker.Advance(far_sun, away, 1024);
+    CHECK(left.redraw == Redraw::Band && Near(left.layers.sun[0], far_sun[0], 1e-6f) && Near(left.layers.sun[2], far_sun[2], 1e-6f));
+    CHECK(Near(left.layers.StaticCoord(away)[0], 0.5f, 1.0f / 1024.0f));
+    CHECK(tracker.Advance(far_sun, away, 1024).redraw == Redraw::None);
+    // Along the sun too (a climb): the depth range is anchored like the square.
+    const Vec3 up_sun{away[0] + far_sun[0] * 11.0f, away[1] + far_sun[1] * 11.0f, away[2] + far_sun[2] * 11.0f};
+    CHECK(tracker.Advance(far_sun, up_sun, 1024).redraw == Redraw::Band);
+    // A direction a little off unit length (the weather's, a D3D light's) is not a step.
+    CHECK(tracker.Advance({far_sun[0] * 0.9999f, far_sun[1] * 0.9999f, far_sun[2] * 0.9999f}, up_sun, 1024).redraw == Redraw::None);
+    // The sea's wider region: its own layers, both wider; the land's again when the place has still geometry.
+    {
+        const auto sea = tracker.Advance(far_sun, up_sun, 1024, kSunShadowRadiusSea);
+        CHECK(sea.redraw == Redraw::First && Near(sea.layers.dynamic_texel, 90.0f / 1024.0f, 1e-6f));
+        const auto edge = sea.layers.StaticCoord({up_sun[0] + sea.layers.right[0] * 44.0f, up_sun[1] + sea.layers.right[1] * 44.0f, up_sun[2] + sea.layers.right[2] * 44.0f});
+        const auto ks = sea.layers.DynamicFromStatic();
+        CHECK(edge[0] * ks[0] + ks[1] > 0.0f && edge[0] * ks[0] + ks[1] < 1.0f); // 44 m off the ship is inside the dynamic layer
+        CHECK(tracker.Advance(far_sun, up_sun, 1024, kSunShadowRadiusSea).redraw == Redraw::None);
+        CHECK(tracker.Advance(far_sun, up_sun, 1024).redraw == Redraw::First);
+    }
+    // Invalidated (new geometry, device) or another size: drawn again.
+    tracker.Invalidate();
+    CHECK(tracker.Advance(far_sun, up_sun, 1024).redraw == Redraw::First);
+    CHECK(tracker.Advance(far_sun, up_sun, 2048).redraw == Redraw::First);
+
+    // Texel snapping: a small camera move shifts neither layer by a fraction of a texel.
+    const auto before = tracker.Advance(far_sun, up_sun, 2048);
+    const auto after = tracker.Advance(far_sun, {up_sun[0] + 0.013f, up_sun[1], up_sun[2] + 0.021f}, 2048);
+    const Vec3 probe{up_sun[0] - 10.0f, up_sun[1] - 2.0f, up_sun[2] + 5.0f};
+    const auto kb = before.layers.DynamicFromStatic(), ka = after.layers.DynamicFromStatic();
+    const auto cb = before.layers.StaticCoord(probe), ca = after.layers.StaticCoord(probe);
+    CHECK(cb == ca); // the static layer did not move at all
+    const float shift_u = ((ca[0] * ka[0] + ka[1]) - (cb[0] * kb[0] + kb[1])) * 2048.0f;
+    const float shift_v = ((ca[1] * ka[0] + ka[2]) - (cb[1] * kb[0] + kb[2])) * 2048.0f;
+    CHECK(Near(shift_u, std::round(shift_u), 3e-2f) && Near(shift_v, std::round(shift_v), 3e-2f));
+    // The projections agree with the coordinates: clip of the view * projection is the uv.
+    {
+        const auto view = before.layers.View(), proj = before.layers.StaticProjection(), dyn = before.layers.DynamicProjection();
+        float l[3], c[3], d[3];
+        for (int j = 0; j < 3; ++j)
+            l[j] = probe[0] * view[j] + probe[1] * view[4 + j] + probe[2] * view[8 + j] + view[12 + j];
+        for (int j = 0; j < 3; ++j)
+        {
+            c[j] = l[0] * proj[j] + l[1] * proj[4 + j] + l[2] * proj[8 + j] + proj[12 + j];
+            d[j] = l[0] * dyn[j] + l[1] * dyn[4 + j] + l[2] * dyn[8 + j] + dyn[12 + j];
+        }
+        CHECK(Near(0.5f + 0.5f * c[0], cb[0], 1e-4f) && Near(0.5f - 0.5f * c[1], cb[1], 1e-4f) && Near(c[2], cb[2], 1e-4f));
+        CHECK(Near(0.5f + 0.5f * d[0], cb[0] * kb[0] + kb[1], 1e-4f) && Near(0.5f - 0.5f * d[1], cb[1] * kb[0] + kb[2], 1e-4f));
+        // A camera-relative world gives the same light space.
+        const Vec3 origin{1000.0f, 0.0f, -600.0f};
+        const auto relative = before.layers.View(origin);
+        const Vec3 p{probe[0] - origin[0], probe[1] - origin[1], probe[2] - origin[2]};
+        for (int j = 0; j < 3; ++j)
+            CHECK(Near(p[0] * relative[j] + p[1] * relative[4 + j] + p[2] * relative[8 + j] + relative[12 + j], l[j], 2e-3f));
+    }
+    // The place's map: every ground point inside, with a margin; casters up to the reach towards the sun.
+    {
+        std::vector<Vec3> ground;
+        for (int i = 0; i < 200; ++i)
+            ground.push_back({-120.0f + 1.7f * static_cast<float>(i), 2.0f + 0.01f * static_cast<float>(i % 17), 40.0f + 90.0f * std::sin(0.37f * static_cast<float>(i))});
+        const SunPlace place = ComputeSunPlace(sun, ground, 300.0f, 2048);
+        for (const Vec3 &p : ground)
+        {
+            const auto c = place.Coord(p);
+            CHECK(c[0] > 2.0f / 2048.0f && c[0] < 1.0f - 2.0f / 2048.0f && c[1] > 2.0f / 2048.0f && c[1] < 1.0f - 2.0f / 2048.0f);
+            CHECK(c[2] > 0.0f && c[2] < 1.0f);
+            const auto up_ray = place.Coord({p[0] + sun[0] * 250.0f, p[1] + sun[1] * 250.0f, p[2] + sun[2] * 250.0f});
+            CHECK(Near(up_ray[0], c[0], 1e-3f) && Near(up_ray[1], c[1], 1e-3f) && up_ray[2] > 0.0f && up_ray[2] < c[2]);
+            CHECK(place.Reaches(p, 0.0f));
+        }
+        CHECK(!place.Reaches({5000.0f, 0.0f, 5000.0f}, 50.0f));
+        // The view and projection agree with Coord, also in a camera-relative world.
+        const Vec3 origin{-100.0f, 0.0f, 50.0f}, p = ground[77];
+        const auto view = place.View(origin), proj = place.Projection();
+        float l[3], c[3];
+        for (int j = 0; j < 3; ++j)
+            l[j] = (p[0] - origin[0]) * view[j] + (p[1] - origin[1]) * view[4 + j] + (p[2] - origin[2]) * view[8 + j] + view[12 + j];
+        for (int j = 0; j < 3; ++j)
+            c[j] = l[0] * proj[j] + l[1] * proj[4 + j] + l[2] * proj[8 + j] + proj[12 + j];
+        const auto expect = place.Coord(p);
+        CHECK(Near(0.5f + 0.5f * c[0], expect[0], 1e-4f) && Near(0.5f - 0.5f * c[1], expect[1], 1e-4f) && Near(c[2], expect[2], 1e-4f));
+    }
     // A sun straight overhead is a valid direction.
-    const ShadowSetup zenith = ComputeShadowSetup({0.0f, 1.0f, 0.0f}, focus, 50.0f, 120.0f, 1024);
-    CHECK(Near(ShadowCoord(zenith, focus)[0], 0.5f, 1.0f / 1024.0f));
+    SunLayerTracker zenith;
+    const auto top = zenith.Advance({0.0f, 1.0f, 0.0f}, focus, 1024);
+    CHECK(Near(top.layers.StaticCoord(focus)[0], 0.5f, 1.0f / 1024.0f));
 }
 // Decodes texel (x, y) of mip `mip` into a unit normal.
 std::array<float, 3> NormalAt(const NormalMap &map, int mip, int x, int y)
@@ -2164,25 +2278,7 @@ void CheckTownLight()
     // squares alone (a, c low, b 0.22) would make it shallower.
     const float depth = (tone.a + tone.c) / (tone.a + tone.c + tone.b * 0.7071f);
     CHECK(tone.valid && tone.edges >= 50 && std::fabs(depth - 0.12f / (0.12f + 0.28f * 0.7071f)) < 0.02f);
-    // Relit for the sun it was baked with: the game's lightmap again; for a sun from the east the cube's shadow falls
-    // west of it, the paint stays.
-    std::vector<uint8_t> same(64 * 64 * 4, 0), east(64 * 64 * 4, 0);
-    ComposeTownLight(texels, tone, game, vis, vis, vis, 0.0f, sky, same);
-    double error = 0.0;
-    for (size_t i = 0; i < texels.texel.size(); ++i)
-        error += std::fabs(same[texels.texel[i] * 4 + 1] - game[texels.texel[i] * 4 + 1]);
-    error /= static_cast<double>(texels.texel.size());
-    const std::vector<uint8_t> morning = SunVisibility(occluders, texels, {0.7071f, 0.7071f, 0.0f}, 20.0f / 64.0f, 4, 2);
-    ComposeTownLight(texels, tone, game, vis, morning, morning, 0.0f, sky, east);
-    auto pixel = [&](const std::vector<uint8_t> &img, float x, float z) {
-        const int tx = static_cast<int>((x + 10.0f) / 20.0f * 64.0f), tz = static_cast<int>((z + 10.0f) / 20.0f * 64.0f);
-        return static_cast<float>(img[(tz * 64 + tx) * 4 + 1]);
-    };
-    std::printf("town light: relit for its own sun, mean error %.1f / 255; for the morning sun east of the cube %.0f "
-                "(was %.0f), west %.0f (was %.0f)\n",
-                error, pixel(east, 4.0f, 0.0f), pixel(game, 4.0f, 0.0f), pixel(east, -4.0f, 0.0f), pixel(game, -4.0f, 0.0f));
-    CHECK(error < 2.0);
-    CHECK(pixel(east, 4.0f, 0.0f) > 2.0f * pixel(game, 4.0f, 0.0f) && pixel(east, -4.0f, 0.0f) < 0.5f * pixel(game, -4.0f, 0.0f));
+    // The relight itself runs on the GPU (fx/sun_relight.hpp): tests/renderer_bgfx/sun_relight_check.cpp.
 }
 
 void CheckVisibility()

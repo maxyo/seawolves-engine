@@ -5,7 +5,6 @@
 
 #include "storm/fx/capabilities.hpp"
 #include "storm/fx/color_lut.hpp"
-#include "storm/fx/contact_shadows.hpp"
 #include "storm/fx/lighting.hpp"
 #include "storm/fx/log.hpp"
 #include "storm/fx/post_chain.hpp"
@@ -41,8 +40,9 @@ constexpr uint16_t kWidth = 1280;
 constexpr uint16_t kHeight = 720;
 constexpr float kNear = 0.5f;
 constexpr float kFar = 4000.0f;
-constexpr bgfx::ViewId kShadowView = 0;
-constexpr bgfx::ViewId kSceneView = 1;
+constexpr bgfx::ViewId kShadowStaticView = 0; // the preview has no still geometry: cleared once, stays open
+constexpr bgfx::ViewId kShadowView = 1;       // the moving casters' layer
+constexpr bgfx::ViewId kSceneView = 2;
 constexpr bgfx::ViewId kPostView = 10;
 constexpr bgfx::ViewId kReadbackView = 40;
 
@@ -131,7 +131,6 @@ struct Shot
     float sun_turn = 0.0f; // rotates the sun around the vertical axis, degrees
     float time = 12.5f;    // seconds: wind (the sea and the ships stay at kTime)
     float interior = 0.0f; // 1 = the scene counts as indoors for the scene grade
-    bool blobs = false;    // contact shadow blobs under the quay's figure and objects
 };
 
 // Vertex + fragment pair of the fixed-function stand-in per lighting variant, keyed by fx::LightingDefines().
@@ -477,19 +476,26 @@ class Preview
             casters = {&relief_[1], &relief_[3]};
             focus = {0.0f, 1.0f, 3.0f};
         }
-        fx::ShadowFrame shadow_frame;
-        shadow_frame.view = kShadowView;
-        shadow_frame.sun_dir = light_dir;
-        shadow_frame.focus = focus;
-        shadow_frame.radius = shot.content == Content::Deck ? 34.0f : shot.content == Content::Materials ? 16.0f : 60.0f;
+        // Every caster of the preview moves (ships, figures): they go into the dynamic layer, around the focus.
+        const fx::SunLayerTracker::Frame sun_step = sun_layers_.Advance(light_dir, focus, fx::SunShadowBudgetFor(settings.shadows).size);
+        fx::SunFrame shadow_frame;
+        shadow_frame.static_view = kShadowStaticView;
+        shadow_frame.dynamic_view = kShadowView;
+        shadow_frame.layers = sun_step.layers;
+        shadow_frame.strength = fx::SunShadowStrength(light_dir[1]);
+        shadow_frame.redraw_static = sun_step.redraw != fx::SunLayerTracker::Redraw::None;
         if (shadows_.Begin(settings, shadow_frame))
+        {
             for (const GpuMesh *mesh : casters)
             {
                 bgfx::setVertexBuffer(0, mesh->vertices);
                 bgfx::setIndexBuffer(mesh->indices);
                 bgfx::setState(fx::Shadows::kCasterState);
                 bgfx::submit(kShadowView, shadows_.CasterProgram());
+                shadows_.CountDynamic();
             }
+            shadows_.End();
+        }
 
         // material == nullptr: geometry with baked vertex colours (D3DRS_LIGHTING off).
         const auto draw = [&](const GpuMesh &mesh, const fx::LightingMaterial *material) {
@@ -525,7 +531,7 @@ class Preview
                 bgfx::setUniform(u_point_count_, packed.u_fxPointCount.data());
             }
             if (settings.shadows != fx::ShadowQuality::Off && (settings.lighting_flags & fx::kLightingPerPixel))
-                shadows_.Bind(lighting.view);
+                shadows_.Bind(lighting.view, fx::SunReceiver{});
             // Renderer state from fx: anisotropic filtering on the world textures, alpha to coverage on alpha-tested ones.
             const uint32_t sampler = renderer.max_anisotropy > 1 ? BGFX_SAMPLER_MIN_ANISOTROPIC | BGFX_SAMPLER_MAG_ANISOTROPIC : BGFX_SAMPLER_NONE;
             bgfx::setTexture(0, s_base_, bgfx::isValid(mesh.base) ? mesh.base : white_base_, sampler);
@@ -589,15 +595,6 @@ class Preview
         {
             draw(pattern_, nullptr);
         }
-
-        if (shot.blobs)
-        {
-            // Under the quay's figure, crate and ball; the renderer would add one per character and object.
-            contact_shadows_.Add({-0.6f, 2.4f, 4.2f}, 0.5f, 0.5f);
-            contact_shadows_.Add({-6.0f, 2.4f, 8.0f}, 1.5f, 0.45f);
-            contact_shadows_.Add({4.5f, 2.4f, 7.5f}, 0.9f, 0.5f);
-        }
-        contact_shadows_.Submit(kSceneView, settings);
 
         if (shot.content != Content::Pattern)
         {
@@ -733,7 +730,7 @@ class Preview
     fx::Sky sky_;
     fx::Lighting lighting_;
     fx::Shadows shadows_;
-    fx::ContactShadows contact_shadows_;
+    fx::SunLayerTracker sun_layers_;
     fx::FlashLights flashes_;
     std::vector<fx::PointLight> town_lights_;
     std::vector<bgfx::ProgramHandle> programs_; // parallel to kMeshVariants
@@ -821,7 +818,7 @@ std::vector<Shot> AllShots(const fx::Support &support, bool game_height_maps)
     basic.alpha_to_coverage = false;
     basic.anisotropy = 1;
     basic.smaa = true;
-    basic.dither = basic.lens_flare = basic.scene_grading = basic.contact_shadows = false;
+    basic.dither = basic.lens_flare = basic.scene_grading = false;
     std::vector<Shot> shots;
     const auto add = [&](std::string name, Content content, fx::Settings settings, preview::Weather weather = preview::Weather::Day) -> Shot & {
         shots.push_back({std::move(name), content, settings, weather});
@@ -948,12 +945,6 @@ std::vector<Shot> AllShots(const fx::Support &support, bool game_height_maps)
     add("aerial_1_on", Content::Ocean, one_more);
     add("aerial_storm_0_off", Content::Ocean, basic, preview::Weather::Storm);
     add("aerial_storm_1_on", Content::Ocean, one_more, preview::Weather::Storm);
-    // Contact shadows where there is no sun shadow: an overcast quay.
-    one_more = basic;
-    one_more.shadows = fx::ShadowQuality::Off;
-    add("contact_0_off", Content::Deck, one_more, preview::Weather::Storm).blobs = true;
-    one_more.contact_shadows = true;
-    add("contact_1_on", Content::Deck, one_more, preview::Weather::Storm).blobs = true;
     // Scene grades by hour, weather and place.
     one_more = basic;
     one_more.scene_grading = true;

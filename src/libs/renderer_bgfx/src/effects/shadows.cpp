@@ -1,5 +1,6 @@
 #include "effects/shadows.hpp"
 
+#include "effects/generation_priority.hpp"
 #include "shim/device.hpp"
 #include "storm/render/frame_owner.hpp"
 
@@ -17,32 +18,21 @@ namespace storm::effects
 
 namespace
 {
-// Shadowed region: a sphere of this radius whose centre lies this far in front of the camera (the third-person
-// cameras look at the player from a few metres behind), casters up to kCasterReach towards the sun (masts, palms).
-// 30 m (was 40, the owner's choice from the before/after): a quarter fewer town tiles, a quarter finer texels.
-constexpr float kRadius = 30.0f;
+// The shadowed region is centred on the player (the controlled character on land, the main ship at sea: the sea
+// camera stands 50-150 m off the ship, which a region in front of the camera would miss altogether) while the
+// camera is within kPlayerReach of it; a camera with no player near (the menu's scene, a fly-by) centres it kAhead
+// metres in front of itself. Its size, the static layer's band and the caster reach are fx/shadow_model.hpp's.
 constexpr float kAhead = 18.0f;
-constexpr float kCasterReach = 120.0f;
-constexpr bgfx::ViewId kShadowView = render::kPreGameViewBegin;
-// The place's still geometry is cut into tiles of this size (xz) so the cascade draws only what it reaches.
+constexpr float kPlayerReach = 250.0f;
+constexpr bgfx::ViewId kStaticView = render::kPreGameViewBegin;
+constexpr bgfx::ViewId kDynamicView = render::kPreGameViewBegin + 3; // 1 and 2 are the lamp atlases
+// The place's still geometry is cut into tiles of this size (xz) so the static layer draws only what it reaches.
 constexpr float kTileSize = 24.0f;
 
-
-float Dot(const std::array<float, 3> &a, const std::array<float, 3> &b)
+float Dot(const fx::Vec3 &a, const fx::Vec3 &b)
 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
-
-std::array<float, 3> Normalize(std::array<float, 3> v)
-{
-    const float l = std::sqrt(Dot(v, v));
-    if (l > 1e-9f)
-        for (float &x : v)
-            x /= l;
-    return v;
-}
-
-// From `from` towards `to` by at most `max_radians` (on the great circle).
 
 } // namespace
 
@@ -69,6 +59,7 @@ void SunShadows::set_casters(const render::EffectsLocationGeometry &geometry)
     else
         caster_uvs_.assign(casters_.size(), {0.0f, 0.0f});
     tiles_dirty_ = true;
+    tracker_.Invalidate();
 }
 
 bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view, const std::array<float, 3> &origin,
@@ -80,74 +71,125 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
     active_ = false;
     if (!enabled() || !sun_present_)
         return false;
-    // Camera position -t * R^T and forward (+z of the row-vector view: the third column), in the device's world.
-    fx::ShadowFrame frame;
-    frame.view = kShadowView;
-    frame.sun_dir = {sun_dir_[0], sun_dir_[1], sun_dir_[2]};
+    origin_ = origin;
+    // Camera position -t * R^T and forward (+z of the row-vector view: the third column), in absolute world.
+    fx::Vec3 eye, focus;
     for (int i = 0; i < 3; ++i)
     {
-        const float eye = -(view[12] * view[i * 4 + 0] + view[13] * view[i * 4 + 1] + view[14] * view[i * 4 + 2]);
-        frame.focus[i] = eye + view[i * 4 + 2] * kAhead;
+        eye[i] = origin[i] - (view[12] * view[i * 4 + 0] + view[13] * view[i * 4 + 1] + view[14] * view[i * 4 + 2]);
+        focus[i] = eye[i] + view[i * 4 + 2] * kAhead;
     }
-    frame.radius = kRadius;
-    frame.caster_reach = kCasterReach;
-    active_ = shadows_.Begin(settings_, frame);
-    if (!active_)
+    int centre = 0; // 0 the camera's view (no player known), 1 the player, 2 the camera's view (the player is far)
+    float player_distance = 0.0f;
+    if (std::array<float, 3> player; generation_focus().player(player))
+    {
+        const fx::Vec3 d{player[0] - eye[0], player[1] - eye[1], player[2] - eye[2]};
+        player_distance = std::sqrt(Dot(d, d));
+        centre = player_distance <= kPlayerReach ? 1 : 2;
+        if (centre == 1)
+            focus = player;
+    }
+    if (centre != logged_centre_)
+    {
+        logged_centre_ = centre;
+        static const char *const what[] = {"in front of the camera (no player position is known)", "on the player",
+                                           "in front of the camera (the player is too far from it)"};
+        shim::logf("effects: sun shadows: the shadowed region is centred %s, %.0f m from the camera", what[centre],
+                   centre == 0 ? kAhead : player_distance);
+    }
+    const float strength = fx::SunShadowStrength(sun_dir_[1]);
+    if (strength <= 0.0f)
         return false;
-    // The cascade as a shadow volume, in the device's world: what moves and meets it is drawn into the map by the
-    // shim's caster entry. The place's still geometry is in the map from the tiles below.
-    ShadowVolume volume;
-    volume.layer = ShadowLayer::Dynamic;
-    volume.still = caster_indices_.empty() ? 0 : render::kShadowStillLocation;
-    volume.pass = Casters::Pass::Sun;
-    volume.view = kShadowView;
-    volume.origin = origin;
-    volume.state = fx::Shadows::kCasterState;
-    const std::array<float, 3> towards_sun = Normalize(sun_dir_);
-    volume.light = {towards_sun[0], towards_sun[1], towards_sun[2], 0.0f};
-    volume.shadow_length = 2.0f * kRadius + kCasterReach;
-    // uv 0..1 -> the clip square -1..1; the depth is 0..1 already.
-    const float to_clip[16] = {2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, -1.0f, -1.0f, 0.0f, 1.0f};
-    std::array<float, 16> world_to_clip;
-    bx::mtxMul(world_to_clip.data(), shadows_.WorldToShadow().data(), to_clip);
-    volume.set_clip_bounds(world_to_clip, false);
-    volumes.publish(volume);
-    if (caster_indices_.empty())
-        return active_;
     if (tiles_dirty_)
         build_tiles();
-    if (tiles_failed_)
-        return false; // retain the loading error; never submit invalid required buffers
-    // The place's still geometry the cascade reaches: tiles near the line through the focus along the sun, from
-    // behind the focus up to the caster reach towards the sun. The tiles are absolute, the cascade in the device's world.
+    if (cut_signature() != drawn_cut_signature_)
+        tracker_.Invalidate();
+    const fx::SunLayerTracker::Frame step =
+        tracker_.Advance({sun_dir_[0], sun_dir_[1], sun_dir_[2]}, focus, fx::SunShadowBudgetFor(settings_.shadows).size,
+                         tiles_.empty() ? fx::kSunShadowRadiusSea : fx::kSunShadowRadius);
+    layers_ = step.layers;
+    fx::SunFrame frame;
+    frame.static_view = kStaticView;
+    frame.dynamic_view = kDynamicView;
+    frame.layers = layers_;
+    frame.origin = {origin[0], origin[1], origin[2]};
+    frame.strength = strength;
+    frame.redraw_static = step.redraw != fx::SunLayerTracker::Redraw::None;
+    active_ = shadows_.Begin(settings_, frame);
+    if (!active_)
+    {
+        tracker_.Invalidate(); // nothing was drawn for this step
+        return false;
+    }
+    if (shadows_.StaticWanted())
+    {
+        const fx::SunLayers &l = layers_;
+        const std::array<uint32_t, 2> drawn = draw_tiles(device, casters, kStaticView, frame.origin, [&l](const fx::Vec3 &c, float r) {
+            // The tile's sphere against the layer's box in light space.
+            const float x = Dot(c, l.right) - l.anchor[0], y = Dot(c, l.up) - l.anchor[1], z = Dot(c, l.forward) - l.anchor[2];
+            return std::fabs(x) <= l.static_half + r && std::fabs(y) <= l.static_half + r && z >= l.near_plane - r &&
+                   z <= l.far_plane + r;
+        });
+        drawn_cut_signature_ = cut_signature();
+        counters_.static_tiles += drawn[0];
+        counters_.static_triangles += drawn[1];
+        totals_.static_tiles += drawn[0];
+        totals_.static_triangles += drawn[1];
+        ++counters_.static_redraws;
+        ++totals_.static_redraws;
+    }
+    shadows_.SetStaticCasters(!tiles_.empty());
+    // The dynamic layer as a shadow volume, in the device's world: what moves and meets it is drawn into it by the
+    // shim's caster entry. The place's still geometry is in the static layer from its tiles: its own draws stay out.
+    ShadowVolume volume;
+    volume.layer = ShadowLayer::Dynamic;
+    volume.still = tiles_.empty() ? 0 : render::kShadowStillLocation;
+    volume.pass = Casters::Pass::Sun;
+    volume.view = kDynamicView;
+    volume.origin = origin;
+    volume.state = fx::Shadows::kCasterState;
+    volume.light = {layers_.sun[0], layers_.sun[1], layers_.sun[2], 0.0f};
+    volume.shadow_length = layers_.far_plane - layers_.near_plane;
+    std::array<float, 16> to_clip;
+    bx::mtxMul(to_clip.data(), layers_.View(frame.origin).data(), layers_.DynamicProjection().data());
+    volume.set_clip_bounds(to_clip, false); // the model's projections: depth 0..1
+    volume_ = volumes.publish(volume);
+    volumes_ = &volumes;
+    published_ = true;
+    return true;
+}
+
+std::array<uint32_t, 2> SunShadows::draw_tiles(shim::Device &device, Casters &casters, bgfx::ViewId view, const fx::Vec3 &origin,
+                                               const std::function<bool(const fx::Vec3 &, float)> &reaches)
+{
+    std::array<uint32_t, 2> drawn{};
+    if (tiles_dirty_)
+        build_tiles();
+    if (tiles_failed_ || tiles_.empty())
+        return drawn; // a loading error is kept: never submit invalid required buffers
     const bgfx::ProgramHandle program = casters.program(device, Casters::Pass::Sun, false, CasterMaterial{});
     if (!bgfx::isValid(program))
-        return active_;
-    const std::array<float, 3> focus{frame.focus[0] + origin[0], frame.focus[1] + origin[1], frame.focus[2] + origin[2]};
-    float to_device[16];
-    bx::mtxTranslate(to_device, -origin[0], -origin[1], -origin[2]);
+        return drawn;
+    // The tiles are absolute.
+    float to_view_world[16];
+    bx::mtxTranslate(to_view_world, -origin[0], -origin[1], -origin[2]);
     for (const Tile &tile : tiles_)
     {
-        std::array<float, 3> c, h;
+        fx::Vec3 c, h;
         for (int k = 0; k < 3; ++k)
         {
-            c[k] = 0.5f * (tile.lo[k] + tile.hi[k]) - focus[k];
+            c[k] = 0.5f * (tile.lo[k] + tile.hi[k]);
             h[k] = 0.5f * (tile.hi[k] - tile.lo[k]);
         }
-        const float tile_radius = std::sqrt(Dot(h, h));
-        const std::array<float, 3> sun = Normalize(sun_dir_);
-        const float along = Dot(c, sun);
-        const std::array<float, 3> across{c[0] - along * sun[0], c[1] - along * sun[1], c[2] - along * sun[2]};
-        if (along < -(kRadius + tile_radius) || along > kCasterReach + tile_radius ||
-            Dot(across, across) > (kRadius + tile_radius) * (kRadius + tile_radius))
+        if (!reaches(c, std::sqrt(Dot(h, h))))
             continue;
         if (bgfx::isValid(tile.solid))
         {
-            bgfx::setTransform(to_device);
+            bgfx::setTransform(to_view_world);
             bgfx::setVertexBuffer(0, tiles_vb_);
             bgfx::setIndexBuffer(tile.solid);
             bgfx::setState(fx::Shadows::kCasterState);
-            bgfx::submit(kShadowView, program);
+            bgfx::submit(view, program);
         }
         // Foliage, nets, gratings: with their texture, so the shadow has their holes (the colour pass's rule).
         for (const auto &[store, triangles] : tile.cut)
@@ -157,16 +199,38 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
                 continue;
             store->sync();
             bgfx::setTexture(0, casters.sampler(), store->handle);
-            bgfx::setTransform(to_device);
+            bgfx::setTransform(to_view_world);
             bgfx::setVertexBuffer(0, tiles_vb_);
             bgfx::setIndexBuffer(triangles);
             bgfx::setState(fx::Shadows::kCasterState);
-            bgfx::submit(kShadowView, program_cut);
+            bgfx::submit(view, program_cut);
         }
-        ++frame_tiles_;
-        frame_tile_triangles_ += tile.triangles;
+        ++drawn[0];
+        drawn[1] += tile.triangles;
     }
-    return active_;
+    return drawn;
+}
+
+uint64_t SunShadows::cut_signature() const
+{
+    uint64_t h = 1469598103934665603ull;
+    for (const Tile &tile : tiles_)
+        for (const auto &[store, triangles] : tile.cut)
+        {
+            h = (h ^ (store ? store->handle.idx : 0xffffu)) * 1099511628211ull;
+        }
+    return h;
+}
+
+bool SunShadows::shaded(const fx::Vec3 &center, float radius) const
+{
+    if (!active_ || !footprint_)
+        return false;
+    // The casters' box swept along the light (forward: away from the sun), in light space.
+    const fx::Vec3 at{center[0] + origin_[0], center[1] + origin_[1], center[2] + origin_[2]};
+    const float x = Dot(at, layers_.right), y = Dot(at, layers_.up), z = Dot(at, layers_.forward);
+    return x >= footprint_lo_[0] - radius && x <= footprint_hi_[0] + radius && y >= footprint_lo_[1] - radius &&
+           y <= footprint_hi_[1] + radius && z >= footprint_near_ - radius;
 }
 
 void SunShadows::build_tiles()
@@ -268,12 +332,49 @@ void SunShadows::destroy_tiles()
     tiles_vb_ = BGFX_INVALID_HANDLE;
 }
 
+void SunShadows::before_frame()
+{
+    if (published_ && volumes_)
+        shadows_.SetDynamicCasters(volumes_->stats(volume_).draws);
+    shadows_.End();
+}
+
 void SunShadows::end_frame()
 {
+    if (published_ && volumes_)
+    {
+        const ShadowVolumeStats &stats = volumes_->stats(volume_);
+        counters_.dynamic_casters += stats.draws;
+        totals_.dynamic_casters += stats.draws;
+        if (stats.draws > 0)
+        {
+            ++counters_.dynamic_frames;
+            ++totals_.dynamic_frames;
+        }
+        // The casters' box (the volume's space: the device's world of this frame) in light space, for the next
+        // frame's receivers.
+        footprint_ = stats.draws > 0 && stats.lo[0] <= stats.hi[0];
+        if (footprint_)
+        {
+            footprint_lo_ = {1e30f, 1e30f};
+            footprint_hi_ = {-1e30f, -1e30f};
+            footprint_near_ = 1e30f;
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const fx::Vec3 p{(corner & 1 ? stats.hi[0] : stats.lo[0]) + origin_[0], (corner & 2 ? stats.hi[1] : stats.lo[1]) + origin_[1],
+                                 (corner & 4 ? stats.hi[2] : stats.lo[2]) + origin_[2]};
+                const float x = Dot(p, layers_.right), y = Dot(p, layers_.up), z = Dot(p, layers_.forward);
+                footprint_lo_ = {std::min(footprint_lo_[0], x), std::min(footprint_lo_[1], y)};
+                footprint_hi_ = {std::max(footprint_hi_[0], x), std::max(footprint_hi_[1], y)};
+                footprint_near_ = std::min(footprint_near_, z);
+            }
+        }
+    }
+    // A frame without the layers (a menu over the scene, a frame without the weather) keeps the last footprint.
+    volumes_ = nullptr;
+    published_ = false;
     prepared_ = false;
     active_ = false;
-    last_static_ = {frame_tiles_, frame_tile_triangles_};
-    frame_tiles_ = frame_tile_triangles_ = 0;
 }
 
 void SunShadows::shutdown()
@@ -281,6 +382,7 @@ void SunShadows::shutdown()
     destroy_tiles();
     caster_texture_.clear();
     shadows_.Shutdown();
+    tracker_.Invalidate();
 }
 
 void SunShadows::on_device_lost()
@@ -289,6 +391,7 @@ void SunShadows::on_device_lost()
     tiles_vb_ = BGFX_INVALID_HANDLE;
     tiles_dirty_ = true;
     shadows_.OnDeviceLost();
+    tracker_.Invalidate();
 }
 
 } // namespace storm::effects

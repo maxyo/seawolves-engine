@@ -165,7 +165,6 @@ value is logged as an error, which fails the scene. The products of the shadow a
 | Moving lamps (carried lanterns, torches) | `fx_lamp_moving=0` / `1` / `2` | their dynamic shadow faces |
 | Lamp shadow filter | `fx_lamp_soft=0` (3x3) / `1` (5x5) | |
 | Lamp shadow view | `fx_lamp_debug=2` | the shadow mask over the picture |
-| Contact blob under characters | `fx_contact_shadows=0` / `1` | |
 | Visibility volume | `fx_visibility=0` / `1` | sky visibility and rain shelter; the bounce lives in it (off with it) |
 | Bounce | `fx_bounce=0` / `1` | `fx_bounce_debug=1` shows it alone |
 | Interior AO volume | `fx_ao_volume=0` / `1`..`3` | |

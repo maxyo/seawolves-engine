@@ -437,39 +437,4 @@ std::vector<uint8_t> TexelBounce(const LightmapTexels &texels, const BounceField
     return out;
 }
 
-void ComposeTownLight(const LightmapTexels &texels, const TownLightTone &tone, std::span<const uint8_t> game,
-                      std::span<const uint8_t> baked, std::span<const uint8_t> sun_a, std::span<const uint8_t> sun_b,
-                      float t, std::span<const uint8_t> sky, std::span<uint8_t> rgba, const TownBounce &bounce)
-{
-    const size_t n = texels.texel.size();
-    const size_t bytes = static_cast<size_t>(texels.width) * texels.height * 4;
-    if (baked.size() != n || sun_a.size() != n || sun_b.size() != n || sky.size() != n || rgba.size() < bytes ||
-        game.size() < bytes)
-        return;
-    const bool bounced = bounce.a.size() == n * 3 && bounce.b.size() == n * 3 && bounce.baked.size() == n * 3;
-    for (size_t i = 0; i < n; ++i)
-    {
-        const float k = sky[i] / 255.0f;
-        const float now = tone.a + tone.b * ((1.0f - t) * sun_a[i] + t * sun_b[i]) / 255.0f + tone.c * k;
-        const float then = tone.a + tone.b * baked[i] / 255.0f + tone.c * tone.GameSky(k);
-        const size_t at = static_cast<size_t>(texels.texel[i]) * 4;
-        for (int ch = 0; ch < 3; ++ch)
-        {
-            float lit = now, was = then;
-            if (bounced)
-            {
-                lit += tone.b * ((1.0f - bounce.t) * bounce.a[i * 3 + ch] + bounce.t * bounce.b[i * 3 + ch]) / 255.0f;
-                was += tone.b * bounce.baked[i * 3 + ch] / 255.0f;
-            }
-            // The paint under the game's light, lit by ours (a texel the game had in a shadow we do not see, or the
-            // other way round, at most 3x brighter / darker).
-            const float ratio = std::clamp(lit / std::max(was, 0.02f), 0.33f, 3.0f);
-            rgba[at + ch] = static_cast<uint8_t>(std::lround(std::clamp(game[at + ch] * ratio, 0.0f, 255.0f)));
-        }
-        rgba[at + 3] = game[at + 3];
-    }
-    for (size_t g = 0; g + 1 < texels.gutter.size(); g += 2)
-        std::copy_n(&rgba[static_cast<size_t>(texels.gutter[g + 1]) * 4], 4, &rgba[static_cast<size_t>(texels.gutter[g]) * 4]);
-}
-
 } // namespace storm::fx
