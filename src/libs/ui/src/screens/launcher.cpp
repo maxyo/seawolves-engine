@@ -211,6 +211,15 @@ Json ResultNotice(Bindings &bindings, const Json &result, bool has_game)
     return notice;
 }
 
+// A date and time («16.11.2026, 14:03») kept on one line: its spaces become no-break spaces.
+std::string NoBreak(const std::string &text)
+{
+    std::string out;
+    for (const char c : text)
+        out += c == ' ' ? std::string("\xC2\xA0") : std::string(1, c);
+    return out;
+}
+
 // Second line of a found game copy: version · languages · size · patch · place.
 std::string RootDetail(const Bindings &bindings, const Json &root)
 {
@@ -345,7 +354,7 @@ class LauncherScreen final : public Screen
                 bindings.Error("launcher: unknown exit reason " + Str(exit, "reason"));
             view["notices"].push_back(bindings.Notice(Json{{"tone", "warn"},
                                            {"text", Fill(bindings.Text("launcher.exit_previous"),
-                                                         {known ? bindings.Text(reason) : Str(exit, "reason"), Str(exit, "when")})}}));
+                                                         {known ? bindings.Text(reason) : Str(exit, "reason"), NoBreak(Str(exit, "when"))})}}));
         }
         if (!result.is_null())
             view["notices"].push_back(bindings.Notice(result));
