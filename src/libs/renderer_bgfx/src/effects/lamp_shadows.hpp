@@ -207,7 +207,8 @@ class LampShadows
     // how many covered frames since they were not.
     bool covered_offered_ = false;
     uint32_t covered_frames_ = 0;
-    float level_ = fx::kLampNegligible; // in the receivers' gamma units over the strongest gain
+    float level_ = fx::kLampNegligible; // where a lamp ends (Settings::lamp_reach_light), the receivers' gamma units over the strongest gain
+    float shadow_level_ = fx::kLampNegligible; // under it no shadow taps (Settings::lamp_shadow_light), likewise
     int face_size_ = 0, dynamic_face_size_ = 0;
     int columns_ = 0, rows_ = 0;
     float gain_ = 1.0f, baked_ = 0.5f;

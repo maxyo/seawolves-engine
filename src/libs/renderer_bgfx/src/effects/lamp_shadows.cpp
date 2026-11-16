@@ -134,7 +134,12 @@ void LampShadows::configure(const fx::Settings &settings, fx::LampDepth depth)
     debug_ = settings.lamp_debug;
     // The receivers' strongest gain: the lit models take a lamp's light as it is, baked surfaces lamp_gain times
     // kBakedGain of it.
-    level_ = fx::kLampNegligible / std::max(1.0f, gain_ * kBakedGain);
+    const float strongest = std::max(1.0f, gain_ * kBakedGain);
+    const float reach_level = settings.lamp_reach_light / strongest;
+    if (reach_level != level_)
+        layout_dirty_ = true; // every slot's reach, its faces and the grid follow the new end of the lamps
+    level_ = reach_level;
+    shadow_level_ = settings.lamp_shadow_light / strongest;
 }
 
 float LampShadows::reach_of(const fx::Lamp &lamp) const
@@ -846,7 +851,7 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
         uniforms_[3 + 3 * s] = {color[0] * slot.weight, color[1] * slot.weight, color[2] * slot.weight, slot.moving ? 2.0f : 0.0f};
         uniforms_[4 + 3 * s] = {slot.at.intensity, slot.at.core * slot.at.core, 0.0f, 0.0f};
     }
-    grid_uniforms_[4] = {static_cast<float>(static_slots()), static_cast<float>(moving_slots_), tint_, level_};
+    grid_uniforms_[4] = {static_cast<float>(static_slots()), static_cast<float>(moving_slots_), tint_, shadow_level_};
     grid_uniforms_[11] = {static_cast<float>(per_pixel_), fx::kLampShadowNear, static_cast<float>(filtered_),
                           soft_light_ / std::max(1.0f, gain_ * kBakedGain)};
     // Per moving slot: the turn from the world into the space of its faces (a ship's; else none).

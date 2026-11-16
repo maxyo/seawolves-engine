@@ -172,8 +172,8 @@ float ffWallSky(float k)
 // u_fxLampGrid[3]: xyz 1 / the room light's extent, w 1 = 5x5 filter on the static faces of the strongest lamp (else 3x3)
 // u_fxLampGrid[4]: x the first slot of the lights that move, y how many such slots (they are not in the grid),
 //                  z the share of a lamp's own colour in what it adds to baked surfaces (the rest: the bake's tone),
-//                  w the light under which a lamp is not filtered against its shadow (fx::kLampNegligible over
-//                  the strongest gain, gamma space)
+//                  w the light under which a lamp is not filtered against its shadow (Settings::lamp_shadow_light
+//                  over the strongest gain, gamma space)
 // u_fxLampGrid[5..7], [8..10]: per such slot, the rows of the turn from the world into the space of its faces
 // u_fxLampGrid[11]: x the most grid lamps per pixel (Settings::lamp_per_pixel), y the faces' near plane
 //                   (fx::kLampShadowNear), z the most lamps per pixel whose shadows are filtered (Settings::lamp_filtered;

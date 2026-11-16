@@ -247,6 +247,11 @@ struct Settings
     // With lamp_soft: the light (gamma space, per unit of the receivers' strongest gain) under which the strongest lamp
     // takes the 3x3 filter after all: a dim lamp's wider penumbra does not show (0: the 5x5 wherever it lights).
     float lamp_soft_light = 24.0f / 255.0f;
+    // The light (gamma space, per unit of the receivers' strongest gain) where a lamp ends: the grid lists it and its
+    // faces take casters only where its light (with kLampReachHeadroom for the flicker) is above it.
+    float lamp_reach_light = 0.5f / 255.0f; // fx::kLampNegligible
+    // The light under which a lamp's light at a pixel is not checked against its shadow (no taps).
+    float lamp_shadow_light = 0.5f / 255.0f; // fx::kLampNegligible
     bool lamp_soft = false;  // a 5x5 instead of a 3x3 filter on the lamp shadows of the still geometry, for the
                              // strongest lamp of a pixel (the others take the 3x3)
     // The most lamps that light one pixel with their shadows, strongest of its cell first (1..kLampGridCapacity):
