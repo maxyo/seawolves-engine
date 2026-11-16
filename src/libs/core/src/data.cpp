@@ -151,20 +151,6 @@ DATA::DATA(uint32_t _num_of_elements, S_TOKEN_TYPE _element_type)
       }*/
 }
 
-bool DATA::IsReference()
-{
-    if (Data_type == VAR_REFERENCE)
-        return true;
-    return false;
-}
-
-bool DATA::IsAReference()
-{
-    if (Data_type == VAR_AREFERENCE)
-        return true;
-    return false;
-}
-
 void DATA::Release()
 {
     if (bArray)
@@ -343,6 +329,27 @@ void DATA::Set(std::string value)
     Data_type = VAR_STRING;
 
     sValue = std::move(value);
+}
+
+void DATA::SetText(std::string_view value)
+{
+    if (Data_type == VAR_REFERENCE)
+    {
+        if (pReference)
+        {
+            pReference->SetText(value);
+            return;
+        }
+        Error(UNINIT_REF);
+        return;
+    }
+    if (bArray)
+    {
+        Error(NO_INDEX);
+        return;
+    }
+    Data_type = VAR_STRING;
+    sValue.assign(value);
 }
 
 void DATA::Set(const char *value)
@@ -970,52 +977,16 @@ bool DATA::Get(entid_t &eid, uint32_t index)
       return true;*/
 }
 
-void DATA::ClearType()
+void DATA::MakeArray(uint32_t array_size)
 {
-    if (Data_type != VAR_AREFERENCE)
+    bArray = true;
+    ArrayPTR.clear();
+    Number_of_elements = array_size;
+    ArrayPTR.reserve(Number_of_elements);
+    for (uint32_t n = 0; n < Number_of_elements; n++)
     {
-        delete AttributesClass;
-    }
-    AttributesClass = nullptr;
-    Data_type = UNKNOWN;
-    pReference = nullptr;
-    sValue.clear();
-}
-
-void DATA::SetType(S_TOKEN_TYPE _element_type, uint32_t array_size)
-{
-    ClearType();
-    Data_type = _element_type;
-    bArray = false;
-
-    if (array_size > 1)
-    {
-        bArray = true;
-        /*if(ArrayPTR)
-        {
-          for(n=0;n<Number_of_elements;n++)
-          {
-
-            ArrayPTR[n].~DATA();
-            //delete ArrayPTR[n];
-          }
-        }*/
-        ArrayPTR.clear();
-        Number_of_elements = array_size;
-        ArrayPTR.reserve(Number_of_elements);
-        for (uint32_t n = 0; n < Number_of_elements; n++)
-        {
-            // ArrayPTR[n] = new DATA(_element_type);
-            // ArrayPTR[n]->SetVCompiler(pVCompiler);
-            // new (&ArrayPTR[n]) DATA(_element_type);
-            ArrayPTR.emplace_back(_element_type);
-            ArrayPTR.back().SetVCompiler(pVCompiler);
-        }
-    }
-    else
-    {
-        ArrayPTR.clear();
-        Number_of_elements = 1;
+        ArrayPTR.emplace_back(Data_type);
+        ArrayPTR.back().SetVCompiler(pVCompiler);
     }
 }
 
@@ -1055,7 +1026,7 @@ bool DATA::Convert(S_TOKEN_TYPE type)
             return true;
         case VAR_STRING:
             Data_type = type;
-            sprintf(buffer, "%d", lValue);
+            *std::to_chars(buffer, buffer + sizeof(buffer) - 1, lValue).ptr = 0;
             Set(buffer);
             return true;
         default:
@@ -2079,7 +2050,7 @@ bool DATA::Copy(DATA *pV)
         Set(pV->fValue);
         break;
     case VAR_STRING:
-        Set(pV->sValue);
+        SetText(pV->sValue);
         break;
     case VAR_OBJECT:
         Set(pV->object_id);
@@ -2397,11 +2368,6 @@ ATTRIBUTES *DATA::GetAClass(uint32_t index)
       return pOD[index].pAttributes;*/
 }
 
-DATA *DATA::GetReference()
-{
-    return pReference;
-}
-
 DATA *DATA::GetArrayElement(uint32_t index)
 {
     if (!bArray)
@@ -2430,11 +2396,8 @@ void DATA::SetVCompiler(VIRTUAL_COMPILER *pVC)
     }
 }
 
-DATA *DATA::GetVarPointer()
+DATA *DATA::GetReferencedVar()
 {
-    // if(!bRef) return this;
-    if (Data_type != VAR_REFERENCE)
-        return this;
     if (pReference == this) {
         Error("ref points to itself");
         return this;

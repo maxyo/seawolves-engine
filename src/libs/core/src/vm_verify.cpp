@@ -12,8 +12,8 @@ namespace storm::vm_verify
 {
 namespace
 {
-constexpr std::array<const char *, static_cast<size_t>(Check::Count)> kNames = {"name_code", "attribute_by_code",
-                                                                                "attribute_by_name"};
+constexpr std::array<const char *, static_cast<size_t>(Check::Count)> kNames = {
+    "name_code", "attribute_by_code", "attribute_by_name", "float_text"};
 std::array<uint64_t, static_cast<size_t>(Check::Count)> counts{}; // the game thread only
 
 const struct AtExit

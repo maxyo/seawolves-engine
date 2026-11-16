@@ -24,7 +24,7 @@ class VIRTUAL_COMPILER
 
 class COMPILER;
 
-class DATA : public VDATA
+class DATA final : public VDATA
 {
     friend COMPILER;
 
@@ -52,7 +52,10 @@ class DATA : public VDATA
   public:
     ATTRIBUTES *AttributesClass;
     // ATTRIBUTES Attributes;
-    DATA *GetReference() override;
+    DATA *GetReference() override
+    {
+        return pReference;
+    }
     void SetReference(DATA *pRef) override;
     void SetAReference(ATTRIBUTES *pARef) override;
     // void  SetReferenceFlag() {bRef = true;};
@@ -79,6 +82,8 @@ class DATA : public VDATA
 
     void Set(float value) override;
     void Set(std::string value) override;
+    // As Set(std::string), into the storage the value already has.
+    void SetText(std::string_view value);
     void Set(const char* value) override;
     void Set(const char *attribute_name, const char *attribute_value) override;
     bool Get(int32_t &value) override;
@@ -106,7 +111,19 @@ class DATA : public VDATA
     ATTRIBUTES *GetAClass() override;
     ATTRIBUTES *GetAClass(uint32_t index) override;
 
-    void SetType(S_TOKEN_TYPE type, uint32_t array_size = 1);
+    void SetType(S_TOKEN_TYPE type, uint32_t array_size = 1)
+    {
+        ClearType();
+        Data_type = type;
+        if (array_size > 1)
+        {
+            MakeArray(array_size);
+            return;
+        }
+        bArray = false;
+        ArrayPTR.clear();
+        Number_of_elements = 1;
+    }
     bool Convert(S_TOKEN_TYPE type);
     void Error(const char *);
     DATA *GetArrayElement(uint32_t index) override;
@@ -128,10 +145,30 @@ class DATA : public VDATA
     {
         return bArray ? Number_of_elements : 1;
     }
-    bool IsReference() override;
-    bool IsAReference() override;
-    DATA *GetVarPointer() override;
-    void ClearType();
+    bool IsReference() override
+    {
+        return Data_type == VAR_REFERENCE;
+    }
+    bool IsAReference() override
+    {
+        return Data_type == VAR_AREFERENCE;
+    }
+    // The variable itself, or the one a chain of references ends at (nullptr: an unset reference, reported).
+    DATA *GetVarPointer() override
+    {
+        return Data_type != VAR_REFERENCE ? this : GetReferencedVar();
+    }
+    void ClearType()
+    {
+        if (Data_type != VAR_AREFERENCE)
+        {
+            delete AttributesClass;
+        }
+        AttributesClass = nullptr;
+        Data_type = UNKNOWN;
+        pReference = nullptr;
+        sValue.clear();
+    }
 
     entid_t GetObjectIDPTR() override
     {
@@ -173,4 +210,8 @@ class DATA : public VDATA
     };
 
     void Release();
+
+  private:
+    void MakeArray(uint32_t array_size);
+    DATA *GetReferencedVar();
 };

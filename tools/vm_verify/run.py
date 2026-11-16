@@ -30,6 +30,7 @@ parser.add_argument('sweep', nargs=argparse.REMAINDER, help='after --: more argu
 args = parser.parse_args()
 
 sweep = Path(__file__).resolve().parents[1] / 'scene_sweep/run.py'
+args.out.mkdir(parents=True, exist_ok=True)
 totals, problems = {}, []
 for name, extra in [('newgame', [])] + ([('save', ['--save', str(args.save)])] if args.save else []):
     out = args.out / name

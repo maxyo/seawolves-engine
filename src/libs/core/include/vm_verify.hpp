@@ -14,6 +14,7 @@ enum class Check : uint8_t
     NameCode,        // STRING_CODEC: the index against a walk of the name's bucket
     AttributeByCode, // ATTRIBUTES: the dense code scan against the children's own codes
     AttributeByName, // ATTRIBUTES: the code of the name against comparing the children's names
+    FloatText,       // a float written to an attribute: our "%.7f" against printf's
     Count
 };
 

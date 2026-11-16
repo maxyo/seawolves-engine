@@ -15,6 +15,7 @@
 #include "debug-trap.h"
 #include "fs.h"
 #include "logging.hpp"
+#include "number_text.hpp"
 #include "platform/path_fingerprint.hpp"
 #include "save_file.hpp"
 #include "save_references.hpp"
@@ -3587,52 +3588,34 @@ bool COMPILER::BC_Jump(SEGMENT_DESC &Segment, uint32_t offset)
     return true;
 }
 
+// Reads the token at InstructionPointer: its type, where its data starts (ip, TLR_DataOffset) and the data size
+// (one byte, or 0xff and four bytes); InstructionPointer moves to the next token.
 S_TOKEN_TYPE COMPILER::BC_TokenGet(uint32_t &ip, uint32_t &token_data_size)
 {
-    // function read token type and data size, advance InstructionPointer to next token
-    // set ip to token data
-    // set token data size value and return token type
-    TokenLastReadResult = static_cast<S_TOKEN_TYPE>(pRunCodeBase[InstructionPointer]);
-    // Trace("Token: %s", Token.GetTypeName(TokenLastReadResult));
-    InstructionPointer++;
-    if (static_cast<uint8_t>(pRunCodeBase[InstructionPointer]) < 0xff)
+    const char *const code = pRunCodeBase;
+    uint32_t at = InstructionPointer;
+    const auto type = static_cast<S_TOKEN_TYPE>(code[at]);
+    uint32_t size = static_cast<uint8_t>(code[at + 1]);
+    at += 2;
+    if (size == 0xff)
     {
-        token_data_size = static_cast<uint8_t>(pRunCodeBase[InstructionPointer]);
-        InstructionPointer++;
+        memcpy(&size, &code[at], sizeof(uint32_t));
+        at += sizeof(uint32_t);
     }
-    else
-    {
-        InstructionPointer++;
-        memcpy(&token_data_size, &pRunCodeBase[InstructionPointer], sizeof(uint32_t));
-        InstructionPointer += sizeof(uint32_t);
-    }
-    ip = InstructionPointer;
-    TLR_DataOffset = InstructionPointer;
-    InstructionPointer += token_data_size;
-    return TokenLastReadResult;
+    TokenLastReadResult = type;
+    ip = at;
+    TLR_DataOffset = at;
+    token_data_size = size;
+    InstructionPointer = at + size;
+    return type;
 }
 
+// For the callers that read the token's data through TLR_DataOffset.
 S_TOKEN_TYPE COMPILER::BC_TokenGet()
 {
-    // short version of function for calls what doesnt need to work with token data
+    uint32_t ip;
     uint32_t token_data_size;
-    TokenLastReadResult = static_cast<S_TOKEN_TYPE>(pRunCodeBase[InstructionPointer]);
-    // Trace("Token: %s", Token.GetTypeName(TokenLastReadResult));
-    InstructionPointer++;
-    if (static_cast<uint8_t>(pRunCodeBase[InstructionPointer]) < 0xff)
-    {
-        token_data_size = static_cast<uint8_t>(pRunCodeBase[InstructionPointer]);
-        InstructionPointer++;
-    }
-    else
-    {
-        InstructionPointer++;
-        memcpy(&token_data_size, &pRunCodeBase[InstructionPointer], sizeof(uint32_t));
-        InstructionPointer += sizeof(uint32_t);
-    }
-    TLR_DataOffset = InstructionPointer;
-    InstructionPointer += token_data_size;
-    return TokenLastReadResult;
+    return BC_TokenGet(ip, token_data_size);
 }
 
 S_TOKEN_TYPE COMPILER::NextTokenType()
@@ -5163,8 +5146,9 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                 {
                     float fV1;
                     ExpressionResult.Get(fV1);
-                    sprintf_s(gs, "%.7f", fV1);
-                    ExpressionResult.Set(gs);
+                    char text[storm::script::kFixed7Size];
+                    storm::script::FormatFixed7(fV1, text);
+                    ExpressionResult.Set(text);
                 }
                 // 2 signs precision --------------------------------
                 ExpressionResult.Convert(VAR_STRING);
@@ -5376,7 +5360,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                     pV->Set("error");
                     break; /*return false;*/
                 }
-                pV->Set(to_string(rAP->GetThisAttr()));
+                pV->SetText(rAP->HasValue() ? std::string_view(rAP->GetValue()) : std::string_view());
                 break;
             default:
                 SetError("invalid argument for STACK_PUSH");
