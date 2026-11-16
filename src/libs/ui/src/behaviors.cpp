@@ -17,7 +17,8 @@
 //           screen guessing widths
 //
 //   reveal  data-reveal="key" on a part that opens (a row with its amount under it): a key new
-//           in a render is scrolled into its closest scrolling box, whole and clear of the fade
+//           in a render is scrolled into its closest scrolling box, whole and clear of the fade;
+//           data-reveal-snap on the part jumps there at once (a box whose whole content was replaced)
 //
 //   panzoom data-panzoom on the viewport (clips), data-plane on the picture plane inside it;
 //           props base [w, h] and view [x0, y0, x1, y1] (the part shown first) in the units the
@@ -1292,7 +1293,8 @@ class RevealBehavior final : public Behavior
             target = std::min(top, bottom + below - view);
         target = std::clamp(target, 0.0f, range);
         if (std::fabs(target - scroll) >= 0.5f)
-            box->ScrollTo({box->GetScrollLeft(), target}, Rml::ScrollBehavior::Smooth);
+            box->ScrollTo({box->GetScrollLeft(), target},
+                          part->HasAttribute("data-reveal-snap") ? Rml::ScrollBehavior::Instant : Rml::ScrollBehavior::Smooth);
     }
 
     std::set<std::string> shown_, pending_;
