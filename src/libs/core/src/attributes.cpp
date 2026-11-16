@@ -79,6 +79,16 @@ void ScriptStateForget()
 namespace
 {
 constexpr size_t kNoIndex = static_cast<size_t>(-1);
+// An object with this many attributes is worth a hash index (a scan of fewer codes is as fast)...
+constexpr size_t kIndexedChildren = 32;
+// ... once it was looked up this many times since its children last moved: a script that deletes an attribute and
+// looks another up in turn would otherwise rebuild the index for every lookup.
+constexpr uint8_t kScansBeforeIndex = 4;
+
+size_t SlotOf(uint32_t code, size_t mask) noexcept
+{
+    return (static_cast<uint64_t>(code) * 0x9e3779b97f4a7c15ull >> 32) & mask;
+}
 
 // The first position of `code`, or kNoIndex. Eight codes per step without a branch between them (the compiler makes
 // it one vector comparison); an object of the game has up to a few hundred attributes.
@@ -130,6 +140,7 @@ ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
     value_ = std::move(other.value_);
     attributes_ = std::move(other.attributes_);
     codes_ = std::move(other.codes_);
+    ChildrenReordered();
     AdoptChildren();
     // Do not update parent
     // parent_ = other.parent_;
@@ -388,6 +399,7 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
             storm::TreeChanged(this);
         attributes_.clear();
         codes_.clear();
+        ChildrenReordered();
     }
     else
     {
@@ -404,6 +416,7 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
             if (it->get() == pA)
             {
                 owner->codes_.erase(owner->codes_.begin() + (it - owner->attributes_.begin()));
+                owner->ChildrenReordered();
                 owner->attributes_.erase(it);
                 storm::TreeChanged(owner);
                 return true;
@@ -569,15 +582,37 @@ ATTRIBUTES * ATTRIBUTES::Append(uint32_t name_code)
 {
     storm::TreeChanged(this);
     codes_.push_back(name_code);
+    if (index_)
+    {
+        // The new child is the last one: it enters the index unless an earlier child has its code.
+        if (codes_.size() * 2 > index_->size())
+            ChildrenReordered(); // full: rebuilt larger by the next lookups
+        else if (IndexedChild(name_code) == kNoIndex)
+        {
+            const size_t mask = index_->size() - 1;
+            size_t at = SlotOf(name_code, mask);
+            while ((*index_)[at] != 0)
+                at = (at + 1) & mask;
+            (*index_)[at] = static_cast<uint32_t>(codes_.size());
+        }
+    }
     return attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code)).get();
 }
 
 // The position of the first child named by `name_code`, or kNoIndex.
-size_t ATTRIBUTES::ChildIndex(uint32_t name_code) const noexcept
+size_t ATTRIBUTES::ChildIndex(uint32_t name_code) const
 {
-    const size_t n = IndexOfCode(codes_, name_code);
+    size_t n;
+    if (codes_.size() < kIndexedChildren)
+        n = IndexOfCode(codes_, name_code);
+    else
+    {
+        if (!index_ && ++scansSinceChange_ >= kScansBeforeIndex)
+            BuildIndex();
+        n = index_ ? IndexedChild(name_code) : IndexOfCode(codes_, name_code);
+    }
 #ifdef STORM_VM_VERIFY
-    storm::vm_verify::Count(storm::vm_verify::Check::AttributeByCode);
+    storm::vm_verify::Count(index_ ? storm::vm_verify::Check::AttributeByIndex : storm::vm_verify::Check::AttributeByCode);
     size_t reference = 0;
     while (reference < attributes_.size() && attributes_[reference]->nameCode_ != name_code)
         reference++;
@@ -588,7 +623,46 @@ size_t ATTRIBUTES::ChildIndex(uint32_t name_code) const noexcept
     return n;
 }
 
-ATTRIBUTES *ATTRIBUTES::FirstWithCode(uint32_t name_code) const noexcept
+size_t ATTRIBUTES::IndexedChild(uint32_t name_code) const noexcept
+{
+    const std::vector<uint32_t> &slots = *index_;
+    const size_t mask = slots.size() - 1;
+    for (size_t at = SlotOf(name_code, mask);; at = (at + 1) & mask)
+    {
+        const uint32_t slot = slots[at];
+        if (slot == 0)
+            return kNoIndex;
+        if (codes_[slot - 1] == name_code)
+            return slot - 1;
+    }
+}
+
+// At most a quarter of the slots are taken, so appended children fit until the count doubles.
+void ATTRIBUTES::BuildIndex() const
+{
+    size_t size = 64;
+    while (size < codes_.size() * 4)
+        size *= 2;
+    index_ = std::make_unique<std::vector<uint32_t>>(size, 0u);
+    const size_t mask = size - 1;
+    for (size_t n = 0; n < codes_.size(); n++)
+    {
+        size_t at = SlotOf(codes_[n], mask);
+        while ((*index_)[at] != 0 && codes_[(*index_)[at] - 1] != codes_[n])
+            at = (at + 1) & mask;
+        if ((*index_)[at] == 0) // else an earlier child has the code: the first one is the answer
+            (*index_)[at] = static_cast<uint32_t>(n + 1);
+    }
+}
+
+// A child was removed, renamed or moved: the positions in the index are stale.
+void ATTRIBUTES::ChildrenReordered() noexcept
+{
+    index_.reset();
+    scansSinceChange_ = 0;
+}
+
+ATTRIBUTES *ATTRIBUTES::FirstWithCode(uint32_t name_code) const
 {
     const size_t n = ChildIndex(name_code);
     return n == kNoIndex ? nullptr : attributes_[n].get();
@@ -623,6 +697,7 @@ void ATTRIBUTES::RenamedInParent() noexcept
         if (parent_->attributes_[n].get() == this)
         {
             parent_->codes_[n] = nameCode_;
+            parent_->ChildrenReordered();
             return;
         }
 }
@@ -635,6 +710,7 @@ void ATTRIBUTES::SortByName()
               });
     for (size_t n = 0; n < attributes_.size(); n++)
         codes_[n] = attributes_[n]->nameCode_;
+    ChildrenReordered();
 }
 
 ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &p) : ATTRIBUTES(p, nullptr, "root")

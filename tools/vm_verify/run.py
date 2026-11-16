@@ -73,7 +73,10 @@ def play_states(engine, name, extra):
     library = args.out / 'repeatable_rand.so'
     subprocess.run([os.environ.get('CC', 'cc'), '-shared', '-fPIC', '-O2', '-o', str(library),
                     str(here / 'repeatable_rand.c')], check=True)
+    # A fixed graphics preset: the automatic one follows the measured frame time, and the renderer writes the
+    # preset's scene detail into script variables (iGrassQuality, InterfaceStates.SeaDetails).
     environment = dict(os.environ, STORM_VM_STATE_DIR=str((out / 'state').resolve()),
+                       STORM_FX_OPTIONS=os.environ.get('STORM_FX_OPTIONS', 'fx_preset=2'),
                        LD_PRELOAD=':'.join(filter(None, (str(library.resolve()), os.environ.get('LD_PRELOAD')))))
     # The game's time runs 20 ms a frame, far ahead of the clock: the sweep's own time limits are in game time.
     command = [sys.executable, str(sweep), '--game', str(args.game), '--engine', str(engine), '--out', str(out / 'sweep'),

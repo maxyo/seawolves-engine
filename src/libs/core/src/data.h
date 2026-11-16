@@ -120,7 +120,8 @@ class DATA final : public VDATA
     ATTRIBUTES *GetAClass() override;
     ATTRIBUTES *GetAClass(uint32_t index) override;
 
-    void SetType(S_TOKEN_TYPE type, uint32_t array_size = 1)
+    // SetType and ClearType are part of every stack push: inlined there whatever the compiler's size limits say.
+    [[gnu::always_inline]] void SetType(S_TOKEN_TYPE type, uint32_t array_size = 1)
     {
         ClearType();
         Data_type = type;
@@ -167,7 +168,7 @@ class DATA final : public VDATA
     {
         return Data_type != VAR_REFERENCE ? this : GetReferencedVar();
     }
-    void ClearType()
+    [[gnu::always_inline]] void ClearType()
     {
         if (Data_type != VAR_AREFERENCE)
         {

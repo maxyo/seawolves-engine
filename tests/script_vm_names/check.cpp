@@ -1,6 +1,7 @@
 // Script attribute names: the codec numbers every name as it always did (legacy_string_codec.hpp, the numbering the
 // saves depend on), and ATTRIBUTES finds, creates, renames, sorts and deletes children as a plain tree that compares
-// names one by one does. Built with STORM_VM_VERIFY: every lookup also checks itself inside the engine code.
+// names one by one does. Built with STORM_VM_VERIFY: every lookup (the scan of a small object's codes, the hash index
+// of a large one) also checks itself inside the engine code.
 #include "attributes.h"
 #include "legacy_string_codec.hpp"
 #include "string_codec.h"
@@ -178,7 +179,8 @@ struct Trees
     Trees()
     {
         model.name = "root";
-        for (int n = 0; n < 24; n++)
+        // More names than the size at which an object gets its hash index: both lookups are exercised.
+        for (int n = 0; n < 72; n++)
             pool.push_back(RandomName(random));
     }
 

@@ -92,8 +92,11 @@ private:
 
     void Release() const noexcept;
     ATTRIBUTES *Append(uint32_t name_code);
-    [[nodiscard]] size_t ChildIndex(uint32_t name_code) const noexcept;
-    [[nodiscard]] ATTRIBUTES *FirstWithCode(uint32_t name_code) const noexcept;
+    [[nodiscard]] size_t ChildIndex(uint32_t name_code) const;
+    [[nodiscard]] size_t IndexedChild(uint32_t name_code) const noexcept;
+    void BuildIndex() const;
+    void ChildrenReordered() noexcept;
+    [[nodiscard]] ATTRIBUTES *FirstWithCode(uint32_t name_code) const;
     [[nodiscard]] ATTRIBUTES *FirstWithName(const std::string_view &name) const;
     void AdoptChildren() noexcept;
     void RenamedInParent() noexcept;
@@ -104,8 +107,13 @@ private:
     std::vector<std::unique_ptr<ATTRIBUTES>> attributes_;
     // The name codes of attributes_, in their order: a lookup scans these, not the children themselves.
     std::vector<uint32_t> codes_;
+    // An object with many attributes (a character has a hundred or two) that is looked up again and again gets a hash
+    // index over codes_: open addressing, a slot holds 1 + the position of the first child with the code, 0 is free.
+    // Appending keeps it; removing, renaming or reordering a child drops it, and the next lookups scan again.
+    mutable std::unique_ptr<std::vector<uint32_t>> index_;
     ATTRIBUTES *parent_{nullptr};
     bool break_{false};
+    mutable uint8_t scansSinceChange_{0}; // lookups by scan since the children last moved (see index_)
     
     class LegacyProxy
     {
