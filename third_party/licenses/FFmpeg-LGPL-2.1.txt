@@ -5,7 +5,7 @@ libavformat.so, libavutil.so, libswscale.so and libswresample.so, built from tha
 source without --enable-gpl, --enable-version3 or --enable-nonfree, so the libraries are
 licensed under the GNU Lesser General Public License version 2.1 or later, reproduced below.
 The build script and the exact configure flags are in the engine repository
-(https://github.com/maxyo/storm-engine-android, tools/ffmpeg/build.py and tools/ffmpeg/README.md);
+(https://github.com/maxyo/seawolves-engine, tools/ffmpeg/build.py and tools/ffmpeg/README.md);
 the APK also carries them as FFmpeg-configure.txt. You may replace these libraries with your
 own build of FFmpeg compatible with the same interface.
 

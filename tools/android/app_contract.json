@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "What the engine and the Android application (corsairs-android) exchange by name. Both sides check themselves",
+    "What the engine and the Android application (seawolves-android) exchange by name. Both sides check themselves",
     "against this file: tests/app_contract here (the engine sources say exactly this), the application's",
     "tests/engine_contract (its Java and its interface scripts accept and send exactly this). Change a name in",
     "the engine: change it here in the same commit; the application's host checks then fail until it follows.",

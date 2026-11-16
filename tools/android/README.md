@@ -265,7 +265,7 @@ time (contents are not hashed), and a local rebuild where only files other than
 `compiler.cpp` changed under the same Git revision; CI release builds are clean
 builds, and changes to tokens or bytecode layout recompile `compiler.cpp`.
 
-APK packaging and releases belong to https://github.com/maxyo/corsairs-android.
+APK packaging and releases belong to https://github.com/maxyo/seawolves-android.
 
 ## The application contract
 
