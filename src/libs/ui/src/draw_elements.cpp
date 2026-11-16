@@ -3,6 +3,7 @@
 // <ui-clamp>: text cut to a number of lines with an ellipsis.
 // <ui-pages>: a long text shown a page at a time, before a reserved part (dialogue replies).
 // <ui-wheel>: a disc cut into sectors around a centre disc (the sword-move wheel).
+// <ui-links>: smooth anti-aliased curves with arrowheads between points of a drawing (the perk tree).
 // Colours come from RCSS properties registered here, so the tokens stay the only source.
 #include "elements.h"
 #include "text_pages.h"
@@ -31,6 +32,7 @@ constexpr float kPi = 3.14159265358979f;
 
 Rml::PropertyId ring_fill, ring_fill_end, ring_track, paper_top, paper_bottom, paper_edge, paper_line, paper_shadow, paper_fibre;
 Rml::PropertyId wheel_fill, wheel_selected, wheel_line, wheel_edge, wheel_centre;
+Rml::PropertyId links_colour, links_met, links_focus;
 
 Rml::Colourb ColourOf(Rml::Element &element, Rml::PropertyId id)
 {
@@ -201,6 +203,107 @@ class RingElement final : public DrawElement
             const int v2 = Push(mesh, inner_point(b), colour(b, filled));
             const int v3 = Push(mesh, inner_point(a), colour(a, filled));
             Quad(mesh, v0, v1, v2, v3);
+        }
+    }
+};
+
+// links="state x,y x,y …;state x,y …" in dp from the element's top left, thickness="dp": each link a line
+// through its points, consecutive points joined by a cubic curve that leaves and arrives vertically (an S
+// between rows, straight down a lane), ending in an arrowhead pointing down at its last point. State 0 is
+// drawn in links-color, 1 in links-met-color, 2 (the selected perk's links, on top, a little thicker) in
+// links-focus-color. Edges fade over one pixel, so the curves stay smooth without multisampling.
+class LinksElement final : public DrawElement
+{
+  public:
+    using DrawElement::DrawElement;
+
+  protected:
+    void Build(Rml::Mesh &mesh, Rml::Mesh &, Rml::Vector2f, float dp) override
+    {
+        struct Path
+        {
+            int state = 0;
+            std::vector<Rml::Vector2f> points;
+        };
+        std::vector<Path> paths;
+        const std::string text = GetAttribute<Rml::String>("links", "");
+        for (size_t at = 0; at < text.size();)
+        {
+            const size_t end = std::min(text.find(';', at), text.size());
+            const std::string item = text.substr(at, end - at);
+            at = end + 1;
+            Path path;
+            const char *c = item.c_str();
+            char *next = nullptr;
+            path.state = static_cast<int>(std::strtol(c, &next, 10));
+            for (c = next;;)
+            {
+                const float x = std::strtof(c, &next);
+                if (next == c || *next != ',')
+                    break;
+                c = next + 1;
+                const float y = std::strtof(c, &next);
+                if (next == c)
+                    break;
+                c = next;
+                path.points.push_back({x * dp, y * dp});
+            }
+            if (path.points.size() >= 2)
+                paths.push_back(std::move(path));
+        }
+        std::stable_sort(paths.begin(), paths.end(), [](const Path &a, const Path &b) { return a.state < b.state; });
+        const float opacity = GetComputedValues().opacity();
+        const float base = GetAttribute<float>("thickness", 2.0f) * dp;
+        const float feather = 1.0f;
+        for (const Path &path : paths)
+        {
+            const Rml::Colourb colour = ColourOf(*this, path.state == 2 ? links_focus : path.state == 1 ? links_met : links_colour);
+            const Rml::ColourbPremultiplied solid = colour.ToPremultiplied(opacity), clear = Rml::Colourb(colour.red, colour.green, colour.blue, 0).ToPremultiplied(opacity);
+            const float half = (path.state == 2 ? base * 1.35f : base) * 0.5f;
+            const float head = 7.0f * dp;
+            // Sample the curves; the line stops where the arrowhead begins.
+            std::vector<Rml::Vector2f> line;
+            for (size_t i = 0; i + 1 < path.points.size(); ++i)
+            {
+                const Rml::Vector2f a = path.points[i], b = path.points[i + 1];
+                const bool last = i + 2 == path.points.size();
+                const Rml::Vector2f end = last ? Rml::Vector2f(b.x, b.y - head * 0.8f) : b;
+                const float bend = (end.y - a.y) * 0.5f;
+                const Rml::Vector2f c1(a.x, a.y + bend), c2(end.x, end.y - bend);
+                const int steps = std::fabs(end.x - a.x) < 0.5f ? 1 : 24;
+                for (int k = line.empty() ? 0 : 1; k <= steps; ++k)
+                {
+                    const float t = static_cast<float>(k) / steps, u = 1.0f - t;
+                    line.push_back(a * (u * u * u) + c1 * (3 * u * u * t) + c2 * (3 * u * t * t) + end * (t * t * t));
+                }
+            }
+            for (size_t i = 0; i + 1 < line.size(); ++i)
+            {
+                const Rml::Vector2f a = line[i], b = line[i + 1], d = b - a;
+                const float length = std::sqrt(d.x * d.x + d.y * d.y);
+                if (length < 0.01f)
+                    continue;
+                const Rml::Vector2f normal(-d.y / length, d.x / length);
+                // A core quad and a one-pixel fade on each side; short segments overlap at the joints.
+                const Rml::Vector2f ext = d * (0.35f / length);
+                const Rml::Vector2f a2 = a - ext, b2 = b + ext;
+                const int c0 = Push(mesh, a2 + normal * half, solid), c1 = Push(mesh, b2 + normal * half, solid);
+                const int c2 = Push(mesh, b2 - normal * half, solid), c3 = Push(mesh, a2 - normal * half, solid);
+                Quad(mesh, c0, c1, c2, c3);
+                const int o0 = Push(mesh, a2 + normal * (half + feather), clear), o1 = Push(mesh, b2 + normal * (half + feather), clear);
+                Quad(mesh, o0, o1, c1, c0);
+                const int o2 = Push(mesh, b2 - normal * (half + feather), clear), o3 = Push(mesh, a2 - normal * (half + feather), clear);
+                Quad(mesh, c3, c2, o2, o3);
+            }
+            // The arrowhead, pointing down at the last point.
+            const Rml::Vector2f tip = path.points.back();
+            const float w = head * 0.55f;
+            const int t0 = Push(mesh, tip, solid), t1 = Push(mesh, {tip.x - w, tip.y - head}, solid), t2 = Push(mesh, {tip.x + w, tip.y - head}, solid);
+            Triangle(mesh, t0, t1, t2);
+            const int f0 = Push(mesh, {tip.x, tip.y + feather}, clear), f1 = Push(mesh, {tip.x - w - feather, tip.y - head - feather * 0.5f}, clear);
+            const int f2 = Push(mesh, {tip.x + w + feather, tip.y - head - feather * 0.5f}, clear);
+            Quad(mesh, f0, f1, t1, t0);
+            Quad(mesh, t0, t2, f2, f0);
         }
     }
 };
@@ -1110,6 +1213,9 @@ void RegisterDrawElements()
     wheel_line = colour("wheel-line", "rgba(203,177,116,115)");
     wheel_edge = colour("wheel-edge", "#d8bd7a");
     wheel_centre = colour("wheel-centre", "rgba(60,18,14,242)");
+    links_colour = colour("links-color", "rgba(90,60,30,110)");
+    links_met = colour("links-met-color", "rgba(47,90,38,170)");
+    links_focus = colour("links-focus-color", "#9b8048");
 
     static Rml::ElementInstancerGeneric<RingElement> ring;
     static Rml::ElementInstancerGeneric<PaperElement> paper;
@@ -1117,6 +1223,8 @@ void RegisterDrawElements()
     Rml::Factory::RegisterElementInstancer("ui-paper", &paper);
     static Rml::ElementInstancerGeneric<WheelElement> wheel;
     Rml::Factory::RegisterElementInstancer("ui-wheel", &wheel);
+    static Rml::ElementInstancerGeneric<LinksElement> links;
+    Rml::Factory::RegisterElementInstancer("ui-links", &links);
     static Rml::ElementInstancerGeneric<ClampElement> clamp;
     Rml::Factory::RegisterElementInstancer("ui-clamp", &clamp);
     static Rml::ElementInstancerGeneric<PagesElement> pages;

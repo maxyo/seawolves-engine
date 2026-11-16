@@ -50,17 +50,9 @@ static const std::vector<tree::Edge> kShipEdges{
     {"StormProfessional", "SailingProfessional"}, {"Turn180", "SailingProfessional"}, {"Doctor1", "Doctor2"},
     {"SailingProfessional", "SeaDogProfessional"}};
 
-// Pieces of one source perk may share its lane; pieces of different sources never run along each other.
-static bool Disjoint(const tree::Layout &layout, const std::vector<int> &a, const std::vector<int> &b)
-{
-    for (int x : a)
-        for (int y : b)
-            if (layout.edges[x].from == layout.edges[y].from)
-                return false;
-    return true;
-}
-
-// What every layout must hold: nodes on their own rows, links distinct, lines inside the canvas.
+// What every layout must hold: icons in their own boxes on the canvas, prerequisites above their
+// dependents, links that start under their source, end above their target at a point of their own,
+// and never run down the same lane as another source's link or through an icon.
 static void Invariants(const tree::Layout &layout, const char *name)
 {
     char what[256];
@@ -69,53 +61,47 @@ static void Invariants(const tree::Layout &layout, const char *name)
         Expect(ok, what);
     };
     expect(layout.valid, "laid out");
-    expect(layout.columns.size() <= 4, "at most four columns: fits a 780 dp phone beside the panel");
-    for (const auto &column : layout.columns)
-        for (const auto &a : column.nodes)
-            for (const auto &b : column.nodes)
-                if (a != b)
-                    expect(std::abs(layout.nodes.at(a).top - layout.nodes.at(b).top) >= tree::Layout::node_height,
-                           "nodes of a column never overlap");
-    for (const auto &edge : layout.edges)
-        expect(layout.nodes.at(edge.from).column < layout.nodes.at(edge.to).column, "a prerequisite stands left of its dependent");
-    std::map<int, int> arrows;
-    for (size_t g = 0; g < layout.gutters.size(); ++g)
+    for (const auto &[id, place] : layout.nodes)
     {
-        const auto &gutter = layout.gutters[g];
-        for (const auto &arrow : gutter.arrows)
-            ++arrows[arrow.edge];
-        for (const auto &line : gutter.lines)
-            expect(line.x >= 0 && line.x + line.width <= gutter.width && line.y >= 0 && line.y + line.height <= layout.height,
-                   "gutter lines stay inside the gutter and the canvas");
-        // Distinct links: two pieces of different sources never run along each other.
-        for (size_t i = 0; i < gutter.lines.size(); ++i)
-            for (size_t j = i + 1; j < gutter.lines.size(); ++j)
-            {
-                const auto &a = gutter.lines[i], &b = gutter.lines[j];
-                if (!Disjoint(layout, a.edges, b.edges))
-                    continue;
-                const bool flat_a = a.height == tree::Layout::thickness && a.width > a.height, flat_b = b.height == tree::Layout::thickness && b.width > b.height;
-                if (flat_a && flat_b && a.y == b.y)
-                    expect(a.x + a.width <= b.x || b.x + b.width <= a.x, "horizontal pieces of different links never overlap");
-                if (!flat_a && !flat_b && a.x == b.x)
-                    expect(a.y + a.height <= b.y || b.y + b.height <= a.y, "vertical pieces of different links never share a lane");
-            }
+        expect(place.left >= 0 && place.left + tree::Layout::slot <= tree::Layout::width && place.top >= 0 &&
+                   place.top + tree::Layout::box <= layout.height,
+               "every touch box on the canvas");
+        for (const auto &[other, next] : layout.nodes)
+            if (id != other)
+                expect(place.left + tree::Layout::slot <= next.left || next.left + tree::Layout::slot <= place.left ||
+                           place.top + tree::Layout::box <= next.top || next.top + tree::Layout::box <= place.top,
+                       "touch boxes never overlap");
     }
-    for (size_t e = 0; e < layout.edges.size(); ++e)
-        expect(arrows[static_cast<int>(e)] == 1, "every link ends in one arrowhead");
-    // Arrivals on a target's edge are each at their own height.
     std::map<std::string, std::set<int>> arrivals;
-    for (const auto &gutter : layout.gutters)
-        for (const auto &arrow : gutter.arrows)
-            expect(arrivals[layout.edges[arrow.edge].to].insert(arrow.y).second, "each link arrives at its own height");
-    // Crossings of skipped columns run between node rows, never through a node.
-    for (size_t c = 0; c < layout.columns.size(); ++c)
-        for (const auto &line : layout.columns[c].lines)
-            for (const auto &id : layout.columns[c].nodes)
-            {
-                const int top = layout.nodes.at(id).top;
-                expect(line.full && (line.y + line.height <= top || top + tree::Layout::node_height <= line.y), "a crossing passes between nodes");
-            }
+    for (const auto &link : layout.links)
+    {
+        const auto &edge = layout.edges[link.edge];
+        const auto &s = layout.nodes.at(edge.from), &t = layout.nodes.at(edge.to);
+        expect(s.top < t.top, "a prerequisite stands above its dependent");
+        expect(link.points.size() >= 2 && link.points.front().y >= s.top + tree::Layout::icon_top + tree::Layout::icon &&
+                   link.points.back().y <= t.top + tree::Layout::icon_top,
+               "a link leaves under its source icon and arrives above its target icon");
+        expect(arrivals[edge.to].insert(link.points.back().x).second, "each link arrives at its own point");
+        // A lane (two points straight down) passes no icon of the rows between.
+        for (size_t i = 0; i + 1 < link.points.size(); ++i)
+        {
+            const auto a = link.points[i], b = link.points[i + 1];
+            if (a.x != b.x || i == 0 || i + 2 == link.points.size())
+                continue;
+            for (const auto &[id, v] : layout.nodes)
+                if (v.top + tree::Layout::box > a.y && v.top < b.y)
+                    expect(a.x <= v.left + (tree::Layout::slot - tree::Layout::icon) / 2 || a.x >= v.left + (tree::Layout::slot + tree::Layout::icon) / 2,
+                           "a lane passes between icons");
+            for (const auto &other : layout.links)
+                if (layout.edges[other.edge].from != edge.from)
+                    for (size_t j = 1; j + 2 < other.points.size(); ++j)
+                    {
+                        const auto c = other.points[j], d = other.points[j + 1];
+                        if (c.x == a.x && d.x == c.x)
+                            expect(b.y <= c.y || d.y <= a.y, "lanes of different sources never overlap");
+                    }
+        }
+    }
 }
 
 static void Topology()
@@ -124,10 +110,11 @@ static void Topology()
     const std::vector<std::string> ids{"Trustworthy", "IronWill", "AdvancedCommerce", "BasicCommerce", "BasicDefense"};
     const std::vector<tree::Edge> edges{{"BasicCommerce", "AdvancedCommerce"}, {"AdvancedCommerce", "Trustworthy"}, {"IronWill", "Trustworthy"}};
     const auto layout = cache.Get(ids, edges);
-    Expect(layout.valid && layout.nodes.size() == 5 && layout.edges.size() == 3, "real cross-group closure retained");
-    Expect(layout.nodes.at("basiccommerce").column == 0 && layout.nodes.at("advancedcommerce").column == 1 &&
-               layout.nodes.at("trustworthy").column == 2 && layout.nodes.at("ironwill").column == 1,
-           "a column per tier; a perk whose dependents stand further right moves next to them");
+    Expect(layout.valid && layout.nodes.size() == 5 && layout.links.size() == 3, "real cross-group closure retained");
+    Expect(layout.nodes.at("basiccommerce").top < layout.nodes.at("advancedcommerce").top &&
+               layout.nodes.at("advancedcommerce").top < layout.nodes.at("trustworthy").top &&
+               layout.nodes.at("ironwill").top == layout.nodes.at("advancedcommerce").top,
+           "a row per tier, top to bottom; a perk whose dependents stand further down moves next to them");
     Expect(layout.caption_top > 0 && layout.nodes.at("basicdefense").top > layout.caption_top, "unlinked perks below the blocks, under a caption");
     cache.Get(ids, edges);
     auto shuffled = edges;
@@ -137,30 +124,32 @@ static void Topology()
     Invariants(layout, "closure");
 
     tree::Cache skip_cache;
-    const auto skipped = skip_cache.Get({"a", "b", "c"}, {{"a", "b"}, {"b", "c"}, {"a", "c"}});
-    Expect(skipped.valid && skipped.columns[1].lines.size() == 1, "a redundant stock link crosses the middle column once");
+    const auto &skipped = skip_cache.Get({"a", "b", "c"}, {{"a", "b"}, {"b", "c"}, {"a", "c"}});
+    size_t lanes = 0;
+    for (const auto &link : skipped.links)
+        lanes += link.points.size() == 4;
+    Expect(skipped.valid && lanes == 1, "a redundant stock link takes a lane past the middle row");
     Invariants(skipped, "skip");
 
     tree::Cache self_cache, ship_cache;
     const auto &self = self_cache.Get(kSelf, kSelfEdges);
     Invariants(self, "stock personal group");
-    Expect(self.columns.size() == 4 && self.nodes.at("hardhitter").column == 3, "personal: four tiers");
     const auto &ship = ship_cache.Get(kShip, kShipEdges);
     Invariants(ship, "stock ship group");
-    Expect(ship.columns.size() == 4 && ship.caption_top > 0, "ship: four tiers, the flags and lone perks packed under a caption");
-    int width = 0;
-    for (const auto &gutter : ship.gutters)
-        width += gutter.width;
-    Expect(width <= 72, "the gutters leave the columns their room");
+    Expect(ship.caption_top > 0, "ship: the flags and lone perks packed under a caption");
+    std::map<int, int> per_row;
+    for (const auto &[id, place] : ship.nodes)
+        ++per_row[place.top];
+    int widest = 0;
+    for (const auto &[row, count] : per_row)
+        widest = std::max(widest, count);
+    Expect(widest <= tree::Layout::slots && tree::Layout::width <= 500, "every stock tier fits one row of a 780 dp phone");
 
     auto cycle = edges;
     cycle.push_back({"Trustworthy", "BasicCommerce"});
     Expect(!cache.Get(ids, cycle).valid, "cyclic data cannot produce an invented partial graph");
     Expect(!cache.Get({"a"}, {{"missing", "a"}}).valid, "a missing source is not a root");
     Expect(!cache.Get({"A", "a"}, {}).valid, "case alias duplicate rejected");
-    Expect(tree::LongestWords({"Профессиональный фехтовальщик", "Тяжёлая рука"}, 2) ==
-               std::vector<std::string>({"Профессиональный", "фехтовальщик"}),
-           "the longest words by letters size a column");
     Expect(tree::CanLearn(true, true, false, 1, "stock-all-v1", true, {true, true}), "ALL two satisfied plus actual eligibility");
     Expect(!tree::CanLearn(true, true, false, 1, "stock-all-v1", true, {true, false}), "one missing AND prerequisite locks");
     Expect(!tree::CanLearn(true, true, false, 1, "any", true, {true, false}), "unexported OR rule never invented");
@@ -211,11 +200,7 @@ static Widget Edge(const char *from, const char *to, bool met)
 }
 static Json Nodes(const Json &props)
 {
-    Json nodes = Json::array();
-    for (const Json &column : props["tree"]["columns"])
-        for (const Json &node : column["nodes"])
-            nodes.push_back(node);
-    return nodes;
+    return props["tree"]["nodes"];
 }
 static Json Node(const Json &props, const std::string &id)
 {
@@ -270,9 +255,9 @@ static void CheckScreen(const std::string &directory)
     Expect(Nodes(surface.props).size() == 5 && surface.errors.empty(), "tree includes both real external ancestors");
     Expect(Selected(surface.props) == "trustworthy" && Node(surface.props, "trustworthy")["reveal"] == "self:trustworthy",
            "the group's first perk in reading order is selected on opening and brought into view");
-    Expect(Node(surface.props, "advancedcommerce")["external"] == true && Node(surface.props, "advancedcommerce")["group"] == "Ship" &&
-               Node(surface.props, "advancedcommerce")["groupIcon"] == "ship" && Node(surface.props, "advancedcommerce")["name"] == "advancedcommerce",
-           "an other-group perk is marked by its group, apart from its name");
+    Expect(Node(surface.props, "advancedcommerce")["other"] == true && Node(surface.props, "advancedcommerce")["groupIcon"] == "ship" &&
+               Node(surface.props, "advancedcommerce")["name"] == "advancedcommerce" && Node(surface.props, "ironwill")["other"] == false,
+           "an other-group perk carries its group's glyph; the name is its long-press tooltip");
     const Json initial = surface.props["tree"];
     router.OnEvent({"perks", "row", "trustworthy"});
     Expect(surface.sent.empty(), "node selection sends no stock command or learn action");
@@ -281,10 +266,10 @@ static void CheckScreen(const std::string &directory)
                Node(surface.props, "trustworthy")["reveal"] == "",
            "a new selection is brought into view");
     router.OnEvent({"perks", "row", "trustworthy"});
-    for (size_t c = 0; c < initial["columns"].size(); ++c)
-        for (size_t i = 0; i < initial["columns"][c]["nodes"].size(); ++i)
-            Expect(initial["columns"][c]["nodes"][i]["top"] == surface.props["tree"]["columns"][c]["nodes"][i]["top"],
-                   "selection preserves every graph position");
+    for (size_t i = 0; i < initial["nodes"].size(); ++i)
+        Expect(initial["nodes"][i]["top"] == surface.props["tree"]["nodes"][i]["top"] &&
+                   initial["nodes"][i]["left"] == surface.props["tree"]["nodes"][i]["left"],
+               "selection preserves every graph position");
     {
         const Json &detail = surface.props["detail"];
         Expect(detail["requires"].size() == 2 && detail["learn"]["disabled"] == true, "detail lists every actual requirement");
@@ -297,11 +282,9 @@ static void CheckScreen(const std::string &directory)
                "a locked perk says what is missing right above its button, which says it is unavailable (no toast in the top bar)");
         Expect(surface.props["perkInfo"] == "hero.free_points 1 · hero.next_point 340 / 1\xC2\xA0" "000",
                "free points and the progress to the next one stay over the tree");
-        bool focus_in = false, dim = false;
-        for (const Json &gutter : surface.props["tree"]["gutters"])
-            for (const Json &arrow : gutter["arrows"])
-                (arrow["cls"].get<std::string>().find("focus") == 0 ? focus_in : dim) = true;
-        Expect(focus_in && dim, "the selected perk's links are highlighted, the others dimmed");
+        const std::string links = surface.props["tree"]["links"];
+        Expect(links.find("2 ") != std::string::npos && (links.find("0 ") != std::string::npos || links.find("1 ") != std::string::npos),
+               "the selected perk's links are highlighted, the others drawn faint");
     }
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null(), "locked perk cannot enter learn confirmation");
@@ -345,7 +328,7 @@ static void CheckScreen(const std::string &directory)
         }
     }
     router.SetInterface(ship);
-    Expect(Selected(surface.props) == "advancedcommerce" && Node(surface.props, "advancedcommerce")["external"] == false &&
+    Expect(Selected(surface.props) == "advancedcommerce" && Node(surface.props, "advancedcommerce")["other"] == false &&
                Node(surface.props, "advancedcommerce")["reveal"] == "ship:advancedcommerce" && !surface.props["detail"]["learn"].is_null() &&
                surface.props["tabs"][2]["selected"] == true &&
                Node(surface.props, "advancedcommerce")["revealTop"].get<int>() < Node(surface.props, "advancedcommerce")["top"].get<int>(),

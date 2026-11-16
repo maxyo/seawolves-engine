@@ -919,13 +919,7 @@ class HeroScreen final : public Screen
             return;
         }
         const size_t builds = perk_tree_.Builds();
-        std::vector<int> widths; // the longest word of each perk's name, as its node wraps it
-        for (const auto &id : graph.ids)
-        {
-            const auto words = perk_tree::LongestWords({BindShortWords(PerkName(graph, id))}, 1);
-            widths.push_back(words.empty() ? 0 : static_cast<int>(perk_tree::Letters(words.front())));
-        }
-        const perk_tree::Layout &layout = perk_tree_.Get(graph.ids, graph.edges, widths);
+        const perk_tree::Layout &layout = perk_tree_.Get(graph.ids, graph.edges);
         const bool built = perk_tree_.Builds() != builds;
         if (!layout.valid)
         {
@@ -947,7 +941,7 @@ class HeroScreen final : public Screen
             for (const auto &[id, row] : graph.rows)
             {
                 const auto &place = layout.nodes.at(id), &best = layout.nodes.at(selected);
-                if (std::tie(place.top, place.column) < std::tie(best.top, best.column))
+                if (std::tie(place.top, place.left) < std::tie(best.top, best.left))
                     selected = id;
             }
             learn_open_ = false;
@@ -966,71 +960,32 @@ class HeroScreen final : public Screen
                     return "locked";
             return "open";
         };
-        const auto edge_met = [&](int e) { return Learned(graph, layout.edges[e].from); };
-        const auto line_class = [&](const std::vector<int> &edges) {
-            bool focus = false, met = !edges.empty();
-            for (int e : edges)
-            {
-                focus |= layout.edges[e].from == selected || layout.edges[e].to == selected;
-                met &= edge_met(e);
-            }
-            return std::string(focus ? "focus" : "") + (met ? " met" : "");
-        };
-        const auto line_json = [&](const perk_tree::Line &line) {
-            return Json{{"x", line.x}, {"y", line.y}, {"w", line.width}, {"h", line.height}, {"cls", line_class(line.edges)}};
-        };
+        // The links as <ui-links> draws them: 2 the selected perk's (on top), 1 from a learned perk, 0 the others.
+        std::string links;
+        for (const auto &link : layout.links)
+        {
+            const auto &edge = layout.edges[link.edge];
+            links += (links.empty() ? "" : ";") +
+                     std::to_string(edge.from == selected || edge.to == selected ? 2 : Learned(graph, edge.from) ? 1 : 0);
+            for (const auto &point : link.points)
+                links += " " + std::to_string(point.x) + "," + std::to_string(point.y);
+        }
         const std::string reveal_group = ship ? "ship:" : "self:";
-        Json columns = Json::array();
-        for (const auto &column : layout.columns)
+        Json nodes = Json::array();
+        for (const auto &id : graph.ids)
         {
-            Json nodes = Json::array();
-            std::vector<std::string> names;
-            for (const auto &id : column.nodes)
-            {
-                const bool external = !graph.rows.count(id);
-                const std::string st = state(id);
-                const bool other = ShipPerk(graph, id) != ship;
-                const std::string name = PerkName(graph, id);
-                names.push_back(BindShortWords(name)); // words as the node's text wraps them
-                nodes.push_back(Json{{"id", id}, {"name", name}, {"image", PerkPicture(graph, id, st != std::string("learned") && st != std::string("open"))},
-                                     {"state", st}, {"selected", id == selected}, {"external", external},
-                                     {"group", external || other ? GroupName(ShipPerk(graph, id)) : ""},
-                                     {"groupIcon", ShipPerk(graph, id) ? "ship" : "hero"},
-                                     {"top", layout.nodes.at(id).top},
-                                     {"reveal", id == selected ? reveal_group + id : ""},
-                                     {"revealTop", layout.nodes.at(id).top - kRevealMargin}});
-            }
-            Json lines = Json::array();
-            for (const auto &line : column.lines)
-                lines.push_back(line_json(line));
-            std::string group; // the widest group caption under a node of this column also sizes it
-            for (const Json &node : nodes)
-                if (node["group"].get<std::string>().size() > group.size())
-                    group = node["group"];
-            const auto measure = perk_tree::LongestWords(names);
-            columns.push_back(Json{{"nodes", nodes}, {"lines", lines}, {"measure", measure}, {"measureGroup", group},
-                                   {"letters", measure.empty() ? 0 : static_cast<int>(perk_tree::Letters(measure.front()))}});
+            const std::string st = state(id);
+            const bool other = ShipPerk(graph, id) != ship;
+            const auto &place = layout.nodes.at(id);
+            nodes.push_back(Json{{"id", id}, {"name", PerkName(graph, id)},
+                                 {"image", PerkPicture(graph, id, st != std::string("learned") && st != std::string("open"))},
+                                 {"state", st}, {"selected", id == selected}, {"other", other},
+                                 {"groupIcon", ShipPerk(graph, id) ? "ship" : "hero"},
+                                 {"left", place.left}, {"top", place.top},
+                                 {"reveal", id == selected ? reveal_group + id : ""},
+                                 {"revealTop", place.top - kRevealMargin}});
         }
-        Json gutters = Json::array();
-        for (const auto &gutter : layout.gutters)
-        {
-            Json lines = Json::array(), arrows = Json::array();
-            for (const auto &line : gutter.lines)
-                lines.push_back(line_json(line));
-            for (const auto &arrow : gutter.arrows)
-                arrows.push_back(Json{{"y", arrow.y - perk_tree::Layout::arrow / 2 - 1}, {"x", gutter.width - perk_tree::Layout::arrow},
-                                      {"cls", line_class({arrow.edge})},
-                                      {"tone", line_class({arrow.edge}).starts_with("focus") ? "brass" : edge_met(arrow.edge) ? "green" : "dim"}});
-            gutters.push_back(Json{{"width", gutter.width}, {"lines", lines}, {"arrows", arrows}});
-        }
-        // Width left over goes mostly to the columns with short words: each column's flex-grow grows with how much
-        // shorter its longest word is than the longest of all (the narrow last tier no longer stays a sliver).
-        int longest = 1;
-        for (const Json &column : columns)
-            longest = std::max(longest, column["letters"].get<int>());
-        for (Json &column : columns)
-            column["grow"] = 1 + (longest - column["letters"].get<int>()) / 3;
-        view["tree"] = Json{{"columns", columns}, {"gutters", gutters}, {"height", layout.height},
+        view["tree"] = Json{{"nodes", nodes}, {"links", links}, {"width", perk_tree::Layout::width}, {"height", layout.height},
                             {"caption", layout.caption_top >= 0 ? bindings.Text("hero.perks_unlinked") : ""}, {"captionTop", layout.caption_top}};
         bindings.On("perks", "row", [this, &bindings, ids = graph.ids, rows = graph.rows](const Event &event) {
             if (std::find(ids.begin(), ids.end(), event.value) == ids.end())

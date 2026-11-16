@@ -2066,13 +2066,7 @@ static void Hero(const std::string &models)
     surface.commands.clear();
     router.OnEvent({"header-tabs", "select", "perks1"});
     view = surface.props;
-    const auto perk_nodes = [](const Json &v) {
-        Json nodes = Json::array();
-        for (const Json &column : v["tree"]["columns"])
-            for (const Json &node : column["nodes"])
-                nodes.push_back(node);
-        return nodes;
-    };
+    const auto perk_nodes = [](const Json &v) { return v["tree"]["nodes"]; };
     Expect(surface.commands.empty() && view["tab"] == "perks" && view["tabs"][1]["selected"] == true && perk_nodes(view).size() == 2 &&
                view["detail"]["title"] == "Basic defense" && view["detail"]["learn"]["disabled"] == false &&
                view["detail"]["learn"]["label"] == "<hero.learn> · 1 (<hero.free_short> 1)" &&
