@@ -3307,6 +3307,7 @@ void Renderer::RunEnd()
         if (progressTexture < 0 && storm::loading::first_frame)
             core.Trace("ERROR: the stock loading artwork is missing: the location loads without it");
         bInsideScene = false;
+        storm::render::SceneLoadingTransactionFrame();
         storm::loading::ready = !storm::render::HoldSceneReveal();
         DrawProgressView(false);
         DrawFrameStats(); // one Present; never release artwork from inside the warm loop
@@ -4535,6 +4536,8 @@ char *Renderer::GetTipsImage()
 
 void Renderer::StartProgressView()
 {
+    // The full-screen loading picture of every fader load (reload.c: FADER_PICTURE0 "loading\\ImgBack.tga").
+    constexpr const char *kStockLoadingBackImage = "loading\\ImgBack.tga";
 #ifdef __ANDROID__
     storm::android::publishLoading(true);
 #endif
@@ -4569,9 +4572,21 @@ void Renderer::StartProgressView()
         back0Texture = TextureCreate(progressBackImage);
         isInPViewProcess = false;
     }
-    else
+    if (back0Texture < 0)
     {
-        back0Texture = -1;
+        // A load without a fader (reload.c LoadMainCharacterInFirstLocationGroup: the new game without its tutorial)
+        // sets no full-screen picture: the one every fader load sets (reload.c FADER_PICTURE0) is taken instead.
+        const bool scripts_set = progressBackImage && progressBackImage[0];
+        isInPViewProcess = true;
+        back0Texture = TextureCreate(kStockLoadingBackImage);
+        isInPViewProcess = false;
+        if (back0Texture >= 0)
+            core.Trace("Loading screen: %s%s; the full-screen picture is the stock %s", scripts_set ? "cannot load " : "the scripts set no full-screen picture",
+                       scripts_set ? progressBackImage : "", kStockLoadingBackImage);
+        else
+            core.Trace("ERROR: Loading screen: %s%s and the stock %s cannot be loaded: black under the loading picture",
+                       scripts_set ? "cannot load " : "the scripts set no full-screen picture", scripts_set ? progressBackImage : "",
+                       kStockLoadingBackImage);
     }
     // Loading a scalable background image
     if (progressImage && progressImage[0])
@@ -4659,17 +4674,14 @@ void Renderer::DrawProgressView(bool present)
     v[2].v = 1.0f;
     v[3].u = 1.0f;
     v[3].v = 1.0f;
+    // The full-screen layer always covers the world: the scene under preparation is never shown, and the location
+    // readiness waits for frames whose cover was presented opaque (LoadingSceneWork). Without any full-screen picture
+    // (StartProgressView logged it as an ERROR) the layer is black, the sampler's unbound texture (shim Context).
     TextureSet(0, back0Texture);
-    if (back0Texture < 0)
-        for (i = 0; i < 4; i++)
-            v[i].color = 0;
-    if (back0Texture >= 0)
-    {
-        storm::render::ArmSceneOpaqueDraw(!present && vp.X == 0 && vp.Y == 0, true, 255);
-        DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
-                        "ProgressBackTech");
-        storm::render::ArmSceneOpaqueDraw(false, false, 0);
-    }
+    storm::render::ArmSceneOpaqueDraw(!present && vp.X == 0 && vp.Y == 0, true, 255);
+    DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 2, v, sizeof(v[0]),
+                    "ProgressBackTech");
+    storm::render::ArmSceneOpaqueDraw(false, false, 0);
 
     float dy = 0.0f;
     float dx = ((float(vp.Width) - (4.0f * float(vp.Height) / 3.0f)) / 2.0f);

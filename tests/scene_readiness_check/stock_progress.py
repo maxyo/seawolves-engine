@@ -33,11 +33,12 @@ namespace storm::render {
 struct Status { bool active=false; }; Status status;
 bool pending=false; int seals=0;
 Status GetSceneLoadStatus(){return status;}
+void SceneLoadingTransactionFrame(){}
 bool HoldSceneReveal(){return pending || !prepared;}
 void CompleteSceneReveal(){assert(!pending);status.active=false;++seals;}
 }
 uint32_t SDL_GetTicks(){return 1000;}
-struct Core {void Trace(const char*){}} core;
+struct Core {void Trace(const char*, ...){}} core;
 using HRESULT=int; constexpr int D3D_OK=0;
 #define CHECKD3DERR(x) ((x)!=0)
 uint64_t SDL_GetPerformanceCounter(){return 0;}

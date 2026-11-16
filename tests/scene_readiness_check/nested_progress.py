@@ -21,7 +21,7 @@ fixture = r'''
 #include <cstdint>
 namespace storm {
 namespace loading {bool active=false, ready=false, first_frame=true;}
-namespace render {bool HoldSceneReveal(){return true;}}
+namespace render {void SceneLoadingTransactionFrame(){} bool HoldSceneReveal(){return true;}}
 }
 struct Core {int errors=0; void Trace(const char *){++errors;}} core;
 struct Renderer {

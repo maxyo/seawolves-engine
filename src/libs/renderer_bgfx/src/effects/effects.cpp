@@ -61,6 +61,7 @@ struct LocationLoad {
     uint64_t phase_polled_at = 0;
     bool cooling = false;
     render::LoadingOpaque opaque;
+    render::LoadingCoverBudget cover;
     render::LoadingSceneWork scene_work;
     uint64_t timing_at = 0;
     double loading_gpu_ms = 0;
@@ -102,6 +103,7 @@ void BeginSceneResources(const char *scene)
         texture::Service::instance().begin_loading_cache_scope();
         load.gate.begin(load_milliseconds());
         load.stall.begin(load_milliseconds());
+        load.cover.begin(load.gate.generation());
         fx::SharedCpuAdmission().begin(load.gate.generation(), true);
         upscales().begin_scene();
         shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
@@ -1387,9 +1389,14 @@ void SuspendSceneCpuBudget(uint64_t generation) { fx::SharedCpuAdmission().suspe
 void SceneOpaquePresented(bool frame_advanced, bool stable_backbuffer) {
     auto &load = effects::location_load();
     load.opaque.frame(load.sealed ? 0 : load.gate.generation(), frame_advanced, stable_backbuffer);
+    if (load.opaque.presented(load.gate.generation())) load.cover.presented(load.gate.generation());
     fx::SharedCpuAdmission().opaque(load.gate.generation(), !load.sealed && load.opaque.presented(load.gate.generation()));
     load.scene_work.presented(frame_advanced, stable_backbuffer);
     if (!load.opaque.presented(load.gate.generation())) SetSceneLoadingWindow(0, 0);
+}
+void SceneLoadingTransactionFrame() {
+    auto &load = effects::location_load();
+    if (!load.sealed) load.cover.transaction_frame(load.gate.generation());
 }
 void SceneBeautySubmitted() {
     auto &load = effects::location_load();
@@ -1398,8 +1405,17 @@ void SceneBeautySubmitted() {
 void BeginSceneWork(uint64_t frame, uint64_t surface, uint64_t target, bool stable_target) {
     auto &load = effects::location_load();
     const auto r = load.gate.resources();
+    bool opaque = load.opaque.presented(load.gate.generation());
+    if (!opaque && !load.sealed) {
+        bool first = false;
+        opaque = load.cover.waived(load.gate.generation(), &first);
+        if (first)
+            shim::logf("ERROR: location readiness: %s: no opaque loading cover presented in %u loading frames; the "
+                       "readiness no longer waits for it and the scene under preparation may show", load.scene.c_str(),
+                       render::LoadingCoverBudget::kBudgetFrames);
+    }
     load.scene_work.begin(frame, load.gate.generation(), surface, target, !load.sealed,
-        load.opaque.presented(load.gate.generation()), r.pending() || r.failed, stable_target);
+        opaque, r.pending() || r.failed, stable_target);
 }
 void ScenePostTarget(uint64_t surface, uint64_t before, uint64_t after) {
     auto &load = effects::location_load();
@@ -1508,6 +1524,7 @@ bool RetrySceneResources(uint64_t generation)
     fx::SharedCpuAdmission().suspend();
     load.gate.begin(effects::load_milliseconds());
     load.stall.begin(effects::load_milliseconds());
+    load.cover.begin(load.gate.generation());
     fx::SharedCpuAdmission().begin(load.gate.generation(), true);
     effects::upscales().begin_scene();
     load.logged_error = load.logged_ready = load.logged_slow = false;

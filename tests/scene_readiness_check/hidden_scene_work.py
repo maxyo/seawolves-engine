@@ -42,6 +42,7 @@ def run():
                 assert result.returncode == 0
 
         compile_run(ROOT / 'tests/scene_readiness_check/hidden_scene_work.cpp', 'lifecycle')
+        compile_run(ROOT / 'tests/scene_readiness_check/cover_budget.cpp', 'cover-budget')
         draw = (SHIM / 'draw.cpp').read_text()
         branch = block(draw, '    if (hiddenBeauty)')
         # Actual branch must precede probe candidate, primary submit and opaque ack.

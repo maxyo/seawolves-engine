@@ -44,6 +44,7 @@ int waitPolls=0,waits=0,cpuEnds=0,cpuSuspends=0;bool invalidateAfterPresent=fals
 namespace storm::render {
 struct Status {bool active=true;uint64_t generation=7;std::string state,phase,detail;uint32_t textures=0,relief=0,shadows=0,failed=0;}; Status status;
 Status GetSceneLoadStatus(){return status;}
+void SceneLoadingTransactionFrame(){}
 bool HoldSceneReveal(){assert(prepared);return error||frames<pendingUntil;}
 void CompleteSceneReveal(){assert(!error&&frames>=pendingUntil);status.active=false;}
 void EndSceneCpuBudget(uint64_t g){assert(g==7);++cpuEnds;}
