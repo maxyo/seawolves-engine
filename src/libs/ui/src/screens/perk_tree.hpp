@@ -170,7 +170,7 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
             blocks[root(static_cast<int>(v))].push_back(static_cast<int>(v));
 
     constexpr int halves = 2 * Layout::slots; // half-slot grid lines 0..halves; a node covers [h, h + 2]
-    std::vector<int> half(n, 0), top(n, 0);
+    std::vector<int> half(n, 0), top(n, 0), shift(n, 0); // shift: the block's offset in dp that centres it exactly
     int y = Layout::margin;
     for (const auto &[first, members] : blocks)
     {
@@ -226,14 +226,14 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
             }
             rows = row_at;
         }
-        // The block centred on the canvas.
+        // The block centred on the canvas, to the dp (its grid stays the half-slot grid).
         int low = halves, high = 0;
         for (int v : members)
             low = std::min(low, half[v]), high = std::max(high, half[v] + 2);
-        const int shift = (halves - high - low) / 2;
+        const int offset = (Layout::width - (high - low) * Layout::slot / 2) / 2 - low * Layout::slot / 2;
         for (int v : members)
         {
-            half[v] += shift;
+            shift[v] = offset;
             top[v] = y + row[v] * Layout::pitch;
         }
         y += rows * Layout::pitch - (Layout::pitch - Layout::box) + Layout::block_gap;
@@ -248,7 +248,8 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
         for (size_t k = 0; k < unlinked.size(); ++k)
         {
             const int in_row = static_cast<int>(std::min<size_t>(Layout::slots, unlinked.size() - k / Layout::slots * Layout::slots));
-            half[unlinked[k]] = Layout::slots - in_row + 2 * static_cast<int>(k % Layout::slots); // each row centred
+            half[unlinked[k]] = 2 * static_cast<int>(k % Layout::slots);
+            shift[unlinked[k]] = (Layout::width - in_row * Layout::slot) / 2; // each row centred
             top[unlinked[k]] = y + static_cast<int>(k / Layout::slots) * Layout::packed_pitch;
         }
         y += static_cast<int>((unlinked.size() + Layout::slots - 1) / Layout::slots) * Layout::packed_pitch - (Layout::packed_pitch - Layout::box);
@@ -258,10 +259,10 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
     layout.height = y + Layout::margin;
     layout.edges = edges;
     for (size_t v = 0; v < n; ++v)
-        layout.nodes[ids[v]] = {half[v] * Layout::slot / 2, top[v]};
+        layout.nodes[ids[v]] = {half[v] * Layout::slot / 2 + shift[v], top[v]};
 
     // Links. Arrivals on a target's top, left to right by their source's centre.
-    const auto centre = [&](int v) { return (half[v] + 1) * Layout::slot / 2; };
+    const auto centre = [&](int v) { return (half[v] + 1) * Layout::slot / 2 + shift[v]; };
     const auto exit_y = [&](int v) { return top[v] + Layout::icon_top + Layout::icon + 2; };
     const auto arrive_y = [&](int v) { return top[v] + Layout::icon_top - 1; };
     std::vector<int> arrive_x(edges.size());
@@ -292,7 +293,7 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
                         return false;
                 return true;
             };
-            const double middle = (centre(s) + centre(t)) / 2.0 / (Layout::slot / 2.0);
+            const double middle = ((centre(s) + centre(t)) / 2.0 - shift[s]) / (Layout::slot / 2.0);
             int best = -1;
             for (int line = 0; line <= halves; ++line)
                 if (free(line) && (best < 0 || std::fabs(line - middle) < std::fabs(best - middle)))
@@ -304,7 +305,7 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
                 offset = std::abs(offset) + Layout::lane_step;
             if (best == halves)
                 offset = -std::abs(offset) - Layout::lane_step;
-            const int x = best * Layout::slot / 2 + offset;
+            const int x = best * Layout::slot / 2 + shift[s] + offset;
             link.points.push_back({x, from});
             link.points.push_back({x, to});
         }
