@@ -79,5 +79,19 @@ int main(int argc,char**) {
  until([&]{return active==1&&global.queued()>0;});assert(peak==1);
  global.opaque(33,true);until([&]{return active==2;});finish=true;
  assert(boosted.wait_for(1s)==std::future_status::ready);boosted.get();assert(peak==2);global.end(33);
+ // The gameplay limit: a quarter of the cores, at most two; the renderer lowers it when the device is hot.
+ // None admits nothing while the game is played, whatever the job's pool; a rise or a place's loading admits again.
+ assert(CpuAdmission(8).gameplay_threads()==2&&CpuAdmission(16).gameplay_threads()==2&&CpuAdmission(4).gameplay_threads()==1);
+ CpuAdmission heat(8);assert(heat.threads()==2&&heat.set_gameplay_limit(1)&&!heat.set_gameplay_limit(1)&&heat.threads()==1);
+ assert(heat.set_gameplay_limit(0)&&heat.gameplay_threads()==0&&heat.threads()==1&&heat.stats().phase_cap==0);
+ auto parked=std::async(std::launch::async,[&]{return heat.acquire(1,{})!=nullptr;});
+ assert(parked.wait_for(60ms)==std::future_status::timeout && "no gameplay threads: nothing is admitted");
+ heat.set_gameplay_limit(1);assert(parked.wait_for(1s)==std::future_status::ready&&parked.get());
+ heat.set_gameplay_limit(0);
+ auto loading=std::async(std::launch::async,[&]{return heat.acquire(8,{})!=nullptr;});
+ assert(loading.wait_for(60ms)==std::future_status::timeout);
+ heat.begin(5,true);heat.opaque(5,true);assert(heat.threads()==8);
+ assert(loading.wait_for(1s)==std::future_status::ready&&loading.get() && "a place's loading takes every core whatever the heat");
+ heat.end(5);
 
 }

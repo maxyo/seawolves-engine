@@ -10,6 +10,7 @@
 #include "effects/effects.hpp"
 #include "storm/render/far_lod.hpp"
 #include "effects/thermal.hpp"
+#include "platform/frame_work.hpp"
 #include "effects/upscale.hpp"
 #include "effects/relief_generator.hpp"
 
@@ -17,6 +18,7 @@
 #include "effects/texture_pixels.hpp"
 #include "storm/fx/skin_tone.hpp"
 #include "shim/device.hpp"
+#include "shim/frame_pacing.hpp"
 #include "storm/fx/bakes.hpp"
 #include "storm/fx/capabilities.hpp"
 #include "storm/fx/cutout.hpp"
@@ -494,7 +496,7 @@ Host &Host::instance()
 void Host::on_device_created()
 {
     fx::SetLogSink(log_sink);
-    fx::SetBakeGate(&background_wait_reason); // Ray bakes honor explicit renderer holds; temperature is telemetry only.
+    fx::SetBakeGate(&background_wait_reason); // Ray bakes wait as the relief does: a renderer hold, heat (thermal.hpp).
     fx::RendererFacts facts;
     // The game's offscreen depth is a D24S8 BGFX_TEXTURE_RT texture (TexStore::create_gpu): sampleable. With MSAA
     // the pinned bgfx GL backend blits the depth into that texture too when the frame buffer is resolved
@@ -719,7 +721,10 @@ void Host::activate(const fx::Settings &settings, const fx::Support &support)
     settings_ = settings;
     render::far_lod::pixels = settings_.far_lod_pixels;
     support_ = support;
-    const fx::RendererState state = fx::RendererStateFor(settings_);
+    fx::RendererState state = fx::RendererStateFor(settings_);
+    // The preset's height is the top of the dynamic resolution's ladder; the same height keeps its step.
+    dynamic_.reset(state.render_height);
+    state.render_height = dynamic_.height();
     const bool depth_read = scene_depth_read();
     renderer_state_changed_ = renderer_state_changed_ ||
                               (device_ready_ && (state.msaa_samples != renderer_state_.msaa_samples ||
@@ -900,6 +905,49 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
 {
     // The renderer sees every perspective scene draw, including unlit/low-preset geometry and the sea.
     ReliefGenerator::instance().frame(scene_frame);
+    // The background work's share while the game is played follows the device's heat (thermal.hpp); a place that
+    // loads is not played, and takes every core as before.
+    {
+        const ThermalLoad heat = thermal_load();
+        fx::CpuAdmission &admission = fx::SharedCpuAdmission();
+        const unsigned threads = background_threads(heat, admission.normal_gameplay_threads());
+        if (admission.set_gameplay_limit(threads))
+            shim::logf("effects: background work while the game is played: %u of %u cores (thermal load %s, %s)", threads,
+                       admission.maximum_threads(), thermal_load_name(heat), thermal_text());
+        background_play(location_load().sealed);
+        // Dynamic resolution (dynamic_resolution.hpp): the scene's height follows the GPU's frame time, the missed
+        // frames and the heat. Judged on played scene frames only, against the interval the pacing aims at.
+        DynamicResolution::Frame f;
+        f.now_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        f.interval_ms = dynamic_frame_ms_ > 0.0 ? f.now_ms - dynamic_frame_ms_ : 0.0;
+        dynamic_frame_ms_ = f.now_ms;
+        if (const bgfx::Stats *stats = bgfx::getStats(); stats && stats->gpuTimerFreq > 0 &&
+                                                         stats->gpuTimeEnd > stats->gpuTimeBegin &&
+                                                         stats->gpuTimeEnd != dynamic_gpu_end_)
+        {
+            dynamic_gpu_end_ = stats->gpuTimeEnd;
+            f.gpu_ms = static_cast<double>(stats->gpuTimeEnd - stats->gpuTimeBegin) * 1000.0 / static_cast<double>(stats->gpuTimerFreq);
+        }
+        f.work_ms = storm::platform::frame_work::LastWorkMs();
+        f.target_ms = std::chrono::duration<double, std::milli>(shim::FramePacing::instance().preferred_interval()).count();
+        f.scene = scene_frame && location_load().sealed && !switching_ && device_ready_;
+        f.heat = heat == ThermalLoad::Severe     ? DynamicResolution::Heat::Severe
+                 : heat == ThermalLoad::Elevated ? DynamicResolution::Heat::Elevated
+                                                 : DynamicResolution::Heat::Normal;
+        const uint16_t before = renderer_state_.render_height;
+        if (dynamic_.frame(f))
+        {
+            renderer_state_.render_height = dynamic_.height();
+            renderer_state_changed_ = true;
+            shim::logf("effects: dynamic resolution: the 3D scene %u -> %u lines (%s; thermal %s); preset %d allows %u..%u",
+                       before, renderer_state_.render_height, dynamic_.reason().c_str(), thermal_text(), preset_,
+                       dynamic_.lowest(), settings_.render_height);
+        }
+        if (dynamic_.take_cpu_bound())
+            shim::logf("effects: dynamic resolution: frames miss the %.1f ms frame while the game thread works %.1f ms of it: "
+                       "the 3D scene stays at %u lines (fewer pixels do not help)", f.target_ms, f.work_ms,
+                       renderer_state_.render_height);
+    }
     if (self_test_.Running())
     {
         const fx::SelfTest::Result result = self_test_.Poll(frame);
@@ -998,7 +1046,9 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         return;
     }
     // GPU timer queries per view (BGFX_DEBUG_PROFILER, option fx_gpu_profile=1): the whole frame and the post chain,
-    // averaged and logged every kProfileFrames presented frames with the CPU frame time and draw calls. Timer
+    // averaged and logged every kProfileFrames presented frames with cpu_frame_ms (bgfx cpuTimeFrame: the interval
+    // from frame to frame, the waits for the render thread and the display's slot included; not CPU work), the game thread's work
+    // per phase and entity class (platform/frame_work.hpp) and draw calls. Timer
     // results lag a few frames; a backend without timer queries reports none (logged as n/a).
     const bgfx::Stats *stats = bgfx::getStats();
     if (stats)
@@ -1010,6 +1060,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             for (uint16_t i = 0; i < stats->numViews; ++i)
             {
                 const bgfx::ViewStats &view = stats->viewStats[i];
+                profile_views_[view.name] += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
                 // The pass names of fx::SeaWaves (SetupView).
                 if (std::strncmp(view.name, "fx sea waves", 12) == 0)
                     times_.sea_waves_ms += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
@@ -1046,16 +1097,38 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                          profile_sum_frame_ / profile_gpu_frames_, profile_sum_post_ / profile_gpu_frames_,
                          profile_sum_smaa_ / profile_gpu_frames_, profile_sum_easu_ / profile_gpu_frames_,
                          profile_sum_rcas_ / profile_gpu_frames_, profile_sum_sea_waves_ / profile_gpu_frames_);
+            // The GPU time per view name over the line's frames, the eight largest: "name:ms,..." per frame.
+            std::string views;
+            {
+                std::vector<std::pair<double, std::string>> order;
+                for (const auto &[name, ms] : profile_views_)
+                    order.emplace_back(ms, name.empty() ? "unnamed" : name);
+                std::sort(order.begin(), order.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+                for (size_t i = 0; i < std::min<size_t>(order.size(), 8) && profile_gpu_frames_ > 0; ++i)
+                {
+                    std::replace(order[i].second.begin(), order[i].second.end(), ' ', '_');
+                    std::replace(order[i].second.begin(), order[i].second.end(), ',', ';');
+                    char ms[24];
+                    snprintf(ms, sizeof(ms), ":%.2f", order[i].first / profile_gpu_frames_);
+                    views += (i ? "," : "") + order[i].second + ms;
+                }
+                profile_views_.clear();
+            }
+            if (views.empty())
+                views = "n/a";
             const Lighting::Counts counts = lighting_.last_frame();
             // The sun's layers over the kProfileFrames frames of this line: how often the static one was drawn (and
             // with how much), in how many frames the dynamic one, its casters.
             const SunShadows::Counters sun = lighting_.shadows().take_counters();
             // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
-            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f post_views=%u lit_draws=%u "
+            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u gpu_views=%s post_views=%u lit_draws=%u "
                        "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
+                       storm::platform::frame_work::Describe(storm::platform::frame_work::Take(storm::platform::frame_work::Reader::Profile)).c_str(),
+                       thermal_text(), fx::SharedCpuAdmission().stats().reserved, fx::SharedCpuAdmission().stats().phase_cap,
+                       renderer_state_.render_height, views.c_str(),
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,

@@ -3,6 +3,7 @@
 // The shim asks it what to set up (RendererState) and calls it at the scene boundary.
 #pragma once
 
+#include "effects/dynamic_resolution.hpp"
 #include "effects/place_bake.hpp"
 #include "effects/lighting.hpp"
 #include "storm/fx/capabilities.hpp"
@@ -22,6 +23,8 @@
 #include <bgfx/bgfx.h>
 
 #include <chrono>
+#include <map>
+#include <string>
 #include <vector>
 
 namespace storm::effects
@@ -180,6 +183,10 @@ class Host
     bool post_broken_ = false; // ... or the post chain
     bool device_ready_ = false;
     bool renderer_state_changed_ = false;
+    std::map<std::string, double> profile_views_; // GPU ms per view name since the last profile line
+    DynamicResolution dynamic_;           // the scene's height under renderer_state_ (dynamic_resolution.hpp)
+    double dynamic_frame_ms_ = 0.0;       // the previous end_frame, a steady clock
+    int64_t dynamic_gpu_end_ = 0;         // bgfx::Stats::gpuTimeEnd already judged
     bool depth_read_ = false;
     fx::SelfTest self_test_;
     fx::Settings tested_{};               // the settings of the running self-test

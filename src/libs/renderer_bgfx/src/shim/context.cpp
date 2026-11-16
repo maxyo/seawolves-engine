@@ -2,6 +2,7 @@
 #include "effects/effects.hpp"
 #include "frame_pacing.hpp"
 #include "perf.hpp"
+#include "platform/frame_work.hpp"
 #include "profiler.hpp"
 #include "program_cache.hpp"
 #include "storm/render/d3d_interop.hpp"
@@ -1145,6 +1146,33 @@ void plot_frame_stats()
 } // namespace
 #endif
 
+namespace
+{
+// Every 30 s, in every session: where the game thread's frames went (platform/frame_work.hpp), with the render
+// thread's submit time of the same frames. The line that says what a slow frame was when no profiler is attached.
+void log_frame_work()
+{
+    namespace frame_work = storm::platform::frame_work;
+    constexpr auto kWindow = std::chrono::seconds(30);
+    static auto window_start = std::chrono::steady_clock::now();
+    static render::PerfCounters totals_start = perf();
+    const auto now = std::chrono::steady_clock::now();
+    if (now - window_start < kWindow)
+        return;
+    const frame_work::Window window = frame_work::Take(frame_work::Reader::Summary);
+    const render::PerfCounters counters = perf().Since(totals_start);
+    const double seconds = std::chrono::duration<double>(now - window_start).count();
+    window_start = now;
+    totals_start = perf();
+    if (window.frames == 0)
+        return;
+    logf("frame work: %.1f s, %u frames; %s render_submit_ms=%.2f shim_ms=%.2f draws=%.0f", seconds, window.frames,
+         frame_work::Describe(window, 6).c_str(), counters.frames ? counters.submit_ms / counters.frames : 0.0,
+         counters.frames ? counters.shim_ms / counters.frames : 0.0,
+         counters.frames ? static_cast<double>(counters.draws) / counters.frames : 0.0);
+}
+} // namespace
+
 void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint32_t game_height)
 {
     STORM_PROFILE_ZONE("present");
@@ -1187,6 +1215,7 @@ void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint3
         }
         {
             STORM_PROFILE_ZONE("UI render");
+            const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Ui);
             for (auto &entry : clients_)
                 entry.client->OnUiRender(frame_);
         }
@@ -1196,6 +1225,7 @@ void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint3
             // With the render thread: the wait for it to finish rendering the previous frame, then the hand-over.
             // Without (render_thread=0): the GL backend, the driver and the present.
             STORM_PROFILE_ZONE("bgfx::frame");
+            const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::WaitRender);
             presented = run_frame(BGFX_FRAME_NONE, &last_frame_);
         }
         if (presented)
@@ -1213,11 +1243,17 @@ void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint3
             {
                 const auto game = gate_end_ == std::chrono::steady_clock::time_point{} ? std::chrono::nanoseconds::zero()
                                                                                        : frame_call - gate_end_;
-                FramePacing::instance().game_thread_waited(frame_gate(last_frame_, game, frame_blocked_));
+                {
+                    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::WaitPresent);
+                    FramePacing::instance().game_thread_waited(frame_gate(last_frame_, game, frame_blocked_));
+                }
                 gate_end_ = std::chrono::steady_clock::now();
                 wait_ms = std::chrono::duration<double, std::milli>(gate_end_ - frame_call).count();
             }
             perf_frame_presented(wait_ms);
+            // The game thread's frame ends with its wait for the display's slot (platform/frame_work.hpp).
+            storm::platform::frame_work::EndFrame();
+            log_frame_work();
             STORM_PROFILE_FRAME();
 #ifdef STORM_TRACY
             plot_frame_stats();

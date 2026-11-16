@@ -806,6 +806,17 @@ uint16_t Device::new_view()
     view_framebuffer = framebuffer(color, rt->face, rt->level, depth);
     view_depth = depth;
     bgfx::setViewFrameBuffer(view, view_framebuffer);
+    // Named by its target for the GPU timers per view (the effects profile's gpu_views).
+    {
+        char name[48];
+        if (color == scaled_color.get())
+            snprintf(name, sizeof(name), "scene");
+        else if (color == back_color->store.get())
+            snprintf(name, sizeof(name), "display");
+        else
+            snprintf(name, sizeof(name), "target %ux%u", color->level_width(rt->level), color->level_height(rt->level));
+        bgfx::setViewName(view, name);
+    }
     bgfx::setViewMode(view, bgfx::ViewMode::Sequential);
     // The display-size depth back from parking (render scale) holds an old frame: cleared in the first view that
     // uses it, in the same pass (a tile GPU loads nothing).

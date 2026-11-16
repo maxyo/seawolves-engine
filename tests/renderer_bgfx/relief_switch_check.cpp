@@ -222,6 +222,12 @@ int main()
     // product that is off is not taken. Held, so that the request stays queued.
     WriteTx(textures / "stone_arch.tga.tx", colour);
     auto arch = Store(colour);
+    // The generator first ends what the steps above left it (a gloss request that is still wanted would stay queued
+    // under the hold and be counted below; how long the worker takes is its budget's, two threads in play).
+    for (const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+         (effects::ReliefGenerator::instance().stats().requested != 0 || effects::ReliefGenerator::instance().stats().working) &&
+         std::chrono::steady_clock::now() < until;)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     effects::hold_background_work("relief_switch_check");
     maps.on_texture_loaded(*arch, "resource\\textures\\stone_arch.tga.tx", textures / "stone_arch.tga.tx");
     Settle(maps, {arch.get()});

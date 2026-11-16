@@ -6,6 +6,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <mutex>
 
 #ifdef __ANDROID__
@@ -58,7 +60,17 @@ struct Thermal
 #endif
 } // namespace
 
-bool device_hot()
+namespace
+{
+std::atomic<const char *> g_hold{nullptr};
+std::atomic<bool> g_playing{false};
+#ifdef __ANDROID__
+std::mutex g_text_mutex;
+char g_text[32] = "n/a"; // under g_text_mutex
+#endif
+} // namespace
+
+ThermalLoad thermal_load()
 {
 #ifdef __ANDROID__
     static Thermal thermal; // thread-safe initialisation
@@ -68,6 +80,7 @@ bool device_hot()
     static float cached_headroom = std::nanf("");
     static std::atomic<bool> hot{false};
     static std::atomic<int> last_status{-1};
+    static std::atomic<ThermalLoad> load{ThermalLoad::Normal};
     const int64_t now =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     // Do not overlap platform calls from the renderer and background workers.
@@ -93,23 +106,38 @@ bool device_hot()
                                    ? cached_headroom : std::nanf("");
         const bool was_hot = hot.load();
         const bool now_hot = thermal_hot(was_hot, status, headroom);
-        // Log forecast-driven load changes even while the reported status stays LIGHT.
-        // This is telemetry only: temperature no longer pauses background preparation.
+        const ThermalLoad now_load = effects::thermal_load(now_hot, status);
+        // Forecast-driven changes are logged even while the reported status stays LIGHT.
         if (status != last_status.exchange(status) || now_hot != was_hot)
-            shim::logf("effects: thermal status: %s, headroom %.2f, load %s; automatic background thermal pause disabled",
-                       status_name(status), static_cast<double>(headroom), now_hot ? "elevated" : "normal");
+            shim::logf("effects: thermal status: %s, headroom %.2f, load %s: %s", status_name(status),
+                       static_cast<double>(headroom), thermal_load_name(now_load), background_policy(now_load));
         hot = now_hot;
+        load = now_load;
+        std::lock_guard text(g_text_mutex);
+        snprintf(g_text, sizeof(g_text), "%s/%.2f", status_name(status), static_cast<double>(headroom));
     }
-    return hot.load();
+    return load.load();
 #else
-    return false;
+    return ThermalLoad::Normal;
 #endif
 }
 
-namespace
+bool device_hot()
 {
-std::atomic<const char *> g_hold{nullptr};
-} // namespace
+    return thermal_load() != ThermalLoad::Normal;
+}
+
+const char *thermal_text()
+{
+#ifdef __ANDROID__
+    static thread_local char text[32];
+    std::lock_guard lock(g_text_mutex);
+    std::memcpy(text, g_text, sizeof(text));
+    return text;
+#else
+    return "n/a";
+#endif
+}
 
 void hold_background_work(const char *why)
 {
@@ -120,12 +148,17 @@ void hold_background_work(const char *why)
         shim::logf("effects: background work (relief generation, ray bakes) released (was held: %s)", was);
 }
 
+void background_play(bool playing)
+{
+    g_playing = playing;
+}
+
 const char *background_wait_reason()
 {
     if (const char *held = g_hold.load())
         return held;
-    (void)device_hot(); // Keep bounded sensor telemetry, without an automatic preparation pause.
-    return nullptr;
+    // The sensor is read whether or not the game is played: its changes are logged.
+    return thermal_load() == ThermalLoad::Severe && g_playing.load() ? kThermalWaitReason : nullptr;
 }
 
 } // namespace storm::effects

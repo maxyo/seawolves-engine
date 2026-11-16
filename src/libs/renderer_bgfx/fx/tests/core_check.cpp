@@ -2766,7 +2766,10 @@ void CheckBakeBudget()
             std::this_thread::sleep_for(std::chrono::microseconds(300));
             std::lock_guard lock(mutex);
             seen.insert(std::this_thread::get_id());
-            if (piece >= 8 + 16) // every thread has asked again by then
+            // The last fifth of the 125 pieces: every thread has asked again long before. (Right after the picture
+            // went, a thread descheduled between taking its piece and working it still counted: on a loaded host
+            // "8 + 16" saw a third thread.)
+            if (piece >= 100)
                 late.insert(std::this_thread::get_id());
         }, 10);
         return std::pair<size_t, size_t>(seen.size(), late.size());

@@ -53,8 +53,11 @@ template <class Lookup> ThermalResolution resolve_thermal_api(int api_level, Loo
 
 // ATHERMAL_STATUS_MODERATE: the first level where the platform asks to cut load.
 constexpr int kThermalModerate = 2;
+// ATHERMAL_STATUS_SEVERE: the platform throttles hard (the owner's Xiaomi 15 Ultra: the GPU about 1.7 times slower)
+// and vendors stop the app soon after (MIUI's AutoThermalKillAll came 12 minutes into it).
+constexpr int kThermalSevere = 3;
 // Headroom (1.0 = severe throttling) forecast kHeadroomForecastSeconds ahead: flag elevated load from kHeadroomPause,
-// clear below kHeadroomResume (and a status under MODERATE), so telemetry does not flap. No scheduling pause.
+// clear below kHeadroomResume (and a status under MODERATE), so the classification does not flap.
 constexpr int kHeadroomForecastSeconds = 10;
 constexpr float kHeadroomPause = 0.9f;
 constexpr float kHeadroomResume = 0.75f;
@@ -72,6 +75,39 @@ inline bool thermal_hot(bool was_hot, int status, float headroom)
     if (std::isnan(headroom))
         return false;
     return was_hot ? headroom >= kHeadroomResume : headroom >= kHeadroomPause;
+}
+
+// What the device's heat asks of the background work (relief and x2 textures, ray bakes) while the game is played.
+// A place's loading is never slowed or paused by it: nothing is played then, and a load that waited for a phone to
+// cool never ended.
+enum class ThermalLoad : unsigned char
+{
+    Normal,   // the background work's normal share of the cores (fx::CpuAdmission::normal_gameplay_threads)
+    Elevated, // MODERATE, or the forecast says SEVERE is near: one thread
+    Severe,   // SEVERE and above: it waits until the device cools or a place loads
+};
+
+inline ThermalLoad thermal_load(bool hot, int status)
+{
+    return status >= kThermalSevere ? ThermalLoad::Severe : hot ? ThermalLoad::Elevated : ThermalLoad::Normal;
+}
+
+// The CPU threads of the background work while the game is played; `normal` is its share on a cool device.
+inline unsigned background_threads(ThermalLoad load, unsigned normal)
+{
+    return load == ThermalLoad::Severe ? 0u : load == ThermalLoad::Elevated ? 1u : normal;
+}
+
+inline const char *thermal_load_name(ThermalLoad load)
+{
+    return load == ThermalLoad::Severe ? "severe" : load == ThermalLoad::Elevated ? "elevated" : "normal";
+}
+
+inline const char *background_policy(ThermalLoad load)
+{
+    return load == ThermalLoad::Severe     ? "while the game is played the background work waits (a place's loading goes on)"
+           : load == ThermalLoad::Elevated ? "while the game is played the background work takes one thread"
+                                           : "the background work takes its normal share of the cores";
 }
 
 } // namespace storm::effects

@@ -60,10 +60,18 @@ int main()
 
     const float nan = std::nanf("");
     check(!thermal_hot(false, 0, 0.5f), "cool");
-    check(thermal_hot(false, 2, 0.f), "moderate is elevated telemetry");
+    check(thermal_hot(false, 2, 0.f), "moderate is elevated");
     check(thermal_hot(false, 0, 0.95f), "headroom flags elevated load early");
-    check(thermal_hot(true, 0, 0.8f), "telemetry hysteresis retains elevated load");
-    check(!thermal_hot(true, 0, 0.7f), "telemetry clears below the lower threshold");
+    check(thermal_hot(true, 0, 0.8f), "hysteresis retains elevated load");
+    check(!thermal_hot(true, 0, 0.7f), "clears below the lower threshold");
     check(!thermal_hot(false, 1, nan), "no forecast: the status decides");
+    // What heat asks of the background work while the game is played.
+    check(thermal_load(false, 1) == ThermalLoad::Normal, "light status, no forecast: normal");
+    check(thermal_load(true, 1) == ThermalLoad::Elevated, "a hot forecast under MODERATE: elevated");
+    check(thermal_load(true, 2) == ThermalLoad::Elevated, "moderate: elevated");
+    check(thermal_load(true, 3) == ThermalLoad::Severe && thermal_load(true, 5) == ThermalLoad::Severe, "severe and above");
+    check(background_threads(ThermalLoad::Normal, 2) == 2, "cool: the normal share");
+    check(background_threads(ThermalLoad::Elevated, 2) == 1, "hot: one thread");
+    check(background_threads(ThermalLoad::Severe, 2) == 0, "severe: none");
     std::puts("thermal_api: ok");
 }

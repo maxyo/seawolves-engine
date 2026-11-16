@@ -34,6 +34,7 @@
 #include "v_sound_service.h"
 #include "animation.h"
 #include "fs.h"
+#include "platform/frame_work.hpp"
 #include "platform/host_hooks.hpp"
 #include "profiler.hpp"
 #ifdef STORM_TRACY
@@ -800,6 +801,7 @@ int main(int argc, char *argv[])
             // is read in this iteration, together with the activity's own queue.
             {
                 STORM_PROFILE_ZONE("UI host: input");
+                const storm::platform::frame_work::Scope hudInput(storm::platform::frame_work::Phase::Hud);
                 storm::android::ui::tick();
             }
             // A pinch acts only in the frame it came for (android_camera_zoom.hpp).
@@ -1196,6 +1198,7 @@ int main(int argc, char *argv[])
                     storm::android::mobileScreen.empty();
                 {
                     STORM_PROFILE_ZONE("HUD adapter: sea orders");
+                    const storm::platform::frame_work::Scope hudSeaOrders(storm::platform::frame_work::Phase::Hud);
                     // Asks the scripts only while the menu is open or when the ship icons were told their list changed (SeaOrdersRefreshGate).
                     storm::android::pollSeaOrders(storm::android::seaOrdersReady(gameplayReady));
                     // Detect Activity replacement before accepting any queued action.
@@ -1209,6 +1212,7 @@ int main(int argc, char *argv[])
                 }
                 {
                     STORM_PROFILE_ZONE("HUD adapter: land commands");
+                    const storm::platform::frame_work::Scope hudLandCommands(storm::platform::frame_work::Phase::Hud);
                     // Asks the scripts only when the land interface was told its list changed (LandRefreshGate).
                     storm::android::pollLandCommands(storm::android::landCommandsReady(gameplayReady));
                     storm::android::publishLandCommands();
@@ -1219,6 +1223,7 @@ int main(int argc, char *argv[])
                     }
                 }
                 STORM_PROFILE_ZONE("HUD adapter: gameplay, combat, map, ship");
+                const storm::platform::frame_work::Scope hudGameplay(storm::platform::frame_work::Phase::Hud);
                 auto gameplaySnapshot = storm::android::readGameplaySnapshot(gameplayReady);
                 if (!gameplayReady)
                     gameplaySnapshot.blocked = notReady(); // the same reason as the blocked branch above: one state per loop

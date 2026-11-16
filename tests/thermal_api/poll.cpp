@@ -108,10 +108,30 @@ int main()
     check(std::strcmp(background_wait_reason(), "lifecycle hold") == 0, "explicit lifecycle hold still blocks");
     hold_background_work(nullptr);
     check(background_wait_reason() == nullptr, "lifecycle release does not wait for cooling");
+    // Heat holds the work only at SEVERE and only while the game is played; a place's loading goes on.
+    forecast = .7f; now_ms += 10000;
+    check(!device_hot(), "cool again");
+    background_play(true);
+    status = 2; now_ms += 1000;
+    check(thermal_load() == ThermalLoad::Elevated && background_wait_reason() == nullptr, "moderate in play: one thread, no pause");
+    status = 3; now_ms += 1000;
+    check(thermal_load() == ThermalLoad::Severe, "severe is read");
+    check(background_wait_reason() == kThermalWaitReason, "severe while the game is played holds the background work");
+    check(SceneCooling(true, false, background_wait_reason()), "a reveal does not wait for work that waits to cool");
+    background_play(false);
+    check(background_wait_reason() == nullptr, "severe while a place loads does not hold its work");
+    background_play(true);
+    status = 1; now_ms += 1000;
+    check(background_wait_reason() == nullptr, "cooled below severe: the work goes on");
+    background_play(false);
+    bool said = false;
+    for (const auto &line : logs)
+        said = said || (line.find("thermal status: severe") != std::string::npos && line.find("background work waits") != std::string::npos);
+    check(said, "the severe status is logged with what it asks of the background work");
     for (const auto &line : logs)
     {
         check(line.find("background work paused") == std::string::npos, "telemetry does not falsely log a pause");
         check(line.find("waiting to cool") == std::string::npos, "telemetry does not falsely log cooling");
     }
-    std::puts("thermal production polling/gate: telemetry retained, hot status/forecast allowed, explicit holds preserved");
+    std::puts("thermal production polling/gate: hot status/forecast never pause, severe pauses in play only, explicit holds preserved");
 }

@@ -11,6 +11,7 @@
 #include "compiler.h"
 #include "controls.h"
 #include "fs.h"
+#include "platform/frame_work.hpp"
 #include "platform/host_hooks.hpp"
 #include "profiler.hpp"
 #include "save_file.hpp"
@@ -233,6 +234,7 @@ bool CoreImpl::Run()
 
     {
         STORM_PROFILE_ZONE("script: frame");
+        const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Script);
         Compiler->ProcessFrame(Timer.GetDeltaTime());
         Compiler->ProcessEvent("frame");
     }
@@ -242,12 +244,14 @@ bool CoreImpl::Run()
 
     {
         STORM_PROFILE_ZONE("save/load state");
+        const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Load);
         ProcessStateLoading();
         ReportFailedLoad();
     }
 
     {
         STORM_PROFILE_ZONE("services: run start");
+        const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Services);
         ProcessRunStart(SECTION_ALL);
     }
     if (stopFrameProcessing_)
@@ -268,6 +272,7 @@ bool CoreImpl::Run()
 
     {
         STORM_PROFILE_ZONE("controls");
+        const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Controls);
         if (Controls)
             Controls->Update(Timer.rDelta_Time);
 
@@ -279,6 +284,7 @@ bool CoreImpl::Run()
 
     {
         STORM_PROFILE_ZONE("services: run end (present)");
+        const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Present);
         ProcessRunEnd(SECTION_ALL);
     }
 
@@ -626,11 +632,13 @@ uint32_t CoreImpl::PostEvent(const char *Event_name, uint32_t post_time, const c
 VDATA *CoreImpl::Event(const std::string_view &event_name)
 {
     MESSAGE message;
+    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Script);
     return Compiler->ProcessEvent(event_name.data(), message);
 }
 
 VDATA *CoreImpl::Event(const std::string_view &event_name, MESSAGE &message)
 {
+    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Script);
     return Compiler->ProcessEvent(event_name.data(), message);
 }
 
@@ -737,6 +745,7 @@ void CoreImpl::ProcessExecute()
 {
     uint64_t ticks;
     STORM_PROFILE_ZONE("execute: game logic, physics");
+    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Execute);
 
     ProcessRunStart(SECTION_EXECUTE);
 
@@ -747,6 +756,7 @@ void CoreImpl::ProcessExecute()
         if (auto *ptr = core.GetEntityPointerSafe(id))
         {
             STORM_PROFILE_ENTITY(*ptr);
+            const storm::platform::frame_work::EntityScope entity(typeid(*ptr), false);
             ptr->ProcessStage(Entity::Stage::execute, deltatime);
         }
     }
@@ -758,6 +768,7 @@ void CoreImpl::ProcessRealize()
 {
     uint64_t ticks;
     STORM_PROFILE_ZONE("realize: render submit");
+    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Realize);
     ProcessRunStart(SECTION_REALIZE);
 
     const auto deltatime = Timer.GetDeltaTime();
@@ -767,6 +778,7 @@ void CoreImpl::ProcessRealize()
         if (auto *ptr = core.GetEntityPointerSafe(id))
         {
             STORM_PROFILE_ENTITY(*ptr);
+            const storm::platform::frame_work::EntityScope entity(typeid(*ptr), true);
             ptr->ProcessStage(Entity::Stage::realize, deltatime);
         }
     }

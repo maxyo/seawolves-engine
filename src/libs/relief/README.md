@@ -27,8 +27,9 @@ lists a game's ×2 targets, `--x2` makes them (host renders).
 ## Where the maps are made
 
 In the game process, lazily (renderer_bgfx `src/effects/relief_generator.hpp`): a texture loaded without its map is
-requested; one worker thread (nice 10, onnxruntime on all cores but two, paused by explicit renderer holds;
-thermal status is telemetry) makes the most recently drawn first, then the other required loaded textures.
+requested; one worker thread (nice 10; while the game is played onnxruntime on a quarter of the cores, at most two,
+one when the device is hot, paused at thermal status SEVERE and by explicit renderer holds; all cores while a place
+loads) makes the most recently drawn first, then the other required loaded textures.
 Normal/gloss and ×2 maps required by scene loading are prepared before the readiness gate reveals the scene;
 textures loaded later still request their own missing maps. After a location is revealed, its direct neighbours (the
 locations and the island's sea its exits lead to: `render::SetEffectsNeighbours`, from the location's script

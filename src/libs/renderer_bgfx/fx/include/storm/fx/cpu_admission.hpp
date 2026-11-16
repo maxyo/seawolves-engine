@@ -12,17 +12,35 @@
 namespace storm::fx {
 // Shared CPU work admission. Exact inference permits reflect its immutable ORT
 // pool; bake pieces use one permit each. FIFO, cancellation polled while parked.
+//
+// Two budgets. Under a place's opaque loading picture the work takes every core: nothing is played and the load
+// ends sooner. While the game is played it takes the gameplay limit: a quarter of the cores, at most two (six of
+// eight cores at full load next to the game brought the owner's phone to thermal status SEVERE in a minute and a
+// half and its GPU to throttle), and less when the renderer says the device is hot (set_gameplay_limit: one thread,
+// or none, effects/thermal.hpp). A limit of none admits nothing new until it rises or a place loads.
 class CpuAdmission {
  public:
-    explicit CpuAdmission(unsigned cores = std::thread::hardware_concurrency()) : cores_(std::max(1u, cores)) {}
+    explicit CpuAdmission(unsigned cores = std::thread::hardware_concurrency())
+        : cores_(std::max(1u, cores)), limit_(normal_gameplay_threads()) {}
     struct Stats { unsigned phase_cap, helper_ceiling, reserved, reserved_peak; };
-    Stats stats() const { std::lock_guard lock(mutex_); return {opaque_ ? cores_ : gameplay_threads(), cores_, used_, peak_}; }
+    Stats stats() const { std::lock_guard lock(mutex_); return {opaque_ ? cores_ : limit_, cores_, used_, peak_}; }
     unsigned maximum_threads() const { return cores_; }
     size_t queued() const { std::lock_guard lock(mutex_); return queue_.size(); }
-    unsigned gameplay_threads() const { return cores_ > 2 ? cores_ - 2 : 1; }
+    unsigned normal_gameplay_threads() const { return std::clamp(cores_ / 4, 1u, 2u); }
+    unsigned gameplay_threads() const { std::lock_guard lock(mutex_); return limit_; }
+    // The threads the background work may take while the game is played; 0: none (see above). True when it changed.
+    bool set_gameplay_limit(unsigned threads) {
+        { std::lock_guard lock(mutex_);
+          threads = std::min(threads, cores_);
+          if (limit_ == threads) return false;
+          limit_ = threads; }
+        wake_.notify_all();
+        return true;
+    }
+    // The pool size of a new job: never none (a job that may not start waits in acquire).
     unsigned threads() const {
         std::lock_guard lock(mutex_);
-        return opaque_ ? cores_ : gameplay_threads();
+        return opaque_ ? cores_ : std::max(1u, limit_);
     }
     // Generation changes invalidate queued pre-admission selection. No caller
     // waits here; only the relief worker waits for the first real stock Present.
@@ -68,7 +86,8 @@ class CpuAdmission {
             }
             // A job admitted during loading may finish its existing immutable
             // pool after reveal. New jobs use threads(), never a smaller lease.
-            const unsigned limit = std::max(count, opaque_ ? cores_ : gameplay_threads());
+            // With no gameplay threads nothing is admitted, whatever its pool.
+            const unsigned limit = opaque_ ? std::max(count, cores_) : limit_ ? std::max(count, limit_) : 0;
             if (queue_.front() == id && used_ + count <= limit) {
                 queue_.pop_front(); used_ += count; peak_ = std::max(peak_, used_);
                 lock.unlock(); wake_.notify_all();
@@ -85,7 +104,7 @@ class CpuAdmission {
     const unsigned cores_;
     mutable std::mutex mutex_;
     std::condition_variable wake_;
-    unsigned used_ = 0, peak_ = 0;
+    unsigned used_ = 0, peak_ = 0, limit_;
     uint64_t serial_ = 0;
     std::deque<uint64_t> queue_;
     bool opaque_ = false, phase_ = false;

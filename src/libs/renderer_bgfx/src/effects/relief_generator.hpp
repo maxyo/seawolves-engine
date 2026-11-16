@@ -13,10 +13,11 @@
 //     on (set_active), never while the device is hot
 //     (thermal.hpp device_hot) or while the networks wait for the GPU on a CPU detour. Then the worker is idle.
 //     Nothing else of the game is listed or prepared, in any state. The host's storm_relief_cli is separate.
-//   * The worker runs at nice 10. CPU jobs use cores-2 in gameplay and all cores
-//     after a presented opaque stock frame, sharing admission with ray-bake pieces.
-//     The renderer's explicit hold (the automatic graphics preset's measurement) pauses work; device thermal
-//     status/headroom is telemetry only. The models are loaded at the first job and released after 10 s with no work left.
+//   * The worker runs at nice 10. CPU jobs take fx::CpuAdmission's share, with the ray-bake pieces: all cores after a
+//     presented opaque stock frame (a place loads), and while the game is played a quarter of the cores, at most two,
+//     one when the device is hot and none at thermal status SEVERE (thermal.hpp). The renderer's explicit hold (the
+//     automatic graphics preset's measurement) and SEVERE while the game is played pause the work. The models are
+//     loaded at the first job and released after 10 s with no work left.
 // The maps persist: a texture's map is made once per game, method and map size.
 #pragma once
 
@@ -124,7 +125,7 @@ class ReliefGenerator
         double upscale_ms = 0.0;   // their worker time
         double made_ms = 0.0;      // their worker time
         double slowest_ms = 0.0;   // the slowest of them
-        std::string paused;        // why the work waits (the thermal status, the renderer's hold); empty: it may run
+        std::string paused;        // why the work waits (heat while the game is played, the renderer's hold); empty: it may run
         bool working = false;      // a loaded texture is being prepared now
         std::string device;        // where the networks run (relief::Session's provider), once loaded
     };
