@@ -454,7 +454,20 @@ void TownLight::upload_map(Map &map)
         std::copy_n(&normal_sky[from], 4, &normal_sky[to]);
     }
     map.texel_metres = TexelMetres(texels);
-    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, map.game});
+    // The device's largest texture bounds the scale (a town's 512 lightmap at x4 is 2048).
+    int scale = scale_;
+    const int largest = static_cast<int>(bgfx::getCaps()->limits.maxTextureSize);
+    while (scale > 1 && std::max(texels.width, texels.height) * scale > largest)
+        scale /= 2;
+    if (scale != scale_)
+        shim::logf("effects: town light of %s: a %dx%d lightmap at x%d exceeds the device's %d texels: x%d", name_.c_str(),
+                   texels.width, texels.height, scale_, largest, scale);
+    map.scale = scale;
+    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, map.game}, scale);
+    if (map.relight != fx::SunRelight::kNoMap)
+        shim::logf("effects: town light of %s: a %dx%d lightmap relit at x%d (%dx%d), %.1f MB of GPU memory for the town's relight",
+                   name_.c_str(), texels.width, texels.height, scale, texels.width * scale, texels.height * scale,
+                   static_cast<double>(relight_.Bytes()) / (1024.0 * 1024.0));
     map.compose_due = true;
 }
 
@@ -542,7 +555,7 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
             place_is_bake_ = true;
             ++sun_counters_.bake_draws;
         }
-        relight_.BakeVisibility(kComposeView, bake_due->relight, 0.5f * bake_due->texel_metres);
+        relight_.BakeVisibility(kComposeView, bake_due->relight, 0.5f * bake_due->texel_metres / static_cast<float>(bake_due->scale));
         compose_all();
         return;
     }
@@ -567,7 +580,7 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
         {
             fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
             std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
-            relight_.Compose(kComposeView, map.relight, tone, up, 0.5f * map.texel_metres, debug_);
+            relight_.Compose(kComposeView, map.relight, tone, up, 0.5f * map.texel_metres / static_cast<float>(map.scale), debug_);
             map.compose_due = false;
             ++sun_counters_.composes;
             break;
@@ -579,6 +592,20 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
         shim::logf("effects: town light of %s: %zu lightmaps relit for the sun at (%.3f, %.3f, %.3f), %.1f° up", name_.c_str(),
                    maps_.size(), live_sun_[0], live_sun_[1], live_sun_[2],
                    std::asin(std::clamp(live_sun_[1], -1.0f, 1.0f)) * 57.29578f);
+    }
+}
+
+void TownLight::set_scale(int scale)
+{
+    if (scale == scale_)
+        return;
+    scale_ = scale;
+    // Made again at the new size (the game's lightmaps stand in until they are composed).
+    relight_.ClearMaps();
+    for (Map &map : maps_)
+    {
+        map.relight = fx::SunRelight::kNoMap;
+        map.compose_due = true;
     }
 }
 

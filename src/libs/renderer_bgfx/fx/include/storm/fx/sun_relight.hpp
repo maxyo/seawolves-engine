@@ -55,8 +55,11 @@ class SunRelight
 
     using Map = uint32_t;
     static constexpr Map kNoMap = UINT32_MAX;
-    // A lightmap's static inputs and its targets; kNoMap when a span has the wrong size.
-    Map AddMap(const RelightTexels &texels);
+    // A lightmap's static inputs and its targets, `scale` (1, 2, 4) times its texels per side; kNoMap when a span has
+    // the wrong size.
+    Map AddMap(const RelightTexels &texels, int scale);
+    // GPU bytes of the maps' inputs and targets (the log, the sheet's budget).
+    size_t Bytes() const;
     // The relit lightmap (invalid until the map was composed once).
     bgfx::TextureHandle Texture(Map map) const;
     void ClearMaps();
@@ -81,13 +84,15 @@ class SunRelight
   private:
     struct MapData
     {
-        int width = 0, height = 0;
+        int width = 0, height = 0;         // the targets'
+        int src_width = 0, src_height = 0; // the game's lightmap (the inputs')
         bgfx::TextureHandle position = BGFX_INVALID_HANDLE, normal_sky = BGFX_INVALID_HANDLE, game = BGFX_INVALID_HANDLE,
                             target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE, bake_target = BGFX_INVALID_HANDLE;
         bool composed = false, bake_ready = false;
     };
     void EnsureResources();
+    static bgfx::TextureFormat::Enum BakeFormat();
     void Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bool sun, float footprint, bool debug, bool bake);
 
     std::vector<MapData> maps_;

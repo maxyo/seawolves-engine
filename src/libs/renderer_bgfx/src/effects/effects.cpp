@@ -395,6 +395,8 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.visibility = on(v); }},
     {"fx_visibility_debug", "0 off, 1 lit and baked surfaces show the visibility volume (red sky, green open)",
      [](fx::Settings &s, int v) { s.visibility_debug = on(v); }},
+    {"fx_town_light_scale", "1, 2, 4: our town lightmaps' texels per side for each of the game's (finer sun shadow edges)",
+     [](fx::Settings &s, int v) { s.town_light_scale = v >= 4 ? 4 : v >= 2 ? 2 : 1; }},
     {"fx_town_light_debug", "0 off, 1 our town lightmaps show the sun's visibility",
      [](fx::Settings &s, int v) { s.town_light_debug = on(v); }},
     {"fx_point_lights", "4, 8", [](fx::Settings &s, int v) { s.point_lights = static_cast<uint8_t>(v >= 8 ? 8 : 4); }},

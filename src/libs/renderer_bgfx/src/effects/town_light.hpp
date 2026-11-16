@@ -56,6 +56,8 @@ class TownLight
     // Debug view (option fx_town_light_debug): our lightmap shows the sun's visibility it holds (grey) in place of
     // the relit paint, to prove where the hour's sun reaches.
     void set_debug(bool debug);
+    // Our lightmaps' texels per side for each of the game's (fx::Settings::town_light_scale).
+    void set_scale(int scale);
     // The place's lightmapped triangles and lightmaps (empty: none, e.g. at sea, indoors, when leaving).
     void set_lightmaps(std::string_view name, std::span<const std::array<float, 3>> positions,
                        std::span<const std::array<float, 2>> uvs, std::span<const uint32_t> indices,
@@ -112,7 +114,8 @@ class TownLight
         std::vector<uint8_t> game;   // its RGBA8 texels at texels' size
         std::vector<uint8_t> sky;    // per texel
         fx::TownLightTone tone;
-        float texel_metres = 0.0f;   // the world size of one of its texels (the sun is read over that footprint)
+        float texel_metres = 0.0f;   // the world size of one of its texels
+        int scale = 1;               // our texels per side for each of its (the sun is read over one of ours)
         fx::SunRelight::Map relight = fx::SunRelight::kNoMap; // its inputs and target on the GPU
         bool compose_due = true;
     };
@@ -161,6 +164,7 @@ class TownLight
     std::array<float, 3> live_sun_{0.0f, 1.0f, 0.0f};
     fx::Vec3 bake_dir_{0.0f, 1.0f, 0.0f}; // the direction the game's lightmaps were baked with
     bool debug_ = false;
+    int scale_ = 1;
     std::array<uint32_t, 2> counts_{}, last_counts_{};
 };
 

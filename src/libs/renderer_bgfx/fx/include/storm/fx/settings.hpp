@@ -229,6 +229,9 @@ struct Settings
     // With town_light: the town's walls and props without a lightmap relit per pixel the same way (our sun with its
     // shadow, our sky over the game's baked sun and sky; src/effects/town_light.hpp TownWallTone).
     bool town_walls = false;
+    // With town_light: our lightmaps have this many texels per side for each of the game's (1, 2, 4): the hour's sun
+    // shadows are read that much finer than the game's lightmaps hold them (src/effects/town_light.hpp).
+    int town_light_scale = 1;
     bool town_light_debug = false;
     // The location's visibility volume (fx/visibility.hpp: sky visibility, the wet surfaces' shelter) for the lit
     // draws (per-pixel or point lighting); off for A/B comparisons (option fx_visibility).

@@ -17,8 +17,9 @@ uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [1] xyz towards the sun (world), w: 1 = the sun is up
 // [2], [3] the game's sky per bin of ours
 // [4] x: the footprint's radius, y: the offset off the surface, z: depth bias
-// [5] xy: 1 / the lightmap's size, z: 1 = write the sun's visibility (the bake's) instead of the relit paint
-uniform vec4 u_fxRelight[6];
+// [5] xy: 1 / the target's size, z: 1 = write the sun's visibility (the bake's) instead of the relit paint
+// [6] xy: the game lightmap's size, zw: 1 / it
+uniform vec4 u_fxRelight[7];
 
 float gameSky(float k)
 {
@@ -38,16 +39,45 @@ float sunTap(vec3 world)
 
 void main()
 {
-    // The target's texel is the lightmap's: no dependence on how the backend orients a render target.
+    // The target's texel: no dependence on how the backend orients a render target. The target has `scale` times
+    // the game lightmap's texels per side; the inputs are the game's texels, interpolated here (bilinear, over the
+    // texels the lightmap's triangles cover: a texel outside them does not pull a position off the surface).
     vec2 uv = gl_FragCoord.xy * u_fxRelight[5].xy;
-    vec4 game = texture2DLod(s_fxRelightGame, uv, 0.0);
-    vec4 position = texture2DLod(s_fxRelightPosition, uv, 0.0);
-    if (position.w < 0.5)
+    vec2 at = uv * u_fxRelight[6].xy - vec2_splat(0.5);
+    vec2 base = floor(at);
+    vec2 f = at - base;
+    vec2 uv00 = clamp((base + vec2_splat(0.5)) * u_fxRelight[6].zw, vec2_splat(0.0), vec2_splat(1.0));
+    vec2 uv11 = clamp((base + vec2_splat(1.5)) * u_fxRelight[6].zw, vec2_splat(0.0), vec2_splat(1.0));
+    vec2 uvs[4];
+    uvs[0] = uv00;
+    uvs[1] = vec2(uv11.x, uv00.y);
+    uvs[2] = vec2(uv00.x, uv11.y);
+    uvs[3] = uv11;
+    float bilinear[4];
+    bilinear[0] = (1.0 - f.x) * (1.0 - f.y);
+    bilinear[1] = f.x * (1.0 - f.y);
+    bilinear[2] = (1.0 - f.x) * f.y;
+    bilinear[3] = f.x * f.y;
+    vec4 game = vec4_splat(0.0);
+    vec4 position = vec4_splat(0.0);
+    vec4 normalSky = vec4_splat(0.0);
+    float covered = 0.0;
+    for (int i = 0; i < 4; ++i)
+    {
+        game += texture2DLod(s_fxRelightGame, uvs[i], 0.0) * bilinear[i];
+        vec4 p = texture2DLod(s_fxRelightPosition, uvs[i], 0.0);
+        float w = bilinear[i] * p.w;
+        position += vec4(p.xyz * w, w);
+        normalSky += texture2DLod(s_fxRelightNormal, uvs[i], 0.0) * w;
+        covered += w;
+    }
+    if (covered < 1e-4)
     {
         gl_FragColor = game; // outside every triangle: the game's
         return;
     }
-    vec4 normalSky = texture2DLod(s_fxRelightNormal, uv, 0.0);
+    position.xyz /= covered;
+    normalSky /= covered;
     vec4 baked = texture2DLod(s_fxRelightBaked, uv, 0.0);
     vec3 n = normalize(normalSky.xyz * 2.0 - vec3_splat(1.0));
     vec3 sun = u_fxRelight[1].xyz;

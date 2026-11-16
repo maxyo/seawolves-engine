@@ -72,6 +72,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.shadows = ShadowQuality::Low;
         s.town_light = true;
         s.town_walls = true;
+        s.town_light_scale = 2; // a town's 512 lightmap relit at 1024: 12 MB
         s.ao_volume = 2;
         s.lamp_shadows = 8;
         s.lamp_moving = 1;
@@ -108,6 +109,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.shadows = ShadowQuality::Soft;
     s.town_light = true;
     s.town_walls = true;
+    s.town_light_scale = 4; // a town's 512 lightmap relit at 2048: 31 MB, one 4 Mpx compose per sun step
     s.ao_volume = 2; // the owner: the strong look left the rooms too dark
     s.lamp_shadows = 16;
     s.lamp_moving = 2;
