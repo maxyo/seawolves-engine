@@ -53,14 +53,14 @@
     "shortcut": ["mainmenu", "character", "characterscreen", "shipscreen", "journalscreen", "itemsscreen"],
     "presence": ["hidden", "menu", "shown"]
   },
-  "host_actions": ["app-about", "app-exit-to-main-menu", "app-settings"],
+  "host_actions": ["app-about", "app-cache-clear", "app-exit-to-main-menu", "app-settings"],
   "state_channels": {
     "game": ["appSettings", "presentation"],
     "launcher": ["launcher"]
   },
   "settings": {
     "keys": ["fx_preset", "texture_quality", "frame_rate", "pirate_frequency", "ui_scale", "hud_transparency"],
-    "host_facts": ["frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "ui_scale_options"],
+    "host_facts": ["cache_bytes", "cache_clear_pending", "frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "ui_scale_options"],
     "debug": {
       "fx_msaa": [-1, 1, 2, 4],
       "fx_bloom": [-1, 0, 1],

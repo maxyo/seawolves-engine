@@ -402,7 +402,7 @@ static void Settings(const std::string &models)
     router.OnEvent({volume[0]["id"], "commit", "40"});
     ExpectEqual(surface.Last(), prefix + "MUSIC_SLIDE\t-1\tset@12:40", "slider release sets the position");
     Json preset = page[0]["columns"][1]["rows"][0];
-    Expect(page[0]["columns"][1]["rows"].size() == 3 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false &&
+    Expect(page[0]["columns"][1]["rows"].size() == 4 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false &&
                !preset.contains("label") && preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
            "the quality preset, applied at once; no graphics API row (it is in «О программе»): " + preset.dump());
     Expect(preset["hint"] == "<settings.fx_scene_height>",
@@ -431,6 +431,19 @@ static void Settings(const std::string &models)
     router.OnEvent({"app-texture_quality", "change", "2"});
     Expect(surface.props["sections"][0]["columns"][1]["rows"][2]["options"][3]["reason"] == "<settings.texture_ultra_unsupported>",
            "a device without ETC2 or BC textures shows «Ультра» disabled with that reason");
+    const Json cache = page[0]["columns"][1]["rows"][3];
+    Expect(cache["kind"] == "button" && cache["id"] == "app-cache-clear" && cache["label"] == "<settings.cache>" &&
+               cache["display"] == "<settings.cache_clear>" && cache["disabled"] == false,
+           "«Кэш» with its size and «Очистить»: " + cache.dump());
+    surface.commands.clear();
+    router.OnEvent({"app-cache-clear", "click", ""});
+    const Json cleared = surface.props["sections"][0]["columns"][1]["rows"][3];
+    Expect(surface.commands.size() == 1 && surface.commands[0] == "host app-cache-clear " && cleared["disabled"] == true &&
+               cleared["hint"] == "<settings.cache_pending>",
+           "«Очистить» asks the host at once (it clears at the next start) and the row says so: " + Json(surface.commands).dump() + cleared.dump());
+    surface.commands.clear();
+    router.OnEvent({"app-cache-clear", "click", ""});
+    Expect(surface.commands.empty(), "a pending clear is not asked twice");
     surface.commands.clear();
     router.OnEvent({"app-fx_preset", "change", "2"});
     router.OnEvent({"app-frame_rate", "change", "3"});

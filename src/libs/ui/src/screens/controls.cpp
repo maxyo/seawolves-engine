@@ -251,6 +251,29 @@ std::string Fill(std::string text, std::initializer_list<std::string> args)
     return text;
 }
 
+// One decimal with the decimal mark of the language ("2,3").
+std::string Decimal(const Bindings &bindings, double value)
+{
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%.1f", value);
+    std::string text = buffer;
+    const size_t dot = text.find('.');
+    if (dot != std::string::npos)
+        text.replace(dot, 1, bindings.Text("launcher.decimal_mark"));
+    return text;
+}
+
+// A size in GB from a tenth of a GB, else in MB; `scale` (when given) picks the unit, so
+// that "done of total" share one.
+std::string Size(const Bindings &bindings, double bytes, double scale)
+{
+    constexpr double kMiB = 1048576.0, kGiB = 1073741824.0;
+    if ((scale < 0 ? bytes : scale) >= kGiB / 10)
+        return Fill(bindings.Text("launcher.gb"), {Decimal(bindings, bytes / kGiB)});
+    return Fill(bindings.Text("launcher.mb"), {Decimal(bindings, bytes / kMiB)});
+}
+
+
 std::string OneLine(const std::string &text)
 {
     std::string out;

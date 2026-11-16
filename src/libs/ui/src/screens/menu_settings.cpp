@@ -253,6 +253,7 @@ class SettingsScreen final : public Screen
             const bool restart = Known("texture_quality") && AppSettings().is_object() && AppSettings().contains("texture_quality") &&
                                  resolution(draft_["texture_quality"].get<int>()) != resolution(AppSettings()["texture_quality"].get<int>());
             Segment(bindings, graphics, "texture_quality", "settings.texture_quality", {0, 1, 2, 3}, levels, restart);
+            CacheRow(bindings, graphics);
             sections.push_back({"", {sound, graphics}});
         }
         else
@@ -403,12 +404,15 @@ class SettingsScreen final : public Screen
         bindings.On("done", "", [this, &bindings, ok](const Event &) {
             if (draft_.is_object() && draft_ != AppSettings())
             {
-                // The settings only: what the host reports about the device (frame_rate_options, ui_scale_options), whether the preset
+                // The settings only: what the host reports about the device (frame_rate_options, ui_scale_options) and
+                // its cache (cache_bytes, cache_clear_pending), whether the preset
                 // was measured (fx_preset_auto: the host's automatic choice) and the measured scene height
                 // (fx_auto_render_height) are not ones.
                 Json settings = draft_;
                 settings.erase("frame_rate_options");
                 settings.erase("ui_scale_options");
+                settings.erase("cache_bytes");
+                settings.erase("cache_clear_pending");
                 settings.erase("fx_preset_auto");
                 settings.erase("fx_auto_render_height");
                 bindings.SendHost("app-settings", settings.dump());
@@ -421,6 +425,33 @@ class SettingsScreen final : public Screen
     }
 
   private:
+    // «Кэш»: what the game derived and can make again (the host's cache_bytes: -1 while it measures) and «Очистить»,
+    // which the host does at the next start (cache_clear_pending), when nothing of the game holds those files.
+    void CacheRow(Bindings &bindings, Column &column)
+    {
+        if (!draft_.is_object() || !draft_.contains("cache_bytes") || !draft_["cache_bytes"].is_number_integer())
+            return; // a host without the cache report: no row
+        const long long bytes = draft_["cache_bytes"].get<long long>();
+        const bool pending = draft_.value("cache_clear_pending", false);
+        constexpr double kGiB = 1073741824.0; // MB below a whole GB: «118,0 МБ», not «0,1 ГБ»
+        const std::string size = bytes < 0 ? bindings.Text("settings.cache_measuring")
+                                           : Size(bindings, static_cast<double>(bytes), bytes < kGiB ? 0.0 : static_cast<double>(bytes));
+        column.rows.push_back(Json{{"kind", "button"},
+                                   {"id", "app-cache-clear"},
+                                   {"label", Fill(bindings.Text("settings.cache"), {size})},
+                                   {"hint", pending ? bindings.Text("settings.cache_pending") : std::string()},
+                                   {"display", bindings.Text("settings.cache_clear")},
+                                   {"disabled", pending || bytes == 0},
+                                   {"reason", pending ? bindings.Text("settings.cache_pending") : bindings.Text("settings.cache_empty")}});
+        bindings.On("app-cache-clear", "", [this, &bindings](const Event &) {
+            if (draft_.value("cache_clear_pending", false))
+                return;
+            bindings.SendHost("app-cache-clear", "");
+            draft_["cache_clear_pending"] = true; // the host confirms with its next report
+            bindings.Rebuild();
+        });
+    }
+
     // The debug page exists only when the host reports debug overrides (a debuggable app).
     int TabCount() const
     {
