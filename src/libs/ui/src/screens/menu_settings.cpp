@@ -13,6 +13,7 @@
 // decision). Fills the pack screen <s-settings>.
 #include "controls.h"
 
+#include <platform/display_options.hpp>
 #include <platform/pirate_frequency.hpp>
 
 namespace storm::ui::screens
@@ -158,7 +159,31 @@ class SettingsScreen final : public Screen
             game(camera, "CAMERASWING_CHECKBOX");
             if (!camera.rows.empty() && camera.rows.back()["id"] == "CAMERASWING_CHECKBOX-0")
                 camera.rows.back()["label"] = bindings.Text("settings.door_camera_turn"); // the game's «Поворот камеры» reads as any turn
-            sections.push_back({"", {camera}});
+            // «Экран и касания»: the app's display options (platform/display_options.hpp), applied with «Готово». The UI
+            // sizes are the ones the host found the display can fit (ui_scale_options: the designed layout height left).
+            Column screen{bindings.Text("settings.screen_touch")};
+            std::vector<int> scales;
+            Json scaleLabels = Json::array(), transparencies = Json::array();
+            if (draft_.is_object() && draft_.contains("ui_scale_options") && draft_["ui_scale_options"].is_array())
+                for (const Json &scale : draft_["ui_scale_options"])
+                    if (scale.is_number_integer() && storm::android::OneOf(storm::android::kUiScales, scale.get<int>()))
+                    {
+                        scales.push_back(scale.get<int>());
+                        scaleLabels.push_back(std::to_string(scales.back()) + "%");
+                    }
+            for (const int share : storm::android::kHudTransparencies)
+                transparencies.push_back(share == 0 ? bindings.Text("settings.transparency_none") : std::to_string(share) + "%");
+            Segment(bindings, screen, "ui_scale", "settings.ui_scale", scales, scaleLabels, false);
+            // A display with room for no larger size than 100 %: the row stays, disabled, and a tap says why.
+            if (scales.size() < 2 && Known("ui_scale"))
+            {
+                screen.rows.back()["disabled"] = true;
+                screen.rows.back()["reason"] = bindings.Text("settings.ui_scale_no_room");
+            }
+            Segment(bindings, screen, "hud_transparency", "settings.hud_transparency",
+                    std::vector<int>(std::begin(storm::android::kHudTransparencies), std::end(storm::android::kHudTransparencies)),
+                    transparencies, false);
+            sections.push_back({"", {camera, screen}});
         }
         else if (tab_ == 2)
         {
@@ -345,11 +370,12 @@ class SettingsScreen final : public Screen
         bindings.On("done", "", [this, &bindings, ok](const Event &) {
             if (draft_.is_object() && draft_ != AppSettings())
             {
-                // The settings only: what the host reports about the device (frame_rate_options), whether the preset
+                // The settings only: what the host reports about the device (frame_rate_options, ui_scale_options), whether the preset
                 // was measured (fx_preset_auto: the host's automatic choice) and the measured scene height
                 // (fx_auto_render_height) are not ones.
                 Json settings = draft_;
                 settings.erase("frame_rate_options");
+                settings.erase("ui_scale_options");
                 settings.erase("fx_preset_auto");
                 settings.erase("fx_auto_render_height");
                 bindings.SendHost("app-settings", settings.dump());

@@ -790,10 +790,6 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
     {
         host_ = host;
     }
-    void SetDensity(float density) override
-    {
-        density_override_ = density;
-    }
     void SetTarget(uint16_t frame_buffer) override
     {
         target_.idx = frame_buffer;
@@ -818,9 +814,8 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
     {
         if (!metrics.valid || !metrics.width_px || !metrics.height_px)
             return;
-        const float density = density_override_ > 0.f ? density_override_ : metrics.density;
         if (host_)
-            host_->Resize(int(metrics.width_px), int(metrics.height_px), density);
+            host_->Resize(int(metrics.width_px), int(metrics.height_px), metrics.density);
         else
             SetViewport(int(metrics.width_px), int(metrics.height_px));
     }
@@ -1091,7 +1086,6 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
 
     BgfxBackendOptions options_;
     Host *host_ = nullptr;
-    float density_override_ = 0.f;
     double next_frame_delay_ = 0.0;
     bool device_ready_ = true;
     bgfx::FrameBufferHandle target_ = BGFX_INVALID_HANDLE;

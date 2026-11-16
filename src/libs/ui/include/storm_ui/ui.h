@@ -202,6 +202,10 @@ class Host
     // icons, pictures and small controls (a component no larger than a quarter of the screen
     // each way). Backgrounds, panels, rows and lists stay where they are, under it.
     virtual void SetCutouts(const std::vector<Cutout> &cutouts) = 0;
+    // The player's display options («Размер интерфейса», «Прозрачность кнопок»): the layout's dp grow by
+    // `ui_scale` (1 = the display's density; Resize and SetSafeArea keep taking the display's own density and dp),
+    // and the HUD's buttons are drawn at `hud_button_opacity` (1 = as designed).
+    virtual void SetDisplayOptions(float ui_scale, float hud_button_opacity) = 0;
     // One sample of a pointer, in physical pixels. `time` is when it happened, in seconds of
     // the host's clock (Now): platforms pass every sample they have (a move event's historical
     // ones too) with its own time, which drag velocities and flings are measured from.

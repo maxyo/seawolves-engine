@@ -363,7 +363,13 @@ static void Settings(const std::string &models)
 
     router.OnEvent({"tabs", "select", "1"});
     Json controls = surface.props["sections"][0]["columns"];
-    Expect(controls.size() == 1 && controls[0]["title"] == "<settings.camera>", "controls page: the camera");
+    Expect(controls.size() == 2 && controls[0]["title"] == "<settings.camera>" && controls[1]["title"] == "<settings.screen_touch>",
+           "controls page: the camera, the screen and touch");
+    const Json screen = controls[1]["rows"];
+    Expect(screen.size() == 2 && screen[0]["id"] == "app-ui_scale" && screen[0]["selected"] == 0 && screen[0]["restart"] == false && screen[0]["disabled"] == false &&
+               screen[0]["options"] == Json::array({"100%", "115%"}) && screen[1]["id"] == "app-hud_transparency" &&
+               screen[1]["selected"] == 0 && screen[1]["options"] == Json::array({"<settings.transparency_none>", "35%", "60%"}),
+           "«Размер интерфейса»: the sizes the host found the display fits (100 chosen) and «Прозрачность кнопок» none/35/60 %, applied at once: " + screen.dump());
     const Json camera = controls[0]["rows"];
     Expect(camera.size() == 4 && camera[0]["id"] == "camera-sensitivity" && camera[0]["label"] == "<settings.camera_sensitivity>" &&
                camera[0]["value"] == 50 && camera[1]["label"] == "<settings.invert_vertical>" && camera[2]["label"] == "<settings.sea_camera>" &&
@@ -378,6 +384,12 @@ static void Settings(const std::string &models)
     Expect(surface.commands.size() == 2 && surface.commands[0] == prefix + "VMOUSE_SENSITIVITY_SLIDE\t-1\tset@12:80" &&
                surface.commands[1] == prefix + "HMOUSE_SENSITIVITY_SLIDE\t-1\tset@12:80",
            "the one sensitivity sets both game sliders to the same position");
+
+    router.OnEvent({"app-ui_scale", "change", "1"});
+    router.OnEvent({"app-hud_transparency", "change", "2"});
+    Expect(surface.props["sections"][0]["columns"][1]["rows"][0]["selected"] == 1 &&
+               surface.props["sections"][0]["columns"][1]["rows"][1]["selected"] == 2,
+           "display options are a draft");
 
     router.OnEvent({"tabs", "select", "2"});
     Json page = surface.props["sections"];
@@ -412,13 +424,27 @@ static void Settings(const std::string &models)
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
-                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"pirate_frequency\":100,\"texture_degradation\":0}" &&
+                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"pirate_frequency\":100,\"texture_degradation\":0,\"ui_scale\":115}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the app options to the host and confirms the game's settings; the measured-preset flag "
            "fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");
     surface.commands.clear();
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 1, "unchanged app options are not sent again");
+    {
+        // A display with room for no size above 100 %: the UI size row stays, disabled, with the reason.
+        FakeSurface small_surface;
+        Router small(small_surface);
+        Json reported = Json::parse(std::ifstream(models + "/app-settings.json", std::ios::binary));
+        reported["ui_scale_options"] = Json::array({100});
+        small.SetState("appSettings", reported);
+        small.SetInterface(Load(models, "settings.json"));
+        small.OnEvent({"tabs", "select", "1"});
+        const Json size = small_surface.props["sections"][0]["columns"][1]["rows"][0];
+        Expect(size["id"] == "app-ui_scale" && size["disabled"] == true && size["reason"] == "<settings.ui_scale_no_room>" &&
+                   size["options"] == Json::array({"100%"}),
+               "a display without room for a larger UI shows the size row disabled with its reason: " + size.dump());
+    }
     {
         // A debuggable host reports single effect overrides: «Отладка эффектов» has the FSR / SMAA
         // rows and «Замер GPU» (fx_gpu_profile), handed to the host with «Готово» like the others.

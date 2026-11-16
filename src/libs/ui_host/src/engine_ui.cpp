@@ -11,6 +11,7 @@
 #include "logging.hpp"
 #include "platform/android_ui.hpp"
 #include "platform/android_ui_sink.hpp"
+#include "platform/display_options.hpp"
 
 #include "storm_ui/asset_files.h"
 #include "storm_ui/backend_bgfx.h"
@@ -396,7 +397,25 @@ class EngineUi
             const std::lock_guard lock(inbox_mutex_);
             platform_states_[channel] = json;
         }
+        if (channel == "appSettings")
+            DisplayOptionsFrom(json);
         Post([channel = std::move(channel), json = std::move(json)](storm::ui::Host &host) { host.SetState(channel, json); });
+    }
+
+    // «Размер интерфейса» and «Прозрачность кнопок» of the app's settings (platform/display_options.hpp), to the host.
+    void DisplayOptionsFrom(const std::string &app_settings)
+    {
+        const storm::android::DisplayOptions options = storm::android::ReadDisplayOptions(app_settings);
+        if (!options.problems.empty())
+            __android_log_print(ANDROID_LOG_ERROR, kTag, "display options: %s", options.problems.c_str());
+        const float scale = static_cast<float>(options.ui_scale) / 100.0f;
+        const float opacity = 1.0f - static_cast<float>(options.hud_transparency) / 100.0f;
+        if (shown_ui_scale_ != options.ui_scale || shown_hud_transparency_ != options.hud_transparency)
+            __android_log_print(ANDROID_LOG_INFO, kTag, "display options: UI size %d%%, HUD buttons %d%% see-through", options.ui_scale,
+                                options.hud_transparency);
+        shown_ui_scale_ = options.ui_scale;
+        shown_hud_transparency_ = options.hud_transparency;
+        Post([scale, opacity](storm::ui::Host &host) { host.SetDisplayOptions(scale, opacity); });
     }
 
     // Safe-area insets in pixels; the host takes dp.
@@ -516,6 +535,11 @@ class EngineUi
         }
         for (const auto &[channel, json] : platform)
             host_->SetState(channel, json);
+        if (const auto settings = platform.find("appSettings"); settings != platform.end())
+        {
+            const storm::android::DisplayOptions options = storm::android::ReadDisplayOptions(settings->second);
+            host_->SetDisplayOptions(static_cast<float>(options.ui_scale) / 100.0f, 1.0f - static_cast<float>(options.hud_transparency) / 100.0f);
+        }
         if (interface_)
             host_->SetInterface(*interface_);
         else if (!screen_.empty())
@@ -751,6 +775,7 @@ class EngineUi
     std::array<float, 4> safe_area_{};
     bool has_safe_area_ = false;
     std::vector<storm::ui::Cutout> cutouts_;
+    int shown_ui_scale_ = -1, shown_hud_transparency_ = -1; // the display options last logged
 };
 
 } // namespace

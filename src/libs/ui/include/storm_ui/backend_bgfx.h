@@ -45,8 +45,6 @@ class BgfxBackend : public RenderBackend, public storm::render::FrameClient
     // The host this backend draws: OnUiRender calls Host::Frame(), OnSurfaceChanged calls
     // Host::Resize(). Null detaches.
     virtual void AttachHost(Host *host) = 0;
-    // Pixels per dp used on surface changes instead of SurfaceMetrics::density (0: use it).
-    virtual void SetDensity(float density) = 0;
     // Render target of the final UI image: a bgfx::FrameBufferHandle index, or 0xffff for the
     // surface back buffer (default). With a frame buffer, BeginFrame(true) clears it first.
     virtual void SetTarget(uint16_t frame_buffer) = 0;

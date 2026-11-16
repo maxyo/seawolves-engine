@@ -331,6 +331,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 *error = "RmlUi context failed";
             return false;
         }
+        display_density_ = config.density;
         context_->SetDensityIndependentPixelRatio(config.density);
         // UI strings: one table per shipped language, chosen by the game language.
         const Json string_files = pack.value("strings", Json::object());
@@ -405,10 +406,27 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         changed_ = true;
         config_.width = width;
         config_.height = height;
-        config_.density = density;
+        display_density_ = density;
+        config_.density = density * ui_scale_; // every dp of the layout, the touch slop and the cutouts' conversion
         backend_->SetViewport(width, height);
         context_->SetDimensions({width, height});
-        context_->SetDensityIndependentPixelRatio(density);
+        context_->SetDensityIndependentPixelRatio(config_.density);
+    }
+
+    void SetDisplayOptions(float ui_scale, float hud_button_opacity) override
+    {
+        if (ui_scale != ui_scale_)
+        {
+            ui_scale_ = ui_scale;
+            Resize(config_.width, config_.height, display_density_);
+            ApplySafeArea(); // the insets came in the display's dp
+            cutouts_changed_ = true;
+        }
+        if (hud_button_opacity != hud_button_opacity_)
+        {
+            hud_button_opacity_ = hud_button_opacity;
+            ApplyHudButtonOpacity();
+        }
     }
 
     void SetCutouts(const std::vector<Cutout> &cutouts) override
@@ -423,7 +441,31 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void SetSafeArea(float left, float top, float right, float bottom) override
     {
-        const Json safe = {{"left", left}, {"top", top}, {"right", right}, {"bottom", bottom}};
+        display_safe_ = {left, top, right, bottom};
+        ApplySafeArea();
+    }
+
+    // «Прозрачность кнопок»: a class on the HUD document's body the HUD buttons' style answers,
+    // hud-buttons-<opacity percent> (none at full opacity; the pack styles each offered step).
+    void ApplyHudButtonOpacity()
+    {
+        if (!hud_document_)
+            return;
+        if (!hud_button_class_.empty())
+            hud_document_->SetClass(hud_button_class_, false);
+        const int percent = static_cast<int>(std::lround(hud_button_opacity_ * 100.0f));
+        hud_button_class_ = percent >= 100 ? std::string() : "hud-buttons-" + std::to_string(percent);
+        if (!hud_button_class_.empty())
+            hud_document_->SetClass(hud_button_class_, true);
+        changed_ = true;
+    }
+
+    // The insets in the layout's dp: the display's dp shrink by the player's UI scale.
+    void ApplySafeArea()
+    {
+        const auto [left, top, right, bottom] = display_safe_;
+        const float scale = ui_scale_ > 0.0f ? ui_scale_ : 1.0f;
+        const Json safe = {{"left", left / scale}, {"top", top / scale}, {"right", right / scale}, {"bottom", bottom / scale}};
         if (safe == safe_)
             return;
         safe_ = safe;
@@ -1160,6 +1202,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 Error("UI pack has no HUD document");
                 return false;
             }
+            ApplyHudButtonOpacity();
             if (overlay_)
                 overlay_->PullToFront();
         }
@@ -2204,6 +2247,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::set<int> held_pointers_;
     Json settings_ = Json::object();
     Json safe_ = {{"left", 0}, {"top", 0}, {"right", 0}, {"bottom", 0}};
+    std::array<float, 4> display_safe_{}; // SetSafeArea's insets in the display's dp
+    float display_density_ = 1.0f;        // Resize's density; config_.density is it times ui_scale_
+    float ui_scale_ = 1.0f;
+    float hud_button_opacity_ = 1.0f;
+    std::string hud_button_class_; // the class ApplyHudButtonOpacity set on the HUD document
     std::unordered_map<int, Capture> captures_;
     std::vector<Rml::ObserverPtr<Rml::Element>> ticking_;
     std::vector<Toast_> toasts_;
