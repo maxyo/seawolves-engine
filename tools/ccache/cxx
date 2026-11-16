@@ -9,6 +9,10 @@ build. Such a command is split here: every source is compiled on its own with `-
 parallel), then the objects are linked with the original command. Commands this script does not
 understand (stdin, -x, response files, preprocess/assembly only) run unchanged through the launcher;
 STORM_CXX_NO_SPLIT=<reason> turns the split off (printed on every call).
+
+STORM_CXX_DEPS=<file> (set by tools/ci/run_host_tests.py for each check): every compile appends the files it
+read (the compiler's -MD list), one path per line; a command whose inputs cannot be listed appends
+"!incomplete". tools/ci/affected.py selects such a check by what it really compiles.
 """
 import concurrent.futures
 import os
@@ -32,7 +36,34 @@ LINK_PREFIX = ('-l', '-L', '-Wl,', '-static', '-shared', '-rdynamic', '-pie', '-
 NO_SPLIT = {'-c', '-S', '-E', '-M', '-MM', '-x', '-', '-fsyntax-only', '--version', '-v', '-###'}
 
 
+deps_log = os.environ.get('STORM_CXX_DEPS')
+
+
+def record(lines):
+    with open(deps_log, 'a') as log:
+        log.write(''.join(line + '\n' for line in lines))
+
+
+def record_depfile(depfile):
+    """Appends the files of a Make-style dependency file (-MD -MF) to STORM_CXX_DEPS."""
+    text = Path(depfile).read_text().replace('\\\n', ' ')
+    paths = []
+    for rule in text.splitlines():
+        if ':' in rule:
+            paths += [os.path.realpath(p) for p in rule.split(':', 1)[1].split()]
+    record(paths)
+
+
 def run_unchanged():
+    if deps_log and any(not a.startswith('-') and a.endswith(SOURCE) for a in args):
+        if '-c' in args and not any(a.startswith('-M') for a in args):
+            with tempfile.TemporaryDirectory(prefix='.cxx-deps-') as directory:
+                depfile = str(Path(directory) / 'deps.d')
+                code = subprocess.run(launcher + args + ['-MD', '-MF', depfile]).returncode
+                if code == 0:
+                    record_depfile(depfile)
+                sys.exit(code)
+        record(['!incomplete'])  # stdin, preprocessing, response files: inputs not listed
     os.execv(launcher[0], launcher + args)
 
 
@@ -77,7 +108,11 @@ with tempfile.TemporaryDirectory(prefix='.cxx-', dir=out_dir) as objects_dir:
     objects = {source: str(Path(objects_dir) / f'{n}-{Path(source).stem}.o') for n, source in enumerate(sources)}
 
     def compile_one(source):
-        return subprocess.run(launcher + compile_flags + ['-c', source, '-o', objects[source]]).returncode
+        deps = ['-MD', '-MF', objects[source] + '.d'] if deps_log else []
+        code = subprocess.run(launcher + compile_flags + ['-c', source, '-o', objects[source], *deps]).returncode
+        if code == 0 and deps_log:
+            record_depfile(objects[source] + '.d')
+        return code
 
     jobs = min(len(sources), int(os.environ.get('STORM_CXX_JOBS', '4')))
     with concurrent.futures.ThreadPoolExecutor(jobs) as pool:

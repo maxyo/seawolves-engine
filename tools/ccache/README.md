@@ -69,6 +69,10 @@ instead of a cold compile.
   removed afterwards (only the binary is used).
 - The shaders that binary compiles are cached like objects, by content, across build directories and
   worktrees: `src/libs/renderer_bgfx/cmake/shaderc_cache.py` (`~/.cache/storm-deps/shader-cache`).
+  Their blobs go into the program through the assembler's `.incbin` (`renderer_bgfx/cmake/shader_blobs.py`), not as
+  C arrays: a shader edit rebuilds one tiny object, not a 120 MB translation unit.
+- Android Release (ThinLTO) links with lld's ThinLTO cache, `~/.cache/storm-deps/thinlto-cache` (pruned by lld to
+  8 GB / 7 days, `cmake/android.cmake`): a relink code-generates only the modules that changed, in any worktree.
 
 ## Is this build warm?
 
@@ -118,3 +122,5 @@ are cached, and so are their compile-and-link commands (`$CXX check.cpp a.cpp -o
 cannot cache those, so `cxx` splits them into one cached `-c` compile per source (in parallel) and the
 original link. A source generated into a fresh temporary directory still misses (its path or its
 includes differ on every run). `STORM_CXX_NO_SPLIT="<reason>"` turns the split off, loudly.
+With `STORM_CXX_DEPS=<file>` (set per check by `tools/ci/run_host_tests.py` and the gate's game checks) every
+compile appends the files it read (`-MD`) to that file; `tools/ci/affected.py` selects the check by them.

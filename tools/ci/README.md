@@ -21,9 +21,15 @@ It plans from `git diff origin/develop...HEAD` and prints one line per stage, `R
 `SKIP` with the reason; skipped host checks are counted on the console and listed with their reasons in
 `build/gate/plan.txt`. Stages run in parallel, each into `build/gate/<stage>.log`:
 
-- **host_checks**: the affected `tests/*/run.py` (`run_host_tests.py --only ...`, longest first);
+- **host_checks**: the affected `tests/*/run.py` (`run_host_tests.py --only ...`, longest first), as many at once
+  as `--jobs` (default 0: the free cores, cores minus the 1-minute load average, 3 to 8; the same number goes to
+  renderer_bgfx's own parallel checks as `STORM_CHECK_JOBS`);
 - **game_checks**: the affected `tools/game_checks/*` on the local game (`$STORM_GAME_DIR`, default
-  `<workspace>/local-testing/extracted/app`; missing game = the gate fails, it is not skipped);
+  `<workspace>/local-testing/extracted/app`; missing game = the gate fails, it is not skipped), in parallel. A
+  pass is remembered in `build/game-checks/results/<name>.json` with the digest of its inputs: its own files, every
+  file its compiles read (a CMake check: its Ninja graph; a direct one: `tools/ccache/cxx` `STORM_CXX_DEPS`), the
+  compiler and the game (path, size and time of every file). The same inputs again print `CACHED PASS` with the
+  time of that pass instead of running (far_lod: 6-10 minutes). A failure is never remembered;
 - **ui_host**: `build/ui-host` (src/libs/ui) build + ctest;
 - **android**: `build/android-engine`, arm64 Release (LTO) `engine`, SDK/NDK from `$STORM_CI_WORK`;
 - **boot** (`--boot auto|on|off`, off by default locally; the land queue uses auto): `boot_stage.py`, below.
@@ -51,18 +57,26 @@ build, sweep and total time), the sweep's report in `build/gate/boot/`.
 
 Rules of `affected.py` (also in its docstring):
 
-- `*.md` affects nothing. `.github/`, `tools/ci/`, `tools/ccache/`, `cmake/`, the top-level
-  `CMakeLists.txt` and `tests/<file>` affect everything.
+- `*.md` affects nothing; `.github/` (run by GitHub after the push) affects nothing here. `tools/ccache/` and
+  `tests/<file>` affect everything; `tools/ci/run_host_tests.py` and what it fetches for every check
+  (`cmake/glm.cmake`, `tools/android/engine_sources.py`, `tools/android/ci_dependencies.sh`) every host check.
+  The rest of `tools/ci/` (the checks naming it: `tests/ci_*`), `cmake/` and the top-level `CMakeLists.txt` (the
+  builds that read them as configure inputs) are files like any other.
 - A host check is affected when its directory changed or its files name the changed file, its directory or
   its component (`src/libs/<lib>/`, `src/apps/<app>/`, `<top>/<name>/`). A CMake check already built in
-  `build/host-ci` is narrowed by its Ninja graph: only changed files the build reads count.
+  `build/host-ci` is decided by its Ninja graph: only changed files the build reads count. A check that compiles
+  through `$CXX` itself is decided by what its last passing run compiled (`build/host-ci/deps/<name>.txt`, written
+  by `run_host_tests.py` from `tools/ccache/cxx`): a changed file on that list, its exact path spelled by the
+  check, or its directory spelled by a script that scans it (or any spelling, for a file that is not C/C++).
+  Spelling `-I src/libs/renderer_bgfx/src` no longer selects a check for every renderer change. Without a
+  trusted list (never passed here, or its scripts call `c++`/`cmake` directly) the name rule above applies.
 - A build is affected when a changed file is in its Ninja graph (dependency log, inputs, configure inputs)
   or is a new file in a directory the build reads; without a built directory it always runs.
 - A game-data check is affected when a header its `check.cpp` includes changed (compiler `-MM`), or a file of a
   library it links: its graph in `build/game-checks/<name>` once built, else what its files name.
 - Names match with or without the final slash (`src/libs/relief"`), never as the start of a longer name.
 - The boot stage: an input of `build/boot-asan` (not built yet: any change under `src/`, `android/`), `src/techniques`
-  (read at run time by no build), `tools/scene_sweep`, `boot_stage.py`. A source file that selects no host or
+  (read at run time by no build), `tools/scene_sweep`, `boot_stage.py`, `ubsan.supp`. A source file that selects no host or
   game-data check selects the boot stage ("owned by no check"): no change selects nothing (`tests/ci_affected`).
 
 Examples of what still runs (2026-11-14): a change of `src/libs/core/src/attributes.cpp` or `compiler.cpp`

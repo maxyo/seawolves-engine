@@ -8,11 +8,20 @@ build it leaves out is reported with the reason.
 
 Rules (README.md here):
 - Markdown files (*.md) are documentation: they affect nothing.
-- A change to the host CI itself (.github, tools/ci, tools/ccache, cmake, the top-level CMakeLists.txt,
-  tests/<file>) selects everything.
+- The compiler launchers (tools/ccache) and tests/<file> select everything. The host check runner and what it
+  fetches for every check (tools/ci/run_host_tests.py, cmake/glm.cmake, tools/android/engine_sources.py,
+  tools/android/ci_dependencies.sh) select every host check. .github/ (the GitHub workflows) selects nothing
+  here. The rest of tools/ci, cmake/ and the top-level CMakeLists.txt are files like any other: the checks
+  that name them, the build graphs that read them (CMake configure inputs), the boot stage for its own tools.
 - A host check that is a CMake project and has been built in --work is decided by its build graph: it
   is affected when a changed file is an input of that build (Ninja's dependency log and build.ninja),
   a new file lies in a directory the build reads, or its own directory changed.
+- A host check that runs the compiler itself through $CXX (tools/ccache/cxx) and passed in --work has the list
+  of files its compiles read (<work>/deps/<name>.txt, tools/ci/run_host_tests.py): it is affected when a
+  changed file is on that list, a new file lies in a directory on it, its files spell the changed file's path,
+  or its directory for a file that is not compiled (C/C++, shader: data read at run time), or a script lists
+  that directory (rglob/walk: its subtree; glob/iterdir/listdir: its files). A check whose scripts call a
+  compiler other than $CXX, or that compiled nothing through it, has no trusted list: the next rule.
 - Any other host check is affected when its own directory changed, or when its files name a changed
   file, the changed file's directory, or the changed file's component (src/libs/<name>, src/apps/<name>,
   <top>/<name>), with or without the final slash (`src/libs/relief"`, `root/'src/libs/relief'`), but
@@ -39,7 +48,18 @@ import subprocess
 import sys
 
 root = Path(__file__).resolve().parents[2]
-EVERYTHING = ('.github/', 'tools/ci/', 'tools/ccache/', 'cmake/')
+EVERYTHING = ('tools/ccache/',)
+# Read by tools/ci/run_host_tests.py for every check (the runner itself, the pinned sources and GLM it fetches).
+ALL_HOST_CHECKS = ('tools/ci/run_host_tests.py', 'cmake/glm.cmake', 'tools/android/engine_sources.py',
+                   'tools/android/ci_dependencies.sh')
+# The GitHub workflows: run by GitHub after the push, read by nothing here.
+NOT_LOCAL = ('.github/',)
+# Compiled sources (C/C++, bgfx shaders): a check that does not compile them does not read them.
+COMPILED = ('.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.inc', '.inl', '.ipp', '.sc', '.sh')
+# A compiler or build tool a check's script names itself, bypassing $CXX (tools/ccache/cxx records nothing then).
+BYPASS = re.compile(r"""['"](?:c\+\+|g\+\+|clang\+\+|clang|gcc|cc|cmake|ninja)['"]""")
+CXX_DEFAULT = re.compile(r"""environ(?:\.get\(|\[)\s*['"]CXX['"]\s*(?:,\s*['"]c\+\+['"]\s*)?[)\]]""")
+SCANS = re.compile(r'\.(?:rglob|glob|iterdir)\(|os\.(?:walk|listdir|scandir)\(')
 TEXT_SUFFIXES = ('.py', '.txt', '.cpp', '.hpp', '.h', '.cmake', '.c', '.json', '.ini', '.sh')
 # Source files: what the engine builds compile or the engine reads at run time.
 SOURCE_ROOTS = ('src/', 'android/')
@@ -47,7 +67,7 @@ SOURCE_SUFFIXES = ('.c', '.cpp', '.h', '.hpp', '.inc', '.inl', '.sc', '.sh', '.f
                    '.patch', '.java', '.def', '.rml', '.rcss')
 # Read by the engine at run time and by no build: the scene sweep lays the techniques over the game's, as the APK.
 RUNTIME_INPUTS = ('src/techniques/',)
-BOOT_TOOLS = ('tools/scene_sweep/', 'tools/ci/boot_stage.py')
+BOOT_TOOLS = ('tools/scene_sweep/', 'tools/ci/boot_stage.py', 'tools/ci/ubsan.supp')
 # Directories of libraries, not one component: their component is one level deeper.
 CONTAINERS = ('src/libs/', 'src/apps/')
 PATH_TOKEN = re.compile(r'[\w./-]+')
@@ -166,8 +186,65 @@ def graph(build_dir):
 
 def everything_reason(files):
     for path in files:
-        if path.startswith(EVERYTHING) or path == 'CMakeLists.txt' or (path.startswith('tests/') and path.count('/') == 1):
+        if path.startswith(EVERYTHING) or (path.startswith('tests/') and path.count('/') == 1):
             return f'{path} changes the host CI itself'
+    return None
+
+
+def all_host_reason(files):
+    path = next((p for p in files if p.startswith(ALL_HOST_CHECKS)), None)
+    return f'{path} is read by the host check runner for every check' if path else None
+
+
+def local_files(files):
+    """The changed files without the GitHub workflows, which nothing here reads."""
+    return {p: s for p, s in files.items() if not p.startswith(NOT_LOCAL)}
+
+
+@functools.cache
+def recorded_deps(work, name, directory):
+    """(inputs, their directories, (recursive scans, flat scans)) of a direct-compile check's last passing run
+    (<work>/deps/<name>.txt), or None when there is no trusted list. A scan is a directory a script lists on the line
+    of the call (rglob/walk: its subtree; glob/iterdir/listdir: its own files)."""
+    listed = Path(work) / 'deps' / f'{name}.txt'
+    if not listed.is_file():
+        return None
+    lines = listed.read_text().splitlines()
+    if not lines or '!incomplete' in lines:
+        return None
+    deep, flat = set(), set()
+    for script in Path(directory).rglob('*.py'):
+        text = script.read_text(errors='ignore')
+        if BYPASS.search(CXX_DEFAULT.sub('', text)):
+            return None
+        for line in text.splitlines():
+            for call in SCANS.finditer(line):
+                spelled = [t for t in PATH_TOKEN.findall(line[:call.start()]) if '/' in t]
+                if spelled:
+                    target = spelled[-1].strip('./')
+                    (deep if call.group(0).startswith(('.rglob', 'os.walk')) else flat).add(target)
+    inputs = frozenset(lines)
+    return inputs, frozenset(os.path.dirname(p) for p in inputs), (frozenset(deep), frozenset(flat))
+
+
+def deps_hit(deps, directory, files, repo):
+    """The reason a check with a recorded input list is affected by the changed files, or None."""
+    inputs, dirs, (deep, flat) = deps
+    spelled = fragments(str(directory))
+    for path, status in files.items():
+        full = os.path.realpath(repo / path)
+        parent = os.path.dirname(path)
+        if full in inputs:
+            return f'its compiles read {path}'
+        if status == 'A' and os.path.dirname(full) in dirs:
+            return f'{path} is new in a directory its compiles read'
+        if path in spelled:
+            return f'names {path}'
+        if not path.endswith(COMPILED) and parent in spelled:
+            return f'names {parent} ({path}, read at run time)'
+        scan = next((d for d in deep if path.startswith(d + '/')), None) or (parent if parent in flat else None)
+        if scan:
+            return f'a script of it lists {scan} ({path})'
     return None
 
 
@@ -179,7 +256,8 @@ def check_directories(directory):
 
 def host_checks(files, work=None, repo=root):
     """{name: (affected, reason)} for every tests/<name>/run.py."""
-    every = everything_reason(files)
+    every = everything_reason(files) or all_host_reason(files)
+    files = local_files(files)
     result = {}
     for name, cmake in check_directories(str(repo / 'tests')):
         own = next((p for p in files if p.startswith(f'tests/{name}/')), None)
@@ -197,6 +275,13 @@ def host_checks(files, work=None, repo=root):
                 result[name] = (True, f'its build reads {hit}') if hit else (
                     False, f'no changed file is an input of its build (ninja graph of build/{name})')
                 continue
+        # A direct-compile check: the files its last passing run compiled (tools/ccache/cxx).
+        deps = recorded_deps(str(work), name, str(repo / 'tests' / name)) if work and not cmake else None
+        if deps:
+            hit = deps_hit(deps, repo / 'tests' / name, files, repo)
+            result[name] = (True, hit) if hit else (
+                False, f'no changed file is read by its compiles or named by it (deps/{name}.txt)')
+            continue
         found = names(repo / 'tests' / name, files)
         result[name] = (True, f'names {found[0]} ({found[1]})') if found else (
             False, 'names no changed file, directory or component')
@@ -207,8 +292,11 @@ def build_affected(build_dir, files, label, repo=root):
     every = everything_reason(files)
     if every:
         return True, every
+    files = local_files(files)
     if any(p.startswith('tools/android/') for p in files):
         return True, 'tools/android changed'
+    if not files:
+        return False, 'only the GitHub workflows changed'
     built = graph(str(build_dir))
     if built.inputs is None:
         return True, f'{label}: no build graph yet in {build_dir}'
@@ -235,6 +323,7 @@ def game_checks(files, repo=root, builds=None):
     builds = Path(builds or repo / 'build/game-checks')
     result = {}
     every = everything_reason(files)
+    files = local_files(files)
     cxx = os.environ.get('STORM_CCACHE_CXX', 'c++')
     for check in sorted((repo / 'tools/game_checks').glob('*/run.py')):
         name = check.parent.name
@@ -265,6 +354,7 @@ def boot_stage(files, build_dir, orphans=(), repo=root):
     every = everything_reason(files)
     if every:
         return True, every
+    files = local_files(files)
     tool = next((p for p in files if p.startswith(BOOT_TOOLS)), None)
     if tool:
         return True, f'{tool} changed (the boot stage itself)'

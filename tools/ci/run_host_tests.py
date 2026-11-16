@@ -126,23 +126,40 @@ direct_environment = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'),
                           STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'))
 
 
+deps_dir = work / 'deps'
+
+
 def run(script):
-    """(name, exit code, output, seconds). Never raises: whatever stops a check is that check's FAIL."""
+    """(name, exit code, output, seconds). Never raises: whatever stops a check is that check's FAIL.
+
+    A check that runs the compiler itself records what its compiles read (tools/ccache/cxx STORM_CXX_DEPS) in
+    <work>/deps/<name>.txt when it passes; tools/ci/affected.py selects it by that list. A failed run leaves none."""
+    name = script.parent.name
     started = time.monotonic()
+    deps = deps_dir / f'{name}.txt'
+    partial = deps_dir / f'{name}.txt.partial'
     try:
+        deps.unlink(missing_ok=True)
+        partial.unlink(missing_ok=True)
         command, problem = command_for(script)
         if problem:
             returncode, output = 1, problem + '\n'
         else:
-            environment = None if (script.parent / 'CMakeLists.txt').exists() else direct_environment
+            environment = None
+            if not (script.parent / 'CMakeLists.txt').exists():
+                environment = dict(direct_environment, STORM_CXX_DEPS=str(partial))
             result = subprocess.run(command, cwd=root, env=environment,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             returncode, output = result.returncode, result.stdout
+        if returncode == 0 and partial.exists():
+            deps.write_text(''.join(f'{line}\n' for line in sorted(set(partial.read_text().splitlines()))))
+        partial.unlink(missing_ok=True)
     except Exception as error:  # reported as this check's FAIL; the other checks keep running
         returncode, output = 1, f'{script.relative_to(root)}: the runner could not run it: {error!r}\n'
-    return script.parent.name, returncode, output, time.monotonic() - started
+    return name, returncode, output, time.monotonic() - started
 
 
+deps_dir.mkdir(parents=True, exist_ok=True)
 failed = []
 with concurrent.futures.ThreadPoolExecutor(max(1, args.jobs)) as pool:
     for future in concurrent.futures.as_completed([pool.submit(run, check) for check in checks]):

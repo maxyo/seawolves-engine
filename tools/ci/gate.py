@@ -24,6 +24,8 @@ tree's pins from $STORM_CI_WORK/pins-<digest> (tools/android/engine_sources.py -
 """
 import argparse
 import concurrent.futures
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -36,7 +38,10 @@ root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(root / 'tools/ci'))
 import affected  # noqa: E402
 
-workspace = root.parent
+# The workspace holds local-testing/ and storm-engine-android/: the worktree's parent, or further up for a worktree
+# inside local-testing (as tools/ci/boot_stage.py).
+workspace = next((p for p in root.parents if (p / 'local-testing').is_dir() and (p / 'storm-engine-android').is_dir()),
+                 root.parent)
 ci_work = Path(os.environ.get('STORM_CI_WORK', workspace / 'storm-engine-android/build/android-ci'))
 game_dir = Path(os.environ.get('STORM_GAME_DIR', workspace / 'local-testing/extracted/app'))
 logs = root / 'build/gate'
@@ -80,14 +85,116 @@ def stage_ui_host():
 
 
 def stage_host_checks(names, jobs):
+    env = dict(os.environ, STORM_CHECK_JOBS=str(jobs))  # renderer_bgfx's own parallel checks
     return run_logged('host_checks', [[*xvfb(), sys.executable, root / 'tools/ci/run_host_tests.py', '--jobs', str(jobs),
-                                       '--only', *names]])
+                                       '--only', *names]], env)
+
+
+def cpu_budget(requested):
+    """Host checks in parallel: --jobs, or with --jobs 0 what the machine has free (cores minus the load average of
+    the last minute, at least 3, at most 8): the land queue runs while other agents build and test."""
+    if requested:
+        return requested, f'--jobs {requested}'
+    cores, load = os.cpu_count() or 4, os.getloadavg()[0]
+    jobs = max(3, min(8, int(cores - load)))
+    return jobs, f'{jobs} ({cores} cores, load {load:.0f})'
+
+
+game_results = root / 'build/game-checks/results'
+game_deps = root / 'build/game-checks/deps'
+
+
+def compiler_identity():
+    cxx = os.environ.get('STORM_CCACHE_CXX', os.environ.get('CXX', 'c++'))
+    done = subprocess.run([cxx, '--version'], capture_output=True, text=True)
+    return f'{cxx}\n{done.stdout}'
+
+
+def game_fingerprint():
+    """Every file of the game, with its size and modification time (0.7 s for the 46000 files of TEHO)."""
+    digest = hashlib.sha256(str(game_dir.resolve()).encode())
+    for directory, dirs, files in os.walk(game_dir):
+        dirs.sort()
+        for name in sorted(files):
+            info = os.stat(os.path.join(directory, name))
+            digest.update(f'{directory}/{name}\0{info.st_size}\0{info.st_mtime_ns}\n'.encode())
+    return digest.hexdigest()
+
+
+def game_check_key(name, game, compiler):
+    """The inputs of a game check's last passing run, or None when they are not known: its own files, every file its
+    compiles read (tools/ccache/cxx STORM_CXX_DEPS; a CMake check: its Ninja graph), the compiler and the game."""
+    check = root / 'tools/game_checks' / name
+    inputs = set()
+    if (check / 'CMakeLists.txt').exists():
+        build = root / 'build/game-checks' / name
+        graph = affected.BuildGraph(build)
+        if graph.inputs is None:
+            return None
+        # Its sources, not what the build makes (objects, the binary, CMake's files: those follow from the sources).
+        inputs = {p for p in graph.inputs if not p.startswith(str(build.resolve()) + '/') and p != str(build.resolve())}
+    else:
+        listed = game_deps / f'{name}.txt'
+        lines = listed.read_text().splitlines() if listed.is_file() else []
+        if not lines or '!incomplete' in lines:
+            return None
+        inputs = set(lines)
+    digest = hashlib.sha256(f'{compiler}\n{game}\n'.encode())
+    for path in sorted({str(p) for p in check.rglob('*') if p.is_file()} | inputs):
+        try:
+            digest.update(path.encode() + b'\0' + hashlib.sha256(Path(path).read_bytes()).digest())
+        except OSError:
+            return None  # an input is gone: run it
+    return digest.hexdigest()
+
+
+def run_game_check(name, game, compiler):
+    """(passed, cached, seconds, log text) of one game check. A pass is remembered with its key (game_check_key);
+    the same inputs again are a cached pass, said so in the log."""
+    started = time.monotonic()
+    record = game_results / f'{name}.json'
+    key = game_check_key(name, game, compiler)
+    try:
+        previous = json.loads(record.read_text()) if key and record.is_file() else {}
+    except ValueError:
+        previous = {}
+    if key and previous.get('key') == key:
+        return True, True, time.monotonic() - started, (
+            f'CACHED PASS {name}: its inputs (own files, compiled files, compiler, game) are those of the pass at '
+            f'{previous["when"]} ({previous["seconds"]:.0f} s); key {key[:16]}\n{previous["tail"]}\n')
+    partial = game_deps / f'{name}.txt.partial'
+    partial.unlink(missing_ok=True)
+    env = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'), STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'),
+               STORM_CXX_DEPS=str(partial))
+    done = subprocess.run([sys.executable, root / f'tools/game_checks/{name}/run.py', game_dir], cwd=root, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    seconds = time.monotonic() - started
+    if done.returncode == 0:
+        if partial.exists():
+            (game_deps / f'{name}.txt').write_text(''.join(f'{line}\n' for line in sorted(set(partial.read_text().splitlines()))))
+        key = game_check_key(name, game, compiler)
+        if key:
+            record.write_text(json.dumps({'key': key, 'when': time.strftime('%Y-%m-%d %H:%M'), 'seconds': seconds,
+                                          'tail': '\n'.join(done.stdout.splitlines()[-8:])}))
+    else:
+        record.unlink(missing_ok=True)
+    partial.unlink(missing_ok=True)
+    return done.returncode == 0, False, seconds, done.stdout
 
 
 def stage_game_checks(names):
-    env = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'), STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'))
-    return run_logged('game_checks', [[sys.executable, root / f'tools/game_checks/{name}/run.py', game_dir] for name in names],
-                      env)
+    """The game checks in parallel (each is independent and reads the game only); every result's time in the log."""
+    game_results.mkdir(parents=True, exist_ok=True)
+    game_deps.mkdir(parents=True, exist_ok=True)
+    game, compiler = game_fingerprint(), compiler_identity()
+    with concurrent.futures.ThreadPoolExecutor(len(names)) as pool:
+        results = dict(zip(names, pool.map(lambda n: run_game_check(n, game, compiler), names)))
+    with open(logs / 'game_checks.log', 'w') as out:
+        for name, (ok, cached, seconds, text) in results.items():
+            out.write(f'$ tools/game_checks/{name}/run.py {game_dir}\n{text}')
+        for name, (ok, cached, seconds, text) in results.items():
+            out.write(f'{"PASS" if ok else "FAIL"} {name} ({"cached, " if cached else ""}{seconds:.0f}s)\n')
+    return all(ok for ok, *_ in results.values())
 
 
 def stage_boot():
@@ -124,7 +231,8 @@ def main():
     parser.add_argument('--push', action='store_true', help='push HEAD to develop when everything passed')
     parser.add_argument('--full', action='store_true', help='every check and build, whatever changed; add --boot on for a release')
     parser.add_argument('--tests', nargs='*', default=[], help='host checks to run in addition')
-    parser.add_argument('--jobs', type=int, default=6, help='host checks in parallel')
+    parser.add_argument('--jobs', type=int, default=0,
+                        help='host checks in parallel; 0 (default): the free cores (cores minus load, 3 to 8)')
     parser.add_argument('--no-fetch', action='store_true')
     parser.add_argument('--boot', choices=('auto', 'on', 'off'), default='off',
                         help='engine boot: off (default) locally; auto selects runtime changes (land queue); on forces a run')
@@ -152,7 +260,7 @@ def main():
     base_sha = git('rev-parse', args.base)
     files = affected.changed_files(args.base)
     if args.full:
-        files = {'.github/full-gate': 'M'}  # selects everything, reason below
+        files = {'tools/ccache/full-gate': 'M'}  # selects everything (affected.EVERYTHING), reason below
     selection = affected.plan(files, root / 'build/host-ci')
     checks, games = selection['host_checks'], selection['game_checks']
     ui, android = selection['ui_host'], selection['android']
@@ -170,7 +278,9 @@ def main():
             plan_lines.append(f'SKIP host check {name}: {why}')
     for name, (run, why) in games.items():
         plan_lines.append(f'{"RUN " if run else "SKIP"} game check {name}: {reason(why)}')
-    plan_lines.append(f'{"RUN " if names else "SKIP"} host checks ({len(names)}): {" ".join(names) or "none affected"}')
+    jobs, jobs_why = cpu_budget(args.jobs)
+    plan_lines.append(f'{"RUN " if names else "SKIP"} host checks ({len(names)}, {jobs_why} in parallel): '
+                      f'{" ".join(names) or "none affected"}')
     for label, (run, why) in (('ui_host', ui), ('android', android)):
         plan_lines.append(f'{"RUN " if run else "SKIP"} {label}: {reason(why)}')
     plan_lines.append(f'{"RUN " if boot[0] else "SKIP"} boot: {boot[1]}')  # --boot decides, not --full
@@ -186,7 +296,7 @@ def main():
     if ui[0]:
         stages['ui_host'] = stage_ui_host
     if names:
-        stages['host_checks'] = lambda: stage_host_checks(names, args.jobs)
+        stages['host_checks'] = lambda: stage_host_checks(names, jobs)
     game_names = [n for n, (run, _) in games.items() if run]
     if game_names:
         if not game_dir.is_dir():

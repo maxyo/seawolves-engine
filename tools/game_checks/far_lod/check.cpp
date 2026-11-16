@@ -2,6 +2,8 @@
 // checked (tests/far_lod/verify.hpp), with the triangles kept per level, the encoded size and the build time by folder.
 #include "verify.hpp"
 
+#include <atomic>
+
 namespace
 {
 using namespace far_lod_check;
@@ -75,6 +77,43 @@ Loaded loadGm(const std::filesystem::path &path)
     return loaded;
 }
 
+// What one model gave: kept for the totals, refused or skipped, or the failure text.
+struct Outcome
+{
+    enum Kind { Checked, Without, Refused, OtherVersion, Failed } kind = Failed;
+    Totals totals;
+    std::string error;
+};
+
+Outcome checkFile(const std::filesystem::path &root, const std::filesystem::path &path)
+{
+    Outcome outcome;
+    const std::string name = std::filesystem::relative(path, root).string();
+    try
+    {
+        const Loaded loaded = loadGm(path);
+        const Model &model = loaded.model;
+        if (!far_lod::Wanted(name, loaded.radius, loaded.animated))
+            outcome.kind = Outcome::Without; // drawn whole by the engine
+        else if (far_lod::CheckMeshLayout(model.objects, model.counts(), model.triangles))
+            outcome.kind = Outcome::Refused; // the engine draws such a model whole, with a warning
+        else
+        {
+            outcome.totals = check(model);
+            outcome.kind = Outcome::Checked;
+        }
+    }
+    catch (const struct OtherVersion &)
+    {
+        outcome.kind = Outcome::OtherVersion;
+    }
+    catch (const std::exception &error)
+    {
+        outcome.error = name + ": " + error.what();
+    }
+    return outcome;
+}
+
 int gameModels(const std::filesystem::path &root, const std::vector<std::string> &folders)
 {
     std::map<std::string, Totals> totals;
@@ -90,33 +129,31 @@ int gameModels(const std::filesystem::path &root, const std::vector<std::string>
                 files.push_back(entry.path());
         }
         std::ranges::sort(files);
-        for (const auto &path : files)
+        // Models are independent: several at once (each builds on 4 threads, as the engine does), the results
+        // summed in file order, so the output does not depend on the scheduling.
+        std::vector<Outcome> outcomes(files.size());
+        std::atomic<size_t> next{0};
+        std::vector<std::thread> workers;
+        const unsigned count = std::max(1u, std::thread::hardware_concurrency() / 4);
+        for (unsigned w = 0; w < count; ++w)
+            workers.emplace_back([&] {
+                for (size_t i; (i = next.fetch_add(1)) < files.size();)
+                    outcomes[i] = checkFile(root, files[i]);
+            });
+        for (auto &worker : workers)
+            worker.join();
+        for (const Outcome &outcome : outcomes)
         {
-            const std::string name = std::filesystem::relative(path, root).string();
-            try
+            switch (outcome.kind)
             {
-                const Loaded loaded = loadGm(path);
-                const Model &model = loaded.model;
-                if (!far_lod::Wanted(name, loaded.radius, loaded.animated))
-                {
-                    ++without; // drawn whole by the engine
-                    continue;
-                }
-                if (far_lod::CheckMeshLayout(model.objects, model.counts(), model.triangles))
-                {
-                    ++refused; // the engine draws such a model whole, with a warning
-                    continue;
-                }
-                totals[folder].add(check(model));
-            }
-            catch (const OtherVersion &)
-            {
-                ++other_versions;
-            }
-            catch (const std::exception &error)
-            {
+            case Outcome::Checked: totals[folder].add(outcome.totals); break;
+            case Outcome::Without: ++without; break;
+            case Outcome::Refused: ++refused; break;
+            case Outcome::OtherVersion: ++other_versions; break;
+            case Outcome::Failed:
                 ++failures;
-                std::printf("FAIL %s: %s\n", name.c_str(), error.what());
+                std::printf("FAIL %s\n", outcome.error.c_str());
+                break;
             }
         }
     }
