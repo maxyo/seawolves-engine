@@ -39,6 +39,8 @@ class SCRSHOTER : public Entity
 
   private:
     bool MakeScreenShot();
+    bool MakeScreenShotFromFrameCopy();
+    bool MakeReadable();
     int32_t FindSaveTexture(const char *fileName) const;
     char *FindSaveData(const char *fileName) const;
     int32_t AddSaveTexture(const char *dirName, const char *fileName);
@@ -47,5 +49,6 @@ class SCRSHOTER : public Entity
     
     VRenderer *rs = nullptr;
     int32_t textureIndex_ = -1;
+    bool readable_ = false; // textureIndex_ can be locked (else it is a render target on the GPU: MakeReadable)
     SAVETEXTURES *m_list = nullptr;
 };

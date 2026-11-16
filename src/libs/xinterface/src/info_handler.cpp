@@ -77,7 +77,7 @@ bool InfoHandler::Init()
     storm::android::gameOverShown = storm::android::gameOverShown || gameOver_;
 #endif
 
-    tex = m_rs->GetRenderTargetAsTexture();
+    tex = m_rs->CopyRenderTargetToTexture(); // only drawn: a copy on the GPU, no read-back
     if (tex < 0)
         return false;
 

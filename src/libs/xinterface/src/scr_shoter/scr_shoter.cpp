@@ -78,10 +78,15 @@ void SCRSHOTER::Realize(uint32_t Delta_Time)
             core.Event("makescrshot");
 }
 
+// The shot of the frame as it is drawn so far, for the save made from the menu that opens now.
+//
+// With a surface it is made on the GPU and stays there: the picture scaled into the shot's texture, the border over
+// it, in the frame's own order. Nothing is read back, so opening the game menu does not wait for the GPU (two
+// read-backs of the frame here were an 82-115 ms frame on a phone, once 842 ms). The save list draws it as it is;
+// only a save reads it (MakeReadable). Without a surface (an autosave while the app goes to the background) it
+// comes from the renderer's copy of the last presented frame, read and scaled on the CPU, without the border.
 bool SCRSHOTER::MakeScreenShot()
 {
-    D3DLOCKED_RECT inRect, outRect;
-
     auto hr = D3D_OK;
 
     // make the video card draw all unfinished tasks
@@ -104,16 +109,66 @@ bool SCRSHOTER::MakeScreenShot()
         rs->TextureRelease(textureIndex_);
     }
     textureIndex_ = -1;
+    readable_ = false;
 
-    // a copy of the frame, scaled down into the shot
+    const auto *owner = storm::render::FrameOwner::Get();
+    if (!owner || !owner->DeviceReady())
+        return MakeScreenShotFromFrameCopy();
+
+    textureIndex_ = rs->CopyRenderTargetToTexture(SS_TEXTURE_WIDTH, SS_TEXTURE_HEIGHT);
+    if (textureIndex_ < 0)
+    {
+        spdlog::warn("Screenshot for the save not taken: the frame cannot be copied; the save gets no thumbnail");
+        return false;
+    }
+    // The border over the shot.
+    const int nTextureID = rs->TextureCreate("interfaces\\EmptyBorder.tga");
+    if (nTextureID >= 0)
+    {
+        const uint32_t BI_SCRSHOTER_VERTEX_FORMAT = (D3DFVF_XYZRHW | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2);
+        struct BI_SCRSHOTER_VERTEX
+        {
+            glm::vec3 pos;
+            float w;
+            float tu, tv;
+        } vert[4];
+        for (auto i = 0; i < 4; i++)
+        {
+            vert[i].pos.z = 1.f;
+            vert[i].w = 0.5f;
+        }
+        vert[1].pos.x = vert[0].pos.x = 0;
+        vert[2].pos.y = vert[0].pos.y = 0;
+        vert[3].pos.x = vert[2].pos.x = SS_TEXTURE_WIDTH;
+        vert[3].pos.y = vert[1].pos.y = SS_TEXTURE_HEIGHT;
+        vert[1].tu = vert[0].tu = 0;
+        vert[2].tv = vert[0].tv = 0;
+        vert[3].tu = vert[2].tu = 1.f;
+        vert[3].tv = vert[1].tv = 1.f;
+
+        rs->PushRenderTarget();
+        if (rs->SetRenderTarget(textureIndex_, 0, 0, {}))
+        {
+            rs->TextureSet(0, nTextureID);
+            rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, BI_SCRSHOTER_VERTEX_FORMAT, 2, vert, sizeof(BI_SCRSHOTER_VERTEX),
+                                "battle_icons");
+        }
+        rs->PopRenderTarget();
+        rs->TextureRelease(nTextureID);
+    }
+    return true;
+}
+
+// Without a surface: the back buffer is read from the renderer's copy of the last presented frame (no read-back can
+// run), scaled into a readable shot.
+bool SCRSHOTER::MakeScreenShotFromFrameCopy()
+{
+    D3DLOCKED_RECT inRect, outRect;
     const int32_t frame = rs->GetRenderTargetAsTexture();
     if (frame < 0)
     {
-        // No picture to copy. Without a surface (an autosave while the app goes to the background)
-        // the renderer reads the back buffer from its copy of the last presented frame; this is
-        // left for a renderer that has neither (no frame presented yet). The save is written
-        // without a thumbnail (SFLB_DoSaveFileData), and the save list shows the record without a
-        // picture.
+        // A renderer that has no frame either (none presented yet). The save is written without a thumbnail
+        // (SFLB_DoSaveFileData), and the save list shows the record without a picture.
         spdlog::warn("Screenshot for the save not taken: the render target cannot be read; the save gets no thumbnail");
         return false;
     }
@@ -148,66 +203,30 @@ bool SCRSHOTER::MakeScreenShot()
         TEXTURE_RELEASE(rs, textureIndex_);
         return false;
     }
+    readable_ = true;
+    spdlog::info("Screenshot for the save taken from the last presented frame, without its border: no surface to draw on");
+    return true;
+}
 
-    // Add a texture with a frame to the shot: drawn on the GPU, so not without a surface (an autosave as the app goes
-    // to the background: the shot comes from the renderer's copy of the last frame and keeps no frame)
-    const auto *owner = storm::render::FrameOwner::Get();
-    if (!owner || !owner->DeviceReady())
+// A save reads the shot's texels: the GPU shot is read back now (one small target; the save itself takes longer).
+// Without a surface that read cannot run: the shot is taken again from the last presented frame.
+bool SCRSHOTER::MakeReadable()
+{
+    if (textureIndex_ < 0 || readable_)
+        return textureIndex_ >= 0;
+    int32_t shot = -1;
+    rs->PushRenderTarget();
+    if (rs->SetRenderTarget(textureIndex_, 0, 0, {}))
+        shot = rs->GetRenderTargetAsTexture();
+    rs->PopRenderTarget();
+    rs->TextureRelease(textureIndex_);
+    textureIndex_ = shot;
+    if (shot < 0)
     {
-        spdlog::info("Screenshot for the save taken without its frame: no surface to draw the frame on");
-        return true;
+        spdlog::warn("The save's screenshot cannot be read from the GPU (no surface): taken again from the last presented frame");
+        return MakeScreenShotFromFrameCopy();
     }
-    const int nTextureID = rs->TextureCreate("interfaces\\EmptyBorder.tga");
-    if (nTextureID >= 0)
-    {
-        const int32_t framed = rs->TextureCreate(SS_TEXTURE_WIDTH, SS_TEXTURE_HEIGHT, 1, D3DUSAGE_RENDERTARGET,
-                                                 D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT);
-        if (framed >= 0)
-        {
-            const uint32_t BI_SCRSHOTER_VERTEX_FORMAT = (D3DFVF_XYZRHW | D3DFVF_TEX1 | D3DFVF_TEXTUREFORMAT2);
-            struct BI_SCRSHOTER_VERTEX
-            {
-                glm::vec3 pos;
-                float w;
-                float tu, tv;
-            } vert[4];
-            for (auto i = 0; i < 4; i++)
-            {
-                vert[i].pos.z = 1.f;
-                vert[i].w = 0.5f;
-            }
-            vert[1].pos.x = vert[0].pos.x = 0;
-            vert[2].pos.y = vert[0].pos.y = 0;
-            vert[3].pos.x = vert[2].pos.x = SS_TEXTURE_WIDTH;
-            vert[3].pos.y = vert[1].pos.y = SS_TEXTURE_HEIGHT;
-            vert[1].tu = vert[0].tu = 0;
-            vert[2].tv = vert[0].tv = 0;
-            vert[3].tu = vert[2].tu = 1.f;
-            vert[3].tv = vert[1].tv = 1.f;
-
-            rs->PushRenderTarget();
-            if (rs->SetRenderTarget(framed, 0, 0, {}))
-            {
-                rs->TextureSet(0, textureIndex_);
-                rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, BI_SCRSHOTER_VERTEX_FORMAT, 2, vert,
-                                    sizeof(BI_SCRSHOTER_VERTEX), "battle_icons");
-                rs->TextureSet(0, nTextureID);
-                rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, BI_SCRSHOTER_VERTEX_FORMAT, 2, vert,
-                                    sizeof(BI_SCRSHOTER_VERTEX), "battle_icons");
-                // the framed shot replaces the plain one (a readable copy of the render target)
-                if (const int32_t shot = rs->GetRenderTargetAsTexture(); shot >= 0)
-                {
-                    rs->TextureRelease(textureIndex_);
-                    textureIndex_ = shot;
-                }
-            }
-            rs->PopRenderTarget();
-            rs->TextureRelease(framed);
-        }
-
-        rs->TextureRelease(nTextureID);
-    }
-
+    readable_ = true;
     return true;
 }
 
@@ -223,6 +242,9 @@ uint64_t SCRSHOTER::ProcessMessage(MESSAGE &message)
         {
             core.Trace("ERROR!!! screen shot create error");
         }
+        // The caller (the save) locks it.
+        if (!MakeReadable())
+            core.Trace("ERROR!!! screen shot read error");
         return textureIndex_;
     case MSG_SCRSHOT_READ: {
         VDATA *pvdat;

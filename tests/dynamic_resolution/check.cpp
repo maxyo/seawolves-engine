@@ -23,6 +23,8 @@ struct Device
     double fixed_ms = 3.0, pixel_ms = 12.0; // at the preset's height
     double work_ms = 6.0;
     bool timers = true, scene = true;
+    bool pacing_follows = false; // Swappy's auto rate: 30 fps after a second of frames that miss 60, 60 after one that fit
+    double paced = 0.0, missed_ms = 0.0, fitted_ms = 0.0;
     DynamicResolution::Heat heat = DynamicResolution::Heat::Normal;
     std::vector<uint16_t> changes;
 
@@ -37,14 +39,27 @@ struct Device
         const double end = now + seconds * 1000.0;
         while (now < end)
         {
-            const double interval = std::max(target, std::ceil(gpu() * 1.15 / 16.67 - 1e-9) * 16.67);
+            if (paced == 0.0)
+                paced = target;
+            const double interval = std::max(paced, std::ceil(gpu() * 1.15 / 16.67 - 1e-9) * 16.67);
             now += interval;
+            if (pacing_follows)
+            {
+                const bool fits = gpu() * 1.15 <= target;
+                missed_ms = fits ? 0.0 : missed_ms + interval;
+                fitted_ms = fits ? fitted_ms + interval : 0.0;
+                if (missed_ms > 1000.0)
+                    paced = 2 * target;
+                if (fitted_ms > 1000.0)
+                    paced = target;
+            }
             DynamicResolution::Frame f;
             f.now_ms = now;
             f.interval_ms = interval;
             f.gpu_ms = timers ? gpu() : -1.0;
             f.work_ms = work_ms;
-            f.target_ms = target;
+            f.target_ms = paced;
+            f.preferred_ms = target;
             f.scene = scene;
             f.heat = heat;
             if (control.frame(f))
@@ -146,6 +161,39 @@ int main()
             f.scene = true;
             check(!d.control.frame(f), "no interval to fit (the host): the preset's height");
         }
+    }
+    {
+        Device d; // the owner's night town: 22 ms of GPU at the lowest height, 60 fps asked for
+        d.control.reset(1100);
+        d.pacing_follows = true;
+        d.fixed_ms = 12.0;
+        d.pixel_ms = 20.0; // 32 ms at 1100 lines, 21.8 at 770
+        d.run(15.0);
+        check(d.paced > 30.0, "nothing holds 60 fps: the pacing lowers the rate");
+        d.run(240.0);
+        check(d.control.height() >= 880, "at the lowered rate the height it has room for comes back (not 770 lines at 30 fps)");
+        check(d.paced > 30.0, "and the rate stays lowered: nothing flickers between 60 and 30");
+        const size_t count = d.changes.size();
+        const uint16_t settled = d.control.height();
+        d.run(240.0);
+        check(d.changes.size() == count && d.control.height() == settled, "settled: no more changes in the same scene");
+        // A lighter place: 60 fps fits again as it is; the pacing returns to it and the height follows as before.
+        d.fixed_ms = 3.0;
+        d.pixel_ms = 7.0;
+        d.run(60.0);
+        check(d.paced < 20.0, "a lighter scene: back at 60 fps");
+        check(d.control.height() == 1100, "with the preset's height");
+    }
+    {
+        Device d; // 60 fps holds at 880 lines but the rate was lowered at 1100 before the first step down landed
+        d.control.reset(1100);
+        d.pacing_follows = true;
+        d.fixed_ms = 3.0;
+        d.pixel_ms = 13.0; // 16 ms at 1100 (18.4 with the margin), 11.3 at 880
+        d.paced = 33.34;
+        d.missed_ms = 2000.0;
+        d.run(30.0);
+        check(d.paced < 20.0 && d.control.height() < 1100, "a lower step that fits the setting's rate is tried, and the rate comes back");
     }
     std::puts("dynamic_resolution: ok");
 }

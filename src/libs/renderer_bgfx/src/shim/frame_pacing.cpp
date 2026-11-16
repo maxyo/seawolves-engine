@@ -488,6 +488,14 @@ std::chrono::nanoseconds FramePacing::preferred_interval() const
     return preferred_;
 }
 
+std::chrono::nanoseconds FramePacing::paced_interval()
+{
+    std::lock_guard lock(mutex_);
+    const bool lowered = swappy_ && swap_interval_ > preferred_ &&
+                         SwapPaced(static_cast<uint64_t>(swap_interval_.count()), static_cast<uint64_t>(threshold_.count()));
+    return lowered ? swap_interval_ : preferred_;
+}
+
 std::chrono::nanoseconds FramePacing::take_present_wait()
 {
     return std::exchange(present_wait_, std::chrono::nanoseconds::zero());
@@ -644,6 +652,11 @@ void FramePacing::render_thread_started(int)
 }
 
 std::chrono::nanoseconds FramePacing::preferred_interval() const
+{
+    return std::chrono::nanoseconds::zero();
+}
+
+std::chrono::nanoseconds FramePacing::paced_interval()
 {
     return std::chrono::nanoseconds::zero();
 }

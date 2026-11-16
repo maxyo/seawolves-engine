@@ -851,6 +851,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         counters_.number = last_frame_.number + 1;
         counters_.shown = Shown();
         ReportSwitch(false);
+        ReportSlowFrame();
         last_frame_ = counters_;
         counters_ = FrameStats(); // what happens until the next frame counts for it
         hud_->Drawn();
@@ -2012,6 +2013,27 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // opening its interface and the model arriving to the screen's first frame, and on until
     // its frames stop rebuilding or laying out (pictures that arrived, re-cut text): the CPU
     // of those frames by stage (FrameStats). GPU time is the renderer's.
+    // A drawn frame whose UI work alone took kSlowFrameMs or more, with its split: what a stutter in the game's
+    // "ui" phase was (the owner's phone showed 56-116 ms there in play, with no line saying why). At most one line
+    // every two seconds; a screen switch has its own report.
+    void ReportSlowFrame()
+    {
+        constexpr double kSlowFrameMs = 25.0;
+        const FrameStats &f = counters_;
+        const auto now = Clock::now();
+        if (f.update_ms + f.render_ms < kSlowFrameMs || Milliseconds(slow_reported_, now) < 2000.0)
+            return;
+        slow_reported_ = now;
+        char line[512];
+        std::snprintf(line, sizeof line,
+                      "UI slow frame: update %.1f + render %.1f ms | apply %.1f, rebuild %.1f (%d, %d elements touched), style %.1f, "
+                      "layout %.1f (%d boxes, %d passes), pictures %d in %.1f, render incl. %d meshes, textures %d (%zu KB) in %.1f, "
+                      "%d frames held before it",
+                      f.update_ms, f.render_ms, f.apply_ms, f.rebuild_ms, f.rebuilds, f.touched, f.style_ms, f.layout_ms, f.laid_out,
+                      f.layout_passes, f.pictures, f.picture_ms, f.geometry, f.textures, f.texture_bytes / 1024, f.texture_ms, f.held);
+        Log(line);
+    }
+
     void ReportSwitch(bool idle)
     {
         if (!switch_.open || switch_.modelled == Clock::time_point{})
@@ -2267,6 +2289,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         }
     } switch_;
     Clock::time_point last_tap_{}, reported_{}; // the newest touch end (its own time); the end of the last switch reported
+    Clock::time_point slow_reported_{};         // the last "UI slow frame" line
     bool unlaid_ = false; // something covers the game since the last frame (PublishTouchMap)
     bool between_ = false; // nothing the player can use is shown (Between)
     struct HeldTouch

@@ -935,7 +935,8 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             f.gpu_ms = static_cast<double>(stats->gpuTimeEnd - stats->gpuTimeBegin) * 1000.0 / static_cast<double>(stats->gpuTimerFreq);
         }
         f.work_ms = storm::platform::frame_work::LastWorkMs();
-        f.target_ms = std::chrono::duration<double, std::milli>(shim::FramePacing::instance().preferred_interval()).count();
+        f.target_ms = std::chrono::duration<double, std::milli>(shim::FramePacing::instance().paced_interval()).count();
+        f.preferred_ms = std::chrono::duration<double, std::milli>(shim::FramePacing::instance().preferred_interval()).count();
         f.scene = scene_frame && location_load().sealed && !switching_ && device_ready_;
         f.heat = heat == ThermalLoad::Severe     ? DynamicResolution::Heat::Severe
                  : heat == ThermalLoad::Elevated ? DynamicResolution::Heat::Elevated

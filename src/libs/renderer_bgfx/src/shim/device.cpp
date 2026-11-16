@@ -1056,7 +1056,7 @@ HRESULT Device::UpdateSurface(Surface *src, const RECT *src_rect, Surface *dst,
 }
 
 HRESULT Device::StretchRect(Surface *src, const RECT *src_rect, Surface *dst, const RECT *dst_rect,
-                            D3DTEXTUREFILTERTYPE filter)
+                            D3DTEXTUREFILTERTYPE filter, bool opaque)
 {
     auto *from = static_cast<Surface *>(src);
     auto *to = static_cast<Surface *>(dst);
@@ -1118,8 +1118,13 @@ HRESULT Device::StretchRect(Surface *src, const RECT *src_rect, Surface *dst, co
     // In a flipped target the picture's top row is at clip y = -1.
     if (Context::instance().flip_y())
         std::swap(v0, v1);
-    Context::instance().draw_fullscreen(id, from->store->handle, flags, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A, u0,
-                                        v0, u1, v1);
+    // Opaque: the source's alpha is not a picture's (a scene target holds whatever its draws left there); the
+    // destination is cleared to alpha 1 in this view and only the colour is copied.
+    if (opaque)
+        bgfx::setViewClear(id, BGFX_CLEAR_COLOR, 0x000000ff, 1.0f, 0);
+    Context::instance().draw_fullscreen(id, from->store->handle, flags,
+                                        opaque ? BGFX_STATE_WRITE_RGB : BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A, u0, v0, u1,
+                                        v1);
     view_has_content = true;
     rt = saved_rt;
     ds = saved_ds;

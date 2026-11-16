@@ -5107,6 +5107,39 @@ int32_t Renderer::GetRenderTargetAsTexture()
     return AddCodeTexture(texture, desc.Width * desc.Height * 4, false);
 }
 
+int32_t Renderer::CopyRenderTargetToTexture(uint32_t width, uint32_t height)
+{
+    const auto *owner = storm::render::FrameOwner::Get();
+    if (!owner || !owner->DeviceReady())
+        return -1; // no surface: nothing is drawn (the caller's own path for that, if it has one)
+    storm::shim::Surface *renderTarget = nullptr;
+    D3DSURFACE_DESC desc;
+    if (CHECKD3DERR(GetRenderTarget(&renderTarget)) || !renderTarget)
+        return -1;
+    storm::shim::Texture2D *texture = nullptr;
+    storm::shim::Surface *level = nullptr;
+    bool copied = !CHECKD3DERR(renderTarget->GetDesc(&desc));
+    if (copied)
+    {
+        width = width ? width : desc.Width;
+        height = height ? height : desc.Height;
+        copied = !CHECKD3DERR(CreateTexture(width, height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &texture)) &&
+                 !CHECKD3DERR(texture->GetSurfaceLevel(0, &level)) &&
+                 !CHECKD3DERR(d3d9->StretchRect(renderTarget, nullptr, level, nullptr, D3DTEXF_LINEAR, true));
+    }
+    if (level)
+        level->Release();
+    renderTarget->Release();
+    if (!copied)
+    {
+        if (texture)
+            texture->Release();
+        spdlog::error("Renderer: cannot copy the render target into a texture on the GPU");
+        return -1;
+    }
+    return AddCodeTexture(texture, width * height * 4, false);
+}
+
 POINT Renderer::GetRenderTargetSize()
 {
     storm::shim::Surface *renderTarget = nullptr;

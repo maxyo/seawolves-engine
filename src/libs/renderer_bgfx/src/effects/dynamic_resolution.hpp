@@ -20,6 +20,11 @@
 //     without them, after a probe interval of fitting windows. A step up that had to be taken back within
 //     kRegretMs doubles the wait for the next one (up to kMaxUpWaitMs): a scene on the edge does not flicker
 //     between two sizes;
+//   * the frames are judged against the interval they are paced at. When even the lowest height does not hold the
+//     frame rate setting, the pacing lowers the rate (60 to 30 fps), and the height that the slower rate has room for
+//     comes back (the owner's phone drew a night town at the lowest height and 30 fps for a minute). While the rate
+//     is lowered: a GPU time that fits the setting's interval as it is raises nothing (the pacing returns to it);
+//     a lower step predicted to fit it is tried once per kMaxUpWaitMs;
 //   * a change rebuilds the scene targets (one slow frame), so changes are at least kMinChangeMs apart and the frames
 //     right after one are not judged (kSettleFrames).
 // Loading and interface frames are not judged. Without a frame interval to fit (the host, no pacing) it stays at the
@@ -73,7 +78,9 @@ class DynamicResolution
         double interval_ms = 0.0; // since the previous presented frame
         double gpu_ms = -1.0;     // the GPU's frame time; < 0: no timer queries
         double work_ms = 0.0;     // the game thread's work of the frame (platform/frame_work.hpp)
-        double target_ms = 0.0;   // the paced interval the frames should fit; 0: none
+        double target_ms = 0.0;   // the interval the frames are paced at now and should fit; 0: none
+        double preferred_ms = 0.0; // the interval of the frame rate setting; shorter than target_ms when the pacing
+                                   // lowered the rate because frames did not fit it; 0: the same
         bool scene = false;       // a 3D scene was drawn and no place is loading
         Heat heat = Heat::Normal;
     };
@@ -87,7 +94,7 @@ class DynamicResolution
         step_ = 0;
         up_wait_ms_ = kUpWaitMs;
         restart(0.0);
-        changed_ms_ = raised_ms_ = severe_ms_ = -1e12;
+        changed_ms_ = raised_ms_ = severe_ms_ = fast_tried_ms_ = -1e12;
         reason_.clear();
     }
 
@@ -147,6 +154,24 @@ class DynamicResolution
 
         const size_t last = kSteps.size() - 1;
         const bool may_change = f.now_ms - changed_ms_ >= kMinChangeMs;
+        // The pacing lowered the frame rate under the setting's (frames did not fit it even at the lowest height, or
+        // did not for a while): the frames are judged against the interval they are paced at, so the height the
+        // slower rate has room for comes back instead of the lowest height at half the rate. `fast_step`: the
+        // highest lower step whose pixels are predicted to fit the setting's interval (past the last: none does).
+        const bool slow = f.preferred_ms > 0.0 && f.target_ms > f.preferred_ms * 1.2;
+        size_t fast_step = last + 1;
+        if (slow && timers)
+        {
+            const double fast_load = gpu * kGpuMargin / f.preferred_ms, now = double(height(step_)) * height(step_);
+            if (fast_load > 1.0)
+                for (size_t step = step_ + 1; step <= last; ++step)
+                    if (double(height(step)) * height(step) <= now * kFitLoad / fast_load)
+                    {
+                        fast_step = step;
+                        break;
+                    }
+        }
+        const bool fast_fits_now = slow && timers && gpu * kGpuMargin / f.preferred_ms <= 1.0;
         size_t next = step_;
         char why[200] = "";
         if (f.heat == Heat::Severe && step_ < last && f.now_ms - severe_ms_ >= kSevereStepMs && may_change)
@@ -177,6 +202,17 @@ class DynamicResolution
             else
                 snprintf(why, sizeof(why), "%.0f%% of the frames miss the %.1f ms frame (no GPU timers)", late * 100.0,
                          f.target_ms);
+        }
+        else if (fast_fits_now)
+            fits_ = 0; // the GPU fits the setting's interval as it is: the pacing returns to it, nothing to raise
+        else if (slow && timers && fast_step <= last && fast_step > step_ && may_change && f.heat == Heat::Normal &&
+                 f.now_ms - fast_tried_ms_ >= kMaxUpWaitMs)
+        {
+            // A lower step is predicted to fit the setting's frame rate: tried once (the pacing follows the frames).
+            next = fast_step;
+            fast_tried_ms_ = f.now_ms;
+            snprintf(why, sizeof(why), "GPU %.1f ms: predicted to fit the %.1f ms frame of the frame rate setting again", gpu,
+                     f.preferred_ms);
         }
         else if (!misses && step_ > 0 && f.heat == Heat::Normal)
         {
@@ -223,7 +259,7 @@ class DynamicResolution
     size_t step_ = 0;
     uint32_t frames_ = 0, gpu_frames_ = 0, late_ = 0, settle_ = 0, fits_ = 0;
     double interval_sum_ = 0.0, work_sum_ = 0.0, gpu_sum_ = 0.0, window_start_ms_ = 0.0;
-    double changed_ms_ = -1e12, raised_ms_ = -1e12, severe_ms_ = -1e12, up_wait_ms_ = kUpWaitMs;
+    double changed_ms_ = -1e12, raised_ms_ = -1e12, severe_ms_ = -1e12, fast_tried_ms_ = -1e12, up_wait_ms_ = kUpWaitMs;
     bool cpu_bound_said_ = false, cpu_bound_pending_ = false;
     std::string reason_;
 };

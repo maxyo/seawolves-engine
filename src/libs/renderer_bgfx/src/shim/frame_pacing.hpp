@@ -63,6 +63,9 @@ class FramePacing
     // Game thread: the swap interval the frame rate setting asks for (not one Swappy lowered the rate to); zero
     // when no frame rate is paced (desktop).
     std::chrono::nanoseconds preferred_interval() const;
+    // Game thread: the interval the frames are paced at now: the setting's, or the slower one Swappy lowered the rate
+    // to while it paces it; zero when no frame rate is paced (desktop).
+    std::chrono::nanoseconds paced_interval();
     // Presenting thread: how long the presents since the last call waited (zero without pacing).
     std::chrono::nanoseconds take_present_wait();
     // The window the game presents to (Swappy reports the frame rate for it); nullptr while there is none.

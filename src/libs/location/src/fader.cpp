@@ -309,8 +309,10 @@ void Fader::Realize(uint32_t delta_time)
         {
             if (isStart)
             {
+                // The picture the fade starts from: a copy on the GPU (it is only drawn; a read-back here was a
+                // 50-58 ms frame on a phone).
                 TEXTURE_RELEASE(rs, tex);
-                tex = rs->GetRenderTargetAsTexture();
+                tex = rs->CopyRenderTargetToTexture();
             }
             else {
                 rs->TextureSet(0, tex);

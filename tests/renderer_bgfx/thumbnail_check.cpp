@@ -49,7 +49,8 @@ bool expect(bool ok, const char *what)
 void frame(Device &d)
 {
     check(d.BeginScene(), "BeginScene");
-    check(d.Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0xFFFF0000, 1.0f, 0), "Clear (red)");
+    // Alpha 0: a scene target's alpha is whatever its draws left (the opaque copy below must not take it).
+    check(d.Clear(0, nullptr, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00FF0000, 1.0f, 0), "Clear (red)");
     // The bottom half blue: a screen-space quad
     struct Vertex
     {
@@ -160,6 +161,34 @@ int main()
         std::vector<uint32_t> pixels;
         ok &= expect(read(*device, back, pixels) == D3D_OK && top_red_bottom_blue(pixels),
                      "with a surface the back buffer reads back the frame");
+        // The shot the game menu takes (scr_shoter.cpp, Renderer::CopyRenderTargetToTexture): the frame scaled into a
+        // small render target on the GPU, opaque. Nothing is read to make it; the save reads the small target.
+        {
+            constexpr uint32_t kShot = 32;
+            shim::Surface *shot = nullptr;
+            check(device->CreateRenderTarget(kShot, kShot, D3DFMT_A8R8G8B8, D3DMULTISAMPLE_NONE, 0, FALSE, &shot, nullptr),
+                  "CreateRenderTarget (shot)");
+            check(device->BeginScene(), "BeginScene");
+            check(device->StretchRect(back, nullptr, shot, nullptr, D3DTEXF_LINEAR, true), "StretchRect (opaque)");
+            check(device->EndScene(), "EndScene");
+            std::vector<uint32_t> texels;
+            const bool was_read = read(*device, shot, texels) == D3D_OK && texels.size() == kShot * kShot;
+            uint32_t wrong = 0;
+            for (uint32_t y = 0; was_read && y < kShot; ++y)
+                for (uint32_t x = 0; x < kShot; ++x)
+                {
+                    const uint32_t texel = texels[y * kShot + x];
+                    if (y < kShot / 4)
+                        wrong += (texel & 0xFFF0F0F0) != 0xFFF00000; // red, alpha 1
+                    else if (y >= kShot * 3 / 4)
+                        wrong += (texel & 0xFFF0F0F0) != 0xFF0000F0; // blue, alpha 1
+                }
+            if (was_read)
+                std::printf("     shot: %u texels of the top and bottom quarters differ (first %08x, last %08x)\n", wrong,
+                            texels.front(), texels.back());
+            ok &= expect(was_read && wrong == 0, "the frame scaled into a small target on the GPU is the frame, opaque");
+            shot->Release();
+        }
         // Android takes the surface away (surfaceDestroyed); the game saves before it gets a new one.
         context.request_surface_release();
         context.poll_surface();

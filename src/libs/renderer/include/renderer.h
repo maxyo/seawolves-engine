@@ -420,6 +420,13 @@ class VRenderer : public SERVICE, public storm::render::TextureColorReader
 
 
     // A new one-level texture (the caller releases it) holding a copy of the current render target, readable
-    // with TextureLock; -1 (logged) on failure.
+    // with TextureLock; -1 (logged) on failure. A read-back: the frame's queued work is executed first and the
+    // game thread waits for it (tens of milliseconds with a scene queued). For a copy that is only drawn, or
+    // drawn into, use CopyRenderTargetToTexture.
     virtual int32_t GetRenderTargetAsTexture() = 0;
+    // A new one-level render target texture (the caller releases it) holding a copy of the current render target
+    // made on the GPU in the frame's own order, scaled to `width` x `height` (0: the target's size as the game
+    // addresses it), opaque (alpha 1: a scene target's alpha is not a picture's). Nothing waits and nothing is read:
+    // it can be drawn and drawn into, not locked. -1 (logged) on failure. Without a surface nothing is drawn, so nothing is copied: -1.
+    virtual int32_t CopyRenderTargetToTexture(uint32_t width = 0, uint32_t height = 0) = 0;
 };

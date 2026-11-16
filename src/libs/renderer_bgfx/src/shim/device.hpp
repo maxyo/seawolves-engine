@@ -331,8 +331,10 @@ struct Device final : Object
     HRESULT UpdateSurface(Surface *src, const RECT *src_rect, Surface *dst,
                           const POINT *dst_point);
     HRESULT GetRenderTargetData(Surface *target, Surface *dest);
+    // `opaque`: the destination gets the source's colour and alpha 1 (a frame copy: a scene target's alpha is not a
+    // picture's).
     HRESULT StretchRect(Surface *src, const RECT *src_rect, Surface *dst, const RECT *dst_rect,
-                        D3DTEXTUREFILTERTYPE filter);
+                        D3DTEXTUREFILTERTYPE filter, bool opaque = false);
     HRESULT SetRenderTarget(DWORD index, Surface *surface);
     HRESULT GetRenderTarget(DWORD index, Surface **surface);
     HRESULT SetDepthStencilSurface(Surface *surface);

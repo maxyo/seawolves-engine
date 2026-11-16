@@ -451,6 +451,7 @@ class Renderer : public VRenderer
     bool sampleTextureArgb(int32_t texture,float u,float v,uint32_t& result) override;
 
     int32_t GetRenderTargetAsTexture() override;
+    int32_t CopyRenderTargetToTexture(uint32_t width, uint32_t height) override;
 
     void LostRender();
     void RestoreRender();
