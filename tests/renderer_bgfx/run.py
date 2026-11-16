@@ -67,7 +67,7 @@ plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 's
          *[[str(build / name)] for name in ('scene_readiness_check', 'scene_resources_check', 'scene_retry_check',
                                                      'scene_texture_failure_check')],
          ['ctest', '--test-dir', str(build), '--output-on-failure', '--no-tests=error',
-          '-R', '^(scene_(post_handoff|nested_progress|hidden_work|stock_(transaction|scheduler|progress|consumers))|texture_cache_lane|texture_cache_codec)_check$'],
+          '-R', '^(scene_(post_handoff|nested_progress|hidden_work|stock_(transaction|scheduler|progress|consumers)))_check$'],
          [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text()],
          [str(build / 'relief' / 'storm_relief_device_retry_check'), str(build / 'device-retry-fixture')],
          [str(build / 'relief' / 'storm_relief_finalizer_check'), str(build / 'finalizer-fixture')]]

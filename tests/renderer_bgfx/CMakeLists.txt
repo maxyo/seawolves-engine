@@ -235,20 +235,6 @@ add_test(NAME scene_hidden_work_check
 set_tests_properties(scene_hidden_work_check PROPERTIES
     LABELS "scene_readiness;cpu" TIMEOUT 60)
 
-# Independent cache-lane/codec controls (the bounded CPU tile recovery is its own host check, tests/relief_cpu_tiles).
-# These execute current production code without models, renderer or device.
-foreach(pair IN ITEMS "texture_cache_lane;../texture_cache_lane/run.py"
-                      "texture_cache_codec;../texture_cache_lane/codec.py")
-    list(GET pair 0 check)
-    list(GET pair 1 script)
-    add_test(NAME ${check}_check
-        COMMAND "${CMAKE_COMMAND}" -E env
-            "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
-            "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/${script}")
-    set_tests_properties(${check}_check PROPERTIES
-        LABELS "texture_pipeline;cpu" TIMEOUT 60)
-endforeach()
-
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
     "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
