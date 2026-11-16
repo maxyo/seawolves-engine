@@ -2630,6 +2630,7 @@ void XINTERFACE::DrawNode(CINODE *nod, uint32_t Delta_Time, int32_t startPrior, 
     }
 }
 
+#ifdef __ANDROID__
 // Answers a widget action: refused at once, applied now or, when it queued script events (they run
 // at the next Execute), once they have run, so that the model the UI gets next shows its result.
 void XINTERFACE::MobileAnswer(uint64_t request, const storm::mobile::ActionOutcome &outcome, bool queuedEvents)
@@ -2891,6 +2892,7 @@ storm::mobile::ActionOutcome XINTERFACE::MobileApplyAction(storm::android::UiWid
     }
         return refused("the node did not take it");
 }
+#endif
 
 void XINTERFACE::DoControl()
 {
