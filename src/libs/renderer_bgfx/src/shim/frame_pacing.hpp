@@ -66,6 +66,9 @@ class FramePacing
     // Game thread: the interval the frames are paced at now: the setting's, or the slower one Swappy lowered the rate
     // to while it paces it; zero when no frame rate is paced (desktop).
     std::chrono::nanoseconds paced_interval();
+    // Game thread: Swappy lowered the rate; the setting's rate is asked for again (dynamic resolution lowered the
+    // scene's height for it). Swappy lowers it again if the frames still do not fit. Logged.
+    void retry_preferred();
     // Presenting thread: how long the presents since the last call waited (zero without pacing).
     std::chrono::nanoseconds take_present_wait();
     // The window the game presents to (Swappy reports the frame rate for it); nullptr while there is none.
@@ -118,6 +121,7 @@ class FramePacing
     std::chrono::nanoseconds preferred_{0}; // game thread: the interval of the setting
     static constexpr std::chrono::seconds kModeCheckDelay{1};
     uint64_t mode_check_period_ = 0; // game thread: the mode period to check at mode_check_at_; 0: none
+    uint64_t mode_stayed_period_ = 0; // game thread: the period of the mode the display stayed in (the last choice); 0: none
     std::chrono::steady_clock::time_point mode_check_at_{};
     std::chrono::nanoseconds present_wait_{0}; // presenting thread
     std::chrono::nanoseconds target_ = kDefaultFrame;

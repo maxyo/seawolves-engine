@@ -337,6 +337,7 @@ void FramePacing::check_display_mode()
 
 void FramePacing::choose_interval(uint64_t display_period)
 {
+    mode_stayed_period_ = display_period;
     // Vulkan: the swap chain stays while this runs (the presenting thread re-creates it under the same mutex).
     std::unique_lock chain(chain_mutex_, std::defer_lock);
     if (vulkan_)
@@ -486,6 +487,14 @@ void FramePacing::render_thread_started(int tid)
 std::chrono::nanoseconds FramePacing::preferred_interval() const
 {
     return preferred_;
+}
+
+void FramePacing::retry_preferred()
+{
+    if (!swappy_ || !started_)
+        return;
+    logf("frame pacing: the frame rate setting is tried again (the scene's height was lowered for it)");
+    choose_interval(mode_stayed_period_);
 }
 
 std::chrono::nanoseconds FramePacing::paced_interval()
@@ -659,6 +668,10 @@ std::chrono::nanoseconds FramePacing::preferred_interval() const
 std::chrono::nanoseconds FramePacing::paced_interval()
 {
     return std::chrono::nanoseconds::zero();
+}
+
+void FramePacing::retry_preferred()
+{
 }
 
 std::chrono::nanoseconds FramePacing::take_present_wait()

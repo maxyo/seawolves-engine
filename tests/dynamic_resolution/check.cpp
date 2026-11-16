@@ -25,6 +25,7 @@ struct Device
     bool timers = true, scene = true;
     bool pacing_follows = false; // Swappy's auto rate: 30 fps after a second of frames that miss 60, 60 after one that fit
     double paced = 0.0, missed_ms = 0.0, fitted_ms = 0.0;
+    int probes = 0;
     DynamicResolution::Heat heat = DynamicResolution::Heat::Normal;
     std::vector<uint16_t> changes;
 
@@ -64,6 +65,13 @@ struct Device
             f.heat = heat;
             if (control.frame(f))
                 changes.push_back(control.height());
+            if (control.take_rate_probe())
+            {
+                // The caller asks the pacing for the setting's rate again.
+                paced = target;
+                missed_ms = fitted_ms = 0.0;
+                ++probes;
+            }
         }
     }
 };
@@ -173,14 +181,15 @@ int main()
         d.run(240.0);
         check(d.control.height() >= 880, "at the lowered rate the height it has room for comes back (not 770 lines at 30 fps)");
         check(d.paced > 30.0, "and the rate stays lowered: nothing flickers between 60 and 30");
+        // At the lowered rate the GPU time is not trusted (its clock is lowered): a step up is tried and, when frames
+        // then come late, taken back, with a doubling wait: a few changes in four minutes, not a flicker.
         const size_t count = d.changes.size();
-        const uint16_t settled = d.control.height();
         d.run(240.0);
-        check(d.changes.size() == count && d.control.height() == settled, "settled: no more changes in the same scene");
+        check(d.changes.size() <= count + 4 && d.control.height() >= 880, "settled: at most a step up tried and taken back");
         // A lighter place: 60 fps fits again as it is; the pacing returns to it and the height follows as before.
         d.fixed_ms = 3.0;
         d.pixel_ms = 7.0;
-        d.run(60.0);
+        d.run(90.0);
         check(d.paced < 20.0, "a lighter scene: back at 60 fps");
         check(d.control.height() == 1100, "with the preset's height");
     }
@@ -194,6 +203,51 @@ int main()
         d.missed_ms = 2000.0;
         d.run(30.0);
         check(d.paced < 20.0 && d.control.height() < 1100, "a lower step that fits the setting's rate is tried, and the rate comes back");
+    }
+    {
+        // A GPU that fits lowers its clock: its frame time reads 88 % of the interval and every frame is on time
+        // (the owner's phone: 14.7 ms of 16.7). With the margin that is 1.01, and it must not step down.
+        DynamicResolution control;
+        control.reset(1100);
+        double now = 1000.0;
+        bool changed = false;
+        for (int i = 0; i < 1200; ++i)
+        {
+            DynamicResolution::Frame f;
+            f.now_ms = now += 16.67;
+            f.interval_ms = 16.67;
+            f.gpu_ms = 14.7;
+            f.work_ms = 5.0;
+            f.target_ms = f.preferred_ms = 16.67;
+            f.scene = true;
+            changed = changed || control.frame(f);
+        }
+        check(!changed && control.height() == 1100, "a GPU time under the interval with every frame on time changes nothing");
+        // The pacing lowers the rate: the setting's rate is tried once at the height predicted to hold it (990); the
+        // pacing stays lowered here, so the height from before comes back. Then the GPU time reads 29 of 33.3 ms
+        // whatever the height, with every frame on time: no step down.
+        const auto slow_frames = [&](int count) {
+            bool any = false;
+            for (int i = 0; i < count; ++i)
+            {
+                DynamicResolution::Frame f;
+                f.now_ms = now += 33.34;
+                f.interval_ms = 33.34;
+                f.gpu_ms = 29.2;
+                f.work_ms = 8.0;
+                f.target_ms = 33.34;
+                f.preferred_ms = 16.67;
+                f.scene = true;
+                any = control.frame(f) || any;
+            }
+            return any;
+        };
+        slow_frames(60);
+        check(control.take_rate_probe() && control.height() == 990, "the rate lowered: the setting's rate is tried at the predicted height");
+        slow_frames(240);
+        check(control.height() == 1100 && !control.take_rate_probe(), "it did not hold: the height from before, at the lowered rate");
+        check(!slow_frames(900) && !control.take_rate_probe(),
+              "at the lowered rate a GPU time that fills the interval is no reason to step down, and no second try");
     }
     std::puts("dynamic_resolution: ok");
 }

@@ -9,6 +9,7 @@
 // one is part of the cached icon texture.
 #include "elements.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -131,48 +132,84 @@ bool Rasterise(const std::string &id, bool plain, Rml::Colourb colour, int pixel
     return true;
 }
 
-// Puts `shadow` under the premultiplied glyph raster (side `pixels`): returns a raster of
-// side pixels + 2 * margin with the glyph in the middle.
-std::vector<Rml::byte> AddShadow(const std::vector<Rml::byte> &glyph, int pixels, const Shadow &shadow)
+// The opacity an icon with a baked shadow is faded with goes into its raster (OnRender), so every opacity of a
+// fade is a texture of its own. In steps of 1/kFadeSteps: a fade's frames share them, a later fade finds them made,
+// and an icon holds at most kFadeSteps + 1 textures (the exact opacity of every frame was a new SVG render, a new
+// blur and a new texture kept for good: 30-77 ms frames on a phone whenever the HUD or a toast faded in).
+constexpr int kFadeSteps = 32;
+float QuantisedFade(float opacity)
 {
-    const int margin = shadow.Margin(), side = pixels + 2 * margin;
-    // The glyph's alpha on the larger canvas, blurred (separable Gaussian, as RmlUi's filter).
+    return std::round(std::clamp(opacity, 0.0f, 1.0f) * kFadeSteps) / kFadeSteps;
+}
+
+// The glyph rasters (lunasvg) and their blurred alphas (the shadow before its colour, offset and fade), each made
+// once: the costly parts of an icon texture. A texture of another opacity is composed from them.
+struct Raster
+{
+    bool ok = false;
+    std::vector<Rml::byte> glyph;
+    std::unordered_map<std::string, std::vector<float>> blurred; // by "margin|sigma"
+};
+std::unordered_map<std::string, Raster> &Rasters()
+{
+    static std::unordered_map<std::string, Raster> rasters;
+    return rasters;
+}
+
+// The glyph's alpha (opaque = 1) on the canvas of side pixels + 2 * margin, blurred (separable Gaussian, as RmlUi's
+// filter). Linear in the glyph's opacity: a faded glyph's shadow is this times the fade.
+std::vector<float> BlurredAlpha(const std::vector<Rml::byte> &glyph, int pixels, int margin, float sigma)
+{
+    const int side = pixels + 2 * margin;
     std::vector<float> alpha(static_cast<size_t>(side) * side, 0.0f), scratch(alpha.size(), 0.0f);
     for (int y = 0; y < pixels; ++y)
         for (int x = 0; x < pixels; ++x)
-            alpha[static_cast<size_t>(y + margin) * side + x + margin] = shadow.fade * glyph[(static_cast<size_t>(y) * pixels + x) * 4 + 3] / 255.0f;
-    if (shadow.sigma > 0.0f)
+            alpha[static_cast<size_t>(y + margin) * side + x + margin] = glyph[(static_cast<size_t>(y) * pixels + x) * 4 + 3] / 255.0f;
+    if (sigma > 0.0f)
     {
-        const int radius = static_cast<int>(std::ceil(3.0f * shadow.sigma));
+        const int radius = static_cast<int>(std::ceil(3.0f * sigma));
         std::vector<float> kernel(static_cast<size_t>(2 * radius + 1));
         float sum = 0.0f;
         for (int i = -radius; i <= radius; ++i)
-            sum += kernel[static_cast<size_t>(i + radius)] = std::exp(-0.5f * static_cast<float>(i * i) / (shadow.sigma * shadow.sigma));
+            sum += kernel[static_cast<size_t>(i + radius)] = std::exp(-0.5f * static_cast<float>(i * i) / (sigma * sigma));
         for (float &k : kernel)
             k /= sum;
-        const auto pass = [&](const std::vector<float> &from, std::vector<float> &to, int dx, int dy) {
-            for (int y = 0; y < side; ++y)
-                for (int x = 0; x < side; ++x)
+        // Along one axis: `step` between neighbours, `count` texels in a line; taps outside the canvas are zero.
+        const auto pass = [&](const std::vector<float> &from, std::vector<float> &to, bool vertical) {
+            const size_t step = vertical ? static_cast<size_t>(side) : 1;
+            for (int line = 0; line < side; ++line)
+            {
+                const size_t start = vertical ? static_cast<size_t>(line) : static_cast<size_t>(line) * side;
+                for (int at = 0; at < side; ++at)
                 {
+                    const int first = std::max(-radius, -at), last = std::min(radius, side - 1 - at);
+                    const float *source = from.data() + start + static_cast<size_t>(at + first) * step;
+                    const float *weight = kernel.data() + (first + radius);
                     float value = 0.0f;
-                    for (int i = -radius; i <= radius; ++i)
-                    {
-                        const int sx = x + i * dx, sy = y + i * dy;
-                        if (sx >= 0 && sy >= 0 && sx < side && sy < side)
-                            value += kernel[static_cast<size_t>(i + radius)] * from[static_cast<size_t>(sy) * side + sx];
-                    }
-                    to[static_cast<size_t>(y) * side + x] = value;
+                    for (int i = first; i <= last; ++i, source += step, ++weight)
+                        value += *weight * *source;
+                    to[start + static_cast<size_t>(at) * step] = value;
                 }
+            }
         };
-        pass(alpha, scratch, 1, 0);
-        pass(scratch, alpha, 0, 1);
+        pass(alpha, scratch, false);
+        pass(scratch, alpha, true);
     }
-    // Shadow alpha at a fractional offset (bilinear, as the filter samples its layer).
+    return alpha;
+}
+
+// Puts `shadow` under the premultiplied glyph raster (side `pixels`): returns a raster of side pixels + 2 * margin
+// with the glyph in the middle. `blurred`: BlurredAlpha of the glyph for the shadow's margin and sigma.
+std::vector<Rml::byte> AddShadow(const std::vector<Rml::byte> &glyph, const std::vector<float> &blurred, int pixels, const Shadow &shadow)
+{
+    const int margin = shadow.Margin(), side = pixels + 2 * margin;
+    // Shadow alpha at a fractional offset (bilinear, as the filter samples its layer); the faded glyph casts a
+    // faded shadow.
     const auto sample = [&](float fx, float fy) {
         const int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
         const float tx = fx - static_cast<float>(x0), ty = fy - static_cast<float>(y0);
-        const auto at = [&](int x, int y) { return x >= 0 && y >= 0 && x < side && y < side ? alpha[static_cast<size_t>(y) * side + x] : 0.0f; };
-        return (at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty;
+        const auto at = [&](int x, int y) { return x >= 0 && y >= 0 && x < side && y < side ? blurred[static_cast<size_t>(y) * side + x] : 0.0f; };
+        return shadow.fade * ((at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx) * (1 - ty) + (at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx) * ty);
     };
     const Rml::ColourbPremultiplied colour = shadow.colour.ToPremultiplied();
     std::vector<Rml::byte> out(static_cast<size_t>(side) * side * 4, 0);
@@ -216,6 +253,7 @@ Rml::CallbackTextureSource &Source(const std::string &id, bool plain, Rml::Colou
     char suffix[128];
     std::snprintf(suffix, sizeof(suffix), "|%d|%02x%02x%02x%02x|%d", plain ? 1 : 0, colour.red, colour.green, colour.blue, colour.alpha, pixels);
     std::string key = id + suffix;
+    const std::string raster_key = key;
     if (shadow.On())
     {
         std::snprintf(suffix, sizeof(suffix), "|s%02x%02x%02x%02x|%.2f|%.2f|%.2f|%.3f", shadow.colour.red, shadow.colour.green, shadow.colour.blue,
@@ -225,18 +263,28 @@ Rml::CallbackTextureSource &Source(const std::string &id, bool plain, Rml::Colou
     auto &entry = Cache()[key];
     if (!entry)
     {
-        entry = std::make_unique<Rml::CallbackTextureSource>([id, plain, colour, pixels, shadow](const Rml::CallbackTextureInterface &texture) {
-            std::vector<Rml::byte> data;
-            if (!Rasterise(id, plain, colour, pixels, data))
+        entry = std::make_unique<Rml::CallbackTextureSource>([id, plain, colour, pixels, shadow, raster_key](const Rml::CallbackTextureInterface &texture) {
+            Raster &raster = Rasters()[raster_key];
+            if (raster.glyph.empty())
             {
-                // No silent blank: a missing or broken symbol is logged and drawn as a
-                // crossed red box so it is seen on the screen.
-                Rml::Log::Message(Rml::Log::LT_ERROR, "Icon '%s' is not in the icon pack (or does not rasterise)", id.c_str());
-                data = MissingIconMarker(pixels);
+                raster.ok = Rasterise(id, plain, colour, pixels, raster.glyph);
+                if (!raster.ok)
+                {
+                    // No silent blank: a missing or broken symbol is logged and drawn as a
+                    // crossed red box so it is seen on the screen.
+                    Rml::Log::Message(Rml::Log::LT_ERROR, "Icon '%s' is not in the icon pack (or does not rasterise)", id.c_str());
+                    raster.glyph = MissingIconMarker(pixels);
+                }
             }
-            const int side = pixels + 2 * shadow.Margin();
-            if (shadow.On())
-                data = AddShadow(data, pixels, shadow);
+            const int margin = shadow.Margin(), side = pixels + 2 * margin;
+            if (!shadow.On())
+                return texture.GenerateTexture({raster.glyph.data(), raster.glyph.size()}, {side, side});
+            char blur_key[48];
+            std::snprintf(blur_key, sizeof(blur_key), "%d|%.3f", margin, shadow.sigma);
+            std::vector<float> &blurred = raster.blurred[blur_key];
+            if (blurred.empty())
+                blurred = BlurredAlpha(raster.glyph, pixels, margin, shadow.sigma);
+            const std::vector<Rml::byte> data = AddShadow(raster.glyph, blurred, pixels, shadow);
             return texture.GenerateTexture({data.data(), data.size()}, {side, side});
         });
     }
@@ -296,7 +344,7 @@ class IconElement final : public Rml::Element
         {
             // As under the filter: the faded glyph casts a faded shadow and shows it through
             // itself, so the opacity goes into the raster, not onto the finished quad.
-            shadow.fade = opacity;
+            shadow.fade = QuantisedFade(opacity);
             opacity = 1.0f;
         }
         const int margin = shadow.Margin();
@@ -360,11 +408,13 @@ void LoadIconPack(const Json &pack)
         target.symbols[item.key()] = std::move(symbol);
     }
     Cache().clear();
+    Rasters().clear();
 }
 
 void ReleaseIconTextures()
 {
     Cache().clear();
+    Rasters().clear();
 }
 
 void RegisterIconElement()

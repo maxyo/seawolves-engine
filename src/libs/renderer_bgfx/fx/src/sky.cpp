@@ -3,6 +3,7 @@
 #include "gpu_util.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace storm::fx
@@ -32,18 +33,25 @@ void Sky::Update(const WeatherInput &weather, float time_seconds, float camera_h
 {
     time_ = time_seconds;
     camera_height_ = camera_height;
-    if (!state_valid_ || SkyNeedsRebuild(weather_, weather))
+    if (next_.valid() && next_.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+    {
+        state_ = next_.get();
+        weather_ = next_weather_;
+    }
+    if (!state_valid_)
     {
         weather_ = weather;
         state_ = ComputeSky(weather);
         state_valid_ = true;
     }
-    else
+    else if (!next_.valid() && SkyNeedsRebuild(weather_, weather))
     {
-        // Wind does not affect the panorama.
-        weather_.wind = weather.wind;
-        weather_.wind_speed = weather.wind_speed;
+        next_weather_ = weather;
+        next_ = std::async(std::launch::async, [weather] { return ComputeSky(weather); });
     }
+    // Wind does not affect the panorama.
+    weather_.wind = weather.wind;
+    weather_.wind_speed = weather.wind_speed;
 }
 
 void Sky::EnsureResources()

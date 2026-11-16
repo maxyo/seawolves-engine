@@ -188,6 +188,7 @@ class Host
     bool profile_in_scene_ = false;
     std::map<std::string, double> profile_views_; // GPU ms per view name since the last profile line
     DynamicResolution dynamic_;           // the scene's height under renderer_state_ (dynamic_resolution.hpp)
+    bool dynamic_played_ = false;         // the last frame was a played one (no place loading)
     double dynamic_frame_ms_ = 0.0;       // the previous end_frame, a steady clock
     int64_t dynamic_gpu_end_ = 0;         // bgfx::Stats::gpuTimeEnd already judged
     bool depth_read_ = false;

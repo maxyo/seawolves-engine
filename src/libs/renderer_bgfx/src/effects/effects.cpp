@@ -951,8 +951,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         f.heat = heat == ThermalLoad::Severe     ? DynamicResolution::Heat::Severe
                  : heat == ThermalLoad::Elevated ? DynamicResolution::Heat::Elevated
                                                  : DynamicResolution::Heat::Normal;
+        // A place was loaded: its frame rate is to be found again.
+        if (location_load().sealed && !dynamic_played_)
+            dynamic_.new_scene();
+        dynamic_played_ = location_load().sealed;
         const uint16_t before = renderer_state_.render_height;
-        if (dynamic_.frame(f))
+        const bool height_changed = dynamic_.frame(f);
+        if (dynamic_.take_rate_probe())
+            shim::FramePacing::instance().retry_preferred();
+        if (height_changed)
         {
             renderer_state_.render_height = dynamic_.height();
             renderer_state_changed_ = true;
