@@ -377,8 +377,6 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.normal_map_strength = static_cast<float>(std::clamp(v, 0, 100)) / 100.0f; }},
     {"fx_gloss", "0 off, 1 on: gloss maps shape the sun's and the lamps' highlights",
      [](fx::Settings &s, int v) { s.gloss = on(v); }},
-    {"fx_upscale", "0 off, 1 on: textures near the camera drawn at their neural ×2 (PBRify, made on the device)",
-     [](fx::Settings &s, int v) { s.upscale = on(v); }},
     {"fx_upscale_budget", "MB of GPU memory for the ×2 textures, 0 from the device's RAM (measurements)",
      [](fx::Settings &s, int v) { s.upscale_budget_mb = static_cast<uint16_t>(std::clamp(v, 0, 4096)); }},
     {"fx_gloss_strength", "10..300 % of the gloss maps' highlights",
@@ -584,6 +582,8 @@ void Host::apply()
             continue; // the preset's value
         else if (option.name == "fx_gpu_profile")
             profile = option.value != 0;
+        else if (option.name == "texture_quality") // «Качество текстур»: the neural ×2 with «Ультра», on any preset
+            fx::ApplyTextureQuality(requested_, static_cast<fx::TextureQuality>(std::clamp(option.value, 0, fx::kTextureQualityLevels - 1)));
         else if (option.name == "fx_caps_profile")
             caps_profile_ = static_cast<fx::CapsProfile>(std::clamp(option.value, 0, static_cast<int>(fx::CapsProfile::Count) - 1));
         else if (const Option *known = find_option(option.name))
@@ -1535,6 +1535,11 @@ bool RetrySceneResources(uint64_t generation)
 bool UpscaleSettled()
 {
     return effects::upscales().settled();
+}
+
+UpscaleSupport UpscaleAvailability()
+{
+    return effects::upscales().support();
 }
 
 bool BakesBusy()

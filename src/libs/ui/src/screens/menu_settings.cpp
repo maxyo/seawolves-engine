@@ -81,6 +81,27 @@ Json &AppSettings()
     return settings;
 }
 
+// What the renderer reports about the device (UI channel "renderCaps"): {"upscale": "supported" | "unsupported" |
+// "unknown"}, the texture quality «Ультра».
+Json &RenderCaps()
+{
+    static Json caps = Json::object();
+    return caps;
+}
+
+class RenderCapsConsumer final : public StateConsumer
+{
+  public:
+    const char *Channel() const override
+    {
+        return "renderCaps";
+    }
+    void OnState(const Json &state, Router &) override
+    {
+        RenderCaps() = state.is_object() ? state : Json::object();
+    }
+};
+
 class AppSettingsConsumer final : public StateConsumer
 {
   public:
@@ -215,8 +236,23 @@ class SettingsScreen final : public Screen
                         rateLabels.push_back(std::to_string(rates.back()));
                     }
             Segment(bindings, graphics, "frame_rate", "settings.frame_rate", rates, rateLabels, false);
-            Segment(bindings, graphics, "texture_degradation", "settings.texture_quality", {0, 1, 2},
-                    {bindings.Text("settings.texture_full"), bindings.Text("settings.texture_medium"), bindings.Text("settings.texture_low")});
+            // «Качество текстур» (fx::TextureQuality): Низкое / Среднее / Высокое change the textures' resolution at the
+            // next start (marked only when the choice changes it); «Ультра» is Высокое with the neural ×2, at once,
+            // offered where the renderer reports the device can show it (channel "renderCaps"), else disabled with why.
+            Json levels = Json::array({bindings.Text("settings.texture_low"), bindings.Text("settings.texture_medium"),
+                                       bindings.Text("settings.texture_high")});
+            const std::string upscale = RenderCaps().value("upscale", std::string("unknown"));
+            if (upscale == "supported")
+                levels.push_back(bindings.Text("settings.texture_ultra"));
+            else
+                levels.push_back(Json{{"label", bindings.Text("settings.texture_ultra")},
+                                      {"disabled", true},
+                                      {"reason", bindings.Text(upscale == "unsupported" ? "settings.texture_ultra_unsupported"
+                                                                                        : "settings.texture_ultra_unknown")}});
+            const auto resolution = [](int level) { return level >= 2 ? 0 : 2 - level; }; // fx::TextureDegradation
+            const bool restart = Known("texture_quality") && AppSettings().is_object() && AppSettings().contains("texture_quality") &&
+                                 resolution(draft_["texture_quality"].get<int>()) != resolution(AppSettings()["texture_quality"].get<int>());
+            Segment(bindings, graphics, "texture_quality", "settings.texture_quality", {0, 1, 2, 3}, levels, restart);
             sections.push_back({"", {sound, graphics}});
         }
         else
@@ -327,9 +363,6 @@ class SettingsScreen final : public Screen
                 DebugSegment(bindings, debug, "fx_pom_probe", "Прицел: текстура и параллакс", {-1, 1}, {"выкл", "вкл"});
                 DebugSegment(bindings, debug, "fx_pom_toggle", "Прицел: переключить параллакс", {-1, 1}, {"А", "Б"});
             }
-            // Neural ×2 textures near the camera (feat/upscale, Высокая): forced on or off.
-            if (Known("fx_upscale"))
-                DebugSegment(bindings, debug, "fx_upscale", "Нейро-×2 текстур", {-1, 0, 1}, onOff);
             // The renderer's thread, its frame overlap and the graphics API (read at the game's start).
             if (Known("render_backend"))
             {
@@ -493,6 +526,11 @@ std::unique_ptr<Screen> CreateSettingsScreen()
 std::unique_ptr<StateConsumer> CreateAppSettingsConsumer()
 {
     return std::make_unique<AppSettingsConsumer>();
+}
+
+std::unique_ptr<StateConsumer> CreateRenderCapsConsumer()
+{
+    return std::make_unique<RenderCapsConsumer>();
 }
 
 } // namespace storm::ui::screens

@@ -30,6 +30,7 @@
 #include "scene_hold.hpp"
 #include "scene_detail.hpp"
 #include "storm/render/effects.hpp"
+#include "storm/fx/settings.hpp"
 #include "storm/render/frame_rate.hpp"
 #include "storm/render/log.hpp"
 #include "storm/render/perf_stats.hpp"
@@ -442,6 +443,23 @@ std::vector<storm::render::EffectsOption> effectsOptions;
 // app reports it as fx_auto_render_height only while that automatic choice stands); 0: the preset's own.
 uint16_t effectsAutoHeight = 0;
 
+// «Качество текстур» (fx::TextureQuality: 0 Низкое … 3 Ультра): engine.ini texture_quality and, on Android, the
+// player's choice in the app, which wins. Out of range: logged, the default (Высокое).
+int TextureQualitySetting(int ini_value)
+{
+    int value = ini_value;
+#ifdef __ANDROID__
+    value = storm::android::graphicsSetting("texture_quality", value);
+#endif
+    if (value < 0 || value >= storm::fx::kTextureQualityLevels)
+    {
+        spdlog::error("graphics: texture quality {} is not one of 0..{}; the default {} is used", value,
+                      storm::fx::kTextureQualityLevels - 1, static_cast<int>(storm::fx::kTextureQualityDefault));
+        value = static_cast<int>(storm::fx::kTextureQualityDefault);
+    }
+    return value;
+}
+
 // Applies "name=value,..." over `preset` / `options`.
 void ApplyEffectsOverrides(std::string_view list, int &preset, std::vector<storm::render::EffectsOption> &options)
 {
@@ -519,6 +537,10 @@ void ConfigureGraphicsEffects(const std::function<int(const char *, int)> &iniVa
                 overridden += fmt::format(" {}={}", info.name, value);
             }
         }
+    // The texture level's part of the effects (the neural ×2 with «Ультра»), applied at once like the preset.
+    const int textureQuality = TextureQualitySetting(iniValue("texture_quality", static_cast<int>(storm::fx::kTextureQualityDefault)));
+    effectsOptions.push_back({"texture_quality", textureQuality});
+    overridden += fmt::format(" texture_quality={}", textureQuality);
     spdlog::info("graphics effects: preset {}, options:{}", effectsPreset, overridden.empty() ? " none" : overridden);
     if (const char *overrides = std::getenv("STORM_FX_OPTIONS"); overrides && *overrides)
     {
@@ -815,10 +837,10 @@ bool Renderer::Init()
 
         bWindow = ini->GetInt(nullptr, "full_screen", 1) == 0;
 
-        nTextureDegradation = ini->GetInt(nullptr, "texture_degradation", 0);
-#ifdef __ANDROID__
-        nTextureDegradation = std::clamp(storm::android::graphicsSetting("texture_degradation", nTextureDegradation), 0, 2);
-#endif
+        // The textures' top mips skipped: the texture quality's resolution (fx::TextureDegradation), at this start.
+        nTextureDegradation = storm::fx::TextureDegradation(static_cast<storm::fx::TextureQuality>(
+            TextureQualitySetting(ini->GetInt(nullptr, "texture_quality", static_cast<int>(storm::fx::kTextureQualityDefault)))));
+        spdlog::info("textures: {} top mip level(s) skipped at this start (the texture quality's resolution)", nTextureDegradation);
         ConfigureGraphicsEffects([&ini](const char *name, int fallback) {
             return effectsIniValues[name] = ini->GetInt(nullptr, name, fallback);
         });
@@ -3238,6 +3260,21 @@ void Renderer::RunStart()
     if (pendingViewResize_.width > 0)
         ApplyViewResize();
     ReconfigureGraphicsEffects(); // the settings screen stored new preferences
+    // The device's answer for the texture quality «Ультра» (the neural ×2): the settings screen offers it, or shows it
+    // disabled with the reason (UI channel "renderCaps", published when it becomes known or changes).
+    {
+        static storm::render::UpscaleSupport published = storm::render::UpscaleSupport::Unknown;
+        static bool first = true;
+        const storm::render::UpscaleSupport support = storm::render::UpscaleAvailability();
+        if (first || support != published)
+        {
+            first = false;
+            published = support;
+            storm::android::publishUiState("renderCaps", support == storm::render::UpscaleSupport::Supported   ? R"({"upscale":"supported"})"
+                                                         : support == storm::render::UpscaleSupport::Unsupported ? R"({"upscale":"unsupported"})"
+                                                                                                                 : R"({"upscale":"unknown"})");
+        }
+    }
     AutoPresetFrame(); // the automatic graphics preset measures on the title screen
     // The pause menu covers a paused game: its last 3D frame is presented again instead of drawing the scene every
     // frame (perf audit F11). The hold begins once the renderer kept a full frame and ends with the menu; a settings

@@ -569,7 +569,29 @@ void CheckSupport()
         CHECK(BackgroundProducts{}.Describe() == "none");
         const BackgroundProducts top = BackgroundProductsFor(high);
         CHECK(top.far_lods && top.visibility && top.ao_volume && top.town_light && top.town_walls && top.lamp_shadows &&
-              top.sun_shadows && top.relief && top.gloss && top.upscale);
+              top.sun_shadows && top.relief && top.gloss && !top.upscale);
+        // «Качество текстур»: the neural ×2 follows the texture level alone, on every preset; nothing else changes.
+        CHECK(TextureDegradation(TextureQuality::Low) == 2 && TextureDegradation(TextureQuality::Medium) == 1 &&
+              TextureDegradation(TextureQuality::High) == 0 && TextureDegradation(TextureQuality::Ultra) == 0);
+        for (const QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
+        {
+            CHECK(!Settings::FromPreset(preset).upscale);
+            const BackgroundProducts base = BackgroundProductsFor(Settings::FromPreset(preset));
+            for (int level = 0; level < kTextureQualityLevels; ++level)
+            {
+                Settings textured = Settings::FromPreset(preset);
+                ApplyTextureQuality(textured, static_cast<TextureQuality>(level));
+                BackgroundProducts products = BackgroundProductsFor(textured);
+                CHECK(products.upscale == (level == static_cast<int>(TextureQuality::Ultra)));
+                products.upscale = base.upscale;
+                CHECK(products == base);
+            }
+        }
+        Settings low_ultra = Settings::FromPreset(QualityPreset::Low);
+        ApplyTextureQuality(low_ultra, TextureQuality::Ultra);
+        BackgroundProducts far_and_x2 = far_only;
+        far_and_x2.upscale = true;
+        CHECK(BackgroundProductsFor(low_ultra) == far_and_x2 && BackgroundProductsFor(low_ultra).Describe() == "far LODs, upscale x2");
         // What needs the lit draws goes without them: no visibility volume.
         Settings unlit = high;
         unlit.lighting_flags = kLightingNone;

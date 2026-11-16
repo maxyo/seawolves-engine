@@ -1,1 +1,1 @@
-{"texture_degradation": 0, "pirate_frequency": 20, "ui_scale": 100, "hud_transparency": 0, "fx_preset": 0, "fx_preset_auto": true, "fx_auto_render_height": 720, "frame_rate": 60, "frame_rate_options": [30, 60, 90, 120], "ui_scale_options": [100, 115]}
+{"texture_quality": 2, "pirate_frequency": 20, "ui_scale": 100, "hud_transparency": 0, "fx_preset": 0, "fx_preset_auto": true, "fx_auto_render_height": 720, "frame_rate": 60, "frame_rate_options": [30, 60, 90, 120], "ui_scale_options": [100, 115]}

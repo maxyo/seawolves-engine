@@ -96,7 +96,7 @@ finish before capture; window boundaries can extend outside the capture interval
 game's techniques (default), `1` uses linear filtering, and `2`, `4`, `8`, or `16`
 request anisotropic filtering capped by device capabilities. Explicit point
 sampling, mip filtering and magnification are preserved. Android graphics
-preferences override this key and `texture_degradation`, `vsync`, `screen_x`,
+preferences override this key and `texture_quality`, `vsync`, `screen_x`,
 and `screen_y` at renderer startup; unset preferences use the game INI values.
 Changes require restarting the game. Evaluate increased filtering on oblique
 ground/deck textures and measure its cost before choosing a device-specific default.

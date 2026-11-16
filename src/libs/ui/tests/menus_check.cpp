@@ -412,8 +412,25 @@ static void Settings(const std::string &models)
                rate["disabled"] == false && rate["options"] == Json::array({"30", "60", "90", "120"}),
            "«Частота кадров» offers the rates the host reports for the display, 60 chosen, applied at once: " + rate.dump());
     const Json textures = page[0]["columns"][1]["rows"][2];
-    Expect(textures["id"] == "app-texture_degradation" && textures["restart"] == true && textures["disabled"] == false,
-           "texture quality from the host, marked as needing a restart");
+    Expect(textures["id"] == "app-texture_quality" && textures["selected"] == 2 && textures["restart"] == false &&
+               textures["disabled"] == false && textures["options"].size() == 4 && textures["options"][2] == "<settings.texture_high>" &&
+               textures["options"][3]["label"] == "<settings.texture_ultra>" && textures["options"][3]["disabled"] == true &&
+               textures["options"][3]["reason"] == "<settings.texture_ultra_unknown>",
+           "«Качество текстур» Низкое/Среднее/Высокое/Ультра, Высокое chosen; «Ультра» disabled with why until the renderer "
+           "reports the device: " + textures.dump());
+    router.OnEvent({"app-texture_quality", "change", "1"});
+    Expect(surface.props["sections"][0]["columns"][1]["rows"][2]["restart"] == true, "a lower resolution applies at the next start");
+    router.OnEvent({"app-texture_quality", "change", "2"});
+    Expect(surface.props["sections"][0]["columns"][1]["rows"][2]["restart"] == false, "back to the stored resolution: no restart");
+    router.SetState("renderCaps", Json{{"upscale", "supported"}});
+    router.OnEvent({"app-texture_quality", "change", "3"});
+    const Json ultra = surface.props["sections"][0]["columns"][1]["rows"][2];
+    Expect(ultra["options"][3] == "<settings.texture_ultra>" && ultra["selected"] == 3 && ultra["restart"] == false,
+           "a device that can show the ×2 offers «Ультра», applied at once (same resolution as Высокое): " + ultra.dump());
+    router.SetState("renderCaps", Json{{"upscale", "unsupported"}});
+    router.OnEvent({"app-texture_quality", "change", "2"});
+    Expect(surface.props["sections"][0]["columns"][1]["rows"][2]["options"][3]["reason"] == "<settings.texture_ultra_unsupported>",
+           "a device without ETC2 or BC textures shows «Ультра» disabled with that reason");
     surface.commands.clear();
     router.OnEvent({"app-fx_preset", "change", "2"});
     router.OnEvent({"app-frame_rate", "change", "3"});
@@ -424,7 +441,7 @@ static void Settings(const std::string &models)
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
-                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"pirate_frequency\":100,\"texture_degradation\":0,\"ui_scale\":115}" &&
+                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"pirate_frequency\":100,\"texture_quality\":2,\"ui_scale\":115}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the app options to the host and confirms the game's settings; the measured-preset flag "
            "fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");
@@ -450,7 +467,7 @@ static void Settings(const std::string &models)
         // rows and «Замер GPU» (fx_gpu_profile), handed to the host with «Готово» like the others.
         FakeSurface debug_surface;
         Router debug(debug_surface);
-        Json reported{{"fx_preset", 1}, {"texture_degradation", 0}};
+        Json reported{{"fx_preset", 1}, {"texture_quality", 2}};
         for (const char *key : {"fx_msaa", "fx_bloom", "fx_grade", "fx_dither", "fx_shadows", "fx_sea_band_limit",
                                 "fx_sea_soft_edges", "fx_sea_specular", "fx_light_per_pixel", "fx_light_point", "fx_light_specular",
                                 "fx_light_normal_map", "fx_alpha_to_coverage", "fx_anisotropy", "fx_ao_volume", "fx_smaa", "fx_sharpen",
@@ -460,7 +477,7 @@ static void Settings(const std::string &models)
                                 "fx_town_walls", "fx_gloss", "fx_gloss_strength",
                                 "fx_gloss_debug", "fx_sea_waves", "fx_sea_waves_lift",
                                 "fx_sea_waves_debug", "fx_pom_probe",
-                                "fx_pom_toggle", "fx_upscale", "fx_far_lod", "fx_light_reach", "fx_light_core",
+                                "fx_pom_toggle", "fx_far_lod", "fx_light_reach", "fx_light_core",
                                 "fx_light_level", "fx_character_relief", "fx_character_relief_strength"}) // GraphicsSettings.DEBUG_KEYS, -1 = the preset's
             reported[key] = -1;
         debug.SetState("appSettings", reported);
@@ -508,9 +525,7 @@ static void Settings(const std::string &models)
         Expect(row("app-fx_sea_waves").is_object() &&
                    row("app-fx_sea_waves_debug")["options"].size() == 4,
                "effects debug: waves from objects: " + rows.dump());
-        Expect(row("app-fx_upscale")["options"] == Json::array({"пресет", "выкл", "вкл"}) &&
-                   row("app-fx_upscale")["label"] == "Нейро-×2 текстур",
-               "effects debug: neural ×2 textures forced on or off: " + rows.dump());
+        Expect(row("app-fx_upscale").is_null(), "the neural ×2 is no debug override: the texture quality «Ультра» decides it");
         Expect(row("app-fx_town_light")["options"] == Json::array({"пресет", "игра", "наш"}) && row("app-fx_town_light_debug").is_object(),
                "effects debug: the town light, game's or ours, and its view: " + rows.dump());
         Expect(row("app-fx_pom_probe")["label"] == "Прицел: текстура и параллакс" &&

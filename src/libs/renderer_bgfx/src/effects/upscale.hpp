@@ -1,4 +1,4 @@
-// The neural ×2 textures on the GPU (fx/upscale.hpp, Settings::upscale: Высокая; fx_upscale forces it on or off).
+// The neural ×2 textures on the GPU (fx/upscale.hpp, Settings::upscale: the texture quality «Ультра»).
 //
 // Every loaded texture fx::ClassifyUpscale gives a target (the relief classes' colour textures, the characters') gets
 // an entry. Its ×2 costs four times its memory, so only the textures drawn near the camera are resident at ×2:
@@ -19,6 +19,7 @@
 #include "effects/loading_upload.hpp"
 
 #include "storm/fx/upscale.hpp"
+#include "storm/render/effects.hpp"
 
 #include <bgfx/bgfx.h>
 
@@ -97,6 +98,11 @@ class Upscales
     int prepare_scene(shim::TexStore &store, uint64_t generation = 0);
     // On: the last plan (they run twice a second) found every texture it chose resident at ×2 (render::UpscaleSettled).
     bool settled() const;
+    // The device's answer once resolve() ran (render::UpscaleAvailability).
+    render::UpscaleSupport support() const
+    {
+        return !configured_ ? render::UpscaleSupport::Unknown : supported_ ? render::UpscaleSupport::Supported : render::UpscaleSupport::Unsupported;
+    }
     void end_frame(LoadingUploadScope scope = {});
 
     struct Stats

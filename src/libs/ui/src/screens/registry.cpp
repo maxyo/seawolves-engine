@@ -21,6 +21,7 @@ std::unique_ptr<Screen> CreateGameMenuScreen();
 std::unique_ptr<Screen> CreateSavesScreen();
 std::unique_ptr<Screen> CreateSettingsScreen();
 std::unique_ptr<StateConsumer> CreateAppSettingsConsumer();
+std::unique_ptr<StateConsumer> CreateRenderCapsConsumer();
 std::unique_ptr<Screen> CreateTitleScreen();
 std::unique_ptr<Screen> CreateNewGameScreen();
 std::unique_ptr<Screen> CreateDiceScreen();
@@ -129,6 +130,7 @@ std::vector<std::unique_ptr<StateConsumer>> CreateStateConsumers()
     std::vector<std::unique_ptr<StateConsumer>> consumers;
     consumers.push_back(CreateDialogueConsumer());
     consumers.push_back(CreateAppSettingsConsumer());
+    consumers.push_back(CreateRenderCapsConsumer());
     consumers.push_back(CreateGameOverConsumer());
     consumers.push_back(CreateLoadFailureConsumer());
     consumers.push_back(CreateTitleIntentConsumer());

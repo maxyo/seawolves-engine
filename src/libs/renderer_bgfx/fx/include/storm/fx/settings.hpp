@@ -186,6 +186,7 @@ struct Settings
     bool gloss = false;
     // Neural ×2 textures (upscale.hpp, renderer src/effects/upscale.hpp): the relief classes' colour textures and the
     // characters' drawn near the camera take PBRify's ×2 made on the device, within a GPU budget from the device's RAM.
+    // No preset sets it: the texture quality «Ультра» does (ApplyTextureQuality).
     bool upscale = false;
     uint16_t upscale_budget_mb = 0; // with upscale: their GPU memory, 0 = UpscaleBudgetBytes of the device's RAM
     float gloss_strength = 1.0f;   // with gloss: the share of the gloss maps' highlights (0..3), 1 = the chosen look
@@ -296,6 +297,30 @@ struct BackgroundProducts
     bool operator==(const BackgroundProducts &) const = default;
 };
 BackgroundProducts BackgroundProductsFor(const Settings &settings);
+
+// «Качество текстур» (owner decision 2026-11-16), one choice for the textures' resolution and the neural ×2:
+// 0 Низкое, 1 Среднее, 2 Высокое (the game's textures from their second mip, their first, their full size), 3 Ультра
+// (Высокое and the neural ×2 near the camera). The resolution applies at the next start (the textures are loaded at it);
+// the ×2 at once. Высокое is the default.
+enum class TextureQuality : int
+{
+    Low = 0,
+    Medium = 1,
+    High = 2,
+    Ultra = 3,
+};
+inline constexpr int kTextureQualityLevels = 4;
+inline constexpr TextureQuality kTextureQualityDefault = TextureQuality::High;
+// The top mips the textures skip (the renderer's texture degradation): 2, 1, 0, 0.
+inline int TextureDegradation(TextureQuality quality)
+{
+    return quality >= TextureQuality::High ? 0 : 2 - static_cast<int>(quality);
+}
+// The level's part of the effects settings: the neural ×2 with «Ультра» only, whatever the preset.
+inline void ApplyTextureQuality(Settings &settings, TextureQuality quality)
+{
+    settings.upscale = quality == TextureQuality::Ultra;
+}
 
 enum class LampDepth : uint8_t
 {

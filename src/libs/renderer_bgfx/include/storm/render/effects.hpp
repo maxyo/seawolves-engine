@@ -343,6 +343,16 @@ const ParallaxProbeState &EffectsParallaxProbe();
 // texture it chose resident at ×2 (none still being read, uploaded or made). The scene sweep reports it with each
 // variant's capture and waits for it when the variant asks (wait=upscale).
 bool UpscaleSettled();
+// Whether this device can show the neural ×2 textures (the texture quality «Ультра»): unknown until the renderer read
+// the GPU's caps and the upscale directory (the first texture); unsupported without ETC2 or BC textures (the ×2 would
+// be held uncompressed).
+enum class UpscaleSupport
+{
+    Unknown,
+    Supported,
+    Unsupported,
+};
+UpscaleSupport UpscaleAvailability();
 // A bake (town light, visibility, bounce, AO volume, far LOD) is queued or running (fx/bakes.hpp). Reported, and waited
 // for on request, by the scene sweep (wait=bakes).
 bool BakesBusy();

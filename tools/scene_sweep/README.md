@@ -150,7 +150,7 @@ generating at its capture. A variant waits for one only when it names it; the pr
 
 | Item | Waits for |
 |---|---|
-| `wait=upscale` | the neural ×2 textures (`fx_upscale`): the last residency plan found every texture it chose resident |
+| `wait=upscale` | the neural ×2 textures (the texture quality «Ультра», `texture_quality=3`): the last residency plan found every texture it chose resident |
 | `wait=relief` | the relief generation: no relief map (or list of relief textures) being made |
 | `wait=bakes` | the bake queue (`fx/bakes.hpp`: town light, visibility volume, AO volume, far LODs): none queued or running |
 
