@@ -3069,11 +3069,15 @@ static void Launcher()
     router.Back();
     Expect(!surface.props["extras"]["reading"].get<bool>(), "back closes the reading sheet first");
 
+    // The reader's file names go where the text puts {1}.
+    surface.texts["launcher.result.import_archive_volumes"] = "<volumes: {1}.>";
+    const size_t errorsBefore = surface.errors.size();
     router.SetState("launcher", launcher({{"phase", "setup"}, {"library", true}, {"hasGame", true}, {"files", true},
                                           {"result", {{"key", "import_archive_volumes"}, {"args", {"setup-2.bin"}}}}}));
+    Expect(surface.errors.size() == errorsBefore, "file names placed by {1} are no error");
     const Json notice = surface.props["notices"][0];
     ExpectEqual(notice["tone"].get<std::string>(), "danger", "failed import is a danger notice");
-    ExpectEqual(notice["text"].get<std::string>(), "<launcher.result.import_archive_volumes> setup-2.bin <launcher.kept>",
+    ExpectEqual(notice["text"].get<std::string>(), "<volumes: setup-2.bin.> <launcher.kept>",
                 "failure names the files and keeps the old game");
     Expect(surface.props["back"].get<bool>(), "changing files of a ready game has ←");
     router.Back();
@@ -3085,7 +3089,7 @@ static void Launcher()
         return std::count(surface.shown.begin(), surface.shown.end(), line);
     };
     const std::string volumes = "danger (notice on screen app:launcher): <launcher.failed> "
-                                "<launcher.result.import_archive_volumes> setup-2.bin <launcher.kept>";
+                                "<volumes: setup-2.bin.> <launcher.kept>";
     Expect(shownCount(volumes) == 1, "a failed import's notice is logged");
     for (const char *key : {"picker_unavailable", "exit_game_first", "picker_unavailable"})
     {
@@ -3157,11 +3161,13 @@ static void Launcher()
     ExpectEqual(surface.props["sets"][0]["action"].get<std::string>(), "pause", "an active set pauses inline");
     Expect(surface.props["sets"][0]["progress"].get<double>() == 50, "download progress");
     ExpectEqual(surface.props["sets"][1]["button"]["id"].get<std::string>(), "btn-2", "import is an inline button");
-    Expect(surface.props["sets"][2]["meta"].get<std::string>().find("<downloads.stalled_no_peers>: Tracker x: 404") != std::string::npos &&
+    const std::string stalledMeta = surface.props["sets"][2]["meta"].get<std::string>();
+    Expect(stalledMeta.find("<downloads.stalled_no_peers>") != std::string::npos && stalledMeta.find("Tracker") == std::string::npos &&
                surface.props["sets"][2]["metaTone"].get<std::string>() == "danger",
-           "a stalled set says why");
-    Expect(surface.props["sets"][3]["meta"].get<std::string>().find("<downloads.storage_full> — No space left on device") != std::string::npos,
-           "a full disk is named");
+           "a stalled set says why in our words; the network problem only goes to the log");
+    const std::string fullMeta = surface.props["sets"][3]["meta"].get<std::string>();
+    Expect(fullMeta.find("<downloads.storage_full>") != std::string::npos && fullMeta.find("No space left") == std::string::npos,
+           "a full disk is named in our words; the system's text only goes to the log");
     Expect(shownCount("danger (notice on screen app:downloads): Full disk: No space left on device") == 1, "a set's error is logged");
     Expect(shownCount("warn (notice on screen app:downloads): Quiet: <downloads.stalled_no_peers>: Tracker x: 404") == 1,
                 "a stalled set's reason is logged");

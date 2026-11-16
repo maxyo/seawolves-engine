@@ -182,10 +182,14 @@ Json ResultNotice(Bindings &bindings, const Json &result, bool has_game)
     }
     else if (std::find_if(std::begin(kKnown), std::end(kKnown), [&table](const char *k) { return table == k; }) != std::end(kKnown))
     {
-        notice["text"] = bindings.Text(table);
-        // The file names the reader reported (missing volumes, the clashing names).
-        if (!arg(0).empty())
-            notice["text"] = notice["text"].get<std::string>() + " " + arg(0);
+        // The file names the reader reported (missing volumes, the clashing names) go where the text puts {1}.
+        const std::string text = bindings.Text(table);
+        notice["text"] = Fill(text, {arg(0)});
+        if (!arg(0).empty() && text.find("{1}") == std::string::npos)
+        {
+            bindings.Error("launcher: result " + key + " has file names but its text has no {1} for them");
+            notice["text"] = text + " " + arg(0);
+        }
     }
     else
     {
@@ -634,16 +638,16 @@ class DownloadsScreen final : public Screen
         }
         else if (wanted > 0 || done > 0)
             meta += " · " + Size(bindings, wanted > 0 ? wanted : done);
-        // Nothing moves: say why (no peers, or peers without data) and the latest network problem.
+        // Nothing moves: say why (no peers, or peers without data). A full storage is said in our words; any other
+        // error has no words of ours and is shown as the host reports it. The raw texts (the latest network problem,
+        // the system's storage error) go to the log below, not on the row.
         const bool stalled = Flag(set, "stalled");
         if (stalled)
-        {
             meta += " · " + bindings.Text(Num(set, "peers") > 0 ? "downloads.stalled_no_data" : "downloads.stalled_no_peers");
-            if (!Str(set, "networkError").empty())
-                meta += ": " + Str(set, "networkError");
-        }
+        // An error replaces the state («Ошибка») and leads; the set's size follows as a fact of its own.
         if (!error.empty())
-            meta += ": " + (Str(set, "errorKind") == "storage-full" ? bindings.Text("downloads.storage_full") + " — " : std::string()) + error;
+            meta = (Str(set, "errorKind") == "storage-full" ? bindings.Text("downloads.storage_full") : error) +
+                   (wanted > 0 || done > 0 ? " · " + Size(bindings, wanted > 0 ? wanted : done) : std::string());
         // The set's problems, without the progress that changes every build.
         if (stalled)
             bindings.Shown("warn", Str(set, "name") + ": " +
