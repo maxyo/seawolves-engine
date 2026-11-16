@@ -3166,7 +3166,7 @@ static void Launcher()
                surface.props["sets"][2]["metaTone"].get<std::string>() == "danger",
            "a stalled set says why in our words; the network problem only goes to the log");
     const std::string fullMeta = surface.props["sets"][3]["meta"].get<std::string>();
-    Expect(fullMeta.find("<downloads.storage_full>") != std::string::npos && fullMeta.find("No space left") == std::string::npos,
+    Expect(fullMeta.find("<downloads.problem.storage-full>") != std::string::npos && fullMeta.find("No space left") == std::string::npos,
            "a full disk is named in our words; the system's text only goes to the log");
     Expect(shownCount("danger (notice on screen app:downloads): Full disk: No space left on device") == 1, "a set's error is logged");
     Expect(shownCount("warn (notice on screen app:downloads): Quiet: <downloads.stalled_no_peers>: Tracker x: 404") == 1,
@@ -3193,6 +3193,20 @@ static void Launcher()
     ExpectEqual(verb(), "APP download 1:1", "one candidate");
     router.OnEvent({"candidate-all", "click", ""});
     ExpectEqual(verb(), "APP download 1:-1", "every file");
+    // Failures in our words by their kind; the host's message only in the log.
+    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"},
+                                     {"downloads", {{"sets", sets}, {"error", "Invalid magnet link: it must start with magnet:?"}, {"errorKind", "magnet-prefix"},
+                                                    {"dialog", {{"kind", "error"}, {"text", "Cannot open selected document"}, {"errorKind", "open-failed"}}}}}});
+    ExpectEqual(surface.props["error"].get<std::string>(), "<downloads.problem.magnet-prefix>", "a failure above the sets in our words");
+    ExpectEqual(surface.props["dialog"]["text"].get<std::string>(), "<downloads.problem.open-failed>", "an error dialog in our words");
+    Expect(shownCount("danger (notice on screen app:downloads): Invalid magnet link: it must start with magnet:?") == 1 &&
+               shownCount("danger (notice on screen app:downloads): <downloads.error>: Cannot open selected document") == 1,
+           "the host's messages are logged");
+    const size_t problemErrors = surface.errors.size();
+    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"},
+                                     {"downloads", {{"sets", sets}, {"dialog", {{"kind", "error"}, {"text", "x"}, {"errorKind", "new-kind"}}}}}});
+    Expect(surface.props["dialog"]["text"].get<std::string>() == "<downloads.problem.failed>" && surface.errors.size() > problemErrors,
+           "a kind without our words is an error and reads as the general failure");
 
     router.SetState("launcher", Json{{"screen", "about"}, {"language", "english"},
                                      {"about", {{"app", {{"appSource", "https://example.org/app/tree/1"}, {"engineSource", "https://example.org/engine/tree/2"}}},

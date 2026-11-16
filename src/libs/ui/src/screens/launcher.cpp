@@ -13,9 +13,9 @@
 //               choices: [{id, name, version, languages, defaultLanguage, bytes, files,
 //               patches, place, missing}], password: {for, retry}}}
 //   downloads: {sets: [{id, kind, name, state, downloaded, wanted, rate, peers, stalled,
-//               networkError, error, errorKind, discovered: ""|checking|game|none|undecided,
+//               networkError, error (log only), errorKind (what the player reads), discovered: ""|checking|game|none|undecided,
 //               main: <verb>, menu: [<verb>], busy}],
-//               error, magnetDraft, dialog: {kind: candidates|details|error, ...}}
+//               error, errorKind, magnetDraft, dialog: {kind: candidates|details|error (text, errorKind), ...}}
 //               (the app's DownloadLibraryState defines states, verbs and candidates)
 //   about:     {app: {version, code, flavor, appCommit, engineCommit, appSource,
 //               engineSource, renderBackend (after the game's first start)}, notices: [<file>], open: {file, text, truncated},
@@ -498,6 +498,24 @@ const char *const kSetStates[] = {
 const char *const kCandidateKinds[] = {StringKey("downloads.kind.loose-game-candidate"), StringKey("downloads.kind.installer-candidate"),
                                        StringKey("downloads.kind.archive-candidate")};
 
+// A failure of the download library in the player's words, by the kind the host names
+// (DownloadProblem in the app); the host's message only goes to the log. A kind without
+// words of ours is an error and reads as the general failure.
+std::string Problem(Bindings &bindings, const std::string &kind)
+{
+    static const char *const kProblems[] = {
+        StringKey("downloads.problem.storage-full"),   StringKey("downloads.problem.storage"),        StringKey("downloads.problem.transfer"),
+        StringKey("downloads.problem.metadata"),       StringKey("downloads.problem.magnet-prefix"),  StringKey("downloads.problem.magnet-damaged"),
+        StringKey("downloads.problem.open-failed"),    StringKey("downloads.problem.too-large"),      StringKey("downloads.problem.files-missing"),
+        StringKey("downloads.problem.refresh-first"),  StringKey("downloads.problem.import-running"), StringKey("downloads.problem.pause-first"),
+        StringKey("downloads.problem.exit-game-first"), StringKey("downloads.problem.failed")};
+    const std::string key = "downloads.problem." + kind;
+    if (std::find_if(std::begin(kProblems), std::end(kProblems), [&key](const char *k) { return key == k; }) != std::end(kProblems))
+        return bindings.Text(key);
+    bindings.Error("downloads: unknown problem kind '" + kind + "'");
+    return bindings.Text("downloads.problem.failed");
+}
+
 // Verbs the host offers for a set: label key, and the icon when the verb is a bare glyph.
 struct Verb
 {
@@ -544,8 +562,10 @@ class DownloadsScreen final : public Screen
         view["title"] = bindings.Text("downloads.title");
         view["empty"] = sets.empty();
         view["emptyText"] = bindings.Text("downloads.empty");
-        view["error"] = Str(state, "error");
-        bindings.Shown("danger", Str(state, "error"));
+        // A failure with no set to show it on (adding one, the library itself).
+        const std::string error = Str(state, "error");
+        view["error"] = error.empty() ? std::string() : Problem(bindings, Str(state, "errorKind"));
+        bindings.Shown("danger", error);
         view["actions"] = sets.empty() ? Json::array() : Json::array({Json{{"id", "add"}, {"icon", "plus"}, {"label", bindings.Text("downloads.add")}}});
         view["sources"] = Sources(bindings);
         view["sheet"] = nullptr;
@@ -647,15 +667,14 @@ class DownloadsScreen final : public Screen
         }
         else if (wanted > 0 || done > 0)
             meta += " · " + Size(bindings, wanted > 0 ? wanted : done);
-        // Nothing moves: say why (no peers, or peers without data). A full storage is said in our words; any other
-        // error has no words of ours and is shown as the host reports it. The raw texts (the latest network problem,
-        // the system's storage error) go to the log below, not on the row.
+        // Nothing moves: say why (no peers, or peers without data). An error is said in our words by its kind. The raw
+        // texts (the latest network problem, the error's message) go to the log below, not on the row.
         const bool stalled = Flag(set, "stalled");
         if (stalled)
             meta += " · " + bindings.Text(Num(set, "peers") > 0 ? "downloads.stalled_no_data" : "downloads.stalled_no_peers");
         // An error replaces the state («Ошибка») and leads; the set's size follows as a fact of its own.
         if (!error.empty())
-            meta = (Str(set, "errorKind") == "storage-full" ? bindings.Text("downloads.storage_full") : error) +
+            meta = Problem(bindings, Str(set, "errorKind")) +
                    (wanted > 0 || done > 0 ? " · " + Size(bindings, wanted > 0 ? wanted : done) : std::string());
         // The set's problems, without the progress that changes every build.
         if (stalled)
@@ -795,8 +814,8 @@ class DownloadsScreen final : public Screen
             }
             else
             {
-                text = Str(dialog, "text");
-                bindings.Shown("danger", bindings.Text("downloads.error") + ": " + text);
+                text = Problem(bindings, Str(dialog, "errorKind"));
+                bindings.Shown("danger", bindings.Text("downloads.error") + ": " + Str(dialog, "text"));
             }
             return Json{{"kind", "info"},
                         {"title", kind == "details" ? Str(dialog, "title") : bindings.Text("downloads.error")},
