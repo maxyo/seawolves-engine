@@ -13,6 +13,10 @@
 //   * program families (FfFamily, renderer_bgfx/CMakeLists.txt): each lit or baked program compiles only the product
 //     blocks of ff_fragment.sh its family names (lamps, AO volume, town wall, rain); ChooseFamily gives a draw the
 //     narrowest family that holds all it receives, so a draw without lamps does not carry the lamps' code.
+//   * flash lights (Settings::flash_lights, render::EffectsFlash: shots and explosions): fx::FlashLights, aged and
+//     capped once per presented frame. Per pixel only, no shadow: baked draws rank them with the dynamic lights; lit
+//     draws give them up to half of their point budget (2 / 4), the D3D point lights take the rest (those left out stay
+//     in the vertex sum).
 //   * lamps (Settings::lamp_shadows, effects/lamp_shadows.hpp): lit and baked draws into the game picture are relit
 //     by the location's own lamps around the camera, each with its shadow maps; a lit draw's D3D point lights that
 //     are such lamps leave its sums (LampShadows::relit). Lit draws of an interior take their ambient from the room
@@ -66,6 +70,7 @@
 #include <bgfx/bgfx.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -284,6 +289,24 @@ class Lighting
         dynamic_lights_this_frame_ = true;
         device_lights_origin_valid_ = false;
     }
+    // A shot, explosion or bolt at `position` (absolute world); nothing while Settings::flash_lights is 0 («Низкая»).
+    void add_flash(fx::FlashKind kind, const fx::Vec3 &position)
+    {
+        if (flash_cap_ > 0)
+        {
+            flashes_.Add(kind, position);
+            ++flash_events_;
+        }
+    }
+    // Flashes reported since the last call (effects profile).
+    uint32_t take_flash_events()
+    {
+        const uint32_t events = flash_events_;
+        flash_events_ = 0;
+        return events;
+    }
+    bool flashes_on() const { return flash_cap_ > 0; }
+    const fx::FlashLights &flashes() const { return flashes_; }
     // Where the device's camera-relative world has its origin in absolute world (the camera position the game's
     // Renderer subtracted from every world matrix and D3D light; render::SetEffectsWorldOrigin).
     void set_world_origin(const std::array<float, 3> &origin)
@@ -372,6 +395,7 @@ class Lighting
     {
         uint32_t lit = 0, baked = 0, coverage = 0, relief = 0, parallax = 0, glossy = 0, shadowed = 0, ground = 0, aerial = 0,
                  ao = 0, lamp_lit = 0, town_walls = 0, wet = 0;
+        uint32_t flashed = 0, flashes = 0; // flashed: draws lit by a flash; flashes: flashes lighting this frame
         // Textured draws that drew without the parallax, by the reason (ParallaxMiss), so a parallax that never
         // reaches the screen shows in the "effects parallax:" line.
         std::array<uint32_t, kParallaxMisses> parallax_miss{};
@@ -416,6 +440,12 @@ class Lighting
     std::vector<fx::PointLight> dynamic_lights_;        // absolute world
     std::vector<fx::PointLight> device_dynamic_lights_; // the same in the device's camera-relative world
     std::vector<fx::PointLight> candidate_lights_; // ... those a baked draw may take (scratch of prepare())
+    fx::FlashLights flashes_;
+    int flash_cap_ = 0; // Settings::flash_lights
+    uint32_t flash_events_ = 0;
+    std::vector<fx::PointLight> flash_lights_;        // this frame's, absolute world
+    std::vector<fx::PointLight> device_flash_lights_; // the same in the device's camera-relative world
+    std::chrono::steady_clock::time_point flash_clock_{};
     bool device_lights_origin_valid_ = false;
     std::array<float, 3> origin_{};
     bool dynamic_lights_this_frame_ = false;

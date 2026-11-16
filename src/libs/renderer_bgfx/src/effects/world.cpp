@@ -70,6 +70,7 @@ render::EffectsWorld Host::world() const
     if (!device_ready_)
         return world;
     world.lens_flare = settings_.lens_flare;
+    world.flash_lights = lighting_.flashes_on();
     return world;
 }
 

@@ -246,6 +246,13 @@ void Lighting::configure(const fx::Settings &settings, const fx::RendererState &
     lighting_ = (flags_ & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0;
     coverage_ = state.alpha_to_coverage;
     budget_ = fx::PointLightBudget(settings);
+    flash_cap_ = lighting_ && budget_ > 0 ? settings.flash_lights : 0;
+    if (flash_cap_ == 0)
+    {
+        flashes_.Clear();
+        flash_lights_.clear();
+        device_lights_origin_valid_ = false;
+    }
     shadows_.configure(settings);
     // Our own lightmaps for the towns with the per-pixel lighting (Средняя / Высокая); Низкая keeps the game's.
     town_light_.set_enabled(fx::BackgroundProductsFor(settings).town_light);
@@ -412,29 +419,44 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     fx::LightSelection baked_lights;
     uint8_t unused = 0;
     bool baked = !lit_state && lamp_on;
-    if (lighting_ && layout.has_normal && !lit_state && budget_ > 0 && !dynamic_lights_.empty())
+    // The dynamic and flash lights are absolute; the draw's sphere and view are in the device's camera-relative world.
+    if (!device_lights_origin_valid_ && (!dynamic_lights_.empty() || !flash_lights_.empty()))
     {
-        // The dynamic lights are absolute; the draw's sphere and view are in the device's camera-relative world.
-        if (!device_lights_origin_valid_)
-        {
-            device_dynamic_lights_ = dynamic_lights_;
-            for (fx::PointLight &l : device_dynamic_lights_)
-                for (int k = 0; k < 3; ++k)
-                    l.position[k] -= origin_[k];
-            device_lights_origin_valid_ = true;
-        }
+        device_flash_lights_ = flash_lights_;
+        for (fx::PointLight &l : device_flash_lights_)
+            for (int k = 0; k < 3; ++k)
+                l.position[k] -= origin_[k];
+        device_dynamic_lights_ = dynamic_lights_;
+        for (fx::PointLight &l : device_dynamic_lights_)
+            for (int k = 0; k < 3; ++k)
+                l.position[k] -= origin_[k];
+        device_dynamic_lights_.insert(device_dynamic_lights_.end(), device_flash_lights_.begin(), device_flash_lights_.end());
+        device_lights_origin_valid_ = true;
+    }
+    if (lighting_ && layout.has_normal && !lit_state && budget_ > 0 && (!dynamic_lights_.empty() || !flash_lights_.empty()))
+    {
         // The candidates of this draw: a carried lantern that has a lamp slot is lit by the lamps, with its shadow
-        // (where the lamps light this draw), so it is not added a second time.
+        // (where the lamps light this draw), so it is not added a second time. The flashes follow them (no lamp has one).
         candidate_lights_.clear();
         for (size_t i = 0; i < dynamic_lights_.size(); ++i)
             if (!lamp_on || !lamps_.relit(dynamic_lights_[i].position))
                 candidate_lights_.push_back(device_dynamic_lights_[i]);
+        const size_t first_flash = candidate_lights_.size();
+        candidate_lights_.insert(candidate_lights_.end(), device_flash_lights_.begin(), device_flash_lights_.end());
         // Ranked at the draw's own vertices: a torch lights the wall next to it wherever the camera is.
         if (const DrawSphere &sphere = sphere_source.get(); sphere.valid)
         {
             if (!candidate_lights_.empty())
                 baked_lights = select(candidate_lights_, sphere.center, sphere.radius, budget_, true, &unused);
             baked |= baked_lights.count > 0;
+            // select() takes every candidate within the budget, else ranks them (SelectLights' indices).
+            const bool all_taken = candidate_lights_.size() <= static_cast<size_t>(budget_);
+            for (int i = 0; i < baked_lights.count; ++i)
+                if ((all_taken ? static_cast<size_t>(i) : baked_lights.indices[i]) >= first_flash)
+                {
+                    ++frame_.flashed;
+                    break;
+                }
         }
         else if (!bounds_reported_)
         {
@@ -815,15 +837,24 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
 
     if (lit)
     {
+        // Flashes first, up to half of the budget (they exist only per pixel: their choice fades); the D3D point lights
+        // take what is left, the rest of them stays in the vertex sum.
+        const D3DMATRIX &w = device.s.world;
+        const DrawSphere &sphere = sphere_source.get();
+        const fx::Vec3 center = sphere.valid ? sphere.center : fx::Vec3{w.m[3][0], w.m[3][1], w.m[3][2]};
+        fx::LightSelection flashes;
+        if (!flash_lights_.empty() && budget_ > 1)
+        {
+            flashes = fx::SelectLights(device_flash_lights_, center, sphere.valid ? sphere.radius : 0.0f, budget_ / 2, true, true);
+            if (flashes.count > 0)
+                ++frame_.flashed;
+        }
         fx::LightSelection selection;
         if (budget_ > 0 && point_count > 0)
         {
             uint8_t picked = 0;
             // Lights left out stay in the vertex sum, so the choice is not faded; it depends only on where the
             // draw's vertices and the lights are. Without positions the model origin stands for the draw.
-            const D3DMATRIX &w = device.s.world;
-            const DrawSphere &sphere = sphere_source.get();
-            const fx::Vec3 center = sphere.valid ? sphere.center : fx::Vec3{w.m[3][0], w.m[3][1], w.m[3][2]};
             if (!sphere.valid && !bounds_reported_)
             {
                 bounds_reported_ = true;
@@ -831,8 +862,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
             }
             const int exact_budget = std::any_of(points, points+point_count, [](const auto &p){return p.aggregate.get();}) ?
                                      fx::kMaxPointLights : budget_;
-            selection = select(std::span(points, point_count), center, sphere.valid ? sphere.radius : 0.0f, exact_budget, false,
-                               &picked);
+            selection = select(std::span(points, point_count), center, sphere.valid ? sphere.radius : 0.0f,
+                               exact_budget - flashes.count, false, &picked);
             for (size_t i = 0; i < point_count; ++i)
                 if (picked & (1u << i))
                 {
@@ -842,6 +873,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                 }
             selection.dropped = 0; // the rest is lit per vertex
         }
+        for (int i = 0; i < flashes.count && selection.count < fx::kMaxPointLights; ++i)
+            selection.lights[selection.count++] = flashes.lights[i];
         draw.points = fx::PackPointLights(selection, input.view);
         prepare_aggregates(draw, selection, sun_slot >= 0 ? static_cast<uint8_t>(1u<<sun_slot) : 0);
         // Sun shadows: lit draws into the game picture (the first one of a frame prepares the map with its camera).
@@ -1408,6 +1441,7 @@ void Lighting::end_frame()
     // the rest are reused by the next frame instead of being made again.
     std::erase_if(aggregate_cache_, [&](const auto &cached) { return cached->used_frame != aggregate_frame_; });
     ++aggregate_frame_;
+    frame_.flashes = static_cast<uint32_t>(flash_lights_.size()); // the flashes this frame drew with
     last_frame_ = frame_;
     frame_ = {};
     // Every 30 frames, when it changed: the parallax census of the last frame.
@@ -1444,6 +1478,21 @@ void Lighting::end_frame()
     if (!dynamic_lights_this_frame_)
         dynamic_lights_.clear(); // no location reported them: none exist
     dynamic_lights_this_frame_ = false;
+    // Flashes age with the presented frames in real time (a 0.2 s flash is the same at 30 and 60 fps), but by at most
+    // a 30 fps frame per frame: below that rate a flash is slowed down, never skipped or shown for a single frame.
+    constexpr float kMaxFlashStep = 1.0f / 30.0f;
+    const auto now = std::chrono::steady_clock::now();
+    const float dt = flash_clock_.time_since_epoch().count() == 0
+                         ? 0.0f
+                         : std::min(std::chrono::duration<float>(now - flash_clock_).count(), kMaxFlashStep);
+    flash_clock_ = now;
+    if (flash_cap_ > 0 && (flashes_.Count() > 0 || !flash_lights_.empty()))
+    {
+        flashes_.Update(dt, origin_, flash_cap_);
+        flash_lights_.clear();
+        flashes_.AppendTo(flash_lights_, settings_.light_falloff);
+        device_lights_origin_valid_ = false;
+    }
 }
 
 void Lighting::shutdown()

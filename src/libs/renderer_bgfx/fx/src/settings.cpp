@@ -62,6 +62,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.lighting_flags = kLightingPerPixel | kLightingHemisphere | kLightingTranslucent | kLightingPoint |
                            kLightingNormalMap | kLightingRim | kLightingAerial;
         s.point_lights = 4;
+        s.flash_lights = 4;
         s.normal_map_size = 256; // the prepared 512 maps from their second mip: a quarter of High's memory
         // Gloss (with the specular it needs) waits for its cost on phones (fx_gloss, fx_light_specular switch it on);
         // its maps would come from their second mip.
@@ -101,6 +102,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.lighting_flags = kLightingPerPixel | kLightingHemisphere | kLightingSpecular | kLightingTranslucent | kLightingPoint |
                        kLightingNormalMap | kLightingRim | kLightingAerial;
     s.point_lights = 8;
+    s.flash_lights = 8;
     s.gloss = true;
     s.parallax = ParallaxQuality::Occlusion;
     s.parallax_shadow = true;
@@ -357,6 +359,10 @@ constexpr Rule kRules[] = {
     {[](const Settings &s, const Support &) { return s.wet_surfaces && !(s.lighting_flags & (kLightingPerPixel | kLightingPoint)); },
      [](Settings &s) { s.wet_surfaces = 0; },
      "wet surfaces are drawn by the per-pixel lighting (or per-pixel point lights): switched off"},
+    {[](const Settings &s, const Support &) { return s.flash_lights > 8; }, [](Settings &s) { s.flash_lights = 8; },
+     "at most 8 flash lights at once: clamped"},
+    {[](const Settings &s, const Support &) { return s.flash_lights && !(s.lighting_flags & kLightingPoint); },
+     [](Settings &s) { s.flash_lights = 0; }, "flash lights need per-pixel point lights: switched off"},
     {[](const Settings &s, const Support &) { return (s.lighting_flags & kLightingPoint) && s.point_lights != 4 && s.point_lights != 8; },
      [](Settings &s) { s.point_lights = s.point_lights > 4 ? 8 : 4; }, "point lights per draw call must be 4 or 8: rounded"},
 };

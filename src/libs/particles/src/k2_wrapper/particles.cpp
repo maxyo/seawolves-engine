@@ -7,6 +7,45 @@
 #include "p_system.h"
 #include "string_compare.hpp"
 #include "shared/messages.h"
+#include "storm/render/effects.hpp"
+
+#include <array>
+#include <optional>
+#include <string_view>
+
+namespace
+{
+// The particle systems of the game's shots and explosions, which have no light of their own: the renderer adds a
+// short flash light at the emitter (render::EffectsFlash). Cannon shots get theirs from AICannon (ShipLights), not
+// from their smoke ("cancloud_*", "Bombard"). The names are the systems the scripts and the engine create
+// (PROGRAM/sea_ai, quests, BLADE::GunFire); a system not listed here makes no light.
+std::optional<storm::render::EffectsFlashKind> FlashOf(std::string_view name)
+{
+    using Kind = storm::render::EffectsFlashKind;
+    struct Entry
+    {
+        std::string_view name;
+        Kind kind;
+    };
+    static constexpr std::array<Entry, 5> kFlashes{{
+        {"gunfire", Kind::Gunshot},
+        {"blast", Kind::BallBlast},
+        {"blast_inv", Kind::Explosion},
+        {"town_explodion", Kind::Explosion},
+        {"ShipExplode", Kind::ShipExplosion},
+    }};
+    for (const Entry &e : kFlashes)
+        if (storm::iEquals(name, e.name))
+            return e.kind;
+    return std::nullopt;
+}
+
+void ReportFlash(std::string_view name, const glm::vec3 &pos)
+{
+    if (const auto kind = FlashOf(name))
+        storm::render::EffectsFlash(*kind, {pos.x, pos.y, pos.z});
+}
+} // namespace
 
 PARTICLES::PARTICLES()
 {
@@ -93,6 +132,7 @@ uint64_t PARTICLES::ProcessMessage(MESSAGE &message)
         pSystem->SetEmitter(pos, angles);
         pSystem->SetDelay(0);
         pSystem->SetLifeTime(lifetime);
+        ReportFlash(ps_name, pos);
         return (uintptr_t)pSystem;
 
         break;
@@ -120,6 +160,7 @@ uint64_t PARTICLES::ProcessMessage(MESSAGE &message)
         pSystem->SetEmitter(pos, angles);
         pSystem->SetDelay(0);
         pSystem->SetLifeTime(lifetime);
+        ReportFlash(ps_name, pos);
         return (uintptr_t)pSystem;
 
         break;
@@ -161,6 +202,7 @@ uint64_t PARTICLES::ProcessMessage(MESSAGE &message)
         pSystem->SetEmitter(pos, angles);
         pSystem->SetDelay(0);
         pSystem->SetLifeTime(lifetime);
+        ReportFlash(ps_name, pos);
         return (uintptr_t)pSystem;
 
         break;

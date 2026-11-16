@@ -1,7 +1,7 @@
 // Point and spot lights for the per-pixel lighting path: the lights the
 // fixed-function pipeline receives through SetLight / LightEnable (location
-// torches and lanterns, ship lanterns, cannon flashes), plus short-lived flash
-// lights for shots and explosions. Selection of the few lights that matter
+// torches and lanterns, ship lanterns), plus short-lived flash lights for shots,
+// explosions and lightning. Selection of the few lights that matter
 // for one draw call happens here, on the CPU.
 #pragma once
 
@@ -10,6 +10,7 @@
 #include "storm/fx/sky_model.hpp"
 
 #include <array>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -63,32 +64,74 @@ inline constexpr float kRankFade = 0.5f;
 LightSelection SelectLights(std::span<const PointLight> lights, Vec3 center, float radius, int max_count, bool include_baked = true,
                             bool fade_rank = false);
 
-// Short-lived lights for muzzle flashes and explosions. Add() at the event, Update() once per frame,
-// then append Lights() to the frame's light list.
+// Short-lived lights of shots and explosions (no shadow, no lamp slot): the game reports each one where it happens
+// (render::EffectsFlash), the renderer ages them once per presented frame and hands the ones it keeps to the per-pixel
+// point-light path of lit and baked draws. A storm's lightning is not one of them: a bolt is far away and lights the
+// whole scene at once, which a local light with a falloff cannot do (the game flashes the screen for it).
+enum class FlashKind : uint8_t
+{
+    Gunshot,       // pistol or musket muzzle (particle system "gunfire")
+    Cannon,        // a cannon of a ship or a fort, at its muzzle (AICannon::RealFire)
+    BallBlast,     // a ball bursting on a fort, an island or a hull ("blast")
+    Explosion,     // a powder keg, a blown cannon, a quest explosion ("blast_inv", "town_explodion")
+    ShipExplosion, // a ship's powder room ("ShipExplode")
+};
+inline constexpr int kFlashKinds = 5;
+
+// What a flash of one kind looks like: peak colour (may exceed 1), the reach of a D3D light of the game with
+// attenuation 1 / (1 + 3 d / range + 16 d² / range²) (about 1/20 of the peak at `range`), and its envelope: linear rise
+// over `rise` seconds, then (1 - t / decay)² down to nothing.
+struct FlashProfile
+{
+    Vec3 color{1.0f, 1.0f, 1.0f};
+    float range = 10.0f;
+    float rise = 0.03f;
+    float decay = 0.2f;
+};
+const FlashProfile &FlashProfileOf(FlashKind kind);
+// 0..1 at `age` seconds after the flash.
+float FlashEnvelope(const FlashProfile &profile, float age);
+// The flash's shape in the one falloff of every light (light_falloff.hpp). ShapeOfGameLight ends a game light at
+// kGameLightReach; a flash wider than the ranges that fit there is the same light scaled up in space (range and core
+// by the ratio, intensity by its square), so a ship's explosion lights as far as its profile says.
+LightShape FlashShapeOf(const FlashProfile &profile, const LightFalloff &falloff);
+
 class FlashLights
 {
   public:
-    // `peak_color` may exceed 1; the light fades to nothing over `duration` seconds (fast start, long tail).
-    void Add(Vec3 position, Vec3 peak_color, float range, float duration);
-    void Update(float delta_seconds);
+    // At the event; absolute world. A second flash within kMergeDistance of one added since the last Update is the
+    // same event reported twice (a ship explosion is two particle systems, "ShipExplode" and "blast_inv"):
+    // the stronger of the two stays.
+    void Add(FlashKind kind, Vec3 position);
+    // Once per presented frame: ages the flashes (gone after rise + decay) and ranks them by their strength at the
+    // camera `eye` (absolute). The `cap` strongest light; one that falls out of them (or comes back in) fades over
+    // kCapFade instead of switching, so hitting the cap never flickers. cap = 0: nothing lights.
+    void Update(float delta_seconds, Vec3 eye, int cap);
+    // The flashes that light this frame (their weight above zero), absolute world, envelope and fade applied, shaped
+    // with `falloff` (FlashShapeOf).
     void AppendTo(std::vector<PointLight> &lights, const LightFalloff &falloff) const;
-    size_t Count() const
-    {
-        return flashes_.size();
-    }
+    void Clear() { flashes_.clear(); }
+    size_t Count() const { return flashes_.size(); }
+    // Flashes with light this frame (at most cap plus those fading out of it).
+    size_t Lit() const;
 
-    static constexpr size_t kCapacity = 32; // the oldest flash is replaced when full
+    static constexpr size_t kCapacity = 32;     // the weakest one is replaced when full
+    static constexpr float kCapFade = 0.08f;    // seconds for a light entering or leaving the cap
+    static constexpr float kMergeDistance = 0.5f;
 
   private:
     struct Flash
     {
+        FlashKind kind;
         Vec3 position;
-        Vec3 color;
-        float range;
-        float duration;
-        float age;
+        float age = 0.0f;
+        float weight = 0.0f; // 0..1, the cap's fade
+        bool fresh = true;   // added since the last Update: takes its rank at once (its envelope rises anyway) and
+                             // is dark until that Update
+        float score = 0.0f;
     };
     std::vector<Flash> flashes_;
+    Vec3 eye_{0.0f, 0.0f, 0.0f}; // of the last Update: ranks a flash added before the next one
 };
 
 // Uniform block u_fxPoint / u_fxPointCount of fx_lighting.sh.

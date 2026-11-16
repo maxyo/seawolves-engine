@@ -178,6 +178,9 @@ struct Settings
                                  // 2: the tilt the waves add to its normal (x red, z blue, none grey)
     uint32_t lighting_flags = kLightingNone;
     uint8_t point_lights = 4;      // per draw call with kLightingPoint: 4 or 8
+    // Flash lights of shots and explosions (light_set.hpp FlashLights): how many light at once, 0..8 (needs
+    // kLightingPoint). Each draw gives them at most half of its point lights.
+    uint8_t flash_lights = 0;
     // With kLightingNormalMap: strength of all relief (lit models and baked surfaces alike; texture classes keep
     // their ratios). 1.0 keeps the generated normals, while Medium and High soften their lighting contrast.
     float normal_map_strength = 1.0f;

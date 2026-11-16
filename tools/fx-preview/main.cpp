@@ -223,13 +223,18 @@ class Preview
         firing_hull_.Set(firing.hull);
         firing_sails_.Set(firing.sails);
         preview::Mesh fire;
+        // The game's cannon flashes (fx::FlashLights, as effects::Lighting runs them) seen from the Broadside camera,
+        // with Высокая's cap of 8.
+        const fx::Vec3 broadside_eye{-7.0f, 4.6f, 24.0f};
         for (int gun = 0; gun < 6; ++gun)
         {
             const fx::Vec3 muzzle{-7.0f + 4.4f * gun, ship_y + 2.3f, 46.0f - 5.6f};
-            // The guns fire in a ripple: let the frame fall 20 to 170 ms after each shot.
-            flashes_.Add(muzzle, {3.4f, 2.3f, 1.0f}, 26.0f, 0.22f);
-            flashes_.Update(0.03f);
-            const float left = 1.0f - 0.03f * static_cast<float>(6 - gun) / 0.22f;
+            // The guns fire in a ripple, one every 30 ms: the frame falls 30 to 180 ms after the shots.
+            flashes_.Add(fx::FlashKind::Cannon, muzzle);
+            flashes_.Update(0.0f, broadside_eye, 8);
+            flashes_.Update(0.03f, broadside_eye, 8);
+            const fx::FlashProfile &cannon = fx::FlashProfileOf(fx::FlashKind::Cannon);
+            const float left = fx::FlashEnvelope(cannon, 0.03f * static_cast<float>(6 - gun));
             fire.Append(preview::MakeSphere({muzzle[0], muzzle[1], muzzle[2] - 0.6f}, 0.25f + 0.75f * left, {1.0f, 0.86f, 0.55f}, 8));
         }
         muzzle_fire_.Set(fire);
@@ -417,7 +422,7 @@ class Preview
         if (shot.content == Content::Harbour)
             lights = town_lights_;
         if (shot.content == Content::Broadside)
-            flashes_.AppendTo(lights);
+            flashes_.AppendTo(lights, fx::LightFalloff{});
         if (shot.content == Content::Materials && night)
         {
             fx::PointLight torch; // a torch held between the wall and the boulder

@@ -135,6 +135,10 @@ ShipLights::LightType *ShipLights::FindLightType(std::string sLightType)
 
 void ShipLights::AddDynamicLights(VAI_OBJBASE *pObject, const glm::vec3 &vPos)
 {
+    // Средняя / Высокая: the cannon's light is the renderer's flash, set at the muzzle by AICannon::RealFire (it lights
+    // the hulls, sails, forts and the land around, not only the ships this light would be set on). This light then stays
+    // only for its glare on the water (Realize's reflection pass): no D3D light, so nothing is lit twice.
+    const bool flash_lights = storm::render::CurrentEffectsWorld().flash_lights;
     if (!bLoadLights && !LoadLights())
         return;
 
@@ -164,7 +168,7 @@ void ShipLights::AddDynamicLights(VAI_OBJBASE *pObject, const glm::vec3 &vPos)
     light.fTotalTime = pLT->fLifeTime;
     light.fUpTime = pLT->fUpTime;
     light.vCurPos = vPos;
-    light.bCoronaOnly = false;
+    light.bCoronaOnly = flash_lights;
     light.fFlareAlpha = 0.0f;
     light.fFlareAlphaMax = 1.0f;
     light.bVisible = false;

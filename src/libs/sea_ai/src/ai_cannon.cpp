@@ -1,6 +1,13 @@
 #include "ai_cannon.h"
 #include "math_inlines.h"
 #include "shared/sea_ai/script_defines.h"
+#include "storm/render/effects.hpp"
+
+namespace
+{
+// Metres ahead of the cannon's locator along the barrel: inside the fire the game's "cancloud_*" systems throw forward.
+constexpr float kMuzzleFlashAhead = 0.5f;
+} // namespace
 
 uint64_t dwTmpRDTSC;
 
@@ -148,6 +155,15 @@ void AICannon::RealFire()
 
     core.Event(CANNON_FIRE, "afffffffff", pAHolder->GetACharacter(), vPosTemp.x, vPosTemp.y, vPosTemp.z, fSpeedV0,
                fFireDirection, fFireHeightAngle, fDirY, fMaxFireDistance, fAngle);
+
+    // Средняя / Высокая: the muzzle flash's light, where the game puts the muzzle fire (the CANNON_FIRE point, at which
+    // Ball_AddBall creates "cancloud_fire"), a little ahead along the barrel inside that fire. Низкая keeps the game's
+    // own D3D light on the ships (ShipLights::AddDynamicLights below).
+    if (storm::render::CurrentEffectsWorld().flash_lights)
+    {
+        const glm::vec3 muzzle = vPosTemp + storm::math::normalizeOrZero(vDirTemp) * kMuzzleFlashAhead;
+        storm::render::EffectsFlash(storm::render::EffectsFlashKind::Cannon, {muzzle.x, muzzle.y, muzzle.z});
+    }
 
     pAIObj->Fire(storm::math::transformPoint(*pAIObj->GetMatrix(), vPos + vDir));
 

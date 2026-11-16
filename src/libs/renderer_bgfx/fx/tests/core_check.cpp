@@ -541,6 +541,7 @@ void CheckSupport()
     unlit.relief_cavity = false;
     unlit.wet_surfaces = 0;
     unlit.character_relief = CharacterRelief::Off;
+    unlit.flash_lights = 0;
     changes.clear();
     CHECK(ConstrainSettings(unlit, all, changes).ao_volume == 0 && changes.size() == 1);
     // Gloss without per-pixel highlights has nothing to shape: switched off, said.
@@ -558,6 +559,13 @@ void CheckSupport()
     too_wet.wet_surfaces = 7;
     changes.clear();
     CHECK(ConstrainSettings(too_wet, all, changes).wet_surfaces == 2 && changes.size() == 1);
+    // Flash lights: none on «Низкая», 4 / 8 at once on Средняя / Высокая; without per-pixel point lights none, said.
+    CHECK(Settings::FromPreset(QualityPreset::Low).flash_lights == 0 && Settings::FromPreset(QualityPreset::Medium).flash_lights == 4 &&
+          high.flash_lights == 8);
+    Settings no_points = high;
+    no_points.lighting_flags &= ~static_cast<uint32_t>(kLightingPoint);
+    changes.clear();
+    CHECK(ConstrainSettings(no_points, all, changes).flash_lights == 0 && changes.size() == 1);
     Settings too_strong = high;
     too_strong.ao_volume = 9;
     changes.clear();
@@ -575,6 +583,7 @@ void CheckSupport()
     flat_town.relief_cavity = false;
     flat_town.wet_surfaces = 0;
     flat_town.character_relief = CharacterRelief::Off;
+    flat_town.flash_lights = 0;
     changes.clear();
     CHECK(!ConstrainSettings(flat_town, all, changes).town_light && changes.size() == 1);
 
@@ -859,6 +868,8 @@ void CheckLightFalloff()
     CHECK(ShapeOfGameLight(10.0f, 0.0f, 0.0f, 0.0f, falloff).range == 0.0f && ShapeOfGameLight(0.0f, 1.0f, 0.0f, 0.0f, falloff).range == 0.0f);
 }
 
+void CheckFlashes();
+
 void CheckLights()
 {
     PointLight torch;
@@ -956,24 +967,122 @@ void CheckLights()
     const float scale = packed.u_fxPoint[6][2], bias = packed.u_fxPoint[6][3];
     CHECK(Near(0.9f * scale + bias, 1.0f, 1e-4f) && Near(0.7f * scale + bias, 0.0f, 1e-4f) && packed.u_fxPoint[7][3] == 2.0f);
 
-    // Flashes: bright at once, gone after their duration, never more than the pool holds.
-    FlashLights flashes;
-    flashes.Add({1.0f, 2.0f, 3.0f}, {3.0f, 2.0f, 1.0f}, 20.0f, 0.2f);
+    CheckFlashes();
+}
+
+void CheckFlashes()
+{
+    // Envelope: rises over ~30 ms, then (1 - t / decay)² to nothing; decays of 0.15..0.4 s by kind.
+    const FlashProfile &gun = FlashProfileOf(FlashKind::Gunshot);
+    const FlashProfile &cannon = FlashProfileOf(FlashKind::Cannon);
+    const FlashProfile &ship = FlashProfileOf(FlashKind::ShipExplosion);
+    CHECK(gun.rise <= 0.04f && cannon.rise <= 0.04f && ship.rise <= 0.04f);
+    CHECK(gun.decay >= 0.15f && gun.decay < cannon.decay && cannon.decay < ship.decay && ship.decay <= 0.4f);
+    CHECK(FlashEnvelope(cannon, 0.0f) == 0.0f && Near(FlashEnvelope(cannon, 0.5f * cannon.rise), 0.5f, 1e-5f));
+    CHECK(Near(FlashEnvelope(cannon, cannon.rise), 1.0f, 1e-5f));
+    CHECK(Near(FlashEnvelope(cannon, cannon.rise + 0.5f * cannon.decay), 0.25f, 1e-4f));
+    CHECK(FlashEnvelope(cannon, cannon.rise + cannon.decay) == 0.0f);
+    const LightFalloff falloff;
+    for (int k = 0; k < kFlashKinds; ++k)
+    {
+        // Every kind lights as far as its range (the game light's reach times the falloff's), and nowhere beyond; the
+        // wide ones are the narrower light scaled up, not cut at the game lights' reach.
+        const FlashProfile &p = FlashProfileOf(static_cast<FlashKind>(k));
+        const LightShape shape = FlashShapeOf(p, falloff);
+        CHECK(shape.range > 0.5f * p.range && shape.range < falloff.reach * p.range);
+        CHECK(LightFalloffAt(shape, shape.range) == 0.0f && LightFalloffAt(shape, 0.5f * p.range) > 0.0f);
+    }
+    {
+        // Scaled in space: the ship explosion at 3 times the distance is what a 20 m flash is at the distance.
+        const FlashProfile wide{{1.0f, 1.0f, 1.0f}, 60.0f, 0.03f, 0.2f}, base{{1.0f, 1.0f, 1.0f}, 20.0f, 0.03f, 0.2f};
+        const LightShape a = FlashShapeOf(wide, falloff), b = FlashShapeOf(base, falloff);
+        CHECK(Near(a.range, 3.0f * b.range, 1e-3f) && Near(LightFalloffAt(a, 15.0f), LightFalloffAt(b, 5.0f), 1e-5f));
+    }
+    const float cannon_range = FlashShapeOf(cannon, falloff).range, ship_range = FlashShapeOf(ship, falloff).range;
+
+    const Vec3 eye{0.0f, 0.0f, 0.0f};
     std::vector<PointLight> out;
-    flashes.AppendTo(out, LightFalloff{});
-    CHECK(out.size() == 1 && out[0].color[0] == 3.0f && !out[0].baked && out[0].range > 10.0f && out[0].range < 20.0f * 1.6f);
-    CHECK(LightAttenuation(out[0], 0.0f) <= 1.0f && LightAttenuation(out[0], out[0].range) == 0.0f);
-    flashes.Update(0.1f);
-    out.clear();
-    flashes.AppendTo(out, LightFalloff{});
-    CHECK(Near(out[0].color[0], 0.75f, 1e-4f)); // half the time left: a quarter of the peak
-    flashes.Update(0.11f);
-    CHECK(flashes.Count() == 0);
-    for (int i = 0; i < 50; ++i)
-        flashes.Add({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 5.0f, 1.0f);
-    CHECK(flashes.Count() == FlashLights::kCapacity);
-    flashes.Add({0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}, 5.0f, 0.0f); // nonsense is ignored
-    CHECK(flashes.Count() == FlashLights::kCapacity);
+    const auto lit = [&](const FlashLights &f) {
+        out.clear();
+        f.AppendTo(out, falloff);
+        return out.size();
+    };
+    {
+        // Dark in the frame it is reported, lit from the next one (it ages with the frame it was reported in), at its
+        // peak after the rise, gone after rise + decay.
+        FlashLights f;
+        f.Add(FlashKind::Cannon, {3.0f, 0.0f, 0.0f});
+        CHECK(lit(f) == 0);
+        f.Update(0.016f, eye, 4); // the frame it was reported in is presented
+        CHECK(lit(f) == 1 && Near(out[0].color[0], cannon.color[0] * 0.016f / cannon.rise, 1e-3f));
+        f.Update(cannon.rise - 0.016f, eye, 4);
+        CHECK(lit(f) == 1 && Near(out[0].color[0], cannon.color[0], 1e-4f) && out[0].range == cannon_range && !out[0].baked);
+        f.Update(cannon.decay, eye, 4);
+        CHECK(f.Count() == 0 && lit(f) == 0);
+        // Cap 0 («Низкая»): nothing lights.
+        f.Add(FlashKind::Cannon, {3.0f, 0.0f, 0.0f});
+        f.Update(0.0f, eye, 0);
+        f.Update(0.02f, eye, 0);
+        CHECK(lit(f) == 0);
+    }
+    {
+        // The same event reported twice in one frame (ShipExplode + blast_inv):
+        // one flash, the stronger kind.
+        FlashLights f;
+        f.Add(FlashKind::Explosion, {10.0f, 0.0f, 0.0f});
+        f.Add(FlashKind::ShipExplosion, {10.2f, 0.0f, 0.0f});
+        f.Add(FlashKind::Cannon, {10.0f, 0.1f, 0.0f});
+        CHECK(f.Count() == 1);
+        f.Update(0.0f, eye, 4);
+        f.Update(0.04f, eye, 4);
+        CHECK(lit(f) == 1 && out[0].range == ship_range);
+        f.Add(FlashKind::Cannon, {10.0f, 0.0f, 0.0f}); // a later shot at the same place is a new flash
+        CHECK(f.Count() == 2);
+    }
+    {
+        // A broadside of 12 guns with cap 4: the 4 strongest at the camera light at once, no more; the cap keeps the
+        // nearest, and when one of them drops out it fades (never a one-frame cut).
+        FlashLights f;
+        for (int gun = 0; gun < 12; ++gun)
+            f.Add(FlashKind::Cannon, {2.0f + 3.0f * gun, 0.0f, 10.0f});
+        f.Update(0.0f, eye, 4);
+        CHECK(f.Lit() == 4);
+        f.Update(0.016f, eye, 4);
+        CHECK(lit(f) == 4);
+        float nearest = 1e9f, farthest = 0.0f;
+        for (const PointLight &l : out)
+        {
+            nearest = std::min(nearest, l.position[0]);
+            farthest = std::max(farthest, l.position[0]);
+        }
+        CHECK(nearest == 2.0f && farthest == 11.0f);
+        // A ship explosion close by takes a place in the cap: the weakest of the four fades over kCapFade.
+        f.Add(FlashKind::ShipExplosion, {0.0f, 0.0f, 5.0f});
+        f.Update(0.016f, eye, 4);
+        CHECK(f.Lit() == 5 && lit(f) == 5); // the explosion and four guns, one of them fading out
+        float faded = 1.0f;
+        for (const PointLight &l : out)
+            if (l.position[0] == 11.0f)
+                faded = l.color[0] / (cannon.color[0] * FlashEnvelope(cannon, 0.032f));
+        CHECK(faded > 0.6f && faded < 0.9f); // 1 - 16 ms / 80 ms
+        f.Update(FlashLights::kCapFade, eye, 4);
+        CHECK(lit(f) == 4 && f.Lit() == 4);
+        bool explosion = false;
+        for (const PointLight &l : out)
+            explosion |= l.range == ship_range;
+        CHECK(explosion);
+    }
+    {
+        // Never more than the pool holds; a full pool replaces its weakest flash.
+        FlashLights f;
+        for (int i = 0; i < 50; ++i)
+        {
+            f.Add(FlashKind::Gunshot, {static_cast<float>(i), 0.0f, 0.0f});
+            f.Update(0.001f, eye, 8);
+        }
+        CHECK(f.Count() == FlashLights::kCapacity);
+        CHECK(f.Lit() <= 8 + 1);
+    }
 }
 
 void CheckShadows()

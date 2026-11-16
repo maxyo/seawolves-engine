@@ -399,6 +399,8 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.town_light_scale = v >= 4 ? 4 : v >= 2 ? 2 : 1; }},
     {"fx_town_light_debug", "0 off, 1 our town lightmaps show the sun's visibility",
      [](fx::Settings &s, int v) { s.town_light_debug = on(v); }},
+    {"fx_flash_lights", "flash lights of shots and explosions at once, 0..8",
+     [](fx::Settings &s, int v) { s.flash_lights = static_cast<uint8_t>(std::clamp(v, 0, 8)); }},
     {"fx_point_lights", "4, 8", [](fx::Settings &s, int v) { s.point_lights = static_cast<uint8_t>(v >= 8 ? 8 : 4); }},
     {"fx_light_per_pixel", "0 off, 1 on", [](fx::Settings &s, int v) { set_flag(s, fx::kLightingPerPixel, v); }},
     {"fx_light_hemisphere", "0 off, 1 on", [](fx::Settings &s, int v) { set_flag(s, fx::kLightingHemisphere, v); }},
@@ -484,7 +486,7 @@ std::string describe(const fx::Settings &s)
     snprintf(text, sizeof(text),
              "tonemap=%d bloom=%d(1/%u,%u) shafts=%d smaa=%d scene_height=%u sharpen=%d(%.2f) dither=%d flare=%d scene_grading=%d "
              "grade=%d msaa=%u a2c=%d aniso=%u sea=%d%d%d turbidity=%d waves=%d%d shadows=%d "
-             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) wet=%u",
+             "lighting=0x%x parallax=%d(%.2f, shadow %d, cavity %d) characters=%d(%.2f) wet=%u flashes=%u",
              s.tonemap, s.bloom, s.bloom_downscale, s.bloom_levels, s.sun_shafts, s.smaa, s.render_height, s.sharpen,
              static_cast<double>(s.sharpness), s.dither,
              s.lens_flare, s.scene_grading, static_cast<int>(s.grade), s.msaa,
@@ -492,7 +494,7 @@ std::string describe(const fx::Settings &s)
              s.sea_waves, s.sea_waves_lift, static_cast<int>(s.shadows), s.lighting_flags, static_cast<int>(s.parallax),
              static_cast<double>(s.parallax_strength), s.parallax_shadow, s.relief_cavity,
              static_cast<int>(s.character_relief), static_cast<double>(s.character_relief_strength),
-             s.wet_surfaces);
+             s.wet_surfaces, s.flash_lights);
     return text;
 }
 } // namespace
@@ -1154,7 +1156,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u scene_views=%.1f scene_passes=%.1f gpu_views=%s post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u flash_events=%u flashes=%u flashed_draws=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
                        storm::platform::frame_work::Describe(storm::platform::frame_work::Take(storm::platform::frame_work::Reader::Profile)).c_str(),
@@ -1165,6 +1167,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
+                       lighting_.take_flash_events(), counts.flashes, counts.flashed,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
             profile_scene_views_ = profile_scene_passes_ = 0;
@@ -1469,6 +1472,13 @@ bool ShadowCasterReachLocal(const std::array<float, 3> &center, float radius)
         scale = std::max(scale, std::sqrt(w.m[k][0] * w.m[k][0] + w.m[k][1] * w.m[k][1] + w.m[k][2] * w.m[k][2]));
     }
     return casters->reach(world, radius * scale, effects::Host::instance().lighting().world_origin(), casters->still());
+}
+
+void EffectsFlash(EffectsFlashKind kind, const std::array<float, 3> &position)
+{
+    static_assert(static_cast<int>(EffectsFlashKind::ShipExplosion) == static_cast<int>(fx::FlashKind::ShipExplosion) &&
+                  static_cast<int>(EffectsFlashKind::ShipExplosion) + 1 == fx::kFlashKinds);
+    effects::Host::instance().lighting().add_flash(static_cast<fx::FlashKind>(kind), position);
 }
 
 void SetEffectsTextureSource(storm::shim::BaseTexture *texture, const char *path, const std::filesystem::path &file)

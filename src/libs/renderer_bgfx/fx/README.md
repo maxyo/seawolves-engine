@@ -78,7 +78,9 @@ Implemented but in no preset (option only): linear-light sums (`fx_light_linear`
 baked colours were tuned to add in gamma space; summed in linear light, models lit by several terms (the room light
 and the lamps of an interior, the vertex lights and the ambient) come out darker than the bake around them. Wind sway (`fx_wind.sh`)
 is not wired into the game. `Shadows::CasterProgram`,
-`Sky::BindAerial/BindWind` and the flash lights are used by `tools/fx-preview` only.
+`Sky::BindAerial/BindWind` are used by `tools/fx-preview` only. The flash lights (`FlashLights`) light shots and
+explosions in the game on Средняя (4 at once) and Высокая (8), option `fx_flash_lights`; «Низкая» keeps the game's
+own D3D cannon light on the ships.
 
 ## Layout
 

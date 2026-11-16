@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace storm::fx
 {
@@ -73,35 +74,142 @@ LightSelection SelectLights(std::span<const PointLight> lights, Vec3 center, flo
     return selection;
 }
 
-void FlashLights::Add(Vec3 position, Vec3 peak_color, float range, float duration)
+namespace
 {
-    if (duration <= 0.0f || range <= 0.0f)
-        return;
-    if (flashes_.size() >= kCapacity)
-        flashes_.erase(std::max_element(flashes_.begin(), flashes_.end(),
-                                        [](const Flash &a, const Flash &b) { return a.age / a.duration < b.age / b.duration; }));
-    flashes_.push_back({position, peak_color, range, duration, 0.0f});
+// Warm powder light. The cannon's reach and brightness are those of the game's own cannon light (ShipLights.c
+// "cannondefault": 2.0 white, 20 m, 1 / (0.3 d), which Низкая keeps): about as bright on the firing ship's deck and
+// sails 3-6 m from the muzzle (measured on the ship:night broadside), warmer, and wider for the per-pixel falloff.
+constexpr std::array<FlashProfile, kFlashKinds> kProfiles{{
+    {{2.6f, 1.9f, 1.0f}, 9.0f, 0.03f, 0.15f},  // Gunshot
+    {{4.4f, 3.0f, 1.3f}, 26.0f, 0.03f, 0.25f}, // Cannon
+    {{3.4f, 2.2f, 0.9f}, 24.0f, 0.03f, 0.30f}, // BallBlast
+    {{4.0f, 2.6f, 1.1f}, 36.0f, 0.03f, 0.35f}, // Explosion
+    {{4.5f, 2.9f, 1.2f}, 60.0f, 0.04f, 0.40f}, // ShipExplosion
+}};
+
+// The widest flash range whose game light still ends inside kGameLightReach: its attenuation reaches kGameLightFloor at
+// 0.59 of the range (16 x² + 3 x + 1 = 1 / 0.12).
+constexpr float kFlashShapeRange = 20.0f;
+
+// Strongest and nearest first: the peak (a flash still rising counts with it), softened with the distance on the scale
+// of the flash's own range (no cut-off, so a big explosion far away still outranks a small one equally far).
+float Score(const FlashProfile &p, const Vec3 &position, float age, const Vec3 &eye)
+{
+    const float dx = position[0] - eye[0], dy = position[1] - eye[1], dz = position[2] - eye[2];
+    const float d2 = dx * dx + dy * dy + dz * dz;
+    const float envelope = age < p.rise ? 1.0f : FlashEnvelope(p, age);
+    return envelope * Peak(p.color) * p.range * p.range / (p.range * p.range + d2);
+}
+} // namespace
+
+const FlashProfile &FlashProfileOf(FlashKind kind)
+{
+    return kProfiles[static_cast<size_t>(kind)];
 }
 
-void FlashLights::Update(float delta_seconds)
+LightShape FlashShapeOf(const FlashProfile &p, const LightFalloff &falloff)
 {
-    for (Flash &flash : flashes_)
-        flash.age += delta_seconds;
-    std::erase_if(flashes_, [](const Flash &flash) { return flash.age >= flash.duration; });
+    const float range = std::min(p.range, kFlashShapeRange);
+    LightShape shape = ShapeOfGameLight(range, 1.0f, 3.0f / range, 16.0f / (range * range), falloff);
+    const float scale = p.range / range;
+    shape.range *= scale;
+    shape.core *= scale;
+    shape.intensity *= scale * scale;
+    return shape;
+}
+
+float FlashEnvelope(const FlashProfile &p, float age)
+{
+    if (age < 0.0f)
+        return 0.0f;
+    if (age < p.rise)
+        return age / p.rise;
+    const float left = 1.0f - (age - p.rise) / p.decay;
+    return left > 0.0f ? left * left : 0.0f;
+}
+
+void FlashLights::Add(FlashKind kind, Vec3 position)
+{
+    const FlashProfile &p = FlashProfileOf(kind);
+    const float strength = Peak(p.color) * p.range;
+    for (Flash &f : flashes_)
+    {
+        if (!f.fresh)
+            continue;
+        const float dx = f.position[0] - position[0], dy = f.position[1] - position[1], dz = f.position[2] - position[2];
+        if (dx * dx + dy * dy + dz * dz > kMergeDistance * kMergeDistance)
+            continue;
+        const FlashProfile &q = FlashProfileOf(f.kind);
+        if (strength > Peak(q.color) * q.range)
+            f.kind = kind;
+        return;
+    }
+    if (flashes_.size() >= kCapacity)
+    {
+        // Out of room: the flash with the least light left at the camera goes.
+        auto weakest = std::min_element(flashes_.begin(), flashes_.end(),
+                                        [](const Flash &a, const Flash &b) { return a.score < b.score; });
+        flashes_.erase(weakest);
+    }
+    Flash flash{kind, position};
+    flash.score = Score(p, position, 0.0f, eye_);
+    flashes_.push_back(flash);
+}
+
+void FlashLights::Update(float delta_seconds, Vec3 eye, int cap)
+{
+    eye_ = eye;
+    // A fresh flash was reported during the frame that just ended: it ages with it, so it lights the very next frame.
+    for (Flash &f : flashes_)
+        f.age += delta_seconds;
+    std::erase_if(flashes_, [](const Flash &f) {
+        const FlashProfile &p = FlashProfileOf(f.kind);
+        return f.age >= p.rise + p.decay;
+    });
+    // Strength at the camera, the envelope's peak for a flash still rising (so a new flash ranks by what it becomes).
+    std::vector<std::pair<float, size_t>> ranked;
+    ranked.reserve(flashes_.size());
+    for (size_t i = 0; i < flashes_.size(); ++i)
+    {
+        Flash &f = flashes_[i];
+        const FlashProfile &p = FlashProfileOf(f.kind);
+        f.score = Score(p, f.position, f.age, eye);
+        ranked.push_back({f.score, i});
+    }
+    std::sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
+    const float step = kCapFade > 0.0f ? delta_seconds / kCapFade : 1.0f;
+    for (size_t r = 0; r < ranked.size(); ++r)
+    {
+        Flash &f = flashes_[ranked[r].second];
+        const float target = r < static_cast<size_t>(std::max(cap, 0)) ? 1.0f : 0.0f;
+        if (f.fresh)
+            f.weight = target;
+        else
+            f.weight = target > f.weight ? std::min(target, f.weight + step) : std::max(target, f.weight - step);
+        f.fresh = false;
+    }
+}
+
+size_t FlashLights::Lit() const
+{
+    return static_cast<size_t>(std::count_if(flashes_.begin(), flashes_.end(), [](const Flash &f) { return f.weight > 0.0f; }));
 }
 
 void FlashLights::AppendTo(std::vector<PointLight> &lights, const LightFalloff &falloff) const
 {
-    for (const Flash &flash : flashes_)
+    for (const Flash &f : flashes_)
     {
-        const float left = 1.0f - flash.age / flash.duration;
+        if (f.weight <= 0.0f || f.fresh)
+            continue;
+        const FlashProfile &p = FlashProfileOf(f.kind);
+        const float k = FlashEnvelope(p, f.age) * f.weight;
+        if (k <= 0.0f)
+            continue;
+        const LightShape shape = FlashShapeOf(p, falloff);
         PointLight light;
-        light.position = flash.position;
-        // Squared fade: most of the energy in the first frames, then a soft afterglow.
+        light.position = f.position;
         for (int i = 0; i < 3; ++i)
-            light.color[i] = flash.color[i] * left * left;
-        // Linear + quadratic attenuation scaled to the range (about 1/20 of the peak at its end), shaped as every light.
-        const LightShape shape = ShapeOfGameLight(flash.range, 1.0f, 3.0f / flash.range, 16.0f / (flash.range * flash.range), falloff);
+            light.color[i] = p.color[i] * k;
         light.range = shape.range;
         light.intensity = shape.intensity;
         light.core = shape.core;

@@ -195,6 +195,21 @@ struct EffectsPointLight
 };
 void SetEffectsDynamicLights(std::span<const EffectsPointLight> lights);
 
+// A short-lived light at a shot or a blast, `position` absolute world (game thread, at the event).
+// The renderer gives it its kind's colour, range and envelope (fx/light_set.hpp FlashProfileOf: a ~30 ms rise, a
+// 0.15..0.4 s decay), lights lit and baked draws with it per pixel without a shadow, and keeps the strongest ones near
+// the camera up to the preset's cap (Средняя 4, Высокая 8; option fx_flash_lights), fading those it drops. Ignored
+// while CurrentEffectsWorld().flash_lights is false («Низкая»: the original game has no such lights).
+enum class EffectsFlashKind : uint8_t
+{
+    Gunshot,       // pistol or musket ("gunfire" particles)
+    Cannon,        // a cannon of a ship or a fort
+    BallBlast,     // a ball bursting ("blast")
+    Explosion,     // powder keg, blown cannon, quest explosion ("blast_inv", "town_explodion")
+    ShipExplosion, // a ship blowing up ("ShipExplode")
+};
+void EffectsFlash(EffectsFlashKind kind, const std::array<float, 3> &position);
+
 // Location, every frame it draws: its static lamps (the lights of lights.ini at its locators, colour with this
 // frame's flicker). The ones around the camera relight the location per pixel, each with its shadow
 // (fx_lamp_shadows).
@@ -380,6 +395,9 @@ struct EffectsWorld
 {
     bool lens_flare = false; // the post chain draws the sun glare: SUNGLOW leaves its glow, overflow and flare
                              // sprites of the sun out and reports the sun's visibility (SetEffectsSunGlare)
+    // Shots and explosions light their surroundings through EffectsFlash; ShipLights then leaves its own D3D cannon
+    // light out (the original's, lighting only the ships, which «Низкая» keeps).
+    bool flash_lights = false;
 };
 EffectsWorld CurrentEffectsWorld();
 
