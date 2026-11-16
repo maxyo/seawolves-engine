@@ -81,8 +81,11 @@ Settings Settings::FromPreset(QualityPreset preset)
     }
     s.render_height = kHighRenderHeight;
     s.far_lod_pixels = 1.f;
-    s.bloom_downscale = 2;
-    s.bloom_levels = 4;
+    // The bloom as «Средняя» draws it: from a quarter of the scene, three levels (eight passes of a quarter of the
+    // pixels instead of ten; 0.9-1.3 ms of GPU on an Adreno 830 before). The faint bloom of these presets differs by
+    // 0.2-0.6 of 255 on average from the half-size one (owner sheet 2026-11-16).
+    s.bloom_downscale = 4;
+    s.bloom_levels = 3;
     s.anisotropy = 8;
     s.lens_flare = true; // the one sun glare: SUNGLOW leaves its glow, overflow and flare sprites out
     s.sun_shafts = true;

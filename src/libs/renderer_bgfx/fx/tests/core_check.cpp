@@ -144,7 +144,7 @@ void CheckSettings()
     const Settings high = Settings::FromPreset(QualityPreset::High);
     CHECK(original.far_lod_pixels == 2.f && medium.far_lod_pixels == 1.5f && high.far_lod_pixels == 1.f);
     CHECK(!medium.PostIsIdentity() && !high.PostIsIdentity());
-    CHECK(medium.bloom_downscale == 4 && high.bloom_downscale == 2);
+    CHECK(medium.bloom_downscale == 4 && high.bloom_downscale == 4 && medium.bloom_levels == 3 && high.bloom_levels == 3);
     // FSR 1 on every preset, by an internal scene height; «Низкая» otherwise the original look.
     CHECK(original.sharpen && medium.sharpen && high.sharpen);
     // Monotonic: a higher preset never renders the scene smaller («Низкая» is the fastest).
