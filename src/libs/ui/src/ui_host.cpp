@@ -524,6 +524,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         Pointer pointer;
         Rml::ObserverPtr<Rml::Element> component;
         bool exclusive = false;
+        // A drag (a slider) on a list that scrolls vertically: the first movement past the slop
+        // decides — sideways the component takes the pointer, up or down the list scrolls; a
+        // tap without movement goes to the component.
+        bool deferred = false;
         struct Sample
         {
             Rml::Vector2f at;
@@ -641,13 +645,30 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             // between): nothing takes it, said once per gesture.
             if (!component && !InterfaceActive() && !hud_->Interactive())
                 Log("touch reached nothing of the UI: " + RoutingFacts());
-            if (component && component->PointerExclusive(capture.pointer))
+            bool deferred = false;
+            if (component && component->PointerExclusive(capture.pointer) && scroll_pointer_ < 0)
+            {
+                scroll_.Down(capture.pointer.target, at, time, config_.density, Slop());
+                deferred = scroll_.ScrollsVertically() && !scroll_.Caught();
+                if (deferred || scroll_.Caught())
+                    scroll_pointer_ = pointer;
+                else
+                    scroll_.Up(time, true); // no list to scroll: the drag is the component's
+                if (deferred)
+                {
+                    capture.deferred = true;
+                    capture.component = component->GetObserverPtr();
+                }
+                else if (scroll_.Caught())
+                    component = nullptr; // a finger that stops a list in motion drags it
+            }
+            if (!deferred && component && component->PointerExclusive(capture.pointer))
             {
                 capture.exclusive = true;
                 capture.component = component->GetObserverPtr();
                 component->PointerDown(capture.pointer);
             }
-            else
+            else if (!deferred)
             {
                 if (scroll_pointer_ < 0)
                 {
@@ -689,7 +710,18 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         capture.pointer.position = at;
         capture.pointer.time = time;
         auto *component = static_cast<ComponentElement *>(capture.component.get());
-        if (component)
+        if (capture.deferred && component && phase != TouchPhase::Cancel)
+        {
+            // A tap on the slider: it goes there as it would have outside a list.
+            capture.deferred = false;
+            capture.exclusive = true;
+            scroll_.Up(time, true);
+            scroll_pointer_ = -1;
+            Pointer down = capture.pointer;
+            down.position = down.start;
+            component->PointerDown(down);
+        }
+        if (component && !capture.deferred)
             component->PointerUp(capture.pointer, phase == TouchPhase::Cancel);
         if (!capture.exclusive && pointer == scroll_pointer_)
         {
@@ -712,6 +744,32 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         capture.pointer.position = at;
         capture.pointer.time = time;
         auto *component = static_cast<ComponentElement *>(capture.component.get());
+        if (capture.deferred && (at - capture.pointer.start).SquaredMagnitude() > Slop() * Slop())
+        {
+            capture.deferred = false;
+            const Rml::Vector2f moved = at - capture.pointer.start;
+            if (component && std::abs(moved.x) >= std::abs(moved.y))
+            {
+                // Sideways: the component's drag, from where the finger went down.
+                scroll_.Up(time, true);
+                scroll_pointer_ = -1;
+                capture.exclusive = true;
+                Pointer down = capture.pointer;
+                down.position = down.start;
+                component->PointerDown(down);
+            }
+            else
+            {
+                capture.component = {};
+                component = nullptr;
+            }
+        }
+        else if (capture.deferred)
+        {
+            if (pointer == scroll_pointer_)
+                scroll_.Move(at, time, sampled);
+            return;
+        }
         if (capture.exclusive)
         {
             if (component)

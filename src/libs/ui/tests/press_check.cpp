@@ -167,6 +167,10 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
         "template": "<div data-live-shape=\"value > 50 ? 'high' : 'low'\"><div data-range=\"value\" style=\"position: absolute; left: 100dp; top: 100dp; width: 400dp; height: 40dp;\"><div id=\"live-knob\" data-range-knob=\"\" data-live-style=\"'left: ' + value + '%;'\" style=\"position: absolute; left: {{value}}%; top: 0; width: 0; height: 40dp;\"></div></div><div id=\"live-num\" data-live-text=\"value\">{{value}}</div><t-if test=\"value > 50\"><div id=\"live-high\">high</div></t-if></div>"})"));
     Write(pack / "live-slide.rml", "<rml><head><style>body { font-family: LatoLatin; font-size: 16dp; width: 800dp; height: 400dp; }</style></head><body>"
                                    "<c-live-slide id=\"live\" value=\"10\"/></body></rml>");
+    // The slider on a page that scrolls vertically (a settings page).
+    Write(pack / "slide-list.rml", "<rml><head><style>body { font-family: LatoLatin; font-size: 16dp; width: 800dp; height: 400dp; }</style></head><body>"
+                                   "<div id=\"page\" style=\"display: block; position: absolute; left: 0; top: 0; width: 800dp; height: 300dp; overflow-y: auto;\">"
+                                   "<div style=\"display: block; position: relative; height: 1000dp;\"><c-slide id=\"listed-slide\" max=\"4\"/></div></div></body></rml>");
     Write(pack / "slide-fine.rml", "<rml><head><style>body { font-family: LatoLatin; font-size: 16dp; width: 800dp; height: 400dp; }</style></head><body>"
                                    "<c-slide id=\"fine\" max=\"4000\"/></body></rml>");
     // A list whose open row shows its amount under itself (C-TradeList): behaviour reveal.
@@ -994,6 +998,46 @@ int main(int argc, char **argv)
         host->Touch(TouchPhase::Up, 1, 493, 120);
         frames(0.05);
         Expect(std::abs(knob_x() - 500.0f) < 0.01f, "released, the knob is at its value (4 of 4: 500 px), not where the finger left it");
+    }
+
+    // On a page that scrolls vertically the first movement decides: up or down scrolls the page
+    // and leaves the slider alone, sideways drags the slider; a tap sets it.
+    Expect(host->LoadDocument("slide-list.rml"), "the slider on a scrolling page loads");
+    frames(0.1);
+    {
+        Rml::Element *page = nullptr;
+        Rml::Context *context = Rml::GetContext("storm-ui");
+        for (int i = 0; context && i < context->GetNumDocuments(); ++i)
+            if (Rml::Element *found = context->GetDocument(i)->GetElementById("page"))
+                page = found;
+        const auto swipe = [&](float x0, float y0, float x1, float y1) {
+            clicks.clear();
+            host->Touch(TouchPhase::Down, 1, x0, y0);
+            frames(1.0 / 60.0);
+            for (int i = 1; i <= 10; ++i)
+            {
+                host->Touch(TouchPhase::Move, 1, x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10);
+                frames(1.0 / 60.0);
+            }
+            host->Touch(TouchPhase::Up, 1, x1, y1);
+            frames(0.05);
+        };
+        swipe(300, 120, 305, 40);
+        Expect(page && page->GetScrollTop() > 40 && clicks.empty(),
+               "a vertical swipe that starts on the slider scrolls the page and changes nothing (" + std::to_string(clicks.size()) + " actions)");
+        frames(1.0);
+        if (page)
+            page->SetScrollTop(0);
+        frames(0.1);
+        swipe(120, 120, 420, 125);
+        Expect(page && page->GetScrollTop() == 0 && !clicks.empty() && clicks.back().find("commit") != std::string::npos,
+               "a sideways drag on the slider moves it and not the page");
+        clicks.clear();
+        host->Touch(TouchPhase::Down, 1, 500, 120);
+        frames(0.05);
+        host->Touch(TouchPhase::Up, 1, 500, 120);
+        frames(0.05);
+        Expect(!clicks.empty() && clicks.back() == "listed-slide commit 4", "a tap sets the slider (" + (clicks.empty() ? std::string("nothing") : clicks.back()) + ")");
     }
 
     // A platform that gives the touches once per frame sends the moves as samples and has each

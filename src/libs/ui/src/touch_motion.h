@@ -54,6 +54,11 @@ class TouchScroll
     {
         return dragging_;
     }
+    // Down found a box that scrolls vertically under the finger.
+    bool ScrollsVertically() const
+    {
+        return down_ && axis_[1];
+    }
     bool Flinging() const
     {
         return fling_[0].Active() || fling_[1].Active();
