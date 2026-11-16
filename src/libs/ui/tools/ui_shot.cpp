@@ -129,6 +129,9 @@ class Capture
     // passes); false when the GPU timer does not work.
     virtual bool BeginGpuQuery() = 0;
     virtual void EndGpuQuery(double &gpu_ms) = 0;
+    // bench: CPU of the UI's part of the last frame, the frame owner's call into the UI backend
+    // (Host::Prepare, then Host::Frame or the replay, and what the host does after them).
+    virtual double UiMilliseconds() const = 0;
 };
 
 struct QuietCallback final : bgfx::CallbackI
@@ -451,7 +454,9 @@ class BgfxCapture final : public Capture
         frame.frame_index = ++frame_index_;
         frame.ui_view_begin = first_view_;
         frame.ui_view_count = views_;
+        const auto started = std::chrono::steady_clock::now();
         backend_->OnUiRender(frame);
+        ui_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
         bgfx::frame();
     }
     bool Shot(storm::ui::Host &host, const std::string &path) override
@@ -515,6 +520,10 @@ class BgfxCapture final : public Capture
         const bgfx::Stats *stats = bgfx::getStats();
         gpu_ms = stats->gpuTimerFreq > 0 ? double(stats->gpuTimeEnd - stats->gpuTimeBegin) * 1000.0 / double(stats->gpuTimerFreq) : 0.0;
     }
+    double UiMilliseconds() const override
+    {
+        return ui_ms_;
+    }
 
   private:
     static constexpr const char *kMesaVendor = "/usr/share/glvnd/egl_vendor.d/50_mesa.json";
@@ -529,6 +538,7 @@ class BgfxCapture final : public Capture
     uint16_t first_view_ = 0;
     uint16_t views_ = storm::render::kUiViewCount;
     uint64_t frame_index_ = 0;
+    double ui_ms_ = 0.0;
     bool started_ = false;
 };
 
@@ -596,6 +606,7 @@ int main(int argc, char **argv)
     const auto files = storm::ui::DirectoryFiles(pack);
     std::string error;
     storm::ui::Config config;
+    config.strict_templates = true; // a template path that names nothing is an error
     config.files = files.get();
     config.backend = capture->Backend();
     config.show_errors = true;
@@ -867,7 +878,7 @@ int main(int argc, char **argv)
                     total += value;
                     worst = std::max(worst, value);
                 }
-            } update, render, gpu, frame, gpu_timer;
+            } update, render, gpu, frame, gpu_timer, ui;
             int drawn_frames = 0;
             bool measured = false;
             long rebuilds = 0, laid_out = 0, geometry = 0, draws = 0, masks = 0, layers = 0, cached = 0, textures = 0, bytes = 0;
@@ -908,6 +919,7 @@ int main(int argc, char **argv)
                 const auto finished = std::chrono::steady_clock::now();
                 update.Add(stats.update_ms);
                 render.Add(stats.render_ms);
+                ui.Add(capture->UiMilliseconds());
                 gpu.Add(std::chrono::duration<double, std::milli>(finished - drawn).count());
                 frame.Add(std::chrono::duration<double, std::milli>(finished - started).count());
                 rebuilds += stats.rebuilds;
@@ -922,9 +934,9 @@ int main(int argc, char **argv)
             }
             const double n = std::max(1, frames), drawn_n = std::max(1, drawn_frames);
             std::printf("bench %d frames%s%s, %d drawn: frame %.2f ms (max %.2f) = update %.2f (max %.2f) + render %.2f (max %.2f) + gpu %.2f (max %.2f); "
-                        "per frame: rebuilds %.1f, laid out %.1f, meshes %.1f, draws %.1f, masks %.1f, layers %.1f (cached %.1f), textures %.2f (%.0f bytes)\n",
+                        "ui cpu %.3f ms (max %.3f); per frame: rebuilds %.1f, laid out %.1f, meshes %.1f, draws %.1f, masks %.1f, layers %.1f (cached %.1f), textures %.2f (%.0f bytes)\n",
                         frames, alternating ? " alternating " : channel.empty() ? "" : " ", channel.c_str(), drawn_frames, frame.total / n, frame.worst, update.total / n, update.worst,
-                        render.total / n, render.worst, gpu.total / n, gpu.worst, rebuilds / n, laid_out / n, geometry / n, draws / n, masks / n, layers / n, cached / n, textures / n,
+                        render.total / n, render.worst, gpu.total / n, gpu.worst, ui.total / n, ui.worst, rebuilds / n, laid_out / n, geometry / n, draws / n, masks / n, layers / n, cached / n, textures / n,
                         bytes / n);
             // Per drawn frame, from bgfx's GPU timer.
             if (measured)

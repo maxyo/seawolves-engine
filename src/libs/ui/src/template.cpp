@@ -1,5 +1,6 @@
 #include "template.h"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
@@ -17,11 +18,17 @@ std::function<std::string(const std::string &)> &Strings()
     static std::function<std::string(const std::string &)> lookup;
     return lookup;
 }
+bool strict_paths = false;
 } // namespace
 
 void SetTemplateStrings(std::function<std::string(const std::string &key)> lookup)
 {
     Strings() = std::move(lookup);
+}
+
+void SetTemplateStrict(bool strict)
+{
+    strict_paths = strict;
 }
 
 bool Truthy(const Json &value)
@@ -370,23 +377,32 @@ class Parser
             Skip();
             if (pos_ < text_.size() && text_[pos_] == '.')
             {
+                const size_t start = pos_;
                 ++pos_;
                 const std::string key = Identifier();
-                value = Member(value, key);
+                const Json *member = MemberRef(value, key);
+                if (!member)
+                    Undefined(live, start);
+                value = member ? Json(*member) : Json();
             }
             else if (pos_ < text_.size() && text_[pos_] == '[')
             {
+                const size_t start = pos_;
                 ++pos_;
                 const Json index = Ternary(live);
                 if (!Eat("]"))
                     Fail("expected ']'");
+                const Json *member = nullptr;
                 if (index.is_number() && value.is_array())
                 {
                     const auto at = static_cast<long long>(index.get<double>());
-                    value = at >= 0 && static_cast<size_t>(at) < value.size() ? value[static_cast<size_t>(at)] : Json();
+                    member = at >= 0 && static_cast<size_t>(at) < value.size() ? &value[static_cast<size_t>(at)] : nullptr;
                 }
                 else
-                    value = Member(value, ToText(index));
+                    member = MemberRef(value, ToText(index));
+                if (!member)
+                    Undefined(live, start);
+                value = member ? Json(*member) : Json();
             }
             else
                 return value;
@@ -411,7 +427,10 @@ class Parser
         }
         const Json *value = scope_.Find(name);
         if (!value)
+        {
+            Undefined(live, start);
             value = &none;
+        }
         while (true)
         {
             Skip();
@@ -420,6 +439,11 @@ class Parser
                 ++pos_;
                 const std::string key = Identifier();
                 value = MemberRef(*value, key);
+                if (!value)
+                {
+                    Undefined(live, start);
+                    value = &none;
+                }
             }
             else if (pos_ < text_.size() && text_[pos_] == '[')
             {
@@ -430,36 +454,43 @@ class Parser
                 if (index.is_number() && value->is_array())
                 {
                     const auto at = static_cast<long long>(index.get<double>());
-                    value = at >= 0 && static_cast<size_t>(at) < value->size() ? &(*value)[static_cast<size_t>(at)] : &none;
+                    value = at >= 0 && static_cast<size_t>(at) < value->size() ? &(*value)[static_cast<size_t>(at)] : nullptr;
                 }
                 else
                     value = MemberRef(*value, ToText(index));
+                if (!value)
+                {
+                    Undefined(live, start);
+                    value = &none;
+                }
             }
             else
                 return value;
         }
     }
 
+    // The member, or nullptr when the object has no such key (or is no object).
     static const Json *MemberRef(const Json &object, const std::string &key)
     {
-        static const Json none;
         if (object.is_object())
         {
             const auto found = object.find(key);
-            return found != object.end() ? &*found : &none;
+            return found != object.end() ? &*found : nullptr;
         }
-        return &none;
+        return nullptr;
     }
 
-    static Json Member(const Json &object, const std::string &key)
+    // A path that names nothing (from `start` up to here): null, or in strict mode
+    // (SetTemplateStrict) an error unless the expression marks it optional (opt(), or()).
+    void Undefined(bool live, size_t start) const
     {
-        if (object.is_object())
-        {
-            const auto found = object.find(key);
-            if (found != object.end())
-                return *found;
-        }
-        return Json();
+        if (!live || !strict_paths || optional_ > 0)
+            return;
+        std::string_view path = text_.substr(start, pos_ - start);
+        while (!path.empty() && std::isspace(static_cast<unsigned char>(path.back())))
+            path.remove_suffix(1);
+        throw std::runtime_error("template expression: '" + std::string(path) + "' is not defined in '" + std::string(text_) +
+                                 "' (opt() marks a path that may be missing)");
     }
 
     std::string Identifier()
@@ -516,6 +547,9 @@ class Parser
         {
             ++pos_;
             std::vector<Json> arguments;
+            // opt(path) and or(…): explicitly optional, their paths may name nothing (strict mode)
+            const bool optional = name == "opt" || name == "or";
+            optional_ += optional;
             if (!Eat(")"))
             {
                 do
@@ -524,6 +558,7 @@ class Parser
                 if (!Eat(")"))
                     Fail("expected ')'");
             }
+            optional_ -= optional;
             // A branch that is not taken is parsed, never evaluated: no call (tr() of an
             // empty key in `c.key ? tr(c.key) : c.label` would report a missing string).
             if (!live)
@@ -547,6 +582,8 @@ class Parser
                     return value;
             return Json();
         }
+        if (name == "opt") // opt(path): the value, null when the path names nothing (also in strict mode)
+            return arg(0);
         if (name == "len")
             return arg(0).is_string() ? arg(0).get_ref<const std::string &>().size() : (arg(0).is_structured() ? arg(0).size() : size_t(0));
         if (name == "num") // amount with grouped thousands
@@ -674,6 +711,7 @@ class Parser
     std::string_view text_;
     const Scope &scope_;
     size_t pos_ = 0;
+    int optional_ = 0; // inside opt() or or(): a missing path is null even in strict mode
 };
 
 struct Tag

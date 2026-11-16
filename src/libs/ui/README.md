@@ -102,6 +102,9 @@ Errors are loud, not defaults: an unknown `<c-…>` tag, an attribute a componen
 have, an enum value outside its options, a template or class expression error and an icon
 missing from the pack are logged with the element (`[ui 1] Component <c-button>
 (c-button#id …): …`) and drawn as the striped `ui-error` marker or a crossed red icon.
+In host checks and captures (`Config::strict_templates`) a template path that names nothing (an
+unknown name, a missing key, an index past the end) is such an error too; a path the data may
+leave out is marked in the template, `opt(r.reason)` or `or(r.id, r_i)` (`src/template.h`).
 The documented fallbacks: with no game root and no picture loader, game pictures are
 "unavailable" (one info line) and keep their neutral placeholder. Code that throws is the
 exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, a handler, its

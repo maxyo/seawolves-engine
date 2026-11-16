@@ -7,6 +7,10 @@
 //
 // Expressions: literals, paths (a.b[0].c), ! - + * / % comparisons && || ?: and calls
 // (see template.cpp for the helper list). Missing values are null; null prints nothing.
+// Strict mode (SetTemplateStrict; Config::strict_templates in host checks): a path that names
+// nothing (an unknown name, a missing key, an index past the end) is an error. A key present
+// with null is defined. A path that may be missing is marked: opt(path), or the arguments of
+// or(path, fallback).
 #pragma once
 
 #include <functional>
@@ -40,6 +44,8 @@ std::string RenderTemplate(std::string_view source, const Json &scope, TemplateM
 // The lookup behind the template helper tr('key'): the UI string of the current language
 // (pack strings/<lang>.json). The host installs it; without one tr() is a template error.
 void SetTemplateStrings(std::function<std::string(const std::string &key)> lookup);
+// Strict mode for paths (see the top). The host sets it from Config::strict_templates.
+void SetTemplateStrict(bool strict);
 Json EvaluateExpression(std::string_view expression, const Json &scope);
 bool Truthy(const Json &value);
 std::string ToText(const Json &value);

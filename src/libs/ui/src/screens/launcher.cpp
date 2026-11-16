@@ -25,9 +25,12 @@
 // Action{verb "back"}. The Android host is UiScreenActivity and its subclasses.
 #include "controls.h"
 
+#include <RmlUi/Core/Log.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <set>
 #include <cstdio>
 #include <tuple>
 
@@ -47,36 +50,71 @@ Json &HostState()
     return state;
 }
 
+// The application writes this state (Java): a field present with another type than the
+// screen reads is its defect, logged once per field; the screen goes on with the default.
+void WrongType(const char *key, const char *expected, const Json &value)
+{
+    static std::set<std::string> logged;
+    if (logged.insert(key).second)
+        Rml::Log::Message(Rml::Log::LT_ERROR, "launcher state: %s is %s, expected %s (logged once)", key, value.type_name(), expected);
+}
+
 std::string Str(const Json &object, const char *key)
 {
     const auto found = object.find(key);
-    return found != object.end() && found->is_string() ? found->get<std::string>() : std::string();
+    if (found == object.end())
+        return {};
+    if (found->is_string())
+        return found->get<std::string>();
+    WrongType(key, "a string", *found);
+    return {};
 }
 
 double Num(const Json &object, const char *key)
 {
     const auto found = object.find(key);
-    return found != object.end() && found->is_number() ? found->get<double>() : 0.0;
+    if (found == object.end())
+        return 0.0;
+    if (found->is_number())
+        return found->get<double>();
+    WrongType(key, "a number", *found);
+    return 0.0;
 }
 
 bool Flag(const Json &object, const char *key)
 {
     const auto found = object.find(key);
-    return found != object.end() && found->is_boolean() && found->get<bool>();
+    if (found == object.end())
+        return false;
+    if (found->is_boolean())
+        return found->get<bool>();
+    WrongType(key, "a boolean", *found);
+    return false;
 }
 
 const Json &Obj(const Json &object, const char *key)
 {
     static const Json none;
     const auto found = object.find(key);
-    return found != object.end() && found->is_object() ? *found : none;
+    if (found == object.end())
+        return none;
+    if (found->is_object())
+        return *found;
+    if (!found->is_null()) // null: the application says there is none
+        WrongType(key, "an object", *found);
+    return none;
 }
 
 const Json &List(const Json &object, const char *key)
 {
     static const Json empty = Json::array();
     const auto found = object.find(key);
-    return found != object.end() && found->is_array() ? *found : empty;
+    if (found == object.end())
+        return empty;
+    if (found->is_array())
+        return *found;
+    WrongType(key, "an array", *found);
+    return empty;
 }
 
 std::string Join(const Json &strings, const std::string &separator)

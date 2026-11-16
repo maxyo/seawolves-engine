@@ -394,6 +394,7 @@ static void Runtime(const fs::path &base, const fs::path &font)
     std::vector<std::string> actions;
     double clock = 0.0;
     Config config;
+    config.strict_templates = true; // a template path that names nothing is an error
     config.files = files.get();
     config.backend = &backend;
     config.width = 800;

@@ -69,6 +69,7 @@ bool Run(const fs::path &pack, const Case &c)
     double clock = 0.0;
     std::vector<std::string> errors, warnings;
     Config config;
+    config.strict_templates = true; // a template path that names nothing is an error
     config.files = files.get();
     config.backend = &backend;
     config.width = 2400; // a common phone in landscape: 914 x 411 dp

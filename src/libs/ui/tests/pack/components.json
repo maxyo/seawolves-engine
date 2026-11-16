@@ -301,7 +301,7 @@
    "constants": {
     "pressRoot": false
    },
-   "template": "<t-for each=\"officers\" as=\"o\"><div class=\"item ship\" {{{ o.tap ? 'data-action=\"member\" data-value=\"' + o_i + '\"' : '' }}} style=\"position: absolute; left: {{ o_i * 60 }}dp; top: 0dp; width: 52dp; height: 52dp;\"></div></t-for>"
+   "template": "<t-for each=\"officers\" as=\"o\"><div class=\"item ship\" {{{ opt(o.tap) ? 'data-action=\"member\" data-value=\"' + o_i + '\"' : '' }}} style=\"position: absolute; left: {{ o_i * 60 }}dp; top: 0dp; width: 52dp; height: 52dp;\"></div></t-for>"
   },
   {
    "tag": "c-panels",

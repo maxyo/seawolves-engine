@@ -112,6 +112,14 @@ static void ModelCodec(const char *models)
     storm::ui::InterfaceModel back;
     Expect(storm::ui::ParseInterfaceModel(storm::ui::InterfaceModelJson(model), back) && back.widgets.at(0).label == "bad \xEF\xBF\xBD text",
            "interface model: broken text is written with U+FFFD");
+    // A field of another type than the format's is a defect of the recording, not a default.
+    std::string error;
+    Expect(!storm::ui::ParseInterfaceModel(R"({"widgets":[{"node":"a"},{"node":"b","index":"3"}]})", back, &error) &&
+               error == "interface model: widgets[1].index: expected a number",
+           "interface model: a wrong-typed field is an error naming it");
+    Expect(!storm::ui::ParseInterfaceModel(R"({"widgets":[{"node":"a","cells":[{"text":1}]}]})", back, &error) &&
+               error == "interface model: widgets[0].cells[0].text: expected a string",
+           "interface model: a wrong-typed cell field is an error naming it");
 }
 
 int main(int argc, char **argv)
@@ -130,6 +138,15 @@ int main(int argc, char **argv)
     ExpectText("{{ on && !off ? 'y' : 'n' }}", scope, "y");
     ExpectText("{{ spec.h[size] + 4 }}", scope, "48");
     ExpectText("{{ missing }}|{{ or(missing, 'x') }}|{{ len(items) }}", scope, "|x|2");
+    // Strict mode (host checks): a path that names nothing is an error unless marked optional;
+    // a branch not taken is not evaluated.
+    storm::ui::SetTemplateStrict(true);
+    ExpectText("{{ missing }}", scope, "<<template expression: 'missing' is not defined in ' missing ' (opt() marks a path that may be missing)>>");
+    ExpectText("{{ items[1].count }}", scope, "<<template expression: 'items[1].count' is not defined in ' items[1].count ' (opt() marks a path that may be missing)>>");
+    ExpectText("{{ spec.h[variant] }}", scope, "<<template expression: 'spec.h[variant]' is not defined in ' spec.h[variant] ' (opt() marks a path that may be missing)>>");
+    ExpectText("{{ opt(missing) }}|{{ or(items[1].count, 0) }}|{{ opt(items[5].label) }}|{{ items[0].count }}", scope, "|0||2");
+    ExpectText("<t-if test=\"off\">{{ missing }}</t-if>{{ off ? missing.x : 'ok' }}", scope, "ok");
+    storm::ui::SetTemplateStrict(false);
     ExpectText("{{ variant == 'primary' ? 'ink' : 'duo' }}", scope, "ink");
     {
         // A one-letter Russian word holds on to the next word in shown text, never in an attribute value.

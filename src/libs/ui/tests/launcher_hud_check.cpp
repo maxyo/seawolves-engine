@@ -16,6 +16,7 @@ static int Check(const char *pack, bool standalone)
     NoBackend backend;
     std::vector<std::string> commands;
     Config config;
+    config.strict_templates = true; // a template path that names nothing is an error
     config.files = files.get();
     config.backend = &backend;
     config.width = 800;

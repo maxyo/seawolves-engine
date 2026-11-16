@@ -10,77 +10,132 @@ namespace
 
 using Json = nlohmann::json;
 
-std::string Text(const Json &object, const char *key)
+// Reads the recorded model. A field that is absent takes its default; one present with another
+// type than the format's is a defect of the recording, reported (the first one) by the parse.
+class Reader
 {
-    const auto found = object.find(key);
-    return found != object.end() && found->is_string() ? found->get<std::string>() : std::string();
-}
+  public:
+    std::string wrong; // "widgets[3].index: expected a number"
 
-template <typename Number> Number Num(const Json &object, const char *key, Number fallback)
-{
-    const auto found = object.find(key);
-    return found != object.end() && found->is_number() ? found->get<Number>() : fallback;
-}
-
-bool Flag(const Json &object, const char *key, bool fallback)
-{
-    const auto found = object.find(key);
-    return found != object.end() && found->is_boolean() ? found->get<bool>() : fallback;
-}
-
-std::vector<ImageRef> Images(const Json &object)
-{
-    std::vector<ImageRef> out;
-    const auto list = object.find("images");
-    if (list == object.end() || !list->is_array())
-        return out;
-    for (const Json &entry : *list)
+    std::string Text(const Json &object, const char *key, const std::string &where)
     {
-        if (!entry.is_object())
-            continue;
-        ImageRef image;
-        image.handle = Num<int64_t>(entry, "handle", 0);
-        image.revision = Num<int64_t>(entry, "imageRevision", 0);
-        image.width = Num<int>(entry, "width", 0);
-        image.height = Num<int>(entry, "height", 0);
-        image.tint_argb = Num<uint32_t>(entry, "tintArgb", 0xffffffffu);
-        const auto source = entry.find("source");
-        if (source != entry.end() && source->is_object())
+        const auto found = object.find(key);
+        if (found == object.end())
+            return {};
+        if (found->is_string())
+            return found->get<std::string>();
+        Wrong(where, key, "a string");
+        return {};
+    }
+
+    template <typename Number> Number Num(const Json &object, const char *key, Number fallback, const std::string &where)
+    {
+        const auto found = object.find(key);
+        if (found == object.end())
+            return fallback;
+        if (found->is_number())
+            return found->get<Number>();
+        Wrong(where, key, "a number");
+        return fallback;
+    }
+
+    bool Flag(const Json &object, const char *key, bool fallback, const std::string &where)
+    {
+        const auto found = object.find(key);
+        if (found == object.end())
+            return fallback;
+        if (found->is_boolean())
+            return found->get<bool>();
+        Wrong(where, key, "a boolean");
+        return fallback;
+    }
+
+    // The array or object under `key`, nullptr when absent (or of another type: reported).
+    const Json *Find(const Json &object, const char *key, bool array, const std::string &where)
+    {
+        const auto found = object.find(key);
+        if (found == object.end())
+            return nullptr;
+        if (array ? found->is_array() : found->is_object())
+            return &*found;
+        Wrong(where, key, array ? "an array" : "an object");
+        return nullptr;
+    }
+
+    void Wrong(const std::string &where, const std::string &key, const char *expected)
+    {
+        if (wrong.empty())
+            wrong = where + (where.empty() || key.empty() ? "" : ".") + key + ": expected " + expected;
+    }
+
+    std::vector<ImageRef> Images(const Json &object, const std::string &where)
+    {
+        std::vector<ImageRef> out;
+        const Json *list = Find(object, "images", true, where);
+        if (!list)
+            return out;
+        for (size_t i = 0; i < list->size(); ++i)
         {
-            image.kind = Text(*source, "kind");
-            image.group = Text(*source, "group");
-            image.image = Text(*source, "image");
-            image.mode = Text(*source, "mode");
-            image.atlas = Text(*source, "atlas");
-            image.pic = Num<int>(*source, "pic", -1);
-            const auto uv = source->find("uv");
-            if (uv != source->end() && uv->is_array() && uv->size() == 4)
-                for (size_t i = 0; i < 4; ++i)
-                    image.uv[i] = (*uv)[i].is_number() ? (*uv)[i].get<float>() : image.uv[i];
+            const Json &entry = (*list)[i];
+            const std::string at = where + ".images[" + std::to_string(i) + "]";
+            if (!entry.is_object())
+            {
+                Wrong(at, "", "an object");
+                continue;
+            }
+            ImageRef image;
+            image.handle = Num<int64_t>(entry, "handle", 0, at);
+            image.revision = Num<int64_t>(entry, "imageRevision", 0, at);
+            image.width = Num<int>(entry, "width", 0, at);
+            image.height = Num<int>(entry, "height", 0, at);
+            image.tint_argb = Num<uint32_t>(entry, "tintArgb", 0xffffffffu, at);
+            if (const Json *source = Find(entry, "source", false, at))
+            {
+                const std::string in = at + ".source";
+                image.kind = Text(*source, "kind", in);
+                image.group = Text(*source, "group", in);
+                image.image = Text(*source, "image", in);
+                image.mode = Text(*source, "mode", in);
+                image.atlas = Text(*source, "atlas", in);
+                image.pic = Num<int>(*source, "pic", -1, in);
+                if (const Json *uv = Find(*source, "uv", true, in))
+                {
+                    if (uv->size() != 4)
+                        Wrong(in, "uv", "4 numbers");
+                    for (size_t k = 0; k < 4 && k < uv->size(); ++k)
+                        if ((*uv)[k].is_number())
+                            image.uv[k] = (*uv)[k].get<float>();
+                        else
+                            Wrong(in, "uv", "4 numbers");
+                }
+            }
+            out.push_back(std::move(image));
         }
-        out.push_back(std::move(image));
+        return out;
     }
-    return out;
-}
 
-std::vector<Cell> Cells(const Json &list)
-{
-    std::vector<Cell> out;
-    int position = 0;
-    for (const Json &entry : list)
+    std::vector<Cell> Cells(const Json &list, const std::string &where)
     {
-        if (!entry.is_object())
-            continue;
-        Cell cell;
-        cell.column = Num<int>(entry, "column", position);
-        cell.text = Text(entry, "text");
-        cell.color_argb = Num<uint32_t>(entry, "colorArgb", 0xffffffffu);
-        cell.images = Images(entry);
-        out.push_back(std::move(cell));
-        ++position;
+        std::vector<Cell> out;
+        for (size_t i = 0; i < list.size(); ++i)
+        {
+            const Json &entry = list[i];
+            const std::string at = where + "[" + std::to_string(i) + "]";
+            if (!entry.is_object())
+            {
+                Wrong(at, "", "an object");
+                continue;
+            }
+            Cell cell;
+            cell.column = Num<int>(entry, "column", static_cast<int>(out.size()), at);
+            cell.text = Text(entry, "text", at);
+            cell.color_argb = Num<uint32_t>(entry, "colorArgb", 0xffffffffu, at);
+            cell.images = Images(entry, at);
+            out.push_back(std::move(cell));
+        }
+        return out;
     }
-    return out;
-}
+};
 
 Json ImagesJson(const std::vector<ImageRef> &images)
 {
@@ -244,48 +299,72 @@ bool ParseInterfaceModel(std::string_view json, InterfaceModel &out, std::string
             *error = "interface model: not an object with widgets";
         return false;
     }
+    Reader read;
     out = InterfaceModel();
-    out.screen = Text(root, "screen");
-    out.language = Text(root, "language");
-    out.opening = Num<uint64_t>(root, "screenRevision", 0);
-    out.revision = Num<uint64_t>(root, "revision", 0);
-    for (const Json &entry : *widgets)
+    out.screen = read.Text(root, "screen", "");
+    out.language = read.Text(root, "language", "");
+    out.opening = read.Num<uint64_t>(root, "screenRevision", 0, "");
+    out.revision = read.Num<uint64_t>(root, "revision", 0, "");
+    for (size_t i = 0; i < widgets->size(); ++i)
     {
+        const Json &entry = (*widgets)[i];
+        const std::string at = "widgets[" + std::to_string(i) + "]";
         if (!entry.is_object())
+        {
+            read.Wrong(at, "", "an object");
             continue;
+        }
         Widget widget;
-        widget.node = Text(entry, "node");
-        widget.type = Text(entry, "type");
-        widget.label = Text(entry, "label");
-        widget.value = Text(entry, "value");
-        widget.index = Num<int>(entry, "index", -1);
+        widget.node = read.Text(entry, "node", at);
+        widget.type = read.Text(entry, "type", at);
+        widget.label = read.Text(entry, "label", at);
+        widget.value = read.Text(entry, "value", at);
+        widget.index = read.Num<int>(entry, "index", -1, at);
         widget.order = static_cast<int>(out.widgets.size()); // the engine sends them sorted
-        widget.enabled = Flag(entry, "enabled", true);
-        widget.row_id = Text(entry, "rowId");
-        widget.images = Images(entry);
-        if (const auto cells = entry.find("cells"); cells != entry.end() && cells->is_array())
-            widget.cells = Cells(*cells);
-        if (const auto actions = entry.find("actions"); actions != entry.end() && actions->is_array())
+        widget.enabled = read.Flag(entry, "enabled", true, at);
+        widget.row_id = read.Text(entry, "rowId", at);
+        widget.images = read.Images(entry, at);
+        if (const Json *cells = read.Find(entry, "cells", true, at))
+            widget.cells = read.Cells(*cells, at + ".cells");
+        if (const Json *actions = read.Find(entry, "actions", true, at))
             for (const Json &verb : *actions)
                 if (verb.is_string())
                     widget.actions.push_back(verb.get<std::string>());
-        widget.min = Num<int>(entry, "min", 0);
-        widget.max = Num<int>(entry, "max", 0);
-        widget.step = Num<int>(entry, "step", 1);
-        widget.exclusive = Flag(entry, "exclusive", false);
-        widget.unavailable_reason = Text(entry, "unavailableReason");
-        if (const auto headers = entry.find("columnHeaders"); headers != entry.end() && headers->is_array())
+                else
+                    read.Wrong(at, "actions", "strings");
+        widget.min = read.Num<int>(entry, "min", 0, at);
+        widget.max = read.Num<int>(entry, "max", 0, at);
+        widget.step = read.Num<int>(entry, "step", 1, at);
+        widget.exclusive = read.Flag(entry, "exclusive", false, at);
+        widget.unavailable_reason = read.Text(entry, "unavailableReason", at);
+        if (const Json *headers = read.Find(entry, "columnHeaders", true, at))
             for (const Json &header : *headers)
-                widget.column_headers.push_back(header.is_string() ? header.get<std::string>() : std::string());
-        if (const auto cells = entry.find("headerCells"); cells != entry.end() && cells->is_array())
-            widget.header_cells = Cells(*cells);
-        if (const auto context = entry.find("context"); context != entry.end() && context->is_object())
+                if (header.is_string())
+                    widget.column_headers.push_back(header.get<std::string>());
+                else
+                    read.Wrong(at, "columnHeaders", "strings");
+        if (const Json *cells = read.Find(entry, "headerCells", true, at))
+            widget.header_cells = read.Cells(*cells, at + ".headerCells");
+        if (const Json *context = read.Find(entry, "context", false, at))
             for (const auto &item : context->items())
                 if (item.value().is_string())
                     widget.context[item.key()] = item.value().get<std::string>();
-        if (const auto color = entry.find("textColorArgb"); color != entry.end() && color->is_number())
-            widget.text_color_argb = color->get<uint32_t>();
+                else
+                    read.Wrong(at + ".context", item.key(), "a string");
+        if (const auto color = entry.find("textColorArgb"); color != entry.end())
+        {
+            if (color->is_number())
+                widget.text_color_argb = color->get<uint32_t>();
+            else
+                read.Wrong(at, "textColorArgb", "a number");
+        }
         out.widgets.push_back(std::move(widget));
+    }
+    if (!read.wrong.empty())
+    {
+        if (error)
+            *error = "interface model: " + read.wrong;
+        return false;
     }
     return true;
 }

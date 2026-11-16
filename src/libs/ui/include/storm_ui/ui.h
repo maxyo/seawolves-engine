@@ -105,6 +105,10 @@ struct Config
     // Checks every prediction of Prepare: a frame it called unchanged that draws other
     // commands than the frame shown is an error (host checks and captures turn this on).
     bool verify_unchanged = false;
+    // Template strict mode (host checks and captures): a template path that names nothing (an
+    // unknown name, a missing key, an index past the end) is an error of the component's render,
+    // not null; paths that may be missing say so with opt() or or() (template.h).
+    bool strict_templates = false;
     // Optional clock in seconds, for deterministic captures.
     std::function<double()> clock;
     // Also gets every line the host logs: its errors, RmlUi's messages and every text it puts on the screen

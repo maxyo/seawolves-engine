@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <exception>
+#include <string_view>
+#include <unordered_set>
 
 namespace storm::ui
 {
@@ -720,10 +722,15 @@ void Router::BuildView()
     for (const ScreenEntry &entry : screens_)
         if (model_.screen == entry.id)
             ported = &entry;
-    std::string nodes;
-    for (const Widget &widget : model_.widgets)
-        if (nodes.find("," + widget.node + ",") == std::string::npos)
-            nodes += (nodes.empty() ? "," : "") + widget.node + ",";
+    // The model's distinct nodes, "a,b,c": the key of the log-once lines below, built only for them.
+    const auto nodes = [this] {
+        std::string list;
+        std::unordered_set<std::string_view> seen;
+        for (const Widget &widget : model_.widgets)
+            if (seen.insert(widget.node).second)
+                list += (list.empty() ? "" : ",") + widget.node;
+        return list;
+    };
     Admission admitted;
     if (ported)
     {
@@ -744,7 +751,7 @@ void Router::BuildView()
                 return;
             }
             const std::string rejection = admitted.missing;
-            const bool logged = !logged_.insert("rejected:" + model_.screen + ":" + nodes).second;
+            const bool logged = !logged_.insert("rejected:" + model_.screen + ":" + nodes()).second;
             CloseOnDefect("screen " + model_.screen + " (interface #" + std::to_string(model_.opening) + " revision " +
                               std::to_string(model_.revision) + "): required nodes missing or mistyped: " + rejection +
                               "; the interface is closed (the engine's back)",
@@ -763,8 +770,8 @@ void Router::BuildView()
             using_ = "generic";
         }
         admitted = Admit(model_, screen_->Nodes());
-        if (logged_.insert("generic:" + model_.screen + ":" + nodes).second)
-            surface_.Log("screen " + model_.screen + ": no ported screen, generic layout; nodes=" + (nodes.empty() ? std::string("none") : nodes.substr(1, nodes.size() - 2)));
+        if (const std::string list = nodes(); logged_.insert("generic:" + model_.screen + ":" + list).second)
+            surface_.Log("screen " + model_.screen + ": no ported screen, generic layout; nodes=" + (list.empty() ? std::string("none") : list));
     }
     Json view = screen_->Build(admitted, bindings_);
     // The generic layout places every widget itself and hands over only its overflow rows.

@@ -934,6 +934,7 @@ static void CheckOneHostPerProcess(const std::string &pack)
     {
         Runtime first(pack);
         Config config;
+        config.strict_templates = true; // a template path that names nothing is an error
         config.files = first.files.get();
         config.backend = &first.backend;
         config.width = 800;

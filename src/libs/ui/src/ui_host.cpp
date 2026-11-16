@@ -344,6 +344,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             strings_[entry.key()] = std::move(table);
         }
         SetTemplateStrings([this](const std::string &key) { return Text(key); });
+        SetTemplateStrict(config.strict_templates);
         screen_path_ = pack.value("screen", std::string());
         // The HUD: its document and where the elements of every scene sit. A pack that
         // names a layout must hold a readable one; a pack without a HUD (none shipped
@@ -805,8 +806,6 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const double routing = config_.game_hud ? std::min(router_->Tick(), hud_->Tick()) : router_->Tick();
 
         UpdateContext();
-        if (RevealInventorySelection())
-            UpdateContext();
         // Scroll edges move only with a layout, a touch or a scroll in motion: the walk over
         // every element is skipped on frames without any of them.
         const bool moved = changed_ || counters_.laid_out > 0 || context_->GetNextUpdateDelay() <= 0.0;
@@ -816,6 +815,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const bool cutouts = moved && AvoidCutouts();
         // Components that measure their layout (columns) set styles from it.
         bool measured = SettleLaidOutComponents();
+        if (edges || cutouts)
+            regions_moved_ = true; // a scroll or a cutout moved what is drawn without a layout
         if (clamps || cutouts || measured) // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout
             UpdateContext();
         // A measurement is drawn with the layout it makes. Measuring settles in one more pass
@@ -913,6 +914,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         last_frame_ = counters_;
         counters_ = FrameStats(); // what happens until the next frame counts for it
         hud_->Drawn();
+        if (last_frame_.laid_out > 0 || last_frame_.touched > 0)
+            regions_moved_ = true; // boxes moved, or elements came, went or changed their classes
         PublishTouchMap(true);
         ReleaseHeld();
         return delay;
@@ -1692,27 +1695,6 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     }
 
   private:
-    // Inventory models may open on an item below the compact list viewport. Reveal it once when
-    // its stable row changes, after layout; subsequent manual scrolling is left alone.
-    bool RevealInventorySelection()
-    {
-        Rml::Element *row = document_ ? document_->QuerySelector("s-items .ig-row.sel") : nullptr;
-        const std::string key = row ? row->GetAttribute<Rml::String>("data-item-id", "") : "";
-        if (!row || key.empty())
-        {
-            inventory_selection_.clear();
-            inventory_selection_row_ = {};
-            return false;
-        }
-        if (inventory_selection_ == key && inventory_selection_row_.get() == row)
-            return false;
-        inventory_selection_ = key;
-        inventory_selection_row_ = row->GetObserverPtr();
-        row->ScrollIntoView(Rml::ScrollIntoViewOptions(Rml::ScrollAlignment::Nearest));
-        changed_ = true;
-        return true;
-    }
-
     // Where a pointer going down belongs to the UI; read by the thread that gets touches.
     struct TouchMap
     {
@@ -2042,6 +2024,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // an interface, a state): the answer of WantsTouch never waits for this thread. Outside a
     // frame (`laid_out` false) what now covers the game is not laid out yet: pointers that go
     // down on it are held until the next frame (Touch, ReleaseHeld).
+    // The HUD's regions (a walk over its whole document) are collected again only when they
+    // can have moved since the last collection (regions_moved_): a frame that laid out or
+    // changed elements, a scroll or cutout shift, a host call. Before that, outside a frame,
+    // the last laid-out regions stay; a frame or a pass with nothing new reuses them. With
+    // Config::verify_unchanged a reuse is checked against a fresh walk.
     void PublishTouchMap(bool laid_out = false)
     {
         TouchMap map;
@@ -2052,8 +2039,29 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         // a document or an interface screen (also one the game opened whose model is still to
         // come), a modal HUD sheet, or nothing the player can use (Between)
         map.everywhere = !video_ && (document_ != nullptr || map.back || opening_ != Opening::None || between_);
+        if (!laid_out)
+            regions_moved_ = true; // a host call: the next frame lays out what it changed
         if (hud && !map.everywhere && hud_document_)
-            CollectRegions(hud_document_, map.regions);
+        {
+            if (!regions_current_ || (laid_out && regions_moved_))
+            {
+                hud_regions_.clear();
+                CollectRegions(hud_document_, hud_regions_);
+                regions_current_ = true;
+                if (laid_out)
+                    regions_moved_ = false;
+            }
+            else if (laid_out && config_.verify_unchanged)
+            {
+                std::vector<Rml::Rectanglef> fresh;
+                CollectRegions(hud_document_, fresh);
+                if (fresh != hud_regions_)
+                    Error("UI touch map out of date: HUD touch regions moved without a layout, an element change, a scroll or a host call");
+            }
+            map.regions = hud_regions_;
+        }
+        else
+            regions_current_ = false; // the HUD takes no part: collected afresh when it does again
         const std::lock_guard<std::mutex> lock(touch_mutex_);
         // What comes after a transition is not laid out before the next frame either.
         if (!laid_out && map.everywhere && (!touch_map_.everywhere || (was_between && !between_)))
@@ -2302,6 +2310,9 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::unordered_map<std::string, std::string> hud_made_; // what each mounted element was created as
     mutable std::mutex touch_mutex_;
     TouchMap touch_map_;
+    std::vector<Rml::Rectanglef> hud_regions_; // the HUD's touch regions as last collected (PublishTouchMap)
+    bool regions_current_ = false;             // hud_regions_ belong to the HUD shown now
+    bool regions_moved_ = true;                // something since that collection can have moved them
     std::vector<Cutout> cutouts_; // physical pixels (SetCutouts)
     bool cutouts_changed_ = false;
     struct CutoutShift_
@@ -2375,8 +2386,6 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::vector<Toast_> toasts_;
     int scroll_pointer_ = -1; // the pointer that drags lists (one at a time)
     TouchScroll scroll_;
-    std::string inventory_selection_;
-    Rml::ObserverPtr<Rml::Element> inventory_selection_row_;
     bool initialised_ = false;
 };
 

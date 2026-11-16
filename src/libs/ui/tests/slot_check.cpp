@@ -63,6 +63,7 @@ int main(int argc, char **argv)
     NoBackend backend;
     double clock = 0.0;
     Config config;
+    config.strict_templates = true; // a template path that names nothing is an error
     config.files = files.get();
     config.backend = &backend;
     config.width = 800;
