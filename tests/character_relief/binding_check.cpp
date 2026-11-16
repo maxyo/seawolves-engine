@@ -6,7 +6,9 @@
 using namespace storm;
 void expect(bool v,const char *s){if(!v){std::fprintf(stderr,"FAIL %s\n",s);std::exit(1);}std::puts(s);}
 namespace bgfx {struct TextureHandle{int idx=-1;};bool isValid(TextureHandle h){return h.idx>=0;}void setTexture(uint8_t,int,TextureHandle,uint32_t){}}
-struct Upscale {uint32_t width=512,height=256;};
+enum class TextureSource {Own,Lightmap,Upscale}; // shim texture_fade.hpp
+namespace effects {struct UpscaleEntry {enum State {Resident=6};};}
+struct Upscale {uint32_t width=512,height=256;int state=0;bgfx::TextureHandle handle{};};
 struct Store {uint32_t width=512,height=256,levels=10;bool full_chain=false,lightmap=false;bgfx::TextureHandle handle{1};std::shared_ptr<Upscale> upscale=std::make_shared<Upscale>();};
 struct Draw {std::array<float,8> skin_tone{};};
 struct Upscales {bool enabled=false,resident=false;bool active(){return enabled;}bgfx::TextureHandle replacement(Store &,float){return {resident?2:-1};}};
@@ -16,6 +18,7 @@ struct Context {static Context &instance(){static Context c;return c;}int sample
 void bind(Store *store,Draw &fx_draw,Upscales &upscales,uint32_t stage=0) {
  (void)fx_draw;Lighting fx_lighting;uint32_t unit=stage,flags=0;auto draw_distance=[](){return 1.0f;};
 PRODUCTION_BINDING
+ (void)source; // the texture fade's input (Device::draw), not this check's
 }
 Draw reference(){Draw d;d.skin_tone={0.47f,0.32f,0.2f,0.7f,1,0,1,3};return d;}
 int main(){
