@@ -252,7 +252,7 @@ void run(shim::Device &device, bool noop)
     const uint16_t base_handle = base->store->handle.idx;
     int owner = 0;
     render::SetEffectsWorldOrigin({10000.0f, 0.0f, 0.0f});
-    render::SetEffectsPlayerPosition({10003.0f, 0.0f, 0.0f}, &owner);
+    render::SetEffectsPlayerPosition({10003.0f, 0.0f, 0.0f}, &owner, render::EffectsPlayerRole::Character);
     base->store->normal_map = std::make_shared<effects::NormalMapEntry>();
     base->store->normal_map->state = effects::NormalMapEntry::Waiting;
     entry->state = effects::UpscaleEntry::Waiting;

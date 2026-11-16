@@ -97,17 +97,31 @@ inline std::pair<uint32_t, float> generation_rank(const GenerationPriority &prio
     return {static_cast<uint32_t>(distance / 10.0f), distance};
 }
 
+// Who claims the player's position. On land the controlled character and the main character's ship both exist (the
+// ship moored in the town's port runs its Execute too): the character outranks the ship, whichever updates last.
+enum class PlayerRole : uint8_t
+{
+    Ship,      // the main character's ship: the player at sea
+    Character, // the controlled character in a location
+};
+
 class GenerationFocus
 {
   public:
     GenerationSnapshot snapshot() const { return {scene_.load(std::memory_order_relaxed), generation_window()}; }
-    void set_player(const std::array<float, 3> &position, const void *owner = nullptr)
+    // False when a valid claim of a higher role holds the anchor: the position is not taken.
+    bool set_player(const std::array<float, 3> &position, const void *owner = nullptr,
+                    PlayerRole role = PlayerRole::Character)
     {
+        if (valid_ && owner != owner_ && role < role_)
+            return false;
         if (owner != owner_)
             scene_.fetch_add(1, std::memory_order_relaxed); // a different controlled entity starts fresh observations
         owner_ = owner;
+        role_ = role;
         player_ = position;
         valid_ = std::all_of(position.begin(), position.end(), [](float p) { return std::isfinite(p); });
+        return valid_;
     }
     void clear_player(const void *owner = nullptr)
     {
@@ -124,6 +138,9 @@ class GenerationFocus
             position = player_;
         return valid_;
     }
+    // The role and identity (never dereferenced) of the current claim; meaningful while player() is true.
+    PlayerRole player_role() const { return role_; }
+    const void *player_owner() const { return owner_; }
     void set_scene(std::string_view name)
     {
         if (name != name_ || name.empty())
@@ -154,6 +171,7 @@ class GenerationFocus
     std::string name_;
     std::array<float, 3> player_{}, origin_{};
     bool valid_ = false;
+    PlayerRole role_ = PlayerRole::Character;
     const void *owner_ = nullptr; // identity only; never dereferenced
 };
 inline GenerationFocus &generation_focus()

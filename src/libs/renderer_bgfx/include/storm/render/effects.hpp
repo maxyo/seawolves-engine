@@ -122,8 +122,14 @@ void SetEffectsWorldOrigin(const std::array<float, 3> &origin);
 
 // The actual controlled character/main ship, in absolute world coordinates: prioritises pending texture generation.
 // Separate from the camera (third-person, dialogue and free-camera views must not move the priority anchor).
-// `owner` is identity only; clearing an old owner must not clear its replacement's position.
-void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner);
+// `owner` is identity only; clearing an old owner must not clear its replacement's position. On land the main
+// character's ship moored in the port also reports: the controlled character outranks it (`role`).
+enum class EffectsPlayerRole : uint8_t
+{
+    Ship,
+    Character,
+};
+void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner, EffectsPlayerRole role);
 void ClearEffectsPlayerPosition(const void *owner);
 
 // Location, once it has read them: its direct neighbours (the locations and the island's sea its exits lead to) and

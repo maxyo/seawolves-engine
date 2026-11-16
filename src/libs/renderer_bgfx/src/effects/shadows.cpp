@@ -79,20 +79,27 @@ bool SunShadows::prepare(shim::Device &device, const std::array<float, 16> &view
         eye[i] = origin[i] - (view[12] * view[i * 4 + 0] + view[13] * view[i * 4 + 1] + view[14] * view[i * 4 + 2]);
         focus[i] = eye[i] + view[i * 4 + 2] * kAhead;
     }
-    int centre = 0; // 0 the camera's view (no player known), 1 the player, 2 the camera's view (the player is far)
+    // 0 the camera's view (no player known), 1 the controlled character, 2 the main ship, 3 the camera's view (the
+    // player is far). Said again whenever it or the player entity changes (a load, a new location, boarding a boat).
+    int centre = 0;
     float player_distance = 0.0f;
-    if (std::array<float, 3> player; generation_focus().player(player))
+    const GenerationFocus &player_focus = generation_focus();
+    const void *player_owner = nullptr;
+    if (std::array<float, 3> player; player_focus.player(player))
     {
         const fx::Vec3 d{player[0] - eye[0], player[1] - eye[1], player[2] - eye[2]};
         player_distance = std::sqrt(Dot(d, d));
-        centre = player_distance <= kPlayerReach ? 1 : 2;
-        if (centre == 1)
+        player_owner = player_focus.player_owner();
+        centre = player_distance > kPlayerReach ? 3 : player_focus.player_role() == PlayerRole::Ship ? 2 : 1;
+        if (centre != 3)
             focus = player;
     }
-    if (centre != logged_centre_)
+    if (centre != logged_centre_ || player_owner != logged_owner_)
     {
         logged_centre_ = centre;
-        static const char *const what[] = {"in front of the camera (no player position is known)", "on the player",
+        logged_owner_ = player_owner;
+        static const char *const what[] = {"in front of the camera (no player position is known)",
+                                           "on the controlled character", "on the player's ship",
                                            "in front of the camera (the player is too far from it)"};
         shim::logf("effects: sun shadows: the shadowed region is centred %s, %.0f m from the camera", what[centre],
                    centre == 0 ? kAhead : player_distance);

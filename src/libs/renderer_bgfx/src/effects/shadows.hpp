@@ -152,6 +152,7 @@ class SunShadows
     float footprint_near_ = 0.0f;
     Counters counters_{}, totals_{};
     int logged_centre_ = -1; // what the region was centred on when it was last said
+    const void *logged_owner_ = nullptr; // and the player entity (identity only)
 };
 
 } // namespace storm::effects

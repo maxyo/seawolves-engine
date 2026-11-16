@@ -1098,10 +1098,12 @@ void SetEffectsWorldOrigin(const std::array<float, 3> &origin)
     effects::generation_focus().set_origin(origin);
 }
 
-void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner)
+void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner, EffectsPlayerRole role)
 {
-    effects::generation_focus().set_player(position, owner);
-    effects::ReliefGenerator::instance().set_anchor(position);
+    if (effects::generation_focus().set_player(position, owner,
+                                               role == EffectsPlayerRole::Ship ? effects::PlayerRole::Ship
+                                                                               : effects::PlayerRole::Character))
+        effects::ReliefGenerator::instance().set_anchor(position);
 }
 
 void ClearEffectsPlayerPosition(const void *owner)

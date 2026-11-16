@@ -471,7 +471,8 @@ void Player::Update(float dltTime)
     // Character * c = FindGunTarget(kDist);
     // if(c) c->Select();
     NPCharacter::Update(dltTime);
-    storm::render::SetEffectsPlayerPosition({curPos.x, curPos.y, curPos.z}, this);
+    storm::render::SetEffectsPlayerPosition({curPos.x, curPos.y, curPos.z}, this,
+                                            storm::render::EffectsPlayerRole::Character);
 #ifdef __ANDROID__
     TraceAndroidMovement(dltTime);
 #endif

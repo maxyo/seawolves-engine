@@ -799,7 +799,8 @@ void SHIP::Execute(uint32_t DeltaTime)
     if (bMainCharacter)
     {
         const auto player_position = GetPos();
-        storm::render::SetEffectsPlayerPosition({player_position.x, player_position.y, player_position.z}, this);
+        storm::render::SetEffectsPlayerPosition({player_position.x, player_position.y, player_position.z}, this,
+                                                storm::render::EffectsPlayerRole::Ship);
     }
     mRoot = storm::math::eulerMatrix(vAng.x + vCurDeadDir.x, vAng.y, vAng.z + vCurDeadDir.z, vPos.x + fXOffset, vPos.y - State.fShipImmersion - SP.fWaterLine, vPos.z + fZOffset);
     SetMatrix(mRoot);

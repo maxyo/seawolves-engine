@@ -430,7 +430,8 @@ int main()
                 scene.eye = {0.0f, 0.0f};
                 scene.origin = {5210.0f, 3.0f, -11840.0f};
                 static const int player = 0;
-                render::SetEffectsPlayerPosition({scene.origin[0], scene.origin[1], scene.origin[2]}, &player);
+                render::SetEffectsPlayerPosition({scene.origin[0], scene.origin[1], scene.origin[2]}, &player,
+                                                 render::EffectsPlayerRole::Ship); // the main ship at sea
                 const std::vector<uint8_t> picture = settle(scene);
                 dump(picture, "sea");
                 const auto before = sun_shadows.totals();

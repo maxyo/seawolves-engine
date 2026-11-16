@@ -67,6 +67,21 @@ void check_focus()
     check(invalid(focus.distance({3.0f, 0.0f, 0.0f}, 0.0f)) && focus.snapshot().scene != current_scene,
           "current owner teardown clears focus and invalidates scene observations");
 
+    // On land the moored main ship reports after the controlled character: the character keeps the anchor.
+    int character = 0, ship = 0;
+    check(focus.set_player({1.0f, 0.0f, 0.0f}, &character, PlayerRole::Character), "the character claims the anchor");
+    const auto character_scene = focus.snapshot().scene;
+    check(!focus.set_player({60.0f, 0.0f, 0.0f}, &ship, PlayerRole::Ship), "the moored ship cannot take it");
+    check(near(focus.distance({3.0f, 0.0f, 0.0f}, 0.0f), 2.0f) && focus.player_role() == PlayerRole::Character &&
+              focus.player_owner() == &character && focus.snapshot().scene == character_scene,
+          "the character's position and observations stay while the ship reports");
+    focus.clear_player(&character);
+    check(focus.set_player({60.0f, 0.0f, 0.0f}, &ship, PlayerRole::Ship) && focus.player_role() == PlayerRole::Ship,
+          "at sea (no character) the ship holds the anchor");
+    check(focus.set_player({1.0f, 0.0f, 0.0f}, &character, PlayerRole::Character) && focus.player_owner() == &character,
+          "a character entering a location takes it from the ship");
+    focus.clear_player(&character);
+
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const float inf = std::numeric_limits<float>::infinity();
     for (const float bad : {nan, inf, -inf})
