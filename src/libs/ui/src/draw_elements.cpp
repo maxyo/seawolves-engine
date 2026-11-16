@@ -585,7 +585,7 @@ class ClampElement final : public Rml::Element, public FitsText
             if (width_ > 0.0f)
                 refit_ = true;
             else
-                Show(GetAttribute<Rml::String>("text", ""), 0);
+                Show(BindShortWords(GetAttribute<Rml::String>("text", "")), 0);
         }
     }
 
@@ -605,7 +605,7 @@ class ClampElement final : public Rml::Element, public FitsText
             return;
         refit_ = false;
         int size = 0;
-        const std::string whole = GetAttribute<Rml::String>("text", "");
+        const std::string whole = BindShortWords(GetAttribute<Rml::String>("text", ""));
         if (GetAttribute<int>("natural", 0) != 0)
             Natural(whole);
         const std::string text = Fit(whole, width_, size);
@@ -843,7 +843,7 @@ class PagesElement final : public Rml::Element, public FitsText
         Rml::Element::OnAttributeChange(changed);
         if (changed.count("text"))
         {
-            const std::string text = GetAttribute<Rml::String>("text", "");
+            const std::string text = BindShortWords(GetAttribute<Rml::String>("text", ""));
             if (text != text_)
             {
                 text_ = text;

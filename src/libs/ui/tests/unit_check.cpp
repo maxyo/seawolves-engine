@@ -132,6 +132,14 @@ int main(int argc, char **argv)
     ExpectText("{{ missing }}|{{ or(missing, 'x') }}|{{ len(items) }}", scope, "|x|2");
     ExpectText("{{ variant == 'primary' ? 'ink' : 'duo' }}", scope, "ink");
     {
+        // A one-letter Russian word holds on to the next word in shown text, never in an attribute value.
+        const Json words = Json::parse(R"({"t":"Я в порту и с ним «к нам» (а он) вы"})");
+        const std::string bound = "Я\xC2\xA0в\xC2\xA0порту и\xC2\xA0с\xC2\xA0ним «к\xC2\xA0нам» (а\xC2\xA0он) вы";
+        ExpectText("<div title=\"{{t}}\">{{t}}</div>", words, "<div title=\"Я в порту и с ним «к нам» (а он) вы\">" + bound + "</div>");
+        Expect(storm::ui::BindShortWords("слово в") == "слово в" && storm::ui::BindShortWords("ив яд") == "ив яд",
+               "short words: a word at the end or inside a longer word stays");
+    }
+    {
         // A call in a branch not taken is never made (tr of an empty key would be an error).
         std::vector<std::string> asked;
         storm::ui::SetTemplateStrings([&asked](const std::string &key) { asked.push_back(key); return "[" + key + "]"; });

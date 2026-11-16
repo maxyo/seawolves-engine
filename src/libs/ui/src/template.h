@@ -44,5 +44,9 @@ Json EvaluateExpression(std::string_view expression, const Json &scope);
 bool Truthy(const Json &value);
 std::string ToText(const Json &value);
 std::string EscapeRml(std::string_view text);
+// Text as it is shown: a one-letter Russian word (в, к, с, у, о, и, а, я) is bound to the next
+// word by a no-break space, so a line never ends on it. Applied to the text the templates
+// show (not to attribute values) and to the text of ui-clamp, ui-pages and the tooltip.
+std::string BindShortWords(std::string_view text);
 
 } // namespace storm::ui

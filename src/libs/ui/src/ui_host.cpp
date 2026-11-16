@@ -1585,7 +1585,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const float gap = 6.0f * config_.density;
         const float width = std::min(static_cast<float>(config_.width) - 2.0f * gap, std::max(size.x, 280.0f * config_.density));
         const float left = std::clamp(origin.x, gap, static_cast<float>(config_.width) - gap - width);
-        tip->SetInnerRML(EscapeRml(text));
+        tip->SetInnerRML(EscapeRml(BindShortWords(text)));
         tip->SetProperty(Rml::PropertyId::Left, Rml::Property(left, Rml::Unit::PX));
         tip->SetProperty(Rml::PropertyId::Width, Rml::Property(width, Rml::Unit::PX));
         if (below)

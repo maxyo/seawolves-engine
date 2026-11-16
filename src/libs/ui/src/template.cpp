@@ -101,6 +101,41 @@ std::string EscapeRml(std::string_view text)
     return out;
 }
 
+std::string BindShortWords(std::string_view text)
+{
+    // The one-letter words as UTF-8 (all two bytes: 0xD0 or 0xD1 and one more).
+    static constexpr const char *kWords[] = {"\xD0\xB2", "\xD0\xBA", "\xD1\x81", "\xD1\x83", "\xD0\xBE", "\xD0\xB8", "\xD0\xB0", "\xD1\x8F",
+                                             "\xD0\x92", "\xD0\x9A", "\xD0\xA1", "\xD0\xA3", "\xD0\x9E", "\xD0\x98", "\xD0\x90", "\xD0\xAF"};
+    const auto word_start = [&text](size_t at) {
+        if (at == 0)
+            return true;
+        const char before = text[at - 1];
+        if (before == ' ' || before == '\n' || before == '(' || before == '"')
+            return true;
+        // «, or a no-break space bound before this word (\xC2\xAB, \xC2\xA0).
+        return at >= 2 && text[at - 2] == '\xC2' && (before == '\xAB' || before == '\xA0');
+    };
+    std::string out;
+    size_t copied = 0;
+    for (size_t at = 0; at + 2 < text.size(); ++at)
+    {
+        if ((text[at] != '\xD0' && text[at] != '\xD1') || text[at + 2] != ' ' || !word_start(at))
+            continue;
+        for (const char *word : kWords)
+            if (text[at] == word[0] && text[at + 1] == word[1])
+            {
+                out.append(text, copied, at + 2 - copied);
+                out += "\xC2\xA0";
+                copied = at + 3;
+                break;
+            }
+    }
+    if (copied == 0)
+        return std::string(text);
+    out.append(text, copied, std::string_view::npos);
+    return out;
+}
+
 namespace
 {
 
@@ -757,6 +792,9 @@ Tag MatchingClose(std::string_view source, size_t from, std::string_view name, T
 void RenderText(std::string_view source, const Scope &scope, std::string &out)
 {
     size_t at = 0;
+    // Inside a tag (an attribute value) or in text content: only shown text binds short words.
+    // A segment starts outside any tag: control tags are never inside one.
+    bool in_tag = false;
     while (true)
     {
         const size_t open = source.find("{{", at);
@@ -765,7 +803,11 @@ void RenderText(std::string_view source, const Scope &scope, std::string &out)
             out += source.substr(at);
             return;
         }
-        out += source.substr(at, open - at);
+        const std::string_view literal = source.substr(at, open - at);
+        const size_t tag_open = literal.rfind('<'), tag_close = literal.rfind('>');
+        if (tag_open != std::string_view::npos || tag_close != std::string_view::npos)
+            in_tag = tag_open != std::string_view::npos && (tag_close == std::string_view::npos || tag_open > tag_close);
+        out += literal;
         const bool raw = source.substr(open, 3) == "{{{";
         const std::string_view closer = raw ? "}}}" : "}}";
         const size_t start = open + closer.size();
@@ -773,7 +815,7 @@ void RenderText(std::string_view source, const Scope &scope, std::string &out)
         if (close == std::string_view::npos)
             throw std::runtime_error("template: unterminated {{");
         const std::string text = ToText(Parser(source.substr(start, close - start), scope).Run());
-        out += raw ? text : EscapeRml(text);
+        out += raw ? text : EscapeRml(in_tag ? text : BindShortWords(text));
         at = close + closer.size();
     }
 }
