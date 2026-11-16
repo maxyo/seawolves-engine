@@ -4,7 +4,11 @@
 #include "string_compare.hpp"
 #include "platform/platform.hpp"
 
+#include "vm_verify.hpp"
+
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <unordered_set>
 
 namespace storm
@@ -72,13 +76,39 @@ void ScriptStateForget()
 }
 } // namespace storm
 
+namespace
+{
+constexpr size_t kNoIndex = static_cast<size_t>(-1);
+
+// The first position of `code`, or kNoIndex. Eight codes per step without a branch between them (the compiler makes
+// it one vector comparison); an object of the game has up to a few hundred attributes.
+size_t IndexOfCode(const std::vector<uint32_t> &codes, uint32_t code) noexcept
+{
+    const uint32_t *const data = codes.data();
+    const size_t size = codes.size();
+    size_t n = 0;
+    for (; n + 8 <= size; n += 8)
+    {
+        uint32_t any = 0;
+        for (size_t k = 0; k < 8; k++)
+            any |= static_cast<uint32_t>(data[n + k] == code);
+        if (any)
+            break;
+    }
+    for (; n < size; n++)
+        if (data[n] == code)
+            return n;
+    return kNoIndex;
+}
+} // namespace
+
 ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC *p): ATTRIBUTES(*p)
 {
 }
 
 ATTRIBUTES::ATTRIBUTES(ATTRIBUTES &&other) noexcept
     : stringCodec_(other.stringCodec_), nameCode_(other.stringCodec_.Convert("root")), value_(std::move(other.value_)),
-      attributes_(std::move(other.attributes_)), break_(other.break_)
+      attributes_(std::move(other.attributes_)), codes_(std::move(other.codes_)), break_(other.break_)
 {
     AdoptChildren();
 }
@@ -99,6 +129,7 @@ ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
     // nameCode_ = other.nameCode_;
     value_ = std::move(other.value_);
     attributes_ = std::move(other.attributes_);
+    codes_ = std::move(other.codes_);
     AdoptChildren();
     // Do not update parent
     // parent_ = other.parent_;
@@ -166,6 +197,7 @@ ATTRIBUTES::LegacyProxy ATTRIBUTES::GetThisAttr() const
 void ATTRIBUTES::SetName(const std::string_view &new_name)
 {
     nameCode_ = stringCodec_.Convert(new_name.data());
+    RenamedInParent();
     storm::TreeChanged(this);
 }
 
@@ -206,10 +238,7 @@ size_t ATTRIBUTES::GetAttributesNum() const
 ATTRIBUTES * ATTRIBUTES::GetAttributeClass(const std::string_view &name) const
 {
     storm::TreeRead(this);
-    for (const auto &attribute : attributes_)
-        if (storm::iEquals(name, attribute->GetThisName()))
-            return attribute.get();
-    return nullptr;
+    return FirstWithName(name);
 }
 
 ATTRIBUTES * ATTRIBUTES::GetAttributeClass(uint32_t n) const
@@ -253,10 +282,8 @@ ATTRIBUTES::LegacyProxy ATTRIBUTES::GetAttribute(size_t n) const
 ATTRIBUTES::LegacyProxy ATTRIBUTES::GetAttribute(const std::string_view &name) const
 {
     storm::TreeRead(this);
-    for (const auto &attribute : attributes_)
-        if (storm::iEquals(name, attribute->GetThisName())) {
-            return attribute->value_;
-        }
+    if (const ATTRIBUTES *attribute = FirstWithName(name))
+        return attribute->value_;
     return {};
 }
 
@@ -333,22 +360,12 @@ bool ATTRIBUTES::SetAttributeUseFloat(const char *name, float val)
 
 ATTRIBUTES & ATTRIBUTES::CreateAttribute(const std::string_view &name)
 {
-    storm::TreeChanged(this);
-    const auto &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name));
-    return *attr;
+    return *Append(stringCodec_.Convert(name.data()));
 }
 
 ATTRIBUTES * ATTRIBUTES::CreateAttribute(const std::string_view &name, const char *attribute)
 {
-    storm::TreeChanged(this);
-    const auto &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name));
-
-    if (attribute)
-    {
-        attr->value_ = attribute;
-    }
-
-    return attr.get();
+    return CreateAttribute(stringCodec_.Convert(name.data()), attribute);
 }
 
 size_t ATTRIBUTES::SetAttribute(const std::string_view &name, const char *attribute)
@@ -370,6 +387,7 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
         if (!attributes_.empty())
             storm::TreeChanged(this);
         attributes_.clear();
+        codes_.clear();
     }
     else
     {
@@ -385,6 +403,7 @@ bool ATTRIBUTES::DeleteAttributeClassX(ATTRIBUTES *pA)
         {
             if (it->get() == pA)
             {
+                owner->codes_.erase(owner->codes_.begin() + (it - owner->attributes_.begin()));
                 owner->attributes_.erase(it);
                 storm::TreeChanged(owner);
                 return true;
@@ -413,14 +432,14 @@ ATTRIBUTES * ATTRIBUTES::CreateSubAClass(ATTRIBUTES *pRoot, const char *access_s
             dwNameCode = stringCodec_.Convert(access_string, n);
             pTemp = pRoot->GetAttributeClassByCode(dwNameCode);
             if (!pTemp)
-                pTemp = pRoot->CreateNewAttribute(dwNameCode);
+                pTemp = pRoot->Append(dwNameCode);
             pResult = CreateSubAClass(pTemp, &access_string[n + 1]);
             return pResult;
 
         case 0:
             dwNameCode = stringCodec_.Convert(access_string);
             pResult = pRoot->GetAttributeClassByCode(dwNameCode);
-            return (pResult) ? pResult : pRoot->CreateNewAttribute(dwNameCode);
+            return (pResult) ? pResult : pRoot->Append(dwNameCode);
         default: ;
         }
         n++;
@@ -464,10 +483,7 @@ ATTRIBUTES * ATTRIBUTES::FindAClass(ATTRIBUTES *pRoot, const char *access_string
 ATTRIBUTES * ATTRIBUTES::GetAttributeClassByCode(uint32_t name_code) const
 {
     storm::TreeRead(this);
-    for (const auto &attribute : attributes_)
-        if (name_code == attribute->nameCode_)
-            return attribute.get();
-    return nullptr;
+    return FirstWithCode(name_code);
 }
 
 ATTRIBUTES * ATTRIBUTES::VerifyAttributeClassByCode(uint32_t name_code)
@@ -481,73 +497,52 @@ ATTRIBUTES * ATTRIBUTES::VerifyAttributeClassByCode(uint32_t name_code)
 
 ATTRIBUTES * ATTRIBUTES::CreateAttribute(uint32_t name_code, const char *attribute)
 {
-    storm::TreeChanged(this);
-    const auto &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code));
-
+    ATTRIBUTES *attr = Append(name_code);
     if (attribute)
     {
         attr->value_ = attribute;
     }
-
-    return attr.get();
+    return attr;
 }
 
 size_t ATTRIBUTES::SetAttribute(uint32_t name_code, const char *attribute)
 {
-    size_t n;
-    for (n = 0; n < attributes_.size(); n++)
+    if (const size_t n = ChildIndex(name_code); n != kNoIndex)
     {
-        if (attributes_[n]->nameCode_ == name_code)
+        auto &value = attributes_[n]->value_;
+        if (attribute ? !value || *value != attribute : value.has_value())
+            storm::TreeChanged(this);
+        if (attribute)
         {
-            auto &value = attributes_[n]->value_;
-            if (attribute ? !value || *value != attribute : value.has_value())
-                storm::TreeChanged(this);
-            if (attribute)
-            {
-                value = attribute;
-            }
-            else
-            {
-                value.reset();
-            }
-            return n;
+            value = attribute;
         }
+        else
+        {
+            value.reset();
+        }
+        return n;
     }
 
-    storm::TreeChanged(this);
-    auto &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code));
-
+    ATTRIBUTES *attr = Append(name_code);
     if (attribute)
     {
-        attributes_[n]->value_ = attribute;
+        attr->value_ = attribute;
     }
-    else {
-        attributes_[n]->value_.reset();
-    }
-
     return attributes_.size() - 1;
 }
 
 size_t ATTRIBUTES::SetAttribute(uint32_t name_code, const std::string_view &attribute)
 {
-    size_t n;
-    for (n = 0; n < attributes_.size(); n++)
+    if (const size_t n = ChildIndex(name_code); n != kNoIndex)
     {
-        if (attributes_[n]->nameCode_ == name_code)
-        {
-            auto &value = attributes_[n]->value_;
-            if (!value || *value != attribute)
-                storm::TreeChanged(this);
-            value = attribute;
-            return n;
-        }
+        auto &value = attributes_[n]->value_;
+        if (!value || *value != attribute)
+            storm::TreeChanged(this);
+        value = attribute;
+        return n;
     }
 
-    storm::TreeChanged(this);
-    auto &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code));
-
-    attributes_[n]->value_ = attribute;
-
+    Append(name_code)->value_ = attribute;
     return attributes_.size() - 1;
 }
 
@@ -562,6 +557,7 @@ void ATTRIBUTES::SetNameCode(uint32_t n) noexcept
     if (nameCode_ != n)
         storm::TreeChanged(this);
     nameCode_ = n;
+    RenamedInParent();
 }
 
 VSTRING_CODEC & ATTRIBUTES::GetStringCodec() const noexcept
@@ -569,11 +565,76 @@ VSTRING_CODEC & ATTRIBUTES::GetStringCodec() const noexcept
     return stringCodec_;
 }
 
-ATTRIBUTES * ATTRIBUTES::CreateNewAttribute(uint32_t name_code)
+ATTRIBUTES * ATTRIBUTES::Append(uint32_t name_code)
 {
     storm::TreeChanged(this);
-    const std::unique_ptr<ATTRIBUTES> &attr = attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code));
-    return attr.get();
+    codes_.push_back(name_code);
+    return attributes_.emplace_back(new ATTRIBUTES(stringCodec_, this, name_code)).get();
+}
+
+// The position of the first child named by `name_code`, or kNoIndex.
+size_t ATTRIBUTES::ChildIndex(uint32_t name_code) const noexcept
+{
+    const size_t n = IndexOfCode(codes_, name_code);
+#ifdef STORM_VM_VERIFY
+    storm::vm_verify::Count(storm::vm_verify::Check::AttributeByCode);
+    size_t reference = 0;
+    while (reference < attributes_.size() && attributes_[reference]->nameCode_ != name_code)
+        reference++;
+    if ((n == kNoIndex ? attributes_.size() : n) != reference || codes_.size() != attributes_.size())
+        storm::vm_verify::Mismatch("attribute by code %u (%s): index %zu, the children say %zu of %zu", name_code,
+                                   stringCodec_.Convert(name_code), n, reference, attributes_.size());
+#endif
+    return n;
+}
+
+ATTRIBUTES *ATTRIBUTES::FirstWithCode(uint32_t name_code) const noexcept
+{
+    const size_t n = ChildIndex(name_code);
+    return n == kNoIndex ? nullptr : attributes_[n].get();
+}
+
+// A name no attribute was ever given has no code, and no child bears it.
+ATTRIBUTES *ATTRIBUTES::FirstWithName(const std::string_view &name) const
+{
+    const std::optional<uint32_t> code = stringCodec_.Find(name);
+    ATTRIBUTES *const found = code ? FirstWithCode(*code) : nullptr;
+#ifdef STORM_VM_VERIFY
+    storm::vm_verify::Count(storm::vm_verify::Check::AttributeByName);
+    ATTRIBUTES *reference = nullptr;
+    for (const auto &attribute : attributes_)
+        if (storm::iEquals(name, stringCodec_.Convert(attribute->nameCode_)))
+        {
+            reference = attribute.get();
+            break;
+        }
+    if (found != reference)
+        storm::vm_verify::Mismatch("attribute by name '%.*s': %p, the children's names say %p", static_cast<int>(name.size()),
+                                   name.data(), static_cast<void *>(found), static_cast<void *>(reference));
+#endif
+    return found;
+}
+
+void ATTRIBUTES::RenamedInParent() noexcept
+{
+    if (!parent_)
+        return;
+    for (size_t n = 0; n < parent_->attributes_.size(); n++)
+        if (parent_->attributes_[n].get() == this)
+        {
+            parent_->codes_[n] = nameCode_;
+            return;
+        }
+}
+
+void ATTRIBUTES::SortByName()
+{
+    std::sort(std::begin(attributes_), std::end(attributes_),
+              [](const std::unique_ptr<ATTRIBUTES> &lhs, const std::unique_ptr<ATTRIBUTES> &rhs) {
+                  return strcmp(lhs->GetThisName(), rhs->GetThisName()) < 0;
+              });
+    for (size_t n = 0; n < attributes_.size(); n++)
+        codes_[n] = attributes_[n]->nameCode_;
 }
 
 ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &p) : ATTRIBUTES(p, nullptr, "root")
@@ -596,6 +657,8 @@ ATTRIBUTES ATTRIBUTES::Copy() const
     ATTRIBUTES result(stringCodec_, nullptr, nameCode_);
     const auto copy = [](const auto &self, const ATTRIBUTES &from, ATTRIBUTES &to) -> void {
         to.value_ = from.value_;
+        to.codes_ = from.codes_;
+        to.attributes_.reserve(from.attributes_.size());
         for (const auto &attribute : from.attributes_)
             self(self, *attribute, *to.attributes_.emplace_back(new ATTRIBUTES(from.stringCodec_, &to, attribute->nameCode_)));
     };

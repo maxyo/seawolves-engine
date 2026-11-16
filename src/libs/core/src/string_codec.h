@@ -1,194 +1,251 @@
 #pragma once
 
-#include "platform/platform.hpp"
+#include "attributes.h"
+#include "istring.hpp"
+#include "vm_verify.hpp"
 
-#include <string>
+#include <algorithm>
+#include <cstring>
+#include <memory>
+#include <stdexcept>
+#include <string_view>
+#include <vector>
 
-#define HASH_TABLE_SIZE 512 // must be power of 2
-
-struct HTSUBELEMENT
-{
-    char *pStr;
-    uint32_t dwHashCode;
-};
-
-struct HTELEMENT
-{
-    HTSUBELEMENT *pElements;
-    uint32_t nStringsNum;
-};
-
+// The names of script attributes, each with a 32-bit code.
+//
+// The codes are part of the save format: a save stores the names in the order of Get()/GetNext() and every attribute
+// by its code, and the load registers the names in that order to give each its code back. So the numbering never
+// changes: the code is (bucket << 16) | (position in the bucket), where the bucket is the low 9 bits of the name's
+// case-insensitive PJW hash (BucketOf) and the position counts the names that came to the bucket before. A name is
+// registered by its first lookup, found or not (Convert), so the set of names and their order follow the session.
+//
+// Looking a name up does not walk its bucket (30-60 names each in a running game): an open-addressing index from
+// the case-folded name's hash to its code answers it.
 class STRING_CODEC : public VSTRING_CODEC
 {
-    uint32_t nHTIndex;
-    uint32_t nHTEIndex;
-    uint32_t nStringsNum;
-
-    HTELEMENT HTable[HASH_TABLE_SIZE]{};
-
   public:
-    STRING_CODEC() : nHTIndex(0), nHTEIndex(0)
-    {
-        nStringsNum = 0;
-    }
-
-    ~STRING_CODEC() override
-    {
-        Release();
-    }
+    static constexpr uint32_t kBuckets = 512; // a power of 2
+    static constexpr uint32_t kInvalidCode = 0xffffffff;
 
     uint32_t GetNum() override
     {
-        return nStringsNum;
+        return count_;
     }
 
     void Release()
     {
-        for (uint32_t m = 0; m < HASH_TABLE_SIZE; m++)
-        {
-            if (HTable[m].pElements)
-            {
-                for (uint32_t n = 0; n < HTable[m].nStringsNum; n++)
-                    delete[] HTable[m].pElements[n].pStr;
-                free(HTable[m].pElements);
-            }
-            HTable[m].pElements = nullptr;
-            HTable[m].nStringsNum = 0;
-        }
-        nStringsNum = 0;
+        index_.clear();
+        count_ = 0;
+        for (auto &bucket : buckets_)
+            bucket.clear();
     }
 
+    // At most iLen bytes of pString, stopping at a terminator.
     uint32_t Convert(const char *pString, int32_t iLen) override
     {
         if (pString == nullptr)
-            return 0xffffffff;
-
-        // At most iLen bytes, stopping at a terminator. This used a 1024 byte
-        // stack buffer and wrote past it for longer strings.
+            return kInvalidCode;
         size_t length = 0;
         while (iLen > 0 && length < static_cast<size_t>(iLen) && pString[length] != 0)
             ++length;
-        const std::string temp(pString, length);
-
-        bool bNew;
-        return Convert(temp.c_str(), bNew);
+        return Convert(std::string_view(pString, length));
     }
 
     uint32_t Convert(const char *pString) override
     {
         if (pString == nullptr)
-            return 0xffffffff;
-        bool bNew;
-        return Convert(pString, bNew);
+            return kInvalidCode;
+        return Convert(std::string_view(pString));
     }
 
-    inline uint32_t GetNum(uint32_t dwNum, uint32_t dwAlign = 8)
+    // The code of `name`, registered now if it is new.
+    uint32_t Convert(std::string_view name)
     {
-        return (1 + dwNum / dwAlign) * dwAlign;
+        const uint32_t hash = FoldedHash(name);
+        if (const Slot *slot = FindSlot(name, hash))
+            return slot->code;
+#ifdef STORM_VM_VERIFY
+        if (const auto walked = WalkBucket(name))
+            storm::vm_verify::Mismatch("name '%.*s': not in the index, the bucket has it as %u",
+                                       static_cast<int>(name.size()), name.data(), *walked);
+#endif
+
+        const uint32_t bucketIndex = BucketOf(name);
+        auto &bucket = buckets_[bucketIndex];
+        // 65536 names of one bucket: the 16-bit position would wrap and two names would share a code.
+        if (bucket.size() > 0xffff)
+            throw std::runtime_error("script name codec: a bucket is full");
+        const uint32_t code = (bucketIndex << 16) | static_cast<uint32_t>(bucket.size());
+        bucket.push_back({std::make_unique<char[]>(name.size() + 1), static_cast<uint32_t>(name.size())});
+        memcpy(bucket.back().text.get(), name.data(), name.size());
+        count_++;
+        if (count_ * 2 > index_.size())
+            GrowIndex();
+        else
+            Insert(hash, code);
+        return code;
     }
 
-    uint32_t Convert(const char *pString, bool &bNew)
+    std::optional<uint32_t> Find(std::string_view name) const override
     {
-        uint32_t nStringCode;
-        uint32_t n;
-        if (pString == nullptr)
-            return 0xffffffff;
-        uint32_t nHash = MakeHashValue(pString);
-        uint32_t nTableIndex = nHash & (HASH_TABLE_SIZE - 1);
-
-        HTELEMENT *pE = &HTable[nTableIndex];
-
-        for (n = 0; n < pE->nStringsNum; n++)
-        {
-            if (pE->pElements[n].dwHashCode == nHash && storm::iEquals(pString, pE->pElements[n].pStr))
-            {
-                nStringCode = (nTableIndex << 16) | (n & 0xffff);
-                bNew = false;
-                return nStringCode;
-            }
-        }
-
-        n = pE->nStringsNum;
-        pE->nStringsNum++;
-        pE->pElements = (HTSUBELEMENT *)realloc(pE->pElements, GetNum(pE->nStringsNum) * sizeof(HTSUBELEMENT));
-
-        const auto len = strlen(pString) + 1;
-        pE->pElements[n].pStr = new char[len];
-        memcpy(pE->pElements[n].pStr, pString, len);
-        pE->pElements[n].dwHashCode = nHash;
-
-        nStringCode = (nTableIndex << 16) | (n & 0xffff);
-        nStringsNum++;
-        bNew = true;
-        return nStringCode;
+        const Slot *slot = FindSlot(name, FoldedHash(name));
+        return slot ? std::optional<uint32_t>(slot->code) : std::nullopt;
     }
 
     void VariableChanged() override;
 
     const char *Convert(uint32_t code) override
     {
-        uint32_t nTableIndex = code >> 16;
-        if (nTableIndex >= HASH_TABLE_SIZE)
+        const uint32_t bucketIndex = code >> 16;
+        if (bucketIndex >= kBuckets)
         {
             return "ERROR: invalid SCCT index";
         }
-        uint32_t n = code & 0xffff;
-        if (n >= HTable[nTableIndex].nStringsNum)
+        const uint32_t n = code & 0xffff;
+        if (n >= buckets_[bucketIndex].size())
         {
             return "INVALID SCC";
         }
-        return HTable[nTableIndex].pElements[n].pStr;
+        return buckets_[bucketIndex][n].text.get();
     }
 
-    uint32_t MakeHashValue(const char *ps)
+    // The names in the order a save stores them: bucket by bucket.
+    const char *Get()
+    {
+        for (iterBucket_ = 0; iterBucket_ < kBuckets; iterBucket_++)
+        {
+            if (!buckets_[iterBucket_].empty())
+            {
+                iterName_ = 0;
+                return buckets_[iterBucket_][0].text.get();
+            }
+        }
+        return nullptr;
+    }
+
+    const char *GetNext()
+    {
+        iterName_++;
+        for (; iterBucket_ < kBuckets; iterBucket_++)
+        {
+            if (buckets_[iterBucket_].empty())
+                continue;
+            if (iterName_ >= buckets_[iterBucket_].size())
+            {
+                iterName_ = 0;
+                continue;
+            }
+            return buckets_[iterBucket_][iterName_].text.get();
+        }
+        return nullptr;
+    }
+
+  private:
+    // The PJW hash of the name with ASCII capitals folded, as the saves have always numbered the names.
+    static uint32_t BucketOf(std::string_view name)
     {
         uint32_t hval = 0;
-        while (*ps != 0)
+        for (char v : name)
         {
-            char v = *ps++;
             if ('A' <= v && v <= 'Z')
-                v += 'a' - 'A'; // case independent
-            hval = (hval << 4) + (uint32_t)v;
-            uint32_t g = hval & ((uint32_t)0xf << (32 - 4));
+                v += 'a' - 'A';
+            hval = (hval << 4) + static_cast<uint32_t>(v);
+            const uint32_t g = hval & (static_cast<uint32_t>(0xf) << (32 - 4));
             if (g != 0)
             {
                 hval ^= g >> (32 - 8);
                 hval ^= g;
             }
         }
-        return hval;
+        return hval & (kBuckets - 1);
     }
 
-    char *Get()
+    struct Name
     {
-        nHTIndex = 0;
-        for (nHTIndex = 0; nHTIndex < HASH_TABLE_SIZE; nHTIndex++)
+        std::unique_ptr<char[]> text; // zero-terminated
+        uint32_t length;
+    };
+
+    struct Slot
+    {
+        uint32_t hash;
+        uint32_t code; // kInvalidCode: free
+    };
+
+    static uint32_t FoldedHash(std::string_view name) noexcept
+    {
+        uint32_t hash = 0x811c9dc5u; // FNV-1a
+        for (const char c : name)
+            hash = (hash ^ storm::FoldCase(c)) * 0x01000193u;
+        return hash;
+    }
+
+    static bool SameName(const Name &stored, std::string_view name) noexcept
+    {
+        return storm::traits_cast<storm::ichar_traits<char>>(std::string_view(stored.text.get(), stored.length)) ==
+               storm::traits_cast<storm::ichar_traits<char>>(name);
+    }
+
+    const Slot *FindSlot(std::string_view name, uint32_t hash) const noexcept
+    {
+        if (index_.empty())
+            return nullptr;
+        const size_t mask = index_.size() - 1;
+        for (size_t at = hash & mask;; at = (at + 1) & mask)
         {
-            if (HTable[nHTIndex].nStringsNum > 0)
+            const Slot &slot = index_[at];
+            if (slot.code == kInvalidCode)
+                return nullptr;
+            if (slot.hash == hash && SameName(buckets_[slot.code >> 16][slot.code & 0xffff], name))
             {
-                nHTEIndex = 0;
-                return HTable[nHTIndex].pElements[nHTEIndex].pStr;
+#ifdef STORM_VM_VERIFY
+                storm::vm_verify::Count(storm::vm_verify::Check::NameCode);
+                if (WalkBucket(name) != slot.code)
+                    storm::vm_verify::Mismatch("name '%.*s': the index says %u, the bucket does not",
+                                               static_cast<int>(name.size()), name.data(), slot.code);
+#endif
+                return &slot;
             }
         }
-        return nullptr;
     }
 
-    char *GetNext()
+#ifdef STORM_VM_VERIFY
+    // The plain lookup: the names of the bucket compared one by one.
+    std::optional<uint32_t> WalkBucket(std::string_view name) const noexcept
     {
-        nHTEIndex++;
-        for (; nHTIndex < HASH_TABLE_SIZE; nHTIndex++)
-        {
-            if (HTable[nHTIndex].nStringsNum == 0)
-                continue;
-            if (nHTEIndex >= HTable[nHTIndex].nStringsNum)
-            {
-                nHTEIndex = 0;
-                continue;
-            }
-            return HTable[nHTIndex].pElements[nHTEIndex].pStr;
-        }
-        return nullptr;
+        const uint32_t bucketIndex = BucketOf(name);
+        const auto &bucket = buckets_[bucketIndex];
+        for (uint32_t n = 0; n < bucket.size(); n++)
+            if (SameName(bucket[n], name))
+                return (bucketIndex << 16) | n;
+        return std::nullopt;
+    }
+#endif
+
+    void Insert(uint32_t hash, uint32_t code) noexcept
+    {
+        const size_t mask = index_.size() - 1;
+        size_t at = hash & mask;
+        while (index_[at].code != kInvalidCode)
+            at = (at + 1) & mask;
+        index_[at] = {hash, code};
     }
 
-    //*/
+    // Twice the slots (at most half of them are taken), every name entered again.
+    void GrowIndex()
+    {
+        index_.assign(std::max<size_t>(1024, index_.size() * 2), Slot{0, kInvalidCode});
+        for (uint32_t bucketIndex = 0; bucketIndex < kBuckets; bucketIndex++)
+        {
+            const auto &bucket = buckets_[bucketIndex];
+            for (uint32_t n = 0; n < bucket.size(); n++)
+                Insert(FoldedHash(std::string_view(bucket[n].text.get(), bucket[n].length)), (bucketIndex << 16) | n);
+        }
+    }
+
+    std::vector<Name> buckets_[kBuckets];
+    std::vector<Slot> index_; // open addressing, linear probing; a power of 2 slots
+    uint32_t count_ = 0;
+    uint32_t iterBucket_ = 0;
+    uint32_t iterName_ = 0;
 };

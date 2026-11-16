@@ -19,6 +19,8 @@ class VSTRING_CODEC
     virtual uint32_t Convert(const char *pString) = 0;
     virtual uint32_t Convert(const char *pString, int32_t iLen) = 0;
     virtual const char *Convert(uint32_t code) = 0;
+    // The code of a name Convert has registered (case-insensitive, as Convert compares); registers nothing.
+    virtual std::optional<uint32_t> Find(std::string_view name) const = 0;
 
     virtual void VariableChanged() = 0;
 };
@@ -70,6 +72,8 @@ class ATTRIBUTES final
     size_t SetAttribute(const std::string_view &name, const std::string_view &attribute);
     [[nodiscard]] ATTRIBUTES Copy() const;
     bool DeleteAttributeClassX(ATTRIBUTES *pA);
+    // The children ordered by name, byte by byte (the script's Sort). The caller reports the change of script state.
+    void SortByName();
     ATTRIBUTES *CreateSubAClass(ATTRIBUTES *pRoot, const char *access_string);
     [[nodiscard]] ATTRIBUTES *FindAClass(ATTRIBUTES *pRoot, const char *access_string);
     [[nodiscard]] ATTRIBUTES *GetAttributeClassByCode(uint32_t name_code) const;
@@ -87,13 +91,19 @@ private:
     ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, uint32_t name_code);
 
     void Release() const noexcept;
-    ATTRIBUTES *CreateNewAttribute(uint32_t name_code);
+    ATTRIBUTES *Append(uint32_t name_code);
+    [[nodiscard]] size_t ChildIndex(uint32_t name_code) const noexcept;
+    [[nodiscard]] ATTRIBUTES *FirstWithCode(uint32_t name_code) const noexcept;
+    [[nodiscard]] ATTRIBUTES *FirstWithName(const std::string_view &name) const;
     void AdoptChildren() noexcept;
+    void RenamedInParent() noexcept;
 
     VSTRING_CODEC &stringCodec_;
     uint32_t nameCode_{};
     std::optional<std::string> value_;
     std::vector<std::unique_ptr<ATTRIBUTES>> attributes_;
+    // The name codes of attributes_, in their order: a lookup scans these, not the children themselves.
+    std::vector<uint32_t> codes_;
     ATTRIBUTES *parent_{nullptr};
     bool break_{false};
     

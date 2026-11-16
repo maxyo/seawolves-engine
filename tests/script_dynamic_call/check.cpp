@@ -38,6 +38,11 @@ class Codec final : public VSTRING_CODEC
     }
     uint32_t Convert(const char *name, int32_t length) override { return Convert(std::string(name, length).c_str()); }
     const char *Convert(uint32_t code) override { return names.at(code).c_str(); }
+    std::optional<uint32_t> Find(std::string_view name) const override
+    {
+        const auto found = std::find(names.begin(), names.end(), name);
+        return found == names.end() ? std::nullopt : std::optional<uint32_t>(found - names.begin());
+    }
     void VariableChanged() override {}
 };
 

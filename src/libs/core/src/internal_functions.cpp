@@ -419,8 +419,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
     DATA *pV3;
     DATA *pV4;
 
-    DATA Access;
-    Access.SetVCompiler(this);
     float TempFloat1;
     float TempFloat2;
     int32_t TempLong1;
@@ -1683,9 +1681,12 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        Access.Copy(pV);
-        // pV->Get(pChar);
-        Access.Get(pChar);
+    {
+        // The name is copied: the result takes the argument's stack slot.
+        DATA name;
+        name.SetVCompiler(this);
+        name.Copy(pV);
+        name.Get(pChar);
         pV = SStack.Push();
         if (BC_LoadSegment(pChar))
             pV->Set(1);
@@ -1693,6 +1694,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             pV->Set(0);
         pVResult = pV;
         return pV;
+    }
         //
     case FUNC_UNLOAD_SEGMENT:
         pV = SStack.Pop();
@@ -2531,10 +2533,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pA = pV->GetAClass();
 
         storm::ScriptStateChanged(); // reorders the children
-        std::sort(std::begin(pA->attributes_), std::end(pA->attributes_),
-                  [](const std::unique_ptr<ATTRIBUTES> &lhs, const std::unique_ptr<ATTRIBUTES> &rhs) {
-                      return strcmp(lhs->GetThisName(), rhs->GetThisName()) < 0;
-                  });
+        pA->SortByName();
 
         break;
     }

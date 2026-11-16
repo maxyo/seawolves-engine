@@ -14,6 +14,7 @@ option(STORM_SCENE_SWEEP "Build the script hook used by tools/scene_sweep (never
 if(STORM_SCENE_SWEEP)
   add_definitions(-DSTORM_SCENE_SWEEP=1)
 endif()
+option(STORM_VM_VERIFY "Script VM: check every fast path against its plain computation (tools/vm_verify; never for shipped builds)" OFF)
 
 add_compile_options(-std=c++20)
 # Matrices, vertex data and D3D structures are viewed through differently

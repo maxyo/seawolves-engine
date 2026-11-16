@@ -21,6 +21,11 @@ public:
         return code;
     }
     const char *Convert(uint32_t code) override { return values.at(code).c_str(); }
+    std::optional<uint32_t> Find(std::string_view name) const override
+    {
+        for (const auto &entry : values) if (entry.second == name) return entry.first;
+        return std::nullopt;
+    }
     void VariableChanged() override {}
 };
 

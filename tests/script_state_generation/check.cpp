@@ -35,6 +35,13 @@ class Codec final : public VSTRING_CODEC
     {
         return names_[code].c_str();
     }
+    std::optional<uint32_t> Find(std::string_view name) const override
+    {
+        for (uint32_t i = 0; i < names_.size(); ++i)
+            if (names_[i] == name)
+                return i;
+        return std::nullopt;
+    }
     void VariableChanged() override
     {
     }

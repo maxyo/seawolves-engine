@@ -34,6 +34,11 @@ class TestStringCodec : public VSTRING_CODEC
     {
         return map_[code].c_str();
     }
+    std::optional<uint32_t> Find(std::string_view name) const override
+    {
+        const uint32_t hash = std::hash<std::string>{}(std::string(name));
+        return map_.contains(hash) ? std::optional<uint32_t>(hash) : std::nullopt;
+    }
 
     void VariableChanged() override
     {
