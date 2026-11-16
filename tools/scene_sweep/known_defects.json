@@ -11,13 +11,6 @@
     {
       "game": "TEHO 1.7.3",
       "scene": "*",
-      "file": "RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm",
-      "error": "missing texture: Can't load texture resource\\textures\\PHONG256_BW.GIF.tx",
-      "reason": "The sloop of the main menu (sloop1_mast2.gm, also sloop1_mast201.gm and Frigate_h1.gm) names the texture PHONG256_BW.GIF, which the game does not ship (not in RESOURCE/Textures of the installer). The engine logs it and draws the mast without that texture, as the original engine does; the data is the game's. Any scene with such a ship shows it (the main menu, the sea with a sloop or frigate about)."
-    },
-    {
-      "game": "TEHO 1.7.3",
-      "scene": "*",
       "file": "PROGRAM/scripts/PsHero.c",
       "error": "RUNTIME ERROR in scripts\\PsHero.c(924)",
       "reason": "The game's script that moves the free captains (PsHero) between towns when a day passes picks a destination t<rand(iNum-1)>; when the captain's town has no travel paths iNum is 0, the script itself traces \"Can't find travel path\", falls back to t0 and reads arDest.t0.town, which does not exist: missed attribute t0, null ap, no rAP data, all at line 924. It is the game's own script on the state of a new game with days passing (the sweep passes a day between locations); it fires on the day change, whatever scene is loading, and the scene still renders. Seen once so far, at loc:Plantation_F1 at midnight; not checked whether a played game reaches the same state."

@@ -178,7 +178,7 @@ void TexStore::create_gpu()
         break;
     }
     if (!bgfx::isValid(handle))
-        logf("texture creation failed: %ux%ux%u levels=%u d3dformat=%u", width, height, depth, levels,
+        logf("ERROR: texture creation failed: %ux%ux%u levels=%u d3dformat=%u", width, height, depth, levels,
              static_cast<uint32_t>(format));
     else if (render_target)
         needs_clear = true;
@@ -461,7 +461,7 @@ void TexStore::create_sampled()
                                                   : bgfx::TextureFormat::RGBA8;
     handle = bgfx::createTexture(counted_texture_upload(make_dds(*this, gpu_format)));
     if (!bgfx::isValid(handle))
-        logf("texture creation failed: %ux%u levels=%u d3dformat=%u", width, height, levels,
+        logf("ERROR: texture creation failed: %ux%u levels=%u d3dformat=%u", width, height, levels,
              static_cast<uint32_t>(format));
     // a decoded DXT texture cannot take partial DXT updates: re-locking recreates it
     transcoded = tier == Tier::Rgba && format_info(format).block_bytes != 0;

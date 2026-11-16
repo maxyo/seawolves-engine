@@ -51,10 +51,31 @@ def check_failure_logs():
             ('system.log', "Can't load model missing.gm", 'missing model'),
             ('system.log', 'Cannot open animation file missing.ani', 'missing resource'),
             ('system.log', 'Warning! Can`t open ini file resource/test.ini', 'missing resource'),
-            ('system.log', "Audio decode failed 'missing.wav'", 'missing resource')):
+            ('system.log', "Audio decode failed 'missing.wav'", 'missing resource'),
+            # The renderer's failure lines are its "ERROR: ..." ones, before its log sink (stdout) and after it.
+            ('stdout', '[storm-bgfx] ERROR: texture creation failed: 64x64 levels=1 d3dformat=21', 'renderer error'),
+            ('stdout', '[storm-bgfx] ERROR: TRAP: SetClipPlane', 'renderer error'),
+            ('system.log', "[x] [system] [error] [storm-bgfx] ERROR: location readiness: sea: texture 'ships/nosuch.tga' "
+                           "requested by resource\\models\\ships\\x.gm could not be created", 'engine error'),
+            # An unknown missing texture still fails, and so would the known one if the engine logged it as missing.
+            ('system.log', "Can't load texture resource\\textures\\PHONG256_BW.GIF.tx", 'missing texture')):
         reasons = sweep.log_reasons([(filename, line)])
         assert reasons and reasons[0].startswith(reason), (line, reasons)
         assert sweep.status_of('menu:main', reasons) == 'fail'
+
+
+def check_not_failures():
+    """Words such as "fail" in a path or a count of zero, and a known game data defect at warning level, are not errors."""
+    for filename, line in (
+            ('system.log', '[x] [system] [info] [storm-bgfx] program cache: /tmp/failtex/cache, 0 binaries (0.0 MB of 64 MB)'),
+            ('stdout', '[storm-bgfx] effects: texture cache in /home/x/failed-runs/missing/invalid'),
+            ('system.log', '[x] [system] [info] [storm-bgfx] effects: relief generation: the neighbours of FortFrance_town are '
+                           'done: 3 maps made, 0 had theirs, 0 without a map, 0 failed; idle until a texture is loaded'),
+            ('system.log', "[x] [system] [warning] [storm-bgfx] WARNING: known game data defect: texture 'phong256_bw.gif' "
+                           "requested by resource\\models\\ships\\Sloop1\\Sloop1_mast2.gm is not shipped by the game "
+                           "(named by RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm); drawn with the engine's unbound-texture "
+                           "fallback (black)")):
+        assert sweep.log_reasons([(filename, line)]) == [], line
 
 
 def check_final_logs():
@@ -91,4 +112,5 @@ check_selection()
 check_no_retry()
 check_final_logs()
 check_failure_logs()
-print('PASS boot sweep order, single session, and final fatal/sanitizer logs')
+check_not_failures()
+print('PASS boot sweep order, single session, final fatal/sanitizer logs, failure lines by their level, not their words')

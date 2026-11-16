@@ -6,6 +6,7 @@
 #include "texture/core/service.hpp"
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 #include "effects/effects.hpp"
 #include "storm/render/far_lod.hpp"
 #include "effects/thermal.hpp"
@@ -1430,8 +1431,39 @@ void RequireSceneTexture(shim::BaseTexture *texture)
     if (store && effects::SceneTextureName(store->name))
         effects::ObserveSceneTexture(store);
 }
+const char *KnownMissingGameTexture(const char *name)
+{
+    struct Known { std::string_view file; const char *named_by; };
+    // TEHO 1.7.3, checked against RESOURCE of the installer: no file of this name in any folder.
+    static constexpr Known kKnown[] = {
+        // Material of the masts: the original engine drew them without it too.
+        {"phong256_bw.gif", "RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm, sloop1_mast201.gm and "
+                            "RESOURCE/MODELS/Ships/Frigate_h1/Frigate_h1.gm"},
+    };
+    const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
+    const size_t slash = normalized.rfind('/');
+    const std::string_view file = slash == std::string::npos ? std::string_view(normalized)
+                                                             : std::string_view(normalized).substr(slash + 1);
+    for (const Known &known : kKnown)
+        if (file == known.file) return known.named_by;
+    return nullptr;
+}
 void FailSceneTexture(const char *name, const char *requester)
 {
+    if (const char *named_by = KnownMissingGameTexture(name))
+    {
+        // The same in every session and every scene: one line per texture per session, wherever it is first needed.
+        static std::mutex mutex;
+        static std::unordered_set<std::string> reported;
+        const std::string normalized = fx::NormalizeTexturePath(name);
+        const std::string file = normalized.substr(normalized.rfind('/') + 1); // npos + 1: no folder
+        std::lock_guard lock(mutex);
+        if (reported.emplace(file).second)
+            shim::logf("WARNING: known game data defect: texture '%s' requested by %s is not shipped by the game (named by "
+                       "%s); drawn with the engine's unbound-texture fallback (black)",
+                       file.c_str(), requester && *requester ? requester : "?", named_by);
+        return;
+    }
     auto &load = effects::location_load();
     const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
     // It will never get a GPU copy: the scene draws the unbound-texture fallback and the reveal does not wait for it.

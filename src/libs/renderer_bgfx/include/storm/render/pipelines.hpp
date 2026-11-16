@@ -44,9 +44,14 @@ SceneLoadingBudget GetSceneLoadingBudget();
 void SetSceneLoadingWindow(uint64_t generation, uint64_t deadline_ms);
 // Successful world TextureCreate, including cache hits, registers demand. Only mandatory model material
 // failures use FailSceneTexture (`requester`: the model that needs it); optional probes and loading/interface
-// pictures are excluded. A failed texture is logged as an ERROR and never holds the reveal.
+// pictures are excluded. A failed texture is logged as an ERROR and never holds the reveal; one the game's data names
+// but does not ship (KnownMissingGameTexture) is logged once per session as a WARNING instead.
 void RequireSceneTexture(shim::BaseTexture *texture);
 void FailSceneTexture(const char *name, const char *requester);
+// A texture the game's own models name but the game does not ship, in any folder or archive: a defect of its data, the
+// same in every session. Returns where the game names it, nullptr for any other texture (a missing one of those is a
+// real failure). Matched by file name, any folder, with or without "resource\textures\" and ".tx".
+const char *KnownMissingGameTexture(const char *name);
 // Explicit retry keeps the same required assets but starts a new generation. Only in-flight texture uploads that made
 // no progress within effects::SceneTextureStall's budget are released by time (logged as an ERROR each).
 bool RetrySceneResources(uint64_t generation);

@@ -66,7 +66,11 @@ void logf(const char *format, ...)
     va_end(args);
     if (const storm::render::LogSink sink = log_sink.load())
     {
-        sink(std::strncmp(buffer, "ERROR", 5) == 0, buffer);
+        using storm::render::LogLevel;
+        sink(std::strncmp(buffer, "ERROR", 5) == 0     ? LogLevel::Error
+             : std::strncmp(buffer, "WARNING", 7) == 0 ? LogLevel::Warning
+                                                       : LogLevel::Info,
+             buffer);
         return;
     }
 #ifdef __ANDROID__
@@ -92,7 +96,7 @@ HRESULT trap(const char *method)
 {
     std::lock_guard lock(trap_mutex);
     if (++trap_counts[method] == 1)
-        logf("TRAP: %s", method);
+        logf("ERROR: TRAP: %s", method);
     return D3DERR_INVALIDCALL;
 }
 
@@ -246,7 +250,7 @@ bool native_handles(SDL_Window *window, void **nwh, void **ndt)
     SDL_VERSION(&info.version);
     if (!SDL_GetWindowWMInfo(window, &info))
     {
-        logf("SDL_GetWindowWMInfo failed: %s", SDL_GetError());
+        logf("ERROR: SDL_GetWindowWMInfo failed: %s", SDL_GetError());
         return false;
     }
     *ndt = nullptr;
@@ -1422,7 +1426,7 @@ uint32_t shader_id_by_name(const char *name)
 {
     const uint32_t id = find_shader_by_name(name);
     if (id == UINT32_MAX)
-        logf("missing embedded shader %s", name);
+        logf("ERROR: missing embedded shader %s", name);
     return id;
 }
 

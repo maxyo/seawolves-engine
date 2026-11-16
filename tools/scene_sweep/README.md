@@ -67,7 +67,8 @@ the sweep fails (`inventory:tables`) when they differ from what `inventory.py` p
   own inode, and the check of `--game` after every engine run includes the file modes.
 
 A scene fails on: a crash or fatal engine error, a timeout, a failed teleport to the entry locator, script errors (`error.log`),
-missing textures or models, engine/renderer errors in the logs, a fader that never goes,
+missing textures or models, engine/renderer errors in the logs (an error by its level: `[error]`, `[critical]`, the
+renderer's `ERROR: ...` lines; never a word such as "fail" in a path or a count), a fader that never goes,
 or a picture that cannot be the scene. Every capture is checked, every variant too (reasons `variant N: ...`):
 a black or single-colour frame, the lower part black at both sides under a lit upper part (a sea or ground not
 drawn), the game's HUD not drawn (the hero's portrait at the top left, at sea also the compass at the top right;
@@ -79,7 +80,10 @@ in locations a dialogue's panel stands in for the portrait; not checked in `menu
 (we never ship or patch game data) is listed in `known_defects.json`: the game version, the scene (a shell pattern), the file at fault,
 the exact error text the sweep sees and the reason. A scene whose only problems match its entries is reported as
 `KNOWN` (progress line, `status: known` in the report, its own section of the summary), not as failed; any other
-problem still fails it. Remove an entry once its cause is gone.
+problem still fails it. Remove an entry once its cause is gone. A texture the game's models name but the game does
+not ship is not listed here: the engine knows it (`KnownMissingGameTexture`, src/libs/renderer_bgfx/src/effects/effects.cpp)
+and logs it once per session as a `WARNING: known game data defect`, which fails nothing; any other missing texture
+still fails the scene.
 
 ## Running
 Needs a Linux host engine configured with `-DSTORM_SCENE_SWEEP=ON`, Xvfb, Pillow, a GPU driver and

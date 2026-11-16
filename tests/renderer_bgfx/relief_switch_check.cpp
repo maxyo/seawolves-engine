@@ -40,7 +40,7 @@ namespace
 constexpr uint32_t kSize = 128, kLevels = 8;
 int failures = 0;
 std::vector<std::string> log_lines;
-void Collect(bool, const char *line)
+void Collect(storm::render::LogLevel, const char *line)
 {
     log_lines.emplace_back(line);
 }

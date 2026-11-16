@@ -960,7 +960,7 @@ bgfx::ProgramHandle Device::program(uint32_t vs_id, uint32_t fs_id)
         handle = bgfx::createProgram(shaders[vs_id], shaders[fs_id], false);
     }
     if (!bgfx::isValid(handle))
-        logf("program creation failed (vs=%u fs=%u)", vs_id, fs_id);
+        logf("ERROR: program creation failed (vs=%u fs=%u)", vs_id, fs_id);
     programs[key] = handle;
     return handle;
 }

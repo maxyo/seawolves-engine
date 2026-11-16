@@ -38,7 +38,7 @@ struct Thermal
         });
         if (!resolution.error.empty() || (level >= kThermalStatusApi && !library))
         {
-            shim::logf("effects: ERROR thermal status unavailable: %s", resolution.error.empty() ? "libandroid.so did not load"
+            shim::logf("ERROR: effects: thermal status unavailable: %s", resolution.error.empty() ? "libandroid.so did not load"
                                                                                                   : resolution.error.c_str());
             return;
         }
@@ -50,7 +50,7 @@ struct Thermal
         api = resolution.api;
         manager = api.acquire();
         if (!manager)
-            shim::logf("effects: ERROR AThermal_acquireManager returned null on Android API %d: no thermal telemetry", level);
+            shim::logf("ERROR: effects: AThermal_acquireManager returned null on Android API %d: no thermal telemetry", level);
         else
             shim::logf("effects: thermal status is read (API %d%s)", level, api.headroom ? ", with headroom" : "");
     }

@@ -746,7 +746,7 @@ bgfx::FrameBufferHandle Device::framebuffer(TexStore *color, uint32_t face, uint
         attachments[count++].init(depth->handle, bgfx::Access::Write, 0, 1, 0, BGFX_ATTACHMENT_NONE);
     const bgfx::FrameBufferHandle handle = bgfx::createFrameBuffer(count, attachments, false);
     if (!bgfx::isValid(handle))
-        logf("framebuffer creation failed (%ux%u face=%u level=%u)", color->width, color->height, face, level);
+        logf("ERROR: framebuffer creation failed (%ux%u face=%u level=%u)", color->width, color->height, face, level);
     framebuffers[key] = handle;
     return handle;
 }

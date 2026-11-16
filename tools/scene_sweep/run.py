@@ -63,7 +63,10 @@ LOG_RULES = [
     (r'compile\.log', r'Main character <.*> error teleportation', 'teleport failed'),  # characters_login.c
     (r'.', r'\[(critical|error)\]', 'engine error'),
     # The renderer's lines: in system.log once the engine set its log sink (storm/render/log.hpp), on stdout before.
-    (r'.', r'(?i)\[storm-bgfx\].*(error|fail|trap|unsupported|missing|invalid)', 'renderer error'),
+    # The renderer marks every line that reports a failure "ERROR: ..." (its level); words such as "failed" elsewhere
+    # in a line are a path, a count ("0 failed") or a description, not the line's verdict. "WARNING: ..." is a known
+    # defect that is not a failure (a texture the game's data names but does not ship: KnownMissingGameTexture).
+    (r'.', r'\[storm-bgfx\] ERROR\b', 'renderer error'),
     # An engine built with sanitizers (tools/ci/boot_stage.py): ASan stops the engine, UBSan reports and goes on.
     (r'.', r'ERROR: AddressSanitizer|ERROR: LeakSanitizer|runtime error: ', 'sanitizer'),
 ]

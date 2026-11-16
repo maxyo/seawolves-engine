@@ -759,9 +759,13 @@ bool Renderer::Init()
 {
     // The bgfx renderer's lines (effects, textures, relief) into the engine's logs: system.log (and logcat), their
     // errors into error.log too, from whichever thread logs them (the sinks lock).
-    storm::render::SetLogSink([](bool error, const char *line) {
+    storm::render::SetLogSink([](storm::render::LogLevel level, const char *line) {
+        using storm::render::LogLevel;
         static const storm::logging::logger_ptr logger = storm::logging::getOrCreateLogger("system");
-        logger->log(error ? spdlog::level::err : spdlog::level::info, "[storm-bgfx] {}", line);
+        logger->log(level == LogLevel::Error     ? spdlog::level::err
+                    : level == LogLevel::Warning ? spdlog::level::warn
+                                                 : spdlog::level::info,
+                    "[storm-bgfx] {}", line);
     });
     if (auto *sentinelService = core.GetService("LostDeviceSentinel"); !sentinelService)
     {
@@ -2010,7 +2014,8 @@ bool Renderer::TextureLoad(int32_t t)
     auto fileS = fio->_CreateFile(fn, std::ios::binary | std::ios::in);
     if (!fileS.is_open())
     {
-        if (bTrace)
+        // One the game's data names but does not ship is reported once per session by its requester (FailSceneTexture).
+        if (bTrace && !storm::render::KnownMissingGameTexture(fn))
         {
             core.Trace("Can't load texture %s", fn);
         }
