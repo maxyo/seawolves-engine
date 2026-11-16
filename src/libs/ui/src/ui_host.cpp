@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <set>
 #include <unordered_map>
@@ -2091,7 +2092,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // After a frame (its layout): an opened interface that got its model is shown, a new sheet
     // is laid out, and the touches held for them are applied in order. Touches held through a
     // transition that ends in gameplay are dropped instead: the player aimed at a screen, not
-    // at the scene that appeared.
+    // at the scene that appeared. A finger still down when gameplay comes starts its gesture
+    // there and then (the move stick gripped during the fade): its pointer is the UI's (the
+    // platform routes a pointer at its pointer-down), so dropping all of it would leave the
+    // finger dead until lifted.
     void ReleaseHeld()
     {
         if (opening_ == Opening::AwaitFrame)
@@ -2104,7 +2108,17 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         held_pointers_.clear();
         if (!InterfaceActive())
         {
-            Log(std::to_string(held.size()) + " touch events dropped: made while the game showed nothing to use, and gameplay came next; " + RoutingFacts());
+            std::map<int, const HeldTouch *> down; // the last event of each finger that did not lift
+            for (const HeldTouch &touch : held)
+                if (touch.phase == TouchPhase::Up || touch.phase == TouchPhase::Cancel)
+                    down.erase(touch.pointer);
+                else
+                    down[touch.pointer] = &touch;
+            Log(std::to_string(held.size()) + " touch events dropped: made while the game showed nothing to use, and gameplay came next" +
+                (down.empty() ? std::string() : "; " + std::to_string(down.size()) + " finger(s) still down start their gesture now") + "; " +
+                RoutingFacts());
+            for (const auto &[pointer, touch] : down)
+                Apply(TouchPhase::Down, pointer, touch->x, touch->y, touch->time);
             return;
         }
         for (const HeldTouch &touch : held)

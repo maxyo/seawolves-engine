@@ -493,9 +493,16 @@ bool Router::Consume(const std::string &channel, const char *what, const std::fu
 void Router::Failed(const std::string &where, const std::string &what)
 {
     const std::string failed = using_.empty() ? model_.screen : using_;
-    surface_.Error("screen " + failed + " (interface " + (model_.screen.empty() ? std::string("-") : model_.screen) + " #" +
-                   std::to_string(model_.opening) + " revision " + std::to_string(model_.revision) + ") threw in " + where + ": " + what +
-                   "; the interface is closed (the engine's back)");
+    CloseOnDefect("screen " + failed + " (interface " + (model_.screen.empty() ? std::string("-") : model_.screen) + " #" +
+                      std::to_string(model_.opening) + " revision " + std::to_string(model_.revision) + ") threw in " + where + ": " + what +
+                      "; the interface is closed (the engine's back)",
+                  false);
+}
+
+void Router::CloseOnDefect(const std::string &line, bool logged)
+{
+    if (!logged)
+        surface_.Error(line);
     surface_.Alert(surface_.Text("ui.error.screen"));
     // Nothing of the failed build stays: its bindings may point into state the throw left half made.
     bindings_.handlers_.clear();
@@ -705,14 +712,19 @@ void Router::BuildView()
     bindings_.handlers_.clear();
     modals_.clear();
     // The ported screen registered for the id draws it when the model passes its admission.
-    // If its REQUIRED nodes are missing or mistyped the interface is still drawn, by the
-    // generic layout, and that is reported as an error (never a quiet switch).
+    // If its REQUIRED nodes are missing or mistyped once the first model settled, the screen
+    // cannot draw the interface: that is a defect, reported, and the interface closes like
+    // one whose screen threw (CloseOnDefect). Only an interface with no ported screen at all
+    // is the generic layout's.
     const ScreenEntry *ported = nullptr;
     for (const ScreenEntry &entry : screens_)
         if (model_.screen == entry.id)
             ported = &entry;
+    std::string nodes;
+    for (const Widget &widget : model_.widgets)
+        if (nodes.find("," + widget.node + ",") == std::string::npos)
+            nodes += (nodes.empty() ? "," : "") + widget.node + ",";
     Admission admitted;
-    std::string rejection;
     if (ported)
     {
         if (using_ != ported->id || !screen_)
@@ -723,7 +735,6 @@ void Router::BuildView()
         admitted = Admit(model_, screen_->Nodes());
         if (!admitted.accepted)
         {
-            rejection = admitted.missing;
             screen_.reset();
             if (surface_.Now() - opened_at_ < kSettle)
             {
@@ -732,10 +743,19 @@ void Router::BuildView()
                 surface_.Hide();
                 return;
             }
+            const std::string rejection = admitted.missing;
+            const bool logged = !logged_.insert("rejected:" + model_.screen + ":" + nodes).second;
+            CloseOnDefect("screen " + model_.screen + " (interface #" + std::to_string(model_.opening) + " revision " +
+                              std::to_string(model_.revision) + "): required nodes missing or mistyped: " + rejection +
+                              "; the interface is closed (the engine's back)",
+                          logged);
+            rejection_ = rejection;
+            return;
         }
     }
     settle_until_ = 0.0;
-    if (!ported || !rejection.empty())
+    rejection_.clear();
+    if (!ported)
     {
         if (using_ != "generic" || !screen_)
         {
@@ -743,19 +763,9 @@ void Router::BuildView()
             using_ = "generic";
         }
         admitted = Admit(model_, screen_->Nodes());
+        if (logged_.insert("generic:" + model_.screen + ":" + nodes).second)
+            surface_.Log("screen " + model_.screen + ": no ported screen, generic layout; nodes=" + (nodes.empty() ? std::string("none") : nodes.substr(1, nodes.size() - 2)));
     }
-    rejection_ = rejection;
-    std::string nodes;
-    for (const Widget &widget : model_.widgets)
-        if (nodes.find("," + widget.node + ",") == std::string::npos)
-            nodes += (nodes.empty() ? "," : "") + widget.node + ",";
-    if (!rejection.empty())
-    {
-        if (logged_.insert("rejected:" + model_.screen + ":" + nodes).second)
-            surface_.Error("screen " + model_.screen + ": required nodes missing or mistyped: " + rejection + "; drawn by the generic layout");
-    }
-    else if (!ported && logged_.insert("generic:" + model_.screen + ":" + nodes).second)
-        surface_.Log("screen " + model_.screen + ": no ported screen, generic layout; nodes=" + (nodes.empty() ? std::string("none") : nodes.substr(1, nodes.size() - 2)));
     Json view = screen_->Build(admitted, bindings_);
     // The generic layout places every widget itself and hands over only its overflow rows.
     Json rows = view.contains("more") ? view["more"] : Json::array();

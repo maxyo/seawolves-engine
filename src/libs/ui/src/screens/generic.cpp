@@ -117,7 +117,7 @@ class GenericScreen final : public Screen
             if (widget == title)
                 continue;
             if (navigation && SameNode(widget->node, "STR_BUTTONS"))
-                continue; // captions of the section buttons: the header icons replace them
+                continue; // captions of the section buttons: their rows carry them
             if (title && (widget->type == "text" || widget->type == "heading") && widget->label == title->label)
                 continue; // the title repeated in the content
             const std::string node = Upper(widget->node);
@@ -307,36 +307,15 @@ class GenericScreen final : public Screen
         for (const Widget *button : overflow)
             more.push_back(ActionRow(bindings, *button, "extra-a" + std::to_string(more.size())));
 
-        // Header: title, ← (the exit button), sections.
-        std::string section;
-        static const char *const own[][2] = {{"character", "hero"}, {"lscchar_all", "hero"}, {"ship", "ship"},
-                                             {"questbook", "journal"}, {"tradebook", "tradebook"}, {"nationrelation", "nations"},
-                                             {"items", "items"}};
-        for (const auto &pair : own)
-            if (!sections.empty() && model.screen == pair[0])
-                section = pair[1];
-        if (section.empty())
-            for (const Widget *button : sections)
-                more.push_back(ActionRow(bindings, *button, "extra-a" + std::to_string(more.size())));
-        if (!section.empty())
-        {
-            // One handler for every section icon.
-            const std::vector<const Widget *> nav = sections;
-            bindings.On("header", "section", [&bindings, nav](const Event &event) {
-                for (const Widget *button : nav)
-                    if (SectionOf(*button) == event.value && button->Offers("press"))
-                    {
-                        bindings.Send(*button, "press");
-                        return;
-                    }
-            });
-        }
+        // Header: title and ← (the exit button). Section buttons go to the «Прочее» rows: every
+        // interface whose sections the header shows has its ported screen.
+        for (const Widget *button : sections)
+            more.push_back(ActionRow(bindings, *button, "extra-a" + std::to_string(more.size())));
         bindings.On("header-back", "", [&bindings, exit](const Event &) { bindings.Back(exit); });
 
         Json view = Json::object();
         view["title"] = title ? title->label : Prettified(model.screen);
         view["layout"] = layout;
-        view["sections"] = section;
         view["left"] = left;
         view["right"] = right;
         view["actions"] = actions;

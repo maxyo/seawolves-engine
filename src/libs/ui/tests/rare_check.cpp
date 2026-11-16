@@ -160,7 +160,7 @@ static void Card(const std::string &models)
     router.SetInterface(broken);
     surface.now += 1.0;
     router.Tick();
-    Expect(router.Using() == "generic" && router.Rejection() == "B_OK(button)", "a card without its answer is rejected loudly");
+    Expect(!router.Active() && router.Rejection() == "B_OK(button)", "a card without its answer is rejected loudly");
 }
 
 static void Frame(const std::string &models)
@@ -190,6 +190,35 @@ static void FramePicture(const std::string &models)
     router.SetInterface(Load(models, "reading-frame-picture.json"));
     Expect(surface.props["picture"]["texture"] == "loading/inside/kiss" && surface.props["picture"]["uv"] == "0,0,1,1",
            "the quest's picture is the interlude's backdrop, by its texture");
+}
+
+// The game opens boal_frame without a line too (an empty FrameText: the romance and brothel
+// scenes, the Caleuche cabin): its FORMATEDTEXT is then no widget at all. The picture alone is
+// the interlude, drawn by its screen, never a defect.
+static void FramePictureOnly(const std::string &models)
+{
+    FakeSurface surface;
+    Router router(surface);
+    router.SetInterface(Load(models, "reading-frame-picture-only.json"));
+    surface.now += 2.0;
+    router.Tick();
+    Expect(router.Using() == "boal_frame" && surface.tag == "s-reading" && surface.props["mode"] == "frame" && surface.props["text"] == "" &&
+               surface.props["picture"]["texture"] == "loading/inside/censored1",
+           "the interlude without a line: its picture alone");
+    Expect(surface.errors.empty() && surface.toasts.empty() && router.Rejection().empty(), "a picture without a line is no defect");
+    router.OnEvent({"frame", "click", ""});
+    ExpectEqual(surface.Last(), "back", "a tap ends it the game's way");
+
+    // Neither a line nor a quest picture (an empty text and no FramePic): the game shows its
+    // frame ornament, which the design leaves out; the dark scene stays, without an error.
+    InterfaceModel bare = Load(models, "reading-frame-picture-only.json");
+    Without(bare, "SCROLLPICT");
+    bare.opening = 31;
+    router.SetInterface(bare);
+    surface.now += 2.0;
+    router.Tick();
+    Expect(router.Using() == "boal_frame" && surface.props["picture"].is_null() && surface.props["text"] == "" && surface.errors.empty(),
+           "the interlude with nothing of its own is still the interlude");
 }
 
 static void Maps(const std::string &models)
@@ -559,6 +588,7 @@ int main(int argc, char **argv)
     Card(models);
     Frame(models);
     FramePicture(models);
+    FramePictureOnly(models);
     Maps(models);
     Rest(models);
     Notices(models);

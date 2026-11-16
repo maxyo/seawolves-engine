@@ -1,7 +1,7 @@
 // Reading cards: the game's small decision windows over the running game, drawn as one
 // parchment C-Dialog (mockups V2-Reading-MapEncounter, -BattleAhead, -Wreck, -DirSail,
-// -LeaveBattle, -Salary), and the text interlude `boal_frame` (V2-Reading-Frame): one line on
-// a dark scene over the interlude's picture, a tap anywhere is the game's own way out. Fills the pack screen <s-reading>.
+// -LeaveBattle, -Salary), and the interlude `boal_frame` (V2-Reading-Frame): its line on a dark
+// scene over its picture, or the picture alone, a tap anywhere is the game's own way out. Fills the pack screen <s-reading>.
 //
 // The card interfaces share one layout in the game (map.ini, DirSailEnc.ini, LeaveBattle.ini,
 // salary.ini): a caption, an info picture, one or more info texts and B_OK / B_CANCEL.
@@ -25,8 +25,13 @@ constexpr NodeRule kCardNodes[] = {
     {"STATICIMAGES", "image"},
 };
 
+// boal_frame.ini is the only layout of the interlude, but the game opens it two ways
+// (SetLaunchFrameFormParam / SetLaunchFrameFormPic): a line, with or without a quest picture
+// (the hours that passed, "a while later…"), and a picture without a line (the romance and
+// brothel scenes, the Caleuche cabin: an empty FrameText). The engine models a FORMATEDTEXT
+// with no text as no widget at all, so nothing here is required.
 constexpr NodeRule kFrameNodes[] = {
-    {"INFO_TEXT", "text", true},
+    {"INFO_TEXT", "text"},
     {"SCROLLPICT", "image"},
     {"BACKSCROLLPICT", "image"},
     {"BORDERS", "image"},

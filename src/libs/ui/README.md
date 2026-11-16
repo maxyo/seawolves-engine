@@ -107,7 +107,9 @@ The documented fallbacks: with no game root and no picture loader, game pictures
 exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, a handler, its
 `Back`, a text answer) that throws is an error line naming the screen, the interface, the call and
 the exception, the danger toast `ui.error.screen`, and the interface closes through the engine's
-back (no replacement layout is built; the generic layout throwing closes it the same way). A HUD
+back (no replacement layout is built; the generic layout throwing closes it the same way). A
+ported screen whose REQUIRED nodes are missing once the opening settled is the same defect
+(`src/screens/README.md`, Admission). A HUD
 scene or the spyglass overlay that throws is an error line, the toast `ui.error.hud` at its first
 failure, and it is off until its retry (its modes show the game-menu button meanwhile): 2 s after
 the first failure, twice as late after each further one, at most 60 s. The touch HUD is the only

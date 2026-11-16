@@ -5,6 +5,7 @@
 // unless the game is between scenes (starting, loading, no scene, an interface launched but not
 // shown yet): then the UI holds it for what comes next. Interfaces (the card and dice games
 // among them) and modal sheets own every touch; press_check and the scene checks cover them.
+#include <algorithm>
 #include "hud_bench.h"
 
 #include <nlohmann/json.hpp>
@@ -115,6 +116,60 @@ int main(int argc, char **argv)
         run.Frame();
         Expect(!host.WantsTouch(400, 200), std::string(state.what) + ": gameplay gives the touches back to the game");
     }
+    // A finger put down during a transition and still down when gameplay comes starts its
+    // gesture then (the move stick gripped during the fade); one that lifted during it is dropped.
+    run.Explore();
+    const auto sent_by_tap = [&](float x, float y) {
+        const size_t before = run.commands.size();
+        host.Touch(TouchPhase::Down, 7, x, y);
+        run.Frame();
+        host.Touch(TouchPhase::Up, 7, x, y);
+        run.Frame();
+        std::string sent;
+        for (size_t i = before; i < run.commands.size(); ++i)
+            if (run.commands[i].rfind("uisound:", 0) != 0)
+                sent = run.commands[i];
+        return sent;
+    };
+    float tap_x = -1.0f, tap_y = -1.0f;
+    std::string expected;
+    for (float y = 390.0f; y > 0.0f && expected.empty(); y -= 10.0f)
+        for (float x = 790.0f; x > 0.0f && expected.empty(); x -= 10.0f)
+            if (host.WantsTouch(x, y))
+            {
+                expected = sent_by_tap(x, y);
+                tap_x = x;
+                tap_y = y;
+                run.Explore();
+            }
+    Expect(!expected.empty(), "the land HUD has a control a tap uses");
+    const Case fading = {"", "unknown", "transition", "", true};
+    // Gameplay comes back as the recorded explore state, whose revision the combat state follows.
+    Expect(host.SetState("gameplay", GameplayJson(fading, ++revision)), "a transition");
+    run.Frame();
+    run.Frame();
+    size_t before = run.commands.size();
+    host.Touch(TouchPhase::Down, 3, tap_x, tap_y);
+    run.Frame();
+    run.Feed("gameplay", "gameplay-explore");
+    run.Frame();
+    host.Touch(TouchPhase::Up, 3, tap_x, tap_y);
+    run.Frame();
+    Expect(std::find(run.commands.begin() + before, run.commands.end(), expected) != run.commands.end(),
+           "a finger down through the end of a transition acts on what gameplay shows: " + expected);
+    Expect(host.SetState("gameplay", GameplayJson(fading, ++revision)), "another transition");
+    run.Frame();
+    run.Frame();
+    before = run.commands.size();
+    host.Touch(TouchPhase::Down, 4, tap_x, tap_y);
+    host.Touch(TouchPhase::Up, 4, tap_x, tap_y);
+    run.Frame();
+    run.Feed("gameplay", "gameplay-explore");
+    run.Frame();
+    run.Frame();
+    Expect(std::none_of(run.commands.begin() + before, run.commands.end(), [](const std::string &sent) { return sent.rfind("presence:", 0) != 0; }),
+           "a tap that lifted during the transition is dropped (the HUD only says it is shown again)");
+
     if (failures)
         std::fprintf(stderr, "%d routing check(s) failed\n", failures);
     else

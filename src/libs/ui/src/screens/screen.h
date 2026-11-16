@@ -324,8 +324,8 @@ class Router
     {
         return using_;
     }
-    // Why the ported screen of this interface id was not used (its REQUIRED nodes that are
-    // missing or mistyped); empty when the screen in use is the intended one.
+    // Why the ported screen of the last interface could not draw it (its REQUIRED nodes that
+    // were missing or mistyped: the interface was closed, CloseOnDefect); empty otherwise.
     const std::string &Rejection() const
     {
         return rejection_;
@@ -367,6 +367,11 @@ class Router
     // the player's danger toast (ui.error.screen), and the interface is closed through the
     // engine's back. No replacement layout is built for a screen that threw.
     void Failed(const std::string &where, const std::string &what);
+    // A ported screen cannot draw its interface (a thrown screen, REQUIRED nodes missing or
+    // mistyped once the first model settled): the defect `line` (an error line, unless
+    // `logged` says it was already reported for this node set), the danger toast
+    // ui.error.screen, and the interface closes through the engine's back. Nothing else draws it.
+    void CloseOnDefect(const std::string &line, bool logged);
     // The boundary of state consumer code: a throw is an error line and the state is dropped
     // (the screen in use stays: a channel's data is not the screen's). False when it threw.
     bool Consume(const std::string &channel, const char *what, const std::function<void()> &call);
@@ -392,7 +397,7 @@ class Router
     uint64_t next_request_ = 0;
     std::map<uint64_t, Request> outstanding_;
     std::map<uint64_t, Answered> answers_; // the latest answers, for the amount drafts (AnsweredSince)
-    std::set<std::string> logged_; // once per (screen, node set): extras, generic use, rejections
+    std::set<std::string> logged_; // once per (screen, node set): extras, generic use, rejection lines
     // The notices (Bindings::Notice) of the view on the screen and of the one being built: a notice is logged when
     // it appears, not again at every build while it stays.
     std::set<std::string> notices_shown_, notices_building_;

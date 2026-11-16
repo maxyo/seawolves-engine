@@ -102,9 +102,13 @@ Verbs and what the engine receives (`EngineCommand`, today's queue line
 
 ## What the router does for every screen
 
-- **Admission.** All REQUIRED nodes present with their type → the ported screen. Otherwise
-  the generic layout draws the interface and an error names the missing nodes
-  (`Router::Rejection()`, logged once per node set, a toast in debug hosts).
+- **Admission.** All REQUIRED nodes present with their type → the ported screen. A model
+  that misses one is held hidden for the first second of the opening (the game fills its
+  nodes over its first frames); after that it is a defect: an error names the missing nodes
+  (`Router::Rejection()`, logged once per node set), the danger toast `ui.error.screen`, and
+  the interface closes through the engine's back, as when a screen throws. The generic
+  layout never stands in for a ported screen; mark nodes REQUIRED only when every way the
+  game opens the interface has them.
 - **Extras.** Widgets a ported screen does not know: buttons, choices and controls become
   rows of the «Прочее» sheet under the header «⋯»; texts become one parchment note.
   Logged once per (screen, node set): `screen store extras=B_GUILD,GUILD_NOTE`.

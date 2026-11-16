@@ -117,8 +117,8 @@ bool Run(const fs::path &pack, const Case &c)
             fed = false;
         }
     }
-    // Past the router's settle time (a model its screen rejects is drawn by the generic layout,
-    // and reported, one second after the opening) and the toasts' first frames.
+    // Past the router's settle time (a model its screen rejects closes the interface, reported,
+    // one second after the opening) and the toasts' first frames.
     frames(1.5);
     std::vector<std::string> marked;
     const int broken = MarkedBroken(marked);

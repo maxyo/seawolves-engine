@@ -318,18 +318,16 @@ static void Generic(const std::string &models)
     router.OnEvent({"header-back", "click", ""});
     ExpectEqual(surface.Last(), "back", "no exit button → global back");
 
-    // Section navigation of the hero screens goes to the header.
+    // Section buttons of an interface with no ported screen are rows of «Прочее»; their
+    // captions leave the content.
     InterfaceModel book;
-    book.screen = "questbook"; // a journal its ported screen rejects (no tabs): the generic layout draws it
+    book.screen = "mod_journal";
     book.opening = 5;
     book.widgets = {Make("TITLE", "heading", "Журнал торговли"), Make("I_SHIP", "button", "Корабли", {"press"}),
                     Make("I_SHIP_2", "button", "Корабли", {"press"}), Make("STR_BUTTONS", "text", "Корабли")};
     router.SetInterface(book);
-    surface.now += 2.0;
-    router.Tick();
-    Expect(surface.props["sections"] == "journal" && surface.props["left"].empty(), "section buttons and their captions leave the content");
-    router.OnEvent({"header", "section", "ship"});
-    ExpectEqual(surface.Last(), "widget:questbook\tI_SHIP\t-1\tpress", "a header section presses its button");
+    Expect(!surface.props.contains("sections") && surface.props["left"].empty() && surface.props["extras"]["rows"].size() == 1,
+           "section buttons leave the content for «Прочее», their captions with them");
 
     router.CloseInterface();
     Expect(surface.tag.empty() && !router.Active(), "closing unmounts the screen");
@@ -617,20 +615,28 @@ static void Store(const std::string &models)
     router.SetInterface(filled);
     Expect(router.Using() == "store" && surface.errors.empty(), "the ported screen when the game has filled the interface");
     broken.opening = 9;
+    const size_t toasts = surface.toasts.size();
     router.SetInterface(broken);
     surface.now += 1.0;
     router.Tick();
-    ExpectEqual(router.Using(), "generic", "store without TABLE_LIST → generic");
+    Expect(!router.Active() && surface.tag.empty() && router.Using().empty(), "store without TABLE_LIST: nothing stands in for its screen");
     ExpectEqual(router.Rejection(), "TABLE_LIST(choice|table)", "the rejection names the missing required node");
     Expect(surface.errors.size() == 1 &&
-               surface.errors[0] == "screen store: required nodes missing or mistyped: TABLE_LIST(choice|table); drawn by the generic layout",
-           "a ported screen that cannot be used is an error");
+               surface.errors[0] == "screen store (interface #9 revision 1): required nodes missing or mistyped: TABLE_LIST(choice|table); "
+                                    "the interface is closed (the engine's back)",
+           "a ported screen that cannot be used is a defect");
+    Expect(surface.Last() == "back" && surface.toasts.size() == toasts + 1 && surface.toasts.back() == "<ui.error.screen>",
+           "the defect closes the interface the game's way, with the danger toast");
     broken.revision = 99;
     router.SetInterface(broken);
-    Expect(surface.errors.size() == 1, "reported once per node set");
+    surface.now += 1.0;
+    router.Tick();
+    Expect(surface.errors.size() == 1 && surface.toasts.size() == toasts + 2, "the same node set again: closed and toasted, reported once");
     broken.widgets.pop_back();
     router.SetInterface(broken);
-    Expect(surface.errors.size() == 2, "and again when the node set changes");
+    surface.now += 1.0;
+    router.Tick();
+    Expect(surface.errors.size() == 2, "and reported again when the node set changes");
     router.SetInterface(Load(models, "store.json"));
     Expect(router.Using() == "store" && router.Rejection().empty(), "the ported screen returns when its nodes are back");
 
@@ -1022,7 +1028,7 @@ static void Crew(const std::string &models)
     router.SetInterface(broken);
     surface.now += 1.0;
     router.Tick();
-    Expect(router.Using() == "generic" && router.Rejection() == "QTY_EDIT(edit)" && surface.errors.size() == 1, "without its edit box the crew screen is rejected loudly");
+    Expect(!router.Active() && router.Rejection() == "QTY_EDIT(edit)" && surface.errors.size() == 1, "without its edit box the crew screen is rejected loudly");
 }
 
 static void Repair(const std::string &models)
@@ -1663,7 +1669,7 @@ static void Shipyard(const std::string &models)
     router.SetInterface(broken);
     surface.now += 1.0;
     router.Tick();
-    Expect(router.Using() == "generic" && router.Rejection() == "ANDROID_SHIPYARD_STATE(shipyard_state)" && !surface.errors.empty(),
+    Expect(!router.Active() && router.Rejection() == "ANDROID_SHIPYARD_STATE(shipyard_state)" && !surface.errors.empty(),
            "without its state widget the shipyard is rejected loudly");
 }
 
@@ -1958,7 +1964,7 @@ static void Nations(const std::string &models)
     router.SetInterface(broken);
     surface.now += 2.0;
     router.Tick();
-    Expect(router.Using() == "generic" && router.Rejection() == "ANDROID_NATION_ROW(nation_row)", "without its rows the nations screen is rejected loudly");
+    Expect(!router.Active() && router.Rejection() == "ANDROID_NATION_ROW(nation_row)", "without its rows the nations screen is rejected loudly");
 }
 
 static Widget *Row(InterfaceModel &model, const char *node, int index)

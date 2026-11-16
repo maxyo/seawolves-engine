@@ -248,8 +248,9 @@ class Host
     virtual void ScrollTo(const std::string &element_id) = 0;
 
     // --- game interfaces -----------------------------------------------------------
-    // Routes a game interface to its screen: the ported screen registered for the id when
-    // the model passes its admission, the generic layout otherwise. The JSON overload
+    // Routes a game interface to its screen: the ported screen registered for the id (a model
+    // it cannot admit closes the interface as a defect), the generic layout for an id with no
+    // ported screen. The JSON overload
     // takes the engine's wire format. Call again for every model revision.
     virtual bool SetInterface(const std::string &json) = 0;
     virtual void SetInterface(const InterfaceModel &model) = 0;
