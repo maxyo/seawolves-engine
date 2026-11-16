@@ -15,6 +15,13 @@ option(STORM_ENABLE_UI "Build the RmlUi based portable game UI runtime" OFF)
 if(NOT STORM_ENABLE_UI)
     return()
 endif()
+# OFF (stand-alone host builds only): the runtime and the checks that draw nothing (storm_ui_pack_check, the
+# screen/HUD unit checks), without the bgfx backend, the .tx decoder, captures, the shader build (no host shaderc)
+# and bgfx's X11/OpenGL configure. The application's tests/ui_pack_contract builds this way.
+option(STORM_UI_RENDER_BACKEND "Build the bgfx render backend, captures and the checks that draw" ON)
+if(NOT STORM_UI_RENDER_BACKEND AND NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    message(FATAL_ERROR "STORM_UI_RENDER_BACKEND=OFF is for the stand-alone host build of src/libs/ui only")
+endif()
 # Inside the engine build: neither this library nor its third-party sources take the engine's
 # global flags (-std=c++20 for C sources, the Windows type headers ...).
 set_directory_properties(PROPERTIES INCLUDE_DIRECTORIES "" COMPILE_DEFINITIONS "" COMPILE_OPTIONS "")
@@ -98,7 +105,7 @@ endforeach()
 # pins and configures bgfx (limits, GLES 3.0) and provides the shader build (the cached host
 # shaderc). Inside the engine it is there already.
 set(storm_ui_renderer_bgfx "${CMAKE_CURRENT_SOURCE_DIR}/../renderer_bgfx")
-if(NOT COMMAND storm_bgfx_embed_shaders)
+if(STORM_UI_RENDER_BACKEND AND NOT COMMAND storm_bgfx_embed_shaders)
     add_subdirectory("${storm_ui_renderer_bgfx}" "${CMAKE_CURRENT_BINARY_DIR}/renderer_bgfx" EXCLUDE_FROM_ALL)
 endif()
 
@@ -163,13 +170,15 @@ endif()
 
 # The render backend: bgfx. Only the frame owner's interface header is used (no symbols), so the
 # stand-alone build does not need the engine's renderer library.
-file(GLOB storm_ui_shader_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.sc")
-list(FILTER storm_ui_shader_sources EXCLUDE REGEX "varying\\.def\\.sc$")
-storm_bgfx_embed_shaders(TARGET storm_ui_shaders NAMESPACE storm_ui_shaders
-    VARYING "${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc" SOURCES ${storm_ui_shader_sources})
-add_library(storm_ui_bgfx STATIC src/backend_bgfx.cpp)
-target_include_directories(storm_ui_bgfx PUBLIC "${storm_ui_renderer_bgfx}/include")
-target_link_libraries(storm_ui_bgfx PUBLIC storm_ui storm_bgfx_runtime PRIVATE storm_ui_shaders)
+if(STORM_UI_RENDER_BACKEND)
+    file(GLOB storm_ui_shader_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.sc")
+    list(FILTER storm_ui_shader_sources EXCLUDE REGEX "varying\\.def\\.sc$")
+    storm_bgfx_embed_shaders(TARGET storm_ui_shaders NAMESPACE storm_ui_shaders
+        VARYING "${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc" SOURCES ${storm_ui_shader_sources})
+    add_library(storm_ui_bgfx STATIC src/backend_bgfx.cpp)
+    target_include_directories(storm_ui_bgfx PUBLIC "${storm_ui_renderer_bgfx}/include")
+    target_link_libraries(storm_ui_bgfx PUBLIC storm_ui storm_bgfx_runtime PRIVATE storm_ui_shaders)
+endif()
 
 if(ANDROID)
     # libstorm_ui.so, the one UI runtime of the APK: the game (src/libs/ui_host in libengine.so)
@@ -190,22 +199,26 @@ if(ANDROID)
     storm_build_stamp(storm_ui_runtime)
     storm_ui_line_tables(storm_ui storm_ui_bgfx storm_ui_runtime)
 elseif(NOT CMAKE_CROSSCOMPILING)
-    # Headless captures for design checks: bgfx GLES 3.0 on a surfaceless EGL display, PNG output.
-    # .tx decoding for the capture tool's pictures (the game takes them from the renderer).
-    add_library(storm_ui_tx STATIC src/tx_texture.cpp)
-    target_link_libraries(storm_ui_tx PUBLIC storm_ui PRIVATE storm_bgfx_runtime)
-    add_executable(storm_ui_shot tools/ui_shot.cpp)
-    target_link_libraries(storm_ui_shot PRIVATE storm_ui_bgfx storm_ui_tx plutovg::plutovg ${CMAKE_DL_LIBS})
+    if(STORM_UI_RENDER_BACKEND)
+        # Headless captures for design checks: bgfx GLES 3.0 on a surfaceless EGL display, PNG output.
+        # .tx decoding for the capture tool's pictures (the game takes them from the renderer).
+        add_library(storm_ui_tx STATIC src/tx_texture.cpp)
+        target_link_libraries(storm_ui_tx PUBLIC storm_ui PRIVATE storm_bgfx_runtime)
+        add_executable(storm_ui_shot tools/ui_shot.cpp)
+        target_link_libraries(storm_ui_shot PRIVATE storm_ui_bgfx storm_ui_tx plutovg::plutovg ${CMAKE_DL_LIBS})
+    endif()
     # The pack contract check (tools/pack_check.cpp): a real pack with the real adapters on the
     # recorded fixtures. The application's host checks run it on its pack (tests/ui_pack_contract);
     # here it runs when STORM_UI_PACK names a built pack.
     add_executable(storm_ui_pack_check tools/pack_check.cpp)
     target_link_libraries(storm_ui_pack_check PRIVATE storm_ui)
     set(STORM_UI_PACK "" CACHE PATH "A built UI pack (the application's build.py --pack output) for the ui_pack_contract test")
-    add_executable(storm_ui_unit tests/unit_check.cpp)
-    target_link_libraries(storm_ui_unit PRIVATE storm_ui storm_ui_tx)
     enable_testing()
-    add_test(NAME ui_unit COMMAND storm_ui_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models")
+    if(STORM_UI_RENDER_BACKEND)
+        add_executable(storm_ui_unit tests/unit_check.cpp)
+        target_link_libraries(storm_ui_unit PRIVATE storm_ui storm_ui_tx)
+        add_test(NAME ui_unit COMMAND storm_ui_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models")
+    endif()
     add_executable(storm_ui_screens_unit tests/screens_check.cpp)
     target_link_libraries(storm_ui_screens_unit PRIVATE storm_ui)
     add_test(NAME ui_screens COMMAND storm_ui_screens_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models")
@@ -252,9 +265,11 @@ elseif(NOT CMAKE_CROSSCOMPILING)
     add_test(NAME ui_hud_sea COMMAND storm_ui_hud_sea_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/states" "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack")
     # A new picture is shown whole or not yet (RenderBackend::FrameHeld), through the bgfx backend: six
     # panels with a box shadow each appear, with too few views to make their textures beside the frame.
-    add_test(NAME ui_whole_frame COMMAND storm_ui_shot --pack "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack" --doc panels.rml --size 640x360 --density 1
-             --views 12 --out "${CMAKE_CURRENT_BINARY_DIR}/whole-frame.png"
-             --script "wait 0.2; mark; props panels {\"sizes\":[40,50,60,70,80,90]}; whole; wait 0.0166; whole; wait 0.0166; whole; wait 0.3; arrived")
+    if(STORM_UI_RENDER_BACKEND)
+        add_test(NAME ui_whole_frame COMMAND storm_ui_shot --pack "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack" --doc panels.rml --size 640x360 --density 1
+                 --views 12 --out "${CMAKE_CURRENT_BINARY_DIR}/whole-frame.png"
+                 --script "wait 0.2; mark; props panels {\"sizes\":[40,50,60,70,80,90]}; whole; wait 0.0166; whole; wait 0.0166; whole; wait 0.3; arrived")
+    endif()
     if(STORM_UI_PACK)
         add_test(NAME ui_pack_contract COMMAND storm_ui_pack_check --pack "${STORM_UI_PACK}" --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     endif()
