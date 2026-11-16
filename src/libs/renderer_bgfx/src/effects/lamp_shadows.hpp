@@ -79,13 +79,10 @@ class LampShadows
     // Main thread, every frame the location draws: its lamps (empty when it has none).
     void set_lamps(const std::vector<fx::Lamp> &lamps);
     void set_lamps(const std::vector<fx::Lamp> &components, std::span<const render::EffectsLampFlame> flames);
-    // The place's lamps as the relight lights them (merged fixtures, range = the radius it windows them to), their
-    // fixtures' sizes, and a count that changes whenever they are laid out anew (they came, went, moved, their radii
-    // changed; not their flicker): the bounce of their light (effects/bounce.hpp) follows it.
+    // The place's lamps as the relight lights them (merged fixtures, range = the radius it windows them to) and their
+    // fixtures' sizes.
     const std::vector<fx::Lamp> &lamps() const { return lamps_; }
     const std::vector<float> &holders() const { return holder_; }
-    const std::vector<std::vector<uint32_t>> &fixtures() const { return fixtures_; }
-    uint32_t layout() const { return layout_; }
     // Main thread, every frame the location draws: the lights that move (carried lanterns and torches).
     void set_moving(std::vector<fx::Lamp> lamps)
     {
@@ -236,7 +233,6 @@ class LampShadows
     std::vector<fx::Lamp> lamps_; // merged, this frame's colours; range = the radius it lights
     std::vector<fx::Vec3> placed_; // per merged lamp: where it stood when the slots were laid out
     std::vector<float> holder_;   // per merged lamp: the size of its fixture
-    uint32_t layout_ = 0;         // see layout()
     std::vector<Slot> slot_;
     bool layout_dirty_ = true; // the lamps or the geometry changed: every slot is chosen and drawn again at once
     bool grid_dirty_ = true;

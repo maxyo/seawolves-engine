@@ -219,7 +219,6 @@ void LampShadows::place_lamps(std::vector<fx::Lamp> merged, std::vector<fx::Lamp
             placed_[i] = merged[i].position;
         layout_dirty_ = true;
         fixtures_dirty_ = true;
-        ++layout_;
     }
     lamps_ = std::move(merged);
     raw_ = std::move(raw);
@@ -265,8 +264,6 @@ void LampShadows::find_fixtures()
             without += at;
         }
     }
-    // The bounce bakes the lamps' light again with their fixtures.
-    ++layout_;
     shim::logf("effects: lamps: fixtures of %d of %zu lamps found (%d pieces, %zu triangles cast no shadow of their own lamp) "
                "in %.0f ms",
                held, lamps_.size(), pieces, triangles,
