@@ -119,6 +119,9 @@ bool ShipTracks::ShipTrack::Update(SHIP_BASE *pShip)
     auto *pATrack1 = pAChar->FindAClass(pAChar, "Ship.Track1");
     auto *pATrack2 = pAChar->FindAClass(pAChar, "Ship.Track2");
 
+    // A pattern of its own per ship, from its entity id: fixed while it sails.
+    fSeed = static_cast<float>(static_cast<uint64_t>(pShip->GetId()) % 1000u) * 0.37f;
+
     if (!pATrack || !pATrack1 || !pATrack2)
         return false;
     if (!pATrack->GetAttributeAsDword("Enable", 0))
@@ -385,7 +388,7 @@ void ShipTracks::ShipTrack::PrepareVertices()
                 for (float xx = 0; xx < fTrackStep1; xx++)
                 {
                     const auto k = xx / (fTrackStep1 - 1.0f);
-                    auto x = T.fWidth * (k - 0.5f);
+                    auto x = T.fWidth * storm::ship::TrackFoamOffset(k, T.fTV, fSeed, 0.18f);
                     auto z = 0.0f;
                     RotateAroundY(x, z, T.fCos, T.fSin);
                     x += T.vPos.x;
@@ -394,7 +397,8 @@ void ShipTracks::ShipTrack::PrepareVertices()
                     pV[i * dwTrackStep1 + xxx].vPos = vPos - vCurPos;
                     pV[i * dwTrackStep1 + xxx].tu = xx / (fTrackStep1 - 1.0f);
                     pV[i * dwTrackStep1 + xxx].tv = T.fTV;
-                    pV[i * dwTrackStep1 + xxx].dwColor = ARGB(T.fAlpha * 255.0f, 0, 0, 0);
+                    pV[i * dwTrackStep1 + xxx].dwColor = ARGB(
+                        T.fAlpha * storm::ship::TrackFoamKeep(k, T.fTV, T.fTime / fLifeTime1, fSeed) * 255.0f, 0, 0, 0);
                     xxx++;
                 }
             }
@@ -412,7 +416,7 @@ void ShipTracks::ShipTrack::PrepareVertices()
                 for (float xx = 0; xx < fTrackStep2; xx++)
                 {
                     const auto k = xx / (fTrackStep2 - 1.0f);
-                    auto x = T.fWidth * (k - 0.5f);
+                    auto x = T.fWidth * storm::ship::TrackFoamOffset(k, T.fTV, fSeed + 2.3f, 0.12f);
                     auto z = 0.0f;
                     RotateAroundY(x, z, T.fCos, T.fSin);
                     x += T.vPos.x;
@@ -421,7 +425,9 @@ void ShipTracks::ShipTrack::PrepareVertices()
                     pV[i * dwTrackStep2 + xxx].vPos = vPos - vCurPos;
                     pV[i * dwTrackStep2 + xxx].tu = static_cast<float>(xx) / (fTrackStep2 - 1.0f);
                     pV[i * dwTrackStep2 + xxx].tv = T.fTV * 6.0f;
-                    pV[i * dwTrackStep2 + xxx].dwColor = ARGB(T.fAlpha * 255.0f, 0, 0, 0);
+                    pV[i * dwTrackStep2 + xxx].dwColor = ARGB(
+                        T.fAlpha * storm::ship::TrackFoamKeep(k, T.fTV, T.fTime / fLifeTime2, fSeed + 2.3f) * 255.0f, 0, 0,
+                        0);
                     xxx++;
                 }
             }

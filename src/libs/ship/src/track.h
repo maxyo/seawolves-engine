@@ -98,6 +98,7 @@ class ShipTracks : public Entity
         float fLifeTime1, fLifeTime2;
         float fZStart1, fZStart2;
         float fTrackStep1, fTrackStep2;
+        float fSeed = 0.0f; // the ship's own foam pattern (storm::ship::TrackFoamKeep)
         uint32_t dwTrackStep1, dwTrackStep2;
         float fUP1, fUP2;
 

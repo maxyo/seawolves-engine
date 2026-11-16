@@ -73,6 +73,28 @@ int main()
     CHECK(std::abs(storm::ship::TrackElevation(Position{13000, 4000, -2000}, hull, .2f, .9f) - .55f) < 1e-6f);
     CHECK(std::abs(storm::ship::TrackElevation(Position{22000, 0, -2000}, hull, .2f, .9f) - .9f) < 1e-6f);
     CHECK(storm::ship::TrackElevation(eye, origin, .2f, .2f) == .2f);
+    // The trail's foam breaks into patches: always within 0..1, a fresh strip keeps most of it, an old one has
+    // holes (patches a few metres long: strips are 1 m apart and a strip keeps its pattern for life) and the two
+    // edges differ.
+    {
+        float fresh_min = 1, old_min = 1, max_step = 0, edge_diff = 0;
+        for (int strip = 0; strip < 400; ++strip)
+            for (int x = 0; x < 12; ++x)
+            {
+                const float across = x / 11.0f, along = strip * .05f;
+                const float fresh = storm::ship::TrackFoamKeep(across, along, 0, 1.3f);
+                const float aged = storm::ship::TrackFoamKeep(across, along, 1, 1.3f);
+                CHECK(fresh >= 0 && fresh <= 1 && aged >= 0 && aged <= 1);
+                fresh_min = std::min(fresh_min, fresh);
+                old_min = std::min(old_min, aged);
+                max_step = std::max(max_step, std::abs(aged - storm::ship::TrackFoamKeep(across, along + .05f, 1, 1.3f)));
+                if (x == 0)
+                    edge_diff = std::max(edge_diff, std::abs(aged - storm::ship::TrackFoamKeep(1, along, 1, 1.3f)));
+            }
+        CHECK(fresh_min >= .54f && old_min < .05f && max_step < .8f && edge_diff > .5f);
+        std::printf("foam breakup: fresh min %.2f, old min %.2f, step between strips %.2f, edges differ %.2f\n",
+                    fresh_min, old_min, max_step, edge_diff);
+    }
     std::printf("foam turn/stop/reset/width checks: %s\n", failed ? "FAIL" : "PASS");
     return failed ? 1 : 0;
 }

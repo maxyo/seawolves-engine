@@ -44,6 +44,26 @@ struct TrackSpacing
     }
 };
 
+// How much of a trail strip's foam stays at `across` (0..1 over its width) on the strip at `along` (its texture v,
+// metres of track / 20) when it is `age` (0..1 of its life) old: the foam breaks into patches that differ edge to edge
+// and strip to strip, more the older it gets, instead of every strip repeating the texture's lines. Smooth in both
+// directions; `seed` gives each ship and track its own pattern. 1 = all of it.
+inline float TrackFoamKeep(float across, float along, float age, float seed)
+{
+    const float n = 0.5f + 0.5f * std::sin(11.0f * across + 9.3f * along + seed) *
+                               std::sin(4.7f * across - 3.9f * along + 1.7f * seed);
+    const float breakup = std::clamp(0.45f + 0.55f * age, 0.0f, 1.0f);
+    const float t = std::clamp((n - 0.3f) / 0.45f, 0.0f, 1.0f);
+    return 1.0f - breakup * t * t * (3.0f - 2.0f * t);
+}
+
+// Where a trail strip's cross-section point at `across` (0..1) lies, as a fraction of the strip's width from its
+// centre: the strip's edges wander by up to `wobble` of the width along the trail, so its foam lines are not ruled.
+inline float TrackFoamOffset(float across, float along, float seed, float wobble)
+{
+    return (across - 0.5f) * (1.0f + wobble * std::sin(5.3f * along + seed + 2.0f * across));
+}
+
 inline float TrackWidth(float initial, float spread_speed, float age, float lifetime)
 {
     if (!(lifetime > 0)) return 0;
