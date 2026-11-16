@@ -6095,27 +6095,11 @@ bool COMPILER::OnLoad()
     return true;
 }
 
-bool COMPILER::SaveState(std::vector<char> &image)
+// The script state as a save holds it, appended to pBuffer: the program directory, the name codec, the segments
+// and every global variable with its attributes.
+void COMPILER::SerializeState()
 {
     uint32_t n;
-    delete[] pBuffer;
-    pBuffer = nullptr;
-
-    dwCurPointer = 0;
-    dwMaxSize = 0;
-
-    DATA *pResult;
-    const uint32_t function_code = FuncTab.FindFunc("OnSave");
-    if (function_code != INVALID_FUNC_CODE)
-        BC_Execute(function_code, pResult);
-
-    // Serialize into memory only: the caller replaces the file atomically, so a
-    // failure or crash at any point leaves the previous save intact.
-    std::string save_info = "save";
-    auto *pVDat = static_cast<VDATA *>(core_internal.GetScriptVariable("savefile_info"));
-    if (pVDat && pVDat->GetString())
-        save_info = pVDat->GetString();
-
     // 1. Program Directory
     SaveString(ProgramDirectory);
 
@@ -6168,6 +6152,29 @@ bool COMPILER::SaveState(std::vector<char> &image)
     }
     save_references_ = nullptr;
     save_variable_name_ = "";
+}
+
+bool COMPILER::SaveState(std::vector<char> &image)
+{
+    delete[] pBuffer;
+    pBuffer = nullptr;
+
+    dwCurPointer = 0;
+    dwMaxSize = 0;
+
+    DATA *pResult;
+    const uint32_t function_code = FuncTab.FindFunc("OnSave");
+    if (function_code != INVALID_FUNC_CODE)
+        BC_Execute(function_code, pResult);
+
+    // Serialize into memory only: the caller replaces the file atomically, so a
+    // failure or crash at any point leaves the previous save intact.
+    std::string save_info = "save";
+    auto *pVDat = static_cast<VDATA *>(core_internal.GetScriptVariable("savefile_info"));
+    if (pVDat && pVDat->GetString())
+        save_info = pVDat->GetString();
+
+    SerializeState();
 
     std::string error;
     const bool built = storm::save::buildState(save_info.c_str(), pBuffer, dwCurPointer, image, error);
@@ -6218,6 +6225,9 @@ bool COMPILER::LoadState(const std::vector<char> &raw, const storm::save::Parsed
     // 5. Variables table, all variables created during previous step, just read value
     storm::save::applyVariables(raw.data(), raw.size(), state.variables, VarTab, &SCodec,
                                 [this](const std::string &line) { SetError("%s", line.c_str()); });
+#ifdef STORM_SCENE_SWEEP
+    WriteStateDump("load"); // the state as loaded, before the game's OnLoad runs
+#endif
 
     // call to script function "OnLoad()"
     OnLoad();

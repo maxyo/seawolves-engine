@@ -151,6 +151,11 @@ void CoreImpl::Init()
     Controls = nullptr;
     fTimeScale = 1.0f;
     Compiler = new COMPILER;
+#ifdef STORM_SCENE_SWEEP
+    // tools/vm_verify --state compares the script state of two engines: the game's time must not follow the clock.
+    if (const char *states = std::getenv("STORM_VM_STATE_DIR"); states && *states)
+        Timer.FixedElapsed = 20.0f;
+#endif
 
     /* TODO: place this outside CoreImpl */
     SetLayerType(EXECUTE, layer_type_t::execute);

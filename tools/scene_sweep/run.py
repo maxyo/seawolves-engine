@@ -555,7 +555,10 @@ class Shard(threading.Thread):
             environment.update(LIBGL_ALWAYS_SOFTWARE='1', LP_NUM_THREADS=str(self.arguments.gl_threads))
         elif self.arguments.render == 'gles-gpu':
             library = self.arguments.virtualgl / 'usr/lib'
-            environment.update(VGL_DISPLAY='egl', LD_PRELOAD=f'{library}/libdlfaker.so:{library}/libvglfaker.so',
+            # The caller's own preloads stay (tools/vm_verify --state: its random number source).
+            environment.update(VGL_DISPLAY='egl',
+                               LD_PRELOAD=':'.join(filter(None, (f'{library}/libdlfaker.so', f'{library}/libvglfaker.so',
+                                                                  os.environ.get('LD_PRELOAD')))),
                                LD_LIBRARY_PATH=':'.join(filter(None, (str(library),
                                                                        os.environ.get('LD_LIBRARY_PATH')))))
         stdout = run / 'stdout.log'

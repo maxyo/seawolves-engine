@@ -16,6 +16,7 @@
 
 #include "compiler.h"
 #include "core.h"
+#include "core_impl.h"
 #include "s_import_func.h"
 #include "script_libriary.h"
 #include "v_s_stack.h"
@@ -163,6 +164,9 @@ uint32_t event(VS_STACK *stack)
     if (line.rfind("incomplete ", 0) == 0)
         writeEvent("window frames=" + std::to_string(windowFrames) + windowFrameStats());
     writeEvent(line);
+    // The script state at the points every run of a session passes: tools/vm_verify --state compares engines by them.
+    if (line.rfind("loaded ", 0) == 0 || line.rfind("end ", 0) == 0)
+        core_internal.Compiler->WriteStateDump(line.c_str());
     startWindow();
     windowIncompleteMark = incompleteFrameHook ? incompleteFrameHook() : 0;
     if (rendererWindow)
@@ -541,6 +545,38 @@ void storm::scene_sweep::setIncompleteFrameHook(IncompleteFrameHook hook)
 void storm::scene_sweep::setRendererWindow(std::function<std::string()> window)
 {
     rendererWindow = std::move(window);
+}
+
+// With STORM_VM_STATE_DIR set: the script state, as SaveState serializes it (without the script's OnSave, which
+// changes it), into <dir>/<number>-<label>.state.
+void COMPILER::WriteStateDump(const char *label)
+{
+    const char *path = std::getenv("STORM_VM_STATE_DIR");
+    if (!path || !*path)
+        return;
+    static int number = 0;
+    std::string name = label;
+    std::replace_if(name.begin(), name.end(), [](char c) { return c == ' ' || c == '/' || c == ':'; }, '_');
+    char prefix[16];
+    std::snprintf(prefix, sizeof(prefix), "%03d-", number++);
+
+    delete[] pBuffer;
+    pBuffer = nullptr;
+    dwCurPointer = 0;
+    dwMaxSize = 0;
+    SerializeState();
+    std::ofstream file(std::filesystem::path(path) / (prefix + name + ".state"), std::ios::binary);
+    file.write(pBuffer, dwCurPointer);
+    if (!file.flush())
+    {
+        spdlog::critical("VM state: cannot write {}/{}{}.state", path, prefix, name);
+        spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
+        std::_Exit(EXIT_FAILURE);
+    }
+    delete[] pBuffer;
+    pBuffer = nullptr;
+    dwCurPointer = 0;
+    dwMaxSize = 0;
 }
 
 void COMPILER::LoadSceneSweep()

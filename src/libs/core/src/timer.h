@@ -21,6 +21,7 @@ class TIMER
     uint32_t fps_count = 0;      // Running total of frames rendered in the last second, which resets to 0 every second.
     uint32_t fps_time = 0;       // A one-second timer which is used to update the FPS counter on the screen.
     TimePoint Current, Previous; // Timepoints of when each iteration of the timer has started and finished.
+    float FixedElapsed = 0.0f;   // Every frame lasts this many ms whatever the clock says (runs that must repeat).
     double Carry = 0.0;          // Milliseconds of real time not yet handed out through Delta_Time (may be negative).
     static constexpr Milliseconds kMaxDelta = Milliseconds{100}; // Maximum time delta per frame.
     static constexpr Milliseconds kFPSUpdateInterval =
@@ -46,7 +47,7 @@ class TIMER
     uint32_t Run()
     {
         Current = Clock::now();
-        const float elapsed = Duration(Current - Previous).count();
+        const float elapsed = FixedElapsed > 0.0f ? FixedElapsed : Duration(Current - Previous).count();
         Previous = Current;
         return Advance(elapsed);
     }

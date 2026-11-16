@@ -228,6 +228,10 @@ class COMPILER : public VIRTUAL_COMPILER
     void ProcessEvent(const char *event_name, MESSAGE *pMs);
 
     bool SaveState(std::vector<char> &image);
+#ifdef STORM_SCENE_SWEEP
+    void WriteStateDump(const char *label); // scene_sweep.cpp
+#endif
+    void SerializeState();
     bool LoadState(const std::vector<char> &raw, const storm::save::ParsedState &state);
     bool OnLoad();
     void SaveDataDebug(char *data_PTR, ...);

@@ -7,13 +7,22 @@ its opening dialogue, then the session's scenes back to back in one engine. In s
 also computes the plain answer and aborts at the first difference, so the session passes only when all of them agreed.
 
   python3 tools/vm_verify/run.py --game <game dir> --engine <build>/engine --out <dir> [--save FILE] [--only SCENE ...]
+
+With --reference ENGINE (an engine without the change under test; both built with STORM_SCENE_SWEEP) it compares the
+two engines instead: each boots, starts a new game and enters the first town (and with --save loads the save and plays
+its scene), with the game's time and rand() made repeatable, and writes its whole script state (every global variable
+and attribute tree and the name codec, exactly as a save stores them) at each step on the way. The states must be
+equal byte for byte, the sweep script's own counters aside.
 """
 import argparse
+import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
+
+import state_diff
 
 # A town walk, interiors, land combat, the sea, a sea battle, a boarding, the world map and a storm.
 SESSION = ['loc:FortFrance_town', 'loc:FortFrance_tavern', 'loc:FortFrance_townhall', 'combat:*', 'sea:Martinique',
@@ -24,13 +33,75 @@ parser.add_argument('--game', type=Path, required=True)
 parser.add_argument('--engine', type=Path, required=True, help='host engine built with STORM_SCENE_SWEEP and STORM_VM_VERIFY')
 parser.add_argument('--out', type=Path, required=True, help='report directory (on the game\'s filesystem)')
 parser.add_argument('--save', type=Path, help='also boot into this save and play the session from it')
+parser.add_argument('--reference', type=Path, help='compare the script states of --engine with this engine\'s')
 parser.add_argument('--only', nargs='+', default=SESSION, help='scenes instead of the default session')
 parser.add_argument('--settle', type=int, default=3000, help='ms every scene plays before the next one')
 parser.add_argument('sweep', nargs=argparse.REMAINDER, help='after --: more arguments for tools/scene_sweep/run.py')
 args = parser.parse_args()
 
-sweep = Path(__file__).resolve().parents[1] / 'scene_sweep/run.py'
+here = Path(__file__).resolve().parent
+sweep = here.parent / 'scene_sweep/run.py'
 args.out.mkdir(parents=True, exist_ok=True)
+
+# The steps of a session up to which two runs of one engine give the same state: later ones depend on how many
+# frames the background loading took.
+STATE_STEPS = {'newgame': ['loaded_menu_main', 'end_menu_main', 'loaded_newgame_intro', 'end_newgame_intro',
+                           'loaded_loc_FortFrance_town'],
+               'save': ['loaded_menu_main', 'end_menu_main', 'load', 'loaded_save_boot', 'end_save_boot']}
+SWEEP_VARIABLE = re.compile(r'^ss[A-Z]')  # tools/scene_sweep/scene_sweep.c counts its own frames and time
+
+
+def play_states(engine, name, extra):
+    """One engine through a session with its states written; {step: path}."""
+    out = args.out / name
+    shutil.rmtree(out, ignore_errors=True)
+    (out / 'state').mkdir(parents=True)
+    library = args.out / 'repeatable_rand.so'
+    subprocess.run([os.environ.get('CC', 'cc'), '-shared', '-fPIC', '-O2', '-o', str(library),
+                    str(here / 'repeatable_rand.c')], check=True)
+    environment = dict(os.environ, STORM_VM_STATE_DIR=str((out / 'state').resolve()),
+                       LD_PRELOAD=':'.join(filter(None, (str(library.resolve()), os.environ.get('LD_PRELOAD')))))
+    # The game's time runs 20 ms a frame, far ahead of the clock: the sweep's own time limits are in game time.
+    command = [sys.executable, str(sweep), '--game', str(args.game), '--engine', str(engine), '--out', str(out / 'sweep'),
+               '--jobs', '1', '--single-session', '--settle', '1000', '--timeout', '30000', '--only',
+               'loc:FortFrance_town', *extra, *[item for item in args.sweep if item != '--']]
+    subprocess.run(command, env=environment, stdout=(out / 'sweep.log').open('w'), stderr=subprocess.STDOUT)
+    return {path.stem.split('-', 1)[1]: path for path in sorted((out / 'state').glob('*.state'))}
+
+
+def compare_states():
+    problems, compared = [], 0
+    for session, extra in [('newgame', [])] + ([('save', ['--save', str(args.save)])] if args.save else []):
+        reference = play_states(args.reference, f'{session}-reference', extra)
+        candidate = play_states(args.engine, f'{session}-engine', extra)
+        for step in STATE_STEPS[session]:
+            if step not in reference or step not in candidate:
+                problems.append(f'{session}: no state "{step}" from the {"reference" if step not in reference else "engine"} '
+                                f'(see {args.out}/{session}-*/sweep.log)')
+                continue
+            size = reference[step].stat().st_size
+            if reference[step].read_bytes() == candidate[step].read_bytes():
+                print(f'{session} {step}: equal, {size} bytes')
+                compared += 1
+                continue
+            a, b = state_diff.parse(reference[step]), state_diff.parse(candidate[step])
+            for state in (a, b):
+                state['values'] = {key: value for key, value in state['values'].items() if not SWEEP_VARIABLE.match(key)}
+            lines = state_diff.differences(a, b, 30)
+            if lines:
+                problems.append(f'{session} {step}: the states differ (reference / engine):\n    ' + '\n    '.join(lines))
+            else:
+                print(f'{session} {step}: equal but for the sweep\'s own counters, {size} bytes')
+                compared += 1
+    print(f'{compared} states equal')
+    for problem in problems:
+        print('FAIL ' + problem)
+    sys.exit(1 if problems else 0)
+
+
+if args.reference:
+    compare_states()
+
 totals, problems = {}, []
 for name, extra in [('newgame', [])] + ([('save', ['--save', str(args.save)])] if args.save else []):
     out = args.out / name
