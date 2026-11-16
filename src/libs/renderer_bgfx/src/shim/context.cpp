@@ -60,11 +60,22 @@ double now_seconds()
 
 void logf(const char *format, ...)
 {
-    char buffer[1024];
-    va_list args;
+    // A line longer than the stack buffer is formatted again into its own storage, never cut: the effects profile
+    // line outgrew 1024 characters and lost every counter after its GPU views in the phone's logs.
+    char local[1024];
+    va_list args, again;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_copy(again, args);
+    const int length = vsnprintf(local, sizeof(local), format, args);
     va_end(args);
+    std::string longer;
+    if (length >= static_cast<int>(sizeof(local)))
+    {
+        longer.resize(static_cast<size_t>(length) + 1);
+        vsnprintf(longer.data(), longer.size(), format, again);
+    }
+    va_end(again);
+    const char *buffer = longer.empty() ? local : longer.c_str();
     if (const storm::render::LogSink sink = log_sink.load())
     {
         using storm::render::LogLevel;
