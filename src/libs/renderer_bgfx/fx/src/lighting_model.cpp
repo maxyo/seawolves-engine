@@ -42,15 +42,18 @@ LightingUniforms ComputeLighting(const LightingInput &input, const LightingMater
     const Vec3 sun = to_view(input.sun_dir);
     const Vec3 up = to_view(Vec3{0.0f, 1.0f, 0.0f});
 
-    // Hemisphere: brighter, sky-tinted light from above and dimmer, warmer light from below. The two average
-    // to the flat ambient, so the overall brightness of a scene does not change with the flag.
+    // Hemisphere: brighter, sky-tinted light from above and dimmer, warmer light from below. Per channel the two
+    // average to the flat ambient whatever the sky's colour (a normal facing sideways keeps the flat ambient), so the
+    // overall brightness of a scene does not change with the flag: above = ambient * (1 + k) * hue, below = ambient *
+    // (2 - (1 + k) * hue). The dome's hue is clamped so that below stays positive (a deep blue night sky).
     constexpr float kContrast = 0.3f;
+    constexpr float kHueMin = 0.6f, kHueMax = 1.4f; // (1 + kContrast) * kHueMax < 2
     Vec3 hue{1.0f, 1.0f, 1.0f};
     if (sky)
     {
         const float luma = std::max(0.2126f * sky->dome[0] + 0.7152f * sky->dome[1] + 0.0722f * sky->dome[2], 1e-4f);
         for (int i = 0; i < 3; ++i) // gamma-space hue of the dome, half strength
-            hue[i] = 0.5f + 0.5f * std::sqrt(sky->dome[i] / luma);
+            hue[i] = std::clamp(0.5f + 0.5f * std::sqrt(std::max(sky->dome[i], 0.0f) / luma), kHueMin, kHueMax);
     }
     LightingUniforms u{};
     u.u_fxLight[0] = {sun[0], sun[1], sun[2], material.specular_power};
@@ -59,7 +62,7 @@ LightingUniforms ComputeLighting(const LightingInput &input, const LightingMater
     for (int i = 0; i < 3; ++i)
     {
         u.u_fxLight[3][i] = input.ambient[i] * (1.0f + kContrast) * hue[i];
-        u.u_fxLight[4][i] = input.ambient[i] * (1.0f - kContrast) * (2.0f - hue[i]);
+        u.u_fxLight[4][i] = input.ambient[i] * (2.0f - (1.0f + kContrast) * hue[i]);
     }
     u.u_fxLight[3][3] = material.wrap;
     // The run-time switches of the programs (fx_lighting.sh): the soft sun shadow filter and linear light.

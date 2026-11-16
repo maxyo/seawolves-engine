@@ -722,7 +722,11 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     draw.room_light = lit && draw.lamps && lamps_.room_light();
     if ((hemisphere || draw.room_light) && lit)
         draw.vertex_ambient_off = true;
-    if (!hemisphere || !lit)
+    if (lit && draw.room_light && !hemisphere)
+        // An interior model's ambient where the sky is seen (ff_fragment.sh, over the room light): the weather's, flat.
+        for (int i = 0; i < 3; ++i)
+            u[3][i] = u[4][i] = input.ambient[i];
+    else if (!hemisphere || !lit)
         for (int i = 0; i < 3; ++i)
             u[3][i] = u[4][i] = 0.0f;
     if (!per_pixel || !(flags_ & fx::kLightingTranslucent))

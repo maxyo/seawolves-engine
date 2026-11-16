@@ -134,6 +134,7 @@ class Host
     // Also before each draw with a Sea2 vertex port and the sun road pixel port: the waves from objects
     // (sea_waves.sh): runs the ripple simulation once per frame (views of its own) and binds its surface.
     void prepare_sea(shim::Device &device);
+    void bind_sea_sun_road(shim::Device &device);
     void set_sea_frame(const render::EffectsSeaFrame &frame);
 
   private:
@@ -216,6 +217,11 @@ class Host
     float camera_height_ = 0.0f; // of the last world pass
     bgfx::UniformHandle u_sea_fx_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_sea_depth_ = BGFX_INVALID_HANDLE;
+    // The Sea2 port's sun road cube (stage 2, unit 7): a draw without one gets this black cube, so the sampler never
+    // meets a 2D texture another program left on the unit (GL: a type mismatch drops the draw). Black: no sun, no glint.
+    bgfx::UniformHandle s_sea_sun_road_ = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle sea_no_sun_road_ = BGFX_INVALID_HANDLE;
+    bool sea_no_sun_road_logged_ = false;
     // The capture of this frame: the target it was taken of and the view the sea continues in after it.
     uint32_t sea_depth_frame_ = UINT32_MAX;
     const void *sea_depth_target_ = nullptr;

@@ -166,7 +166,7 @@ void Host::prepare_sea(shim::Device &device)
     const float sea_fx[20] = {
         settings_.sea_band_limit ? 1.0f : 0.0f, soft_edges ? 1.0f : 0.0f, specular ? 1.0f : 0.0f, far_plane,
         sun[0], sun[1], sun[2], settings_.sea_specular_power,
-        weather_.sun_color[0] * strength, weather_.sun_color[1] * strength, weather_.sun_color[2] * strength,
+        strength, 0.0f, 0.0f,
         1.0f / std::max(settings_.sea_edge_depth, 0.01f),
         water_color[0], water_color[1], water_color[2], turbidity ? 1.0f / 12.0f : 0.0f,
         device.s.view.m[0][2], device.s.view.m[1][2], device.s.view.m[2][2], 0.0f,
@@ -174,6 +174,30 @@ void Host::prepare_sea(shim::Device &device)
     bgfx::setUniform(u_sea_fx_, sea_fx, 5);
     if (depth_ready) // otherwise neither optical feature reads the unit
         bgfx::setTexture(fx::kNormalMapStage, s_sea_depth_, sea_depth_.Texture(), BGFX_SAMPLER_UVW_CLAMP | BGFX_SAMPLER_POINT);
+}
+
+// The Sea2 port's sun road cube (fs_port_sea2.sc s_cube2, stage 2 -> unit 7): the game binds its sun road there (sea.cpp);
+// a draw without one gets a black cube (no sun, no glint) instead of whatever 2D texture another program left on the unit.
+void Host::bind_sea_sun_road(shim::Device &device)
+{
+    const bool specular = device_ready_ && settings_.sea_specular && has_weather();
+    const shim::TexStore *sun_road = shim::store_of(device.s.textures[2]);
+    if (!sun_road || sun_road->kind != shim::TexKind::Cube || !bgfx::isValid(sun_road->handle))
+    {
+        if (!bgfx::isValid(sea_no_sun_road_))
+        {
+            static const uint32_t black[6] = {};
+            s_sea_sun_road_ = bgfx::createUniform("s_cube2", bgfx::UniformType::Sampler);
+            sea_no_sun_road_ = bgfx::createTextureCube(1, false, 1, bgfx::TextureFormat::RGBA8, BGFX_SAMPLER_POINT,
+                                                       bgfx::copy(black, sizeof(black)));
+        }
+        if (specular && !sea_no_sun_road_logged_)
+        {
+            shim::logf("effects: the sea is drawn without the game's sun road cube (stage 2): no sun glint on it");
+            sea_no_sun_road_logged_ = true;
+        }
+        bgfx::setTexture(7, s_sea_sun_road_, sea_no_sun_road_);
+    }
 }
 
 void Host::set_sea_frame(const render::EffectsSeaFrame &frame)

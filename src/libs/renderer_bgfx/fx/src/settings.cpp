@@ -58,8 +58,9 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.sea_band_limit = true;
         s.sea_waves = s.sea_waves_lift = true;
         s.anisotropy = 4;
-        s.lighting_flags = kLightingPerPixel | kLightingTranslucent | kLightingPoint | kLightingNormalMap | kLightingRim |
-                           kLightingAerial;
+        s.sea_specular = true; // the sun's glint over the game's sun road: one uniform branch of the sea shader
+        s.lighting_flags = kLightingPerPixel | kLightingHemisphere | kLightingTranslucent | kLightingPoint |
+                           kLightingNormalMap | kLightingRim | kLightingAerial;
         s.point_lights = 4;
         s.normal_map_size = 256; // the prepared 512 maps from their second mip: a quarter of High's memory
         // Gloss (with the specular it needs) waits for its cost on phones (fx_gloss, fx_light_specular switch it on);
@@ -90,8 +91,9 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.sea_waves = s.sea_waves_lift = true;
     // Wind sway is not in the presets: the game already sways sails, flags and grass itself, and the static
     // location models carry no anchor weights for foliage (option fx_wind, reported as not wired).
-    s.lighting_flags = kLightingPerPixel | kLightingSpecular | kLightingTranslucent | kLightingPoint | kLightingNormalMap |
-                       kLightingRim | kLightingAerial;
+    s.sea_specular = true;
+    s.lighting_flags = kLightingPerPixel | kLightingHemisphere | kLightingSpecular | kLightingTranslucent | kLightingPoint |
+                       kLightingNormalMap | kLightingRim | kLightingAerial;
     s.point_lights = 8;
     s.gloss = true;
     s.parallax = ParallaxQuality::Occlusion;

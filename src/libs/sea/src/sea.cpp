@@ -1551,9 +1551,13 @@ void SEA::Realize(uint32_t dwDeltaTime)
             // crests and wakes; the original shader leaves stage 1 unread).
             rs->TextureSet(1, iFoamTexture);
             rs->TextureSet(3, envMap);
+            // The sun road's cube: the renderer's Sea2 pixel shader takes the colour of the sun's glint from the sun
+            // as the game draws it there (the original shader leaves stage 2 unread).
+            rs->TextureSet(2, sunRoadMap);
             rs->DrawIndexedPrimitiveNoVShader(D3DPT_TRIANGLELIST, iVSeaBuffer, sizeof(SeaVertex), iISeaBuffer, 0,
                                               iVStart, 0, iTStart, "Sea2");
             rs->TextureSet(1, -1);
+            rs->TextureSet(2, -1);
 
             if (fFoamK > 0.0f && bFoamEnable && bIniFoamEnable)
             {

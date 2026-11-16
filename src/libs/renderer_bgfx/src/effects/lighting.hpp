@@ -199,6 +199,9 @@ struct FfDraw
         aggregate_fallback = true;
         lamps = room_light = false;
         vertex_ambient_off = hemisphere_ambient;
+        if (!hemisphere_ambient) // the flat ambient of the room light's sky share returns to the vertex sum
+            for (int i = 0; i < 3; ++i)
+                light.u_fxLight[3][i] = light.u_fxLight[4][i] = 0.0f;
         vertex_diffuse_off &= directional_mask;
         vertex_specular_off &= directional_mask;
         points = {};

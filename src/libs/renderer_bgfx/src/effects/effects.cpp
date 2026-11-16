@@ -534,7 +534,8 @@ void Host::on_device_lost()
     sky_.OnDeviceLost();
     sea_depth_.OnDeviceLost();
     depth_copy_.OnDeviceLost();
-    u_sea_fx_ = s_sea_depth_ = BGFX_INVALID_HANDLE;
+    u_sea_fx_ = s_sea_depth_ = s_sea_sun_road_ = BGFX_INVALID_HANDLE;
+    sea_no_sun_road_ = BGFX_INVALID_HANDLE;
     sea_depth_frame_ = UINT32_MAX;
     sea_waves_.OnDeviceLost();
     sea_waves_idle_ = {};
@@ -558,12 +559,17 @@ void Host::shutdown()
     sea_waves_.Shutdown();
     sea_waves_idle_ = {};
     sea_waves_frame_ = UINT32_MAX;
-    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &u_sea_waves_, &s_sea_waves_})
+    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &s_sea_sun_road_, &u_sea_waves_, &s_sea_waves_})
         if (bgfx::isValid(*uniform))
         {
             bgfx::destroy(*uniform);
             *uniform = BGFX_INVALID_HANDLE;
         }
+    if (bgfx::isValid(sea_no_sun_road_))
+    {
+        bgfx::destroy(sea_no_sun_road_);
+        sea_no_sun_road_ = BGFX_INVALID_HANDLE;
+    }
     sea_depth_frame_ = UINT32_MAX;
     place_.shutdown();
     ao_bound_ = nullptr;

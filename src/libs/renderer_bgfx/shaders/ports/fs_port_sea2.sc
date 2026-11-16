@@ -14,7 +14,7 @@ $input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v
 //   nearer than the water itself, the pixel belongs to an object in front of the sea (its edge: a rope, a sail, a
 //   hull, partly covering a multisampled pixel) and the water is not faded: fading it there showed what lies under
 //   the sea as bright fringes along every edge over the water;
-// - specular: a sun highlight from the bumped normal over the game's own sun road (optional);
+// - specular: the sun's glint from the bumped normal: the same reflected ray as the game's sun road, so it lies on it;
 // - waves from objects (sea_waves.sh): ripples around swimmers, boats and hulls (and the wakes they leave) tilt the
 //   normal; the reflection follows it, and so does the Fresnel split between the mirrored sky (v0) and the water's
 //   own colour and transparency (v1, alpha), recomputed per pixel with the vertex shader's formula for the tilted and
@@ -25,10 +25,11 @@ $input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v
 #include "sea_optics.sh"
 SAMPLER3D(s_vol0, 8);
 SAMPLER2D(s_tex1, 1);
+SAMPLERCUBE(s_cube2, 7); // the game's sun road cube (sea.cpp, stage 2): the glint's colour
 SAMPLERCUBE(s_cube3, 11);
 SAMPLER2D(s_seaDepth, 14);
 // [0] x: band limit, y: soft edges, z: specular (each 0 or 1), w: far plane of the packed scene distance
-// [1] xyz: towards the sun (world), w: specular power   [2] rgb: sun colour * strength, w: 1 / edge depth (metres)
+// [1] xyz: towards the sun (world), w: specular power   [2] x: specular strength, w: 1 / edge depth (metres)
 // [3] rgb: current game water colour, w: extinction per metre (0 disables turbidity).
 // [4] xyz: actual shim camera forward (row-vector view third column).
 uniform vec4 u_seaFx[5];
@@ -69,8 +70,13 @@ void main()
     vec4 t3 = textureCube(s_cube3, R);
     r0.rgb = PS11(v0.rgb * t3.rgb + v1.rgb);                                // mad r0.xyz, v0, t3, v1
     r0.a = v0.a;                                                            // mov r0.w, v0.wwww
-    float highlight = pow(max(dot(normalize(R), u_seaFx[1].xyz), 0.0), u_seaFx[1].w);
-    r0.rgb += u_seaFx[0].z * highlight * u_seaFx[2].rgb;
+    if (u_seaFx[0].z > 0.5)
+    {
+        // The sun's glint: the same reflected ray as the game's sun road, so it lies on it, in the colour of the sun
+        // the game draws into that road's cube (warm at dawn and dusk, none where the game shows no sun).
+        vec3 sun = textureCube(s_cube2, u_seaFx[1].xyz).rgb;
+        r0.rgb += pow(max(dot(normalize(R), u_seaFx[1].xyz), 0.0), u_seaFx[1].w) * u_seaFx[2].x * sun;
+    }
     float gap = -1.0;
     if (u_seaFx[0].y > 0.5 || u_seaFx[3].w > 0.0)
     {

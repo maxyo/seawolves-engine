@@ -36,8 +36,9 @@ On every preset the post chain also draws the game's underwater screen wobble (`
 never showed on this port.
 - **Средняя**: faint bloom on the brightest highlights, MSAA 4x + alpha to coverage (on the internal picture,
   before the upscale), dither,
-  a gentle Caribbean grade, anisotropy 4, the sea's band limit, per-pixel lighting with 4 point lights and normal
-  maps, sun shadows (low), the ambient-occlusion volume of interiors, the AgX tone curve on the luminance
+  a gentle Caribbean grade, anisotropy 4, the sea's band limit and the sun's glint on it (a highlight from the bumped
+  normal along the game's own sun road, in the sun's colour), per-pixel lighting with 4 point lights and normal
+  maps, the sky / ground ambient (sky-tinted from above, warmer from below, averaging to the game's flat ambient), sun shadows (low), the ambient-occlusion volume of interiors, the AgX tone curve on the luminance
   (strength 0.6), the grade of the place and hour (hue and warmth only), aerial perspective and height fog, rim light,
   sunlight through the sails (a warm term on sails and flags with the sun behind them, scaled by the luminance of the
   canvas texture, the sun's visibility taken on the sail's sunlit side), waves from objects (`fx_sea_waves`,
@@ -73,8 +74,9 @@ backend (on the x86_64 emulator about 40 ms more GL submit per frame in a town);
 frame (`gpu_ms` in RenderMetrics). The GPU self-test of
 a settings switch runs the chain with an upscale when the settings have an internal height.
 
-Implemented but in no preset (options only): hemisphere ambient,
-linear-light sums, the sea's sun specular. Wind sway (`fx_wind.sh`)
+Implemented but in no preset (option only): linear-light sums (`fx_light_linear`). The game's lights and its
+baked colours were tuned to add in gamma space; summed in linear light, models lit by several terms (the room light
+and the lamps of an interior, the vertex lights and the ambient) come out darker than the bake around them. Wind sway (`fx_wind.sh`)
 is not wired into the game. `Shadows::CasterProgram`,
 `Sky::BindAerial/BindWind` and the flash lights are used by `tools/fx-preview` only.
 

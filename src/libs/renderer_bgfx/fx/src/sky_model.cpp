@@ -51,7 +51,10 @@ void SunTransmittance(const Atmosphere &atm, Vec3 sun, Vec3 &out)
 {
     const Vec3 origin{0.0f, kPlanetRadius + 30.0f, 0.0f};
     // Below the horizon the path is clamped: twilight fades through the `night` factor instead.
-    const Vec3 dir{sun[0], std::max(sun[1], 0.0f), sun[2]};
+    // A sun straight down (the night's sky_sun_dir) has no horizontal part: its clamped path is any horizontal one.
+    Vec3 dir{sun[0], std::max(sun[1], 0.0f), sun[2]};
+    if (Dot(dir, dir) < 1e-8f)
+        dir = {1.0f, 0.0f, 0.0f};
     const float inv = 1.0f / std::sqrt(Dot(dir, dir));
     const Vec3 unit = dir * inv;
     const float length = ExitDistance(origin, unit, kAtmosphereRadius);

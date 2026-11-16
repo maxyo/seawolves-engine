@@ -1335,7 +1335,10 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     // Effects: the Sea2 ports' improvements; the soft edges and the waves may capture the scene depth in a view of their own
     // first, so this comes before the draw's view.
     if ((ps_port && s.ps->port->sea_fx) || (vs_port && s.vs->port->sea_fx))
+    {
         effects::Host::instance().prepare_sea(*this);
+        effects::Host::instance().bind_sea_sun_road(*this);
+    }
     const uint16_t view_id = ensure_view();
     if (!bind_geometry(call, *layout, element_count))
         return false;

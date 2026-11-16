@@ -162,9 +162,12 @@ void CheckSettings()
     CHECK(medium.msaa == 4 && high.msaa == 4 && !medium.smaa && !high.smaa && original.msaa == 1);
     CHECK(medium.anisotropy == 4 && high.anisotropy == 8 && original.anisotropy == 1);
     CHECK(medium.dither && !original.dither);
-    // The game's own sea everywhere: the band limit from «Средняя», soft edges at «Высокая», the specular optional.
+    // The game's own sea everywhere: the band limit and the sun's glint from «Средняя», soft edges at «Высокая».
     CHECK(medium.sea_band_limit && !medium.sea_soft_edges && high.sea_band_limit && high.sea_soft_edges);
-    CHECK(!medium.sea_specular && !high.sea_specular);
+    CHECK(medium.sea_specular && high.sea_specular);
+    // The sky / ground ambient from «Средняя»; linear light in no preset (the game's lights and bakes add in gamma).
+    CHECK((medium.lighting_flags & kLightingHemisphere) && (high.lighting_flags & kLightingHemisphere));
+    CHECK(!(medium.lighting_flags & kLightingLinear) && !(high.lighting_flags & kLightingLinear));
     // Waves from objects: Средняя and Высокая, never Низкая; without vertex fetch only the lift goes, loudly.
     CHECK(medium.sea_waves && medium.sea_waves_lift && high.sea_waves && high.sea_waves_lift);
     CHECK(!original.sea_waves && !original.sea_waves_lift);
@@ -410,6 +413,17 @@ void CheckLighting()
     }
     CHECK(tinted.u_fxLight[3][2] > tinted.u_fxLight[3][0]);
     CHECK(tinted.u_fxLight[4][0] > tinted.u_fxLight[4][2]);
+    // Tinted too, sky and ground average to the flat ambient per channel; a deep blue night dome keeps the ground
+    // light positive (the night characters stay as bright as without the hemisphere).
+    SkyState night;
+    night.dome = {0.0005f, 0.001f, 0.02f};
+    const LightingUniforms dark = ComputeLighting(input, LightingMaterial::Character(), &night, Settings{});
+    for (const LightingUniforms *u : {&tinted, &dark})
+        for (int i = 0; i < 3; ++i)
+        {
+            CHECK(Near(0.5f * (u->u_fxLight[3][i] + u->u_fxLight[4][i]), 0.4f, 1e-5f));
+            CHECK(u->u_fxLight[4][i] > 0.0f);
+        }
 
     Settings s;
     CHECK(PointLightBudget(s) == 0);
@@ -1518,6 +1532,16 @@ void CheckCheapUpgrades()
     weather.sun_dir = {0.6f, 0.8f, 0.0f};
     weather.fog_density = 0.002f;
     const SkyState noon = ComputeSky(weather);
+    // The sky stays finite for every sun, also straight down (the night's sky_sun_dir): its dome tints the
+    // hemisphere ambient and its horizon the aerial perspective.
+    for (float h : {-1.0f, -0.5f, 0.0f, 0.3f})
+    {
+        WeatherInput w = weather;
+        w.sun_dir = {0.0f, h, -std::sqrt(1.0f - h * h)};
+        const SkyState sky = ComputeSky(w);
+        for (int i = 0; i < 3; ++i)
+            CHECK(std::isfinite(sky.dome[i]) && std::isfinite(sky.horizon[i]));
+    }
 
     // Aerial perspective: the game's fog density, a haze layer that thins with the camera's height, world up
     // taken from the view matrix, haze colour = the horizon (gamma encoded).

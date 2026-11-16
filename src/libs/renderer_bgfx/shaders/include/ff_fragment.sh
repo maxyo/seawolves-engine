@@ -771,22 +771,35 @@ void main()
         // holds leaves the ambient, as on the baked surfaces.
         vec3 room = ffRoomLight(Pw, Nw);
         float level = max(dot(room, vec3(0.299, 0.587, 0.114)), 0.03);
-        vec3 roomAmbient = fxLightColor(room) * (u_fxLampGrid[2].w * level / (level + u_fxLamps[0].w * u_fxLamps[0].z * lamps.a));
-#ifdef FX_LIGHT_HEMISPHERE
-        ambient = mix(roomAmbient, ambient, skySeen.x); // the sky's light where the sky is seen
-#else
-        ambient = roomAmbient; // (without the hemisphere the weather's ambient is in the vertex sum, switched off here)
-#endif
+        // The room's level, the models' lift over it and the lamps' gain are scales of light: squared in linear light,
+        // as the baked colours' relight below takes them, so models and the room around them stay as bright as each
+        // other in either space.
+        float lift = u_fxLampGrid[2].w;
+        float lampGain = u_fxLamps[0].z;
+        if (fxLinear())
+        {
+            level *= level;
+            lift *= lift;
+            lampGain *= lampGain;
+        }
+        vec3 roomAmbient = fxLightColor(room) * (lift * level / (level + u_fxLamps[0].w * lampGain * lamps.a));
+        // The sky's light where the sky is seen: fxAmbient is the weather's ambient, the hemisphere's or a flat one
+        // (src/effects/lighting.cpp), since the vertex sum's is switched off here.
+        ambient = mix(roomAmbient, ambient, skySeen.x);
     }
 #endif
     // A lamp's light on a model is at most that of a fully lit surface: above half of it the sum is compressed
     // towards 1 (a model at a candle's flame is lit, not burnt out).
     float lampShown = lampSeen <= 0.5 ? lampSeen : 0.5 + (lampSeen - 0.5) / (1.0 + 2.0 * (lampSeen - 0.5));
     vec3 lampLight = lamps.rgb * (lampShown / max(lampSeen, 1e-4)) * cavityDirect;
+    // The occlusion of the ambient, as on the vertex sum (squared with it in linear light: fxLit).
+    float ambientShade = aoVolume * cavity;
+    if (fxLinear())
+        ambientShade *= ambientShade;
     vec4 ffDiffuse = vec4(clamp(fxLit(v_color0.rgb * (aoVolume * cavity), v_matDiffuse.rgb,
                                  fxSunDiffuse(N, V) * sunShadow + (ffPointDiffuse + ffLampMoved) * cavityDirect +
                                      lampLight,
-                                 v_matAmbient.rgb, ambient * (aoVolume * cavity)), 0.0, 1.0), v_color0.a);
+                                 v_matAmbient.rgb, ambient * ambientShade), 0.0, 1.0), v_color0.a);
 #else
     vec4 ffDiffuse = v_color0;
 #endif
