@@ -36,7 +36,7 @@ int iniPirateFrequency()
     return value;
 }
 
-// The configured percentage, or the default with one log line per distinct missing/invalid value.
+// The configured percentage, or the default; one log line per distinct value read (valid, missing or invalid).
 int pirateFrequency()
 {
     int value = iniPirateFrequency();
@@ -45,9 +45,17 @@ int pirateFrequency()
     value = storm::android::graphicsSetting("pirate_frequency", value);
     source = "the app setting pirate_frequency";
 #endif
-    if (storm::game::validPirateFrequency(value))
-        return value;
     static std::optional<int> reported;
+    if (storm::game::validPirateFrequency(value))
+    {
+        // Once per value: the log shows what the encounter script got, and every change of the setting.
+        if (reported != value)
+        {
+            reported = value;
+            spdlog::info("pirate frequency: {}% of the random pirate encounters kept ({})", value, source);
+        }
+        return value;
+    }
     if (reported != value)
     {
         reported = value;
