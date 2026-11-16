@@ -1560,6 +1560,9 @@ const KnownMissing *FindKnownMissing(const std::string &normalized)
         // Third material of a blade: checker.tga is shipped in Textures/, Characters/ and MainMenu/, not in Ammo/
         // (Caribbean Legend's blade_29.gm no longer names it).
         {"ammo/checker", "RESOURCE/MODELS/Ammo/blade_29.gm"},
+        // A material of the store's locator model: Textures/ ships A_big22.tga only, in TEHO and in Caribbean Legend
+        // (Steam) alike.
+        {"a_big", "RESOURCE/MODELS/Locations/Inside/StoreSmall/storeSmall_locators.gm"},
     };
     const size_t slash = normalized.rfind('/');
     const std::string_view file = slash == std::string::npos ? std::string_view(normalized)
