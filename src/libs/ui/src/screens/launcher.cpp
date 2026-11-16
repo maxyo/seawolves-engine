@@ -18,7 +18,7 @@
 //               error, magnetDraft, dialog: {kind: candidates|details|error, ...}}
 //               (the app's DownloadLibraryState defines states, verbs and candidates)
 //   about:     {app: {version, code, flavor, appCommit, engineCommit, appSource,
-//               engineSource}, notices: [<file>], open: {file, text, truncated},
+//               engineSource, renderBackend (after the game's first start)}, notices: [<file>], open: {file, text, truncated},
 //               saves: [{key, name, date}] (the save picker is open; newest first)}
 // What the player does goes back as Action{node "APP", verb, value} (text fields:
 // node "PASSWORD" / "MAGNET", verb "edit"); the global back without a ← binding is
@@ -944,6 +944,10 @@ class AboutScreen final : public Screen
                                      Json{{"k", bindings.Text("about.app_commit")}, {"v", short_commit(Str(app, "appCommit"))}},
                                      Json{{"k", bindings.Text("about.engine_commit")}, {"v", short_commit(Str(app, "engineCommit"))}},
                                      Json{{"k", bindings.Text("about.flavor")}, {"v", Str(app, "flavor")}}});
+        // The graphics API the game's last device ran and why (moved from the settings screen; absent before the game
+        // started once).
+        if (app.contains("renderBackend") && app["renderBackend"].is_string())
+            view["facts"].push_back(Json{{"k", bindings.Text("about.render_backend")}, {"v", Str(app, "renderBackend")}});
         Json sources = Json::array();
         for (const auto &[id, key, field] : {std::tuple{"source-app", StringKey("about.app_source"), "appSource"},
                                              std::tuple{"source-engine", StringKey("about.engine_source"), "engineSource"}})

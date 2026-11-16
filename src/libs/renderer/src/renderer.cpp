@@ -28,6 +28,7 @@
 #include "storm/render/d3d_interop.hpp"
 #include "storm/render/frame_owner.hpp"
 #include "scene_hold.hpp"
+#include "scene_detail.hpp"
 #include "storm/render/effects.hpp"
 #include "storm/render/frame_rate.hpp"
 #include "storm/render/log.hpp"
@@ -3196,8 +3197,43 @@ bool Renderer::ResetDevice()
     return true;
 }
 
+namespace
+{
+// The preset's grass and sea detail into the game's option state (scene_detail.hpp), once a second, only what differs.
+void SyncSceneDetail()
+{
+    static uint64_t last = 0;
+    const uint64_t now = SDL_GetTicks64();
+    if (now - last < 1000)
+        return;
+    last = now;
+    const int preset = storm::render::CurrentEffects().preset;
+    const storm::render::SceneDetail detail = storm::render::PresetSceneDetail(preset);
+    if (auto *grass = static_cast<VDATA *>(core.GetScriptVariable("iGrassQuality")))
+    {
+        int32_t current = -1;
+        if (grass->Get(current) && current != detail.grass)
+        {
+            grass->Set(static_cast<int32_t>(detail.grass));
+            spdlog::info("scene detail: preset {} sets the game's grass quality {} (was {})", preset, detail.grass, current);
+        }
+    }
+    if (auto *states = static_cast<VDATA *>(core.GetScriptVariable("InterfaceStates")))
+        if (ATTRIBUTES *root = states->GetAClass())
+        {
+            const float current = root->GetAttributeAsFloat("SeaDetails", -1.0f);
+            if (!storm::render::SameSeaDetail(current, detail.sea))
+            {
+                root->SetAttributeUseFloat("SeaDetails", detail.sea);
+                spdlog::info("scene detail: preset {} sets the game's sea detail {:.2f} (was {:.2f})", preset, detail.sea, current);
+            }
+        }
+}
+} // namespace
+
 void Renderer::RunStart()
 {
+    SyncSceneDetail();
 #ifdef __ANDROID__
     if (pendingViewResize_.width > 0)
         ApplyViewResize();

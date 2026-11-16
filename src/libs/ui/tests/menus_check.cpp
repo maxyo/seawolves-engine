@@ -337,80 +337,88 @@ static void Settings(const std::string &models)
     ExpectEqual(surface.tag, "s-settings", "settings mounted");
     Expect(surface.errors.empty(), "no errors");
     const Json extras = surface.props["extras"];
-    Expect(extras["rows"].size() == 1 && extras["rows"][0]["title"] == "По умолчанию" && extras["note"] == "",
-           "keyboard nodes and colour correction are not offered; the defaults button goes under «⋯»");
-    Expect(surface.props["tabs"].size() == 4 && surface.props["tabs"][0]["selected"] == true, "four pages, the first open");
+    Expect(extras.is_null() || extras["rows"].empty(),
+           "keyboard nodes, their defaults button and colour correction are not offered: " + extras.dump());
+    Expect(surface.props["tabs"].size() == 3 && surface.props["tabs"][0]["label"] == "<settings.tab_game>" &&
+               surface.props["tabs"][1]["label"] == "<settings.tab_controls>" && surface.props["tabs"][2]["label"] == "<settings.tab_sound_graphics>" &&
+               surface.props["tabs"][0]["selected"] == true,
+           "three pages «Игра / Управление / Звук и графика», the first open; no «Отладка» without debug overrides");
     Json columns = surface.props["sections"][0]["columns"];
-    Expect(columns[0]["title"] == "<settings.volume>" && columns[0]["rows"].size() == 3 && columns[0]["rows"][0]["label"] == "<settings.music>" &&
-               columns[0]["rows"][0]["value"] == 70,
-           "volume sliders with our labels");
-    Expect(columns[1]["rows"].size() == 4 && columns[1]["rows"][0]["label"] == "Автозапись", "game toggles keep the game's labels");
-    const Json pirates = columns[1]["rows"][3];
+    Expect(columns.size() == 2 && columns[0]["title"] == "<settings.sea_and_map>" && columns[1]["title"] == "<settings.markers>",
+           "game page: sea and map, marks");
+    const Json pirates = columns[0]["rows"][0];
     Expect(pirates["id"] == "app-pirate_frequency" && pirates["label"] == "<settings.pirate_frequency>" && pirates["selected"] == 0 &&
                pirates["restart"] == false && pirates["disabled"] == false &&
                pirates["options"] == Json::array({"<settings.pirates_rare>", "<settings.pirates_fewer>", "<settings.pirates_game>"}),
-           "«Частота пиратов на карте» from the host, 20% («Редко») chosen, applied without a restart: " + pirates.dump());
+           "«Частота пиратов на карте» first, from the host, 20% («Редко») chosen, applied without a restart: " + pirates.dump());
+    Expect(columns[0]["rows"].size() == 4 && columns[0]["rows"][3]["label"] == "Автозапись", "game toggles keep the game's labels");
 
     const std::string prefix = "widget:option_screen\t";
-    router.OnEvent({columns[0]["rows"][0]["id"], "change", "40"});
-    Expect(surface.commands.empty(), "slider drag progress sends nothing");
-    router.OnEvent({columns[0]["rows"][0]["id"], "commit", "40"});
-    ExpectEqual(surface.Last(), prefix + "MUSIC_SLIDE\t-1\tset@12:40", "slider release sets the position");
-    router.OnEvent({columns[1]["rows"][2]["id"], "change", "1"});
+    router.OnEvent({columns[0]["rows"][2]["id"], "change", "1"});
     ExpectEqual(surface.Last(), prefix + "ENHANCEDSAILING_CHECKBOX\t0\t1", "toggle on");
-
     surface.commands.clear();
     router.OnEvent({"app-pirate_frequency", "change", "2"});
-    Expect(surface.commands.empty() && surface.props["sections"][0]["columns"][1]["rows"][3]["selected"] == 2,
+    Expect(surface.commands.empty() && surface.props["sections"][0]["columns"][0]["rows"][0]["selected"] == 2,
            "the pirate frequency is a draft until «Готово»");
 
+    router.OnEvent({"tabs", "select", "1"});
+    Json controls = surface.props["sections"][0]["columns"];
+    Expect(controls.size() == 1 && controls[0]["title"] == "<settings.camera>", "controls page: the camera");
+    const Json camera = controls[0]["rows"];
+    Expect(camera.size() == 4 && camera[0]["id"] == "camera-sensitivity" && camera[0]["label"] == "<settings.camera_sensitivity>" &&
+               camera[0]["value"] == 50 && camera[1]["label"] == "<settings.invert_vertical>" && camera[2]["label"] == "<settings.sea_camera>" &&
+               camera[3]["label"] == "<settings.door_camera_turn>",
+           "one sensitivity, «Инверсия по вертикали», sea camera, door turn; no «Всегда бегом»: " + camera.dump());
+    for (const Json &row : camera)
+        Expect(row["id"].get<std::string>().find("ALWAYS_RUN") == std::string::npos, "«Всегда бегом» is gone");
+    surface.commands.clear();
+    router.OnEvent({"camera-sensitivity", "change", "80"});
+    Expect(surface.commands.empty(), "sensitivity drag progress sends nothing");
+    router.OnEvent({"camera-sensitivity", "commit", "80"});
+    Expect(surface.commands.size() == 2 && surface.commands[0] == prefix + "VMOUSE_SENSITIVITY_SLIDE\t-1\tset@12:80" &&
+               surface.commands[1] == prefix + "HMOUSE_SENSITIVITY_SLIDE\t-1\tset@12:80",
+           "the one sensitivity sets both game sliders to the same position");
+
     router.OnEvent({"tabs", "select", "2"});
-    Json image = surface.props["sections"];
-    Expect(image.size() == 1 && image[0]["columns"].size() == 2 && image[0]["columns"][0]["title"] == "<settings.graphics>" &&
-               image[0]["columns"][1]["title"] == "<settings.detail>",
-           "image page: one graphics column and the game's scene detail");
-    Json preset = image[0]["columns"][0]["rows"][0];
-    Expect(image[0]["columns"][0]["rows"].size() == 4 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false && !preset.contains("label") &&
-               preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
-           "the quality preset «Низкая / Средняя / Высокая», applied at once; no effect overrides; a measured preset "
-           "(fx_preset_auto) is not marked: " + preset.dump());
+    Json page = surface.props["sections"];
+    Expect(page.size() == 1 && page[0]["columns"].size() == 2 && page[0]["columns"][0]["title"] == "<settings.volume>" &&
+               page[0]["columns"][1]["title"] == "<settings.graphics>",
+           "sound and graphics page: volumes and the graphics column; no grass or sea detail (the preset's)");
+    const Json volume = page[0]["columns"][0]["rows"];
+    Expect(volume.size() == 3 && volume[0]["label"] == "<settings.music>" && volume[0]["value"] == 70, "volume sliders with our labels");
+    surface.commands.clear();
+    router.OnEvent({volume[0]["id"], "commit", "40"});
+    ExpectEqual(surface.Last(), prefix + "MUSIC_SLIDE\t-1\tset@12:40", "slider release sets the position");
+    Json preset = page[0]["columns"][1]["rows"][0];
+    Expect(page[0]["columns"][1]["rows"].size() == 3 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false &&
+               !preset.contains("label") && preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
+           "the quality preset, applied at once; no graphics API row (it is in «О программе»): " + preset.dump());
     Expect(preset["hint"] == "<settings.fx_scene_height>",
            "«Низкая» measured at a lower scene height (fx_auto_render_height) shows the height under the row: " + preset.dump());
-    const Json textures = image[0]["columns"][0]["rows"][1];
-    Expect(textures["id"] == "app-texture_degradation" && textures["restart"] == true && textures["disabled"] == false,
-           "texture quality from the host, marked as needing a restart");
-    const Json rate = image[0]["columns"][0]["rows"][2];
+    const Json rate = page[0]["columns"][1]["rows"][1];
     Expect(rate["id"] == "app-frame_rate" && rate["label"] == "<settings.frame_rate>" && rate["selected"] == 1 && rate["restart"] == false &&
                rate["disabled"] == false && rate["options"] == Json::array({"30", "60", "90", "120"}),
            "«Частота кадров» offers the rates the host reports for the display, 60 chosen, applied at once: " + rate.dump());
-    const Json api = image[0]["columns"][0]["rows"][3];
-    Expect(api["kind"] == "none" && api["id"] == "app-render_backend_in_use" && api["label"] == "<settings.render_backend>" &&
-               api["hint"] == "the device has Vulkan 1.1 with what the game needs and no recorded failure" && !api.contains("options"),
-           "the graphics API in use and why, shown read-only: " + api.dump());
-    const Json grass = image[0]["columns"][1]["rows"][0];
-    Expect(image[0]["columns"][1]["rows"].size() == 2 && grass["kind"] == "segment" && grass["selected"] == 2 && grass["label"] == "<settings.grass>",
-           "the game's grass (radio group as one segment) and sea detail; its other effects are the preset's");
-    router.OnEvent({grass["id"], "change", "3"});
-    ExpectEqual(surface.Last(), prefix + "HERB_CHECKBOX\t3\t1", "grass option chosen");
+    const Json textures = page[0]["columns"][1]["rows"][2];
+    Expect(textures["id"] == "app-texture_degradation" && textures["restart"] == true && textures["disabled"] == false,
+           "texture quality from the host, marked as needing a restart");
     surface.commands.clear();
     router.OnEvent({"app-fx_preset", "change", "2"});
     router.OnEvent({"app-frame_rate", "change", "3"});
-    Expect(surface.commands.empty() && surface.props["sections"][0]["columns"][0]["rows"][0]["selected"] == 2 &&
-               surface.props["sections"][0]["columns"][0]["rows"][2]["selected"] == 3,
+    Expect(surface.commands.empty() && surface.props["sections"][0]["columns"][1]["rows"][0]["selected"] == 2 &&
+               surface.props["sections"][0]["columns"][1]["rows"][1]["selected"] == 3,
            "renderer options are a draft");
-    Expect(!surface.props["sections"][0]["columns"][0]["rows"][0].contains("hint"),
-           "the measured scene height belongs to «Низкая» only");
+    Expect(!surface.props["sections"][0]["columns"][1]["rows"][0].contains("hint"), "the measured scene height belongs to «Низкая» only");
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
                    "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"pirate_frequency\":100,\"texture_degradation\":0}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
-           "«Готово» hands the renderer options to the host and confirms the game's settings; the measured-preset "
-           "flag fx_preset_auto, the measured scene height fx_auto_render_height and the graphics API in use stay with "
-           "the host");
+           "«Готово» hands the app options to the host and confirms the game's settings; the measured-preset flag "
+           "fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");
     surface.commands.clear();
     router.OnEvent({"done", "click", ""});
-    Expect(surface.commands.size() == 1, "unchanged renderer options are not sent again");
+    Expect(surface.commands.size() == 1, "unchanged app options are not sent again");
     {
         // A debuggable host reports single effect overrides: «Отладка эффектов» has the FSR / SMAA
         // rows and «Замер GPU» (fx_gpu_profile), handed to the host with «Готово» like the others.
@@ -431,7 +439,9 @@ static void Settings(const std::string &models)
             reported[key] = -1;
         debug.SetState("appSettings", reported);
         debug.SetInterface(Load(models, "settings.json"));
-        debug.OnEvent({"tabs", "select", "2"});
+        Expect(debug_surface.props["tabs"].size() == 4 && debug_surface.props["tabs"][3]["label"] == "Отладка",
+               "a debuggable host adds the untranslated «Отладка» page");
+        debug.OnEvent({"tabs", "select", "3"});
         Json rows = Json::array();
         for (const Json &section : debug_surface.props["sections"])
             for (const Json &column : section["columns"])
@@ -494,7 +504,7 @@ static void Settings(const std::string &models)
     ExpectEqual(surface.Last(), prefix + "BTN_CANCEL\t-1\tpress", "← drops the game's changes");
 
     router.OnEvent({"tabs", "select", "3"});
-    Expect(surface.props["sections"][0]["columns"][0]["rows"][0]["display"] == "×1.2", "HUD scale shows the game's factor");
+    Expect(surface.props["tabs"][2]["selected"] == true, "without debug overrides there is no fourth page to open");
 
     InterfaceModel broken = Load(models, "settings.json");
     Without(broken, "BTN_OK");

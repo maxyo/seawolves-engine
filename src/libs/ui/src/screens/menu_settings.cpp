@@ -1,20 +1,16 @@
-// Settings (interface "option_screen", mockups V2-Settings-Sound, -Controls, -Graphics,
-// -Image, -Interface): four pages on a rail, each in two columns of C-Setting rows. The
-// game applies its own controls as they change and keeps or drops them with BTN_OK /
-// BTN_CANCEL: «Готово» is BTN_OK, ← is BTN_CANCEL, and there is no unsaved-changes question
-// (owner decision). The image page is one graphics choice (owner decision): the quality
-// preset «Низкая / Средняя / Высокая» (engine renderer_bgfx fx_preset 0/1/2, applied at once:
-// the host asks the engine to re-read it; «Низкая» chosen by the automatic preset at a lower scene height shows that
-// height under it), plus the texture quality (memory on small phones,
-// at the next start), both application options from the platform host on the state channel
-// "appSettings", kept as a draft and sent back with «Готово» (Bindings::SendHost); and the
-// game's own grass and sea detail (scene density the renderer preset does not cover), and the frame rate
-// «Частота кадров» among the rates the host reports for the display (applied at once). The
-// single fx_* effect overrides are developer-only engine.ini keys (and STORM_FX_OPTIONS).
-// Keyboard bindings are not offered at all (mobile only); colour correction is not
-// available in the Android renderer. The first page also carries the application's «Частота пиратов на карте»
-// (pirate_frequency, platform/pirate_frequency.hpp), a draft sent with «Готово» like the renderer options.
-// Fills the pack screen <s-settings>.
+// Settings (interface "option_screen"): three pages on a rail, each in columns of C-Setting rows (owner-approved
+// rework 2026-11-16). «Игра»: «Частота пиратов на карте» (the app's pirate_frequency, platform/pirate_frequency.hpp),
+// the game's Директсейл, advanced navigation, boarding autosave and its marks. «Управление»: one «Чувствительность»
+// for the game's two mouse sensitivities (the touch camera drag goes through them), «Инверсия по вертикали», the sea
+// camera, the camera turn at doors. «Звук и графика»: the game's volumes; the quality preset «Низкая / Средняя /
+// Высокая» (engine renderer_bgfx fx_preset 0/1/2, applied at once; «Низкая» chosen by the automatic preset at a lower
+// scene height shows that height under it), which also decides the game's grass and sea detail (renderer
+// scene_detail.hpp), the frame rate «Частота кадров» among the rates the host reports for the display, and the
+// texture quality (at the next start). A debuggable app adds «Отладка», its single fx overrides. The application's
+// options come from the platform host on the state channel "appSettings", are kept as a draft and go back with
+// «Готово» (Bindings::SendHost). The game applies its own controls as they change and keeps or drops them with
+// BTN_OK / BTN_CANCEL: «Готово» is BTN_OK, ← is BTN_CANCEL, and there is no unsaved-changes question (owner
+// decision). Fills the pack screen <s-settings>.
 #include "controls.h"
 
 #include <platform/pirate_frequency.hpp>
@@ -34,23 +30,25 @@ constexpr NodeRule kNodes[] = {
     {"VMOUSE_SENSITIVITY_SLIDE", "slider"},
     {"HMOUSE_SENSITIVITY_SLIDE", "slider"},
     {"SEACAMPERSP_SLIDE", "slider"},
-    {"SEA_DETAILS_SLIDE", "slider"},
-    {"HUD_SLIDE", "slider"},
     {"AUTOSAVE_CHECKBOX", "check"},
     {"DIRECTSAIL_CHECKBOX", "check"},
     {"ENHANCEDSAILING_CHECKBOX", "check"},
     {"INVERT_MOUSE_CHECKBOX", "check"},
-    {"ALWAYS_RUN_CHECKBOX", "check"},
     {"CAMERASWING_CHECKBOX", "check"},
-    {"HERB_CHECKBOX", "check"},
     {"QUESTMARK_CHECKBOX", "check"},
     {"SHIPMARK_CHECKBOX", "check"},
     {"BATTLE_MODE_CHECKBOX", "check"},
-    {"HUD_DESCRIP_TEXT", "text"},
     // Not offered: colour correction (unavailable in the Android renderer), keyboard
-    // bindings (mobile only), the game's effects the quality preset decides (glow, sky
-    // rotation, dynamic lights, simple sea, crew on deck), the game's own captions and
-    // pictures of its layout.
+    // bindings and their defaults (mobile only), the game's effects the quality preset decides (glow, sky
+    // rotation, dynamic lights, simple sea, crew on deck, grass and sea detail: renderer scene_detail.hpp),
+    // «Всегда бегом» (the move stick's travel decides walk or run), the game's HUD scale (the portable HUD
+    // replaces the game's), the game's own captions and pictures of its layout.
+    {"HERB_CHECKBOX", "check"},
+    {"SEA_DETAILS_SLIDE", "slider"},
+    {"ALWAYS_RUN_CHECKBOX", "check"},
+    {"HUD_SLIDE", "slider"},
+    {"HUD_DESCRIP_TEXT", "text"},
+    {"BTN_CONTROLS_DEFAULT", "button"},
     {"GLOW_SLIDE", "slider"},
     {"ROTATESKY_CHECKBOX", "check"},
     {"DYNAMICLIGHTS_CHECKBOX", "check"},
@@ -72,8 +70,8 @@ constexpr NodeRule kNodes[] = {
     {"MAIN_BACK", "image"},
 };
 
-const char *const kTabs[] = {StringKey("settings.tab_sound"), StringKey("settings.tab_controls"), StringKey("settings.tab_image"),
-                             StringKey("settings.tab_interface")};
+// «Игра», «Управление», «Звук и графика»; a debuggable app adds the untranslated «Отладка» (TabCount).
+const char *const kTabs[] = {StringKey("settings.tab_game"), StringKey("settings.tab_controls"), StringKey("settings.tab_sound_graphics")};
 
 // The application's renderer options as the host last reported them.
 Json &AppSettings()
@@ -128,37 +126,48 @@ class SettingsScreen final : public Screen
         };
 
         std::vector<std::pair<std::string, std::vector<Column>>> sections;
+        const int tabs_count = TabCount();
+        tab_ = std::clamp(tab_, 0, tabs_count - 1);
         if (tab_ == 0)
         {
-            Column volume{bindings.Text("settings.volume")}, play{bindings.Text("settings.game")};
-            game(volume, "MUSIC_SLIDE", "settings.music");
-            game(volume, "SOUND_SLIDE", "settings.sound_effects");
-            game(volume, "DIALOG_SLIDE", "settings.voices");
-            game(play, "AUTOSAVE_CHECKBOX");
-            game(play, "DIRECTSAIL_CHECKBOX");
-            game(play, "ENHANCEDSAILING_CHECKBOX");
+            // «Игра»: the game's rules at sea and on the map, and its marks.
+            Column sea{bindings.Text("settings.sea_and_map")}, markers{bindings.Text("settings.markers")};
             // «Частота пиратов на карте» (platform/pirate_frequency.hpp): an app setting the game's encounter script
             // asks for at every random encounter, so it counts from the next one after «Готово».
-            Segment(bindings, play, "pirate_frequency", "settings.pirate_frequency",
+            Segment(bindings, sea, "pirate_frequency", "settings.pirate_frequency",
                     std::vector<int>(std::begin(storm::game::kPirateFrequencies), std::end(storm::game::kPirateFrequencies)),
                     {bindings.Text("settings.pirates_rare"), bindings.Text("settings.pirates_fewer"), bindings.Text("settings.pirates_game")},
                     false);
-            sections.push_back({"", {volume, play}});
+            game(sea, "DIRECTSAIL_CHECKBOX");
+            game(sea, "ENHANCEDSAILING_CHECKBOX");
+            game(sea, "AUTOSAVE_CHECKBOX");
+            game(markers, "QUESTMARK_CHECKBOX");
+            game(markers, "SHIPMARK_CHECKBOX");
+            game(markers, "BATTLE_MODE_CHECKBOX");
+            sections.push_back({"", {sea, markers}});
         }
         else if (tab_ == 1)
         {
-            Column camera{bindings.Text("settings.camera")}, movement{bindings.Text("settings.movement")};
-            game(camera, "VMOUSE_SENSITIVITY_SLIDE", "settings.vertical");
-            game(camera, "HMOUSE_SENSITIVITY_SLIDE", "settings.horizontal");
-            game(camera, "SEACAMPERSP_SLIDE", "settings.sea_camera");
+            // «Управление»: the camera (the touch drag goes through the game's mouse sensitivity and inversion).
+            Column camera{bindings.Text("settings.camera")};
+            Sensitivity(admitted, bindings, camera);
             game(camera, "INVERT_MOUSE_CHECKBOX");
-            game(movement, "ALWAYS_RUN_CHECKBOX");
-            game(movement, "CAMERASWING_CHECKBOX");
-            sections.push_back({"", {camera, movement}});
+            if (!camera.rows.empty() && camera.rows.back()["id"] == "INVERT_MOUSE_CHECKBOX-0")
+                camera.rows.back()["label"] = bindings.Text("settings.invert_vertical");
+            game(camera, "SEACAMPERSP_SLIDE", "settings.sea_camera");
+            game(camera, "CAMERASWING_CHECKBOX");
+            if (!camera.rows.empty() && camera.rows.back()["id"] == "CAMERASWING_CHECKBOX-0")
+                camera.rows.back()["label"] = bindings.Text("settings.door_camera_turn"); // the game's «Поворот камеры» reads as any turn
+            sections.push_back({"", {camera}});
         }
         else if (tab_ == 2)
         {
-            Column graphics{bindings.Text("settings.graphics")}, detail{bindings.Text("settings.detail")};
+            // «Звук и графика». The graphics choice is the preset; it also decides the game's grass and sea detail
+            // (renderer scene_detail.hpp). The graphics API in use is shown in «О программе».
+            Column sound{bindings.Text("settings.volume")}, graphics{bindings.Text("settings.graphics")};
+            game(sound, "MUSIC_SLIDE", "settings.music");
+            game(sound, "SOUND_SLIDE", "settings.sound_effects");
+            game(sound, "DIALOG_SLIDE", "settings.voices");
             // The preset's three names stand right under the column's title «Графика».
             Segment(bindings, graphics, "fx_preset", "settings.graphics", {0, 1, 2},
                     {bindings.Text("settings.fx_low"), bindings.Text("settings.fx_medium"), bindings.Text("settings.fx_high")}, false);
@@ -169,8 +178,6 @@ class SettingsScreen final : public Screen
                 draft_["fx_preset"].get<int>() == 0)
                 graphics.rows.back()["hint"] =
                     Fill(bindings.Text("settings.fx_scene_height"), {std::to_string(draft_["fx_auto_render_height"].get<int>())});
-            Segment(bindings, graphics, "texture_degradation", "settings.texture_quality", {0, 1, 2},
-                    {bindings.Text("settings.texture_full"), bindings.Text("settings.texture_medium"), bindings.Text("settings.texture_low")});
             // «Частота кадров»: the rates the host found the display can show (frame_rate_options: whole divisors
             // of its refresh rates), applied at once with «Готово» (the engine's frame pacing).
             std::vector<int> rates;
@@ -183,164 +190,140 @@ class SettingsScreen final : public Screen
                         rateLabels.push_back(std::to_string(rates.back()));
                     }
             Segment(bindings, graphics, "frame_rate", "settings.frame_rate", rates, rateLabels, false);
-            // The graphics API the game's device runs and why (the host's render_backend_in_use and
-            // render_backend_reason, from the engine's choice at the start): shown, not chosen.
-            if (draft_.is_object() && draft_.contains("render_backend_in_use") && draft_["render_backend_in_use"].is_string())
-                graphics.rows.push_back(
-                    Json{{"kind", "none"},
-                         {"id", "app-render_backend_in_use"},
-                         {"label", Fill(bindings.Text("settings.render_backend"), {draft_["render_backend_in_use"].get<std::string>()})},
-                         {"hint", draft_.value("render_backend_reason", std::string())}});
-            game(detail, "HERB_CHECKBOX", "settings.grass");
-            game(detail, "SEA_DETAILS_SLIDE", "settings.sea_detail");
-            sections.push_back({"", {graphics, detail}});
-            // A debuggable app reports single fx overrides (GraphicsSettings.DEBUG_KEYS): rows to bisect
-            // rendering problems on a phone, applied with «Готово» like the preset. Development only, so
-            // the texts are not translated.
-            if (Known("fx_msaa"))
-            {
-                Column debug{"Отладка эффектов"};
-                const Json onOff = Json::array({"пресет", "выкл", "вкл"});
-                DebugSegment(bindings, debug, "fx_msaa", "MSAA", {-1, 1, 2, 4}, {"пресет", "выкл", "2x", "4x"});
-                DebugSegment(bindings, debug, "fx_bloom", "Свечение (bloom)", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_grade", "Цветокоррекция", {-1, 0, 1, 2}, {"пресет", "выкл", "Карибы", "Пасмурно"});
-                DebugSegment(bindings, debug, "fx_dither", "Дизеринг", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_shadows", "Тени солнца", {-1, 0, 1, 2}, {"пресет", "выкл", "низк", "мягк"});
-                DebugSegment(bindings, debug, "fx_sea_band_limit", "Море: мягкая даль", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_sea_soft_edges", "Море: мягкие края", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_sea_specular", "Море: блик солнца", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_light_per_pixel", "Освещение попиксельно", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_light_point", "Точечные огни", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_light_specular", "Блики", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_light_normal_map", "Карты нормалей", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_alpha_to_coverage", "Alpha to coverage", {-1, 0, 1}, onOff);
-                DebugSegment(bindings, debug, "fx_anisotropy", "Анизотропия", {-1, 1, 4, 8}, {"пресет", "выкл", "4x", "8x"});
-                DebugSegment(bindings, debug, "fx_ao_volume", "Затенение (объём)", {-1, 0, 1, 2, 3}, {"пресет", "выкл", "игра", "умер", "сильн"});
-                // FSR 1 and SMAA (cc59cbe9, 924e22d2): the scene's internal height (native on displays not taller),
-                // the post AA, RCAS;
-                // «Замер GPU» logs GPU timer averages, which «Поделиться логом» carries out.
-                if (Known("fx_render_height"))
-                {
-                    DebugSegment(bindings, debug, "fx_render_height", "Высота сцены", {-1, 720, 900, 1000, 1100, 0},
-                                 {"пресет", "720", "900", "1000", "1100", "экран"});
-                    DebugSegment(bindings, debug, "fx_smaa", "SMAA", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "fx_sharpen", "Резкость (RCAS)", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "fx_gpu_profile", "Замер GPU", {-1, 1}, {"выкл", "вкл"});
-                }
-                // Far LODs of islands, ships and outdoor locations: the pixels a simplified level may differ by
-                // (src/libs/geometry/far_lod), in tenths of a pixel; «выкл» draws every model whole.
-                if (Known("fx_far_lod"))
-                    DebugSegment(bindings, debug, "fx_far_lod", "Дальние LOD", {-1, 0, 10, 20}, {"пресет", "выкл", "1 px", "2 px"});
-                // The lamps' relight of locations (f0265528, fb6f189e): how many lamps cast shadows, the
-                // shadow filter, how much brighter characters indoors are than the room, the lamp views.
-                if (Known("fx_lamp_shadows"))
-                {
-                    DebugSegment(bindings, debug, "fx_lamp_shadows", "Тени ламп", {-1, 0, 8, 16}, {"пресет", "выкл", "8", "16"});
-                    DebugSegment(bindings, debug, "fx_lamp_soft", "Фильтр теней ламп", {-1, 0, 1}, {"пресет", "3x3", "5x5"});
-                    DebugSegment(bindings, debug, "fx_lamp_model_lift", "Персонажи ярче комнаты", {-1, 0, 20, 50, 100},
-                                 {"пресет", "0%", "20%", "50%", "100%"});
-                    DebugSegment(bindings, debug, "fx_lamp_debug", "Лампы: отладка", {-1, 0, 1, 2}, {"пресет", "выкл", "цвета", "маска"});
-                }
-                // The share of a lamp's own colour in the light it adds to baked surfaces (7f1592e6).
-                if (Known("fx_lamp_tint"))
-                    DebugSegment(bindings, debug, "fx_lamp_tint", "Цвет ламп на стенах", {-1, 0, 25, 50, 100},
-                                 {"пресет", "0%", "25%", "50%", "100%"});
-                // The one falloff of every light (fx/light_falloff.hpp): how far it reaches, its soft core, its level.
-                if (Known("fx_light_reach"))
-                {
-                    DebugSegment(bindings, debug, "fx_light_reach", "Огни: дальность", {-1, 100, 160, 220, 300},
-                                 {"пресет", "100%", "160%", "220%", "300%"});
-                    DebugSegment(bindings, debug, "fx_light_core", "Огни: мягкость у огня", {-1, 10, 40, 80},
-                                 {"пресет", "10 см", "40 см", "80 см"});
-                    DebugSegment(bindings, debug, "fx_light_level", "Огни: яркость", {-1, 50, 70, 85, 100},
-                                 {"пресет", "50%", "70%", "85%", "100%"});
-                }
-                // Sunlight through the sails (fe7b54e5): its strength.
-                if (Known("fx_sail_light"))
-                    DebugSegment(bindings, debug, "fx_sail_light", "Свет сквозь паруса", {-1, 0, 100, 200, 300},
-                                 {"пресет", "выкл", "100%", "200%", "300%"});
-                // Our town lightmaps for the live sun (effects/town_light.hpp) against the game's, and what they hold.
-                if (Known("fx_town_light"))
-                {
-                    DebugSegment(bindings, debug, "fx_town_light", "Свет городов", {-1, 0, 1}, {"пресет", "игра", "наш"});
-                    DebugSegment(bindings, debug, "fx_town_light_debug", "Свет городов: отладка", {-1, 0, 1}, onOff);
-                }
-                // The town walls relit per pixel (32d9ce5d).
-                if (Known("fx_town_walls"))
-                    DebugSegment(bindings, debug, "fx_town_walls", "Стены городов", {-1, 0, 1}, {"пресет", "игра", "наши"});
-                // Gloss maps (6e5576d5, Высокая): per-texel highlights of the sun and lamps, metal in its own colour.
-                if (Known("fx_gloss"))
-                {
-                    DebugSegment(bindings, debug, "fx_gloss", "Блеск", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "fx_gloss_strength", "Сила блеска", {-1, 50, 100, 200, 300},
-                                 {"пресет", "50%", "100%", "200%", "300%"});
-                    DebugSegment(bindings, debug, "fx_gloss_debug", "Блеск: отладка", {-1, 0, 1, 2, 3, 4, 5},
-                                 {"пресет", "выкл", "блеск", "нормали", "солнце", "металл", "кожа"});
-                }
-                // The characters' relief (feat/char-relief): off, normal maps, with the parallax; its strength.
-                if (Known("fx_character_relief"))
-                {
-                    DebugSegment(bindings, debug, "fx_character_relief", "Рельеф персонажей", {-1, 0, 1, 2},
-                                 {"пресет", "выкл", "нормали", "параллакс"});
-                    DebugSegment(bindings, debug, "fx_character_relief_strength", "Сила рельефа персонажей",
-                                 {-1, 25, 50, 75, 100}, {"пресет", "25%", "50%", "75%", "100%"});
-                }
-                // Waves from objects (49b75861): ripples, their lift of the surface, their views.
-                if (Known("fx_sea_waves"))
-                {
-                    DebugSegment(bindings, debug, "fx_sea_waves", "Море: рябь от объектов", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "fx_sea_waves_lift", "Море: рябь поднимает воду", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "fx_sea_waves_debug", "Море: волны, отладка", {-1, 0, 1, 2},
-                                 {"пресет", "выкл", "слои", "наклон"});
-                }
-                // The parallax probe (engine effects/parallax_probe.hpp): the relief texture under the screen centre, its
-                // parallax and trust mask drawn over the picture; the second row switches that texture's parallax.
-                // Settings reach the engine as stored values applied with «Готово», not as events: every change of
-                // fx_pom_toggle's value is one press (the engine switches on the change, never on the value itself).
-                if (Known("fx_pom_probe"))
-                {
-                    DebugSegment(bindings, debug, "fx_pom_probe", "Прицел: текстура и параллакс", {-1, 1}, {"выкл", "вкл"});
-                    DebugSegment(bindings, debug, "fx_pom_toggle", "Прицел: переключить параллакс", {-1, 1}, {"А", "Б"});
-                }
-                // Neural ×2 textures near the camera (feat/upscale, Высокая): forced on or off.
-                if (Known("fx_upscale"))
-                    DebugSegment(bindings, debug, "fx_upscale", "Нейро-×2 текстур", {-1, 0, 1}, onOff);
-                // The renderer's thread, its frame overlap and the graphics API (read at the game's start).
-                if (Known("render_backend"))
-                {
-                    DebugSegment(bindings, debug, "render_backend", "Графический API", {-1, 1, 2}, {"авто", "GLES", "Vulkan"});
-                    DebugSegment(bindings, debug, "render_thread", "Поток рендера", {-1, 0, 1}, onOff);
-                    DebugSegment(bindings, debug, "render_overlap", "Кадр вперёд", {-1, 0, 1}, {"по кадру", "никогда", "всегда"});
-                }
-                sections.push_back({"", {debug}});
-            }
+            Segment(bindings, graphics, "texture_degradation", "settings.texture_quality", {0, 1, 2},
+                    {bindings.Text("settings.texture_full"), bindings.Text("settings.texture_medium"), bindings.Text("settings.texture_low")});
+            sections.push_back({"", {sound, graphics}});
         }
         else
         {
-            Column hud{bindings.Text("settings.hud")}, markers{bindings.Text("settings.markers")};
-            game(hud, "HUD_SLIDE", "settings.hud_scale");
-            // The game shows the scale it derives from the slider: "1080 / 900 : 1.2".
-            const std::string scale = admitted.Label("HUD_DESCRIP_TEXT");
-            if (const size_t colon = scale.rfind(':'); colon != std::string::npos && !hud.rows.empty())
+            // «Отладка», only when a debuggable app reports single fx overrides (GraphicsSettings.DEBUG_KEYS): rows to
+            // bisect rendering problems on a phone, applied with «Готово» like the preset. Development only, so the
+            // texts are not translated.
+            Column debug{"Отладка эффектов"};
+            const Json onOff = Json::array({"пресет", "выкл", "вкл"});
+            DebugSegment(bindings, debug, "fx_msaa", "MSAA", {-1, 1, 2, 4}, {"пресет", "выкл", "2x", "4x"});
+            DebugSegment(bindings, debug, "fx_bloom", "Свечение (bloom)", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_grade", "Цветокоррекция", {-1, 0, 1, 2}, {"пресет", "выкл", "Карибы", "Пасмурно"});
+            DebugSegment(bindings, debug, "fx_dither", "Дизеринг", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_shadows", "Тени солнца", {-1, 0, 1, 2}, {"пресет", "выкл", "низк", "мягк"});
+            DebugSegment(bindings, debug, "fx_sea_band_limit", "Море: мягкая даль", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_sea_soft_edges", "Море: мягкие края", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_sea_specular", "Море: блик солнца", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_light_per_pixel", "Освещение попиксельно", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_light_point", "Точечные огни", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_light_specular", "Блики", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_light_normal_map", "Карты нормалей", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_alpha_to_coverage", "Alpha to coverage", {-1, 0, 1}, onOff);
+            DebugSegment(bindings, debug, "fx_anisotropy", "Анизотропия", {-1, 1, 4, 8}, {"пресет", "выкл", "4x", "8x"});
+            DebugSegment(bindings, debug, "fx_ao_volume", "Затенение (объём)", {-1, 0, 1, 2, 3}, {"пресет", "выкл", "игра", "умер", "сильн"});
+            // FSR 1 and SMAA (cc59cbe9, 924e22d2): the scene's internal height (native on displays not taller),
+            // the post AA, RCAS;
+            // «Замер GPU» logs GPU timer averages, which «Поделиться логом» carries out.
+            if (Known("fx_render_height"))
             {
-                std::string factor = scale.substr(colon + 1);
-                factor.erase(0, factor.find_first_not_of(' '));
-                hud.rows.back()["display"] = "×" + factor;
+                DebugSegment(bindings, debug, "fx_render_height", "Высота сцены", {-1, 720, 900, 1000, 1100, 0},
+                             {"пресет", "720", "900", "1000", "1100", "экран"});
+                DebugSegment(bindings, debug, "fx_smaa", "SMAA", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "fx_sharpen", "Резкость (RCAS)", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "fx_gpu_profile", "Замер GPU", {-1, 1}, {"выкл", "вкл"});
             }
-            game(markers, "QUESTMARK_CHECKBOX");
-            game(markers, "SHIPMARK_CHECKBOX");
-            game(markers, "BATTLE_MODE_CHECKBOX");
-            sections.push_back({"", {hud, markers}});
+            // Far LODs of islands, ships and outdoor locations: the pixels a simplified level may differ by
+            // (src/libs/geometry/far_lod), in tenths of a pixel; «выкл» draws every model whole.
+            if (Known("fx_far_lod"))
+                DebugSegment(bindings, debug, "fx_far_lod", "Дальние LOD", {-1, 0, 10, 20}, {"пресет", "выкл", "1 px", "2 px"});
+            // The lamps' relight of locations (f0265528, fb6f189e): how many lamps cast shadows, the
+            // shadow filter, how much brighter characters indoors are than the room, the lamp views.
+            if (Known("fx_lamp_shadows"))
+            {
+                DebugSegment(bindings, debug, "fx_lamp_shadows", "Тени ламп", {-1, 0, 8, 16}, {"пресет", "выкл", "8", "16"});
+                DebugSegment(bindings, debug, "fx_lamp_soft", "Фильтр теней ламп", {-1, 0, 1}, {"пресет", "3x3", "5x5"});
+                DebugSegment(bindings, debug, "fx_lamp_model_lift", "Персонажи ярче комнаты", {-1, 0, 20, 50, 100},
+                             {"пресет", "0%", "20%", "50%", "100%"});
+                DebugSegment(bindings, debug, "fx_lamp_debug", "Лампы: отладка", {-1, 0, 1, 2}, {"пресет", "выкл", "цвета", "маска"});
+            }
+            // The share of a lamp's own colour in the light it adds to baked surfaces (7f1592e6).
+            if (Known("fx_lamp_tint"))
+                DebugSegment(bindings, debug, "fx_lamp_tint", "Цвет ламп на стенах", {-1, 0, 25, 50, 100},
+                             {"пресет", "0%", "25%", "50%", "100%"});
+            // The one falloff of every light (fx/light_falloff.hpp): how far it reaches, its soft core, its level.
+            if (Known("fx_light_reach"))
+            {
+                DebugSegment(bindings, debug, "fx_light_reach", "Огни: дальность", {-1, 100, 160, 220, 300},
+                             {"пресет", "100%", "160%", "220%", "300%"});
+                DebugSegment(bindings, debug, "fx_light_core", "Огни: мягкость у огня", {-1, 10, 40, 80},
+                             {"пресет", "10 см", "40 см", "80 см"});
+                DebugSegment(bindings, debug, "fx_light_level", "Огни: яркость", {-1, 50, 70, 85, 100},
+                             {"пресет", "50%", "70%", "85%", "100%"});
+            }
+            // Sunlight through the sails (fe7b54e5): its strength.
+            if (Known("fx_sail_light"))
+                DebugSegment(bindings, debug, "fx_sail_light", "Свет сквозь паруса", {-1, 0, 100, 200, 300},
+                             {"пресет", "выкл", "100%", "200%", "300%"});
+            // Our town lightmaps for the live sun (effects/town_light.hpp) against the game's, and what they hold.
+            if (Known("fx_town_light"))
+            {
+                DebugSegment(bindings, debug, "fx_town_light", "Свет городов", {-1, 0, 1}, {"пресет", "игра", "наш"});
+                DebugSegment(bindings, debug, "fx_town_light_debug", "Свет городов: отладка", {-1, 0, 1}, onOff);
+            }
+            // The town walls relit per pixel (32d9ce5d).
+            if (Known("fx_town_walls"))
+                DebugSegment(bindings, debug, "fx_town_walls", "Стены городов", {-1, 0, 1}, {"пресет", "игра", "наши"});
+            // Gloss maps (6e5576d5, Высокая): per-texel highlights of the sun and lamps, metal in its own colour.
+            if (Known("fx_gloss"))
+            {
+                DebugSegment(bindings, debug, "fx_gloss", "Блеск", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "fx_gloss_strength", "Сила блеска", {-1, 50, 100, 200, 300},
+                             {"пресет", "50%", "100%", "200%", "300%"});
+                DebugSegment(bindings, debug, "fx_gloss_debug", "Блеск: отладка", {-1, 0, 1, 2, 3, 4, 5},
+                             {"пресет", "выкл", "блеск", "нормали", "солнце", "металл", "кожа"});
+            }
+            // The characters' relief (feat/char-relief): off, normal maps, with the parallax; its strength.
+            if (Known("fx_character_relief"))
+            {
+                DebugSegment(bindings, debug, "fx_character_relief", "Рельеф персонажей", {-1, 0, 1, 2},
+                             {"пресет", "выкл", "нормали", "параллакс"});
+                DebugSegment(bindings, debug, "fx_character_relief_strength", "Сила рельефа персонажей",
+                             {-1, 25, 50, 75, 100}, {"пресет", "25%", "50%", "75%", "100%"});
+            }
+            // Waves from objects (49b75861): ripples, their lift of the surface, their views.
+            if (Known("fx_sea_waves"))
+            {
+                DebugSegment(bindings, debug, "fx_sea_waves", "Море: рябь от объектов", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "fx_sea_waves_lift", "Море: рябь поднимает воду", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "fx_sea_waves_debug", "Море: волны, отладка", {-1, 0, 1, 2},
+                             {"пресет", "выкл", "слои", "наклон"});
+            }
+            // The parallax probe (engine effects/parallax_probe.hpp): the relief texture under the screen centre, its
+            // parallax and trust mask drawn over the picture; the second row switches that texture's parallax.
+            // Settings reach the engine as stored values applied with «Готово», not as events: every change of
+            // fx_pom_toggle's value is one press (the engine switches on the change, never on the value itself).
+            if (Known("fx_pom_probe"))
+            {
+                DebugSegment(bindings, debug, "fx_pom_probe", "Прицел: текстура и параллакс", {-1, 1}, {"выкл", "вкл"});
+                DebugSegment(bindings, debug, "fx_pom_toggle", "Прицел: переключить параллакс", {-1, 1}, {"А", "Б"});
+            }
+            // Neural ×2 textures near the camera (feat/upscale, Высокая): forced on or off.
+            if (Known("fx_upscale"))
+                DebugSegment(bindings, debug, "fx_upscale", "Нейро-×2 текстур", {-1, 0, 1}, onOff);
+            // The renderer's thread, its frame overlap and the graphics API (read at the game's start).
+            if (Known("render_backend"))
+            {
+                DebugSegment(bindings, debug, "render_backend", "Графический API", {-1, 1, 2}, {"авто", "GLES", "Vulkan"});
+                DebugSegment(bindings, debug, "render_thread", "Поток рендера", {-1, 0, 1}, onOff);
+                DebugSegment(bindings, debug, "render_overlap", "Кадр вперёд", {-1, 0, 1}, {"по кадру", "никогда", "всегда"});
+            }
+            sections.push_back({"", {debug}});
         }
 
         Json view = Json::object();
         view["title"] = bindings.Text("settings.title");
         Json tabs = Json::array();
-        for (size_t i = 0; i < std::size(kTabs); ++i)
-            tabs.push_back(Json{{"label", bindings.Text(kTabs[i])}, {"selected", static_cast<int>(i) == tab_}});
+        for (int i = 0; i < tabs_count; ++i)
+            tabs.push_back(Json{{"label", i < static_cast<int>(std::size(kTabs)) ? bindings.Text(kTabs[i]) : std::string("Отладка")},
+                                {"selected", i == tab_}});
         view["tabs"] = tabs;
         bindings.On("tabs", "select", [this, &bindings](const Event &event) {
-            tab_ = std::clamp(std::atoi(event.value.c_str()), 0, static_cast<int>(std::size(kTabs)) - 1);
+            tab_ = std::clamp(std::atoi(event.value.c_str()), 0, TabCount() - 1);
             bindings.Rebuild();
         });
         Json pages = Json::array();
@@ -364,10 +347,8 @@ class SettingsScreen final : public Screen
             {
                 // The settings only: what the host reports about the device (frame_rate_options), whether the preset
                 // was measured (fx_preset_auto: the host's automatic choice) and the measured scene height
-                // (fx_auto_render_height) and the graphics API in use (render_backend_in_use, _reason) are not ones.
+                // (fx_auto_render_height) are not ones.
                 Json settings = draft_;
-                settings.erase("render_backend_in_use");
-                settings.erase("render_backend_reason");
                 settings.erase("frame_rate_options");
                 settings.erase("fx_preset_auto");
                 settings.erase("fx_auto_render_height");
@@ -381,6 +362,45 @@ class SettingsScreen final : public Screen
     }
 
   private:
+    // The debug page exists only when the host reports debug overrides (a debuggable app).
+    int TabCount() const
+    {
+        return static_cast<int>(std::size(kTabs)) + (Known("fx_msaa") ? 1 : 0);
+    }
+
+    // «Чувствительность»: one slider for the game's two mouse sensitivities (the touch camera drag goes through
+    // them): it shows the vertical one and sets both to the same position.
+    void Sensitivity(const Admission &admitted, Bindings &bindings, Column &column)
+    {
+        const Widget *vertical = admitted.One("VMOUSE_SENSITIVITY_SLIDE");
+        const Widget *horizontal = admitted.One("HMOUSE_SENSITIVITY_SLIDE");
+        if (!vertical || !horizontal)
+            return;
+        const auto percent = [](const Widget &slider) {
+            const int span = std::max(1, slider.max - slider.min);
+            return std::clamp(static_cast<int>(std::lround(100.0 * (std::atoi(slider.value.c_str()) - slider.min) / span)), 0, 100);
+        };
+        const auto position = [](const Widget &slider, double share) {
+            const int span = std::max(1, slider.max - slider.min);
+            const int step = std::max(1, slider.step);
+            const double wanted = slider.min + share * span;
+            const int snapped = slider.min + static_cast<int>(std::lround((wanted - slider.min) / step)) * step;
+            return std::to_string(std::clamp(snapped, slider.min, slider.max));
+        };
+        bindings.Ignore("camera-sensitivity", "change"); // drag progress: the position goes out on release
+        bindings.On("camera-sensitivity", "commit", [&bindings, vertical, horizontal, position](const Event &event) {
+            const double share = std::clamp(std::atof(event.value.c_str()), 0.0, 100.0) / 100.0;
+            bindings.Send(*vertical, "set", position(*vertical, share));
+            bindings.Send(*horizontal, "set", position(*horizontal, share));
+        });
+        column.rows.push_back(Json{{"kind", "slider"},
+                                   {"id", "camera-sensitivity"},
+                                   {"label", bindings.Text("settings.camera_sensitivity")},
+                                   {"value", percent(*vertical)},
+                                   {"disabled", !vertical->Offers("set") || !horizontal->Offers("set")},
+                                   {"reason", vertical->unavailable_reason}});
+    }
+
     // A renderer option the host reported; without the report the row stays visible but
     // disabled, and a tap says why.
     bool Known(const char *key) const

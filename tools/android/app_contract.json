@@ -60,7 +60,7 @@
   },
   "settings": {
     "keys": ["fx_preset", "texture_degradation", "frame_rate", "pirate_frequency"],
-    "host_facts": ["frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "render_backend_in_use", "render_backend_reason"],
+    "host_facts": ["frame_rate_options", "fx_auto_render_height", "fx_preset_auto"],
     "debug": {
       "fx_msaa": [-1, 1, 2, 4],
       "fx_bloom": [-1, 0, 1],
