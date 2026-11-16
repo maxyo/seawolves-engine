@@ -80,7 +80,7 @@ struct Layout
 {
     static constexpr int node_height = 80, pitch = 90, block_gap = 18, margin = 8, caption = 30;
     static constexpr int thickness = 2, exit_at = 30, arrive_at = 42, arrive_step = 9, arrive_last = 72;
-    static constexpr int lane_first = 2, lane_step = 4, arrow = 7, gutter_min = 12;
+    static constexpr int lane_first = 2, lane_step = 4, arrow = 6, gutter_min = 12;
     static constexpr int min_columns = 3;
     std::map<std::string, Place> nodes;
     std::vector<Edge> edges;
