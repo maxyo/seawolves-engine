@@ -148,7 +148,7 @@ generating at its capture. A variant waits for one only when it names it; the pr
 |---|---|
 | `wait=upscale` | the neural ×2 textures (`fx_upscale`): the last residency plan found every texture it chose resident |
 | `wait=relief` | the relief generation: no relief map (or list of relief textures) being made |
-| `wait=bakes` | the bake queue (`fx/bakes.hpp`: town light, visibility volume, bounce, AO volume, far LODs): none queued or running |
+| `wait=bakes` | the bake queue (`fx/bakes.hpp`: town light, visibility volume, AO volume, far LODs): none queued or running |
 
 `wait=` items may be repeated (`fx_preset=2,wait=upscale,wait=bakes`); an unknown name stops the engine. A product
 still generating `--timeout` - 30 s after the settings became active fails the scene with its name.
@@ -165,14 +165,13 @@ value is logged as an error, which fails the scene. The products of the shadow a
 | Moving lamps (carried lanterns, torches) | `fx_lamp_moving=0` / `1` / `2` | their dynamic shadow faces |
 | Lamp shadow filter | `fx_lamp_soft=0` (3x3) / `1` (5x5) | |
 | Lamp shadow view | `fx_lamp_debug=2` | the shadow mask over the picture |
-| Visibility volume | `fx_visibility=0` / `1` | sky visibility and rain shelter; the bounce lives in it (off with it) |
-| Bounce | `fx_bounce=0` / `1` | `fx_bounce_debug=1` shows it alone |
+| Visibility volume | `fx_visibility=0` / `1` | sky visibility and rain shelter |
 | Interior AO volume | `fx_ao_volume=0` / `1`..`3` | |
 | Town light (our lightmaps for the live sun) | `fx_town_light=0` / `1` | `fx_town_light_debug=1` shows its sun visibility |
 | Relit town walls | `fx_town_walls=0` / `1` | with `fx_town_light=1` |
 | Relief self-shadow | `fx_parallax_shadow=0` / `1` | with `fx_parallax=2` |
 
-The baked products (visibility, bounce, AO, town light) are made in the background once switched on: compare them with
+The baked products (visibility, AO, town light) are made in the background once switched on: compare them with
 `wait=bakes`, or the capture shows them still missing (its `background` says `bakes`). Options added for new products
 belong in `EffectsOptionNames()` and in this table.
 
