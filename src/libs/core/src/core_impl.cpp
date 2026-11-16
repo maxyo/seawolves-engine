@@ -252,6 +252,21 @@ bool CoreImpl::Run()
         ProcessStateLoading();
         ReportFailedLoad();
     }
+    // A scene the scripts opened this frame without the loading screen, so without the ReloadProgressEnd that runs
+    // the stock loading transaction (a quest's sea login: SeaLogin alone; the sea's Tele reload): prepared here by the
+    // same transaction, behind the same screen, before its first frame is executed or shown. It waits for the same
+    // resources and quality products (kSceneProductBudgetMs) and logs the same ready line as every other load.
+    if (!storm::loading::active && !storm::loading::screen_up && storm::loading::screen &&
+        storm::render::GetSceneLoadStatus().active)
+    {
+        STORM_PROFILE_ZONE("load: scene opened without the loading screen");
+        Trace("Stock loading transaction for a scene the scripts opened without the loading screen: prepared behind it");
+        storm::loading::screen(true);
+        const bool prepared = PrepareLoadingScene();
+        storm::loading::screen(false);
+        if (!prepared)
+            return false; // aborted: the engine exits (AbortLoadingTransaction)
+    }
 
     {
         STORM_PROFILE_ZONE("services: run start");

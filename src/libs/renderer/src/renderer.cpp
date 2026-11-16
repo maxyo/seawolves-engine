@@ -781,6 +781,15 @@ static std::filesystem::path TextureLogPath()
 
 bool Renderer::Init()
 {
+    // A scene the scripts open without the loading screen is prepared behind it all the same (CoreImpl::Run).
+    static Renderer *screen_owner = nullptr;
+    screen_owner = this;
+    storm::loading::screen = [](bool open) {
+        if (open)
+            screen_owner->StartProgressView();
+        else
+            screen_owner->EndProgressView();
+    };
     // The bgfx renderer's lines (effects, textures, relief) into the engine's logs: system.log (and logcat), their
     // errors into error.log too, from whichever thread logs them (the sinks lock).
     storm::render::SetLogSink([](storm::render::LogLevel level, const char *line) {
@@ -1126,6 +1135,7 @@ bool Renderer::Init()
 //################################################################################
 Renderer::~Renderer()
 {
+    storm::loading::screen = nullptr;
     ReleaseProgressView(); // teardown/cancel must not defer behind an unfinished scene
     storm::render::ShutdownRelief();
     storm::render::ShutdownTextureCache();
@@ -4580,6 +4590,7 @@ void Renderer::StartProgressView()
 #ifdef __ANDROID__
     storm::android::publishLoading(true);
 #endif
+    storm::loading::screen_up = true;
     progressSafeCounter = 0;
     if (progressTexture < 0)
     {
@@ -4841,6 +4852,7 @@ void Renderer::ReleaseProgressView()
 #ifdef __ANDROID__
     storm::android::publishLoading(false);
 #endif
+    storm::loading::screen_up = false;
     if (progressTexture >= 0)
         TextureRelease(progressTexture);
     progressTexture = -1;

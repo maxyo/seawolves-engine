@@ -7,6 +7,11 @@ namespace storm::loading
 inline bool active = false;
 inline bool ready = false;
 inline bool first_frame = true;
+// The stock loading screen (Renderer Start/EndProgressView) is up: the scripts opened it (ReloadProgressStart) and the
+// transaction runs from their ReloadProgressEnd.
+inline bool screen_up = false;
+// Opens (true) / closes the stock loading screen, for a scene the scripts opened without it (the renderer sets it).
+inline void (*screen)(bool open) = nullptr;
 enum class Outcome { Cancel, Quit, Unavailable, Invalidated, Reentrant };
 inline const char *OutcomeName(Outcome outcome)
 {
