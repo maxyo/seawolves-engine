@@ -7,6 +7,9 @@
 //           Without a marked part the whole component is the button (verb "click") unless
 //           the spec sets constants.pressRoot to false. On a game interface a press start asks
 //           for the interface's click unless constants.pressSound is false.
+//           A hold (prop hold / data-hold) fills a <ui-ring> or the width of a [data-hold-fill] part; a
+//           release before it is full, and a tap on a disabled control without a reason, put the class
+//           "shake" on the part (or the component) for a moment.
 //   range   data-range="prop" on the track (props min, max, step)
 //   stick   data-stick="x|xy" on the travel area, data-knob on the knob; prop `floating`:
 //           the component's box is the zone, the travel area goes under the finger (atX, atY)
@@ -204,21 +207,16 @@ class PressBehavior final : public Behavior
                 part == &self ? ToText(self.Prop("reason")) + ToText(self.Prop("disabledReason")) : Attr(part, "data-reason");
             if (!reason.empty())
                 self.Host().Toast(reason, "info");
+            else
+                Shake(self, part); // the reason stands next to the control: the control says "not now" by shaking
             return;
         }
         if (was_holding)
         {
-            // Released before the ring closed: nothing happens, and the control says so by shaking (class "shake" on
-            // the part, as a refused modal shakes; the owner's hold-to-confirm rule: an animation, no caption).
-            if (part != &self)
-            {
-                if (shaking_)
-                    shaking_->SetClass("shake", false);
-                part->SetClass("shake", true);
-                shaking_ = Rml::ObserverPtr<Rml::Element>(part->GetObserverPtr());
-                shake_until_ = self.Host().Now() + RefuseSeconds(self);
-                self.RequestTicks(*this, true);
-            }
+            // Released before the hold filled the control: nothing happens, and the control says so by shaking
+            // (class "shake" on the part or the whole component, as a refused modal shakes; a component may show
+            // its hold hint while it carries the class).
+            Shake(self, part);
             return;
         }
         Activate(self, part);
@@ -351,13 +349,31 @@ class PressBehavior final : public Behavior
             part_->SetClass("pressed", on);
     }
 
+    void Shake(ComponentElement &self, Rml::Element *part)
+    {
+        if (shaking_)
+            shaking_->SetClass("shake", false);
+        part->SetClass("shake", true);
+        shaking_ = Rml::ObserverPtr<Rml::Element>(part->GetObserverPtr());
+        shake_until_ = self.Host().Now() + RefuseSeconds(self);
+        self.RequestTicks(*this, true);
+    }
+
+    // The hold's progress: the value of a <ui-ring>, or the width of a part marked data-hold-fill (a fill that
+    // sweeps across the whole control), in the part or else in the component.
     static void SetRing(ComponentElement &self, Rml::Element *part, const Json &percent)
     {
+        const float value = static_cast<float>(Number(percent));
         Rml::Element *ring = part ? part->QuerySelector("ui-ring") : nullptr;
         if (!ring)
             ring = self.QuerySelector("ui-ring");
         if (ring)
-            ring->SetAttribute("value", static_cast<float>(Number(percent)));
+            ring->SetAttribute("value", value);
+        Rml::Element *fill = part ? part->QuerySelector("[data-hold-fill]") : nullptr;
+        if (!fill)
+            fill = self.QuerySelector("[data-hold-fill]");
+        if (fill)
+            fill->SetProperty(Rml::PropertyId::Width, Rml::Property(std::clamp(value, 0.0f, 100.0f), Rml::Unit::PERCENT));
     }
 
     void Release(ComponentElement &self)

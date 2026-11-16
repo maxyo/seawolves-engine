@@ -971,7 +971,7 @@ class HeroScreen final : public Screen
             const bool other = ShipPerk(graph, id) != ship;
             targets[id] = {ShipPerk(graph, id), graph.rows.count(id) > 0};
             return Json{{"perk", id}, {"name", PerkName(graph, id)}, {"image", PerkPicture(graph, id, !Learned(graph, id))},
-                        {"met", met}, {"other", other}, {"groupIcon", other ? (ShipPerk(graph, id) ? "ship" : "hero") : ""}};
+                        {"met", met}, {"state", state(id)}, {"other", other}, {"groupIcon", other ? (ShipPerk(graph, id) ? "ship" : "hero") : ""}};
         };
         // What is still missing first, then this tab's perks before the other group's; a row of the other group
         // carries that group's glyph, so it is never read as one of this tab.
