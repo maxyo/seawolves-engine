@@ -7,8 +7,9 @@
 #include <string_view>
 
 // The player's display options (settings screen «Управление» → «Экран и касания»), app settings of the "appSettings"
-// state channel: «Размер интерфейса» ui_scale (percent of the display's density the UI lays out at) and «Прозрачность
-// кнопок» hud_transparency (percent the HUD's buttons are see-through beyond their design). The app's GraphicsSettings
+// state channel: «Размер интерфейса» ui_scale (percent of the display's density the UI lays out at), «Прозрачность
+// кнопок» hud_transparency (percent the HUD's buttons are see-through beyond their design) and «Под левую руку»
+// left_handed (the HUD mirrored left to right). The app's GraphicsSettings
 // keeps the same steps and defaults; the engine's UI host (ui_host engine_ui.cpp) applies them (Host::SetDisplayOptions).
 namespace storm::android
 {
@@ -17,6 +18,9 @@ inline constexpr int kUiScales[] = {100, 115, 130};
 inline constexpr int kUiScaleDefault = 100;
 inline constexpr int kHudTransparencies[] = {0, 35, 60};
 inline constexpr int kHudTransparencyDefault = 0;
+// «Под левую руку»: 0 the HUD as designed, 1 mirrored left to right.
+inline constexpr int kLeftHandedSteps[] = {0, 1};
+inline constexpr int kLeftHandedDefault = 0;
 
 template <size_t N> bool OneOf(const int (&steps)[N], int value)
 {
@@ -52,6 +56,7 @@ struct DisplayOptions
 {
     int ui_scale = kUiScaleDefault;
     int hud_transparency = kHudTransparencyDefault;
+    int left_handed = kLeftHandedDefault;
     std::string problems; // what was missing or invalid and replaced by its default (empty: none)
 };
 
@@ -72,6 +77,7 @@ inline DisplayOptions ReadDisplayOptions(std::string_view app_settings)
     };
     take("ui_scale", kUiScales, kUiScaleDefault, options.ui_scale);
     take("hud_transparency", kHudTransparencies, kHudTransparencyDefault, options.hud_transparency);
+    take("left_handed", kLeftHandedSteps, kLeftHandedDefault, options.left_handed);
     return options;
 }
 } // namespace storm::android

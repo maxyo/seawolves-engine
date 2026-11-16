@@ -426,11 +426,18 @@ class SeaScene final : public Scene
     void FollowFleet(const View &shown)
     {
         static constexpr float kBandMin = 240.0f, kGap = 8.0f;
+        // Measured in the design's orientation (fleet on the left, the top row and the minimap on the right): with
+        // «Под левую руку» every box is mirrored back first and the band's sides are swapped at the end.
+        const bool mirrored = hud_.Mirrored();
+        const auto x0 = [mirrored](const Placement &p) { // the box's left edge in the design, dp from the layer's left
+            const float left = p.x - p.layer_x;
+            return (mirrored ? p.layer_width - (left + p.width) : left) / p.density;
+        };
         Band band;
         Placement first, last;
         if (shown.elements.contains("fleet") && hud_.Measure("fleet", ".item.ship:first-child", first) &&
-            hud_.Measure("fleet", ".item.ship:last-child", last) && last.x > first.x)
-            band.left = static_cast<int>(std::ceil((last.x + last.width - last.layer_x) / last.density)) + 8;
+            hud_.Measure("fleet", ".item.ship:last-child", last) && x0(last) > x0(first))
+            band.left = static_cast<int>(std::ceil(x0(last) + last.width / last.density)) + 8;
         // the top row: the buttons the band runs beside, and the minimap it runs under
         float row_left = 0.0f, row_bottom = 0.0f, map_left = 0.0f, layer_width = 0.0f, fleet_right = 0.0f;
         for (const char *id : {"ship", "pause", "orders"})
@@ -438,16 +445,16 @@ class SeaScene final : public Scene
             Placement button;
             if (!shown.elements.contains(id) || !hud_.Measure(id, "", button))
                 continue;
-            const float x = (button.x - button.layer_x) / button.density, bottom = (button.y - button.layer_y + button.height) / button.density;
+            const float x = x0(button), bottom = (button.y - button.layer_y + button.height) / button.density;
             row_left = row_left > 0.0f ? std::min(row_left, x) : x;
             row_bottom = std::max(row_bottom, bottom);
             layer_width = button.layer_width / button.density;
         }
         Placement map, column;
         if (shown.elements.contains("minimap") && hud_.Measure("minimap", "", map))
-            map_left = (map.x - map.layer_x) / map.density;
+            map_left = x0(map);
         if (shown.elements.contains("fleet") && hud_.Measure("fleet", ".item.ship:last-child", column))
-            fleet_right = (column.x - column.layer_x + column.width) / column.density;
+            fleet_right = x0(column) + column.width / column.density;
         if (row_left > 0.0f && map_left > 0.0f && layer_width > 0.0f)
         {
             const float left = band.left > 0 ? static_cast<float>(band.left) : fleet_right + kGap;
@@ -458,6 +465,8 @@ class SeaScene final : public Scene
                 band.top = static_cast<int>(std::ceil(row_bottom + kGap));
             }
         }
+        if (mirrored)
+            std::swap(band.left, band.right); // the notice's safeLeft / safeRight are the screen's
         if (band == band_)
             return;
         band_ = band;

@@ -414,8 +414,20 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         context_->SetDensityIndependentPixelRatio(config_.density);
     }
 
-    void SetDisplayOptions(float ui_scale, float hud_button_opacity) override
+    void SetDisplayOptions(float ui_scale, float hud_button_opacity, bool left_handed) override
     {
+        if (left_handed != left_handed_)
+        {
+            left_handed_ = left_handed;
+            // Mounted anew with the other placement and props: restyling the mounted elements in place left the
+            // touch regions of their parts at the old place (RmlUi keeps a child's absolute offset until it
+            // lays it out itself), so every element is created again. A held control is released first.
+            if (hud_document_ && hud_document_->IsVisible())
+                HideHud();
+            hud_props_.clear();
+            if (hud_)
+                hud_->Rebuild();
+        }
         if (ui_scale != ui_scale_)
         {
             ui_scale_ = ui_scale;
@@ -1090,6 +1102,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         router_->SubmitText(token, text, accepted);
     }
 
+    bool Mirrored() const override
+    {
+        return left_handed_;
+    }
     bool ScreenMounted() const override
     {
         return router_->Active() || document_ != nullptr;
@@ -1266,10 +1282,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 hud_made_[element.id] = wanted[element.id];
             }
             before = mounted;
-            if (mounted->GetAttribute<Rml::String>("style", "") != element.rcss)
+            const std::string &style = left_handed_ ? element.rcss_mirrored : element.rcss;
+            if (mounted->GetAttribute<Rml::String>("style", "") != style)
             {
                 changed_ = true;
-                mounted->SetAttribute("style", element.rcss);
+                mounted->SetAttribute("style", style);
             }
             complete = SetHudProps(element, view) && complete;
             for (const hud::LayoutElement &child : element.children)
@@ -1666,6 +1683,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             return false;
         }
         Json props = element.props;
+        if (left_handed_)
+            props.update(element.props_mirrored);
         props.update(view.elements[element.id]);
         Json &shown = hud_props_[element.id];
         if (shown != props)
@@ -2265,6 +2284,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     float display_density_ = 1.0f;        // Resize's density; config_.density is it times ui_scale_
     float ui_scale_ = 1.0f;
     float hud_button_opacity_ = 1.0f;
+    bool left_handed_ = false; // «Под левую руку»: the HUD mounted mirrored
     std::string hud_button_class_; // the class ApplyHudButtonOpacity set on the HUD document
     std::unordered_map<int, Capture> captures_;
     std::vector<Rml::ObserverPtr<Rml::Element>> ticking_;

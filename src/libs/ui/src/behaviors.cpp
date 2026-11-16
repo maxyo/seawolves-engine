@@ -204,8 +204,21 @@ class PressBehavior final : public Behavior
                 self.Host().Toast(reason, "info");
             return;
         }
-        if (was_holding) // released before the ring closed: nothing happens
+        if (was_holding)
+        {
+            // Released before the ring closed: nothing happens, and the control says so by shaking (class "shake" on
+            // the part, as a refused modal shakes; the owner's hold-to-confirm rule: an animation, no caption).
+            if (part != &self)
+            {
+                if (shaking_)
+                    shaking_->SetClass("shake", false);
+                part->SetClass("shake", true);
+                shaking_ = Rml::ObserverPtr<Rml::Element>(part->GetObserverPtr());
+                shake_until_ = self.Host().Now() + RefuseSeconds(self);
+                self.RequestTicks(*this, true);
+            }
             return;
+        }
         Activate(self, part);
     }
 
@@ -223,6 +236,14 @@ class PressBehavior final : public Behavior
 
     void Tick(ComponentElement &self, double now) override
     {
+        if (shake_until_ > 0.0 && now >= shake_until_)
+        {
+            shake_until_ = 0.0;
+            if (shaking_)
+                shaking_->SetClass("shake", false);
+            shaking_ = {};
+            StopTicksWhenIdle(self);
+        }
         if (refused_until_ > 0.0 && now >= refused_until_)
         {
             refused_until_ = 0.0;
@@ -353,7 +374,7 @@ class PressBehavior final : public Behavior
 
     void StopTicksWhenIdle(ComponentElement &self)
     {
-        if (!part_ && done_until_ == 0.0 && refused_until_ == 0.0)
+        if (!part_ && done_until_ == 0.0 && refused_until_ == 0.0 && shake_until_ == 0.0)
             self.RequestTicks(*this, false);
     }
 
@@ -412,6 +433,8 @@ class PressBehavior final : public Behavior
     double down_at_ = 0.0;
     double done_until_ = 0.0;
     double refused_until_ = 0.0;
+    double shake_until_ = 0.0;                // a hold released early shakes its part until then
+    Rml::ObserverPtr<Rml::Element> shaking_;  // that part
     bool holding_ = false;
     bool tooltip_pending_ = false;
     bool tooltip_open_ = false;

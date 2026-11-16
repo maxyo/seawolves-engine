@@ -392,12 +392,22 @@ static void CheckLayout()
     Layout layout;
     std::string error;
     const Json file = Json::parse(R"({"version": 2, "scenes": {"probe": {"elements": [
-        {"id": "button", "component": "c-hud-button", "rcss": "position: absolute;", "props": {"icon": "talk"}, "behavior": "hold", "data": {"swipe-dead": 20}},
+        {"id": "button", "component": "c-hud-button", "rcss": "position: absolute; right: 4dp;", "rcssMirrored": "position: absolute; left: 4dp;",
+         "props": {"icon": "talk"}, "propsMirrored": {"icon": "eye"}, "behavior": "hold", "data": {"swipe-dead": 20}},
         {"id": "plate", "component": "c-hud-plate", "children": [{"id": "bar", "component": "c-bar", "props": {"mode": "hud"}}]},
         {"id": "log", "component": "c-notice"}, {"id": "stick", "component": "c-stick"}]}}})");
     Expect(ParseLayout(file, layout, &error) && layout.count("probe") && layout["probe"].size() == 4, "layout: scenes and elements");
+    Expect(layout["probe"][0].rcss_mirrored == "position: absolute; left: 4dp;" && layout["probe"][0].props_mirrored == Json{{"icon", "eye"}},
+           "layout: the mirrored placement and props («Под левую руку»)");
+    {
+        Layout stale;
+        const Json old_pack = Json::parse(R"({"version": 2, "scenes": {"probe": {"elements": [
+            {"id": "button", "component": "c-hud-button", "rcss": "position: absolute;"}]}}})");
+        Expect(!ParseLayout(old_pack, stale, &error) && error.find("rcssMirrored") != std::string::npos,
+               "layout: a placed element without its mirrored placement is refused: " + error);
+    }
     const LayoutElement &button = layout["probe"][0];
-    Expect(button.rcss == "position: absolute;" && button.behavior == "hold" && button.props["icon"] == "talk" && button.data["swipe-dead"] == 20,
+    Expect(button.rcss == "position: absolute; right: 4dp;" && button.behavior == "hold" && button.props["icon"] == "talk" && button.data["swipe-dead"] == 20,
            "layout: place, props, behaviour and data of an element");
     Expect(layout["probe"][1].children.size() == 1 && layout["probe"][1].children[0].id == "bar", "layout: children");
 

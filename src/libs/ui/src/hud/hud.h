@@ -447,6 +447,12 @@ class Mount
     virtual bool ScreenMounted() const = 0;
     // A notice for the player that survives the change of screen (the danger toast).
     virtual void Alert(const std::string &text) = 0;
+    // «Под левую руку»: the layout is mounted mirrored (scenes that reason about which side an element is on
+    // measure in the design's own orientation and mirror their result). Hosts without the option: never.
+    virtual bool Mirrored() const
+    {
+        return false;
+    }
 };
 
 using screens::SubjectRequest;
@@ -479,6 +485,11 @@ class Hud
     void Rebuild()
     {
         changed_ = true;
+    }
+    // «Под левую руку»: the layout is mounted mirrored (Mount::Mirrored).
+    bool Mirrored() const
+    {
+        return mount_.Mirrored();
     }
     double Now() const
     {
@@ -716,6 +727,10 @@ void AddStateConsumers(std::vector<std::unique_ptr<screens::StateConsumer>> &con
 struct LayoutElement
 {
     std::string id, component, rcss, behavior;
+    // «Под левую руку» (Host::SetDisplayOptions): the pack's mirrored placement and the props it changes
+    // (mobile-ui/design build.py hud_mirrored), used instead of rcss and on top of props.
+    std::string rcss_mirrored;
+    Json props_mirrored = Json::object();
     Json props = Json::object();
     Json data = Json::object(); // data-* attributes: configuration of the behaviour
     std::vector<LayoutElement> children;

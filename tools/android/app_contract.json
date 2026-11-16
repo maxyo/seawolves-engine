@@ -59,7 +59,7 @@
     "launcher": ["launcher"]
   },
   "settings": {
-    "keys": ["fx_preset", "texture_quality", "frame_rate", "pirate_frequency", "ui_scale", "hud_transparency"],
+    "keys": ["fx_preset", "texture_quality", "frame_rate", "pirate_frequency", "ui_scale", "hud_transparency", "left_handed"],
     "host_facts": ["cache_bytes", "cache_clear_pending", "frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "ui_scale_options"],
     "debug": {
       "fx_msaa": [-1, 1, 2, 4],

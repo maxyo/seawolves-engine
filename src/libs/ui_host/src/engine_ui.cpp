@@ -410,12 +410,14 @@ class EngineUi
             __android_log_print(ANDROID_LOG_ERROR, kTag, "display options: %s", options.problems.c_str());
         const float scale = static_cast<float>(options.ui_scale) / 100.0f;
         const float opacity = 1.0f - static_cast<float>(options.hud_transparency) / 100.0f;
-        if (shown_ui_scale_ != options.ui_scale || shown_hud_transparency_ != options.hud_transparency)
-            __android_log_print(ANDROID_LOG_INFO, kTag, "display options: UI size %d%%, HUD buttons %d%% see-through", options.ui_scale,
-                                options.hud_transparency);
+        const bool left_handed = options.left_handed != 0;
+        if (shown_ui_scale_ != options.ui_scale || shown_hud_transparency_ != options.hud_transparency || shown_left_handed_ != options.left_handed)
+            __android_log_print(ANDROID_LOG_INFO, kTag, "display options: UI size %d%%, HUD buttons %d%% see-through, %s", options.ui_scale,
+                                options.hud_transparency, left_handed ? "left-handed HUD" : "right-handed HUD");
         shown_ui_scale_ = options.ui_scale;
         shown_hud_transparency_ = options.hud_transparency;
-        Post([scale, opacity](storm::ui::Host &host) { host.SetDisplayOptions(scale, opacity); });
+        shown_left_handed_ = options.left_handed;
+        Post([scale, opacity, left_handed](storm::ui::Host &host) { host.SetDisplayOptions(scale, opacity, left_handed); });
     }
 
     // Safe-area insets in pixels; the host takes dp.
@@ -538,7 +540,8 @@ class EngineUi
         if (const auto settings = platform.find("appSettings"); settings != platform.end())
         {
             const storm::android::DisplayOptions options = storm::android::ReadDisplayOptions(settings->second);
-            host_->SetDisplayOptions(static_cast<float>(options.ui_scale) / 100.0f, 1.0f - static_cast<float>(options.hud_transparency) / 100.0f);
+            host_->SetDisplayOptions(static_cast<float>(options.ui_scale) / 100.0f, 1.0f - static_cast<float>(options.hud_transparency) / 100.0f,
+                                     options.left_handed != 0);
         }
         if (interface_)
             host_->SetInterface(*interface_);
@@ -775,7 +778,7 @@ class EngineUi
     std::array<float, 4> safe_area_{};
     bool has_safe_area_ = false;
     std::vector<storm::ui::Cutout> cutouts_;
-    int shown_ui_scale_ = -1, shown_hud_transparency_ = -1; // the display options last logged
+    int shown_ui_scale_ = -1, shown_hud_transparency_ = -1, shown_left_handed_ = -1; // the display options last logged
 };
 
 } // namespace

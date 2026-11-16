@@ -158,7 +158,7 @@ class SettingsScreen final : public Screen
             // asks for at every random encounter, so it counts from the next one after «Готово».
             Segment(bindings, sea, "pirate_frequency", "settings.pirate_frequency",
                     std::vector<int>(std::begin(storm::game::kPirateFrequencies), std::end(storm::game::kPirateFrequencies)),
-                    {bindings.Text("settings.pirates_rare"), bindings.Text("settings.pirates_fewer"), bindings.Text("settings.pirates_game")},
+                    {bindings.Text("settings.pirates_rare"), bindings.Text("settings.pirates_sometimes"), bindings.Text("settings.pirates_often")},
                     false);
             game(sea, "DIRECTSAIL_CHECKBOX");
             game(sea, "ENHANCEDSAILING_CHECKBOX");
@@ -204,6 +204,7 @@ class SettingsScreen final : public Screen
             Segment(bindings, screen, "hud_transparency", "settings.hud_transparency",
                     std::vector<int>(std::begin(storm::android::kHudTransparencies), std::end(storm::android::kHudTransparencies)),
                     transparencies, false);
+            Toggle(bindings, screen, "left_handed", "settings.left_handed"); // the HUD mirrored left to right
             sections.push_back({"", {camera, screen}});
         }
         else if (tab_ == 2)
@@ -436,13 +437,15 @@ class SettingsScreen final : public Screen
         constexpr double kGiB = 1073741824.0; // MB below a whole GB: «118,0 МБ», not «0,1 ГБ»
         const std::string size = bytes < 0 ? bindings.Text("settings.cache_measuring")
                                            : Size(bindings, static_cast<double>(bytes), bytes < kGiB ? 0.0 : static_cast<double>(bytes));
+        // Pending: the row says so in its normal colours and has no button any more; «Очистить» is pressed and held
+        // (the owner's rule for destructive actions: the c-setting button confirms by a hold).
         column.rows.push_back(Json{{"kind", "button"},
                                    {"id", "app-cache-clear"},
                                    {"label", Fill(bindings.Text("settings.cache"), {size})},
                                    {"hint", pending ? bindings.Text("settings.cache_pending") : std::string()},
-                                   {"display", bindings.Text("settings.cache_clear")},
-                                   {"disabled", pending || bytes == 0},
-                                   {"reason", pending ? bindings.Text("settings.cache_pending") : bindings.Text("settings.cache_empty")}});
+                                   {"display", pending ? std::string() : bindings.Text("settings.cache_clear")},
+                                   {"disabled", !pending && bytes >= 0 && bytes < (1 << 20)}, // under a megabyte: nothing to clear
+                                   {"reason", bindings.Text("settings.cache_empty")}});
         bindings.On("app-cache-clear", "", [this, &bindings](const Event &) {
             if (draft_.value("cache_clear_pending", false))
                 return;
@@ -521,6 +524,23 @@ class SettingsScreen final : public Screen
             const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
             if (index < values.size() && Known(key))
                 draft_[key] = values[index];
+            bindings.Rebuild();
+        });
+    }
+
+    // An app option that is on (1) or off (0) as a toggle row, a draft applied with «Готово».
+    void Toggle(Bindings &bindings, Column &column, const char *key, const char *label)
+    {
+        const std::string id = std::string("app-") + key;
+        column.rows.push_back(Json{{"kind", "toggle"},
+                                   {"id", id},
+                                   {"label", bindings.Text(label)},
+                                   {"on", Known(key) && draft_[key].get<int>() != 0},
+                                   {"disabled", !Known(key)},
+                                   {"reason", Known(key) ? std::string() : bindings.Text("settings.app_unavailable")}});
+        bindings.On(id, "change", [this, &bindings, key](const Event &event) {
+            if (Known(key))
+                draft_[key] = event.value == "1" ? 1 : 0;
             bindings.Rebuild();
         });
     }

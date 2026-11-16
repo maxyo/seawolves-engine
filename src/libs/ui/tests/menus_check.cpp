@@ -349,7 +349,7 @@ static void Settings(const std::string &models)
     const Json pirates = columns[0]["rows"][0];
     Expect(pirates["id"] == "app-pirate_frequency" && pirates["label"] == "<settings.pirate_frequency>" && pirates["selected"] == 0 &&
                pirates["restart"] == false && pirates["disabled"] == false &&
-               pirates["options"] == Json::array({"<settings.pirates_rare>", "<settings.pirates_fewer>", "<settings.pirates_game>"}),
+               pirates["options"] == Json::array({"<settings.pirates_rare>", "<settings.pirates_sometimes>", "<settings.pirates_often>"}),
            "«Частота пиратов на карте» first, from the host, 20% («Редко») chosen, applied without a restart: " + pirates.dump());
     Expect(columns[0]["rows"].size() == 4 && columns[0]["rows"][3]["label"] == "Автозапись", "game toggles keep the game's labels");
 
@@ -366,7 +366,10 @@ static void Settings(const std::string &models)
     Expect(controls.size() == 2 && controls[0]["title"] == "<settings.camera>" && controls[1]["title"] == "<settings.screen_touch>",
            "controls page: the camera, the screen and touch");
     const Json screen = controls[1]["rows"];
-    Expect(screen.size() == 2 && screen[0]["id"] == "app-ui_scale" && screen[0]["selected"] == 0 && screen[0]["restart"] == false && screen[0]["disabled"] == false &&
+    Expect(screen.size() == 3 && screen[2]["id"] == "app-left_handed" && screen[2]["kind"] == "toggle" && screen[2]["on"] == false &&
+               screen[2]["label"] == "<settings.left_handed>",
+           "«Под левую руку» as a toggle: " + screen.dump());
+    Expect(screen[0]["id"] == "app-ui_scale" && screen[0]["selected"] == 0 && screen[0]["restart"] == false && screen[0]["disabled"] == false &&
                screen[0]["options"] == Json::array({"100%", "115%"}) && screen[1]["id"] == "app-hud_transparency" &&
                screen[1]["selected"] == 0 && screen[1]["options"] == Json::array({"<settings.transparency_none>", "35%", "60%"}),
            "«Размер интерфейса»: the sizes the host found the display fits (100 chosen) and «Прозрачность кнопок» none/35/60 %, applied at once: " + screen.dump());
@@ -385,6 +388,7 @@ static void Settings(const std::string &models)
                surface.commands[1] == prefix + "HMOUSE_SENSITIVITY_SLIDE\t-1\tset@12:80",
            "the one sensitivity sets both game sliders to the same position");
 
+    router.OnEvent({"app-left_handed", "change", "1"});
     router.OnEvent({"app-ui_scale", "change", "1"});
     router.OnEvent({"app-hud_transparency", "change", "2"});
     Expect(surface.props["sections"][0]["columns"][1]["rows"][0]["selected"] == 1 &&
@@ -438,8 +442,8 @@ static void Settings(const std::string &models)
     surface.commands.clear();
     router.OnEvent({"app-cache-clear", "click", ""});
     const Json cleared = surface.props["sections"][0]["columns"][1]["rows"][3];
-    Expect(surface.commands.size() == 1 && surface.commands[0] == "host app-cache-clear " && cleared["disabled"] == true &&
-               cleared["hint"] == "<settings.cache_pending>",
+    Expect(surface.commands.size() == 1 && surface.commands[0] == "host app-cache-clear " && cleared["disabled"] == false &&
+               cleared["display"] == "" && cleared["hint"] == "<settings.cache_pending>",
            "«Очистить» asks the host at once (it clears at the next start) and the row says so: " + Json(surface.commands).dump() + cleared.dump());
     surface.commands.clear();
     router.OnEvent({"app-cache-clear", "click", ""});
@@ -454,7 +458,7 @@ static void Settings(const std::string &models)
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
-                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"pirate_frequency\":100,\"texture_quality\":2,\"ui_scale\":115}" &&
+                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"left_handed\":1,\"pirate_frequency\":100,\"texture_quality\":2,\"ui_scale\":115}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the app options to the host and confirms the game's settings; the measured-preset flag "
            "fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");

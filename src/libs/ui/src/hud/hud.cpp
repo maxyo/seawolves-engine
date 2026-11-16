@@ -810,13 +810,19 @@ bool ParseElement(const Json &source, LayoutElement &out, const std::string &whe
     out.id = text("id");
     out.component = text("component");
     out.rcss = text("rcss");
+    out.rcss_mirrored = text("rcssMirrored");
     out.behavior = text("behavior");
     if (out.id.empty() || out.component.empty())
     {
         *error = where + ": an element needs 'id' and 'component'";
         return false;
     }
-    for (const char *key : {"props", "data"})
+    if (!out.rcss.empty() && out.rcss_mirrored.empty())
+    {
+        *error = where + "/" + out.id + ": a placed element needs 'rcssMirrored' (a pack built before «Под левую руку»)";
+        return false;
+    }
+    for (const char *key : {"props", "data", "propsMirrored"})
     {
         const auto found = source.find(key);
         if (found == source.end())
@@ -826,7 +832,8 @@ bool ParseElement(const Json &source, LayoutElement &out, const std::string &whe
             *error = where + "/" + out.id + ": '" + key + "' must be an object";
             return false;
         }
-        (std::string(key) == "props" ? out.props : out.data) = *found;
+        const std::string name(key);
+        (name == "props" ? out.props : name == "data" ? out.data : out.props_mirrored) = *found;
     }
     const auto children = source.find("children");
     if (children != source.end())

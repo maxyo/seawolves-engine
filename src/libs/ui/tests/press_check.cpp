@@ -103,6 +103,10 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
         "tag": "c-head", "behaviors": ["press", "columns", "reveal"], "constants": {"pressRoot": false},
         "props": {"show": {"type": "bool", "default": true}},
         "template": "<div t-if=\"show\" data-action=\"sort\" data-value=\"2\" data-tip=\"Buy price\" style=\"width: 60dp; height: 40dp;\">icon</div><div data-action=\"\" data-tip=\"Our stock\" style=\"width: 60dp; height: 40dp;\">icon</div>"})"));
+    // A hold-to-confirm part (C-Setting's «Очистить»): a hold sends, an early release shakes it.
+    components["components"].push_back(Json::parse(R"({
+        "tag": "c-confirm", "behaviors": ["press"], "constants": {"pressRoot": false},
+        "template": "<div id=\"confirm-part\" data-action=\"clear\" data-hold=\"\" style=\"display: block; width: 100dp; height: 48dp;\"></div>"})"));
     // Column sizing must preserve the design minimum even when the headers are tiny icons.
     components["components"].push_back(Json::parse(R"({
         "tag": "c-cols", "behaviors": ["press", "columns", "reveal", "tick-probe"], "constants": {"colMin": 56},
@@ -123,6 +127,7 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
                              "<c-fit id=\"fit\" style=\"top: 200dp;\" hold=\"1\" least=\"11\" title=\"Mannschaft\"/>"
                              "<c-fit id=\"cut\" style=\"top: 300dp;\" hold=\"1\" title=\"Mannschaft\"/>"
                              "<c-pz id=\"pz\" style=\"display: block; position: absolute; left: 400dp; top: 200dp; width: 400dp; height: 200dp;\"/>"
+                             "<c-confirm id=\"confirm\" style=\"display: block; position: absolute; left: 600dp; top: 0; width: 100dp; height: 48dp;\"/>"
                              "</body></rml>");
     Write(pack / "columns-only.rml", "<rml><head><style>body { font-family: LatoLatin; width: 100%; height: 100%; }</style></head>"
           "<body><div style=\"display: flex; width: 100%;\"><c-cols id=\"columns\" style=\"display: block; flex: 1 1 0; min-width: 0; height: 100dp;\"/>"
@@ -310,6 +315,23 @@ int main(int argc, char **argv)
         host->Touch(TouchPhase::Up, 1, x, y);
         frames(0.1);
     };
+    {
+        Rml::Element *part = nullptr;
+        Rml::Context *context = Rml::GetContext("storm-ui");
+        for (int i = 0; context && i < context->GetNumDocuments(); ++i)
+            if (Rml::Element *found = context->GetDocument(i)->GetElementById("confirm-part"))
+                part = found;
+        clicks.clear();
+        host->Touch(TouchPhase::Down, 1, 640, 20);
+        frames(0.2);
+        host->Touch(TouchPhase::Up, 1, 640, 20);
+        frames(0.05);
+        Expect(part && clicks.empty() && part->IsClassSet("shake"), "a hold released early sends nothing and shakes its part");
+        frames(1.0);
+        Expect(part && !part->IsClassSet("shake"), "the shake ends");
+        hold(20, 640);
+        Expect(clicks.size() == 1 && clicks[0] == "confirm clear", "a full hold sends: " + (clicks.empty() ? std::string() : clicks[0]));
+    }
     {
         Rml::Element *table = nullptr;
         Rml::Context *context = Rml::GetContext("storm-ui");

@@ -9,73 +9,97 @@
      "rcss": "position: absolute; left: 0dp; bottom: 0dp; width: 42%; height: 224dp; max-height: 58%;",
      "props": {
       "floating": true
-     }
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; bottom: 0dp; width: 42%; height: 224dp; max-height: 58%;",
+     "propsMirrored": {}
     },
     {
      "id": "party",
      "component": "c-party",
      "rcss": "position: absolute; left: 12dp; top: 10dp; width: 240dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 12dp; top: 10dp; width: 240dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "effects",
      "component": "c-box",
      "rcss": "position: absolute; left: 12dp; top: 68dp; width: 120dp; height: 28dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 12dp; top: 68dp; width: 120dp; height: 28dp;",
+     "propsMirrored": {}
     },
     {
      "id": "log",
      "component": "c-box",
      "rcss": "position: absolute; left: 150dp; bottom: 150dp; width: 100dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 150dp; bottom: 150dp; width: 100dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "location",
      "component": "c-box",
      "rcss": "position: absolute; right: 10dp; top: 62dp; width: 200dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 62dp; width: 200dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "actions",
      "component": "c-button",
      "rcss": "position: absolute; right: 130dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 130dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "hero",
      "component": "c-button",
      "rcss": "position: absolute; right: 70dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 70dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "pause",
      "component": "c-button",
      "rcss": "position: absolute; right: 10dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "context",
      "component": "c-button",
      "rcss": "position: absolute; right: 20dp; bottom: 80dp; width: 64dp; height: 64dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 20dp; bottom: 80dp; width: 64dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "travel",
      "component": "c-button",
      "rcss": "position: absolute; left: 250dp; bottom: 10dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 250dp; bottom: 10dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "potion",
      "component": "c-button",
      "rcss": "position: absolute; right: 85dp; bottom: 10dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 85dp; bottom: 10dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "weapon",
      "component": "c-button",
      "rcss": "position: absolute; right: 20dp; bottom: 10dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 20dp; bottom: 10dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     }
    ]
   },
@@ -87,25 +111,33 @@
      "rcss": "position: absolute; left: 0dp; bottom: 0dp; width: 42%; height: 224dp; max-height: 58%;",
      "props": {
       "floating": true
-     }
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; bottom: 0dp; width: 42%; height: 224dp; max-height: 58%;",
+     "propsMirrored": {}
     },
     {
      "id": "party",
      "component": "c-party",
      "rcss": "position: absolute; left: 12dp; top: 10dp; width: 240dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 12dp; top: 10dp; width: 240dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "effects",
      "component": "c-box",
      "rcss": "position: absolute; left: 12dp; top: 68dp; width: 120dp; height: 28dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 12dp; top: 68dp; width: 120dp; height: 28dp;",
+     "propsMirrored": {}
     },
     {
      "id": "log",
      "component": "c-box",
      "rcss": "position: absolute; left: 300dp; top: 10dp; width: 200dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 300dp; top: 10dp; width: 200dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "opponent",
@@ -119,25 +151,33 @@
        "rcss": "",
        "props": {}
       }
-     ]
+     ],
+     "rcssMirrored": "position: absolute; right: 340dp; top: 8dp; width: 230dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "location",
      "component": "c-box",
      "rcss": "position: absolute; right: 10dp; top: 62dp; width: 200dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 62dp; width: 200dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "hero",
      "component": "c-button",
      "rcss": "position: absolute; right: 70dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 70dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "pause",
      "component": "c-button",
      "rcss": "position: absolute; right: 10dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "strike",
@@ -150,44 +190,58 @@
       "swipe-bounds": "-135,-67.5,-22.5,45,135,225",
       "swipe-centre": "fast",
       "swipe-dead": 20
-     }
+     },
+     "rcssMirrored": "position: absolute; left: 86dp; bottom: 76dp; width: 84dp; height: 84dp;",
+     "propsMirrored": {}
     },
     {
      "id": "block",
      "component": "c-button",
      "rcss": "position: absolute; left: 78dp; bottom: 236dp; width: 64dp; height: 64dp;",
      "props": {},
-     "behavior": "hold"
+     "behavior": "hold",
+     "rcssMirrored": "position: absolute; right: 78dp; bottom: 236dp; width: 64dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "shot",
      "component": "c-button",
      "rcss": "position: absolute; right: 16dp; bottom: 84dp; width: 56dp; height: 56dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 16dp; bottom: 84dp; width: 56dp; height: 56dp;",
+     "propsMirrored": {}
     },
     {
      "id": "actions",
      "component": "c-button",
      "rcss": "position: absolute; right: 130dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 130dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "potion",
      "component": "c-button",
      "rcss": "position: absolute; right: 260dp; bottom: 10dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 260dp; bottom: 10dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "weapon",
      "component": "c-button",
      "rcss": "position: absolute; right: 200dp; bottom: 10dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 200dp; bottom: 10dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "moves",
      "component": "c-box",
      "rcss": "position: absolute; right: 14dp; bottom: 4dp; width: 228dp; height: 228dp; pointer-events: none;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 14dp; bottom: 4dp; width: 228dp; height: 228dp; pointer-events: none;",
+     "propsMirrored": {}
     }
    ]
   },
@@ -202,37 +256,49 @@
       "floating": true,
       "restLeft": 140,
       "restBottom": 99
-     }
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; left: 328dp; bottom: 0dp; height: 224dp; max-height: 60%;",
+     "propsMirrored": {}
     },
     {
      "id": "fleet",
      "component": "c-fleet",
      "rcss": "position: absolute; left: 10dp; top: 10dp; width: 56dp; height: 240dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 10dp; top: 10dp; width: 56dp; height: 240dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ship",
      "component": "c-button",
      "rcss": "position: absolute; right: 310dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 310dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "pause",
      "component": "c-button",
      "rcss": "position: absolute; right: 250dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 250dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "orders",
      "component": "c-button",
      "rcss": "position: absolute; right: 190dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 190dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "minimap",
      "component": "c-minimap",
      "rcss": "position: absolute; right: 10dp; top: 10dp; width: 172dp; height: 150dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 10dp; width: 172dp; height: 150dp;",
+     "propsMirrored": {}
     },
     {
      "id": "sail",
@@ -240,80 +306,106 @@
      "rcss": "position: absolute; right: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
      "props": {
       "mode": "steps"
-     }
+     },
+     "rcssMirrored": "position: absolute; left: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "propsMirrored": {}
     },
     {
      "id": "helm",
      "component": "c-helm",
      "rcss": "position: absolute; left: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "log",
      "component": "c-box",
      "rcss": "position: absolute; left: 300dp; top: 10dp; width: 100dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 300dp; top: 10dp; width: 100dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "context",
      "component": "c-button",
      "rcss": "position: absolute; right: 96dp; bottom: 110dp; width: 64dp; height: 64dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 96dp; bottom: 110dp; width: 64dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "map",
      "component": "c-button",
      "rcss": "position: absolute; right: 168dp; bottom: 126dp; width: 56dp; height: 56dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 168dp; bottom: 126dp; width: 56dp; height: 56dp;",
+     "propsMirrored": {}
     },
     {
      "id": "camera",
      "component": "c-button",
      "rcss": "position: absolute; right: 216dp; bottom: 16dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 216dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "spyglass",
      "component": "c-button",
      "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "props": {},
-     "behavior": "hold"
+     "behavior": "hold",
+     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo",
      "component": "c-button",
      "rcss": "position: absolute; right: 100dp; bottom: 16dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 100dp; bottom: 16dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-1",
      "component": "c-button",
      "rcss": "position: absolute; right: 207dp; bottom: 51dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 207dp; bottom: 51dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-2",
      "component": "c-button",
      "rcss": "position: absolute; right: 159dp; bottom: 111dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 159dp; bottom: 111dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-3",
      "component": "c-button",
      "rcss": "position: absolute; right: 84dp; bottom: 127dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 84dp; bottom: 127dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "fire",
      "component": "c-button",
      "rcss": "position: absolute; right: 16dp; bottom: 16dp; width: 76dp; height: 76dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 16dp; bottom: 16dp; width: 76dp; height: 76dp;",
+     "propsMirrored": {}
     },
     {
      "id": "time",
      "component": "c-button",
      "rcss": "position: absolute; right: 366dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 366dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     }
    ]
   },
@@ -328,37 +420,49 @@
       "floating": true,
       "restLeft": 140,
       "restBottom": 99
-     }
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; left: 328dp; bottom: 0dp; height: 224dp; max-height: 60%;",
+     "propsMirrored": {}
     },
     {
      "id": "fleet",
      "component": "c-fleet",
      "rcss": "position: absolute; left: 10dp; top: 10dp; width: 56dp; height: 240dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 10dp; top: 10dp; width: 56dp; height: 240dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ship",
      "component": "c-button",
      "rcss": "position: absolute; right: 310dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 310dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "pause",
      "component": "c-button",
      "rcss": "position: absolute; right: 250dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 250dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "orders",
      "component": "c-button",
      "rcss": "position: absolute; right: 190dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 190dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "minimap",
      "component": "c-minimap",
      "rcss": "position: absolute; right: 10dp; top: 10dp; width: 172dp; height: 150dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 10dp; top: 10dp; width: 172dp; height: 150dp;",
+     "propsMirrored": {}
     },
     {
      "id": "sail",
@@ -366,92 +470,122 @@
      "rcss": "position: absolute; right: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
      "props": {
       "mode": "steps"
-     }
+     },
+     "rcssMirrored": "position: absolute; left: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "propsMirrored": {}
     },
     {
      "id": "helm",
      "component": "c-helm",
      "rcss": "position: absolute; left: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "log",
      "component": "c-box",
      "rcss": "position: absolute; left: 300dp; top: 10dp; width: 100dp; height: 30dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 300dp; top: 10dp; width: 100dp; height: 30dp;",
+     "propsMirrored": {}
     },
     {
      "id": "context",
      "component": "c-button",
      "rcss": "position: absolute; right: 96dp; bottom: 110dp; width: 64dp; height: 64dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 96dp; bottom: 110dp; width: 64dp; height: 64dp;",
+     "propsMirrored": {}
     },
     {
      "id": "map",
      "component": "c-button",
      "rcss": "position: absolute; right: 168dp; bottom: 126dp; width: 56dp; height: 56dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 168dp; bottom: 126dp; width: 56dp; height: 56dp;",
+     "propsMirrored": {}
     },
     {
      "id": "camera",
      "component": "c-button",
      "rcss": "position: absolute; right: 216dp; bottom: 16dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 216dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "spyglass",
      "component": "c-button",
      "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "props": {},
-     "behavior": "hold"
+     "behavior": "hold",
+     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo",
      "component": "c-button",
      "rcss": "position: absolute; right: 100dp; bottom: 16dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 100dp; bottom: 16dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-1",
      "component": "c-button",
      "rcss": "position: absolute; right: 207dp; bottom: 51dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 207dp; bottom: 51dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-2",
      "component": "c-button",
      "rcss": "position: absolute; right: 159dp; bottom: 111dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 159dp; bottom: 111dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "ammo-3",
      "component": "c-button",
      "rcss": "position: absolute; right: 84dp; bottom: 127dp; width: 52dp; height: 52dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 84dp; bottom: 127dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     },
     {
      "id": "fire",
      "component": "c-button",
      "rcss": "position: absolute; right: 16dp; bottom: 16dp; width: 76dp; height: 76dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 16dp; bottom: 16dp; width: 76dp; height: 76dp;",
+     "propsMirrored": {}
     },
     {
      "id": "time",
      "component": "c-button",
      "rcss": "position: absolute; right: 366dp; top: 10dp; width: 48dp; height: 48dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 366dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     },
     {
      "id": "effect-0",
      "component": "c-button",
      "rcss": "position: absolute; right: 220dp; bottom: 78dp; width: 44dp; height: 44dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 220dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
     },
     {
      "id": "effect-1",
      "component": "c-button",
      "rcss": "position: absolute; right: 168dp; bottom: 78dp; width: 44dp; height: 44dp;",
-     "props": {}
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 168dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
     }
    ]
   },
@@ -463,7 +597,9 @@
      "rcss": "position: absolute; right: 12dp; top: 8dp; width: 48dp; height: 48dp;",
      "props": {
       "icon": "menu"
-     }
+     },
+     "rcssMirrored": "position: absolute; left: 12dp; top: 8dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
     }
    ]
   }

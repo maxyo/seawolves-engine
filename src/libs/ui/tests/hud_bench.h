@@ -125,6 +125,11 @@ struct FakeMount final : Mount
     {
         return false;
     }
+    bool Mirrored() const override
+    {
+        return mirrored;
+    }
+    bool mirrored = false;
     bool ScreenMounted() const override
     {
         return screen;

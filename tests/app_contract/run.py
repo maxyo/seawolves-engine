@@ -113,7 +113,7 @@ for host, written in manifest['state_channels'].items():
 # The settings screen.
 settings_screen = text('src/libs/ui/src/screens/menu_settings.cpp')
 settings = manifest['settings']
-same('application setting (menu_settings.cpp Segment)', re.findall(r'\bSegment\(bindings, \w+, "(\w+)"', settings_screen),
+same('application setting (menu_settings.cpp Segment, Toggle)', re.findall(r'\b(?:Segment|Toggle)\(bindings, \w+, "(\w+)"', settings_screen),
      settings['keys'])
 same('host fact (menu_settings.cpp, erased before «Готово» sends)', re.findall(r'settings\.erase\("(\w+)"\)', settings_screen),
      settings['host_facts'])

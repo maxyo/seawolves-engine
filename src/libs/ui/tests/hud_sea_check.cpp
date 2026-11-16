@@ -335,6 +335,23 @@ static void CheckSailing()
     top_row(915, 74);
     Expect(!mount.shown.elements["log"].contains("offset") && !mount.shown.elements["log"].contains("safeRight"),
            "915 dp: the band stays pinned to the top edge: " + mount.shown.elements["log"].dump());
+    // «Под левую руку»: the same boxes mirrored (the fleet on the right, the top row and the minimap on the left); the
+    // band is worked out the same way and its sides swap.
+    mount.mirrored = true;
+    top_row(640, 74); // the right-handed boxes, mirrored below
+    for (const char *key : {"fleet .item.ship:first-child", "fleet .item.ship:last-child", "time ", "ship ", "pause ", "orders ", "minimap "})
+    {
+        Placement &box = mount.boxes[key];
+        box.x = 640 - box.x - box.width;
+    }
+    bench.Frame();
+    bench.Frame();
+    {
+        const Json &log = mount.shown.elements["log"];
+        Expect(log["offset"] == 66 && log["safeLeft"] == 190 && log["safeRight"] == 138,
+               "left-handed 640 dp: the band drops between the minimap (now left) and the fleet (now right): " + log.dump());
+    }
+    mount.mirrored = false;
 
     // what is not drawn any more gives the engine's indicators back
     mount.commands.clear();
