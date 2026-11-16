@@ -258,26 +258,78 @@ std::string NoBreak(const std::string &text)
     return out;
 }
 
-// Second line of a found game copy: version · languages · size · patch · place.
-std::string RootDetail(const Bindings &bindings, const Json &root)
+// The version number of a copy's version line («ver. 1.7.3 (26.11.21) x64» → «1.7.3»): the
+// first run of digits and dots with a dot in it; the line itself when it has none.
+std::string VersionNumber(const std::string &line)
+{
+    for (size_t at = 0; at < line.size(); ++at)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(line[at])))
+            continue;
+        size_t end = at;
+        while (end < line.size() && (std::isdigit(static_cast<unsigned char>(line[end])) || line[end] == '.'))
+            ++end;
+        while (end > at && line[end - 1] == '.')
+            --end;
+        if (line.substr(at, end - at).find('.') != std::string::npos)
+            return line.substr(at, end - at);
+        at = end;
+    }
+    const size_t first = line.find_first_not_of(' '), last = line.find_last_not_of(' ');
+    return first == std::string::npos ? std::string() : line.substr(first, last - first + 1);
+}
+
+// A copy's name as the player reads it: the game's title with its version number once
+// («Корсары: Каждому свое 1.7.3»), trimmed.
+std::string RootName(const Bindings &bindings, const Json &root)
+{
+    std::string name = Str(root, "name");
+    const size_t first = name.find_first_not_of(' '), last = name.find_last_not_of(' ');
+    name = first == std::string::npos ? std::string() : name.substr(first, last - first + 1);
+    if (name.empty())
+        name = bindings.Text("launcher.root_unnamed");
+    const std::string version = VersionNumber(Str(root, "version"));
+    if (!version.empty() && name.find(version) == std::string::npos)
+        name += " " + version;
+    return name;
+}
+
+// The game's language folders by name (RESOURCE/INI/texts/<name>, lower case).
+std::string LanguageName(Bindings &bindings, const std::string &folder)
+{
+    static const char *const kLanguages[] = {
+        StringKey("launcher.language.russian"), StringKey("launcher.language.english"), StringKey("launcher.language.german"),
+        StringKey("launcher.language.spanish"), StringKey("launcher.language.french"),  StringKey("launcher.language.italian"),
+        StringKey("launcher.language.polish"),  StringKey("launcher.language.czech"),   StringKey("launcher.language.ukrainian"),
+        StringKey("launcher.language.portuguese"), StringKey("launcher.language.chinese")};
+    const std::string key = "launcher.language." + folder;
+    if (std::find_if(std::begin(kLanguages), std::end(kLanguages), [&key](const char *k) { return key == k; }) != std::end(kLanguages))
+        return bindings.Text(key);
+    bindings.Error("launcher: no name for the game language '" + folder + "'");
+    return folder;
+}
+
+// Second line of a found game copy: languages (the game's own first) · size · patched · place.
+std::string RootDetail(Bindings &bindings, const Json &root)
 {
     std::vector<std::string> parts;
-    if (!Str(root, "version").empty())
-        parts.push_back(Str(root, "version"));
-    const Json &languages = List(root, "languages");
+    std::vector<std::string> languages;
+    for (const Json &language : List(root, "languages"))
+        if (language.is_string())
+        {
+            const bool own = language.get<std::string>() == Str(root, "defaultLanguage");
+            languages.insert(own ? languages.begin() : languages.end(), LanguageName(bindings, language.get<std::string>()));
+        }
     if (!languages.empty())
     {
         std::string list;
-        for (const Json &language : languages)
-            if (language.is_string())
-                list += (list.empty() ? "" : ", ") + language.get<std::string>() +
-                        (language.get<std::string>() == Str(root, "defaultLanguage") ? "*" : "");
-        parts.push_back(Fill(bindings.Text("launcher.root_languages"), {list}));
+        for (const std::string &language : languages)
+            list += (list.empty() ? "" : ", ") + language;
+        parts.push_back(list);
     }
-    parts.push_back(Fill(bindings.Text("launcher.root_size"),
-                         {Size(bindings, Num(root, "bytes")), std::to_string(static_cast<long long>(Num(root, "files")))}));
+    parts.push_back(Size(bindings, Num(root, "bytes")));
     if (!List(root, "patches").empty())
-        parts.push_back(Fill(bindings.Text("launcher.root_patched"), {Join(List(root, "patches"), ", ")}));
+        parts.push_back(bindings.Text("launcher.root_patched"));
     if (!Str(root, "place").empty())
         parts.push_back(Fill(bindings.Text("launcher.root_place"), {Str(root, "place")}));
     std::string text;
@@ -440,8 +492,8 @@ class LauncherScreen final : public Screen
     }
 
   private:
-    // Several game copies found (V2-Launcher-Folder as a picker of copies): the ready ones
-    // fit, a copy that lacks volumes says which; «Использовать» installs the chosen one.
+    // Several game copies found (V2-Launcher-Folder as a picker of copies): a copy that lacks
+    // volumes says which and cannot be chosen; «Установить» installs the chosen one.
     Json Choose(Json &view, const Json &import, Bindings &bindings)
     {
         view["view"] = "choose";
@@ -460,24 +512,19 @@ class LauncherScreen final : public Screen
         }
         Json rows = Json::array();
         std::vector<std::string> ids;
-        std::string chosen_name;
         for (const Json &root : choices)
         {
             const bool ready = List(root, "missing").empty();
             const std::string id = Str(root, "id");
-            const std::string name = Str(root, "name").empty() ? bindings.Text("launcher.root_unnamed") : Str(root, "name");
-            if (id == chosen_)
-                chosen_name = name;
             Json missing = ready ? Json("") : Json{{"text", Fill(bindings.Text("launcher.root_missing"), {Join(List(root, "missing"), ", ")})}, {"tone", "dim"}};
-            rows.push_back(Json{{"cells", Json::array({Json{{"text", name}, {"icon", "load"}, {"sub", RootDetail(bindings, root)}}, missing})},
-                                {"fit", ready},
+            rows.push_back(Json{{"cells", Json::array({Json{{"text", RootName(bindings, root)}, {"icon", "load"}, {"sub", RootDetail(bindings, root)}}, missing})},
                                 {"selected", id == chosen_},
                                 {"disabled", !ready}});
             ids.push_back(id);
         }
         view["choose"] = Json{{"columns", Json::array({Json{{"label", ""}, {"w", "1"}}, Json{{"label", ""}, {"w", "200px"}, {"align", "right"}}})},
                               {"rows", rows},
-                              {"primary", Json{{"label", Fill(bindings.Text("launcher.use"), {chosen_name})}, {"disabled", chosen_.empty()}}}};
+                              {"primary", Json{{"label", bindings.Text("launcher.use")}, {"disabled", chosen_.empty()}}}};
         bindings.On("roots", "row", [this, &bindings, ids](const Event &event) {
             const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
             if (index < ids.size())
