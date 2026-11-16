@@ -3,6 +3,7 @@
 #include "shim/device.hpp"
 #include "shim/perf.hpp"
 #include "storm/render/frame_owner.hpp"
+#include "storm/render/pipelines.hpp"
 
 #include <bx/math.h>
 
@@ -871,7 +872,25 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
     bgfx::setViewClear(kLampDynamicView, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
     bgfx::setViewTransform(kLampDynamicView, nullptr, nullptr);
     volumes_ = &volumes;
-    for (int s = 0; s < slots_; ++s)
+    // Under the loading cover (render::HideSceneBeauty: the game picture is drawn for its resources, not shown) no
+    // receiver that anybody sees reads the dynamic faces: they are offered the casters in the first such frame (the
+    // caster programs' pipelines are found then) and not again until the picture shows. Redrawn every covered frame,
+    // a harbour's ships and people took ~1950 draws and 10.5 ms of an Adreno 830's frame through the reveal's wait.
+    const shim::TexStore *picture = device.held_color ? device.held_color.get()
+                                    : device.back_color ? device.back_color->store.get() : nullptr;
+    const bool covered = picture && render::HideSceneBeauty(shim::Context::instance().Surface().generation, picture->serial);
+    const bool skip_dynamic = covered && covered_offered_;
+    if (covered && !covered_offered_)
+        covered_frames_ = 0;
+    covered_offered_ = covered;
+    if (skip_dynamic)
+        ++covered_frames_;
+    else if (!covered && covered_frames_ > 0)
+    {
+        shim::logf("effects: lamps: the dynamic faces were left undrawn in %u frames under the loading cover", covered_frames_);
+        covered_frames_ = 0;
+    }
+    for (int s = 0; s < slots_ && !skip_dynamic; ++s)
     {
         Slot &slot = slot_[s];
         if (slot.lamp == -1 || !slot.ready)

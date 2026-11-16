@@ -203,6 +203,10 @@ class LampShadows
     fx::LampDepth depth_ = fx::LampDepth::None;
     int per_pixel_ = fx::kLampGridCapacity;
     int filtered_ = fx::kLampGridCapacity;
+    // prepare(): the dynamic faces were offered their casters in this run of frames under the loading cover, and in
+    // how many covered frames since they were not.
+    bool covered_offered_ = false;
+    uint32_t covered_frames_ = 0;
     float level_ = fx::kLampNegligible; // in the receivers' gamma units over the strongest gain
     int face_size_ = 0, dynamic_face_size_ = 0;
     int columns_ = 0, rows_ = 0;
