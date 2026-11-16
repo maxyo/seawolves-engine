@@ -204,6 +204,15 @@ class EngineUi
 
     void Loading(bool active)
     {
+        // A load starts (the loading picture comes next, then the game thread blocks in it): no menu follows the one
+        // that just closed, so it goes now instead of after its grace, which the blocked loop would only see after
+        // the load's first frames (the title over the loading picture after «Продолжить»).
+        if (active && close_at_)
+        {
+            __android_log_print(ANDROID_LOG_INFO, kTag, "interface closed at the start of a load (not after its %u ms grace)",
+                                kCloseGraceMs);
+            CloseNow();
+        }
         Set(presentation_.loading, active);
     }
     void Cinematic(bool active)
@@ -217,6 +226,18 @@ class EngineUi
     void LocationLoad(bool blocks)
     {
         Set(presentation_.location_load, blocks);
+    }
+
+    // The closed screen's grace is over (Tick) or a load starts (Loading): the interface goes.
+    void CloseNow()
+    {
+        close_at_ = 0;
+        interface_.reset();
+        if (host_)
+            host_->CloseInterface();
+        PublishInterfaceActive();
+        presentation_.screen.clear(); // after the same grace: a menu that follows at once keeps it
+        PublishPresentation();
     }
 
     void AlertString(const std::string &key)
@@ -233,15 +254,7 @@ class EngineUi
         if (!host_ && !failed_)
             Start();
         if (close_at_ && static_cast<int32_t>(SDL_GetTicks() - close_at_) >= 0)
-        {
-            close_at_ = 0;
-            interface_.reset();
-            if (host_)
-                host_->CloseInterface();
-            PublishInterfaceActive();
-            presentation_.screen.clear(); // after the same grace: a menu that follows at once keeps it
-            PublishPresentation();
-        }
+            CloseNow();
         std::vector<Step> work;
         std::optional<bool> live;
         {
