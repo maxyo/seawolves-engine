@@ -914,7 +914,9 @@ NoticeName ParseNotice(std::string file)
         {"storm", "Storm Engine", ""},           {"MarckScript", "Marck Script", ""}, {"GreatVibes", "Great Vibes", ""},
         {"NotoSerif", "Noto Serif", ""},         {"nlohmann-json", "nlohmann/json", ""}, {"threejs", "three.js", ""},
         {"FidelityFX-FSR", "AMD FidelityFX FSR", ""}, {"onnxruntime", "ONNX Runtime", ""}, {"NDK-toolchain", "Android NDK", ""},
-        {"MJP-Shadows", "MJP Shadows", ""},      {"boost", "Boost", ""},           {"xz", "XZ Utils", ""},
+        {"MJP-Shadows", "MJP Shadows", ""},      {"boost", "Boost", "BSL-1.0"},    {"xz", "XZ Utils", "0BSD"},
+        {"zlib", "zlib", "zlib"},                {"libarchive", "libarchive", "BSD-2-Clause"}, {"innoextract", "innoextract", "zlib"},
+        {"bzip2", "bzip2", "bzip2"},             {"miniaudio", "miniaudio", "MIT-0"}, {"stb_vorbis", "stb_vorbis", "MIT"},
         {"SDL", "SDL", "zlib"},                  {"fmt", "fmt", "MIT"},          {"spdlog", "spdlog", "MIT"},
         {"mimalloc", "mimalloc", "MIT"},
     };

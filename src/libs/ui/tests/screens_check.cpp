@@ -3220,7 +3220,7 @@ static void Launcher()
         for (const Json &row : surface.props["notices"])
             listed += row["title"].get<std::string>() + "|" + row["value"].get<std::string>() + ";";
         ExpectEqual(listed,
-                    "Storm Engine|GPL-3.0;<about.notice_script_patches>|;bgfx|BSD-2-Clause;Boost 1.90.0|;FFmpeg|LGPL-2.1;"
+                    "Storm Engine|GPL-3.0;<about.notice_script_patches>|;bgfx|BSD-2-Clause;Boost 1.90.0|BSL-1.0;FFmpeg|LGPL-2.1;"
                     "FFmpeg|<about.notice_kind.build>;fmt|MIT;Great Vibes|OFL;RmlUi|MIT;",
                     "notices by their names as people know them, licence or what the file is; the licence before the files beside it");
     }
