@@ -33,6 +33,8 @@ class S_EVENTTAB
     uint32_t Buffer_size[HASHTABLE_SIZE];
     uint32_t Event_num[HASHTABLE_SIZE];
     std::vector<EVENTINFO> pTable[HASHTABLE_SIZE];
+    // A handler was added as new or marked deleted since the last ProcessFrame: only then has a frame anything to do.
+    bool pendingStatuses_ = false;
     // bool bKeepName;
   public:
     S_EVENTTAB();

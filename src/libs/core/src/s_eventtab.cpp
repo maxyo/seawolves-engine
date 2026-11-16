@@ -1,6 +1,7 @@
 #include "s_eventtab.h"
 
 #include "string_compare.hpp"
+#include "vm_verify.hpp"
 #define HASHT_INDEX(x) (uint8_t)(x >> 24)
 #define HASHT_CODE(x) (x & 0xffffff)
 #define HASH2INDEX(x) (uint8_t)(x & 0x2f)
@@ -28,7 +29,10 @@ void S_EVENTTAB::Clear()
             for (uint32_t m = 0; m < pTable[i][n].elements; m++)
             {
                 if (!pTable[i][n].pFuncInfo[m].bStatic)
+                {
                     pTable[i][n].pFuncInfo[m].status = FSTATUS_DELETED;
+                    pendingStatuses_ = true;
+                }
             }
 
             // if(pTable[n].pFuncInfo) delete pTable[n].pFuncInfo;
@@ -103,7 +107,10 @@ uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code,
             pTable[ti][n].pFuncInfo[i].func_code = func_code;
             pTable[ti][n].pFuncInfo[i].segment_id = func_segment_id;
             if (flag)
+            {
                 pTable[ti][n].pFuncInfo[i].status = FSTATUS_NEW;
+                pendingStatuses_ = true;
+            }
             else
                 pTable[ti][n].pFuncInfo[i].status = FSTATUS_NORMAL;
             pTable[ti][n].pFuncInfo[i].bStatic = bStatic;
@@ -127,7 +134,10 @@ uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code,
     pTable[ti][Event_num[ti]].pFuncInfo[0].func_code = func_code;
     pTable[ti][Event_num[ti]].pFuncInfo[0].segment_id = func_segment_id;
     if (flag)
+    {
         pTable[ti][Event_num[ti]].pFuncInfo[0].status = FSTATUS_NEW;
+        pendingStatuses_ = true;
+    }
     else
         pTable[ti][Event_num[ti]].pFuncInfo[0].status = FSTATUS_NORMAL;
     pTable[ti][Event_num[ti]].pFuncInfo[0].bStatic = bStatic;
@@ -203,6 +213,7 @@ void S_EVENTTAB::SetStatus(const char *event_name, uint32_t func_code, uint32_t 
                     if (pTable[ti][n].pFuncInfo[i].func_code == func_code)
                     {
                         pTable[ti][n].pFuncInfo[i].status = status;
+                        pendingStatuses_ = true;
                         return;
                     }
                 }
@@ -261,8 +272,27 @@ uint32_t S_EVENTTAB::FindEvent(const char *event_name)
     return INVALID_EVENT_CODE;
 }
 
+// New handlers become normal, deleted ones are removed. A frame in which no status was set finds nothing to change
+// (a static handler marked deleted stays so: it is never removed), and most frames are such.
 void S_EVENTTAB::ProcessFrame()
 {
+    if (!pendingStatuses_)
+    {
+#ifdef STORM_VM_VERIFY
+        storm::vm_verify::Count(storm::vm_verify::Check::EventStatuses);
+        for (uint32_t ti = 0; ti < HASHTABLE_SIZE; ti++)
+            for (uint32_t n = 0; n < Event_num[ti]; n++)
+                for (uint32_t i = 0; i < pTable[ti][n].elements; i++)
+                {
+                    const EVENT_FUNC_INFO &handler = pTable[ti][n].pFuncInfo[i];
+                    if (handler.status == FSTATUS_NEW || (handler.status == FSTATUS_DELETED && !handler.bStatic))
+                        storm::vm_verify::Mismatch("event '%s': handler %u has status %u in a frame with nothing pending",
+                                                   pTable[ti][n].name, i, handler.status);
+                }
+#endif
+        return;
+    }
+    pendingStatuses_ = false;
     for (uint32_t ti = 0; ti < HASHTABLE_SIZE; ti++)
         for (uint32_t n = 0; n < Event_num[ti]; n++)
         {

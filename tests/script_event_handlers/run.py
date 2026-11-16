@@ -22,6 +22,7 @@ with tempfile.TemporaryDirectory(prefix="script-event-handlers-") as temp:
         (temp / name).write_text((core / name).read_text())
     binary = temp / "check"
     subprocess.run([os.environ.get("CXX", "c++"), "-std=c++20", "-fsanitize=address,undefined", "-I" + str(temp),
-                    "-I" + str(root / "src/libs/util/include"), str(here / "check.cpp"),
+                    "-I" + str(root / "src/libs/util/include"), "-I" + str(root / "src/libs/core/include"),
+                    str(here / "check.cpp"),
                     str(temp / "s_eventtab.cpp"), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

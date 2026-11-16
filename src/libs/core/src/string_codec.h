@@ -172,12 +172,31 @@ class STRING_CODEC : public VSTRING_CODEC
         uint32_t code; // kInvalidCode: free
     };
 
+    // Equal for names that differ only in the case of ASCII letters: every byte gets the case bit set (which also
+    // merges a few punctuation pairs; the comparison of the names tells those apart). Eight bytes a step.
     static uint32_t FoldedHash(std::string_view name) noexcept
     {
-        uint32_t hash = 0x811c9dc5u; // FNV-1a
-        for (const char c : name)
-            hash = (hash ^ storm::FoldCase(c)) * 0x01000193u;
-        return hash;
+        constexpr uint64_t kCaseBits = 0x2020202020202020ull;
+        constexpr uint64_t kMultiplier = 0x9fb21c651e98df25ull;
+        uint64_t hash = 0x9e3779b97f4a7c15ull ^ name.size();
+        const char *at = name.data();
+        size_t left = name.size();
+        for (; left >= 8; at += 8, left -= 8)
+        {
+            uint64_t word;
+            memcpy(&word, at, 8);
+            hash = (hash ^ (word | kCaseBits)) * kMultiplier;
+            hash ^= hash >> 32;
+        }
+        if (left != 0)
+        {
+            uint64_t word = 0;
+            for (size_t n = 0; n < left; n++)
+                word |= static_cast<uint64_t>(static_cast<uint8_t>(at[n])) << (8 * n);
+            hash = (hash ^ (word | kCaseBits)) * kMultiplier;
+            hash ^= hash >> 32;
+        }
+        return static_cast<uint32_t>(hash ^ (hash >> 29));
     }
 
     static bool SameName(const Name &stored, std::string_view name) noexcept
