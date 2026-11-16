@@ -244,11 +244,17 @@ struct Settings
     // The lamps of a location relight it with shadows (lamp_shadows.hpp): how many lamps around the camera take
     // part, 0, 8 or 16. Interiors also light their lit models with the room's own baked light.
     uint8_t lamp_shadows = 0;
+    // With lamp_soft: the light (gamma space, per unit of the receivers' strongest gain) under which the strongest lamp
+    // takes the 3x3 filter after all: a dim lamp's wider penumbra does not show (0: the 5x5 wherever it lights).
+    float lamp_soft_light = 24.0f / 255.0f;
     bool lamp_soft = false;  // a 5x5 instead of a 3x3 filter on the lamp shadows of the still geometry, for the
                              // strongest lamp of a pixel (the others take the 3x3)
     // The most lamps that light one pixel with their shadows, strongest of its cell first (1..kLampGridCapacity):
     // the weaker lamps of a crowded cell keep only the light the bake holds of them.
     uint8_t lamp_per_pixel = 8;
+    // Of those, how many take filtered shadows (1..kLampGridCapacity): the strongest the 5x5 (lamp_soft) or 3x3
+    // filter, the next ones the 3x3; the pixel's other lamps one hardware-filtered tap (2x2 texels).
+    uint8_t lamp_filtered = 8;
     // How many of those slots are kept for lights that move (carried lanterns and torches): the nearest to the
     // camera cast shadows, their still faces redrawn whenever they move. 0, 1 or 2.
     uint8_t lamp_moving = 0;
@@ -261,7 +267,8 @@ struct Settings
     // Indoors the lit models stand this much above the room light around them (0 = at its level): the owner wants
     // the characters to stand out from the room a little.
     float lamp_model_lift = 0.2f;
-    uint8_t lamp_debug = 0;  // 1: every lamp slot in its own colour, 2: the shadow mask, 3: the shadow taps per pixel
+    uint8_t lamp_debug = 0;  // 1: every lamp slot in its own colour, 2: the shadow mask, 3: the shadow taps per pixel,
+                             // 4: the lamps that reach each pixel
     // Rain wetness of the outdoor surfaces where the rain reaches them (wetness.hpp, ff_wet.sh): 0 off, 1 wet (darker,
     // glossier, the sky's reflection; following the rain and drying after it), 2 also puddles in the relief's hollows
     // (the parallax's height). Lit and baked draws (per-pixel lighting); highlights where there is FX_LIGHT_SPECULAR.

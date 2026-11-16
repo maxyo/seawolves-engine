@@ -501,6 +501,12 @@ void CheckSupport()
     changes.clear();
     CHECK(ConstrainSettings(crowded, all, changes).lamp_per_pixel == 8 && changes.size() == 1);
     CHECK(high.lamp_per_pixel == 4 && Settings::FromPreset(QualityPreset::Medium).lamp_per_pixel == 2);
+    // Filtered lamp shadows per pixel (the others one tap): 2 on Высокая, 1 on Средняя; 1..8.
+    CHECK(high.lamp_filtered == 2 && Settings::FromPreset(QualityPreset::Medium).lamp_filtered == 1);
+    crowded = high;
+    crowded.lamp_filtered = 0;
+    changes.clear();
+    CHECK(ConstrainSettings(crowded, all, changes).lamp_filtered == 1 && changes.size() == 1);
 
     // No R8 3D textures: no AO volume, said once; the rest stays.
     Support no_ao = all;

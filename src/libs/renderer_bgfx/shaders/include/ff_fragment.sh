@@ -166,17 +166,19 @@ float ffWallSky(float k)
 // per slot i at 2 + 3i: xyz position, w radius | rgb colour (with the slot's fade), w 2 = a light that moves (a
 //               carried lantern: no bake holds its light, it only adds), else 0 | intensity, core², unused, unused
 // u_fxLampGrid[0]: xyz the lamp grid's corner, w debug view (1 each slot in its colour, 2 the shadow mask, 3 the
-//                  shadow taps per pixel)
+//                  shadow taps per pixel, 4 the lamps that reach the pixel)
 // u_fxLampGrid[1]: xyz 1 / the grid's extent, w cells along x
 // u_fxLampGrid[2]: xyz the room light's corner, w > 0 = this draw takes its ambient from the room light, times w
-// u_fxLampGrid[3]: xyz 1 / the room light's extent, w 1 = 5x5 filter on the static faces of the strongest lamp
+// u_fxLampGrid[3]: xyz 1 / the room light's extent, w 1 = 5x5 filter on the static faces of the strongest lamp (else 3x3)
 // u_fxLampGrid[4]: x the first slot of the lights that move, y how many such slots (they are not in the grid),
 //                  z the share of a lamp's own colour in what it adds to baked surfaces (the rest: the bake's tone),
 //                  w the light under which a lamp is not filtered against its shadow (fx::kLampNegligible over
 //                  the strongest gain, gamma space)
 // u_fxLampGrid[5..7], [8..10]: per such slot, the rows of the turn from the world into the space of its faces
 // u_fxLampGrid[11]: x the most grid lamps per pixel (Settings::lamp_per_pixel), y the faces' near plane
-//                   (fx::kLampShadowNear)
+//                   (fx::kLampShadowNear), z the most lamps per pixel whose shadows are filtered (Settings::lamp_filtered;
+//                   the others take one tap), w the light (gamma space) under which the strongest lamp takes the 3x3
+//                   filter instead of the 5x5 (Settings::lamp_soft_light over the strongest gain)
 // u_fxLampFaces[i].x (a frame uniform, the value at the end of the frame for every draw of it): per slot, the faces
 //                   (bit f = face f) of its dynamic atlas that hold a caster this frame; the others are not read.
 uniform vec4 u_fxLamps[50];
@@ -187,12 +189,14 @@ SAMPLER3D(s_fxLampGrid, 9);
 SAMPLER2DSHADOW(s_fxLampDynamic, 10);
 SAMPLER2DSHADOW(s_fxLampStatic, 11);
 
-// Shadow compare taps of this pixel (the debug view u_fxLampGrid[0].w = 3); a global of the shader (HLSL, which the
-// SPIR-V path compiles, reads a global without `static` as a uniform).
+// Shadow compare taps of this pixel (the debug view u_fxLampGrid[0].w = 3) and the lamps that reach it (4); globals
+// of the shader (HLSL, which the SPIR-V path compiles, reads a global without `static` as a uniform).
 #if BGFX_SHADER_LANGUAGE_GLSL
 float ffLampTaps = 0.0;
+float ffLampsReached = 0.0;
 #else
 static float ffLampTaps = 0.0;
+static float ffLampsReached = 0.0;
 #endif
 
 // 3x3 percentage-closer filter in four hardware-filtered compare taps: the optimised PCF of The Witness, after
@@ -247,10 +251,13 @@ float ffLampFaceDepth(float major, float radius)
 }
 
 // 1 = the lamp of slot `slot` reaches the point at L from it (unit geometric normal Ng, facing the lamp by ngl),
-// 0 = the location or a character stands between them. radius: the lamp's; soft: 1 = the 5x5 filter on its still
-// faces (the strongest lamp of the pixel), 0 = 3x3. Its dynamic faces are read only where they hold a caster.
-float ffLampVisibility(float slot, vec3 L, float radius, vec3 Ng, float ngl, float soft)
+// 0 = the location or a character stands between them. radius: the lamp's; filtering: 2 = the 5x5 filter on its still
+// faces (the strongest lamp of the pixel with Settings::lamp_soft), 1 = 3x3 (the lamps of the pixel's filtered
+// budget, Settings::lamp_filtered), 0 = one hardware-filtered tap (the pixel's other lamps); the dynamic faces take
+// the 3x3 filter or the one tap alike. Its dynamic faces are read only where they hold a caster.
+float ffLampVisibility(float slot, vec3 L, float radius, vec3 Ng, float ngl, float filtering)
 {
+    float soft = filtering > 1.5 ? 1.0 : 0.0;
     // One texel of a face at this distance, in metres: the receiver steps that far off its surface (further at grazing
     // light), and the compared point is pulled towards the lamp by most of a texel.
     float texel = 2.1 * length(L) / u_fxLamps[1].z;
@@ -286,20 +293,34 @@ float ffLampVisibility(float slot, vec3 L, float radius, vec3 Ng, float ngl, flo
     float depth = ffLampFaceDepth(major * (len - 0.75 * texel) / len, radius);
     vec2 faces = vec2(1.0 / u_fxLamps[1].x, 1.0 / u_fxLamps[1].y);
     float lit;
-    if (soft > 0.5)
+    if (filtering > 1.5)
     {
         FF_LAMP_PCF5(lit, s_fxLampStatic, uv, faces * u_fxLamps[1].z, depth)
     }
-    else
+    else if (filtering > 0.5)
     {
         FF_LAMP_PCF3(lit, s_fxLampStatic, uv, faces * u_fxLamps[1].z, depth)
+    }
+    else
+    {
+        lit = shadow2D(s_fxLampStatic, vec3(uv, depth));
+        ffLampTaps += 1.0;
     }
     if (mod(floor(u_fxLampFaces[int(slot + 0.5)].x / exp2(face) + 0.001), 2.0) > 0.5)
     {
         // The characters' faces are coarser by the ratio of the face sizes.
         float pull = 0.75 * texel + texel * (u_fxLamps[1].z / u_fxLamps[1].w - 1.0);
+        float movingDepth = ffLampFaceDepth(major * (len - pull) / len, radius);
         float moving;
-        FF_LAMP_PCF3(moving, s_fxLampDynamic, uv, faces * u_fxLamps[1].w, ffLampFaceDepth(major * (len - pull) / len, radius))
+        if (filtering > 0.5)
+        {
+            FF_LAMP_PCF3(moving, s_fxLampDynamic, uv, faces * u_fxLamps[1].w, movingDepth)
+        }
+        else
+        {
+            moving = shadow2D(s_fxLampDynamic, vec3(uv, movingDepth));
+            ffLampTaps += 1.0;
+        }
         lit = min(lit, moving);
     }
     return lit;
@@ -328,10 +349,24 @@ float ffLampShown(float slot, vec3 Pw)
 // Adds the lamp with grid number `id` (slot + 1, 0 = none) at Pw: sum.rgb its light with its shadow, sum.a the
 // luminance of its light without the shadow. Ng: geometric normal (shadow bias, no light from behind the
 // surface), N: shading normal. fxLightFalloff: the lamp's shape, zero at its radius. strongest: the slot of the
-// pixel's strongest lamp (the 5x5 filter), -1 = none.
+// pixel's strongest lamp (the 5x5 filter with Settings::lamp_soft, else 3x3), -1 = none. filtered: how many more of
+// the pixel's lamps take the 3x3 filter (Settings::lamp_filtered less the strongest; the first lamps that look their
+// shadow up, in the loop's order: the lights that move, then the grid's strongest first); the others take one tap.
 // specV, spec: the world-space unit vector to the eye and the pixel's highlight (fxGlossSpec / fxMaterialSpec); the
 // lamp's highlight with its shadow is added to lampSpec.
-void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float strongest, inout vec4 sum, inout vec3 lampSpec)
+// shown: the lamp's light at the pixel (gamma space): the 5x5 filter only where it is bright enough for its wider
+// penumbra to show (u_fxLampGrid[11].w, Settings::lamp_soft_light), the 3x3 below.
+float ffLampFilter(float slot, float strongest, float shown, inout float filtered)
+{
+    if (abs(slot - strongest) < 0.5)
+        return u_fxLampGrid[3].w > 0.5 && shown >= u_fxLampGrid[11].w ? 2.0 : 1.0;
+    if (filtered < 0.5)
+        return 0.0;
+    filtered -= 1.0;
+    return 1.0;
+}
+void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float strongest, inout float filtered,
+               inout vec4 sum, inout vec3 lampSpec)
 {
     if (id < 0.5)
         return;
@@ -342,6 +377,7 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
     float reach = length(L);
     if (reach >= lamp.w)
         return;
+    ffLampsReached += 1.0;
     vec4 aggregateShape = u_fxLamps[base+2];
     if (aggregateShape.z > 0.5)
     {
@@ -351,7 +387,8 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
         // Exactly one visibility, including grazing-center normals. At the center the lookup direction is undefined.
         float seen = 1.0;
         if (reach > 1e-4)
-            seen = ffLampVisibility(slot, L, lamp.w, Ng, dot(Ng, -L / reach), abs(slot - strongest) < 0.5 ? 1.0 : 0.0);
+            seen = ffLampVisibility(slot, L, lamp.w, Ng, dot(Ng, -L / reach), ffLampFilter(slot, strongest,
+                                                                                    fxLinear() ? sqrt(diffuse.a) : diffuse.a, filtered));
         if (u_fxLampGrid[0].w > 0.5)
             diffuse.rgb = ffLampDebugColor(slot) * diffuse.a;
         sum.rgb += diffuse.rgb * seen;
@@ -390,8 +427,7 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
             Lf = vec3(dot(L, u_fxLampGrid[turn].xyz), dot(L, u_fxLampGrid[turn + 1].xyz), dot(L, u_fxLampGrid[turn + 2].xyz));
             Nf = vec3(dot(Ng, u_fxLampGrid[turn].xyz), dot(Ng, u_fxLampGrid[turn + 1].xyz), dot(Ng, u_fxLampGrid[turn + 2].xyz));
         }
-        float soft = abs(slot - strongest) < 0.5 ? 1.0 : 0.0;
-        seen = ffLampVisibility(slot, Lf, lamp.w, Nf, ngl, soft);
+        seen = ffLampVisibility(slot, Lf, lamp.w, Nf, ngl, ffLampFilter(slot, strongest, shown, filtered));
     }
     sum.rgb += rgb * (light * seen);
     sum.a += dot(rgb, vec3(0.299, 0.587, 0.114)) * light;
@@ -429,10 +465,9 @@ vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampM
         if (near.w > 0.5 && cap > 4.5)
             more = floor(texture3D(s_fxLampGrid, vec3(u + 0.5, cell.y, cell.z)) * 255.0 + vec4_splat(0.5));
     }
-    // The strongest lamp of the pixel takes the soft filter: the first of its cell (the grid lists the strongest
-    // first) or a light that moves, whichever is stronger here.
+    // The strongest lamp of the pixel takes the best filter (ffLampFilter): the first of its cell (the grid lists the
+    // strongest first) or a light that moves, whichever is stronger here.
     float strongest = -1.0;
-    if (u_fxLampGrid[3].w > 0.5)
     {
         float best = 0.0;
         if (near.x > 0.5)
@@ -454,6 +489,7 @@ vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampM
             }
         }
     }
+    float filtered = u_fxLampGrid[11].z - 1.0;
     // One loop over the pixel's lights, so the program holds ffLampAdd (its filters, its aggregate loop) once: ten
     // inlined copies made the lamp programs four times the size of the others, and their links as slow. First the
     // lights that move (at most two: few and anywhere, every pixel asks them, without the grid), which leave the sum
@@ -484,7 +520,7 @@ vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampM
             int c = k < 4 ? k : k - 4;
             id = c == 0 ? cellIds.x : c == 1 ? cellIds.y : c == 2 ? cellIds.z : cellIds.w;
         }
-        ffLampAdd(id, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+        ffLampAdd(id, Pw, Ng, N, specV, spec, strongest, filtered, sum, lampSpec);
     }
     return sum;
 }
@@ -950,8 +986,10 @@ void main()
             current.rgb = vec3_splat(0.35 * grey) + lamps.rgb * u_fxLamps[0].z;
         else if (u_fxLampGrid[0].w < 2.5)
             current.rgb = vec3_splat(lamps.a > 1e-4 ? dot(lamps.rgb, vec3(0.299, 0.587, 0.114)) / lamps.a : 0.5);
-        else
+        else if (u_fxLampGrid[0].w < 3.5)
             current.rgb = vec3_splat(ffLampTaps * 2.0 / 255.0); // two steps of 8 bits per tap
+        else
+            current.rgb = vec3_splat(ffLampsReached * 16.0 / 255.0); // sixteen steps per lamp
     }
 #endif
 #ifndef STAGE0_CUBE

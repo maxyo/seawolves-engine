@@ -76,6 +76,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.lamp_shadows = 8;
         s.lamp_moving = 1;
         s.lamp_per_pixel = 2; // frame.md budget: the mid class
+        s.lamp_filtered = 1;
         s.wet_surfaces = 1;
         return s;
     }
@@ -111,6 +112,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.lamp_moving = 2;
     s.lamp_soft = true;
     s.lamp_per_pixel = 4; // frame.md budget: the flagship class
+    s.lamp_filtered = 2;
     s.wet_surfaces = 2;
     return s;
 }
@@ -339,6 +341,9 @@ constexpr Rule kRules[] = {
     {[](const Settings &s, const Support &) { return s.lamp_per_pixel < 1 || s.lamp_per_pixel > kLampGridCapacity; },
      [](Settings &s) { s.lamp_per_pixel = static_cast<uint8_t>(std::clamp<int>(s.lamp_per_pixel, 1, kLampGridCapacity)); },
      "1 to 8 lamps light a pixel with their shadows: clamped"},
+    {[](const Settings &s, const Support &) { return s.lamp_filtered < 1 || s.lamp_filtered > kLampGridCapacity; },
+     [](Settings &s) { s.lamp_filtered = static_cast<uint8_t>(std::clamp<int>(s.lamp_filtered, 1, kLampGridCapacity)); },
+     "1 to 8 lamps of a pixel take filtered shadows: clamped"},
     {[](const Settings &s, const Support &c) { return s.lamp_shadows && !c.ao_volume; }, [](Settings &s) { s.lamp_shadows = 0; },
      "the lamps' grid and the room light need RGBA8 3D textures: lamp shadows switched off"},
     {[](const Settings &s, const Support &) { return s.lamp_shadows && !(s.lighting_flags & kLightingPerPixel); },

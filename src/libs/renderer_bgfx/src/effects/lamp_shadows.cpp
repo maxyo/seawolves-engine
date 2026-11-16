@@ -119,6 +119,7 @@ void LampShadows::configure(const fx::Settings &settings, fx::LampDepth depth)
                    fx::kLampShadowNear);
     depth_ = depth;
     per_pixel_ = std::clamp<int>(settings.lamp_per_pixel, 1, fx::kLampGridCapacity);
+    filtered_ = std::clamp<int>(settings.lamp_filtered, 1, fx::kLampGridCapacity);
     face_size_ = face;
     dynamic_face_size_ = face / 2;
     columns_ = 6;
@@ -126,6 +127,7 @@ void LampShadows::configure(const fx::Settings &settings, fx::LampDepth depth)
     gain_ = settings.lamp_gain;
     baked_ = settings.lamp_baked;
     soft_ = settings.lamp_soft;
+    soft_light_ = settings.lamp_soft_light;
     model_lift_ = settings.lamp_model_lift;
     tint_ = settings.lamp_tint;
     debug_ = settings.lamp_debug;
@@ -844,7 +846,8 @@ bool LampShadows::prepare(shim::Device &device, const std::array<float, 3> &eye,
         uniforms_[4 + 3 * s] = {slot.at.intensity, slot.at.core * slot.at.core, 0.0f, 0.0f};
     }
     grid_uniforms_[4] = {static_cast<float>(static_slots()), static_cast<float>(moving_slots_), tint_, level_};
-    grid_uniforms_[11] = {static_cast<float>(per_pixel_), fx::kLampShadowNear, 0.0f, 0.0f};
+    grid_uniforms_[11] = {static_cast<float>(per_pixel_), fx::kLampShadowNear, static_cast<float>(filtered_),
+                          soft_light_ / std::max(1.0f, gain_ * kBakedGain)};
     // Per moving slot: the turn from the world into the space of its faces (a ship's; else none).
     for (int i = 0; i < 2; ++i)
     {

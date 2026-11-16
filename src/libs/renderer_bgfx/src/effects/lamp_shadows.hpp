@@ -18,8 +18,9 @@
 //   * its number in the lamp grid (a small 3D texture: which slots reach which cell of the place).
 // A lamp counts only as far as its light can show (fx::LampReach, fx::kLampNegligible): the grid lists it there,
 // still triangles and characters cast into its faces from there; a receiver where its light is under that level
-// takes no shadow taps for it. The strongest lamp of a pixel takes the 5x5 filter (Settings::lamp_soft), the others
-// 3x3; at most Settings::lamp_per_pixel grid lamps light one pixel.
+// takes no shadow taps for it. The strongest lamp of a pixel takes the 5x5 filter (Settings::lamp_soft) or the 3x3, up to
+// Settings::lamp_filtered of its lamps in all take a filter (the others the 3x3), the rest one hardware-filtered tap;
+// at most Settings::lamp_per_pixel grid lamps light one pixel.
 // A lamp fades in once its faces are drawn and fades out before its slot goes to another lamp.
 // The last Settings::lamp_moving slots are for the lights that move, the nearest to the camera; the receivers take
 // them without the grid, and they only add light (no bake holds theirs), as far and as strong as the game's point
@@ -201,6 +202,7 @@ class LampShadows
     int slots_ = 0;
     fx::LampDepth depth_ = fx::LampDepth::None;
     int per_pixel_ = fx::kLampGridCapacity;
+    int filtered_ = fx::kLampGridCapacity;
     float level_ = fx::kLampNegligible; // in the receivers' gamma units over the strongest gain
     int face_size_ = 0, dynamic_face_size_ = 0;
     int columns_ = 0, rows_ = 0;
@@ -274,6 +276,7 @@ class LampShadows
     void find_fixtures();
     float model_lift_ = 0.0f;
     float tint_ = 0.25f; // Settings::lamp_tint
+    float soft_light_ = 0.0f; // Settings::lamp_soft_light
     fx::Vec3 geometry_lo_{}, geometry_hi_{};
     fx::Vec3 room_lo_{}, room_hi_{};
     fx::LampGrid grid_;
