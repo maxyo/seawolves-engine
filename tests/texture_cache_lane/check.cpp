@@ -1,6 +1,7 @@
 #include "texture/core/service.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -106,5 +107,12 @@ int main() {
  {std::lock_guard l(gate_mutex);leave=true;}gate_cv.notify_all();stop.join();
  require(events.empty(),"queued callbacks dropped on shutdown");
  require(service.workers_.empty(),"late IO callback must not restart CPU workers during shutdown");
- std::puts("PASS actual cache IO isolation, fairness, bounds, generation and shutdown");
+ // The game thread promotes a ticket right after posting it (Upscales::prepare_scene) while the worker picks the next
+ // task: the pick must never see a task as neither ordinary nor foreground (owner build 1650 crashed so, about 1 in 4 loads).
+ reset();service.configure({},nullptr);service.begin_loading_cache_scope();
+ {std::atomic<long> ran{0};constexpr long kRace=300000;
+  for(long i=0;i<kRace;++i){auto t=std::make_shared<CacheTask>();while(!service.post_cache(t,[&]{++ran;}))std::this_thread::yield();service.promote_cache(t);}
+  while(ran.load()<kRace)std::this_thread::yield();}
+ service.shutdown();
+ std::puts("PASS actual cache IO isolation, fairness, bounds, generation, promotion race and shutdown");
 }

@@ -171,12 +171,18 @@ void Service::cache_worker()
             wake_.wait(lock, [&] { return stopping_ || !cache_tasks_.empty(); });
             continue;
         }
+        // promote_cache changes a ticket's generation from the game thread without mutex_, so every task is
+        // classified exactly once: separate scans could see a task ordinary, then foreground, and pick end().
         const uint64_t generation = loading_generation_;
-        auto foreground = [&](const Task &task) { return generation && task.cache->generation.load() == generation; };
-        auto urgent = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), foreground);
-        auto ordinary = std::find_if(cache_tasks_.begin(), cache_tasks_.end(), [&](const Task &t) { return !foreground(t); });
-        auto chosen = urgent != cache_tasks_.end() && (foreground_streak_ < 2 || ordinary == cache_tasks_.end()) ? urgent : ordinary;
-        foreground_streak_ = foreground(*chosen) ? foreground_streak_ + 1 : 0;
+        const auto end = cache_tasks_.end();
+        auto urgent = end, ordinary = end;
+        for (auto it = cache_tasks_.begin(); it != end && (urgent == end || ordinary == end); ++it) {
+            auto &first = generation && it->cache->generation.load() == generation ? urgent : ordinary;
+            if (first == end) first = it;
+        }
+        const bool take_urgent = urgent != end && (foreground_streak_ < 2 || ordinary == end);
+        const auto chosen = take_urgent ? urgent : ordinary;
+        foreground_streak_ = take_urgent ? foreground_streak_ + 1 : 0;
         Task task = std::move(*chosen); cache_tasks_.erase(chosen); ++cache_running_;
         lock.unlock();
         if (!task.cache->cancelled) task.work();
