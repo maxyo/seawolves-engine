@@ -39,7 +39,11 @@ requirements, then `<script> --sources <dir> --output <dir>`), and update the sh
 
 ## Accuracy
 
-The fp16 graphs against the float models: 58 dB on a brick pattern. ncnn on the CPU against ncnn on the GPU: 57..62 dB
+The fp16 graphs against the float models (onnxruntime fp32) on 10 TEHO textures at 512 px, inner area: on the CPU
+(fp16 weights, fp32 arithmetic) 84..87 dB, mean normal error 0.01 degrees; on the GPU (fp16 storage and arithmetic)
+normal 57 dB / 0.19 degrees, height and roughness alike, x4 63 dB. The int8 models the CPU ran before: normal 40 dB /
+1.77 degrees, height 45 dB, roughness 44 dB, x4 38 dB. The fp16 graphs against the float models: 58 dB on a brick
+pattern. ncnn on the CPU against ncnn on the GPU: 57..62 dB
 on 8 TEHO textures at 512 px (only their arithmetic differs). Until 2026-11 the CPU ran int8 quantisations of the same
 models through onnxruntime; ncnn's graphs against them: 35..47 dB (the int8 models' own error; side by side the
 difference is grain, no structure).

@@ -79,17 +79,24 @@ class, before a host render that shows them.
   (`<key>.gloss`: R the metal mask, G the gloss) from the roughness and the height models at 256², in the same queue.
 - Devices (`backend.hpp`): ncnn 20261020 (BSD-3-Clause; `cmake/ncnn.cmake`; notices in `third_party/licenses/ncnn-*`,
   `glslang-*`) is the one inference runtime, running the same graphs on the GPU (Vulkan compute, its in-house loader
-  opening libvulkan at run time) or on the CPU (its NEON / fp16 kernels on arm64, SSE / AVX picked at run time on
-  x86-64; its own minimal OpenMP runtime, waiting threads sleeping; the image in tiles of 128 or 256 texels by the RAM,
-  `cpu_tiles.hpp`, a smaller tile after an allocation failure, logged). The
+  opening libvulkan at run time; fp16 storage, packing and arithmetic where the device has them, logged with
+  `relief GPU model: ... ready`) or on the CPU (fp16 arithmetic on ARMv8.2 FP16 cores, fp32 otherwise, logged with
+  `relief CPU runtime`; SSE / AVX picked at run time on x86-64; its own minimal OpenMP runtime, waiting threads sleeping;
+  the thread count is the game's current CPU budget, applied to the next run without reloading anything; the image in
+  tiles of 128 or 256 texels by the RAM, `cpu_tiles.hpp`, a smaller tile after an allocation failure, logged). No int8:
+  ncnn's int8 graphs (ncnn2table + ncnn2int8 on the same procedural set) were 2.97..3.16 degrees of mean normal error
+  against the float models (fp16: 0.19 on the GPU, 0.01 on the CPU) and no faster (ncnn's ARM tables: its winograd
+  fp16 3x3 convolutions beat its int8 ones on Snapdragon 888 / X Elite / Cortex-A720). The
   device is measured once per game: a probe tile on both (`ChooseDevice`), the faster taken, logged with both numbers
   (`relief device: GPU (measured now on <GPU>, driver <v>: ... GPU x ms ..., CPU y ms ...)`) and kept in the relief
   directory's `relief-device.txt` for that GPU, driver, model and thread count; «Очистить кэш» measures again. That is
   the starting device; then each texture is placed (`relief.hpp` Session): on the GPU, two textures in a row 1.5 times
-  slower than the CPU's estimate while the game draws its scene move the work to the CPU, which then makes only what is
+  slower than the CPU's estimate (the probe's, then each CPU texture's own cost per texel; a change of the CPU budget
+  scales it by the thread counts until measured again) while the game draws its scene move the work to the CPU, which then makes only what is
   on screen (the rest of the game waits for the GPU); the GPU is tried again as soon as the game leaves it free (a
   loading or an interface screen, the game in the background: no scene drawn for 30 frames or no frame for a second)
-  or after 60 s / 8 completed CPU textures (standalone ×2 included), when the next required texture arrives; no
+  or after 60 s / 8 completed CPU textures (standalone ×2 included; without a CPU estimate to compare with, the GPU is
+  kept only while the game leaves it free), when the next required texture arrives; no
   automatic whole-corpus work is admitted to trigger a retry. The ×2 compares its GPU time against measured CPU x4 time, rather
   than the unrelated normal-network probe. Scene presence comes from the renderer's perspective draws, including the
   low preset and sea; lighting-feature counters do not classify a scene as idle. Every switch is logged (`relief device: CPU for now ...`, `GPU again ...`, `CPU still
@@ -97,10 +104,16 @@ class, before a host render that shows them.
   (`relief-gpu-crashed.txt`), the CPU alone, with the reason logged. A controlled GPU model-load/calibration error
   falls back to the CPU for that session and logs the error; an in-flight driver hang is not forcibly interrupted.
   Model-opening/calibration begin and end are logged before the first texture, separately from texture inference. On the GPU the image runs in tiles with the networks'
-  24-texel reach around each (no seams), each tile one GPU submission of at most 6 ms of GPU work, so the game's frames
-  do not wait on a long one: the tile size is calibrated per network graph on the device (a submission's wall time is
-  a fixed part, ~2.5–5 ms of recording, transfers and fence, plus the GPU's work per texel; logged as `relief GPU
-  tiles: ...`), 224 texels on an RTX 5070 Ti. The GPU's output against the CPU's (the same graph): above 45 dB on a
+  24-texel reach around each (no seams), and each tile's graph in stages, one GPU submission each of at most 6 ms of
+  GPU work, so the game's frames do not wait on a long one while the tiles stay large (the halo is recomputed work: a
+  32-texel tile computes 6 texels for each it keeps). A stage ends at a convolution's output; the blobs later stages
+  need stay on the GPU between submissions (the tile is uploaded before the first, downloaded after the last; those
+  transfers are not counted as GPU work). The calibration (per graph and GPU, logged as `relief GPU tiles: N + 24
+  texels in K submissions ...`) measures every convolution's part of the graph's work at two tile sizes and a
+  submission's fixed wall time; the tile is the one of the least wall time per kept texel whose largest convolution fits
+  6 ms (32 to 512 texels), its stages the fewest that each fit. A stage that takes longer than planned (another app,
+  the GPU's clock down) halves the next tiles (`relief GPU tile guard`). An RTX 5070 Ti: 512 + 24 in 2 submissions.
+  The GPU's output against the CPU's (the same graph): above 45 dB on a
   brick pattern (relief_check), 57..62 dB on game textures; against the float models 58 dB. NNAPI (deprecated) is not
   used.
 - Maps: the models run on the texture downscaled to 512 px (`fx::kReliefMapSize`, the owner's choice); the GPU's

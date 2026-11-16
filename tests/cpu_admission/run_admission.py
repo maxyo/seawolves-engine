@@ -34,11 +34,12 @@ struct Extractor {
  int extract(const char*,Mat&m){++api->calls;api->held_during_run=held.load();if(api->fail_run)return api->fail_run;
   m=Mat(1,1,3);for(int k=0;k<3;++k)m.d[k]=float(k+1);return 0;}
 };
-struct Net {Api*api;Extractor create_extractor(){return {api};}};
+struct Option {int num_threads=1;};
+struct Net {Api*api;Option opt;Extractor create_extractor(){return {api};}};
 }
 constexpr const char *kCpuOutOfMemory="ncnn: CPU inference out of memory";
 struct Actual {
- Api *api_;ncnn::Net net_{api_};int scale_=1;
+ Api *api_;ncnn::Net net_{api_};int scale_=1;std::shared_ptr<const std::atomic<int>> threads_=std::make_shared<std::atomic<int>>(2);
  std::function<std::shared_ptr<void>()>cpu_admission_;
  BODY
 };

@@ -524,8 +524,10 @@ struct Session::Impl
         runtime = std::move(next_runtime);
         cpu = std::move(next_cpu);
         cpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
-        const unsigned permits = static_cast<unsigned>(threads);
-        auto admission = [this, permits] { return fx::SharedCpuAdmission().acquire(permits, [this] { return cancelled.load(); }); };
+        // As many permits as the networks' current threads (SetCpuBudget changes both on this worker thread).
+        auto admission = [this] {
+            return fx::SharedCpuAdmission().acquire(static_cast<unsigned>(threads), [this] { return cancelled.load(); });
+        };
         for (auto &network : cpu) network->SetCpuAdmission(admission);
         cpu_upscaler->SetCpuAdmission(admission);
         Log("relief CPU runtime ready: %d threads, model reopen %.3f ms", threads, std::chrono::duration<double, std::milli>(Clock::now() - reopen_started).count());
@@ -634,14 +636,21 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
 void Session::SetCpuBudget(unsigned threads)
 {
     if (!threads || static_cast<unsigned>(impl_->threads) == threads) return;
-    const auto started = Clock::now();
-    impl_->ReleaseCpu(); // mutex excludes Cancel; no admission waits while held
+    const int previous = impl_->threads;
     impl_->synchronous_finalizer.reset(); // compute owner only; async finalizer has its own lifetime
     impl_->threads = static_cast<int>(threads);
-    // A CPU timing measured with another pool size must not demote a GPU.
-    impl_->cpu_ms_per_texel = impl_->upscale_cpu_ms_per_texel = 0.0;
-    Log("relief CPU budget: %u threads; old runtime release %.3f ms; lazy model reopen measured separately", threads,
-        std::chrono::duration<double, std::milli>(Clock::now() - started).count());
+    {
+        std::lock_guard lock(impl_->networks_mutex);
+        if (impl_->runtime)
+            impl_->runtime->SetThreads(impl_->threads); // the loaded networks run with it from their next tile
+    }
+    // The CPU's estimates were measured with the other pool: scaled by the thread counts until the next CPU texture
+    // measures them again (zero would let any GPU time pass as faster than the CPU).
+    const double scale = static_cast<double>(previous) / impl_->threads;
+    impl_->cpu_ms_per_texel *= scale;
+    impl_->upscale_cpu_ms_per_texel *= scale;
+    Log("relief CPU budget: %u threads (from %d); the CPU's estimate scaled to %.3f us a texel until measured again",
+        threads, previous, impl_->cpu_ms_per_texel * 1000.0);
 }
 
 void Session::ReleaseIdleModels()
@@ -870,7 +879,8 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     if (!failed && !impl_->cancelled)
     {
         const double cpu_ms = impl_->cpu_ms_per_texel * infer_texels;
-        const bool slow = impl_->cpu_ms_per_texel > 0.0 && infer_ms > kSlowFactor * cpu_ms;
+        const bool known = impl_->cpu_ms_per_texel > 0.0;
+        const bool slow = known && infer_ms > kSlowFactor * cpu_ms;
         const char *why = loading_probe ? "one measured loading-window retry" : impl_->gpu_free ? "the game leaves the GPU free" : "a while on the CPU";
         if (use_gpu && impl_->on_gpu)
         {
@@ -888,7 +898,8 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         }
         else if (use_gpu)
         {
-            if (!slow)
+            // Without a CPU estimate to hold it against, the GPU is taken back only while the game leaves it free.
+            if (known ? !slow : impl_->gpu_free.load())
             {
                 Log("relief device: GPU again (%s: %s's networks took %.0f ms on the GPU against %.0f ms estimated on "
                     "the CPU)",
@@ -906,7 +917,12 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
             }
         }
         else
+        {
             ++impl_->cpu_textures;
+            // The CPU's own cost per texel with its current threads, measured on this texture.
+            if (infer_texels > 0.0)
+                impl_->cpu_ms_per_texel = infer_ms / infer_texels;
+        }
         impl_->Describe();
     }
     if (use_gpu && impl_->gpu_unproven && !failed)

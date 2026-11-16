@@ -5,7 +5,10 @@
 #include "relief.hpp"
 #include "storm/fx/gpu_crash_guard.hpp"
 
+#include <command.h>
+#include <cpu.h>
 #include <gpu.h>
+#include <layer.h>
 #include <datareader.h>
 #include <net.h>
 
@@ -131,11 +134,11 @@ const CpuLimits &Limits()
 class CpuNetwork final : public Network
 {
   public:
-    CpuNetwork(std::string describe, int threads, int halo, int scale, int tile)
-        : describe_(std::move(describe)), halo_(halo), scale_(scale), tile_(tile)
+    CpuNetwork(std::shared_ptr<const std::atomic<int>> threads, int halo, int scale, int tile)
+        : threads_(std::move(threads)), halo_(halo), scale_(scale), tile_(tile)
     {
         net_.opt.use_vulkan_compute = false;
-        net_.opt.num_threads = threads;
+        net_.opt.num_threads = threads_->load();
         net_.opt.lightmode = true; // intermediate blobs freed as soon as they are consumed
     }
 
@@ -199,6 +202,7 @@ class CpuNetwork final : public Network
                 std::memcpy(in.channel(c).row(y), image + (static_cast<size_t>(c) * height + y) * width,
                             static_cast<size_t>(width) * sizeof(float));
         ncnn::Mat out;
+        net_.opt.num_threads = threads_->load(); // the runtime's current budget (SetThreads): the run's own, no reload
         ncnn::Extractor ex = net_.create_extractor();
         const int status = ex.input("in0", in) != 0 ? -1 : ex.extract("out0", out);
         if (status == -100) { error = kCpuOutOfMemory; return false; } // ncnn's "allocation failed" from any layer
@@ -219,12 +223,14 @@ class CpuNetwork final : public Network
 
     std::string Describe() const override
     {
-        return describe_ + (tile_ ? ", tiles of " + std::to_string(tile_) + " + " + std::to_string(halo_) + " texels" : "");
+        return "CPU (ncnn), " + std::to_string(threads_->load()) + " threads of " +
+               std::to_string(std::thread::hardware_concurrency()) + " cores" +
+               (tile_ ? ", tiles of " + std::to_string(tile_) + " + " + std::to_string(halo_) + " texels" : "");
     }
 
   private:
     std::function<std::shared_ptr<void>()> cpu_admission_;
-    std::string describe_;
+    std::shared_ptr<const std::atomic<int>> threads_;
     int halo_, scale_, tile_;
     std::atomic<bool> cancelled_{false};
     std::string param_;
@@ -234,40 +240,51 @@ class CpuNetwork final : public Network
 class NcnnCpuRuntime final : public CpuRuntime
 {
   public:
-    NcnnCpuRuntime(int threads, int tile) : threads_(threads), tile_(tile)
+    NcnnCpuRuntime(int threads, int tile) : threads_(std::make_shared<std::atomic<int>>(threads)), tile_(tile)
     {
-        Log("relief CPU runtime: ncnn, %d threads, %.1f GB of RAM: %s", threads_, Limits().ram_gb,
-            tile_ ? ("tiles of " + std::to_string(tile_) + " texels").c_str() : "whole images");
+        // fp16 weights either way; the arithmetic in fp16 where the CPU has it (ARMv8.2 FP16), else in fp32.
+#if defined(__aarch64__)
+        const char *arithmetic = ncnn::cpu_support_arm_asimdhp() ? "fp16 (ARMv8.2 FP16)" : "fp32 (no ARMv8.2 FP16)";
+#else
+        const char *arithmetic = "fp32";
+#endif
+        Log("relief CPU runtime: ncnn, %d threads, %s arithmetic, %.1f GB of RAM: %s", threads, arithmetic,
+            Limits().ram_gb, tile_ ? ("tiles of " + std::to_string(tile_) + " texels").c_str() : "whole images");
     }
+
+    void SetThreads(int threads) override { threads_->store(threads); }
 
     std::unique_ptr<Network> Load(std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int scale,
                                   std::string &error) override
     {
-        auto network = std::make_unique<CpuNetwork>(
-            "CPU (ncnn), " + std::to_string(threads_) + " threads of " +
-                std::to_string(std::thread::hardware_concurrency()) + " cores",
-            threads_, halo, scale, tile_);
+        auto network = std::make_unique<CpuNetwork>(threads_, halo, scale, tile_);
         if (!network->Open(param, bin, error))
             return nullptr;
         return network;
     }
 
   private:
-    int threads_;
+    std::shared_ptr<std::atomic<int>> threads_; // shared with its networks: read at each run
     int tile_;
 };
 
-// The GPU: one submission per tile of the inner area, each at most kSubmitMs of GPU work (a frame of the game waits
-// at most that long for a submission of ours). The tile size comes from a calibration of the network on this GPU
-// (Calibrate): a submission's wall time is a fixed part (the CPU's recording, the upload and download, the fence
-// wait: ~5 ms on a loaded host, whatever the size) plus the GPU's work, proportional to the texels. Only the second
-// part holds the game's frames, so the tiles are as large as it allows, from kMinTile to kMaxTile.
+// The GPU: the image runs in tiles of the inner area, and each tile's graph in stages, one submission per stage, so a
+// frame of the game waits at most for one stage (kSubmitMs of GPU work) while the tiles stay large (the halo around a
+// small tile is mostly recomputed work: at 32 + 24 texels the GPU computes 6 texels per texel kept). A stage ends at a
+// convolution's output; ncnn keeps the blobs the later stages need on the GPU between the submissions (no transfer in
+// between: the first stage uploads the tile, the last downloads its result). The calibration (Calibrate) measures, per
+// graph and GPU, a submission's fixed wall time (recording, the fence wait), the graph's GPU work per texel and each
+// convolution's part of it; the tile is the one with the least wall time per inner texel whose largest convolution
+// fits kSubmitMs (kMinTile at least, kMaxTile at most), its stages the fewest whose work fits kSubmitMs each.
 constexpr int kMinTile = 32, kMaxTile = 512, kProbeSmall = 64, kProbeLarge = 256;
 constexpr double kSubmitMs = 6.0;
 
 struct Calibration
 {
-    double fixed_ms = 0.0, ms_per_texel = 0.0;
+    double fixed_ms = 0.0;     // a submission's fixed wall time
+    double ms_per_texel = 0.0; // the whole graph's GPU work per texel of a tile with its halo
+    std::vector<double> share; // the part of that work of each segment (up to each cut, then up to the output)
+    double max_share = 1.0;
     int tile = kMinTile;
 };
 
@@ -286,22 +303,97 @@ class GpuNetwork final : public Network
 
     ~GpuNetwork() override { --gpu_networks; }
 
+    // The precision ncnn runs this graph in on this GPU (its options after loading: what the device supports).
+    std::string Precision() const
+    {
+        const ncnn::Option &o = net_.opt;
+        return std::string("fp16 storage ") + (o.use_fp16_storage ? "on" : "off") + ", packed " +
+               (o.use_fp16_packed ? "on" : "off") + ", arithmetic " + (o.use_fp16_arithmetic ? "on" : "off") +
+               " (fp16 weights)";
+    }
+
     bool Open(std::span<const uint8_t> param, std::span<const uint8_t> bin, std::string &error)
     {
         // Stable model attribution, including weights: the three relief graphs can share a calibration.
         for (const auto bytes : {param, bin})
             for (const uint8_t byte : bytes)
                 model_id_ = (model_id_ ^ byte) * 0x100000001b3ull;
-        if (!LoadGraph(net_, param_, param, bin))
+        if (!LoadGraph(net_, param_, param, bin) || net_.input_indexes().size() != 1 || net_.output_indexes().size() != 1)
         {
             error = "ncnn could not load the network for the GPU (a damaged graph?)";
             return false;
         }
+        input_ = net_.input_indexes()[0];
+        output_ = net_.output_indexes()[0];
+        // The cuts between stages: every convolution's output but the graph's own, in graph order.
+        for (const ncnn::Layer *layer : net_.layers())
+            if (layer->type == "Convolution" && layer->tops.size() == 1 && layer->tops[0] != output_)
+                cuts_.push_back(layer->tops[0]);
         return Calibrate(error);
     }
 
-    // The tile size for this network on this GPU, measured once per graph (the relief's three networks share one):
-    // two tile sizes, each the faster of two runs after a warm-up (the GPU's allocations), fitted to fixed + per texel.
+    static double Texels(int inner, int halo) { return static_cast<double>(inner + 2 * halo) * (inner + 2 * halo); }
+
+    // The submissions' ends for a tile: the cuts after which the work so far would exceed kSubmitMs (the output ends
+    // the last).
+    std::vector<int> Stages(const Calibration &c, int tile) const
+    {
+        const double work = c.ms_per_texel * Texels(tile, halo_);
+        std::vector<int> ends;
+        double stage = 0.0;
+        for (size_t i = 0; i < c.share.size(); ++i)
+        {
+            if (i > 0 && stage > 0.0 && stage + c.share[i] * work > kSubmitMs)
+            {
+                ends.push_back(cuts_[i - 1]);
+                stage = 0.0;
+            }
+            stage += c.share[i] * work;
+        }
+        return ends;
+    }
+
+    // One tile (planar input with its halo) through the graph: its upload, one submission per stage (`ends`, then the
+    // output), its download. `walls`: each stage's wall time (the transfers' are left out: their GPU work is a copy,
+    // their wall time mostly the CPU's staging copies and conversions, which hold no frame of the game).
+    bool RunStages(const ncnn::Mat &in, const std::vector<int> &ends, ncnn::Mat &out, std::vector<double> &walls)
+    {
+        walls.clear();
+        const ncnn::VulkanDevice *device = net_.vulkan_device();
+        ncnn::VkAllocator *blobs = device->acquire_blob_allocator();
+        ncnn::VkAllocator *staging = device->acquire_staging_allocator();
+        bool ok = true;
+        {
+            ncnn::Extractor ex = net_.create_extractor();
+            ex.set_blob_vkallocator(blobs);
+            ex.set_workspace_vkallocator(blobs);
+            ex.set_staging_vkallocator(staging);
+            const auto submit = [&](int blob, bool timed) {
+                if (cancelled_)
+                    return false;
+                const Clock::time_point start = Clock::now();
+                ncnn::VkCompute cmd(device);
+                ncnn::VkMat mat;
+                if (ex.extract(blob, mat, cmd) != 0 || cmd.submit_and_wait() != 0)
+                    return false;
+                if (timed)
+                    walls.push_back(Ms(start));
+                return true;
+            };
+            ok = ex.input(input_, in) == 0 && submit(input_, false);
+            for (size_t i = 0; ok && i < ends.size(); ++i)
+                ok = submit(ends[i], true);
+            ok = ok && submit(output_, true) && ex.extract(output_, out) == 0;
+        }
+        device->reclaim_blob_allocator(blobs);
+        device->reclaim_staging_allocator(staging);
+        return ok;
+    }
+
+    // The calibration of this graph on this GPU, measured once per graph (the relief's three networks share one): the
+    // graph with a submission at every cut at two tile sizes, each stage the faster of two runs after a warm-up (the
+    // GPU's allocations). A segment's work is its growth between the sizes (the fixed part cancels); the fixed part is
+    // what is left of the small runs.
     bool Calibrate(std::string &error)
     {
         static std::mutex mutex;
@@ -317,45 +409,79 @@ class GpuNetwork final : public Network
                     return true;
                 }
         }
-        const auto run = [&](int inner, double &best) {
+        const auto run = [&](int inner, std::vector<double> &best) {
             const int size = inner + 2 * halo_;
             ncnn::Mat in(size, size, 3);
             in.fill(0.5f);
-            best = 1e30;
+            best.assign(cuts_.size() + 1, 1e30);
+            std::vector<double> walls;
             for (int i = 0; i < 3; ++i)
             {
-                const Clock::time_point start = Clock::now();
                 ncnn::Mat out;
-                ncnn::Extractor ex = net_.create_extractor();
-                if (ex.input("in0", in) != 0 || ex.extract("out0", out) != 0)
+                if (!RunStages(in, cuts_, out, walls) || walls.size() != best.size())
                 {
                     error = "ncnn could not run the network";
                     return false;
                 }
                 if (i > 0)
-                    best = std::min(best, Ms(start));
+                    for (size_t s = 0; s < walls.size(); ++s)
+                        best[s] = std::min(best[s], walls[s]);
             }
             return true;
         };
-        double small = 0.0, large = 0.0;
+        std::vector<double> small, large;
         if (!run(kProbeSmall, small) || !run(kProbeLarge, large))
             return false;
-        const auto texels = [&](int inner) { return static_cast<double>(inner + 2 * halo_) * (inner + 2 * halo_); };
+        const double grown = Texels(kProbeLarge, halo_) - Texels(kProbeSmall, halo_);
         Calibration c;
-        c.ms_per_texel = std::max((large - small) / (texels(kProbeLarge) - texels(kProbeSmall)), 1e-9);
-        c.fixed_ms = std::max(small - c.ms_per_texel * texels(kProbeSmall), 0.0);
-        c.tile = kMinTile;
+        double work = 0.0, fixed = 0.0;
+        for (size_t s = 0; s < small.size(); ++s)
+        {
+            c.share.push_back(std::max(large[s] - small[s], 0.0));
+            work += c.share.back();
+        }
+        if (work <= 0.0)
+            c.share.assign(small.size(), 1.0), work = static_cast<double>(small.size()); // no growth seen: equal parts
+        c.ms_per_texel = std::max(work / grown, 1e-9);
+        c.max_share = 0.0;
+        for (double &share : c.share)
+        {
+            share /= work;
+            c.max_share = std::max(c.max_share, share);
+        }
+        for (size_t s = 0; s < small.size(); ++s)
+            fixed += std::max(small[s] - c.share[s] * c.ms_per_texel * Texels(kProbeSmall, halo_), 0.0);
+        c.fixed_ms = fixed / static_cast<double>(small.size());
+        // The tile of the least wall time per inner texel whose largest segment fits a submission.
+        double best = 1e30;
         for (int tile = kMinTile; tile <= kMaxTile; tile += 32)
-            if (c.ms_per_texel * texels(tile) <= kSubmitMs)
-                c.tile = tile;
-        Log("relief GPU tiles: %d + %d texels (%.1f ms of GPU work a tile, %.1f ms fixed a submission; measured: %d px "
-            "%.1f ms, %d px %.1f ms)",
-            c.tile, halo_, c.ms_per_texel * texels(c.tile), c.fixed_ms, kProbeSmall, small, kProbeLarge, large);
+        {
+            const double graph = c.ms_per_texel * Texels(tile, halo_);
+            if (tile > kMinTile && c.max_share * graph > kSubmitMs)
+                break;
+            const double cost = (graph + static_cast<double>(Stages(c, tile).size() + 1) * c.fixed_ms) /
+                                (static_cast<double>(tile) * tile);
+            if (cost <= best)
+                best = cost, c.tile = tile;
+        }
+        const size_t stages = Stages(c, c.tile).size() + 1;
+        Log("relief GPU tiles: %d + %d texels in %zu submissions (graph %.1f ms of GPU work a tile, at most %.1f ms a "
+            "submission, %.1f ms fixed a submission; %zu cuts measured at %d and %d px: %.1f and %.1f ms in all)",
+            c.tile, halo_, stages, c.ms_per_texel * Texels(c.tile, halo_), c.max_share * c.ms_per_texel * Texels(c.tile, halo_),
+            c.fixed_ms, cuts_.size(), kProbeSmall, kProbeLarge, Sum(small), Sum(large));
         calibration_ = c;
         tile_ = c.tile;
         std::lock_guard lock(mutex);
         known.emplace_back(key, c);
         return true;
+    }
+
+    static double Sum(const std::vector<double> &values)
+    {
+        double sum = 0.0;
+        for (const double v : values)
+            sum += v;
+        return sum;
     }
 
     bool Infer(const float *image, int width, int height, float *planes, std::string &error) override
@@ -367,19 +493,21 @@ class GpuNetwork final : public Network
                 for (int y = 0; y < ih; ++y)
                     std::memcpy(tile.channel(c).row(y), in + (static_cast<size_t>(c) * ih + y) * iw,
                                 static_cast<size_t>(iw) * sizeof(float));
-            const Clock::time_point start = Clock::now();
             ncnn::Mat result;
-            ncnn::Extractor ex = net_.create_extractor();
             // A probe's final lease/budget check and attempt accounting must follow ALL input allocation/copy.
             // Ordinary inference has no callback and retains its original behavior.
             if (before_submit && !before_submit()) return false;
-            if (ex.input("in0", tile) != 0 || ex.extract("out0", result) != 0 || result.c != 3 ||
+            // The stages of this tile's own size (a tile at the image's edge is smaller: fewer, shorter stages).
+            std::vector<double> walls;
+            if (!RunStages(tile, Stages(calibration_, std::max(iw, ih) - 2 * halo_), result, walls) || result.c != 3 ||
                 result.w != iw * scale_ || result.h != ih * scale_)
             {
-                failure = "ncnn inference failed";
+                failure = cancelled_ ? "cancelled" : "ncnn inference failed";
                 return false;
             }
-            ms = Ms(start);
+            ms = 0.0; // the longest submission: what a frame of the game may wait for
+            for (const double wall : walls)
+                ms = std::max(ms, wall);
             const int ow = iw * scale_, oh = ih * scale_;
             for (int c = 0; c < 3; ++c)
                 for (int y = 0; y < oh; ++y)
@@ -395,7 +523,7 @@ class GpuNetwork final : public Network
         const auto lease = loading_retry_; // renderer may revoke it, but never extends this captured deadline
         const int previous = tile_;
         const TileRecoveryPlan probe = recovery_.plan(lease, now_ms(), cancelled_, tile_, calibration_.tile, halo_,
-            width - 2 * halo_, height - 2 * halo_, calibration_.fixed_ms, calibration_.ms_per_texel);
+            width - 2 * halo_, height - 2 * halo_, calibration_.fixed_ms, calibration_.ms_per_texel * calibration_.max_share);
         bool attempted = false, adopted = false;
         double probe_wall = 0.0, extra_wall = 0.0;
         const char *reason = "not-submitted";
@@ -501,6 +629,8 @@ class GpuNetwork final : public Network
     Calibration calibration_;
     std::string param_;
     ncnn::Net net_;
+    int input_ = -1, output_ = -1;
+    std::vector<int> cuts_; // the blobs a stage may end at (Open)
     std::atomic<bool> cancelled_{false};
 };
 
@@ -582,7 +712,7 @@ std::unique_ptr<Network> LoadGpuNetwork(std::span<const uint8_t> param, std::spa
         Log("ERROR: relief GPU model: scale %d failed after %.0f ms: %s", scale, Ms(start), error.c_str());
         return nullptr;
     }
-    Log("relief GPU model: scale %d ready after %.0f ms", scale, Ms(start));
+    Log("relief GPU model: scale %d ready after %.0f ms; %s", scale, Ms(start), network->Precision().c_str());
     return network;
 }
 

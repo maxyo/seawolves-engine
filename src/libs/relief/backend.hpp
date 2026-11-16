@@ -46,6 +46,8 @@ class CpuRuntime
     // `halo` texels, its output `scale` times the input; the image runs in tiles with the halo around each.
     virtual std::unique_ptr<Network> Load(std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int scale,
                                           std::string &error) = 0;
+    // The thread count of its networks' next runs (the game's CPU budget changes with its phase); nothing reloaded.
+    virtual void SetThreads(int threads) = 0;
 };
 
 // The Vulkan compute device ncnn would use (its default one): created on first use, kept for the process.
