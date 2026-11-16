@@ -2075,21 +2075,21 @@ static void Hero(const std::string &models)
     };
     Expect(surface.commands.empty() && view["tab"] == "perks" && view["tabs"][1]["selected"] == true && perk_nodes(view).size() == 2 &&
                view["detail"]["title"] == "Basic defense" && view["detail"]["learn"]["disabled"] == false &&
-               view["detail"]["learn"]["sub"] == "<hero.cost> 1 · <hero.free_points> 1" &&
-               view["detail"]["progress"] == "<hero.next_point> 340 / 1\xC2\xA0" "000" &&
+               view["detail"]["learn"]["label"] == "<hero.learn> · 1 (<hero.free_short> 1)" &&
+               view["perkInfo"] == "<hero.free_points> 1 · <hero.next_point> 340 / 1\xC2\xA0" "000" &&
                view["detail"]["text"] == "Damage taken is 10% lower.\n\nStacks with armour.",
            "the game's open perk group: its tree, the detail with cost, free points, the progress, the text's paragraphs");
     Expect(perk_nodes(view)[0]["state"] == "open" && perk_nodes(view)[1]["state"] == "locked" && perk_nodes(view)[1]["image"]["enamel"] == "iron" &&
-               view["detail"]["opens"].size() == 1 && view["detail"]["opens"][0]["id"] == "perk-go-criticalhit",
+               view["detail"]["opens"].size() == 1 && view["detail"]["opens"][0]["perk"] == "criticalhit",
            "a perk with a missing requirement is locked; the open one names what it opens");
     router.OnEvent({"perks", "row", "criticalhit"});
     Expect(surface.commands.empty() && surface.props["detail"]["learn"]["disabled"] == true &&
                surface.props["detail"]["requires"].size() == 1 && surface.props["detail"]["requires"][0]["name"] == "Basic defense" &&
-               surface.props["detail"]["missing"] == "<hero.learn_first> Basic defense",
+               surface.props["detail"]["lacking"] == "<hero.lacking> 1" && surface.props["detail"]["learn"]["reason"] == "<hero.learn_first> Basic defense",
            "the locked perk's detail names what it needs, in words");
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null(), "a perk that cannot be learned opens no card");
-    router.OnEvent({"perk-go-basicdefense", "click", ""});
+    router.OnEvent({"perk-detail", "go", "basicdefense"});
     Expect(surface.commands.empty() && surface.props["detail"]["title"] == "Basic defense", "«Требует» selects that perk");
     router.OnEvent({"perk-learn", "click", ""});
     {
@@ -2116,7 +2116,8 @@ static void Hero(const std::string &models)
     router.SetInterface(model);
     router.OnEvent({"header-tabs", "select", "perks2"});
     ExpectEqual(surface.Last(), "widget:lscchar_all\tTABBTN_2\t-1\tpress", "the ship perks: the game's second group");
-    Expect(surface.props["tabs"][2]["selected"] == true && surface.props["tabs"][1]["selected"] == false, "the asked group shows as chosen while the game switches");
+    Expect(surface.props["tabs"][1]["selected"] == true && surface.props["tabs"][2]["selected"] == false,
+           "the tab marker stays on the game's group until the game shows the asked one (marker and tree change together)");
 
     // Officers: a post opens the game's remove window; the dialog removes or closes.
     model.revision += 1;

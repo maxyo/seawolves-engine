@@ -288,14 +288,15 @@ static void CheckScreen(const std::string &directory)
     {
         const Json &detail = surface.props["detail"];
         Expect(detail["requires"].size() == 2 && detail["learn"]["disabled"] == true, "detail lists every actual requirement");
-        Expect(detail["requires"][0]["id"] == "perk-go-advancedcommerce" && detail["requires"][0]["met"] == false &&
-                   detail["requires"][0]["meta"] == "hero.not_learned" && detail["requires"][0]["groupHead"] == "Ship" &&
-                   detail["requires"][0]["groupIcon"] == "ship" && detail["requires"][1]["id"] == "perk-go-ironwill" &&
-                   detail["requires"][1]["meta"] == "hero.learned" && detail["requires"][1]["groupHead"] == "Personal",
-               "missing requirements first; a caption with glyph and name wherever the group changes");
-        Expect(detail["missing"] == "hero.learn_first advancedcommerce", "a locked perk says what is missing");
-        Expect(detail["learn"]["sub"] == "hero.cost 1 · hero.free_points 1" && detail["progress"] == "hero.next_point 340 / 1\xC2\xA0" "000",
-               "cost and free points are separate");
+        Expect(detail["requires"][0]["perk"] == "advancedcommerce" && detail["requires"][0]["met"] == false &&
+                   detail["requires"][0]["groupIcon"] == "ship" && detail["requires"][1]["perk"] == "ironwill" &&
+                   detail["requires"][1]["met"] == true && detail["requires"][1]["groupIcon"] == "",
+               "missing requirements first; a row of the other group carries its glyph");
+        Expect(detail["lacking"] == "hero.lacking 1" && detail["learn"]["label"] == "items.unavailable" &&
+                   detail["learn"]["reason"] == "hero.learn_first advancedcommerce",
+               "a locked perk counts what is missing; its button says it is unavailable and why");
+        Expect(surface.props["perkInfo"] == "hero.free_points 1 · hero.next_point 340 / 1\xC2\xA0" "000",
+               "free points and the progress to the next one stay over the tree");
         bool focus_in = false, dim = false;
         for (const Json &gutter : surface.props["tree"]["gutters"])
             for (const Json &arrow : gutter["arrows"])
@@ -305,11 +306,11 @@ static void CheckScreen(const std::string &directory)
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null(), "locked perk cannot enter learn confirmation");
     // «Требует» in the same group selects that perk.
-    router.OnEvent({"perk-go-ironwill", "click", ""});
+    router.OnEvent({"perk-detail", "go", "ironwill"});
     Expect(surface.sent.empty() && Selected(surface.props) == "ironwill" && surface.props["detail"]["opens"].size() == 1 &&
-               surface.props["detail"]["opens"][0]["id"] == "perk-go-trustworthy",
+               surface.props["detail"]["opens"][0]["perk"] == "trustworthy",
            "a requirement row jumps to it; its panel lists what it opens");
-    router.OnEvent({"perk-go-trustworthy", "click", ""});
+    router.OnEvent({"perk-detail", "go", "trustworthy"});
     Expect(Selected(surface.props) == "trustworthy", "an «Открывает» row jumps back");
     // An other-group node is read in place; its own tab learns it.
     router.OnEvent({"perks", "row", "advancedcommerce"});
@@ -318,11 +319,12 @@ static void CheckScreen(const std::string &directory)
            "other-group node is readable but cannot learn using personal points");
     // «Требует» across groups: the game switches to the other group, where the perk is selected.
     router.OnEvent({"perks", "row", "trustworthy"});
-    router.OnEvent({"perk-go-advancedcommerce", "click", ""});
+    router.OnEvent({"perk-detail", "go", "advancedcommerce"});
     Expect(surface.sent.size() == 1 && EngineCommand(surface.sent.back()).find("TABBTN_2") != std::string::npos,
            "a requirement of the other group switches the game to that group");
-    Expect(Selected(surface.props) == "advancedcommerce" && surface.props["tabs"][2]["selected"] == true,
-           "the asked group shows as chosen and the perk selected while the game switches");
+    Expect(Selected(surface.props) == "advancedcommerce" && surface.props["tabs"][1]["selected"] == true &&
+               surface.props["tabs"][2]["selected"] == false,
+           "the perk is selected at once; the tab marker moves with the game's group, in the same frame as the tree");
     auto ship = model;
     ship.revision++;
     std::erase_if(ship.widgets, [](const Widget &w) { // the adapter exports the ship table's perks and their prerequisites
@@ -344,7 +346,9 @@ static void CheckScreen(const std::string &directory)
     }
     router.SetInterface(ship);
     Expect(Selected(surface.props) == "advancedcommerce" && Node(surface.props, "advancedcommerce")["external"] == false &&
-               Node(surface.props, "advancedcommerce")["reveal"] == "ship:advancedcommerce" && !surface.props["detail"]["learn"].is_null(),
+               Node(surface.props, "advancedcommerce")["reveal"] == "ship:advancedcommerce" && !surface.props["detail"]["learn"].is_null() &&
+               surface.props["tabs"][2]["selected"] == true &&
+               Node(surface.props, "advancedcommerce")["revealTop"].get<int>() < Node(surface.props, "advancedcommerce")["top"].get<int>(),
            "in its own group the perk is selected, brought into view and learnable there");
     router.SetInterface(model);
 
@@ -360,7 +364,7 @@ static void CheckScreen(const std::string &directory)
         poor_router.OnEvent({"header-tabs", "select", "perks1"});
         poor_router.OnEvent({"perks", "row", "basicdefense"});
         Expect(Node(poor_surface.props, "basicdefense")["state"] == "open" && Node(poor_surface.props, "trustworthy")["state"] == "locked" &&
-                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["missing"] == "hero.no_points",
+                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.no_points" && poor_surface.props["detail"]["lacking"] == "",
                "no free points: reachable perks stay open, the button and the panel say why it cannot be learned");
     }
     // Incomplete facts: shown, never learnable.

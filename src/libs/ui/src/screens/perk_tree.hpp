@@ -292,14 +292,31 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
         for (int k = 0; k < count; ++k)
             arrive[in[k]] = top[v] + Layout::arrive_at + k * step;
     }
-    // A link that skips columns crosses them in the gap above its target's row, in a channel of its
-    // own among the links whose column ranges overlap there.
+    // A link that skips columns runs straight at its arrival height when the skipped cells there are
+    // empty (no channel boxing an empty cell), else it crosses them in the gap above its target's row,
+    // in a channel of its own among the links whose column ranges overlap there.
+    std::vector<std::vector<int>> in_column(columns);
+    for (size_t v = 0; v < n; ++v)
+        in_column[column[v]].push_back(static_cast<int>(v));
+    const auto clear_at = [&](int first, int last, int y) {
+        constexpr int clearance = 4;
+        for (int c = first; c <= last; ++c)
+            for (int v : in_column[c])
+                if (top[v] - clearance <= y && y <= top[v] + Layout::node_height + clearance)
+                    return false;
+        return true;
+    };
     std::map<int, std::vector<std::tuple<int, int, int>>> gaps; // gap top -> (first, last column, slot)
     for (size_t e = 0; e < edges.size(); ++e)
     {
         const int s = index.at(edges[e].from), t = index.at(edges[e].to);
         if (column[t] - column[s] < 2)
             continue;
+        if (clear_at(column[s] + 1, column[t] - 1, arrive[e]))
+        {
+            channel[e] = arrive[e];
+            continue;
+        }
         auto &used = gaps[top[t]];
         int slot = 0;
         for (bool clash = true; clash; )
@@ -344,7 +361,7 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
     for (size_t e = 0; e < edges.size(); ++e)
     {
         const int s = index.at(edges[e].from), t = index.at(edges[e].to);
-        if (column[t] - column[s] >= 2)
+        if (column[t] - column[s] >= 2 && channel[e] != arrive[e])
             owners[column[t] - 1].push_back(Owner{std::min(channel[e], arrive[e]), std::max(channel[e], arrive[e]), -1, static_cast<int>(e)});
     }
     for (int g = 0; g + 1 < columns; ++g)
@@ -406,10 +423,17 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
             }
         }
     }
-    // The crossings of skipping links: whole columns and whole gutters between the two ends.
+    // The crossings of skipping links: whole columns and whole gutters between the two ends; a straight
+    // one ends in the gutter before its target without a turn.
     for (size_t e = 0; e < edges.size(); ++e)
     {
         const int s = index.at(edges[e].from), t = index.at(edges[e].to);
+        if (column[t] - column[s] >= 2 && channel[e] == arrive[e])
+        {
+            Gutter &last = layout.gutters[column[t] - 1];
+            last.lines.push_back(Horizontal(0, last.width - Layout::arrow, arrive[e], {static_cast<int>(e)}));
+            last.arrows.push_back({arrive[e], static_cast<int>(e)});
+        }
         for (int c = column[s] + 1; c < column[t]; ++c)
         {
             layout.columns[c].lines.push_back(Line{0, channel[e] - Layout::thickness / 2, 0, Layout::thickness, true, {static_cast<int>(e)}});
