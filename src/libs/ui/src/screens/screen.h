@@ -142,6 +142,8 @@ class Bindings
     // Any other text of the view that tells the player about a problem or a result (an error line, an error
     // dialog's text): logged the same way, when it appears.
     void Shown(const std::string &tone, const std::string &text);
+    // A player action the log should record (an irreversible one such as learning a perk): an info line.
+    void Log(const std::string &text);
     // Something the screen cannot do as designed: an error line (a toast in debug hosts).
     void Error(const std::string &text);
     // Local state of the screen changed: build the view again from the same model.

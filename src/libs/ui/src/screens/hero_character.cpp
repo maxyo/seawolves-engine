@@ -217,7 +217,6 @@ class HeroScreen final : public Screen
                   : admitted.One("ACCEPT_ADD_OFFICER") || admitted.One("CANCEL_ADD_OFFICER")         ? Window::Assign
                   : admitted.One("MSG_OK")                                                           ? Window::Message
                                                                                                      : Window::None;
-        if (learn_open_ && !SameLearnContext(learn_character_, learn_ship_)) learn_open_ = false;
         Walk(bindings);
         if (full && subject_request_ && intent_.kind == Intent::None && window_ == Window::None)
             OpenOnSubject(bindings);
@@ -253,7 +252,6 @@ class HeroScreen final : public Screen
             if (next == tab_ && (!perks || want_ship == (wanted_ship_ >= 0 ? wanted_ship_ == 1 : ship)))
                 return;
             tab_ = next;
-            learn_open_ = false;
             if (intent_.kind == Intent::Learn) intent_ = {};
             skill_help_ = nullptr;
             sent_revision_ = 0; // a player action: its first step may go at once
@@ -269,7 +267,6 @@ class HeroScreen final : public Screen
         });
         view["tab"] = tab_ == Tab::Skills ? "skills" : tab_ == Tab::Perks ? "perks" : "officers";
         view["subject"] = full ? hero::Subject(admitted, bindings, subjects_, [this, &bindings](const Widget &row) {
-            learn_open_ = false;
             if (intent_.kind == Intent::Learn) intent_ = {};
             sent_revision_ = 0; // a player action: its first step may go at once
             Step(bindings, &row, "select", row.row_id);
@@ -301,22 +298,17 @@ class HeroScreen final : public Screen
         return view;
     }
 
-    // Android back closes the learning card or the game's window first (Bindings::Modal does it for
+    // Android back closes the skill help or the game's window first (Bindings::Modal does it for
     // those shown as a dialog; a window of the game is open a moment before its dialog is).
     bool OwnsBack() const override
     {
-        return !skill_help_.is_null() || learn_open_ || window_ != Window::None;
+        return !skill_help_.is_null() || window_ != Window::None;
     }
     void Back(Bindings &bindings) override
     {
         if (!skill_help_.is_null())
         {
             skill_help_ = nullptr;
-            return bindings.Rebuild();
-        }
-        if (learn_open_)
-        {
-            learn_open_ = false;
             return bindings.Rebuild();
         }
         sent_revision_ = 0; // a player action: its first step may go at once
@@ -364,9 +356,6 @@ class HeroScreen final : public Screen
     Intent intent_;
     std::string perk_;                  // the perk in the detail panel
     perk_tree::Cache perk_tree_;        // topology only; selection/state changes do not relayout
-    std::string learn_character_;
-    bool learn_ship_ = false;
-    bool learn_open_ = false;           // the parchment card that confirms learning perk_
     Json skill_help_ = nullptr;         // presentation-only stock skill description, never a game selection
     int wanted_ship_ = -1;              // the perk group the player asked for until the game shows it (0 personal, 1 ship)
     std::map<std::string, int> added_;  // points the player put into a skill during this visit
@@ -376,14 +365,6 @@ class HeroScreen final : public Screen
         const Widget *group = a_->One("TABBTN_2");
         return !character.empty() && character == Field(a_->One("ANDROID_SUBJECT"), "character") &&
             ship == (group && group->value == "1");
-    }
-
-    void OpenLearn(bool allowed)
-    {
-        learn_character_ = Field(a_->One("ANDROID_SUBJECT"), "character");
-        const Widget *group = a_->One("TABBTN_2");
-        learn_ship_ = group && group->value == "1";
-        learn_open_ = allowed && !learn_character_.empty();
     }
 
     // One engine step per model revision: a step is sent only after the engine answered the last.
@@ -864,15 +845,6 @@ class HeroScreen final : public Screen
                                                      Field(fact, "eligible") == "1", met);
     }
 
-    // What a perk needs, for the learning card: every required perk with whether the character has it.
-    Json Conditions(const PerkGraph &graph, const std::string &id) const
-    {
-        Json conditions = Json::array();
-        for (const Widget *edge : graph.incoming.count(id) ? graph.incoming.at(id) : std::vector<const Widget *>())
-            conditions.push_back(Json{{"name", PerkName(graph, perk_tree::Id(Field(edge, "source")))}, {"met", Field(edge, "met") == "1"}});
-        return conditions;
-    }
-
     Json PerkImage(const Widget &row, bool locked) const
     {
         if (HasPerkIcon(row.row_id))
@@ -885,7 +857,6 @@ class HeroScreen final : public Screen
     // there. Nothing is learned or changed in the game but the shown group.
     void JumpTo(Bindings &bindings, const std::string &id, bool ship_perk, bool local, bool shown_ship)
     {
-        learn_open_ = false;
         perk_ = id;
         if (!local && ship_perk != shown_ship && window_ == Window::None && intent_.kind == Intent::None)
         {
@@ -915,7 +886,6 @@ class HeroScreen final : public Screen
         const PerkGraph graph = Graph();
         if (graph.rows.empty())
         {
-            learn_open_ = false;
             return;
         }
         const size_t builds = perk_tree_.Builds();
@@ -927,7 +897,6 @@ class HeroScreen final : public Screen
             if (built)
                 bindings.Error("Perk prerequisite graph is cyclic or names a perk without a fact; the perk tree is not shown");
             view["perksEmpty"] = bindings.Text("items.unavailable");
-            learn_open_ = false;
             return;
         }
         if (built && !graph.complete)
@@ -944,7 +913,6 @@ class HeroScreen final : public Screen
                 if (std::tie(place.top, place.left) < std::tie(best.top, best.left))
                     selected = id;
             }
-            learn_open_ = false;
         }
         perk_ = graph.rows.count(selected) ? graph.rows.at(selected)->row_id : selected;
 
@@ -991,7 +959,6 @@ class HeroScreen final : public Screen
             if (std::find(ids.begin(), ids.end(), event.value) == ids.end())
                 return;
             perk_ = rows.count(event.value) ? rows.at(event.value)->row_id : event.value;
-            learn_open_ = false;
             bindings.Rebuild(); // the description only: no engine command
         });
 
@@ -1034,26 +1001,23 @@ class HeroScreen final : public Screen
             if (found != targets.end())
                 JumpTo(bindings, found->first, found->second.first, found->second.second, ship);
         });
-        // Why it cannot be learned now, in the order the stock window checks it: the button's one line
-        // (label) and the full reason it gives on a tap.
-        std::string reason, refusal;
-        if (learned)
-            reason = refusal = bindings.Text("hero.learned");
-        else if (!graph.complete)
-            reason = refusal = bindings.Text("items.unavailable");
+        // Why it cannot be learned now, in the order the stock window checks it (shown above the button).
+        std::string reason;
+        if (!graph.complete)
+            reason = bindings.Text("items.unavailable");
         else if (!missing.empty())
-            reason = bindings.Text("hero.learn_first") + " " + missing, refusal = bindings.Text("items.unavailable");
+            reason = bindings.Text("hero.learn_first") + " " + missing;
         else if (free <= 0)
-            reason = refusal = bindings.Text("hero.no_points");
+            reason = bindings.Text("hero.no_points");
         else if (!can_learn)
-            reason = refusal = bindings.Text("items.unavailable");
+            reason = bindings.Text("items.unavailable");
         Json detail{{"id", "detail:" + reveal_group + selected}, // a reveal key of its own: the panel scrolls back to its top
                     {"title", PerkName(graph, selected)},
                     {"text", StockText(Field(fact, "text"))},
                     {"image", PerkPicture(graph, selected, state(selected) != std::string("learned") && state(selected) != std::string("open"))},
                     {"group", external || ship_perk != ship ? GroupName(ship_perk) : ""},
                     {"groupIcon", ship_perk ? "ship" : "hero"},
-                    {"blocked", !external && full && !learned && graph.complete && !missing.empty() ? reason : ""},
+                    {"blocked", !external && full && !learned && !can_learn ? reason : ""},
                     {"requires", grouped(needs)},
                     {"opens", grouped(opens)},
                     {"note", !external && Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : ""},
@@ -1069,23 +1033,30 @@ class HeroScreen final : public Screen
         }
         else if (full)
         {
-            // One line: what it costs and how many points are free, or why it cannot be learned. No tap reason:
-            // the label says it, and missing prerequisites stand in words right above the button (`blocked`),
-            // not in a toast in the top bar.
+            // «Изучить», learned by a hold (the owner's rule for what cannot be undone: an early release shakes,
+            // nothing is sent). Why a perk cannot be learned stands right above the button (`blocked`), so the
+            // disabled button needs no toast. The hold starts the stock learn at once (Intent::Learn: the row's
+            // ChoosePerk, then its PERK_ACCEPT, never drawn), so points, flags and unlocks are the stock ones.
             detail["learn"] = Json{{"id", "perk-learn"},
-                                   {"label", can_learn ? bindings.Text("hero.learn") + " · 1 (" + bindings.Text("hero.free_short") + " " +
-                                                             std::to_string(free) + ")"
-                                                       : refusal},
+                                   {"label", bindings.Text(learned ? "hero.learned" : "hero.learn")},
                                    {"disabled", !can_learn},
                                    {"busy", intent_.kind == Intent::Learn}};
-            // Learning is confirmed on a parchment card (the owner's exception to hold-to-confirm).
-            bindings.On("perk-learn", "", [this, &bindings, can_learn](const Event &) {
-                OpenLearn(can_learn);
+            bindings.On("perk-learn", "", [this, &bindings, can_learn, id = selected](const Event &) {
+                if (!can_learn || intent_.kind != Intent::None)
+                    return;
+                Intent intent;
+                intent.kind = Intent::Learn;
+                intent.row = perk_;
+                intent.learn_character = Field(a_->One("ANDROID_SUBJECT"), "character");
+                const Widget *group = a_->One("TABBTN_2");
+                intent.learn_ship = group && group->value == "1";
+                bindings.Log("perk learn: " + id + " (character " + intent.learn_character + ", " + (intent.learn_ship ? "ship" : "personal") +
+                             " group) by a hold on Изучить");
+                sent_revision_ = 0; // a player action: its first step may go at once
+                Start(bindings, intent);
                 bindings.Rebuild();
             });
         }
-        if (!can_learn)
-            learn_open_ = false;
         view["detail"] = detail;
     }
 
@@ -1151,41 +1122,6 @@ class HeroScreen final : public Screen
         for (const Widget *p : a_->All("ANDROID_POSTS"))
             if (slot && Field(p, "slot") == std::to_string(slot->index))
                 post = p;
-        // The card that confirms learning: the perk's picture, its full text, what it needs, what it costs.
-        if (learn_open_ && tab_ == Tab::Perks && window_ == Window::None && intent_.kind == Intent::None)
-            if (const Widget *row = Row("TABLE_PERKS", perk_))
-            {
-                const PerkGraph graph = Graph();
-                const std::string id = perk_tree::Id(perk_);
-                const Widget *fact = FactOf(graph, id);
-                const auto cancel = [this, &bindings](const Event &) {
-                    learn_open_ = false;
-                    bindings.Rebuild();
-                };
-                bindings.Modal("dialog", cancel);
-                bindings.On("dialog-close", "", cancel);
-                bindings.On("learn-cancel", "", cancel);
-                bindings.On("learn-ok", "", [this, &bindings](const Event &) {
-                    learn_open_ = false;
-                    Intent intent;
-                    if (!SameLearnContext(learn_character_, learn_ship_)) { bindings.Rebuild(); return; }
-                    intent.kind = Intent::Learn;
-                    intent.row = perk_;
-                    intent.learn_character = learn_character_;
-                    intent.learn_ship = learn_ship_;
-                    Start(bindings, intent);
-                    bindings.Rebuild();
-                });
-                return Json{{"kind", "learn"},
-                            {"title", Trim(row->CellText(1))},
-                            {"text", StockText(Field(fact, "text"))},
-                            {"image", PerkImage(*row, false)},
-                            {"conditions", Conditions(graph, id)},
-                            {"note", Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : std::string()},
-                            {"actions", Json::array({Json{{"id", "learn-cancel"}, {"label", bindings.Text("common.cancel")}, {"variant", "quiet"}},
-                                                     Json{{"id", "learn-ok"}, {"label", bindings.Text("hero.learn")},
-                                                          {"sub", bindings.Text("hero.cost") + " 1"}, {"variant", "primary"}}})}};
-            }
         const auto close = [this, &bindings](const Event &) {
             sent_revision_ = 0; // a player action: its first step may go at once
             CloseWindow(bindings);

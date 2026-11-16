@@ -172,7 +172,8 @@ struct SurfaceProbe final : Surface
     void Alert(const std::string &) override {}
     void SetLanguage(const std::string &) override {}
     std::string Text(const std::string &key) override { return key; }
-    void Log(const std::string &) override {}
+    std::vector<std::string> logs;
+    void Log(const std::string &line) override { logs.push_back(line); }
     void Shown(const std::string &, const std::string &, const std::string &) const override {}
     void Error(const std::string &e) override { errors.push_back(e); }
     void Refuse(const std::string &) override {}
@@ -277,8 +278,8 @@ static void CheckScreen(const std::string &directory)
                    detail["requires"][0]["groupIcon"] == "ship" && detail["requires"][1]["perk"] == "ironwill" &&
                    detail["requires"][1]["met"] == true && detail["requires"][1]["groupIcon"] == "",
                "missing requirements first; a row of the other group carries its glyph");
-        Expect(detail["blocked"] == "hero.learn_first advancedcommerce" && detail["learn"]["label"] == "items.unavailable" &&
-                   !detail["learn"].contains("reason"),
+        Expect(detail["blocked"] == "hero.learn_first advancedcommerce" && detail["learn"]["label"] == "hero.learn" &&
+                   detail["learn"]["disabled"] == true && !detail["learn"].contains("reason"),
                "a locked perk says what is missing right above its button, which says it is unavailable (no toast in the top bar)");
         Expect(surface.props["perkInfo"] == "hero.free_points 1 · hero.next_point 340 / 1\xC2\xA0" "000",
                "free points and the progress to the next one stay over the tree");
@@ -287,7 +288,7 @@ static void CheckScreen(const std::string &directory)
                "the selected perk's links are highlighted, the others drawn faint");
     }
     router.OnEvent({"perk-learn", "click", ""});
-    Expect(surface.props["dialog"].is_null(), "locked perk cannot enter learn confirmation");
+    Expect(surface.props["dialog"].is_null() && surface.sent.empty(), "a locked perk's hold learns nothing");
     // «Требует» in the same group selects that perk.
     router.OnEvent({"perk-detail", "go", "ironwill"});
     Expect(surface.sent.empty() && Selected(surface.props) == "ironwill" && surface.props["detail"]["opens"].size() == 1 &&
@@ -347,7 +348,7 @@ static void CheckScreen(const std::string &directory)
         poor_router.OnEvent({"header-tabs", "select", "perks1"});
         poor_router.OnEvent({"perks", "row", "basicdefense"});
         Expect(Node(poor_surface.props, "basicdefense")["state"] == "open" && Node(poor_surface.props, "trustworthy")["state"] == "locked" &&
-                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.no_points" && poor_surface.props["detail"]["blocked"] == "",
+                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.learn" && poor_surface.props["detail"]["blocked"] == "hero.no_points",
                "no free points: reachable perks stay open, the button and the panel say why it cannot be learned");
     }
     // Incomplete facts: shown, never learnable.
@@ -405,7 +406,6 @@ static void CheckScreen(const std::string &directory)
         stale.OnEvent({"header-tabs", "select", "perks1"});
         stale.OnEvent({"perks", "row", "basicdefense"});
         stale.OnEvent({"perk-learn", "click", ""});
-        stale.OnEvent({"learn-ok", "click", ""});
         Expect(stale_surface.sent.size() == 1, "context control starts a genuine pending learn");
         auto reply = model;
         reply.revision++;
@@ -432,34 +432,21 @@ static void CheckScreen(const std::string &directory)
         stale.SetInterface(reply);
         stale.OnEvent({"perks", "row", "basicdefense"});
         stale.OnEvent({"perk-learn", "click", ""});
-        stale.OnEvent({"learn-ok", "click", ""});
         Expect(stale_surface.sent.size() == 2, "fresh explicit learn remains possible in new context");
     }
-    {
-        SurfaceProbe card_surface;
-        Router card(card_surface);
-        card.SetInterface(model);
-        card.OnEvent({"header-tabs", "select", "perks1"});
-        card.OnEvent({"perks", "row", "basicdefense"});
-        card.OnEvent({"perk-learn", "click", ""});
-        Expect(card_surface.props["dialog"]["kind"] == "learn", "an open perk enters the confirmation card");
-        auto changed = model;
-        changed.revision++;
-        for (auto &w : changed.widgets)
-            if (w.node == "ANDROID_SUBJECT")
-                w.context["character"] = "9";
-        card.SetInterface(changed);
-        Expect(card_surface.props["dialog"].is_null(), "subject change closes old confirmation even before an intent exists");
-    }
+    // The completed hold on «Изучить» starts the stock learn at once (no card), and the log says so.
     router.OnEvent({"perks", "row", "basicdefense"});
+    const size_t before_learn = surface.sent.size();
     router.OnEvent({"perk-learn", "click", ""});
-    Expect(surface.sent.size() == 1 && surface.props["dialog"]["kind"] == "learn", "only explicit Learn opens existing confirmation");
-    router.OnEvent({"learn-cancel", "click", ""});
-    Expect(surface.sent.size() == 1, "cancel spends nothing");
+    Expect(surface.sent.size() == before_learn + 1 && EngineCommand(surface.sent.back()).find("TABLE_PERKS\t0\tactivate") != std::string::npos &&
+               surface.props["dialog"].is_null() && surface.props["detail"]["learn"]["busy"] == true,
+           "the hold enters the stock perk window at once; no card, the button busy");
+    bool logged = false;
+    for (const auto &line : surface.logs)
+        logged |= line.find("perk learn: basicdefense") != std::string::npos;
+    Expect(logged, "the learn action is logged");
     router.OnEvent({"perk-learn", "click", ""});
-    router.OnEvent({"learn-ok", "click", ""});
-    Expect(surface.sent.size() == 2 && EngineCommand(surface.sent.back()).find("TABLE_PERKS\t0\tactivate") != std::string::npos,
-           "confirmation still enters stock perk window; cannot bypass PERK_ACCEPT");
+    Expect(surface.sent.size() == before_learn + 1, "a second hold while the game learns sends nothing");
     model.revision += 100;
     Widget accept;
     accept.node = "PERK_ACCEPT";

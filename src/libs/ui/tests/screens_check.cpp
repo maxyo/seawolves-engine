@@ -2069,7 +2069,7 @@ static void Hero(const std::string &models)
     const auto perk_nodes = [](const Json &v) { return v["tree"]["nodes"]; };
     Expect(surface.commands.empty() && view["tab"] == "perks" && view["tabs"][1]["selected"] == true && perk_nodes(view).size() == 2 &&
                view["detail"]["title"] == "Basic defense" && view["detail"]["learn"]["disabled"] == false &&
-               view["detail"]["learn"]["label"] == "<hero.learn> · 1 (<hero.free_short> 1)" &&
+               view["detail"]["learn"]["label"] == "<hero.learn>" &&
                view["perkInfo"] == "<hero.free_points> 1 · <hero.next_point> 340 / 1\xC2\xA0" "000" &&
                view["detail"]["text"] == "Damage taken is 10% lower.\n\nStacks with armour.",
            "the game's open perk group: its tree, the detail with cost, free points, the progress, the text's paragraphs");
@@ -2082,22 +2082,13 @@ static void Hero(const std::string &models)
                surface.props["detail"]["blocked"] == "<hero.learn_first> Basic defense",
            "the locked perk's detail names what it needs, in words");
     router.OnEvent({"perk-learn", "click", ""});
-    Expect(surface.props["dialog"].is_null(), "a perk that cannot be learned opens no card");
+    Expect(surface.props["dialog"].is_null() && surface.commands.empty(), "a perk that cannot be learned learns nothing");
     router.OnEvent({"perk-detail", "go", "basicdefense"});
     Expect(surface.commands.empty() && surface.props["detail"]["title"] == "Basic defense", "«Требует» selects that perk");
-    router.OnEvent({"perk-learn", "click", ""});
-    {
-        const Json &card = surface.props["dialog"];
-        Expect(surface.commands.empty() && card["kind"] == "learn" && card["title"] == "Basic defense" && card["text"] == "Damage taken is 10% lower.\n\nStacks with armour." &&
-                   card["actions"][1]["id"] == "learn-ok" && card["actions"][1]["sub"] == "<hero.cost> 1" && router.WantsBack(),
-               "learning asks on a card: the perk's text and its cost; nothing is sent yet: " + card.dump());
-    }
-    router.OnEvent({"learn-cancel", "click", ""});
-    Expect(surface.commands.empty() && surface.props["dialog"].is_null(), "«Отмена» closes the card and learns nothing");
-    router.OnEvent({"perk-learn", "click", ""});
-    router.OnEvent({"learn-ok", "click", ""});
-    ExpectEqual(surface.Last(), "widget:lscchar_all\tTABLE_PERKS\t0\tactivate@4:basicdefense", "confirmed: the selected perk's window is opened");
-    Expect(surface.props["dialog"].is_null(), "the card is gone while the game learns");
+    Expect(surface.props["detail"]["learn"]["label"] == "<hero.learn>", "the button says just «Изучить»");
+    router.OnEvent({"perk-learn", "click", ""}); // the completed hold
+    ExpectEqual(surface.Last(), "widget:lscchar_all\tTABLE_PERKS\t0\tactivate@4:basicdefense", "the hold opens the selected perk's stock window at once");
+    Expect(surface.props["dialog"].is_null(), "no card while the game learns");
     model.revision += 1;
     model.widgets.push_back(Make("PERK_ACCEPT", "button", "Learn", {"press"}));
     model.widgets.push_back(Make("PERK_CANCEL", "button", "Cancel", {"press"}));

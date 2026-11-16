@@ -388,6 +388,11 @@ void Bindings::Shown(const std::string &tone, const std::string &text)
         router_.surface_.Shown("notice on screen " + router_.using_, tone, text);
 }
 
+void Bindings::Log(const std::string &text)
+{
+    router_.surface_.Log("screen " + router_.using_ + ": " + text);
+}
+
 void Bindings::Error(const std::string &text)
 {
     router_.surface_.Error("screen " + router_.using_ + ": " + text);
