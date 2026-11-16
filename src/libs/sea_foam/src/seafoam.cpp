@@ -100,6 +100,7 @@ void SEAFOAM::AddShip(entid_t pShipEID)
     foamInfo->carcass[1]->InitCircleMeasure(wideK * 1.4f, wideK * 1.f, .55f);
 
     foamInfo->firstSoundPlay = true;
+    foamInfo->splash = {};
     foamInfo->doSplash = false;
     foamInfo->sound = 0;
 }
@@ -403,23 +404,18 @@ void SEAFOAM::RealizeShipFoam_Particles(tShipFoamInfo &_shipFoamInfo, uint32_t _
 
     if (isStorm)
     {
-        static auto oldFrontEmitterPosY = frontEmitterPos.y;
-        if ((frontEmitterPos.y - oldFrontEmitterPosY) / _dTime < 5e-4f) // 0.025
-        {
-            _shipFoamInfo.frontEmitter[2]->EnableEmit(false);
-            _shipFoamInfo.doSplash = false;
-        }
-        else
-        {
-            _shipFoamInfo.frontEmitter[2]->EnableEmit(true);
-            _shipFoamInfo.doSplash = true;
-        }
-        oldFrontEmitterPosY = frontEmitterPos.y;
+        _shipFoamInfo.doSplash = _shipFoamInfo.splash.Update(frontEmitterPos.y, 1e-3f * static_cast<float>(_dTime));
+        _shipFoamInfo.frontEmitter[2]->EnableEmit(_shipFoamInfo.doSplash);
         auto mtx2 = _shipFoamInfo.shipModel->mtx;
         storm::math::pos(mtx2) = glm::vec3(0.f);
         const auto a = storm::math::transformPoint(mtx2, glm::vec3(0.f, 1.0f, -.15f));
         _shipFoamInfo.frontEmitter[2]->SetEmitter(storm::math::transformPoint(_shipFoamInfo.shipModel->mtx, frontEmitterPos), a);
         _shipFoamInfo.frontEmitter[2]->Realize(_dTime);
+    }
+    else
+    {
+        _shipFoamInfo.splash.Reset();
+        _shipFoamInfo.doSplash = false;
     }
 
     if (soundService && (_shipFoamInfo.doSplash))

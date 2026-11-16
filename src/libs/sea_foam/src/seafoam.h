@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bow_splash.hpp"
 #include "seafoam_defines.h"
 #include "t_carcass.h"
 #include "v_sound_service.h"
@@ -31,6 +32,7 @@ struct tShipFoamInfo
     SEAFOAM_PS *frontEmitter[3];
     MODEL *shipModel;
     TSD_ID sound;
+    storm::sea_foam::BowSplashGate splash; // the storm's bow splash, from this ship's own bow
     bool doSplash;
     bool firstSoundPlay;
     bool enabled;
