@@ -56,11 +56,5 @@ template <class KeyRefs> class HudChannel
     {
         return json_;
     }
-    // Published elsewhere (another path with its own JSON): rebuild on the next publish.
-    void published(std::string json)
-    {
-        key_.reset();
-        json_ = std::move(json);
-    }
 };
 } // namespace storm::android

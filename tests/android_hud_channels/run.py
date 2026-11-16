@@ -50,6 +50,8 @@ assert re.search(r'gameplayChannel\.publish\(state\.publicationKey\(\), \[', bod
 main = (root / 'src/apps/engine/src/main.cpp').read_text()
 loop = main[main.index('STORM_PROFILE_ZONE("HUD adapter: gameplay, combat, map, ship");'):]
 assert 'publishGameplayState(gameplayState);' in loop[:loop.index('publishWorldMapHud(')], 'the loop publishes the typed state'
+assert 'publishGameplayState(gameplayState.json())' not in main, 'every path publishes the typed gameplay state'
+assert 'inline void publishGameplayState(const std::string' not in ui, 'no text overload'
 
 ship = (root / 'src/libs/util/include/platform/android_ship_telemetry.hpp').read_text()
 body = publisher(ship, 'std::optional<std::string> publication(uint32_t tick) const')

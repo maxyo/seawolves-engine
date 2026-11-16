@@ -672,7 +672,7 @@ int main(int argc, char *argv[])
     };
     storm::android::updateCombatState(gameplayState, core_private);
     storm::android::publishCombatState();
-    storm::android::publishGameplayState(gameplayState.json());
+    storm::android::publishGameplayState(gameplayState);
     storm::android::worldMapHud.update({},SDL_GetTicks());
     storm::android::publishWorldMapHud();
     storm::android::shipTelemetry.update(gameplayState.revision(), {});
@@ -1060,7 +1060,7 @@ int main(int argc, char *argv[])
                 storm::android::deckWalk.update(gameplayState.revision());
                 storm::android::updateCombatState(gameplayState, core_private);
                 storm::android::publishCombatState();
-                storm::android::publishGameplayState(gameplayState.json());
+                storm::android::publishGameplayState(gameplayState);
                 storm::android::worldMapHud.update({},SDL_GetTicks());
                 storm::android::publishWorldMapHud();
                 storm::android::shipTelemetry.update(gameplayState.revision(), {});
@@ -1308,7 +1308,7 @@ int main(int argc, char *argv[])
         stopping.blocked = "starting"; // the engine is going down: nothing of the game is usable
         gameplayState.update(std::move(stopping));
     }
-    storm::android::publishGameplayState(gameplayState.json());
+    storm::android::publishGameplayState(gameplayState);
     storm::android::worldMapHud.update({},SDL_GetTicks());
     storm::android::publishWorldMapHud();
     storm::android::shipTelemetry.update(gameplayState.revision(), {});

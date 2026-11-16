@@ -101,7 +101,7 @@ inline void sendGameplayState(const std::string &json)
     if (type) env->DeleteLocalRef(type);
     env->DeleteLocalRef(activity);
 }
-// The main loop's publisher: the JSON is built only for a new gameplay revision.
+// The JSON is built only for a new gameplay revision.
 inline void publishGameplayState(const GameplayState &state)
 {
     const auto *json = gameplayChannel.publish(state.publicationKey(), [&] {
@@ -111,14 +111,6 @@ inline void publishGameplayState(const GameplayState &state)
         return gameplayChannel.json(); // the last one sent: nothing to publish
     });
     if (json) sendGameplayState(*json);
-}
-// The same channel from a ready JSON text (the loop's start, blocked and stop paths).
-inline void publishGameplayState(const std::string &json)
-{
-    if (gameplayChannel.json() == json) return;
-    if (json.size() > 8192) { spdlog::error("gameplay state of {} bytes is over the 8192-byte bound: not published", json.size()); return; }
-    gameplayChannel.published(json);
-    sendGameplayState(json);
 }
 // Live ship telemetry (channel "ship"). Independent from action revisions; rendering
 // acknowledgements are never inherited by a new UI host.
