@@ -115,7 +115,8 @@ static void Topology()
                layout.nodes.at("advancedcommerce").top < layout.nodes.at("trustworthy").top &&
                layout.nodes.at("ironwill").top == layout.nodes.at("advancedcommerce").top,
            "a row per tier, top to bottom; a perk whose dependents stand further down moves next to them");
-    Expect(layout.caption_top > 0 && layout.nodes.at("basicdefense").top > layout.caption_top, "unlinked perks below the blocks, under a caption");
+    Expect(layout.nodes.at("basicdefense").top == layout.nodes.at("basiccommerce").top,
+           "a perk without links takes a free slot in the top row, among the others (no caption)");
     cache.Get(ids, edges);
     auto shuffled = edges;
     std::reverse(shuffled.begin(), shuffled.end());
@@ -136,7 +137,11 @@ static void Topology()
     Invariants(self, "stock personal group");
     const auto &ship = ship_cache.Get(kShip, kShipEdges);
     Invariants(ship, "stock ship group");
-    Expect(ship.caption_top > 0, "ship: the flags and lone perks packed under a caption");
+    int top_row = 0;
+    for (const auto &[id, place] : ship.nodes)
+        top_row += place.top == ship.nodes.at("shipspeedup").top || place.top == ship.nodes.at("fastreload").top;
+    Expect(ship.nodes.at("flaghol").top < ship.nodes.at("sailingprofessional").top && top_row > 4,
+           "ship: the flags and lone perks fill free slots of the rows, no caption and no rows of their own");
     std::map<int, int> per_row;
     for (const auto &[id, place] : ship.nodes)
         ++per_row[place.top];
@@ -254,8 +259,8 @@ static void CheckScreen(const std::string &directory)
     router.SetInterface(model);
     router.OnEvent({"header-tabs", "select", "perks1"});
     Expect(Nodes(surface.props).size() == 5 && surface.errors.empty(), "tree includes both real external ancestors");
-    Expect(Selected(surface.props) == "trustworthy" && Node(surface.props, "trustworthy")["reveal"] == "self:trustworthy",
-           "the group's first perk in reading order is selected on opening and brought into view");
+    Expect(Selected(surface.props) == "basicdefense" && Node(surface.props, "basicdefense")["reveal"] == "self:basicdefense",
+           "the group's first perk in reading order (top row, from the left) is selected on opening and brought into view");
     Expect(Node(surface.props, "advancedcommerce")["other"] == true && Node(surface.props, "advancedcommerce")["groupIcon"] == "ship" &&
                Node(surface.props, "advancedcommerce")["name"] == "advancedcommerce" && Node(surface.props, "ironwill")["other"] == false,
            "an other-group perk carries its group's glyph; the name is its long-press tooltip");
@@ -278,9 +283,9 @@ static void CheckScreen(const std::string &directory)
                    detail["requires"][0]["groupIcon"] == "ship" && detail["requires"][1]["perk"] == "ironwill" &&
                    detail["requires"][1]["met"] == true && detail["requires"][1]["groupIcon"] == "",
                "missing requirements first; a row of the other group carries its glyph");
-        Expect(detail["blocked"] == "hero.learn_first advancedcommerce" && detail["learn"]["label"] == "hero.learn" &&
-                   detail["learn"]["disabled"] == true && !detail["learn"].contains("reason"),
-               "a locked perk says what is missing right above its button, which says it is unavailable (no toast in the top bar)");
+        Expect(!detail.contains("blocked") && detail["learn"]["label"] == "hero.learn" && detail["learn"]["disabled"] == true &&
+                   !detail["learn"].contains("reason"),
+               "a locked perk: the button disabled with no reason line or toast (what it needs is in its description icons)");
         Expect(surface.props["perkInfo"] == "hero.free_points 1 · hero.next_point 340 / 1\xC2\xA0" "000",
                "free points and the progress to the next one stay over the tree");
         const std::string links = surface.props["tree"]["links"];
@@ -348,8 +353,8 @@ static void CheckScreen(const std::string &directory)
         poor_router.OnEvent({"header-tabs", "select", "perks1"});
         poor_router.OnEvent({"perks", "row", "basicdefense"});
         Expect(Node(poor_surface.props, "basicdefense")["state"] == "open" && Node(poor_surface.props, "trustworthy")["state"] == "locked" &&
-                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.learn" && poor_surface.props["detail"]["blocked"] == "hero.no_points",
-               "no free points: reachable perks stay open, the button and the panel say why it cannot be learned");
+                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.learn" && !poor_surface.props["detail"].contains("blocked"),
+               "no free points: reachable perks stay open, the button is disabled");
     }
     // Incomplete facts: shown, never learnable.
     auto incomplete = model;

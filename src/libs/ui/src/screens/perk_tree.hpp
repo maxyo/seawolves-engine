@@ -8,8 +8,9 @@
 // width (Layout::width, which a 780 dp phone shows beside the panel):
 // - a row per tier, top to bottom: a perk stands one row under its deepest prerequisite, and a perk
 //   whose dependents all stand further down moves up next to the nearest of them;
-// - linked perks form blocks stacked in the game's order; perks without any link are packed row by
-//   row under the blocks, under a caption;
+// - linked perks form blocks stacked in the game's order; a perk without any link takes a free slot
+//   beside a row of icons, the topmost row first (no captions or labels in the tree); only when no row
+//   has room, new rows follow the blocks;
 // - each perk is an icon in a touch box of one slot, on a grid of half slots, as near the mean of
 //   its prerequisites (or dependents) as its row allows; a tier wider than the canvas wraps;
 // - links are smooth curves (drawn by <ui-links>) from under the source icon to above the target
@@ -66,13 +67,12 @@ struct Layout
 {
     static constexpr int slots = 8, slot = 62, width = slots * slot;            // the canvas: 496 dp
     static constexpr int box = 56, icon = 44, icon_top = 6;                    // touch box height, icon in it
-    static constexpr int pitch = 84, packed_pitch = 64, block_gap = 22, margin = 8, caption = 30;
+    static constexpr int pitch = 84, block_gap = 22, margin = 8;
     static constexpr int arrive_step = 7, lane_step = 5;
     std::map<std::string, Place> nodes;
     std::vector<Edge> edges;
     std::vector<Link> links;
     int height = 0;
-    int caption_top = -1; // where the caption over the unlinked perks stands, -1: none
     bool valid = false;
 };
 
@@ -238,24 +238,61 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
         }
         y += rows * Layout::pitch - (Layout::pitch - Layout::box) + Layout::block_gap;
     }
-    if (!unlinked.empty())
+    // Perks without links: beside the rows of icons, topmost row first, alternately right and left of the row so
+    // the block stays centred; a new centred row after the blocks only when no row has a free slot.
+    std::vector<int> placed_nodes;
+    for (size_t v = 0; v < n; ++v)
+        if (!parents[v].empty() || !children[v].empty())
+            placed_nodes.push_back(static_cast<int>(v));
+    const auto left_of = [&](int v) { return half[v] * Layout::slot / 2 + shift[v]; };
+    std::vector<int> rows_top;
+    for (int v : placed_nodes)
+        if (std::find(rows_top.begin(), rows_top.end(), top[v]) == rows_top.end())
+            rows_top.push_back(top[v]);
+    std::sort(rows_top.begin(), rows_top.end());
+    if (blocks.empty())
+        y += Layout::block_gap; // no blocks: the loop below starts the rows at the margin
+    for (int v : unlinked)
     {
-        if (!blocks.empty())
+        bool done = false;
+        for (int row_top : rows_top)
         {
-            layout.caption_top = y;
-            y += Layout::caption;
+            int low = Layout::width, high = 0;
+            for (int u : placed_nodes)
+                if (top[u] == row_top)
+                    low = std::min(low, left_of(u)), high = std::max(high, left_of(u) + Layout::slot);
+            // Alternately right and left of the row (the side with more room first), so it stays balanced.
+            int added = 0;
+            for (int u : unlinked)
+                added += u != v && top[u] == row_top && std::find(placed_nodes.begin(), placed_nodes.end(), u) != placed_nodes.end();
+            const bool right_first = ((Layout::width - high) >= low) == (added % 2 == 0);
+            for (int side = 0; side < 2 && !done; ++side)
+            {
+                const bool right = (side == 0) == right_first;
+                const int left = right ? high : low - Layout::slot;
+                if (left < 0 || left + Layout::slot > Layout::width)
+                    continue;
+                half[v] = 0;
+                shift[v] = left;
+                top[v] = row_top;
+                placed_nodes.push_back(v);
+                done = true;
+            }
+            if (done)
+                break;
         }
-        for (size_t k = 0; k < unlinked.size(); ++k)
+        if (!done)
         {
-            const int in_row = static_cast<int>(std::min<size_t>(Layout::slots, unlinked.size() - k / Layout::slots * Layout::slots));
-            half[unlinked[k]] = 2 * static_cast<int>(k % Layout::slots);
-            shift[unlinked[k]] = (Layout::width - in_row * Layout::slot) / 2; // each row centred
-            top[unlinked[k]] = y + static_cast<int>(k / Layout::slots) * Layout::packed_pitch;
+            const int row_top = y - Layout::block_gap + (rows_top.empty() ? 0 : Layout::pitch - Layout::box);
+            rows_top.push_back(row_top);
+            half[v] = 0;
+            shift[v] = (Layout::width - Layout::slot) / 2;
+            top[v] = row_top;
+            placed_nodes.push_back(v);
+            y = row_top + Layout::box + Layout::block_gap;
         }
-        y += static_cast<int>((unlinked.size() + Layout::slots - 1) / Layout::slots) * Layout::packed_pitch - (Layout::packed_pitch - Layout::box);
     }
-    else
-        y -= Layout::block_gap;
+    y -= Layout::block_gap;
     layout.height = y + Layout::margin;
     layout.edges = edges;
     for (size_t v = 0; v < n; ++v)
@@ -276,7 +313,7 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
     }
     // A link whose span holds a row of icons between its ends goes down the free half-slot line nearest
     // to the middle of its ends, in its own offset among the links on that line.
-    std::map<int, std::vector<int>> lane_ends; // line -> lane ends
+    std::map<int, std::vector<int>> lane_ends; // lane x (dp) -> lane ends
     for (size_t e = 0; e < edges.size(); ++e)
     {
         const int s = index.at(edges[e].from), t = index.at(edges[e].to);
@@ -287,25 +324,30 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
                 between.push_back(static_cast<int>(v));
         if (!between.empty())
         {
-            const auto free = [&](int line) {
+            const auto free = [&](int line) { // the lane's x passes no touch box of the rows between
+                const int x = line * Layout::slot / 2 + shift[s];
+                if (x <= 0 || x >= Layout::width)
+                    return false;
                 for (int v : between)
-                    if (half[v] < line && line < half[v] + 2)
+                    if (layout.nodes.at(ids[v]).left < x && x < layout.nodes.at(ids[v]).left + Layout::slot)
                         return false;
                 return true;
             };
             const double middle = ((centre(s) + centre(t)) / 2.0 - shift[s]) / (Layout::slot / 2.0);
-            int best = -1;
-            for (int line = 0; line <= halves; ++line)
-                if (free(line) && (best < 0 || std::fabs(line - middle) < std::fabs(best - middle)))
+            int best = -halves - 1; // none yet
+            // Lines across the whole canvas, in half slots from the source block's own grid.
+            for (int line = -halves; line <= 2 * halves; ++line)
+                if (free(line) && (best < -halves || std::fabs(line - middle) < std::fabs(best - middle)))
                     best = line;
             const int from = exit_y(s) + (Layout::pitch - Layout::box) / 2, to = arrive_y(t) - (Layout::pitch - Layout::box) / 2;
-            const int lane = TakeLane(lane_ends[best], from, to);
+            const int base = best * Layout::slot / 2 + shift[s];
+            const int lane = TakeLane(lane_ends[base], from, to);
             int offset = (lane + 1) / 2 * Layout::lane_step * (lane % 2 ? -1 : 1);
-            if (best == 0)
+            if (base + offset < Layout::lane_step) // the canvas edges: lanes step inwards
                 offset = std::abs(offset) + Layout::lane_step;
-            if (best == halves)
+            if (base + offset > Layout::width - Layout::lane_step)
                 offset = -std::abs(offset) - Layout::lane_step;
-            const int x = best * Layout::slot / 2 + shift[s] + offset;
+            const int x = base + offset;
             link.points.push_back({x, from});
             link.points.push_back({x, to});
         }

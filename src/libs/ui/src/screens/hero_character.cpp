@@ -953,8 +953,7 @@ class HeroScreen final : public Screen
                                  {"reveal", id == selected ? reveal_group + id : ""},
                                  {"revealTop", place.top - kRevealMargin}});
         }
-        view["tree"] = Json{{"nodes", nodes}, {"links", links}, {"width", perk_tree::Layout::width}, {"height", layout.height},
-                            {"caption", layout.caption_top >= 0 ? bindings.Text("hero.perks_unlinked") : ""}, {"captionTop", layout.caption_top}};
+        view["tree"] = Json{{"nodes", nodes}, {"links", links}, {"width", perk_tree::Layout::width}, {"height", layout.height}};
         bindings.On("perks", "row", [this, &bindings, ids = graph.ids, rows = graph.rows](const Event &event) {
             if (std::find(ids.begin(), ids.end(), event.value) == ids.end())
                 return;
@@ -982,15 +981,8 @@ class HeroScreen final : public Screen
             return rows;
         };
         Json needs = Json::array(), opens = Json::array();
-        std::string missing;
         for (const Widget *edge : graph.incoming.count(selected) ? graph.incoming.at(selected) : std::vector<const Widget *>())
-        {
-            const std::string source = perk_tree::Id(Field(edge, "source"));
-            const bool met = Field(edge, "met") == "1";
-            needs.push_back(link(source, met));
-            if (!met)
-                missing += (missing.empty() ? "" : ", ") + PerkName(graph, source);
-        }
+            needs.push_back(link(perk_tree::Id(Field(edge, "source")), Field(edge, "met") == "1"));
         for (const Widget *edge : graph.outgoing.count(selected) ? graph.outgoing.at(selected) : std::vector<const Widget *>())
         {
             const std::string target = perk_tree::Id(Field(edge, "target"));
@@ -1001,23 +993,12 @@ class HeroScreen final : public Screen
             if (found != targets.end())
                 JumpTo(bindings, found->first, found->second.first, found->second.second, ship);
         });
-        // Why it cannot be learned now, in the order the stock window checks it (shown above the button).
-        std::string reason;
-        if (!graph.complete)
-            reason = bindings.Text("items.unavailable");
-        else if (!missing.empty())
-            reason = bindings.Text("hero.learn_first") + " " + missing;
-        else if (free <= 0)
-            reason = bindings.Text("hero.no_points");
-        else if (!can_learn)
-            reason = bindings.Text("items.unavailable");
         Json detail{{"id", "detail:" + reveal_group + selected}, // a reveal key of its own: the panel scrolls back to its top
                     {"title", PerkName(graph, selected)},
                     {"text", StockText(Field(fact, "text"))},
                     {"image", PerkPicture(graph, selected, state(selected) != std::string("learned") && state(selected) != std::string("open"))},
                     {"group", external || ship_perk != ship ? GroupName(ship_perk) : ""},
                     {"groupIcon", ship_perk ? "ship" : "hero"},
-                    {"blocked", !external && full && !learned && !can_learn ? reason : ""},
                     {"requires", grouped(needs)},
                     {"opens", grouped(opens)},
                     {"note", !external && Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : ""},
@@ -1034,8 +1015,8 @@ class HeroScreen final : public Screen
         else if (full)
         {
             // «Изучить», learned by a hold (the owner's rule for what cannot be undone: an early release shakes,
-            // nothing is sent). Why a perk cannot be learned stands right above the button (`blocked`), so the
-            // disabled button needs no toast. The hold starts the stock learn at once (Intent::Learn: the row's
+            // nothing is sent, no caption). A perk that cannot be learned has the button disabled; a tap shakes it
+            // (what it needs stands in its description, the free points over the tree). The hold starts the stock learn at once (Intent::Learn: the row's
             // ChoosePerk, then its PERK_ACCEPT, never drawn), so points, flags and unlocks are the stock ones.
             detail["learn"] = Json{{"id", "perk-learn"},
                                    {"label", bindings.Text(learned ? "hero.learned" : "hero.learn")},
