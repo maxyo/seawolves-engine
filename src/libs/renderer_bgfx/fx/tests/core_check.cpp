@@ -495,12 +495,12 @@ void CheckSupport()
     changes.clear();
     constrained = ConstrainSettings(high, no_lamp_depth, changes);
     CHECK(constrained.lamp_shadows == 0 && constrained.shadows == high.shadows && changes.size() == 1);
-    // At most 8 lamps per pixel (the grid's cell); the presets: 4 on Высокая, 2 on Средняя.
+    // At most 8 lamps per pixel (the grid's cell); the presets: 3 on Высокая, 2 on Средняя.
     Settings crowded = high;
     crowded.lamp_per_pixel = 12;
     changes.clear();
     CHECK(ConstrainSettings(crowded, all, changes).lamp_per_pixel == 8 && changes.size() == 1);
-    CHECK(high.lamp_per_pixel == 4 && Settings::FromPreset(QualityPreset::Medium).lamp_per_pixel == 2);
+    CHECK(high.lamp_per_pixel == 3 && Settings::FromPreset(QualityPreset::Medium).lamp_per_pixel == 2);
     // Filtered lamp shadows per pixel (the others one tap): 2 on Высокая, 1 on Средняя; 1..8.
     CHECK(high.lamp_filtered == 2 && Settings::FromPreset(QualityPreset::Medium).lamp_filtered == 1);
     crowded = high;

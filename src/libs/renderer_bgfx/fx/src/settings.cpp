@@ -77,6 +77,7 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.lamp_moving = 1;
         s.lamp_per_pixel = 2; // frame.md budget: the mid class
         s.lamp_filtered = 1;
+        s.lamp_reach_light = s.lamp_shadow_light = 2.0f / 255.0f; // the owner's sheet of 2026-11-16: no visible change
         s.wet_surfaces = 1;
         return s;
     }
@@ -111,8 +112,9 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.lamp_shadows = 16;
     s.lamp_moving = 2;
     s.lamp_soft = true;
-    s.lamp_per_pixel = 4; // frame.md budget: the flagship class
+    s.lamp_per_pixel = 3; // frame.md budget: the flagship class (4 until the owner's sheet of 2026-11-16)
     s.lamp_filtered = 2;
+    s.lamp_reach_light = s.lamp_shadow_light = 2.0f / 255.0f;
     s.wet_surfaces = 2;
     return s;
 }
