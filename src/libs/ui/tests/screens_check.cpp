@@ -3196,13 +3196,21 @@ static void Launcher()
 
     router.SetState("launcher", Json{{"screen", "about"}, {"language", "english"},
                                      {"about", {{"app", {{"appSource", "https://example.org/app/tree/1"}, {"engineSource", "https://example.org/engine/tree/2"}}},
-                                                {"notices", {"ui-RmlUi-MIT.txt", "storm-GPLv3.txt", "fmt-LICENSE.rst"}}}}});
+                                                {"notices", {"ui-RmlUi-MIT.txt", "storm-GPLv3.txt", "fmt-LICENSE.rst", "archive-boost_1_90_0.txt",
+                                                             "bgfx-BSD-2-Clause.txt", "FFmpeg-configure.txt", "FFmpeg-LGPL-2.1.txt",
+                                                             "font-OFL-GreatVibes.txt", "script-patches.txt"}}}}});
     ExpectEqual(surface.tag, "s-about", "about screen");
     ExpectEqual(surface.props["notices"][0]["title"].get<std::string>(), "Storm Engine", "the engine's licence first");
-    ExpectEqual(surface.props["notices"][1]["title"].get<std::string>(), "fmt", "LICENSE suffix dropped; then by name");
-    ExpectEqual(surface.props["notices"][2]["title"].get<std::string>() + "|" + surface.props["notices"][2]["value"].get<std::string>(), "RmlUi|MIT",
-                "notice named by its file");
-    router.OnEvent({"notice-2", "click", ""});
+    {
+        std::string listed;
+        for (const Json &row : surface.props["notices"])
+            listed += row["title"].get<std::string>() + "|" + row["value"].get<std::string>() + ";";
+        ExpectEqual(listed,
+                    "Storm Engine|GPL-3.0;<about.notice_script_patches>|;bgfx|BSD-2-Clause;Boost 1.90.0|;FFmpeg|LGPL-2.1;"
+                    "FFmpeg|<about.notice_kind.build>;fmt|MIT;Great Vibes|OFL;RmlUi|MIT;",
+                    "notices by their names as people know them, licence or what the file is; the licence before the files beside it");
+    }
+    router.OnEvent({"notice-8", "click", ""});
     ExpectEqual(verb(), "APP license ui-RmlUi-MIT.txt", "a notice opens");
     router.OnEvent({"source-app", "click", ""});
     ExpectEqual(verb(), "APP open-url https://example.org/app/tree/1", "source link");

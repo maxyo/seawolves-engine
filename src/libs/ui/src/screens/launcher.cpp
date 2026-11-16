@@ -820,41 +820,118 @@ class DownloadsScreen final : public Screen
 
 // --- about and licences ------------------------------------------------------------------
 
-// "ui-RmlUi-MIT.txt" → {"RmlUi", "MIT"}: a notice file is named <component>-<licence>
-// (or <component>-LICENSE[-<licence>]); a few carry no licence in their name.
-std::pair<std::string, std::string> NoticeName(std::string file)
+// A bundled notice file as the about screen lists it: the component's name as people know
+// it, its licence, or what the file is when it is not the licence itself (kind, shown from
+// about.notice_kind.*). Files are named <component>[-<licence>][-<kind>] with build prefixes
+// (ui-, archive-, font-) and versions («archive-boost_1_90_0.txt» → «Boost 1.90.0»).
+struct NoticeName
+{
+    std::string name, licence, kind;
+};
+
+NoticeName ParseNotice(std::string file)
 {
     const auto ends = [&file](const std::string &tail) {
         return file.size() > tail.size() && file.compare(file.size() - tail.size(), std::string::npos, tail) == 0;
     };
+    NoticeName notice;
     for (const char *prefix : {"ui-", "archive-", "font-"})
         if (file.rfind(prefix, 0) == 0)
             file = file.substr(std::char_traits<char>::length(prefix));
     for (const char *suffix : {".txt", ".rst", ".h", ".c"})
         if (ends(suffix))
             file.resize(file.size() - std::char_traits<char>::length(suffix));
-    static const std::pair<const char *, std::pair<const char *, const char *>> kNamed[] = {
-        {"storm-GPLv3", {"Storm Engine", "GPL-3.0"}}, {"SDL", {"SDL", "zlib"}}, {"NDK-toolchain-NOTICE", {"Android NDK", ""}},
-        {"miniaudio-storm-patch", {"miniaudio (patch)", ""}}, {"try_signal-license", {"try_signal", ""}},
-        {"fast_float-LICENSE-APACHE", {"fast_float", "Apache-2.0"}}, {"fast_float-LICENSE-MIT", {"fast_float", "MIT"}},
-        {"MJP-Shadows-MIT", {"MJP Shadows sample", "MIT"}},
-    };
-    for (const auto &[stem, shown] : kNamed)
-        if (file == stem)
-            return {shown.first, shown.second};
-    for (const char *notice : {"-LICENSE", "-SOURCE"})
-        if (ends(notice))
-            return {file.substr(0, file.size() - std::char_traits<char>::length(notice)), ""};
-    static const char *const kLicences[] = {"BSD-3-Clause", "Apache-2.0", "BSL-1.0", "MIT", "FTL", "OFL"};
+    // Files beside a component's licence: what they are.
+    static const std::pair<const char *, const char *> kKinds[] = {{"-NOTICE", "notice"},          {"-SOURCE", "source"},
+                                                                   {"-PROVENANCE", "provenance"},  {"-ThirdPartyNotices", "third_party"},
+                                                                   {"-configure", "build"},        {"-storm-patch", "patch"}};
+    for (const auto &[tail, kind] : kKinds)
+        if (ends(tail))
+        {
+            file.resize(file.size() - std::char_traits<char>::length(tail));
+            notice.kind = kind;
+            break;
+        }
+    static const std::pair<const char *, const char *> kLicenceFiles[] = {
+        {"-LICENSE-APACHE", "Apache-2.0"}, {"-LICENSE-MIT", "MIT"}, {"-LICENSE", ""}, {"-license", ""}, {"-GPLv3", "GPL-3.0"}};
+    static const char *const kLicences[] = {"BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "BSL-1.0", "LGPL-2.1", "AGPL-3.0",
+                                            "GPL-3.0",      "CC0-1.0",      "MIT",        "FTL",     "OFL"};
+    bool licenced = false;
+    for (const auto &[tail, licence] : kLicenceFiles)
+        if (!licenced && ends(tail))
+        {
+            file.resize(file.size() - std::char_traits<char>::length(tail));
+            notice.licence = licence;
+            licenced = true;
+        }
     for (const char *licence : kLicences)
     {
         const std::string tail = std::string("-") + licence, head = std::string(licence) + "-";
+        if (licenced)
+            break;
         if (ends(tail))
-            return {file.substr(0, file.size() - tail.size()), licence};
-        if (file.size() > head.size() && file.compare(0, head.size(), head) == 0)
-            return {file.substr(head.size()), licence};
+            file.resize(file.size() - tail.size());
+        else if (file.size() > head.size() && file.compare(0, head.size(), head) == 0)
+            file = file.substr(head.size());
+        else
+            continue;
+        notice.licence = licence;
+        licenced = true;
     }
-    return {file, ""};
+    // A version at the end: «boost_1_90_0», «bzip2-1.0.8».
+    std::string version;
+    size_t first = file.size();
+    while (first > 0 && (std::isdigit(static_cast<unsigned char>(file[first - 1])) || file[first - 1] == '.' || file[first - 1] == '_'))
+        --first;
+    const size_t digits = first < file.size() && file[first] == '_' ? first + 1 : first;
+    if (digits < file.size() && std::isdigit(static_cast<unsigned char>(file[digits])) && first > 0 && (digits > first || file[first - 1] == '-'))
+    {
+        version = file.substr(digits);
+        std::replace(version.begin(), version.end(), '_', '.');
+        file.resize(digits > first ? first : first - 1);
+    }
+    // Names as the projects write them, and licences the file name does not carry.
+    static const std::tuple<const char *, const char *, const char *> kNames[] = {
+        {"storm", "Storm Engine", ""},           {"MarckScript", "Marck Script", ""}, {"GreatVibes", "Great Vibes", ""},
+        {"NotoSerif", "Noto Serif", ""},         {"nlohmann-json", "nlohmann/json", ""}, {"threejs", "three.js", ""},
+        {"FidelityFX-FSR", "AMD FidelityFX FSR", ""}, {"onnxruntime", "ONNX Runtime", ""}, {"NDK-toolchain", "Android NDK", ""},
+        {"MJP-Shadows", "MJP Shadows", ""},      {"boost", "Boost", ""},           {"xz", "XZ Utils", ""},
+        {"SDL", "SDL", "zlib"},                  {"fmt", "fmt", "MIT"},          {"spdlog", "spdlog", "MIT"},
+        {"mimalloc", "mimalloc", "MIT"},
+    };
+    notice.name = file;
+    for (const auto &[stem, name, licence] : kNames)
+        if (file == stem)
+        {
+            notice.name = name;
+            if (notice.licence.empty() && notice.kind.empty())
+                notice.licence = licence;
+        }
+    if (!version.empty())
+        notice.name += " " + version;
+    return notice;
+}
+
+// The row's name: our own notices are named in the player's language.
+std::string NoticeTitle(const Bindings &bindings, const NoticeName &notice)
+{
+    return notice.name == "script-patches" ? bindings.Text("about.notice_script_patches") : notice.name;
+}
+
+// The row's value: the licence, or what the file is.
+std::string NoticeValue(const Bindings &bindings, const NoticeName &notice)
+{
+    if (!notice.kind.empty())
+    {
+        static const char *const kKindKeys[] = {StringKey("about.notice_kind.notice"),      StringKey("about.notice_kind.source"),
+                                                StringKey("about.notice_kind.provenance"),  StringKey("about.notice_kind.third_party"),
+                                                StringKey("about.notice_kind.build"),       StringKey("about.notice_kind.patch")};
+        const std::string key = "about.notice_kind." + notice.kind;
+        for (const char *known : kKindKeys)
+            if (key == known)
+                return bindings.Text(key);
+    }
+    return notice.licence;
 }
 
 class AboutScreen final : public Screen
@@ -898,7 +975,7 @@ class AboutScreen final : public Screen
         if (open.is_object())
         {
             // One notice, verbatim, on parchment; paragraphs as the file has them.
-            const auto [name, licence] = NoticeName(Str(open, "file"));
+            const NoticeName notice = ParseNotice(Str(open, "file"));
             Json paragraphs = Json::array();
             if (Flag(open, "truncated"))
                 paragraphs.push_back(bindings.Text("about.license_tail"));
@@ -915,7 +992,7 @@ class AboutScreen final : public Screen
                 start = end + 2;
             }
             view["title"] = bindings.Text("about.license");
-            view["license"] = Json{{"name", name}, {"kind", licence}, {"paragraphs", paragraphs}};
+            view["license"] = Json{{"name", NoticeTitle(bindings, notice)}, {"kind", NoticeValue(bindings, notice)}, {"paragraphs", paragraphs}};
             view["saves"] = nullptr;
             return view;
         }
@@ -963,24 +1040,26 @@ class AboutScreen final : public Screen
         view["note"] = bindings.Text("about.note");
         view["noticesTitle"] = bindings.Text("about.notices");
         // The engine's own licence first, then the components by name.
-        std::vector<std::tuple<std::string, std::string, std::string>> notices;
+        // (title, value, kind, file): a component's licence before the files beside it.
+        std::vector<std::tuple<std::string, std::string, std::string, std::string>> notices;
         for (const Json &file : List(state, "notices"))
             if (file.is_string())
             {
-                const auto [name, licence] = NoticeName(file.get<std::string>());
-                notices.emplace_back(name, licence, file.get<std::string>());
+                const NoticeName notice = ParseNotice(file.get<std::string>());
+                notices.emplace_back(NoticeTitle(bindings, notice), NoticeValue(bindings, notice), notice.kind, file.get<std::string>());
             }
-        const auto key = [](const std::string &name) {
+        const auto key = [](const auto &notice) {
+            const std::string &name = std::get<0>(notice);
             std::string lower = name == "Storm Engine" ? std::string(1, '\0') : name;
             std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            return lower;
+            return std::make_pair(lower, std::get<2>(notice));
         };
-        std::stable_sort(notices.begin(), notices.end(), [&key](const auto &a, const auto &b) { return key(std::get<0>(a)) < key(std::get<0>(b)); });
+        std::stable_sort(notices.begin(), notices.end(), [&key](const auto &a, const auto &b) { return key(a) < key(b); });
         Json rows = Json::array();
-        for (const auto &[name, licence, path] : notices)
+        for (const auto &[name, value, kind, path] : notices)
         {
             const std::string id = "notice-" + std::to_string(rows.size());
-            rows.push_back(Json{{"id", id}, {"title", name}, {"value", licence}});
+            rows.push_back(Json{{"id", id}, {"title", name}, {"value", value}});
             bindings.On(id, "", [this, &bindings, path = path](const Event &) { bindings.Send(command_, "license", path); });
         }
         view["notices"] = rows;
