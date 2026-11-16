@@ -16,6 +16,7 @@ namespace storm::android
 inline bool combatContextCurrent(const GameplayState &gameplay, bool ready)
 {
     if (!ready || (gameplay.snapshot().mode != "explore" && gameplay.snapshot().mode != "melee")) return false;
+    if (gameplaySnapshotCurrent()) return !gameplay.snapshot().scene.empty();
     const auto current = readGameplaySnapshot(true);
     return current.mode == gameplay.snapshot().mode && current.scene == gameplay.snapshot().scene &&
         current.group == gameplay.snapshot().group && !current.scene.empty();

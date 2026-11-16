@@ -42,7 +42,7 @@ inline std::optional<int> readMapRainState(ATTRIBUTES *hero,const MapInstrumentF
 inline WorldMapFrame readWorldMapFrame(const GameplayState &gameplay, bool ready)
 {
     WorldMapFrame frame;
-    if (!ready || gameplay.snapshot().mode!="worldmap" || readGameplaySnapshot(true).mode!="worldmap") return frame;
+    if (!ready || gameplay.snapshot().mode!="worldmap" || (!gameplaySnapshotCurrent() && readGameplaySnapshot(true).mode!="worldmap")) return frame;
     frame.owner=core.GetEntityId("WorldMap");
     auto *main=shipMainCharacter();
     auto *characters=static_cast<VDATA *>(core.GetScriptVariable("Characters"));

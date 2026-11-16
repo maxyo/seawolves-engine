@@ -194,6 +194,7 @@ bool CoreImpl::Run()
 
     if (Exit_flag)
         return false; // exit
+    storm::ScriptStateMayChange(); // the frame's scripts, entities and loading
 
     Timer.Run(); // calc delta time
     storm::save::trash().tick(); // finalize save deletes whose grace period has passed

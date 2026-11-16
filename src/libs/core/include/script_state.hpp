@@ -43,16 +43,26 @@ class ScriptStateReads
 void ScriptStateForget();
 
 // What engine code asks the script state by name while no script runs (the VM's "script work:" line, compiler.cpp):
-// attributes looked up by a name or a path, of them inside a ScriptStateReads (an interface adapter), and global
-// variables found by name.
+// attributes looked up by a name or a path, of them inside a ScriptStateReads (an interface adapter) and in the
+// frame's HUD phase (the Android HUD adapters, frame_work::Phase::Hud), and global variables found by name, of them in
+// the HUD phase.
 struct ScriptNameLookups
 {
     uint64_t attributes = 0;
     uint64_t adapterAttributes = 0;
+    uint64_t hudAttributes = 0;
     uint64_t variables = 0;
+    uint64_t hudVariables = 0;
 };
 ScriptNameLookups &NameLookups() noexcept;
 // Scripts are running (the VM's own lookups are not the engine's).
 void ScriptRunning(bool running) noexcept;
+
+// Advances whenever the game state can have changed: at every core frame (CoreImpl::Run: scripts, entities, loading)
+// and whenever engine code starts a script outside one (an event raised by input or a HUD command). Native readers
+// of the game state (the Android HUD adapters) read it once per value of this and reuse what they read until it
+// advances. Game thread only.
+uint64_t ScriptStateEpoch() noexcept;
+void ScriptStateMayChange() noexcept;
 void CountVariableLookup() noexcept;
 } // namespace storm

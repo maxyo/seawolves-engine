@@ -634,7 +634,11 @@ int main(int argc, char *argv[])
     storm::android::movementInput.guard = [&](std::string_view owner) -> std::optional<storm::android::MovementPermission> {
         const bool ready = isRunning && bActive && androidLifecycle.canRun() && core_private->initialized() &&
             core.Controls && storm::android::loadingState == 0 && storm::android::mobileScreen.empty();
-        const auto current = storm::android::readGameplaySnapshot(ready);
+        storm::android::GameplaySnapshot read;
+        const bool stored = ready && storm::android::gameplaySnapshotCurrent();
+        if (!stored)
+            read = storm::android::readGameplaySnapshot(ready);
+        const auto &current = stored ? gameplayState.snapshot() : read;
         if (!storm::android::movementOwnerCurrent(owner, current)) return std::nullopt;
         storm::android::MovementPermission permissions;
         unsigned processed = 0;
@@ -1063,6 +1067,7 @@ int main(int argc, char *argv[])
                 storm::android::GameplaySnapshot blocked;
                 blocked.blocked = notReady();
                 gameplayState.update(std::move(blocked));
+                storm::android::gameplayReadEpoch = 0;
                 storm::android::heldControls.update(gameplayState.revision());
                 storm::android::deckWalk.update(gameplayState.revision());
                 storm::android::updateCombatState(gameplayState, core_private);
@@ -1231,6 +1236,7 @@ int main(int argc, char *argv[])
                 gameplaySnapshot.analogMovement = !gameplaySnapshot.inputOwner.empty();
                 gameplaySnapshot.movementGeneration = gameplaySnapshot.analogMovement ? storm::android::movementInput.generation() : 0;
                 gameplayState.update(std::move(gameplaySnapshot));
+                storm::android::gameplayReadEpoch = gameplayReady ? storm::ScriptStateEpoch() : 0;
                 storm::android::heldControls.update(gameplayState.revision());
                 storm::android::deckWalk.update(gameplayState.revision());
                 storm::android::seaQuickLifecycleReady = gameplayReady;
@@ -1317,6 +1323,7 @@ int main(int argc, char *argv[])
         storm::android::GameplaySnapshot stopping;
         stopping.blocked = "starting"; // the engine is going down: nothing of the game is usable
         gameplayState.update(std::move(stopping));
+        storm::android::gameplayReadEpoch = 0;
     }
     storm::android::publishGameplayState(gameplayState);
     storm::android::worldMapHud.update({},SDL_GetTicks());

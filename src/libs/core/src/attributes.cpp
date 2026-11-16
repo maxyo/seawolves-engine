@@ -2,6 +2,7 @@
 #include "script_state.hpp"
 
 #include "string_compare.hpp"
+#include "platform/frame_work.hpp"
 #include "platform/platform.hpp"
 
 #include "vm_verify.hpp"
@@ -44,6 +45,12 @@ void TreeRead(const ATTRIBUTES *attribute)
 
 ScriptNameLookups nameLookups;
 bool scriptRunning = false;
+uint64_t scriptStateEpoch = 1;
+
+bool InHud() noexcept
+{
+    return platform::frame_work::state().current == platform::frame_work::Phase::Hud;
+}
 
 // Engine code looks an attribute up by name.
 void NameLookup() noexcept
@@ -53,6 +60,8 @@ void NameLookup() noexcept
     nameLookups.attributes++;
     if (readTrees)
         nameLookups.adapterAttributes++;
+    if (InHud())
+        nameLookups.hudAttributes++;
 }
 } // namespace
 
@@ -64,12 +73,27 @@ ScriptNameLookups &NameLookups() noexcept
 void ScriptRunning(bool running) noexcept
 {
     scriptRunning = running;
+    if (running)
+        ScriptStateMayChange();
+}
+
+uint64_t ScriptStateEpoch() noexcept
+{
+    return scriptStateEpoch;
+}
+
+void ScriptStateMayChange() noexcept
+{
+    scriptStateEpoch++;
 }
 
 void CountVariableLookup() noexcept
 {
-    if (!scriptRunning)
-        nameLookups.variables++;
+    if (scriptRunning)
+        return;
+    nameLookups.variables++;
+    if (InHud())
+        nameLookups.hudVariables++;
 }
 
 uint64_t ScriptStateGeneration() noexcept

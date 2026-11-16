@@ -49,6 +49,7 @@ struct SHIP_BASE {
 namespace storm::android {
 GameplaySnapshot live;
 GameplaySnapshot readGameplaySnapshot(bool){return live;}
+bool gameplaySnapshotCurrent(){return false;} // the stub snapshot is re-read: live is what the scripts hold now
 std::string context="Martinique";
 std::string worldMapContext(uint64_t){return context;}
 void readWorldMapCommands(WorldMapFrame &f){f.shipsVisible=true;f.commandsReady=true;f.commands={{"EnterToIsland","Approach island"}};}

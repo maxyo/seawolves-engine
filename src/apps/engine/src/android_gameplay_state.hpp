@@ -3,6 +3,7 @@
 #include "platform/android_gameplay.hpp"
 #include "android_ship_state.hpp"
 #include "core.h"
+#include "script_state.hpp"
 #include "v_data.h"
 #include "shared/sea_ai/sea_people.h"
 #include "shared/messages.h"
@@ -10,6 +11,15 @@
 
 namespace storm::android
 {
+// The script state epoch (script_state.hpp) at which the main loop's HUD phase last stored a snapshot it read while
+// gameplay was ready; 0: the stored one was not read (blocked). While the epoch has not advanced since, no frame or
+// script ran and that snapshot is the current state: the combat, world map and movement checks use it instead of
+// reading the scripts again.
+inline uint64_t gameplayReadEpoch = 0;
+inline bool gameplaySnapshotCurrent()
+{
+    return gameplayReadEpoch == ScriptStateEpoch();
+}
 inline GameplaySnapshot readGameplaySnapshot(bool ready)
 {
     GameplaySnapshot out;

@@ -1195,8 +1195,10 @@ void COMPILER::ReportScriptWork()
                             events[n].second.ns / 1e6 / frames, events[n].second.calls / frames);
     }
     storm::ScriptNameLookups &lookups = storm::NameLookups();
-    line += fmt::format("; engine lookups by name per frame: attributes={:.1f} (interface adapters {:.1f}) variables={:.1f}",
-                        lookups.attributes / frames, lookups.adapterAttributes / frames, lookups.variables / frames);
+    line += fmt::format("; engine lookups by name per frame: attributes={:.1f} (interface adapters {:.1f}, hud {:.1f}) "
+                        "variables={:.1f} (hud {:.1f})",
+                        lookups.attributes / frames, lookups.adapterAttributes / frames, lookups.hudAttributes / frames,
+                        lookups.variables / frames, lookups.hudVariables / frames);
     spdlog::info("{}", line);
     lookups = {};
     event_work_.clear();
