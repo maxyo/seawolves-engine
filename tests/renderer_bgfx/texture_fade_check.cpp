@@ -74,6 +74,24 @@ int main()
         require(s.from == kNoTexture, "the turned fade ends within kTextureFadeMs");
     }
     {
+        // Our lightmap made again at another scale: the game's for one frame, then ours. The new one fades in over the
+        // one the player saw (the old one), never showing the game's whole.
+        TextureFade fade;
+        fade.observe(50, TextureSource::Lightmap, 0, epoch);
+        TextureFade::Sample s = fade.observe(51, TextureSource::Own, 16, epoch);
+        require(s.started && s.from == 50, "our old lightmap fades out to the game's");
+        s = fade.observe(52, TextureSource::Lightmap, 19, epoch);
+        require(s.started && s.from == 50 && s.share > 0.95f, "a second swap early in the fade keeps fading from the old one");
+        s = fade.observe(52, TextureSource::Lightmap, 16 + kTextureFadeMs, epoch);
+        require(s.from == kNoTexture, "and ends kTextureFadeMs after the first swap");
+        // Late in a fade a new swap fades from the one fading in.
+        fade.observe(53, TextureSource::Lightmap, 400, epoch);
+        s = fade.observe(54, TextureSource::Lightmap, 400 + kTextureFadeMs * 2 / 3, epoch);
+        require(s.started && s.from == 53 && near(s.share, 1.0f), "a swap late in a fade fades from the texture fading in");
+        // The worst case for the retirement: the carried fade still ends before kTextureRetireMs after the retire.
+        require(kTextureFadeRecentMs + kTextureFadeMs < kTextureRetireMs, "a carried fade ends within the retirement");
+    }
+    {
         TextureFade fade;
         fade.observe(30, TextureSource::Own, 0, epoch);
         TextureFade::Sample s = fade.observe(31, TextureSource::Lightmap, 16, epoch);

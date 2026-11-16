@@ -103,10 +103,23 @@ struct TextureFade
             sample.started = sample.reversed = true;
             return sample;
         }
-        const bool on_screen = current != kNoTexture && now - drawn <= kTextureFadeRecentMs;
         sample.kind = Kind(source, handle_source);
-        // Swapped again while fading: the new one fades in over the one the player saw last (its previous share
-        // is dropped: two swaps of one texture within kTextureFadeMs are rare and both are of the same picture).
+        if (from != kNoTexture && now - since < kTextureFadeMs / 2)
+        {
+            // Swapped again in the first half of a fade (our lightmap made again: the game's for a frame, then ours
+            // at the new scale): the player still sees mostly the texture fading out, so the new one fades in over
+            // it, at its share, and the one in between is skipped. Its fade ends by since + kTextureFadeMs, within its
+            // retirement.
+            current = handle;
+            source = handle_source;
+            drawn = now;
+            sample.from = from;
+            sample.share = Share(now - since);
+            sample.started = true;
+            return sample;
+        }
+        const bool on_screen = current != kNoTexture && now - drawn <= kTextureFadeRecentMs;
+        // Swapped again later in a fade: the new one fades in over the one the player sees most (the one fading in).
         from = on_screen ? current : kNoTexture;
         current = handle;
         source = handle_source;
