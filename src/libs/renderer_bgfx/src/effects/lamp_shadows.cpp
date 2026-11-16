@@ -432,9 +432,12 @@ void LampShadows::choose_slots(const std::array<float, 3> &eye)
             free_slot(slot);
     // The lamps whose light begins nearest to the camera. A lamp keeps its slot until it is two places behind the
     // last one that fits, so two lamps at the same distance do not trade a slot back and forth.
+    // A lamp whose light shows nowhere (fx::LampReach 0: under Settings::lamp_reach_light even at its flame) takes no
+    // slot: its faces' volume would have no bound (ShadowVolume: sphere radius 0 = everything) and light nothing.
     std::vector<std::pair<float, int>> order;
     for (int i = 0; i < count; ++i)
-        if (const float d = distance(lamps_[i].position, {eye[0], eye[1], eye[2]}) - lamps_[i].range; d < kLampSight)
+        if (const float d = distance(lamps_[i].position, {eye[0], eye[1], eye[2]}) - lamps_[i].range;
+            d < kLampSight && reach_of(lamps_[i]) > 0.0f)
             order.emplace_back(lamps_[i].aggregate.get() ?
                 -fx::AggregateScore(lamps_[i].aggregate, {eye[0],eye[1],eye[2]}, kLampSight) : d, i);
     std::sort(order.begin(), order.end());
@@ -518,7 +521,7 @@ void LampShadows::choose_moving(const std::array<float, 3> &eye)
     }
     std::vector<std::pair<float, size_t>> order;
     for (size_t i = 0; i < lights.size(); ++i)
-        if (lights[i].lamp.range > 0.0f && // (a D3D light of no range lights nothing)
+        if (lights[i].lamp.range > 0.0f && reach_of(lights[i].lamp) > 0.0f && // (a D3D light of no range lights nothing)
             0.299f * lights[i].lamp.color[0] + 0.587f * lights[i].lamp.color[1] + 0.114f * lights[i].lamp.color[2] > 1e-3f)
             order.emplace_back(distance(lights[i].lamp.position, {eye[0], eye[1], eye[2]}), i);
     std::sort(order.begin(), order.end());

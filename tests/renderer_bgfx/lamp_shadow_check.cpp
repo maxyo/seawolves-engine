@@ -19,6 +19,7 @@
 #include <SDL2/SDL.h>
 #include "storm/fx/lamp_shadows.hpp"
 #include "storm/fx/light_falloff.hpp"
+#include "storm/fx/settings.hpp"
 #include "storm/render/effects.hpp"
 #include "storm/render/perf_stats.hpp"
 
@@ -258,8 +259,8 @@ int main()
 
             // Reach: a dim lamp lights its whole radius, but its light counts only near it. Its colour and
             // attenuation are chosen so that the plate 2 m under it (its sphere 1.41 m) is within its reach and the
-            // plate 4.06 m from it is not (fx::LampReach with the flicker's headroom, at the receivers' level for
-            // lamp_gain 1).
+            // plate 4.06 m from it is not (fx::LampReach with the flicker's headroom, at the preset's
+            // Settings::lamp_reach_light for lamp_gain 1).
             render::EffectsPointLight dim{{0.0f, 3.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, 15.0f, 0.5f, 0.0f, 0.1f};
             fx::LightShape dim_shape;
             float dim_reach = 0.0f;
@@ -272,7 +273,7 @@ int main()
                     dim_shape = fx::ShapeOfGameLight(dim.range, dim.att0, dim.att1, att2, fx::LightFalloff{});
                     const float h = c * fx::kLampReachHeadroom;
                     dim_reach = fx::LampReach({dim.position, {h, h, h}, dim_shape.range, dim_shape.intensity, dim_shape.core},
-                                              fx::kLampNegligible);
+                                              fx::Settings::FromPreset(fx::QualityPreset::High).lamp_reach_light);
                     dim.att2 = att2;
                     dim.color = {c, c, c};
                     found = dim_reach > 0.8f && dim_reach < 2.6f && dim_shape.range > 5.5f;
