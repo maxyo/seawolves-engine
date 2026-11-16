@@ -77,7 +77,6 @@ uint64_t CalculateCacheKey(const char *program_directory)
 
 // extern char * FuncNameTable[];
 extern INTFUNCDESC IntFuncTable[];
-extern uint32_t dwNumberScriptCommandsExecuted;
 
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
@@ -3588,6 +3587,19 @@ bool COMPILER::BC_Jump(SEGMENT_DESC &Segment, uint32_t offset)
     return true;
 }
 
+// The expression register as the integer a conditional jump tests. A register that does not convert leaves `value`
+// as it was (the jump then follows the previous condition, as it always did).
+inline void COMPILER::ReadCondition(int32_t &value)
+{
+    if (ExpressionResult.Data_type == VAR_INTEGER && !ExpressionResult.bArray)
+    {
+        value = ExpressionResult.lValue;
+        return;
+    }
+    ExpressionResult.Convert(VAR_INTEGER);
+    ExpressionResult.Get(value);
+}
+
 // Reads the token at InstructionPointer: its type, where its data starts (ip, TLR_DataOffset) and the data size
 // (one byte, or 0xff and four bytes); InstructionPointer moves to the next token.
 S_TOKEN_TYPE COMPILER::BC_TokenGet(uint32_t &ip, uint32_t &token_data_size)
@@ -3730,7 +3742,6 @@ std::optional<int32_t> COMPILER::FindIntegerDefine(const char *name)
 bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const char *pDbgExpSource)
 {
     // GUARD(BC_Execute)
-    uint32_t inout;
     uint32_t segment_index;
     uint32_t token_data_size;
     uint32_t ip;
@@ -3751,7 +3762,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
     DATA *pVResult;
     //    DATA   ExpressionResult;    // while compile expression not ready, each function have its own register
     const char *pCodeBase;
-    bool bExit;
     int32_t lvalue;
     S_TOKEN_TYPE vtype;
     DATA *pVV;
@@ -3889,20 +3899,20 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
         pRunCodeBase = pCodeBase;
     }
 
-    inout = 0;
-    bExit = false;
-
     nLeftOperandIndex = INVALID_ARRAY_INDEX;
     nLeftOperandCode = INVALID_VAR_CODE;
     bLeftOperandType = 0xffffffff;
     pLeftOperandAClass = nullptr;
 
-    // S_TOKEN_TYPE oldToken_type;
     do
     {
-        dwNumberScriptCommandsExecuted++;
-        // oldToken_type = Token_type;
-        Token_type = BC_TokenGet(ip, token_data_size);
+        // A sixth of the tokens only mark the source line and the end of a statement.
+        do
+        {
+            Token_type = BC_TokenGet(ip, token_data_size);
+            if (Token_type == DEBUG_LINE_CODE && core_internal.Exit_flag)
+                return false;
+        } while (Token_type == DEBUG_LINE_CODE || Token_type == SEPARATOR);
 
         switch (Token_type)
         {
@@ -3923,8 +3933,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
             pV->Copy(&ExpressionResult);
             break;
         case POP_NZ:
-            ExpressionResult.Convert(VAR_INTEGER);
-            ExpressionResult.Get(lvalue);
+            ReadCondition(lvalue);
             if (lvalue == 0)
                 break;
             SStack.Pop();
@@ -3939,8 +3948,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
             break;
         case JUMP_Z:
             memcpy(&jump_offset, &pCodeBase[ip], sizeof(uint32_t));
-            ExpressionResult.Convert(VAR_INTEGER);
-            ExpressionResult.Get(lvalue);
+            ReadCondition(lvalue);
             if (lvalue)
                 break;
             if (!BC_Jump(SegmentTable[segment_index], jump_offset))
@@ -3948,8 +3956,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
             break;
         case JUMP_NZ:
             memcpy(&jump_offset, &pCodeBase[ip], sizeof(uint32_t));
-            ExpressionResult.Convert(VAR_INTEGER);
-            ExpressionResult.Get(lvalue);
+            ReadCondition(lvalue);
             if (lvalue == 0)
                 break;
             if (!BC_Jump(SegmentTable[segment_index], jump_offset))
@@ -4249,27 +4256,8 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
 
             break;
             break;
-        case DEBUG_LINE_CODE:
-            if (core_internal.Exit_flag)
-                return false;
-            if (pDbgExpSource)
-                break;
-            if (bDebugExpressionRun)
-                break;
-            break;
         case DEBUG_FILE_NAME:
 
-            /*if(!bTraceMode) break;
-
-            int32_t index;
-            int32_t file_line_offset;
-            int32_t file_name_size;
-            index = ip;
-            memcpy(&file_line_offset,&pCodeBase[index],sizeof(uint32_t)); index += sizeof(uint32_t);
-            memcpy(&file_name_size,&pCodeBase[index],sizeof(uint32_t)); index += sizeof(uint32_t);
-            memcpy(DebugTraceFileName,&pCodeBase[index],file_name_size); index += file_name_size;
-            DebugTraceFileName[file_name_size] = 0;
-            //DebugSourceLine = 1;*/
             break;
         case BLOCK_IN:
         case BLOCK_OUT:
@@ -4371,46 +4359,10 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                     return false;
                 }
             return true;
-            /*if(BC_ProcessExpression(&ExpressionResult))
-            {
-              if(pDbgExpSource == 0)    // skip stack unwind for dbg expression process
-                SStack.InvalidateFrom(frame.stack_offset);
-              pV = SStack.Push();
-              pV->Copy(&ExpressionResult);
-              pVReturnResult = pV;
-
-              if(pDbgExpSource == 0)    // skip test for dbg expression process
-              if(frame.return_type != pV->GetType())
-              {
-                SetError("%s function return %s value",
-                  Token.GetTypeName(frame.return_type),
-                  Token.GetTypeName(pV->GetType()));
-
-                return false;
-              }
-            }
-            else
-            {
-              SetError("incorrect return expression");
-
-              return false;
-            }*/
 
             // case PROCESS_EXPRESSION:
             // BC_ProcessExpression(&ExpressionResult);
             // break;
-            /*case WHILE_BLOCK:
-              if(BC_TokenGet(ip,token_data_size) != OPEN_BRACKET){SetError("missing '('"); return false;};
-              BC_ProcessExpression(&ExpressionResult);
-            break;
-            case IF_BLOCK:
-              if(BC_TokenGet(ip,token_data_size) != OPEN_BRACKET){SetError("missing '('"); return false;};
-              BC_ProcessExpression(&ExpressionResult);
-            break;
-            case SWITCH_COMMAND:
-              if(BC_TokenGet(ip,token_data_size) != OPEN_BRACKET){SetError("missing '('"); return false;};
-              BC_ProcessExpression(&ExpressionResult);
-            break;*/
 
         case OP_MULTIPLYEQ:
         case OP_DIVIDEEQ:
@@ -4472,39 +4424,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
 
             break; //*/
 
-            /*case OP_MULTIPLYEQ:
-            case OP_DIVIDEEQ:
-            case OP_INCADD:
-            case OP_DECADD:
-              S_TOKEN_TYPE OpType;
-              OpType = Token_type;
-              if(nLeftOperandCode == INVALID_VAR_CODE) { SetError("no Lvalue"); return false;    }
-              if(bLeftOperandType == VARIABLE)
-              {
-                if(!VarTab.GetVar(vi,nLeftOperandCode))    { SetError("Global variable not found"); return false; }
-                pV = vi.pDClass;
-              }
-              else
-              {
-                pV = SStack.Read(pRun_fi->stack_offset,nLeftOperandCode);
-                if(pV == 0) { SetError("Local variable not found"); return false; }
-              }
-              if(nLeftOperandIndex != INVALID_ARRAY_INDEX)
-              {
-                pV = (DATA*)pV->GetArrayElement(nLeftOperandIndex);
-                if(pV == 0) { SetError("invalid array index"); return false; }
-
-              }
-              BC_ProcessExpression(&ExpressionResult);
-              switch(OpType)
-              {
-                case OP_INCADD:        pV->Plus(&ExpressionResult); break;
-                case OP_DECADD:        pV->Minus(&ExpressionResult); break;
-                case OP_MULTIPLYEQ: pV->Multiply(&ExpressionResult); break;
-                case OP_DIVIDEEQ: pV->Divide(&ExpressionResult); break;
-              }
-
-            break;//*/
         case OP_INC:
             if (nLeftOperandCode == INVALID_VAR_CODE)
             {
@@ -4583,228 +4502,7 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                 pV->Dec();
             }
             break;
-            /*case OP_EQUAL:
-              if(nLeftOperandCode == INVALID_VAR_CODE) { SetError("no Lvalue"); return false;    }
-              if(BC_ProcessExpression(&ExpressionResult))
-              {
-                if(pLeftOperandAClass != 0)
-                {
-                  // set attribute class value
-                  char * pChar;
-                  // 2 signs precision --------------------------------
-                    if(ExpressionResult.GetType() == VAR_FLOAT)
-                    {
-                      float fV1;
-                      ExpressionResult.Get(fV1);
-                      sprintf_s(gs,"%.7f",fV1);
-                      ExpressionResult.Set(gs);
 
-                    }
-                  // 2 signs precision --------------------------------
-                  ExpressionResult.Convert(VAR_STRING);
-                  ExpressionResult.Get(pChar);
-                  pLeftOperandAClass->SetValue(pChar);
-
-
-                  if(bLeftOperandType == VARIABLE)
-                  {
-                    if(!VarTab.GetVar(vi,nLeftOperandCode))    { SetError("Global variable not found"); return false; }
-                    pV = vi.pDClass;
-                  }
-                  else
-                  {
-                    pV = SStack.Read(pRun_fi->stack_offset,nLeftOperandCode);
-                    if(pV == 0) { SetError("Local variable not found"); return false; }
-                  }
-                  if(nLeftOperandIndex != INVALID_ARRAY_INDEX) pV = (DATA*)pV->GetArrayElement(nLeftOperandIndex);
-                  if(pV == 0) { SetError("bad array element"); return false; }
-                  pV->Get(eid);
-                  //api->Entity_AttributeChanged(&eid,pLeftOperandAClass->GetThisName());
-                  if(bEntityUpdate) core_internal.Entity_AttributeChanged(&eid,pLeftOperandAClass);
-                  break;
-                }
-                // copy value to variable
-                if(bLeftOperandType == VARIABLE)
-                {
-                  if(!VarTab.GetVar(vi,nLeftOperandCode))    { SetError("Global variable not found"); return false; }
-                  pV = vi.pDClass;
-                }
-                else
-                {
-                  pV = SStack.Read(pRun_fi->stack_offset,nLeftOperandCode);
-                  if(pV == 0) { SetError("Local variable not found"); return false; }
-                }
-
-                if(pV->GetType() == VAR_REFERENCE && ExpressionResult.GetType() == VAR_REFERENCE)
-                {
-                  pV->SetReference(ExpressionResult.GetReference());
-                  break;
-                }
-
-                pVV = ExpressionResult.GetVarPointer();
-
-
-                DATA * pV1;
-                pV1 = pV->GetVarPointer();
-                if(pV1->GetType() != pVV->GetType())
-                {
-                  // ??? think about a little later
-                  if(ExpressionResult.IsReference()) ExpressionResult.RefConvert();
-                  if(!ExpressionResult.Convert(pV1->GetType()))    /// ??????????
-                  {
-                    break;    // skip unallowed conversion, write to log(in Convert func)
-                  }
-                  pVV = ExpressionResult.GetVarPointer();    // ??????????? ->
-                  //ExpressionResult.RefConvert();
-                  //if(!pVV->Convert(ExpressionResult.GetType()))
-                  //{
-                  //    break;    // skip unallowed conversion, write to log(in Convert func)
-                  //}
-                }
-
-                if(nLeftOperandIndex == INVALID_ARRAY_INDEX)
-                {
-                  pV->Copy(pVV);
-                }
-                else
-                {
-                  pV->CopyOnElement(pVV,nLeftOperandIndex);
-                }
-              }
-            break;*/
-            /*case SQUARE_OPEN_BRACKET:
-              if(!BC_ProcessExpression(&ExpressionResult)) { SetError("Invalid array index"); return false; }
-              if(!ExpressionResult.Get(nLeftOperandIndex)) { SetError("Invalid array index"); return false; }
-            break;*/
-
-            /*case MAKEREF_COMMAND:
-              if(BC_TokenGet() != OPEN_BRACKET) {SetError("missed '('"); return false;};
-              Token_type = BC_TokenGet(ip,token_data_size);
-              if(Token_type == VARIABLE)
-              {
-                if(!VarTab.GetVar(vi,*((uint32_t *)&pCodeBase[ip]))) { SetError("Global variable not found"); break; }
-                pRef = vi.pDClass;
-              }
-              else
-              {
-                pRef = SStack.Read(pRun_fi->stack_offset,*((uint32_t *)&pCodeBase[ip]));
-                if(pRef == 0) { SetError("Local variable not found"); return false; }
-              }
-              if(!pRef->IsReference()) { SetError("makeref to non reference variable"); return false; }
-
-              if(BC_TokenGet() != COMMA) {SetError("missed ','"); return false;};
-
-              Token_type = BC_TokenGet(ip,token_data_size);
-              if(Token_type == VARIABLE)
-              {
-                if(!VarTab.GetVar(vi,*((uint32_t *)&pCodeBase[ip])))    { SetError("Global variable not found"); break;
-            } pVar = vi.pDClass;
-              }
-              else
-              {
-                pVar = SStack.Read(pRun_fi->stack_offset,*((uint32_t *)&pCodeBase[ip]));
-                if(pVar == 0) { SetError("Local variable not found"); return false; }
-              }
-
-              if(BC_TokenGet()== SQUARE_OPEN_BRACKET)
-              {
-                if(!BC_ProcessExpression(&ExpressionResult)) { SetError("Invalid array index"); return false; }
-                if(!ExpressionResult.Get(array_index)) { SetError("Invalid array index"); return false; }
-                if(TokenType()!= SQUARE_CLOSE_BRACKET){ SetError("missed ']'"); return false; }
-                BC_TokenGet();
-                pVar = (DATA *)pVar->GetArrayElement(array_index);
-              }
-              pRef->SetReference(pVar->GetVarPointer());
-              if(TokenType() != CLOSE_BRACKET) {SetError("missed ')'"); return false;};
-            break;
-
-            case MAKEAREF_COMMAND:
-              Token_type = Token_type;
-
-            break;
-
-              if(BC_TokenGet() != OPEN_BRACKET) {SetError("missed '('"); return false;};
-              Token_type = BC_TokenGet(ip,token_data_size);
-              if(Token_type == VARIABLE)
-              {
-                if(!VarTab.GetVar(vi,*((uint32_t *)&pCodeBase[ip]))) { SetError("Global variable not found"); break; }
-                pRef = vi.pDClass;
-              }
-              else
-              {
-                pRef = SStack.Read(pRun_fi->stack_offset,*((uint32_t *)&pCodeBase[ip]));
-                if(pRef == 0) { SetError("Local variable not found"); return false; }
-              }
-              if(!pRef->IsAReference()) { SetError("makeref to non A reference variable"); return false; }
-
-              if(BC_TokenGet() != COMMA) {SetError("missed ','"); return false;};
-
-              Token_type = BC_TokenGet(ip,token_data_size);
-              if(Token_type == VARIABLE)
-              {
-                if(!VarTab.GetVar(vi,*((uint32_t *)&pCodeBase[ip])))    { SetError("Global variable not found"); break;
-            } pVar = vi.pDClass; if(pVar == 0) { SetError("Global variable not found"); return false; }
-              }
-              else
-              {
-                pVar = SStack.Read(pRun_fi->stack_offset,*((uint32_t *)&pCodeBase[ip]));
-                if(pVar == 0) { SetError("Local variable not found"); return false; }
-              }
-
-              if(BC_TokenGet()== SQUARE_OPEN_BRACKET)
-              {
-                if(!BC_ProcessExpression(&ExpressionResult)) { SetError("Invalid array index"); return false; }
-                if(!ExpressionResult.Get(array_index)) { SetError("Invalid array index"); return false; }
-                if(TokenType()!= SQUARE_CLOSE_BRACKET){ SetError("missed ']'"); return false; }
-                BC_TokenGet();
-                pVar = (DATA*)pVar->GetArrayElement(array_index);
-                if(pVar == 0) { SetError("Invalid array index"); return false; }
-              }
-              pRoot = pVar->GetAClass();
-              if(pRoot == 0) {SetError("AClass ERROR n1"); return false; }
-              //while(TokenType() == ACCESS_WORD)
-              //{
-              //    pRoot = pRoot->CreateSubAClass(pRoot,(char *)&pRunCodeBase[TLR_DataOffset]);
-              //    BC_TokenGet();
-              //}
-              while(TokenType() == ACCESS_WORD_CODE || TokenType() == ACCESS_WORD || TokenType() == ACCESS_VAR)
-              {
-                if(TokenType() == ACCESS_WORD_CODE)
-                {
-                  pRoot = pRoot->VerifyAttributeClassByCode(*((int32_t *)&pRunCodeBase[TLR_DataOffset]));
-                  // pRoot = pRoot->CreateSubAClass(pRoot,(char *)&pRunCodeBase[TLR_DataOffset]);
-                } else
-                if(TokenType() == ACCESS_WORD)
-                {
-                  pRoot = pRoot->CreateSubAClass(pRoot,(char *)&pRunCodeBase[TLR_DataOffset]);
-                } else
-                if(TokenType() == ACCESS_VAR)
-                {
-                  vtype = BC_TokenGet();
-                  var_code = *((int32_t *)&pRunCodeBase[TLR_DataOffset]);
-                  if(!(vtype == VARIABLE || vtype == LOCAL_VARIABLE)){SetError("invalid access var");return false;}
-                  if(vtype == VARIABLE)
-                  {
-                    if(!VarTab.GetVar(vi,var_code))    { SetError("Global variable not found"); return false; }
-                    pVV = vi.pDClass;
-                  }
-                  else
-                  {
-                    pVV = SStack.Read(pRun_fi->stack_offset,var_code);
-                    if(pVV == 0) { SetError("Local variable not found"); return false; }
-                  }
-                  pVV->Get(pAccess_string);
-                  pRoot = pRoot->CreateSubAClass(pRoot,pAccess_string);
-                }
-
-                BC_TokenGet();
-              }
-              pRef->SetAReference(pRoot);
-
-              pVar->Get(eid);
-              pRef->Set(eid);
-              if(TokenType() != CLOSE_BRACKET) {SetError("missed ')'"); return false;};
-            break;*/
 
             //-----------------------------------------------------------------------
 
@@ -4818,8 +4516,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
         case CASE_COMMAND:
             return false;
 
-        case SEPARATOR:
-            break;
         case UNKNOWN:
             break;
         case VAR_OBJECT:
@@ -4838,22 +4534,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
         case DOT:
 
             break;
-            /*            // off start whean ready compile expression
-                  case OP_BOOL_EQUAL:
-                  case OP_GREATER:
-                  case OP_GREATER_OR_EQUAL:
-                  case OP_LESSER:
-                  case OP_LESSER_OR_EQUAL:
-                  case OP_NOT_EQUAL:
-                  case OP_MINUS:
-                  case OP_PLUS:
-                  case OP_MULTIPLY:
-                  case OP_DIVIDE:
-                  case OP_POWER:
-                  case OP_MODUL:
-
-
-                  break;//*/
 
             //----------------------------------------------
         case NUMBER:
@@ -5101,11 +4781,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                     }
                 }
                 break;
-                /*case EX:
-                  ExpressionResult.ClearType();
-                  pVDst = &ExpressionResult;
-
-                break;*/
             default:
                 SetError("invalid DST");
                 return false;
@@ -5248,7 +4923,12 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                 pV->Set(*((float *)&pRunCodeBase[TLR_DataOffset]));
                 break;
             case STRING:
-                pV->Set((char *)&pRunCodeBase[TLR_DataOffset + 4]); // 4 - string length
+            {
+                // The constant: its size with the terminator (4 bytes), then the text.
+                uint32_t size;
+                memcpy(&size, &pRunCodeBase[TLR_DataOffset], sizeof(size));
+                pV->SetText(std::string_view(&pRunCodeBase[TLR_DataOffset + 4], size - 1));
+            }
                 break;
             case VARIABLE:
                 real_var = VarTab.GetVar(*((uint32_t *)&pCodeBase[ip]));
@@ -5606,10 +5286,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                 else
                     rAP = rAP->FindAClass(rAP, pChar);
 
-                /*if(sttV == VERIFY_AP)
-                rAP = rAP->VerifyAttributeClass(pChar);
-                  else
-                rAP = rAP->GetAttributeClass(pChar);*/
                 if (!rAP)
                     SetError("missed attribute: %s", pChar);
                 break;
@@ -5635,10 +5311,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
                 else
                     rAP = rAP->FindAClass(rAP, pChar);
 
-                /*if(sttV == VERIFY_AP)
-                  rAP = rAP->VerifyAttributeClass(pChar);
-                else
-                rAP = rAP->GetAttributeClass(pChar);*/
 
                 if (!rAP)
                     SetError("missed attribute: %s", pChar);
@@ -5656,11 +5328,8 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
             //*/
             //----------------------------------------------
         }
-    } while (Token_type != END_OF_PROGRAMM && bExit != true);
+    } while (Token_type != END_OF_PROGRAMM);
 
-    if (Token_type == END_OF_PROGRAMM && inout != 0)
-        SetError("Unexpected end of programm");
-    // UNGUARD
     return false;
 }
 

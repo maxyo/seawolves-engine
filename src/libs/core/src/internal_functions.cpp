@@ -402,7 +402,6 @@ void COMPILER::DeleteScriptEntity(DATA &object)
 DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t arguments)
 {
     //    char Format_string[MAX_PATH];
-    std::string Message_string;
     entid_t ent;
     uint32_t functions_num;
     uint32_t function_code;
@@ -433,7 +432,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
     ATTRIBUTES *pA;
     ATTRIBUTES *pRoot;
     Entity *pE;
-    MESSAGE ms;
     uint32_t s_off;
     
     static std::remove_reference_t<entity_container_cref>::const_iterator entity_iterator;
@@ -447,7 +445,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
 
     int32_t slen, slen2;
     char sVarName[64];
-    std::string utf8_character;
 
     switch (func_code)
     {
@@ -616,11 +613,14 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         TempLong = utf8::u8_offset(pChar, TempLong1); // begin
         TempLong2 = utf8::u8_inc(pChar + TempLong); // len
-        utf8_character = std::string(pChar + TempLong, TempLong2);
+    {
+        // Copied first: the result takes the stack slot whose string pChar points into.
+        const std::string character(pChar + TempLong, TempLong2);
         pV = SStack.Push();
-        pV->Set(utf8_character.c_str());
+        pV->Set(character.c_str());
         pVResult = pV;
         return pV;
+    }
 
     case FUNC_GETENTITY:
         pV = SStack.Pop();
@@ -1065,12 +1065,14 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             pVResult = pV;
             return pV;
         }
-        Message_string = std::string(pChar + TempLong1, pChar + TempLong2 + 1);
+    {
+        // Copied first: the result takes the stack slot whose string pChar points into.
+        const std::string cut(pChar + TempLong1, pChar + TempLong2 + 1);
         pV = SStack.Push();
-        pV->Set(Message_string.c_str());
+        pV->Set(cut.c_str());
         pVResult = pV;
         return pV;
-        break;
+    }
 
     case FUNC_FINDSUBSTR:
         pV3 = SStack.Pop();
@@ -1644,8 +1646,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             return pResult;
         case 's':
             pResult = SStack.Push();
-            Message_string = pEventMessage->String();
-            pResult->Set(Message_string.c_str());
+            pResult->Set(pEventMessage->String().c_str());
             pVResult = pResult;
             return pResult;
         case 'i':
@@ -1739,6 +1740,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pV->Get(pChar);
         if (arguments > 1)
         {
+            MESSAGE ms;
             if (CreateMessage(&ms, s_off, 1))
             {
                 ms.Move2Start();
@@ -1807,6 +1809,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         pV->Get(ent);
 
+        MESSAGE ms;
         const bool created = CreateMessage(&ms, s_off, 1);
 
         uint64_t mresult = 0;

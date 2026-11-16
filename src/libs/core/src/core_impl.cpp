@@ -100,8 +100,6 @@ ENGINE_VERSION getTargetEngineVersion(const std::string_view &version)
 } // namespace
 } // namespace storm
 
-uint32_t dwNumberScriptCommandsExecuted = 0;
-
 typedef struct
 {
     uint32_t code;
@@ -192,7 +190,6 @@ bool CoreImpl::Run()
     const auto bDebugWindow = true;
     if (bDebugWindow && core_internal.Controls && core_internal.Controls->GetDebugAsyncKeyState(VK_F7) < 0)
         DumpEntitiesInfo();
-    dwNumberScriptCommandsExecuted = 0;
 
     if (Exit_flag)
         return false; // exit
@@ -1169,7 +1166,6 @@ void CoreImpl::DumpEntitiesInfo()
     char * ptr;
     VMA * pClass;
 
-    Trace("Script commands executed: %" PRIu32, dwNumberScriptCommandsExecuted);
     Trace("Entity Dump -----------------------------------");
 
     for(n=0;n<=CoreState.Atoms_max_orbit;n++)

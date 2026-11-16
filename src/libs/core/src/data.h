@@ -76,7 +76,16 @@ class DATA final : public VDATA
     DATA(S_TOKEN_TYPE _element_type);
     DATA(uint32_t num_of_elements, S_TOKEN_TYPE _element_type);
     ~DATA() override;
-    void Set(int32_t value) override;
+    void Set(int32_t value) override
+    {
+        if (Data_type == VAR_REFERENCE || bArray)
+        {
+            SetThroughReference(value);
+            return;
+        }
+        Data_type = VAR_INTEGER;
+        lValue = value;
+    }
     void SetPtr(uintptr_t value) override;
     bool GetPtr(uintptr_t &value) override;
 
@@ -178,7 +187,27 @@ class DATA final : public VDATA
     // operations
     bool Inc() override;
     bool Dec() override;
-    bool Copy(DATA *pV) override;
+    // Most copies move a number between the stack, a register and a local: those are done here.
+    bool Copy(DATA *pV) override
+    {
+        if (pV && !bArray && !pV->bArray &&
+            (Data_type == UNKNOWN || Data_type == VAR_INTEGER || Data_type == VAR_FLOAT || Data_type == VAR_STRING))
+        {
+            if (pV->Data_type == VAR_INTEGER)
+            {
+                Data_type = VAR_INTEGER;
+                lValue = pV->lValue;
+                return true;
+            }
+            if (pV->Data_type == VAR_FLOAT && pV->fValue == pV->fValue) // a NaN is reported by the full copy
+            {
+                Data_type = VAR_FLOAT;
+                fValue = pV->fValue;
+                return true;
+            }
+        }
+        return CopyAny(pV);
+    }
     bool Copy(DATA *pV, uint32_t index) override;
     bool CopyOnElement(DATA *pV, uint32_t index) override;
     bool Inverse() override;
@@ -212,6 +241,8 @@ class DATA final : public VDATA
     void Release();
 
   private:
+    void SetThroughReference(int32_t value);
+    bool CopyAny(DATA *pV);
     void MakeArray(uint32_t array_size);
     DATA *GetReferencedVar();
 };

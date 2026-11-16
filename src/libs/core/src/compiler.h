@@ -173,6 +173,7 @@ class COMPILER : public VIRTUAL_COMPILER
     void FindErrorSource();
     S_TOKEN_TYPE BC_TokenGet(uint32_t &ip, uint32_t &token_data_size);
     S_TOKEN_TYPE BC_TokenGet();
+    void ReadCondition(int32_t &value);
 
     S_TOKEN_TYPE TokenLastReadResult;
     uint32_t execute_depth_ = 0;  // nested BC_Execute frames

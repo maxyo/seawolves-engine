@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -36,6 +37,7 @@ parser.add_argument('--save', type=Path, help='also boot into this save and play
 parser.add_argument('--reference', type=Path, help='compare the script states of --engine with this engine\'s')
 parser.add_argument('--only', nargs='+', default=SESSION, help='scenes instead of the default session')
 parser.add_argument('--settle', type=int, default=3000, help='ms every scene plays before the next one')
+parser.add_argument('--limit', type=int, default=1500, help='seconds one engine may take for its session')
 parser.add_argument('sweep', nargs=argparse.REMAINDER, help='after --: more arguments for tools/scene_sweep/run.py')
 args = parser.parse_args()
 
@@ -49,6 +51,18 @@ STATE_STEPS = {'newgame': ['loaded_menu_main', 'end_menu_main', 'loaded_newgame_
                            'loaded_loc_FortFrance_town'],
                'save': ['loaded_menu_main', 'end_menu_main', 'load', 'loaded_save_boot', 'end_save_boot']}
 SWEEP_VARIABLE = re.compile(r'^ss[A-Z]')  # tools/scene_sweep/scene_sweep.c counts its own frames and time
+
+
+def run_sweep(command, log, environment=None):
+    """The sweep with its engine, stopped after --limit seconds: a script that went wrong may wait for ever."""
+    process = subprocess.Popen(command, env=environment, stdout=log.open('w'), stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    try:
+        process.wait(timeout=args.limit)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        print(f'FAIL the session did not end in {args.limit} s and was stopped (see {log})')
 
 
 def play_states(engine, name, extra):
@@ -65,7 +79,7 @@ def play_states(engine, name, extra):
     command = [sys.executable, str(sweep), '--game', str(args.game), '--engine', str(engine), '--out', str(out / 'sweep'),
                '--jobs', '1', '--single-session', '--settle', '1000', '--timeout', '30000', '--only',
                'loc:FortFrance_town', *extra, *[item for item in args.sweep if item != '--']]
-    subprocess.run(command, env=environment, stdout=(out / 'sweep.log').open('w'), stderr=subprocess.STDOUT)
+    run_sweep(command, out / 'sweep.log', environment)
     return {path.stem.split('-', 1)[1]: path for path in sorted((out / 'state').glob('*.state'))}
 
 
@@ -110,7 +124,7 @@ for name, extra in [('newgame', [])] + ([('save', ['--save', str(args.save)])] i
                '--jobs', '1', '--single-session', '--keep-work', '--settle', str(args.settle), '--only', *args.only,
                *extra, *[item for item in args.sweep if item != '--']]
     # The sweep's own verdict on the scenes (game data defects, pictures) is not this tool's: the engines' checks are.
-    subprocess.run(command, stdout=(args.out / f'{name}.sweep.log').open('w'), stderr=subprocess.STDOUT)
+    run_sweep(command, args.out / f'{name}.sweep.log')
     logs = sorted(out.glob('work/shard-*/run-*/stdout.log'))
     if not logs:
         problems.append(f'{name}: no engine ran (see {args.out}/{name}.sweep.log)')

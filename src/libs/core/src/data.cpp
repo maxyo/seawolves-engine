@@ -261,9 +261,8 @@ void DATA::SetPtr(uintptr_t value)
     pValue = value;
 }
 
-void DATA::Set(int32_t value)
+void DATA::SetThroughReference(int32_t value)
 {
-    // if(bRef)
     if (Data_type == VAR_REFERENCE)
     {
         if (pReference)
@@ -1955,9 +1954,8 @@ bool DATA::Compare(DATA *pV, char opA, char opB)
 
 // copy data from pV variable to this variable
 // arrays must be the same type and size
-bool DATA::Copy(DATA *pV)
+bool DATA::CopyAny(DATA *pV)
 {
-    // if(bRef)
     if (Data_type == VAR_REFERENCE)
     {
         if (pReference)
