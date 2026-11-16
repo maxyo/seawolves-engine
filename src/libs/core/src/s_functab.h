@@ -86,7 +86,7 @@ class FuncTable
     // get func num
     size_t GetFuncNum() const;
     // get func index by name
-    size_t FindFunc(const std::string &func_name) const;
+    size_t FindFunc(std::string_view func_name) const;
     // add func to table, returns func index
     size_t AddFunc(const FuncInfo &fi);
     // get func by index, returns true if func is registered and loaded
@@ -118,5 +118,5 @@ class FuncTable
     // GetFuncPtr results survive runtime segment loading
     std::deque<FuncInfo> funcs_;
     storm::iStrHasher hasher_;
-    std::unordered_map<std::string, size_t, storm::iStrHasher, storm::iStrComparator> hash_table_;
+    std::unordered_map<std::string, size_t, ScriptNameHash, ScriptNameEqual> hash_table_;
 };

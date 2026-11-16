@@ -3,6 +3,7 @@
 #include "data.h"
 #include "string_compare.hpp"
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -11,6 +12,29 @@
 
 #define INVALID_VAR_CODE 0xffffffff
 #define INVALID_SEGMENT_ID 0xffffffff
+
+// The name tables' hash and comparison: ASCII case folded, and transparent, so a lookup by a C string or a view
+// builds no std::string (the engine asks for globals by name every frame: CoreImpl::GetScriptVariable).
+struct ScriptNameHash
+{
+    using is_transparent = void;
+    size_t operator()(std::string_view name) const noexcept
+    {
+        uint64_t hash = 0xcbf29ce484222325ull; // FNV-1a
+        for (const char c : name)
+            hash = (hash ^ storm::FoldCase(c)) * 0x100000001b3ull;
+        return static_cast<size_t>(hash ^ (hash >> 32));
+    }
+};
+
+struct ScriptNameEqual
+{
+    using is_transparent = void;
+    bool operator()(std::string_view left, std::string_view right) const noexcept
+    {
+        return storm::iEquals(left, right);
+    }
+};
 
 struct VarInfo
 {
@@ -51,7 +75,7 @@ class VarTable
     // invalidate all segment's vars
     void InvalidateBySegmentID(uint32_t segment_id);
     // get var index by name
-    size_t FindVar(const std::string &var_name) const;
+    size_t FindVar(std::string_view var_name) const;
     // set var's array size, returns true if successful
     bool SetElementsNum(size_t var_index, size_t elements_num);
     // clear table
@@ -64,7 +88,6 @@ class VarTable
 
   private:
     std::vector<VarInfo> vars_;
-    std::unordered_map<std::string, size_t, storm::iStrHasher, storm::iStrComparator>
-        hash_table_; // name to index mapping
+    std::unordered_map<std::string, size_t, ScriptNameHash, ScriptNameEqual> hash_table_; // name to index mapping
     VIRTUAL_COMPILER *vc_;
 };

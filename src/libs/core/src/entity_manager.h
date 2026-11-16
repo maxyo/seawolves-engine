@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 #include "entity.h"
@@ -95,6 +96,10 @@ class EntityManager final
 
     // stack of entities for deferred delete
     std::vector<entity_index_t> deletedIndices_;
+
+    // Valid entities per class: GetEntityId answers "none" for a class without one (the HUD adapters ask for the
+    // fader, the world map and the video players every frame) instead of walking every entity.
+    std::unordered_map<hash_t, uint32_t> validByClass_;
 
     entid_stamp_t previousStamp_ = 0;
 };

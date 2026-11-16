@@ -34,6 +34,7 @@ void EntityManager::EraseAndFree(EntityInternalData &data)
 void EntityManager::MarkDeleted(EntityInternalData &data)
 {
     data.state = kExists;
+    --validByClass_[data.hash];
     const auto index = static_cast<entid_index_t>(data.id);
     deletedIndices_.push_back(index);
 }
@@ -200,6 +201,7 @@ void EntityManager::EraseAll()
     entities_.clear();
     freeIndices_.clear();
     deletedIndices_.clear();
+    validByClass_.clear();
 
     // clear cache
     cache_.Clear();
@@ -297,6 +299,8 @@ bool EntityManager::IsEntityValid(entid_t id) const
 
 entid_t EntityManager::GetEntityId(const uint32_t hash) const
 {
+    if (const auto count = validByClass_.find(hash); count == validByClass_.end() || count->second == 0)
+        return invalid_entity;
     for (auto it = std::begin(entities_); it != std::end(entities_); ++it)
     {
         if (it->hash == hash && it->state == kValid)
@@ -473,6 +477,7 @@ entid_t EntityManager::InsertEntity(entptr_t ptr, hash_t hash)
         freeIndices_.pop_back();
         entities_[index] = {{}, {}, kValid, ptr, id, hash};
     }
+    ++validByClass_[hash];
 
     return id;
 }

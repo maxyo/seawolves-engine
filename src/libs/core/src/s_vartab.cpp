@@ -100,7 +100,7 @@ void VarTable::InvalidateBySegmentID(uint32_t segment_id)
     }
 }
 
-size_t VarTable::FindVar(const std::string &var_name) const
+size_t VarTable::FindVar(std::string_view var_name) const
 {
     auto result = hash_table_.find(var_name);
 
