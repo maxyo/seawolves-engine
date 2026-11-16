@@ -69,6 +69,8 @@ class TownLight
     // The walls' relight (Lighting, u_fxTownWall): on while the sun is up and the walls are calibrated.
     bool walls_active() const { return active() && wall_ready_ && sun_present_ && wall_.valid; }
     const fx::TownLightTone *wall_light() const { return wall_ready_ ? &wall_light_ : nullptr; }
+    // The walls' relight this frame: 0 -> 1 over shim::kTextureFadeMs after it came on (update()), 0 while off.
+    float wall_weight() const { return wall_weight_; }
     const fx::TownWallTone *wall_tone() const { return &wall_; }
     const std::array<float, 3> &live_sun() const { return live_sun_; }
     std::array<float, 3> bake_sun() const { return {bake_dir_[0], bake_dir_[1], bake_dir_[2]}; }
@@ -140,7 +142,9 @@ class TownLight
     void start_place();
     void upload_map(Map &map);
     void compose_all();
+    void fade_walls();
     static float TexelMetres(const fx::LightmapTexels &texels);
+    static void RetireLightmap(bgfx::TextureHandle texture);
 
     bool enabled_ = false;
     bool ready_ = false;
@@ -150,7 +154,7 @@ class TownLight
     bool want_place_ = false; // the set's job is due once the sun is up
     fx::Bake<PlaceJob> place_job_;
     std::vector<Map> maps_;
-    fx::SunRelight relight_;
+    fx::SunRelight relight_{RetireLightmap}; // a lightmap made again or let go is faded from (shim texture_fade.hpp)
     std::array<float, 3> place_sun_{0.0f, 0.0f, 0.0f}; // the direction the place's sun map was drawn for (0: not drawn)
     bool place_is_bake_ = false;                        // ... the bake's (for the lightmaps' bake visibility)
     uint64_t place_cut_signature_ = 0;                  // ... and the cut-out textures it was drawn with
@@ -160,6 +164,9 @@ class TownLight
     fx::TownWallTone wall_;
     fx::TownLightTone wall_light_; // the tone of the first relit lightmap
     bool wall_ready_ = false;
+    bool walls_were_active_ = false;
+    uint64_t walls_since_ = 0;
+    float wall_weight_ = 0.0f;
     bool sun_present_ = false;
     std::array<float, 3> live_sun_{0.0f, 1.0f, 0.0f};
     fx::Vec3 bake_dir_{0.0f, 1.0f, 0.0f}; // the direction the game's lightmaps were baked with

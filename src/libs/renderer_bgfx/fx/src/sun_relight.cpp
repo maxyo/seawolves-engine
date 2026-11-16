@@ -131,7 +131,10 @@ void SunRelight::ClearMaps()
     for (MapData &m : maps_)
     {
         Destroy(m.target);
-        Destroy(m.target_texture);
+        if (retire_ && m.composed && bgfx::isValid(m.target_texture))
+            retire_(m.target_texture); // draws may still be fading from it
+        else
+            Destroy(m.target_texture);
         Destroy(m.bake_target);
         Destroy(m.bake_texture);
         Destroy(m.position);

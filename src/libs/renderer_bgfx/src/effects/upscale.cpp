@@ -2,6 +2,7 @@
 
 #include "effects/relief_generator.hpp"
 #include "shim/device.hpp"
+#include "shim/texture_fades.hpp"
 #include "storm/fx/relief_store.hpp"
 #include "texture/core/formats.hpp"
 #include "texture/core/service.hpp"
@@ -151,7 +152,7 @@ void Upscales::release(UpscaleEntry &entry)
 {
     if (entry.state == UpscaleEntry::Resident)
     {
-        bgfx::destroy(entry.handle);
+        shim::texture_fades().retire(entry.handle); // a draw on screen fades back to the texture (texture_fade.hpp)
         entry.handle = BGFX_INVALID_HANDLE;
         entry.state = UpscaleEntry::Stored;
     }

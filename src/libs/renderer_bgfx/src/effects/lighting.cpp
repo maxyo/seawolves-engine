@@ -1369,7 +1369,7 @@ void Lighting::bind_town_wall(const FfDraw &draw)
             for (int k = 0; k < 3; ++k)
                 out[k] = d[0] * draw.view[0 * 4 + k] + d[1] * draw.view[1 * 4 + k] + d[2] * draw.view[2 * 4 + k];
         };
-        u[0] = {tone->a, tone->b, tone->c, 1.0f};
+        u[0] = {tone->a, tone->b, tone->c, town_light_.wall_weight()};
         to_view(town_light_.live_sun(), u[1]);
         to_view(town_light_.bake_sun(), u[2]);
         for (int i = 0; i < fx::TownWallTone::kSkyBins; ++i)

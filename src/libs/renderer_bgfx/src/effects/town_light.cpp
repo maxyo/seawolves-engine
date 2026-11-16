@@ -3,6 +3,7 @@
 #include "effects/casters.hpp"
 #include "effects/shadows.hpp"
 #include "shim/shim.hpp"
+#include "shim/texture_fades.hpp"
 #include "storm/render/frame_owner.hpp"
 #include "storm/fx/hash.hpp"
 #include "texture/core/formats.hpp"
@@ -372,7 +373,10 @@ void TownLight::update(const std::array<float, 3> &sun, bool present)
     sun_present_ = present;
     live_sun_ = sun;
     if (!enabled_)
+    {
+        fade_walls();
         return; // no bake runs (set_enabled)
+    }
     // The set's job: once the place's probes are there and the sun is up (nothing is fitted at night: the game's
     // night lightmaps hold no sun to find).
     if (want_place_ && place_ && present && !place_job_ && maps_.empty())
@@ -427,6 +431,28 @@ void TownLight::update(const std::array<float, 3> &sun, bool present)
         }
         place_job_.reset();
     }
+    fade_walls();
+}
+
+void TownLight::fade_walls()
+{
+    // The walls' relight fades in as our lightmaps do (shim texture_fade.hpp): it comes with them, possibly after the
+    // location was revealed.
+    const bool walls = walls_active();
+    const uint64_t now = shim::texture_fades().now();
+    if (walls && !walls_were_active_)
+    {
+        walls_since_ = now;
+        shim::logf("effects: town light of %s: the walls' relight fades in over %llu ms", name_.c_str(),
+                   static_cast<unsigned long long>(shim::kTextureFadeMs));
+    }
+    walls_were_active_ = walls;
+    wall_weight_ = walls ? 1.0f - shim::TextureFade::Share(now - walls_since_) : 0.0f;
+}
+
+void TownLight::RetireLightmap(bgfx::TextureHandle texture)
+{
+    shim::texture_fades().retire(texture);
 }
 
 void TownLight::upload_map(Map &map)

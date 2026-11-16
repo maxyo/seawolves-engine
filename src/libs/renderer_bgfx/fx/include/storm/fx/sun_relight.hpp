@@ -45,7 +45,10 @@ class SunRelight
     // Size of the place's sun map (texels per side).
     static constexpr int kPlaceSize = 2048;
 
-    SunRelight() = default;
+    // `retire`: takes a lightmap ClearMaps lets go of (the renderer keeps it while draws fade from it to its
+    // replacement); null: destroyed at once.
+    using Retire = void (*)(bgfx::TextureHandle);
+    explicit SunRelight(Retire retire = nullptr) : retire_(retire) {}
     ~SunRelight();
     SunRelight(const SunRelight &) = delete;
     SunRelight &operator=(const SunRelight &) = delete;
@@ -62,6 +65,7 @@ class SunRelight
     size_t Bytes() const;
     // The relit lightmap (invalid until the map was composed once).
     bgfx::TextureHandle Texture(Map map) const;
+    // Every map goes; a composed lightmap is retired (`retire`), the rest destroyed.
     void ClearMaps();
 
     // The place's sun map for `place`: sets up `view` (cleared). The caller submits the still casters into it with
@@ -95,6 +99,7 @@ class SunRelight
     static bgfx::TextureFormat::Enum BakeFormat();
     void Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bool sun, float footprint, bool debug, bool bake);
 
+    Retire retire_ = nullptr;
     std::vector<MapData> maps_;
     bgfx::TextureHandle place_map_ = BGFX_INVALID_HANDLE;
     bgfx::FrameBufferHandle place_target_ = BGFX_INVALID_HANDLE;

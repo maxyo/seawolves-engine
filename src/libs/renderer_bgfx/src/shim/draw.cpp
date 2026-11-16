@@ -6,6 +6,7 @@
 #include "storm/fx/skin_tone.hpp"
 #include "perf.hpp"
 #include "ports.hpp"
+#include "texture_fades.hpp"
 #include "util.hpp"
 #include <cfloat>
 
@@ -663,7 +664,8 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
             a[3] = encode_arg(t[D3DTSS_ALPHAARG0]);
             m[0] = (t[D3DTSS_RESULTARG] & D3DTA_SELECTMASK) == D3DTA_TEMP ? 1.0f : 0.0f;
             m[1] = (t[D3DTSS_TEXTURETRANSFORMFLAGS] & D3DTTFF_PROJECTED) && !layout.rhw ? 1.0f : 0.0f;
-            m[2] = bound ? 1.0f : 0.0f;
+            // Above 1 while the stage fades from its previous texture (texture_fade.hpp): 1 + its share.
+            m[2] = bound ? 1.0f + stage_fade_[stage] : 0.0f;
             m[3] = point_sprite ? 1.0f : 0.0f; // the stars (weather/stars.cpp) are point sprites
             stage_count = stage + 1;
         }
@@ -1378,6 +1380,13 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
         }
         return upscale_distance;
     };
+    // A stage whose texture was swapped a moment ago fades from the previous one (texture_fade.hpp): bound at the first
+    // fixed-function unit this draw leaves free, stage 0's at unit 4, stage 1's at unit 3.
+    uint32_t ff_stages = 0;
+    while (!ps_port && ff_stages < kFfStages && s.tss[ff_stages][D3DTSS_COLOROP] != D3DTOP_DISABLE)
+        ++ff_stages;
+    std::fill(std::begin(stage_fade_), std::end(stage_fade_), 0.0f);
+    TextureFades &fades = texture_fades();
     for (uint32_t stage = 0; stage < stage_limit; ++stage)
     {
         TexStore *store = store_of(s.textures[stage]);
@@ -1434,14 +1443,23 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
         bgfx::TextureHandle handle = store->handle;
         uint32_t skin_width = store->width, skin_height = store->height;
         uint32_t skin_levels = store->full_chain ? 0 : store->levels;
+        TextureSource source = TextureSource::Own;
         if (store->lightmap) // a town's lightmap: ours for the hour's sun in its place (effects/town_light.hpp)
             if (const bgfx::TextureHandle ours = fx_lighting.town_light().replacement(store); bgfx::isValid(ours))
+            {
                 handle = ours;
+                source = TextureSource::Lightmap;
+            }
+        // A resident ×2 is the store's texture for every draw (one without bounds reports no distance but binds it
+        // too): draws that disagreed about it would make it flicker and keep restarting its fade.
         if (store->upscale && upscales.active())
-            if (const float distance = draw_distance(); distance >= 0.0f)
-                if (const bgfx::TextureHandle ours = upscales.replacement(*store, distance); bgfx::isValid(ours))
+            if (const float distance = draw_distance();
+                distance >= 0.0f || store->upscale->state == effects::UpscaleEntry::Resident)
+                if (const bgfx::TextureHandle ours = distance >= 0.0f ? upscales.replacement(*store, distance) : store->upscale->handle;
+                    bgfx::isValid(ours))
                 {
                     handle = ours;
+                    source = TextureSource::Upscale;
                     skin_width = store->upscale->width * 2;
                     skin_height = store->upscale->height * 2;
                     skin_levels = 0; // every resident upscale has its complete rebuilt chain
@@ -1452,6 +1470,34 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             fx::SetSkinToneSampling(fx_draw.skin_tone, skin_width, skin_height, skin_levels);
         bgfx::setTexture(static_cast<uint8_t>(unit), Context::instance().sampler(unit), handle, flags);
         ++perf().texture_binds;
+        if (const TextureFade::Sample fade = store->fade.observe(handle.idx, source, fades.now(), fades.epoch());
+            fade.from != kNoTexture)
+        {
+            const uint32_t from_unit = stage == 0 ? 4 : stage == 1 ? 3 : 0;
+            const bool fades_here = !ps_port && store->kind == TexKind::Tex2D && from_unit && ff_stages <= from_unit;
+            if (fades_here)
+            {
+                bgfx::setTexture(static_cast<uint8_t>(from_unit), Context::instance().sampler(from_unit),
+                                 bgfx::TextureHandle{fade.from}, flags);
+                ++perf().texture_binds;
+                last_draw.texture[from_unit] = fade.from;
+                stage_fade_[stage] = fade.share;
+            }
+            if (fade.started)
+            {
+                TextureFadeCounts &counts = fades.counts();
+                counts.reversed += fade.reversed ? 1 : 0;
+                if (fades_here)
+                    ++counts.started[size_t(fade.kind)];
+                else
+                    ++(ps_port ? counts.port : store->kind != TexKind::Tex2D ? counts.not_2d : counts.no_unit);
+                if (fade.kind == TextureFadeKind::Lightmap)
+                    logf("texture fade: town lightmap %s: %s over %llu ms", store->name.c_str(),
+                         !fades_here          ? "swapped at once (no free unit)"
+                         : source == TextureSource::Lightmap ? "ours fades in" : "the game's fades back in",
+                         static_cast<unsigned long long>(kTextureFadeMs));
+            }
+        }
         if (last_draw.texture[unit] != handle.idx || last_draw.sampler[unit] != flags)
         {
             ++perf().texture_changes;

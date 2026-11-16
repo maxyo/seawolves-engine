@@ -4,6 +4,7 @@
 // Models, inference and the generator are intentionally absent: public UpscaleEntry states represent pending work,
 // while Read -> Resident and dimension rejection use the real Upscales::end_frame upload path.
 #include "device.hpp"
+#include "texture_fades.hpp"
 #include "effects/upscale.hpp"
 #include "effects/normal_maps.hpp"
 #include "storm/render/effects.hpp"
@@ -31,6 +32,9 @@ namespace
 {
 constexpr uint32_t kSize = 64;
 using Pixels = std::vector<uint8_t>;
+// The fades' clock (shim texture_fades.hpp), advanced by each draw: the swaps fade by exact shares.
+uint64_t g_now = 1000;
+uint64_t FadeClock() { return g_now; }
 
 void require(bool good, const char *what)
 {
@@ -106,8 +110,11 @@ class Harness
             readback_->Release();
     }
 
-    Frame draw(shim::Texture2D *texture, float distance = 0.0f)
+    // `advance`: the fade clock's ms since the last draw (a frame at 60 Hz by default).
+    Frame draw(shim::Texture2D *texture, float distance = 0.0f, uint64_t advance = 16)
     {
+        g_now += advance;
+        shim::texture_fades().frame();
         check(device_.BeginScene(), "BeginScene");
         check(device_.SetRenderTarget(0, target_), "SetRenderTarget");
         check(device_.SetDepthStencilSurface(nullptr), "SetDepthStencilSurface");
@@ -222,6 +229,7 @@ void run(shim::Device &device, bool noop)
     require(budget.stats().budget == automatic, "automatic budget also restored while already disabled");
     std::printf("PASS: manual/automatic upscale budget transitions (RAM policy %llu MB)\n",
                 static_cast<unsigned long long>(automatic >> 20));
+    shim::texture_fades().set_clock(FadeClock);
     Harness harness(device, noop);
     auto *base = make_texture(device, kSize, false);
     auto *reference = make_texture(device, kSize * 2, true);
@@ -290,13 +298,31 @@ void run(shim::Device &device, bool noop)
     require(entry->state == effects::UpscaleEntry::Resident && bgfx::isValid(entry->handle), "real upload becomes Resident");
     const uint16_t upscale_handle = entry->handle.idx;
     require(upscale_handle != base_handle, "replacement allocation differs from retained base");
+    // The swap fades (shim texture_fade.hpp): the first frame still shows the texture, half way the two mix, after
+    // kTextureFadeMs only the ×2.
+    Pixels halfway;
+    for (size_t i = 0; i < original.pixels.size(); ++i)
+        halfway.push_back(uint8_t((unsigned(original.pixels[i]) + unsigned(replacement.pixels[i]) + 1) / 2));
+    if (noop)
+        halfway.clear();
+    expect(harness.draw(base), upscale_handle, noop ? Pixels{} : original.pixels, 2,
+           "the x2's first frame still shows the texture it replaces (fade start)");
+    expect(harness.draw(base, 0.0f, shim::kTextureFadeMs / 2), upscale_handle, halfway, 12,
+           "half way through the fade the texture and its x2 mix evenly");
+    expect(harness.draw(base, 0.0f, shim::kTextureFadeMs), upscale_handle, replacement.pixels, 10,
+           "after the fade only the x2 shows");
     for (int i = 0; i < 3; ++i)
         expect(harness.draw(base), upscale_handle, replacement.pixels, 10, "resident replacement draws without blank frame");
     require(base->store->handle.idx == base_handle, "resident upscale keeps original base allocation");
 
     upscales.configure(false, 16);
     require(!bgfx::isValid(entry->handle), "disable releases upscale allocation");
-    expect(harness.draw(base), base_handle, original.pixels, 0, "disabled upscale immediately returns to base");
+    const size_t retired = shim::texture_fades().retired();
+    require(retired >= 1, "the released x2 is retired, not destroyed, while draws fade from it");
+    expect(harness.draw(base), base_handle, replacement.pixels, 10, "disabled upscale fades back to base from the x2");
+    expect(harness.draw(base, 0.0f, shim::kTextureFadeMs), base_handle, original.pixels, 0, "after the fade only the base shows");
+    harness.draw(base, 0.0f, shim::kTextureRetireMs);
+    require(shim::texture_fades().retired() < retired, "the retired x2 is destroyed once no fade can read it");
     upscales.configure(true, 16);
     // A cancellation/reset state is seeded explicitly: this does not claim to test inference cancellation.
     entry->state = effects::UpscaleEntry::Missing;
@@ -304,6 +330,8 @@ void run(shim::Device &device, bool noop)
     stage_upload(*entry, format, kSize * 2);
     expect(harness.draw(base), base_handle, original.pixels, 0, "second upload retains base before readiness");
     require(entry->state == effects::UpscaleEntry::Resident, "second real upload becomes resident");
+    expect(harness.draw(base), entry->handle.idx, noop ? Pixels{} : original.pixels, 2, "second x2 fades in from the base");
+    harness.draw(base, 0.0f, shim::kTextureFadeMs);
     // Wait only for the production 500 ms residency plan (on its outcome, no deadline); every intervening frame must
     // retain valid imagery.
     std::printf("step: the residency plan evicts the far upscale\n");
@@ -315,7 +343,9 @@ void run(shim::Device &device, bool noop)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     require(!bgfx::isValid(entry->handle), "real residency plan evicts far upscale");
-    expect(harness.draw(base, 1000.0f), base_handle, original.pixels, 0, "eviction returns to patterned base without blank frame");
+    expect(harness.draw(base, 1000.0f), base_handle, replacement.pixels, 10, "eviction fades back to the base from the x2");
+    expect(harness.draw(base, 1000.0f, shim::kTextureFadeMs), base_handle, original.pixels, 0,
+           "eviction returns to patterned base without blank frame");
     // Real Read -> Resident publication under the loading batch policy. Container encoding,
     // bgfx allocation/dimension validation and state transitions remain production operations.
     // The permission is seeded here; loading_upload/check.cpp exercises the actual opacity receipt.
@@ -362,6 +392,7 @@ void run(shim::Device &device, bool noop)
     batch_entries.clear();
 
     upscales.configure(false, 16);
+    shim::texture_fades().set_clock(nullptr);
     base->store->upscale.reset();
     entry.reset();
     base->Release();

@@ -594,6 +594,8 @@ struct Device final : Object
         }
     };
     LastDraw last_draw;
+    // This draw's share of each stage's previous texture while it fades (texture_fade.hpp; u_ffStage ms.z - 1).
+    float stage_fade_[kFfStages] = {};
 
     // Vertex ranges of buffers written in this frame that are already in transient memory: later
     // draws of the same (or a contained) range bind the copy instead of copying again. Valid until

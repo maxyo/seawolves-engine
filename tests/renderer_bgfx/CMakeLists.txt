@@ -195,6 +195,11 @@ target_compile_definitions(texture_format_check PRIVATE NOMINMAX)
 target_compile_options(texture_format_check PRIVATE -fsigned-char)
 target_link_libraries(texture_format_check PRIVATE storm_bgfx storm_check_sdl)
 
+# The texture swap fade's state (src/shim/texture_fade.hpp): CPU only.
+add_executable(texture_fade_check texture_fade_check.cpp)
+target_include_directories(texture_fade_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_compile_options(texture_fade_check PRIVATE -UNDEBUG)
+
 # Upscale swaps through the real draw binding: offscreen pixels on GLES/Vulkan, --noop for submission/state only.
 # Location reveal state, actual producer state chains and worker/cache retry. Noop only, no display/GPU.
 foreach(pair IN ITEMS "scene_readiness_check;check" "scene_resources_check;resources" "scene_retry_check;retry"

@@ -396,8 +396,13 @@ int main()
                     game = picture;
                 SDL_Delay(5);
             }
-            for (int f = 0; f < 5; ++f)
+            // Ours fades in over the game's (shim texture_fade.hpp): the frames after the fade show it whole.
+            const uint64_t fade_end = SDL_GetTicks64() + shim::kTextureFadeMs + 50;
+            for (int f = 0; f < 5 || SDL_GetTicks64() < fade_end; ++f)
+            {
                 picture = frame();
+                SDL_Delay(5);
+            }
             dump(game, "game");
             dump(picture, "relit");
 

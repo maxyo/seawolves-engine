@@ -9,6 +9,7 @@
 
 #include "storm_render_types.h"
 #include "storm/fx/aggregate_light.hpp"
+#include "texture_fade.hpp"
 
 #include <atomic>
 
@@ -144,6 +145,8 @@ struct TexStore
     std::shared_ptr<effects::NormalMapEntry> gloss_map;
     // Effects: its neural ×2 (src/effects/upscale.hpp), drawn in its place near the camera; null without a ×2 target.
     std::shared_ptr<effects::UpscaleEntry> upscale;
+    // The handle its draws bound last and the one it fades from after a swap (texture_fade.hpp; Device::draw).
+    TextureFade fade;
 
     ~TexStore();
     uint32_t faces() const { return kind == TexKind::Cube ? 6 : 1; }

@@ -138,7 +138,7 @@ float ffSunReach(float open)
 }
 
 // The town walls' relight (src/effects/town_light.hpp, lighting.cpp bind_town_wall): [0] the lightmaps' tone a, b, c and
-// w 1 = on for this draw; [1] towards the live sun (view space); [2] towards the sun the game baked with; [3], [4] the
+// w its share for this draw (0 off; it fades in 0 -> 1 after it came on, TownLight::wall_weight); [1] towards the live sun (view space); [2] towards the sun the game baked with; [3], [4] the
 // game's sky per bin of ours (bin centres (i + 0.5) / 8).
 #ifdef FX_FF_TOWN_WALL
 uniform vec4 u_fxTownWall[5];
@@ -603,14 +603,18 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
 }
 
 #define FF_ARG(arg) ffArg(arg, current, tex, temp, FF_DIFFUSE, v_color1)
-#define FF_STAGE(i, SAMPLE) \
+// ms.z above 1: the stage's texture was swapped a moment ago (a finished transcode, its x2, our town lightmap:
+// src/shim/texture_fade.hpp) and the previous one, bound at the first unit the draw leaves free, still shows by ms.z - 1.
+#define FF_FADE(tex, ms, PREV) if (ms.z > 1.0) { tex = mix(tex, PREV, ms.z - 1.0); }
+#define FF_NO_FADE(tex, ms, PREV)
+#define FF_STAGE(i, SAMPLE, FADE, PREV) \
     if (running && float(i) < u_ffFs[3].z) \
     { \
         vec4 cs = u_ffStage[3 * i]; \
         vec4 as = u_ffStage[3 * i + 1]; \
         vec4 ms = u_ffStage[3 * i + 2]; \
         vec4 tex = vec4(0.0, 0.0, 0.0, 1.0); \
-        if (ms.z > 0.5) { tex = SAMPLE; } \
+        if (ms.z > 0.5) { tex = SAMPLE; FADE(tex, ms, PREV) } \
         FF_KEEP_TEX(i, tex) \
         vec4 c = ffCombine(cs.x, FF_ARG(cs.y), FF_ARG(cs.z), FF_ARG(cs.w), current, tex, FF_DIFFUSE); \
         vec4 a = as.x < 1.5 ? current : ffCombine(as.x, FF_ARG(as.y), FF_ARG(as.z), FF_ARG(as.w), current, tex, FF_DIFFUSE); \
@@ -650,6 +654,14 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
 #endif
 #ifndef STAGE2_SAMPLE
 #define STAGE2_SAMPLE texture2D(s_tex2, FF_UV(v_texcoord2, ms))
+#endif
+// The previous texture of a fading stage 0 / 1 (FF_FADE): stage 0's at unit 4, stage 1's at unit 3, read as the stage.
+#ifdef FX_LIGHT_PARALLAX
+#define STAGE0_PREV (u_fxFf.y > 0.5 ? texture2D(s_tex4, FF_UV(v_texcoord0, ms)) : texture2DGrad(s_tex4, ffReliefUv, ffReliefDx, ffReliefDy))
+#define STAGE1_PREV (u_fxFf.y > 0.5 ? texture2DGrad(s_tex3, ffReliefUv, ffReliefDx, ffReliefDy) : texture2D(s_tex3, FF_UV(v_texcoord1, ms)))
+#else
+#define STAGE0_PREV texture2D(s_tex4, FF_UV(v_texcoord0, ms))
+#define STAGE1_PREV texture2D(s_tex3, FF_UV(v_texcoord1, ms))
 #endif
 #define STAGE3_SAMPLE texture2D(s_tex3, FF_UV(v_texcoord3, ms))
 #define STAGE4_SAMPLE texture2D(s_tex4, FF_UV(v_texcoord4, ms))
@@ -844,11 +856,11 @@ void main()
     vec4 current = FF_DIFFUSE;
     vec4 temp = vec4_splat(0.0);
     bool running = true;
-    FF_STAGE(0, STAGE0_SAMPLE)
-    FF_STAGE(1, STAGE1_SAMPLE)
-    FF_STAGE(2, STAGE2_SAMPLE)
-    FF_STAGE(3, STAGE3_SAMPLE)
-    FF_STAGE(4, STAGE4_SAMPLE)
+    FF_STAGE(0, STAGE0_SAMPLE, FF_FADE, STAGE0_PREV)
+    FF_STAGE(1, STAGE1_SAMPLE, FF_FADE, STAGE1_PREV)
+    FF_STAGE(2, STAGE2_SAMPLE, FF_NO_FADE, tex)
+    FF_STAGE(3, STAGE3_SAMPLE, FF_NO_FADE, tex)
+    FF_STAGE(4, STAGE4_SAMPLE, FF_NO_FADE, tex)
 #ifdef FX_FF_DYN
     current.rgb *= fxSunGround(v_shadow.xyz, v_shadow.w);
 #endif
@@ -924,7 +936,7 @@ void main()
     vec3 ffLampBakedSpec = vec3_splat(0.0);
 #endif
 #ifdef FX_FF_TOWN_WALL
-    if (u_fxTownWall[0].w > 0.5)
+    if (u_fxTownWall[0].w > 0.0)
     {
         // A town's wall (src/effects/town_light.hpp TownWallTone): its baked colour carries the game's sun along the
         // direction the game baked with and the game's sky, which takes no account of alleys and gaps between
@@ -934,7 +946,7 @@ void main()
         float sunThen = max(0.0, dot(N, u_fxTownWall[2].xyz));
         float now = u_fxTownWall[0].x + u_fxTownWall[0].y * sunNow + u_fxTownWall[0].z * skySeen.x;
         float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(skySeen.x);
-        current.rgb *= clamp(now / max(then, 0.02), 0.33, 3.0);
+        current.rgb *= mix(1.0, clamp(now / max(then, 0.02), 0.33, 3.0), u_fxTownWall[0].w);
     }
 #endif
     current.rgb = fxLit(current.rgb, tex0.rgb, (ffPointDiffuse + ffLampMoved) * cavityDirect, vec3_splat(0.0),

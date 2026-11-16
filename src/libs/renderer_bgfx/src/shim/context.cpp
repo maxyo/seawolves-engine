@@ -1,4 +1,5 @@
 #include "device.hpp"
+#include "texture_fades.hpp"
 #include "effects/effects.hpp"
 #include "frame_pacing.hpp"
 #include "perf.hpp"
@@ -798,6 +799,7 @@ void Context::shutdown()
         entry.client->OnDeviceLost();
     dump_traps();
     effects::Host::instance().shutdown();
+    texture_fades().shutdown(); // after the effects retired their last lightmaps
     bone_palettes_.shutdown();
     stop_backend();
     overlap_ = {};
@@ -958,6 +960,7 @@ bool Context::run_frame(uint32_t flags, uint32_t *frame_number)
 {
     // The frame's bone palettes go up in one update, before the draws that read them are rendered.
     bone_palettes_.flush();
+    texture_fades().frame(); // the next frame's fade time; replaced textures no fade reads any more are destroyed
     if (before_frame_)
         before_frame_();
     bool refused = false;

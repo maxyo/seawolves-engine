@@ -1,6 +1,7 @@
 #include <atomic>
 #include "device.hpp"
 #include "perf.hpp"
+#include "texture_fades.hpp"
 
 #include <chrono>
 #include <thread>
@@ -560,7 +561,7 @@ void TexStore::finish_transcode()
         return;
     }
     service.release(transcode_job);
-    bgfx::destroy(handle);
+    texture_fades().retire(handle); // a draw on screen fades from the interim copy (texture_fade.hpp)
     handle = made;
     gpu_format = made_format;
     full_chain = true;
@@ -595,6 +596,7 @@ void TexStore::destroy_sampled()
     transcoded = false;
     full_chain = false;
     shadow_released = false;
+    fade.reset(); // made again from new contents: nothing to fade from
     if (bgfx::isValid(handle))
         bgfx::destroy(handle);
     handle = BGFX_INVALID_HANDLE;
