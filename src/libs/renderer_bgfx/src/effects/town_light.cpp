@@ -153,6 +153,15 @@ void TownLight::set_lightmaps(std::string_view name, std::span<const std::array<
                    "when it is switched on", name_.c_str());
 }
 
+bool TownLight::preparing() const
+{
+    if (!enabled_ || lightmapped_->indices.empty())
+        return false;
+    if (place_job_ || (want_place_ && place_ && sun_present_ && maps_.empty()))
+        return true;
+    return !maps_.empty() && !ready_ && fx::SunRelight::Supported();
+}
+
 void TownLight::set_place(std::shared_ptr<const PlaceReady> place)
 {
     if (place && (place->place->interior || place->place->name != name_ || !place->volume))

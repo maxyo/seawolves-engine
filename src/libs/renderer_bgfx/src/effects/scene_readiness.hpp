@@ -1,7 +1,10 @@
 // Game-thread scene reveal state. Workers publish resource states; they never release the fader.
 #pragma once
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
@@ -12,11 +15,81 @@ inline bool SceneCooling(bool inference_pending, bool worker_running, std::strin
     return inference_pending && !worker_running && pause == kThermalWaitReason;
 }
 struct SceneResources {
-    // relief: the location's relief/gloss maps still being made. Reported only (the loading screen shows the
-    // count); never pending() and never a failure: the reveal does not wait for quality products.
+    // relief: the location's relief/gloss maps still being made (the loading screen shows the count); they hold the
+    // reveal only through `products` (SceneProductWait), never as a failure.
     uint32_t textures = 0, relief = 0, shadows = 0, failed = 0;
     bool switching = false;
-    bool pending() const { return textures || shadows || switching; }
+    // The quality products still being made hold the reveal: within kSceneProductBudgetMs of mandatory-ready only.
+    bool products = false;
+    // The mandatory part: what the scene cannot be drawn without (GPU textures, this frame's shadow maps, a switch).
+    bool mandatory_pending() const { return textures || shadows || switching; }
+    bool pending() const { return mandatory_pending() || products; }
+};
+// Owner decision 2026-11-16 («если есть что готовить на сцене то ждём макс 10 секунд»): when a location loads, the
+// reveal waits for the quality products the active preset wants for the scene and that are still being made, for at
+// most this long, counted from the moment its mandatory resources (SceneResources::mandatory_pending) are ready.
+// What finishes within it is there at the reveal; what does not continues in the background and comes in after it
+// (the relief maps fade in over kReliefFade, the AO and visibility volumes over lighting.cpp kVolumeFade). One budget per load, never extended.
+// Before 662cc596 the reveal waited for the relief generation without a bound (40-150 s per map on slow devices).
+inline constexpr uint64_t kSceneProductBudgetMs = 10000;
+// The quality products a load waits for. A product the preset does not want is never counted (its owner makes
+// nothing: «Низкая» has none of them), so it adds no wait.
+enum class SceneProduct : uint8_t {
+    Transcode, // a texture drawing its fallback while its full transcode runs (a cache read included)
+    Relief,    // relief/gloss maps of the scene's loaded textures (cache read, generation, upload and fade)
+    Upscale,   // neural x2 of the textures the residency plan chose (near the camera)
+    Place,     // the place's probes: its visibility and AO volumes (cache load or bake)
+    TownLight, // the town light: the lightmap set (cache load or bake) and its first composition
+    Count
+};
+struct SceneProducts {
+    std::array<uint32_t, static_cast<size_t>(SceneProduct::Count)> count{};
+    void add(SceneProduct p, uint32_t n = 1) { count[static_cast<size_t>(p)] += n; }
+    uint32_t operator[](SceneProduct p) const { return count[static_cast<size_t>(p)]; }
+    bool any() const { for (const uint32_t n : count) if (n) return true; return false; }
+    // "relief/gloss maps 12, town light 1", or "nothing".
+    std::string describe() const {
+        static constexpr const char *kNames[] = {"texture transcodes", "relief/gloss maps", "x2 textures",
+                                                 "place probes (visibility/AO volume)", "town light"};
+        std::string text;
+        for (size_t i = 0; i < count.size(); ++i)
+            if (count[i]) text += (text.empty() ? "" : ", ") + std::string(kNames[i]) + " " + std::to_string(count[i]);
+        return text.empty() ? "nothing" : text;
+    }
+};
+// The bounded wait for the quality products of one load (game thread; no clock or engine call of its own).
+class SceneProductWait {
+public:
+    void begin() { *this = {}; }
+    // One sample of the products in progress. `mandatory_ready`: a scene frame with no mandatory resource pending;
+    // the first one starts the budget (later mandatory work does not restart it). True while the products hold.
+    bool hold(bool mandatory_ready, const SceneProducts &products, uint64_t now) {
+        last_ = products;
+        if (finished_) return false;
+        if (!started_) {
+            if (!mandatory_ready) return false; // the mandatory resources hold the reveal; the budget has not begun
+            started_ = true; ready_at_ = now;
+        }
+        if (!products.any()) return false;
+        for (size_t i = 0; i < products.count.size(); ++i) waited_.count[i] = std::max(waited_.count[i], products.count[i]);
+        if (now >= ready_at_ + kSceneProductBudgetMs) { expired_ = true; finished_ = true; waited_ms_ = kSceneProductBudgetMs; return false; }
+        waited_ms_ = now - ready_at_;
+        return true;
+    }
+    // The location was revealed: nothing holds it again in this load (a product starting later fills in).
+    void revealed() { finished_ = true; }
+    bool started() const { return started_; }
+    bool expired() const { return expired_; }
+    uint64_t ready_at() const { return ready_at_; }
+    uint64_t waited_ms() const { return waited_ms_; }
+    // The most of each product in progress while the wait ran.
+    const SceneProducts &waited() const { return waited_; }
+    // The products in progress at the last sample (at the reveal: what continues after it).
+    const SceneProducts &last() const { return last_; }
+private:
+    bool started_ = false, finished_ = false, expired_ = false;
+    uint64_t ready_at_ = 0, waited_ms_ = 0;
+    SceneProducts waited_{}, last_{};
 };
 // Only producer failures with an implemented retry transition offer Retry. Allocation,
 // mandatory missing materials and unsupported scene resources require a fresh scene load.
@@ -24,11 +97,11 @@ struct SceneFailures {
     uint32_t retryable = 0, reload_required = 0;
     bool can_retry() const { return retryable > 0 && reload_required == 0; }
 };
-// One scene texture's states for the reveal. Only a texture still in flight (its own upload, `holds`) holds the
-// reveal, and only within SceneTextureStall's budget. A texture that failed never holds it: it will never get a GPU
-// copy, so the caller logs an ERROR naming it and the scene draws the engine's unbound-texture fallback. Its
-// relief/gloss maps and its x2 (`relief_pending`: NormalMaps::prepare_scene_texture said 1) are quality products
-// that fill in after the reveal, flat or the original texture meanwhile; their owners log their failures.
+// One scene texture's states for the reveal. A texture still in flight (its own upload, `holds`) holds the reveal as
+// a mandatory resource, within SceneTextureStall's budget. A texture that failed never holds it: it will never get a
+// GPU copy, so the caller logs an ERROR naming it and the scene draws the engine's unbound-texture fallback. Its
+// relief/gloss maps (`relief_pending`: NormalMaps::prepare_scene_texture said 1) are quality products: the caller
+// counts them in SceneProducts, which hold the reveal only within kSceneProductBudgetMs; their owners log failures.
 inline void AccountSceneTexture(SceneResources &r, bool holds, bool relief_pending) {
     if (holds) ++r.textures;
     if (relief_pending) ++r.relief;

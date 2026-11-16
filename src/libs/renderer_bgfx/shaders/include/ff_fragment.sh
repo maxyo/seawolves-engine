@@ -102,7 +102,8 @@ float ffAoVolume(vec3 P, vec3 Ng, vec3 Nw)
 // place's bounds), y open (the share of directions more than 15° up that reach out). P and the geometric normal Ng in
 // view space: the volume is read off the surface along Ng, on the side the surface faces (a wall's own cells would
 // mix in the other side's). u_fxVisibility: view space -> volume uvw; u_fxVisibilityParams: x 1 = this place has a
-// volume (0: everything counts as under open sky; 2: the debug view fx_visibility_debug), y that offset in metres.
+// volume (0: everything counts as under open sky; 2: the debug view fx_visibility_debug), y that offset in metres, z the
+// volume's share while it fades in after it arrived (lighting.cpp kVolumeFade; open sky for the rest).
 // Read once per pixel: every term that needs it takes the value.
 // A stage 0 cube map takes the unit: such a draw has no lit or baked variant, and its place counts as open.
 #ifndef STAGE0_CUBE
@@ -117,7 +118,8 @@ vec2 ffVisibility(vec3 P, vec3 Ng)
 #else
     if (u_fxVisibilityParams.x <= 0.0)
         return vec2(1.0, 1.0);
-    return texture3D(s_fxVisibility, mul(u_fxVisibility, vec4(P + Ng * u_fxVisibilityParams.y, 1.0)).xyz).xy;
+    vec2 seen = texture3D(s_fxVisibility, mul(u_fxVisibility, vec4(P + Ng * u_fxVisibilityParams.y, 1.0)).xyz).xy;
+    return mix(vec2(1.0, 1.0), seen, u_fxVisibilityParams.z);
 #endif
 }
 // Whether the sun can reach the pixel at all, from the volume's openness: closed under a roof (an interior, an

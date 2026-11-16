@@ -1164,6 +1164,34 @@ bool Lighting::sun_lit(const shim::Device &device) const
     });
 }
 
+namespace
+{
+// A location's AO or visibility volume that arrives where there was none (its bake or cache load ended, possibly after
+// the reveal: scene_readiness.hpp kSceneProductBudgetMs) fades in over this instead of popping in.
+constexpr std::chrono::milliseconds kVolumeFade{300};
+float volume_weight(std::chrono::steady_clock::time_point &since, const void *was, const void *volume)
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (!volume)
+        return 0.0f;
+    if (!was)
+        since = now;
+    return std::min(1.0f, std::chrono::duration<float>(now - since).count() / std::chrono::duration<float>(kVolumeFade).count());
+}
+} // namespace
+
+void Lighting::set_ao_volume(const AoVolumes::Bound *volume)
+{
+    ao_weight_ = volume_weight(ao_since_, ao_volume_, volume);
+    ao_volume_ = volume;
+}
+
+void Lighting::set_visibility(const Visibility::Bound *volume)
+{
+    visibility_weight_ = volume_weight(visibility_since_, visibility_, volume);
+    visibility_ = volume;
+}
+
 void Lighting::bind_ao_volume(const FfDraw &draw)
 {
     if (!bgfx::isValid(u_ao_params_))
@@ -1198,7 +1226,7 @@ void Lighting::bind_ao_volume(const FfDraw &draw)
         ao_world_to_uvw_ = ao_volume_->world_to_uvw;
     }
     const fx::AoVolumeLevel &level = fx::kAoVolumeLevel[std::min<uint8_t>(settings_.ao_volume, fx::kAoVolumeLevels)];
-    const float params[4] = {level.strength * settings_.ao_gain, level.contrast, ao_volume_->cell, 1.0f / fx::kAoOpenSurface};
+    const float params[4] = {level.strength * settings_.ao_gain * ao_weight_, level.contrast, ao_volume_->cell, 1.0f / fx::kAoOpenSurface};
     bgfx::setUniform(u_ao_matrix_, ao_view_to_uvw_.data());
     bgfx::setUniform(u_ao_params_, params);
     bgfx::setTexture(fx::kAoVolumeStage, s_ao_volume_, ao_volume_->texture);
@@ -1233,8 +1261,10 @@ void Lighting::bind_visibility(const FfDraw &draw)
         visibility_view_ = draw.world_view;
         visibility_world_to_uvw_ = visibility_->world_to_uvw;
     }
-    // x the mode (2: the debug view of the visibility), y the receivers' offset along their normal in metres.
-    const float params[4] = {settings_.visibility_debug ? 2.0f : 1.0f, visibility_->offset, 0.0f, 0.0f};
+    // x the mode (2: the debug view of the visibility), y the receivers' offset along their normal in metres, z its
+    // share while it fades in (kVolumeFade; the debug view shows it whole).
+    const float params[4] = {settings_.visibility_debug ? 2.0f : 1.0f, visibility_->offset,
+                             settings_.visibility_debug ? 1.0f : visibility_weight_, 0.0f};
     bgfx::setUniform(u_visibility_matrix_, visibility_view_to_uvw_.data());
     bgfx::setUniform(u_visibility_params_, params);
     bgfx::setTexture(fx::kVisibilityStage, s_visibility_, visibility_->texture);

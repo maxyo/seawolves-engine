@@ -20,8 +20,8 @@ int main() {
  opaque.arm(2,true,true,255);opaque.submitted(2);opaque.frame(2,true,false);assert(!opaque.presented(2)); // replaced surface/backbuffer
  opaque.arm(2,true,true,255);opaque.submitted(2,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // actual scissor/viewport partial
  opaque.arm(2,true,true,255);opaque.submitted(2,true,false);opaque.frame(2,true,true);assert(!opaque.presented(2)); // MAX/MIN/SUBTRACT can retain destination despite alpha255
- // A slow relief generator never delays the reveal: a texture whose relief/gloss (or x2) is still being made counts
- // only in the report; once the textures are uploaded the gate becomes ready after its stable frames.
+ // AccountSceneTexture counts relief/gloss in progress only for the report: they hold through SceneProductWait
+ // (below); once the textures are uploaded the gate becomes ready after its stable frames.
  {
   SceneReadiness gate; const uint64_t g=gate.begin(0);
   for(uint64_t frame=1;frame<=4;++frame){
@@ -71,6 +71,64 @@ int main() {
   assert(released.size()==1&&released[0]==9);
   assert(sample(200000,2).empty()); assert(sample(200001,2).empty()); // released: it no longer holds
   assert(gate.state()==SceneReadiness::State::Ready&&!gate.hold(200001));
+ }
+ // The quality products (relief, x2, bakes, ...) hold the reveal within one budget of kSceneProductBudgetMs counted
+ // from mandatory-ready: a fast one until it is done, a slow one until the budget, an off one never.
+ {
+  using storm::effects::SceneProduct; using storm::effects::SceneProducts; using storm::effects::SceneProductWait;
+  using storm::effects::kSceneProductBudgetMs;
+  static_assert(kSceneProductBudgetMs==10000);
+  SceneProducts relief; relief.add(SceneProduct::Relief,3);
+  SceneProducts bake; bake.add(SceneProduct::Place);
+  // Drives a gate and a wait like SampleSceneResources: mandatory textures until `mandatory_at`, then the products.
+  struct Load { SceneReadiness gate; SceneProductWait wait; uint64_t g=0, frame=0;
+   Load(){ g=gate.begin(0); wait.begin(); }
+   bool sample(uint64_t now,bool mandatory,const SceneProducts &p){
+    SceneResources r{}; r.textures=mandatory?1:0;
+    r.products=wait.hold(!r.mandatory_pending(),p,now);
+    gate.frame(g,++frame,true,r);
+    return gate.hold(now);
+   }
+  };
+  // A fast product: holds until it is done, then the location reveals after its stable frames.
+  {
+   Load l;
+   assert(l.sample(0,true,relief)); assert(!l.wait.started()); // mandatory still pending: the budget has not begun
+   assert(l.sample(500,false,relief)&&l.wait.started()&&l.wait.ready_at()==500);
+   assert(l.sample(3000,false,relief)); // still being made: holds
+   assert(l.sample(3100,false,{})); assert(l.sample(3200,false,{})); assert(!l.sample(3300,false,{})); // done: stable frames
+   assert(!l.wait.expired()&&l.wait.waited_ms()==2500&&l.wait.waited()[SceneProduct::Relief]==3&&!l.wait.last().any());
+  }
+  // A slow product: holds until exactly kSceneProductBudgetMs after mandatory-ready, then the location reveals
+  // with it still in progress (it continues after the reveal).
+  {
+   Load l;
+   assert(l.sample(0,true,bake)); assert(l.sample(2000,true,bake)); // mandatory pending: the bake does not count yet
+   assert(l.sample(4000,false,bake)&&l.wait.ready_at()==4000); // the budget starts at mandatory-ready
+   assert(l.sample(4000+kSceneProductBudgetMs-1,false,bake)); // one millisecond short: still held
+   l.sample(4000+kSceneProductBudgetMs,false,bake); // the budget: released
+   assert(l.wait.expired()&&l.wait.waited_ms()==kSceneProductBudgetMs);
+   l.sample(14001,false,bake); assert(!l.sample(14002,false,bake)); // revealed with the bake still running
+   assert(l.gate.state()==SceneReadiness::State::Ready&&l.wait.last()[SceneProduct::Place]==1);
+   l.wait.revealed(); SceneProducts more=bake; more.add(SceneProduct::Upscale);
+   assert(!l.sample(20000,false,more)); // after the reveal nothing holds it again
+  }
+  // One budget per load: mandatory work found after mandatory-ready (a texture first used late) does not restart it.
+  {
+   Load l;
+   assert(l.sample(1000,false,relief)&&l.wait.ready_at()==1000);
+   assert(l.sample(6000,true,relief)); // a late texture holds as mandatory, the budget runs on
+   assert(l.sample(10999,false,relief)); l.sample(11000,false,relief); assert(l.wait.expired());
+  }
+  // An off product (the preset does not want it: its owner reports nothing in progress) never holds: the location
+  // reveals after the mandatory resources' stable frames, with nothing waited.
+  {
+   Load l;
+   assert(l.sample(0,true,{})); assert(l.sample(1,false,{})); assert(l.sample(2,false,{})); assert(!l.sample(3,false,{}));
+   assert(l.wait.waited_ms()==0&&!l.wait.waited().any()&&l.wait.waited().describe()=="nothing");
+  }
+  SceneProducts two; two.add(SceneProduct::Relief,12); two.add(SceneProduct::TownLight);
+  assert(two.describe()=="relief/gloss maps 12, town light 1");
  }
  storm::render::LoadingBudget pacing;
  assert(pacing.deadline(100,true,20,100)==100); // no prior real frame

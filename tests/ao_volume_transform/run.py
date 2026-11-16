@@ -60,6 +60,7 @@ public:
  Bound *ao_volume_=nullptr;
  bgfx::Handle s_ao_volume_,u_ao_matrix_,u_ao_params_,ao_open_;
  struct { uint8_t ao_volume=2; float ao_gain=1.25f; } settings_;
+ float ao_weight_=1.0f; // set_ao_volume's fade share: whole here
 FIELDS
 };
 METHOD

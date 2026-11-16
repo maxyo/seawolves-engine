@@ -56,6 +56,7 @@ struct LocationLoad {
     std::unordered_set<std::string> failed_textures;
     std::unordered_set<uint64_t> fallback_textures;
     SceneTextureStall stall;
+    SceneProductWait products;
     bool sealed = true, pipelines_pending = false;
     bool logged_error = false, logged_ready = false, logged_slow = false;
     uint64_t phase_polled_at = 0;
@@ -104,6 +105,7 @@ void BeginSceneResources(const char *scene)
         load.gate.begin(load_milliseconds());
         load.stall.begin(load_milliseconds());
         load.cover.begin(load.gate.generation());
+        load.products.begin();
         fx::SharedCpuAdmission().begin(load.gate.generation(), true);
         upscales().begin_scene();
         shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
@@ -129,6 +131,7 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     if (load.sealed) return;
     Host &host = Host::instance();
     SceneResources resources{};
+    SceneProducts products;
     load.failures = {};
     resources.switching = host.switching() || load.pipelines_pending;
     // Order-independent per-resource stages: two different completions can leave total pending
@@ -162,6 +165,8 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
             (uint64_t(store->full_chain) << 4);
         const bool holds = uploading && load.stall.in_flight(store->serial, texture_stage);
         if (holds) name("texture upload: " + store->name);
+        // Drawing its fallback (or a previous upload) while its full chain is still on the way: a quality product.
+        if (drawable && working) products.add(SceneProduct::Transcode);
         // Failed when no work is left: no GPU copy, or a finished transcode without its full mip chain. It will
         // never be complete, so it never holds the reveal: drawn with what it has (or the unbound-texture fallback).
         if (!working && (!drawable || (store->transcoded && !store->full_chain)) &&
@@ -169,12 +174,16 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
             shim::logf("ERROR: location readiness: %s: texture %s failed (%s); drawn with %s, the reveal does not wait for it",
                        load.scene.c_str(), store->name.c_str(), drawable ? "transcode without its full mip chain" : "no GPU copy",
                        drawable ? "the levels it has" : "the engine's unbound-texture fallback (black)");
-        // The x2 and the relief/gloss maps are prepared with loading priority while the transaction runs, but the
-        // reveal never waits for them (AccountSceneTexture).
+        // The x2 and the relief/gloss maps are prepared with loading priority while the transaction runs; the reveal
+        // waits for them within kSceneProductBudgetMs (SceneProductWait). Only the x2 the residency plan chose (near
+        // the camera) counts, or any while the first plan is not made; the far ones are made in the background.
         const int upscale = upscales().prepare_scene(*store, load.gate.generation());
         bool relief_inference = false;
         const int relief = host.lighting().prepare_scene_texture(*store, &relief_inference);
         AccountSceneTexture(resources, holds, relief == 1);
+        if (relief == 1) products.add(SceneProduct::Relief);
+        if (upscale == 1 && store->upscale && (store->upscale->selected || !upscales().planned()))
+            products.add(SceneProduct::Upscale);
         // Match NormalMaps::prepare_scene's actual consumers; old disabled Waiting entries get no token.
         if (relief == 1 && relief_inference) {
             if (store->normal_map && store->normal_map->state == NormalMapEntry::Waiting &&
@@ -211,12 +220,19 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     };
     shadow(draw_shadows ? (*draw_shadows)[0] : host.lighting().shadows().initial_state(!host.lighting().lamp_shadows().interior()), "sun shadows");
     shadow(draw_shadows ? (*draw_shadows)[1] : host.lighting().lamp_shadows().initial_state(), "lamp shadows");
-    // The place's probes (its visibility and AO volumes) and the town light are quality products made in the
-    // background: they fill in after the reveal and never hold it.
+    // The place's probes (its visibility and AO volumes) and the town light: quality products, made only when the
+    // preset wants them (PlaceBake::update, TownLight::set_enabled), waited for within kSceneProductBudgetMs.
+    if (host.place().state() == PlaceBake::State::Building) products.add(SceneProduct::Place);
+    if (host.lighting().town_light().preparing()) products.add(SceneProduct::TownLight);
     progress ^= mix(uint64_t(resources.shadows) | (uint64_t(resources.failed) << 32) |
                     (uint64_t(resources.switching) << 63));
     load.gate.observe_progress(progress, load_milliseconds());
     const uint64_t now = load_milliseconds();
+    // The budget starts at the first scene frame with nothing mandatory pending; a HoldSceneResources sample only
+    // re-evaluates it (it may end it at the budget, before the Fader draws).
+    resources.products = load.products.hold(completed && scene_frame && !resources.mandatory_pending() && !resources.failed,
+                                            products, now);
+    if (resources.products) name("quality products: " + products.describe());
     if (!inference_pending) load.cooling = false;
     else if (!load.phase_polled_at || now - load.phase_polled_at >= 1000) {
         // Observe the worker's actual pause, not a new thermal query or a renderer heartbeat.
@@ -239,11 +255,18 @@ bool HoldSceneResources()
     SampleSceneResources(false, 0, false);
     const auto now = load_milliseconds();
     const bool hold = load.gate.hold(now);
-    // One line when the location is revealed; waiting is reported only as slow or failed below (no line per change).
+    // One line when the location is revealed: when the mandatory resources were ready, what the quality products
+    // held it for and what continues after it. Waiting is reported only as slow or failed below (no line per change).
     if (!hold && !load.logged_ready) {
-        shim::logf("location readiness: ready generation=%llu after %llu ms (%u relief/gloss maps still being made)",
-                   static_cast<unsigned long long>(load.gate.generation()),
-                   static_cast<unsigned long long>(load.gate.elapsed(now)), load.gate.resources().relief);
+        const SceneProductWait &wait = load.products;
+        const uint64_t mandatory_ms = load.gate.elapsed(wait.started() ? wait.ready_at() : now);
+        shim::logf("location readiness: ready %s generation=%llu after %llu ms: mandatory ready at %llu ms; quality "
+                   "products waited %llu ms of %llu for: %s%s; continued after the reveal: %s",
+                   load.scene.c_str(), static_cast<unsigned long long>(load.gate.generation()),
+                   static_cast<unsigned long long>(load.gate.elapsed(now)), static_cast<unsigned long long>(mandatory_ms),
+                   static_cast<unsigned long long>(wait.waited_ms()), static_cast<unsigned long long>(kSceneProductBudgetMs),
+                   wait.waited().describe().c_str(), wait.expired() ? " (budget reached)" : "", wait.last().describe().c_str());
+        load.products.revealed();
         load.logged_ready = true;
     }
     if (load.gate.state() == SceneReadiness::State::Error && !load.logged_error) {
@@ -1525,6 +1548,7 @@ bool RetrySceneResources(uint64_t generation)
     load.gate.begin(effects::load_milliseconds());
     load.stall.begin(effects::load_milliseconds());
     load.cover.begin(load.gate.generation());
+    load.products.begin();
     fx::SharedCpuAdmission().begin(load.gate.generation(), true);
     effects::upscales().begin_scene();
     load.logged_error = load.logged_ready = load.logged_slow = false;

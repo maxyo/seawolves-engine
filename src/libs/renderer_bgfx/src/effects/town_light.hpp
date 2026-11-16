@@ -92,6 +92,11 @@ class TownLight
     };
     const SunCounters &sun_counters() const { return sun_counters_; }
     bool active() const { return enabled_ && ready_; }
+    // The place's lightmap set is being made for the location's reveal (scene readiness, SceneProduct::TownLight):
+    // its job runs (cache load or bake), starts at the next update (the probes are there and the sun is up), or its
+    // lightmaps wait for their first composition. False while off, without lightmapped ground, while the probes are
+    // still being made (their own product) and on a device that cannot relight.
+    bool preparing() const;
 
     void shutdown();
     void on_device_lost();

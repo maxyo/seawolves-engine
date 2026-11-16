@@ -271,10 +271,15 @@ class Lighting
     }
     void set_wet(const WetFrame &wet) { wet_ = wet; }
     const WetFrame &wet() const { return wet_; }
-    // The interior's AO volume for this frame's draws into the game picture (null: none).
-    void set_ao_volume(const AoVolumes::Bound *volume) { ao_volume_ = volume; }
-    // The location's visibility volume for this frame's lit and baked draws (null: none yet, or no location).
-    void set_visibility(const Visibility::Bound *volume) { visibility_ = volume; }
+    // The interior's AO volume for this frame's draws into the game picture (null: none). Once per frame. A volume
+    // arriving where there was none fades in over kVolumeFade (one made after the reveal does not pop in).
+    void set_ao_volume(const AoVolumes::Bound *volume);
+    // This frame's share of the AO / visibility volume while it fades in (1 once it is whole, 0 without one).
+    float ao_weight() const { return ao_weight_; }
+    float visibility_weight() const { return visibility_weight_; }
+    // The location's visibility volume for this frame's lit and baked draws (null: none yet, or no location). Once
+    // per frame; fades in like the AO volume.
+    void set_visibility(const Visibility::Bound *volume);
     NormalMaps &normal_maps() { return normal_maps_; }
     int prepare_scene_texture(shim::TexStore &store, bool *inference_pending = nullptr) {
         return normal_maps_.prepare_scene(store, fx_, inference_pending);
@@ -416,6 +421,8 @@ class Lighting
     // AO volume (ff_fragment.sh ffAoVolume): sampler stage kAoVolumeStage, view -> volume uvw, parameters
     void bind_ao_volume(const FfDraw &draw);
     const AoVolumes::Bound *ao_volume_ = nullptr;
+    float ao_weight_ = 0.0f, visibility_weight_ = 0.0f; // 0..1 while a volume fades in (kVolumeFade)
+    std::chrono::steady_clock::time_point ao_since_{}, visibility_since_{};
     bgfx::UniformHandle s_ao_volume_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_ao_matrix_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_ao_params_ = BGFX_INVALID_HANDLE;

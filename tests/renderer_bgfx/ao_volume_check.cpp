@@ -179,9 +179,11 @@ float mean(const std::vector<uint8_t> &p, float u, float v)
 bool settle(Harness &harness, int preset, const std::vector<render::EffectsOption> &options, bool volume = false)
 {
     render::ConfigureEffects(preset, options);
-    // The previous settings draw until the new ones are prepared.
+    // The previous settings draw until the new ones are prepared; a volume that arrived fades in (kVolumeFade).
     auto settled = [&] {
-        return !render::CurrentEffects().pending && (!volume || effects::Host::instance().ao_volume() != nullptr);
+        effects::Host &host = effects::Host::instance();
+        return !render::CurrentEffects().pending &&
+               (!volume || (host.ao_volume() != nullptr && host.lighting().ao_weight() >= 1.0f));
     };
     for (int frame = 0; frame < 2000; ++frame)
     {
