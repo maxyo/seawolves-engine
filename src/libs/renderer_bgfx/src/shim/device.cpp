@@ -636,24 +636,19 @@ void Device::scene_complete()
     TexStore *scene = back_color->store.get();
     scene->sync();
     back_depth->store->sync();
-    // The multisampled scene is resolved when bgfx leaves it for the chain's first view; nothing reads its
-    // multisampled attachments afterwards in this frame (the interface draws on the processed picture, which takes a
-    // single-sample depth) and the next frame clears them. Invalidating them after the resolve spares a tile GPU
-    // writing them back to memory (patches/bgfx-gl-framebuffer-discard.patch). Single-sample targets are the
-    // textures the chain reads: never discarded.
-    // Vulkan: bgfx resolves a multisampled texture after its render pass, from the stored attachment (colour:
-    // vkCmdResolveImage; a depth an effect reads: a shader pass), so the discard would leave nothing to resolve.
-    // Only a multisampled depth that nothing reads can go there.
-    if (view_color == scene && (scene->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) &&
-        (back_depth->store->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && !probe_placed)
-    {
-        uint16_t discard = BGFX_CLEAR_DISCARD_COLOR_0 | BGFX_CLEAR_DISCARD_DEPTH | BGFX_CLEAR_DISCARD_STENCIL;
-        if (Context::instance().device_info().vulkan)
-            discard = (back_depth->store->target_flags & BGFX_TEXTURE_RT_WRITE_ONLY)
-                          ? BGFX_CLEAR_DISCARD_DEPTH | BGFX_CLEAR_DISCARD_STENCIL
-                          : BGFX_CLEAR_NONE;
-        bgfx::setViewClear(view, view_clear_set | discard, view_clear_rgba, view_clear_z, view_clear_stencil);
-    }
+    // The multisampled scene colour is resolved when bgfx leaves it for the chain's first view and nothing reads
+    // its multisampled colour afterwards in this frame: invalidating it after the resolve spares a tile GPU writing it
+    // back to memory (patches/bgfx-gl-framebuffer-discard.patch). The depth and stencil are kept: the 3D the game
+    // draws after the scene boundary (ship foam, particles, coronas, the ship pointer) is drawn on the processed
+    // picture, which is multisampled as the scene is, depth-tested against that same scene depth. Discarded, that
+    // depth was undefined and those draws were cut into blocks (the bow foam). Single-sample targets are the textures
+    // the chain reads: never discarded.
+    // Vulkan: bgfx resolves a multisampled texture after its render pass, from the stored attachment, so the colour
+    // discard would leave nothing to resolve: nothing is discarded there.
+    if (view_color == scene && (scene->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && !probe_placed &&
+        !Context::instance().device_info().vulkan)
+        bgfx::setViewClear(view, view_clear_set | BGFX_CLEAR_DISCARD_COLOR_0, view_clear_rgba, view_clear_z,
+                           view_clear_stencil);
     effects::Host::PostTargets targets;
     targets.scene_color = scene->handle;
     targets.width = static_cast<uint16_t>(scene->width);
