@@ -26,6 +26,15 @@ int main()
     held.advance(0);
     assert(state("Ship_TurnLeft") == 0);
 
+    // a tap shorter than a frame (taken and let go between two frames) still activates once
+    assert(held.offer("7\tWMapCameraSwitch\t1", 0) && held.offer("7\tWMapCameraSwitch\t0", 0));
+    held.advance(0);
+    assert(state("WMapCameraSwitch") == 3);
+    held.advance(0);
+    assert(state("WMapCameraSwitch") == 2);
+    held.advance(0);
+    assert(state("WMapCameraSwitch") == 0);
+
     // the controls bound inversely to the held key see it pressed: the spyglass's TelescopeOut
     // (VK_CONTROL inverted) lets go while TelescopeIn is held and activates on its release
     assert(held.inverse("TelescopeIn") == -1 && held.inverse("Ship_Fire") == -1);

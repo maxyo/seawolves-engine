@@ -28,6 +28,7 @@ class HeldControls
     struct Held
     {
         bool wanted = false, previous = false;
+        bool pressed = false; // taken since the last frame: a tap shorter than a frame still activates once
         int strength = 100; // percent of a full press while wanted
         int state = 0; // 0 inactive, 1 active, 2 released, 3 activated: the CONTROL_STATE contract
     };
@@ -41,7 +42,7 @@ class HeldControls
     }
     void release()
     {
-        for (auto &held : held_) held.wanted = false;
+        for (auto &held : held_) held.wanted = held.pressed = false;
     }
 public:
     // Installed by the engine: the current gameplay binds this control and the player can act.
@@ -76,7 +77,7 @@ public:
         auto &held = held_[static_cast<size_t>(slot)];
         if (value == "0") { held.wanted = false; return true; } // a release always counts
         if (revision != revision_ || !revision_ || !guard || !guard(control)) return false;
-        held.wanted = true;
+        held.wanted = held.pressed = true;
         held.strength = strength;
         return true;
     }
@@ -87,9 +88,13 @@ public:
         for (size_t i = 0; i < held_.size(); ++i)
         {
             auto &held = held_[i];
-            if (held.wanted && (!guard || !guard(HeldControlNames[i]))) held.wanted = false;
-            held.state = held.wanted ? (held.previous ? 1 : 3) : (held.previous ? 2 : 0);
-            held.previous = held.wanted;
+            if ((held.wanted || held.pressed) && (!guard || !guard(HeldControlNames[i]))) held.wanted = held.pressed = false;
+            // A hold taken and let go between two frames (a quick tap on a slow frame) is still
+            // a press: activated in this frame, released in the next.
+            const bool down = held.wanted || held.pressed;
+            held.state = down ? (held.previous ? 1 : 3) : (held.previous ? 2 : 0);
+            held.previous = down;
+            held.pressed = false;
         }
     }
     // A physical activation or hold keeps priority.
