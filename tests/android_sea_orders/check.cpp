@@ -114,6 +114,7 @@ int main()
     assert(!s.frame().complete && s.frame().active && s.frame().available);
     assert(s.frame().recipients[0].name == "\xE2\x80\xA6");
     assert(s.frame().items[0].label == "\xE2\x80\xA6");
+    assert(s.defect() && std::string(s.defect()).find("text") != std::string::npos);
     assert(s.offer(request(s,"back"),100)); assert(s.take(101)->verb == "back");
     assert(s.offer(request(s,"close"),100)); assert(s.take(101)->verb == "close");
     f.recipients[0].name = "\xC2\x85";
@@ -125,6 +126,7 @@ int main()
         f.items.push_back({"i"+std::to_string(i), "command", std::string(93, '\"'), "native-quoted-"+std::to_string(i), true, 1});
     s.update("escaped-size", f);
     assert(s.json().size() <= 65536 && !s.frame().complete && s.frame().active && s.frame().available);
+    assert(s.defect() && std::string(s.defect()).find("JSON over") != std::string::npos);
     assert(s.offer(request(s,"back"),100)); assert(s.take(101)->verb == "back");
     assert(s.offer(request(s,"close"),100)); assert(s.take(101)->verb == "close");
     std::cout << "PASS: sea order guards, live identities, cooldown, queue, ACK, duplicate rejection; closed menu asked only on invalidation or a gating change, active menu every iteration\n";

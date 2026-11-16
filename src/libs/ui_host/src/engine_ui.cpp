@@ -62,7 +62,8 @@ double MonotonicMs()
     return now.tv_sec * 1000.0 + now.tv_nsec / 1e6;
 }
 
-// adb shell setprop log.tag.<tag> DEBUG
+// adb shell setprop log.tag.<tag> DEBUG. Read once per process (EngineUi's flags), before the
+// first state: set it before the game starts.
 bool Loggable(const char *tag)
 {
     char value[PROP_VALUE_MAX] = {};
@@ -132,7 +133,7 @@ class EngineUi
 
     void State(std::string_view channel, std::string json)
     {
-        if (Loggable("StormUiState"))
+        if (trace_states_)
             __android_log_print(ANDROID_LOG_DEBUG, "StormUiState", "%.*s %s", int(channel.size()), channel.data(), json.c_str());
         std::string name(channel);
         if (host_)
@@ -536,7 +537,6 @@ class EngineUi
             host_ = std::move(host);
         }
         ++generation_;
-        trace_input_ = Loggable("StormUiInput");
         if (trace_input_)
             owner->AddClient(&frame_trace_, kClientOrder + 1);
         backend_->AttachHost(host_.get());
@@ -671,7 +671,7 @@ class EngineUi
     // <external files>/ui-models/<screen>.json, to record real models for the screen tests.
     void Record(const storm::ui::InterfaceModel &model) const
     {
-        if (screen_.empty() || !Loggable("StormUiModels"))
+        if (screen_.empty() || !record_models_)
             return;
         const std::string json = storm::ui::InterfaceModelJson(model);
         const char *external = SDL_AndroidGetExternalStoragePath();
@@ -695,7 +695,10 @@ class EngineUi
     uint64_t generation_ = 0;
     uint64_t loop_ = 0;     // engine loop iterations (Tick)
     uint64_t tap_loop_ = 0; // the iteration that applied the newest touch end
-    bool trace_input_ = false;
+    // The debug log tags (Loggable), read once.
+    const bool trace_input_ = Loggable("StormUiInput");
+    const bool trace_states_ = Loggable("StormUiState");
+    const bool record_models_ = Loggable("StormUiModels");
     // With the input trace: which loop iteration each presented UI frame belongs to, and every
     // 5 s what the UI frames cost on the CPU (GPU work is the renderer's, in RenderMetrics).
     struct FrameTrace final : storm::render::FrameClient

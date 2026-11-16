@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <deque>
 #include <jni.h>
+#include <set>
 #include <spdlog/spdlog.h>
 #include <android/log.h>
 #include <sys/system_properties.h>
@@ -47,6 +48,15 @@ inline std::string uiJsonText(std::string_view text)
     }
     return out + '"';
 }
+// What a channel's data lost on its way to the UI (cut, replaced, not published): logged once
+// per channel and reason, so a mismatch between the scripts and the UI is never silent and
+// never floods the log.
+inline void logChannelDefect(const char *channel, const std::string &reason)
+{
+    static std::set<std::string> logged;
+    if (logged.insert(std::string(channel) + '\x1f' + reason).second)
+        spdlog::error("UI channel {}: {} (logged once)", channel, reason);
+}
 inline uint64_t mobileScreenRevision = 1;
 inline InterfacePresentation interfacePresentation;
 inline std::deque<std::string> dialogueActions;
@@ -59,11 +69,14 @@ inline std::string contextAction, requestedContextAction;
 // Opt-in, bounded diagnostics for the Android interaction bridge. Game thread only.
 inline void traceContextAction(const char *stage, const std::string &action, const std::string &detail)
 {
+    // adb shell setprop log.tag.StormInput DEBUG, read once (before the game starts).
+    static const bool enabled = [] {
+        char setting[PROP_VALUE_MAX] = {};
+        __system_property_get("log.tag.StormInput", setting);
+        return std::string_view(setting) == "DEBUG";
+    }();
     static unsigned budget = 192;
-    if (!budget) return;
-    char setting[PROP_VALUE_MAX] = {};
-    __system_property_get("log.tag.StormInput", setting);
-    if (std::string_view(setting) != "DEBUG") return;
+    if (!enabled || !budget) return;
     --budget;
     __android_log_print(ANDROID_LOG_DEBUG, "StormInput", "context %s action=%s %s",
                         stage, action.c_str(), detail.c_str());
@@ -125,6 +138,11 @@ inline void publishShipTelemetry()
     const auto tick = SDL_GetTicks();
     if (const auto json = shipTelemetry.publication(tick))
     {
+        if (json->size() > 8192)
+        {
+            logChannelDefect("ship", "state over the 8192-byte bound: not published");
+            return;
+        }
         ui::state("ship", *json);
         shipTelemetry.published(*json, tick);
     }
@@ -151,7 +169,10 @@ inline HudChannel<decltype(seaOrders.publicationKey())> seaOrdersChannel;
 inline void publishSeaOrders()
 {
     if (seaOrdersHost != ui::generation()) { seaOrdersHost = ui::generation(); seaOrdersChannel.reset(); seaOrders.resetActivity(); }
-    if (const auto *json = seaOrdersChannel.publish(seaOrders.publicationKey(), [] { return seaOrders.json(); }))
+    if (const auto *json = seaOrdersChannel.publish(seaOrders.publicationKey(), [] {
+            if (const char *defect = seaOrders.defect()) logChannelDefect("seaOrders", defect);
+            return seaOrders.json();
+        }))
         ui::state("seaOrders", *json);
 }
 // The sea quick action (U1). A new UI host gets a new activity generation: nothing drawn or
@@ -169,7 +190,10 @@ inline HudChannel<decltype(landCommands.publicationKey())> landCommandsChannel;
 inline void publishLandCommands()
 {
     if (landCommandsHost != ui::generation()) { landCommandsHost = ui::generation(); landCommandsChannel.reset(); landCommands.resetActivity(); }
-    if (const auto *json = landCommandsChannel.publish(landCommands.publicationKey(), [] { return landCommands.json(); }))
+    if (const auto *json = landCommandsChannel.publish(landCommands.publicationKey(), [] {
+            if (const char *defect = landCommands.defect()) logChannelDefect("landCommands", defect);
+            return landCommands.json();
+        }))
         ui::state("landCommands", *json);
 }
 // The land hero's bars and status (android_land_vitals.hpp), nothing when the engine draws no land
@@ -468,8 +492,19 @@ inline std::vector<std::string> pollMobileActions()
     auto *env = static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return result;
-    const auto type = env->GetObjectClass(activity);
-    const auto method = type ? env->GetMethodID(type, "pollMobileAction", "()[B") : nullptr;
+    // Polled every engine frame: the method id is looked up once (the activity class ships with
+    // this engine and stays loaded; tools/android/app_contract.json). Missing is an error.
+    static const jmethodID method = [&] {
+        const auto type = env->GetObjectClass(activity);
+        const auto found = type ? env->GetMethodID(type, "pollMobileAction", "()[B") : nullptr;
+        if (!found)
+        {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            spdlog::error("GameActivity.pollMobileAction()[B is missing: no UI action of the activity reaches the engine");
+        }
+        if (type) env->DeleteLocalRef(type);
+        return found;
+    }();
     if (method)
     {
         for (int i = 0; i < 32 && !env->ExceptionCheck(); ++i)
@@ -483,11 +518,12 @@ inline std::vector<std::string> pollMobileActions()
                 env->GetByteArrayRegion(value, 0, size, reinterpret_cast<jbyte *>(text.data()));
                 if (!env->ExceptionCheck()) result.push_back(std::move(text));
             }
+            else
+                logChannelDefect("mailbox", "an action over 8192 bytes is dropped");
             env->DeleteLocalRef(value);
         }
     }
     if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
-    if (type) env->DeleteLocalRef(type);
     env->DeleteLocalRef(activity);
     return result;
 }

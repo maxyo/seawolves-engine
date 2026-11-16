@@ -430,13 +430,14 @@ public:
     // Everything json() reads: every change of the frame advances the sequence.
     auto publicationKey() const { return std::tie(revision_, sequence_, hudRevision_); }
     // The JSON to publish now. It is built only when the state changed since the last publication
-    // and the 100 ms throttle (bypassed by a forced change) lets it go.
+    // and the 100 ms throttle (bypassed by a forced change) lets it go. The publisher refuses one
+    // over the channel's bound, and says so (android_ui.hpp publishShipTelemetry).
     std::optional<std::string> publication(uint32_t tick) const
     {
         if (published_ && publishedKey_ == publicationKey()) return {}; // the JSON last published
         if (published_ && !forcePublish_ && tick - lastPublishedTick_ < 100) return {};
         auto value = json();
-        if (value.size() > 8192 || (published_ && value == lastPublished_)) return {};
+        if (published_ && value == lastPublished_) return {};
         return value;
     }
     void published(const std::string &value, uint32_t tick)

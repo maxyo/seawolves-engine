@@ -43,12 +43,12 @@ int main() {
     auto beforeActivity=request(s,"close");s.resetActivity();assert(!s.offer(beforeActivity,100));
     f.complete=false;s.update("incomplete",f);
     assert(!s.offer(request(s,"activateItem","i0"),100));assert(s.offer(request(s,"close"),100));assert(s.take(101));
-    f=fixture();f.items[0].label="";s.update("missing",f);assert(!s.frame().complete&&s.frame().available);
+    f=fixture();f.items[0].label="";s.update("missing",f);assert(!s.frame().complete&&s.frame().available);assert(s.defect()&&std::string(s.defect()).find("text")!=std::string::npos);
     f=fixture();f.items[0].source=std::string(513,'a');s.update("invalid-source",f);assert(!s.frame().complete);
     f=fixture();f.items[0].label="\xc2\x85";s.update("invalid-utf8",f);assert(!s.frame().complete);
     f=fixture();for(int i=3;i<257;++i)f.items.push_back({"i"+std::to_string(i),"travel","Route","actual-source","location:locator",true,1});
-    s.update("oversize",f);assert(!s.frame().complete&&s.frame().items.empty()&&s.json().size()<=65536);
-    f=fixture();f.active=false;f.items.clear();f.selectedItemId.clear();s.update("closed",f);
+    s.update("oversize",f);assert(!s.frame().complete&&s.frame().items.empty()&&s.json().size()<=65536);assert(s.defect()&&std::string(s.defect()).find("256 items")!=std::string::npos);
+    f=fixture();f.active=false;f.items.clear();f.selectedItemId.clear();s.update("closed",f);assert(!s.defect());
     assert(s.offer(request(s,"open"),100));assert(!s.take(1601));
     assert(s.offer(request(s,"open"),0xfffffff0u));assert(s.take(0x10u));
     // "open" into a root command: only one the scripts offer now; the JSON carries what is offered and the pictures

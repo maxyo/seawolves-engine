@@ -67,6 +67,7 @@ class SeaOrdersState
 {
     inline static std::atomic<uint64_t> nextEpoch_{0};
     SeaOrdersFrame frame_;
+    const char *defect_ = nullptr;
     std::string sceneKey_;
     uint64_t scene_ = 0, revision_ = 1, activity_ = 0;
     bool covered_ = false;
@@ -78,6 +79,9 @@ class SeaOrdersState
     }
 public:
     const SeaOrdersFrame &frame() const { return frame_; }
+    // What the last update cut or replaced in the script's frame, or nullptr: the publisher
+    // logs it (android_ui.hpp, once per reason).
+    const char *defect() const { return defect_; }
     uint64_t sceneEpoch() const { return scene_; }
     uint64_t revision() const { return revision_; }
     uint64_t activityGeneration() const { return activity_; }
@@ -98,9 +102,10 @@ public:
         // Always publish a bounded valid snapshot, including a recoverable
         // active/Back/Close state for incompatible or malformed script data.
         size_t textBytes = 0;
+        defect_ = nullptr;
         const auto checkText = [&](std::string &text, size_t limit, bool required = false) {
             if (!seaOrdersTextValid(text, limit) || (required && text.find_first_not_of(" ") == std::string::npos))
-            { text = "\xE2\x80\xA6"; frame.complete = false; }
+            { text = "\xE2\x80\xA6"; frame.complete = false; defect_ = "invalid, over-long or empty text shown as \xE2\x80\xA6"; }
             textBytes += text.size();
         };
         checkText(frame.language, 32); checkText(frame.pendingLabel, 1024);
@@ -108,12 +113,13 @@ public:
         for (auto &item : frame.items)
         {
             checkText(item.label, 1024, true);
-            if (!seaOrdersTextValid(item.source, 128)) item.source.clear();
+            if (!seaOrdersTextValid(item.source, 128)) { item.source.clear(); defect_ = "an invalid or over-long item source is dropped"; }
             textBytes += item.source.size();
         }
         if (frame.items.size() > 256 || frame.recipients.size() > 32 || textBytes > 24000)
         {
             frame.items.clear(); frame.selectedItemId.clear(); frame.complete = false;
+            defect_ = "over 256 items, 32 recipients or 24000 text bytes: the items are dropped";
             if (frame.recipients.size() > 32) { frame.recipients.clear(); frame.available = false; }
         }
         // JSON escaping can expand otherwise valid text (quotes/backslashes)
@@ -123,6 +129,7 @@ public:
         if (jsonFor(frame).size() > 64000)
         {
             frame.items.clear(); frame.selectedItemId.clear(); frame.complete = false;
+            defect_ = "JSON over 64000 bytes: the items are dropped";
             if (jsonFor(frame).size() > 64000)
                 for (auto &recipient : frame.recipients) recipient.name = "\xE2\x80\xA6";
         }

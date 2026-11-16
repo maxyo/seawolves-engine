@@ -68,6 +68,7 @@ class LandCommandsState
 {
     inline static std::atomic<uint64_t> nextEpoch_{0};
     LandCommandsFrame frame_;
+    const char *defect_ = nullptr;
     struct Receipt { uint64_t serial = 0; LandCommandsRequest request; bool accepted = false; std::string reason; } receipt_;
     std::deque<Receipt> receipts_;
     std::string sceneKey_;
@@ -83,6 +84,9 @@ class LandCommandsState
     }
 public:
     const LandCommandsFrame &frame() const { return frame_; }
+    // What the last update cut or replaced in the script's frame, or nullptr: the publisher
+    // logs it (android_ui.hpp, once per reason).
+    const char *defect() const { return defect_; }
     // A receipt records native dispatch, never that the script began a reload.
     void result(const LandCommandsRequest &request, bool accepted, const std::string &reason)
     {
@@ -127,18 +131,20 @@ public:
         // Always publish a bounded valid snapshot, including a recoverable
         // active/Back/Close state for incompatible or malformed script data.
         size_t textBytes = 0;
+        defect_ = nullptr;
         const auto checkText = [&](std::string &text, size_t limit, bool required = false) {
             if (!landCommandsTextValid(text, limit) || (required && text.find_first_not_of(" ") == std::string::npos))
-            { text = "\xE2\x80\xA6"; frame.complete = false; }
+            { text = "\xE2\x80\xA6"; frame.complete = false; defect_ = "invalid, over-long or empty text shown as \xE2\x80\xA6"; }
             textBytes += text.size();
         };
         checkText(frame.language, 32); checkText(frame.pendingLabel, 1024);
         for (auto &item : frame.items) { checkText(item.label, 1024, true); checkText(item.source, 512); checkText(item.picture, 128); }
         for (auto &event : frame.offered) checkText(event, 128);
-        if (frame.offered.size() > 64) { frame.offered.clear(); frame.complete = false; }
+        if (frame.offered.size() > 64) { frame.offered.clear(); frame.complete = false; defect_ = "over 64 offered events: the list is dropped"; }
         if (frame.items.size() > 256 || textBytes > 24000)
         {
             frame.items.clear(); frame.selectedItemId.clear(); frame.complete = false;
+            defect_ = "over 256 items or 24000 text bytes: the items are dropped";
         }
         // JSON escaping can expand otherwise valid text (quotes/backslashes)
         // beyond the JNI/Java limit. Keep a complete recoverable envelope,
@@ -147,6 +153,7 @@ public:
         if (jsonFor(frame).size() > 64000)
         {
             frame.items.clear(); frame.selectedItemId.clear(); frame.complete = false;
+            defect_ = "JSON over 64000 bytes: the items are dropped";
         }
         if (sceneKey_ != sceneKey || !scene_)
         {
