@@ -43,10 +43,12 @@ struct SceneLoadingBudget {
 SceneLoadingBudget GetSceneLoadingBudget();
 void SetSceneLoadingWindow(uint64_t generation, uint64_t deadline_ms);
 // Successful world TextureCreate, including cache hits, registers demand. Only mandatory model material
-// failures use FailSceneTexture; optional probes and loading/interface pictures are excluded.
+// failures use FailSceneTexture (`requester`: the model that needs it); optional probes and loading/interface
+// pictures are excluded. A failed texture is logged as an ERROR and never holds the reveal.
 void RequireSceneTexture(shim::BaseTexture *texture);
-void FailSceneTexture(const char *name);
-// Explicit retry keeps the same required assets but starts a new generation. No automatic timer-based reveal.
+void FailSceneTexture(const char *name, const char *requester);
+// Explicit retry keeps the same required assets but starts a new generation. Only in-flight texture uploads that made
+// no progress within effects::SceneTextureStall's budget are released by time (logged as an ERROR each).
 bool RetrySceneResources(uint64_t generation);
 
 } // namespace storm::render

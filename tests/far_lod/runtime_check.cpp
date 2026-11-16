@@ -147,7 +147,7 @@ class Service final : public GEOM_SERVICE
     void CloseFile(std::fstream &s) override { s.close(); }
     void *malloc(int32_t bytes) override { return std::calloc(std::max(bytes, 1), 1); }
     void free(void *p) override { std::free(p); }
-    GEOS::ID CreateTexture(const char *) override { return -1; }
+    GEOS::ID CreateTexture(const char *, const char *) override { return -1; }
     std::string TextureFile(const char *) const override { return {}; }
     void ReleaseTexture(GEOS::ID) override {}
     void SetMaterial(const GEOS::MATERIAL &) override {}

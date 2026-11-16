@@ -24,19 +24,53 @@ int main() {
  // only in the report; once the textures are uploaded the gate becomes ready after its stable frames.
  {
   SceneReadiness gate; const uint64_t g=gate.begin(0);
-  storm::effects::SceneFailures failures;
   for(uint64_t frame=1;frame<=4;++frame){
    SceneResources r{};
    for(int texture=0;texture<3;++texture)
-    storm::effects::AccountSceneTexture(r,failures,frame==1&&texture==0,false,true); // relief pending throughout
+    storm::effects::AccountSceneTexture(r,frame==1&&texture==0,true); // relief pending throughout
    assert(r.relief==3&&!r.failed);
    gate.frame(g,frame,true,r);
   }
   assert(gate.state()==SceneReadiness::State::Ready&&!gate.hold(0)&&gate.resources().relief==3);
-  // A texture that cannot be drawn still fails the location; an upload still holds it.
-  SceneResources r{};storm::effects::AccountSceneTexture(r,failures,false,true,false);
-  assert(r.failed==1&&failures.reload_required==1);
-  r={};storm::effects::AccountSceneTexture(r,failures,true,false,false);assert(r.pending());
+  // An upload in flight holds the reveal.
+  SceneResources r{};storm::effects::AccountSceneTexture(r,true,false);assert(r.pending()&&!r.failed);
+ }
+ // A texture that failed during the load (empty name, missing file, no GPU copy) never holds the reveal: it never
+ // reaches the in-flight accounting, so the location reveals after its stable frames with the texture failed.
+ {
+  SceneReadiness gate; const uint64_t g=gate.begin(0);
+  storm::effects::SceneTextureStall stall; stall.begin(0);
+  for(uint64_t frame=1;frame<=4;++frame){
+   SceneResources r{};
+   storm::effects::AccountSceneTexture(r,false,false); // the failed texture: no work left, no GPU copy
+   storm::effects::AccountSceneTexture(r,frame==1&&stall.in_flight(7,1),false); // a good one, uploaded in frame 2
+   assert(stall.end(frame).empty());
+   gate.frame(g,frame,true,r);
+  }
+  assert(gate.state()==SceneReadiness::State::Ready&&!gate.hold(4)&&!gate.resources().failed);
+ }
+ // A texture still in flight holds the reveal only within the budget: while any in-flight texture changes stage it
+ // keeps holding; when none changed for the budget, they are released (named by the caller) and the location reveals.
+ {
+  using storm::effects::SceneTextureStall;
+  SceneReadiness gate; const uint64_t g=gate.begin(0);
+  SceneTextureStall stall; stall.begin(0);
+  uint64_t frame=0;
+  const auto sample=[&](uint64_t now,uint64_t stage){
+   SceneResources r{};
+   storm::effects::AccountSceneTexture(r,stall.in_flight(9,stage),false);
+   const auto released=stall.end(now);
+   r.textures-=static_cast<uint32_t>(released.size());
+   gate.frame(g,++frame,true,r);
+   return released;
+  };
+  assert(sample(1000,1).empty()&&gate.hold(1000));
+  assert(sample(50000,2).empty()&&gate.hold(50000)); // progressed: the budget restarts
+  assert(sample(50000+SceneTextureStall::kBudgetMs-1,2).empty()&&gate.hold(110000)); // within the budget
+  const auto released=sample(50000+SceneTextureStall::kBudgetMs,2);
+  assert(released.size()==1&&released[0]==9);
+  assert(sample(200000,2).empty()); assert(sample(200001,2).empty()); // released: it no longer holds
+  assert(gate.state()==SceneReadiness::State::Ready&&!gate.hold(200001));
  }
  storm::render::LoadingBudget pacing;
  assert(pacing.deadline(100,true,20,100)==100); // no prior real frame

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <unordered_set>
+#include <vector>
 #include "effects/thermal.hpp"
 namespace storm::shim { struct TexStore; }
 namespace storm::effects {
@@ -22,16 +24,44 @@ struct SceneFailures {
     uint32_t retryable = 0, reload_required = 0;
     bool can_retry() const { return retryable > 0 && reload_required == 0; }
 };
-// One scene texture's states for the reveal. Only what the scene cannot be drawn without holds the reveal: the
-// texture's own upload, and a texture that cannot be drawn fails the location. Its relief/gloss maps and its x2
-// (`relief_pending`: NormalMaps::prepare_scene_texture said 1) are quality products that fill in after the reveal,
-// flat or the original texture meanwhile; their owners log their failures.
-inline void AccountSceneTexture(SceneResources &r, SceneFailures &f, bool uploading, bool undrawable,
-                                bool relief_pending) {
-    if (uploading) ++r.textures;
-    else if (undrawable) { ++r.failed; ++f.reload_required; }
+// One scene texture's states for the reveal. Only a texture still in flight (its own upload, `holds`) holds the
+// reveal, and only within SceneTextureStall's budget. A texture that failed never holds it: it will never get a GPU
+// copy, so the caller logs an ERROR naming it and the scene draws the engine's unbound-texture fallback. Its
+// relief/gloss maps and its x2 (`relief_pending`: NormalMaps::prepare_scene_texture said 1) are quality products
+// that fill in after the reveal, flat or the original texture meanwhile; their owners log their failures.
+inline void AccountSceneTexture(SceneResources &r, bool holds, bool relief_pending) {
+    if (holds) ++r.textures;
     if (relief_pending) ++r.relief;
 }
+// The budget of the in-flight scene textures: when none of them changed stage for kBudgetMs, the ones still in flight
+// stop holding the reveal (the caller logs each by name as an ERROR). A slow but progressing upload keeps holding.
+class SceneTextureStall {
+public:
+    static constexpr uint64_t kBudgetMs = 60000;
+    void begin(uint64_t now) { released_.clear(); pending_.clear(); signature_ = sample_ = 0; progress_at_ = now; }
+    // Called for every texture in flight in a sample; false once its stall was released (it no longer holds).
+    bool in_flight(uint64_t serial, uint64_t stage) {
+        if (released_.contains(serial)) return false;
+        pending_.push_back(serial);
+        sample_ ^= mix(serial ^ mix(stage + 1));
+        return true;
+    }
+    // Ends a sample: the textures released now, because none of those in flight progressed within the budget.
+    std::vector<uint64_t> end(uint64_t now) {
+        std::vector<uint64_t> released;
+        if (pending_.empty() || sample_ != signature_) progress_at_ = now;
+        else if (now >= progress_at_ + kBudgetMs) { released = pending_; released_.insert(pending_.begin(), pending_.end()); }
+        signature_ = sample_; sample_ = 0; pending_.clear();
+        return released;
+    }
+private:
+    static uint64_t mix(uint64_t x) {
+        x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL; x ^= x >> 27; x *= 0x94d049bb133111ebULL; return x ^ (x >> 31);
+    }
+    std::unordered_set<uint64_t> released_;
+    std::vector<uint64_t> pending_;
+    uint64_t signature_ = 0, sample_ = 0, progress_at_ = 0;
+};
 inline bool SceneTextureName(std::string_view normalized) {
     return !normalized.empty() && !normalized.starts_with("interfaces/") && !normalized.starts_with("loading/");
 }

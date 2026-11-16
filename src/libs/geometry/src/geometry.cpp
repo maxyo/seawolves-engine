@@ -239,7 +239,7 @@ std::string GEOM_SERVICE_R::TextureFile(const char *fname) const
     return std::string(texturePath) + fname;
 }
 
-GEOS::ID GEOM_SERVICE_R::CreateTexture(const char *fname)
+GEOS::ID GEOM_SERVICE_R::CreateTexture(const char *fname, const char *requester)
 {
     const std::string tex = TextureFile(fname);
     if (RenderService)
@@ -247,7 +247,7 @@ GEOS::ID GEOM_SERVICE_R::CreateTexture(const char *fname)
         RenderService->ProgressView();
         const auto texture = RenderService->TextureCreate(tex.c_str());
         // Mandatory model material, unlike optional interface probes through generic TextureCreate.
-        if (texture < 0) storm::render::FailSceneTexture(tex.c_str());
+        if (texture < 0) storm::render::FailSceneTexture(tex.c_str(), requester);
         return texture;
     }
     return INVALID_TEXTURE_ID;

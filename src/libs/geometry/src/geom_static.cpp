@@ -339,9 +339,23 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
         }
     }
 
+    // Some stock models carry texture slots no material uses, with an empty name (citiz_50.gm: slots 3 and 5).
+    // Loading one would request the bare texture folder ("characters\\"), which fails and is no material's
+    // texture; only the slots the materials reference are loaded.
+    std::vector<bool> referenced(rhead.ntextures, false);
+    for (int32_t m = 0; m < rhead.nmaterials; m++)
+        for (int32_t tl = 0; tl < 4; tl++)
+            if (rmat[m].texture_type[tl] != TEXTURE_NONE && rmat[m].texture[tl] >= 0 &&
+                rmat[m].texture[tl] < rhead.ntextures)
+                referenced[rmat[m].texture[tl]] = true;
     for (int32_t t = 0; t < rhead.ntextures; t++)
     {
-        tlookup[t] = srv.CreateTexture(&globname[tname[t]]);
+        if (!referenced[t] && globname[tname[t]] == '\0')
+        {
+            tlookup[t] = -1;
+            continue;
+        }
+        tlookup[t] = srv.CreateTexture(&globname[tname[t]], fname);
         if (storm::iEquals(&globname[tname[t]], "shadow.tga"))
         {
             lightmap_file_ = "resource\\textures\\" + srv.TextureFile(&globname[tname[t]]) + ".tx";

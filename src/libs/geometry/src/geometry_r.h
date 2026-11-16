@@ -48,7 +48,7 @@ class GEOM_SERVICE_R final : public GEOM_SERVICE
     void *malloc(int32_t bytes);
     void free(void *ptr);
 
-    GEOS::ID CreateTexture(const char *fname);
+    GEOS::ID CreateTexture(const char *fname, const char *requester) override;
     std::string TextureFile(const char *fname) const override;
     void SetMaterial(const GEOS::MATERIAL &mt);
     void ReleaseTexture(GEOS::ID tex);

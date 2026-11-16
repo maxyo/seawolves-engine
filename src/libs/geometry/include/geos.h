@@ -334,7 +334,8 @@ class GEOM_SERVICE
     virtual void *malloc(int32_t bytes) = 0;
     virtual void free(void *ptr) = 0;
 
-    virtual GEOS::ID CreateTexture(const char *fname) = 0;
+    // `requester`: the model file that needs the texture, named when it cannot be created.
+    virtual GEOS::ID CreateTexture(const char *fname, const char *requester) = 0;
     // The file CreateTexture loads for `fname` (relative to resource\textures, without the .tx).
     virtual std::string TextureFile(const char *fname) const = 0;
     virtual void ReleaseTexture(GEOS::ID tex) = 0;

@@ -51,7 +51,10 @@ struct LocationLoad {
     SceneFailures failures;
     std::string scene, detail;
     std::unordered_map<uint64_t, std::weak_ptr<shim::TexStore>> textures;
+    // Scene textures that failed, each logged once as an ERROR; they never hold the reveal.
     std::unordered_set<std::string> failed_textures;
+    std::unordered_set<uint64_t> fallback_textures;
+    SceneTextureStall stall;
     bool sealed = true, pipelines_pending = false;
     bool logged_error = false, logged_ready = false, logged_slow = false;
     uint64_t phase_polled_at = 0;
@@ -85,7 +88,8 @@ void BeginSceneResources(const char *scene)
     load.loading_normal.clear(); load.loading_upscale.clear();
     load.neighbours_place.clear(); load.neighbours.clear();
     ReliefGenerator::instance().set_neighbours({}, {}); // the previous place's neighbours are not this one's
-    load.textures.clear(); load.failed_textures.clear(); load.detail.clear(); load.scene = scene ? scene : "";
+    load.textures.clear(); load.failed_textures.clear(); load.fallback_textures.clear(); load.detail.clear();
+    load.scene = scene ? scene : "";
     // Stock completion covers both on-land loading and SEA_AI's explicit sea scene.
     // Other scene names are not silently admitted to this resource contract.
     load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea";
@@ -96,6 +100,7 @@ void BeginSceneResources(const char *scene)
     if (!load.sealed) {
         texture::Service::instance().begin_loading_cache_scope();
         load.gate.begin(load_milliseconds());
+        load.stall.begin(load_milliseconds());
         fx::SharedCpuAdmission().begin(load.gate.generation(), true);
         upscales().begin_scene();
         shim::logf("location readiness: begin %s generation=%llu", load.scene.c_str(),
@@ -121,12 +126,11 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     if (load.sealed) return;
     Host &host = Host::instance();
     SceneResources resources{};
-    resources.failed = static_cast<uint32_t>(load.failed_textures.size());
-    load.failures = {0, resources.failed};
+    load.failures = {};
     resources.switching = host.switching() || load.pipelines_pending;
     // Order-independent per-resource stages: two different completions can leave total pending
     // unchanged. Neither render frames nor polling count constitute producer progress.
-    uint64_t progress = resources.failed;
+    uint64_t progress = 0;
     bool inference_pending = false;
     load.loading_normal.clear(); load.loading_upscale.clear();
     const fx::BackgroundProducts loading_products = fx::BackgroundProductsFor(host.settings());
@@ -138,7 +142,6 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     const auto name = [&](const std::string &what) { if (load.detail.size() < 384) {
         if (!load.detail.empty()) load.detail += "; "; load.detail += what;
     }};
-    for (const auto &failed : load.failed_textures) name("texture failed: " + failed);
     for (auto it = load.textures.begin(); it != load.textures.end();) {
         auto store = it->second.lock();
         if (!store) { // no scene owner remains; a dead resource is no longer required
@@ -151,16 +154,24 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         const bool drawable = bgfx::isValid(store->handle);
         const bool working = store->fallback_bytes || store->transcode_job || store->any_dirty;
         const bool uploading = !drawable && working;
-        // Failed only when no work is left: no GPU copy, or a finished transcode without its full mip chain.
-        const bool undrawable = !working && (!drawable || (store->transcoded && !store->full_chain));
-        if (uploading) name("texture upload: " + store->name);
-        else if (undrawable) name("texture fallback: " + store->name);
+        const uint64_t texture_stage = static_cast<uint64_t>(drawable) | (uint64_t(store->fallback_bytes != 0) << 1) |
+            (uint64_t(bool(store->transcode_job)) << 2) | (uint64_t(store->any_dirty) << 3) |
+            (uint64_t(store->full_chain) << 4);
+        const bool holds = uploading && load.stall.in_flight(store->serial, texture_stage);
+        if (holds) name("texture upload: " + store->name);
+        // Failed when no work is left: no GPU copy, or a finished transcode without its full mip chain. It will
+        // never be complete, so it never holds the reveal: drawn with what it has (or the unbound-texture fallback).
+        if (!working && (!drawable || (store->transcoded && !store->full_chain)) &&
+            load.fallback_textures.insert(store->serial).second)
+            shim::logf("ERROR: location readiness: %s: texture %s failed (%s); drawn with %s, the reveal does not wait for it",
+                       load.scene.c_str(), store->name.c_str(), drawable ? "transcode without its full mip chain" : "no GPU copy",
+                       drawable ? "the levels it has" : "the engine's unbound-texture fallback (black)");
         // The x2 and the relief/gloss maps are prepared with loading priority while the transaction runs, but the
         // reveal never waits for them (AccountSceneTexture).
         const int upscale = upscales().prepare_scene(*store, load.gate.generation());
         bool relief_inference = false;
         const int relief = host.lighting().prepare_scene_texture(*store, &relief_inference);
-        AccountSceneTexture(resources, load.failures, uploading, undrawable, relief == 1);
+        AccountSceneTexture(resources, holds, relief == 1);
         // Match NormalMaps::prepare_scene's actual consumers; old disabled Waiting entries get no token.
         if (relief == 1 && relief_inference) {
             if (store->normal_map && store->normal_map->state == NormalMapEntry::Waiting &&
@@ -171,15 +182,25 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         }
         if (upscale == 1 && store->upscale && store->upscale->state == UpscaleEntry::Waiting)
             load.loading_upscale.push_back(store->upscale);
-        uint64_t stage = static_cast<uint64_t>(bgfx::isValid(store->handle)) |
-            (uint64_t(store->fallback_bytes != 0) << 1) | (uint64_t(bool(store->transcode_job)) << 2) |
-            (uint64_t(store->any_dirty) << 3) | (uint64_t(store->full_chain) << 4);
+        uint64_t stage = texture_stage;
         for (const auto &[entry, shift] : {std::pair{store->normal_map, 8}, std::pair{store->gloss_map, 16}})
             if (entry) stage |= uint64_t(1 + entry->state.load(std::memory_order_acquire)) << shift;
         if (store->upscale) stage |= uint64_t(1 + store->upscale->state.load(std::memory_order_acquire)) << 24;
         progress ^= mix(store->serial ^ mix(stage));
         inference_pending |= (relief == 1 && relief_inference) ||
             (upscale == 1 && store->upscale && store->upscale->state == UpscaleEntry::Waiting);
+    }
+    const uint64_t sampled_at = load_milliseconds();
+    if (const auto released = load.stall.end(sampled_at); !released.empty()) {
+        resources.textures -= static_cast<uint32_t>(std::min<size_t>(resources.textures, released.size()));
+        for (const uint64_t serial : released) {
+            const auto it = load.textures.find(serial);
+            const auto store = it == load.textures.end() ? nullptr : it->second.lock();
+            shim::logf("ERROR: location readiness: %s: texture %s made no upload progress for %llu ms; drawn with the "
+                       "engine's unbound-texture fallback (black) until it arrives, the reveal does not wait for it",
+                       load.scene.c_str(), store ? store->name.c_str() : "?",
+                       static_cast<unsigned long long>(SceneTextureStall::kBudgetMs));
+        }
     }
     const auto shadow = [&](int state, const char *what) {
         if (state == 1) { ++resources.shadows; name(what); }
@@ -1365,7 +1386,7 @@ SceneLoadStatus GetSceneLoadStatus()
     const auto &load = effects::location_load();
     const auto r = load.gate.resources();
     const bool error = load.gate.state() == effects::SceneReadiness::State::Error || r.failed > 0;
-    return {load.gate.generation(), !load.sealed, error, !load.sealed && error && load.failures.can_retry() && load.failed_textures.empty(),
+    return {load.gate.generation(), !load.sealed, error, !load.sealed && error && load.failures.can_retry(),
             load.sealed ? "inactive" : error ? "error" : load.gate.state() == effects::SceneReadiness::State::Ready ? "ready" : "preparing",
             r.textures, r.relief, r.shadows, r.failed, load.detail, load.cooling ? "cooling" : "generating"};
 }
@@ -1428,11 +1449,15 @@ void RequireSceneTexture(shim::BaseTexture *texture)
     if (store && effects::SceneTextureName(store->name))
         effects::ObserveSceneTexture(store);
 }
-void FailSceneTexture(const char *name)
+void FailSceneTexture(const char *name, const char *requester)
 {
     auto &load = effects::location_load();
     const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
-    if (!load.sealed && effects::SceneTextureName(normalized) && load.failed_textures.emplace(normalized).second) load.gate.invalidate();
+    // It will never get a GPU copy: the scene draws the unbound-texture fallback and the reveal does not wait for it.
+    if (!load.sealed && effects::SceneTextureName(normalized) && load.failed_textures.emplace(normalized).second)
+        shim::logf("ERROR: location readiness: %s: texture '%s' requested by %s could not be created; drawn with the "
+                   "engine's unbound-texture fallback (black), the reveal does not wait for it",
+                   load.scene.c_str(), normalized.c_str(), requester && *requester ? requester : "?");
 }
 void CompleteSceneReveal() {
     auto &load = effects::location_load();
@@ -1459,7 +1484,7 @@ void SetEffectsNeighbours(std::string_view place, std::vector<EffectsNeighbour> 
 bool RetrySceneResources(uint64_t generation)
 {
     auto &load = effects::location_load();
-    if (load.sealed || generation != load.gate.generation() || !load.failed_textures.empty() || !load.failures.can_retry()) return false;
+    if (load.sealed || generation != load.gate.generation() || !load.failures.can_retry()) return false;
     for (const auto &[serial, weak] : load.textures) if (auto store = weak.lock()) {
         effects::Host::instance().lighting().normal_maps().retry_scene(*store);
         if (store->upscale && store->upscale->state == effects::UpscaleEntry::Failed)
@@ -1467,6 +1492,7 @@ bool RetrySceneResources(uint64_t generation)
     }
     fx::SharedCpuAdmission().suspend();
     load.gate.begin(effects::load_milliseconds());
+    load.stall.begin(effects::load_milliseconds());
     fx::SharedCpuAdmission().begin(load.gate.generation(), true);
     effects::upscales().begin_scene();
     load.logged_error = load.logged_ready = load.logged_slow = false;
