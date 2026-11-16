@@ -1,5 +1,6 @@
 #include "storm/render/pipelines.hpp"
 #include "core.h"
+#include "platform/frame_work.hpp"
 #include "fs.h"
 
 #include <filesystem>
@@ -91,6 +92,7 @@ int vrtSize;
 
 GEOS *GEOMETRY::CreateGeometry(const char *file_name, const char *light_file_name, int32_t flags, const char *lmPath)
 {
+    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::ModelLoad);
     char fnt[256], lfn[256];
     if (light_file_name != nullptr)
     {

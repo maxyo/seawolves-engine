@@ -1420,6 +1420,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
     aBlocks.clear();
     BuildTree(0, 0, 0);
     FitBlocksToBuffer();
+    cubeSeaInView_ = !aBlocks.empty(); // the next frame's cube faces (CubeFacesDue)
 
     uint32_t i;
 

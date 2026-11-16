@@ -10,6 +10,7 @@
 
 #include "animation_service_imp.h"
 #include "loading_transaction.hpp"
+#include "platform/frame_work.hpp"
 #include "skin_bones.hpp"
 
 #include "core.h"
@@ -200,6 +201,7 @@ void AnimationServiceImp::Event(const char *eventName)
 // load animation
 int32_t AnimationServiceImp::LoadAnimation(const char *animationName)
 {
+    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::AnimationLoad);
     // Form the file name
     static char path[MAX_PATH];
     strcpy_s(path, ASKW_PATH_ANI);

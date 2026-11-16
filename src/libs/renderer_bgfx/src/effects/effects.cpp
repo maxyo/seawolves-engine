@@ -1064,10 +1064,17 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         {
             const double to_ms = 1000.0 / static_cast<double>(stats->gpuTimerFreq);
             times_.frame_ms = static_cast<double>(stats->gpuTimeEnd - stats->gpuTimeBegin) * to_ms;
+            profile_in_scene_ = false;
             for (uint16_t i = 0; i < stats->numViews; ++i)
             {
                 const bgfx::ViewStats &view = stats->viewStats[i];
                 profile_views_[view.name] += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
+                // The scene target's views, and its passes: runs of them that no other target's view cuts (a cut
+                // stores, resolves and loads the multisampled scene on a tile GPU). In the frame's view order.
+                const bool scene = std::strcmp(view.name, "scene") == 0;
+                profile_scene_views_ += scene;
+                profile_scene_passes_ += scene && !profile_in_scene_;
+                profile_in_scene_ = scene;
                 // The pass names of fx::SeaWaves (SetupView).
                 if (std::strncmp(view.name, "fx sea waves", 12) == 0)
                     times_.sea_waves_ms += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
@@ -1129,18 +1136,21 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             const SunShadows::Counters sun = lighting_.shadows().take_counters();
             // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
-            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u gpu_views=%s post_views=%u lit_draws=%u "
+            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u scene_views=%.1f scene_passes=%.1f gpu_views=%s post_views=%u lit_draws=%u "
                        "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
                        storm::platform::frame_work::Describe(storm::platform::frame_work::Take(storm::platform::frame_work::Reader::Profile)).c_str(),
                        thermal_text(), fx::SharedCpuAdmission().stats().reserved, fx::SharedCpuAdmission().stats().phase_cap,
-                       renderer_state_.render_height, views.c_str(),
+                       renderer_state_.render_height,
+                       profile_gpu_frames_ ? static_cast<double>(profile_scene_views_) / profile_gpu_frames_ : 0.0,
+                       profile_gpu_frames_ ? static_cast<double>(profile_scene_passes_) / profile_gpu_frames_ : 0.0, views.c_str(),
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
+            profile_scene_views_ = profile_scene_passes_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
             profile_sum_smaa_ = profile_sum_easu_ = profile_sum_rcas_ = profile_sum_sea_waves_ = 0.0;
             profile_draws_ = 0;

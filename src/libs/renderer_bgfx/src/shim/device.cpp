@@ -2,6 +2,7 @@
 #include "device.hpp"
 #include "effects/effects.hpp"
 #include "perf.hpp"
+#include "platform/frame_work.hpp"
 #include "pipeline_sets.hpp"
 #include "util.hpp"
 #include "../texture/core/formats.hpp"
@@ -1162,6 +1163,7 @@ HRESULT Device::GetRenderTargetData(Surface *target, Surface *dest)
     if (to->store->level_width(to->level) != w || to->store->level_height(to->level) != h)
         return D3DERR_INVALIDCALL;
     // Copy into a CPU-readable texture, execute the queued frame without presenting, then read.
+    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::ReadBack);
     const bgfx::TextureHandle staging = bgfx::createTexture2D(
         static_cast<uint16_t>(w), static_cast<uint16_t>(h), false, 1, bgfx::TextureFormat::RGBA8,
         BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);

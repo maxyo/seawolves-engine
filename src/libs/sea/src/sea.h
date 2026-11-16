@@ -4,6 +4,7 @@
 #pragma once
 
 #include "sea_base.h"
+#include <chrono>
 #include "renderer.h"
 #include "vma.hpp"
 #include "wave_focus.hpp"
@@ -183,13 +184,24 @@ class SEA : public SEA_BASE
     bool EnvMap_Render();
 
     // Environment and sun-road cube faces rendered this frame (bit per D3DCUBEMAP_FACES): all of them after the
-    // entity starts, a camera jump or a switch above/below the surface, otherwise kCubeFacesPerFrame round-robin
-    // (5 faces above the surface: a full refresh every 3 frames). The fx water reads the same cube (env_cube).
-    static constexpr uint32_t kCubeFacesPerFrame = 2;
+    // entity starts, a camera jump, a switch above/below the surface or the sea coming back into view, otherwise
+    // round-robin at kCubeFacesPerSecond by the clock (5 faces above the surface: a full refresh every 83 ms, at
+    // 30 fps two faces a frame as before, at 60 fps one: the faces' cost no longer doubles with the frame rate).
+    // None while no sea block is in view (the frame before drew none: nothing reads the cubes; in a town the two
+    // cubes' faces drew more triangles than the main view). While a place loads: every face in its first
+    // kCubeLoadingFullFrames frames, then the same round-robin (every face of both cubes in every frame of a
+    // ten-second wait for the place's products was 5.5 ms of GPU a frame on a phone, under the loading picture).
+    // The fx water reads the same cube (env_cube).
+    static constexpr float kCubeFacesPerSecond = 60.0f;
+    static constexpr uint32_t kCubeLoadingFullFrames = 2;
     static constexpr float kCubeJump = 10.0f; // camera movement in one frame that refreshes every face
     uint32_t CubeFacesDue();
     uint32_t cubeFaces_ = 0;
     uint32_t cubeCursor_ = 0;
+    uint32_t cubeLoadingFrames_ = 0;
+    float cubeDue_ = 0.0f; // faces owed by the clock
+    std::chrono::steady_clock::time_point cubeTime_{};
+    bool cubeSeaInView_ = true; // the last frame drew sea blocks
     bool cubeRefreshAll_ = true;
     bool cubeUnderSea_ = false;
     glm::vec3 cubeCamPos_{};

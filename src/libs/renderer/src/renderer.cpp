@@ -27,6 +27,7 @@
 #include "logging.hpp"
 #include "storm/render/d3d_interop.hpp"
 #include "storm/render/frame_owner.hpp"
+#include "platform/frame_work.hpp"
 #include "scene_hold.hpp"
 #include "scene_detail.hpp"
 #include "storm/render/effects.hpp"
@@ -2007,6 +2008,7 @@ bool Renderer::TextureIncReference(int32_t texid)
 bool Renderer::TextureLoad(int32_t t)
 {
     using namespace std::literals;
+    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::TextureLoad);
 
     ProgressView();
     // Form the path to the texture

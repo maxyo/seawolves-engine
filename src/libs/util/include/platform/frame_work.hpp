@@ -59,6 +59,21 @@ inline bool IsWork(Phase phase)
     return phase != Phase::WaitRender && phase != Phase::WaitPresent;
 }
 
+// Synchronous work that makes a frame long wherever it is called from (a script's CreateEntity, an entity's first
+// Realize): counted beside the phases, exclusive among themselves (a model's textures count as texture loads), so a
+// slow frame says whether it was the game's script or a load inside it.
+enum class Sync : uint8_t
+{
+    None,
+    TextureLoad,   // a texture file read and prepared on the game thread (Renderer::TextureLoad)
+    ModelLoad,     // a model file (GEOMETRY::CreateGeometry), without its textures
+    AnimationLoad, // an animation file (AnimationServiceImp::LoadAnimation)
+    ReadBack,      // a render target read back: the queued frame is executed and waited for
+    Count,
+};
+inline constexpr size_t kSyncs = static_cast<size_t>(Sync::Count);
+inline constexpr const char *kSyncNames[kSyncs] = {"none", "texture_load", "model_load", "animation_load", "read_back"};
+
 enum class Reader : uint8_t
 {
     Profile,
@@ -80,6 +95,8 @@ struct Window
     bool worst_entity_realize = false;
     int64_t worst_entity_ns = 0;
     ClassTimes execute, realize; // ns per entity class over the window
+    std::array<int64_t, kSyncs> sync{}, worst_sync{};          // ns: over the window, of the slowest frame
+    std::array<uint32_t, kSyncs> sync_count{}, worst_sync_count{};
 };
 
 struct State
@@ -88,6 +105,10 @@ struct State
     Phase current = Phase::Other;
     std::array<int64_t, kPhases> frame{};
     int64_t last_work = 0;       // ns: the work of the last ended frame
+    Sync sync = Sync::None;      // the synchronous work running now
+    Clock::time_point sync_mark{};
+    std::array<int64_t, kSyncs> sync_ns{}; // this frame
+    std::array<uint32_t, kSyncs> sync_count{};
     ClassTimes execute, realize; // this frame
     std::array<Window, static_cast<size_t>(Reader::Count)> windows;
 };
@@ -123,6 +144,34 @@ class Scope
 
   private:
     Phase previous_;
+};
+
+inline Sync EnterSync(Sync sync)
+{
+    State &s = state();
+    const Clock::time_point now = Clock::now();
+    if (s.sync != Sync::None)
+        s.sync_ns[static_cast<size_t>(s.sync)] += std::chrono::duration_cast<std::chrono::nanoseconds>(now - s.sync_mark).count();
+    s.sync_mark = now;
+    return std::exchange(s.sync, sync);
+}
+
+class SyncScope
+{
+  public:
+    explicit SyncScope(Sync sync) : previous_(EnterSync(sync))
+    {
+        ++state().sync_count[static_cast<size_t>(sync)];
+    }
+    ~SyncScope()
+    {
+        EnterSync(previous_);
+    }
+    SyncScope(const SyncScope &) = delete;
+    SyncScope &operator=(const SyncScope &) = delete;
+
+  private:
+    Sync previous_;
 };
 
 // One entity's stage, by its class (inclusive: the script events it raises are in it too).
@@ -177,10 +226,17 @@ inline void EndFrame()
         for (size_t i = 0; i < kPhases; ++i)
             window.sum[i] += s.frame[i];
         window.work_ms.push_back(static_cast<float>(work * 1e-6));
+        for (size_t i = 0; i < kSyncs; ++i)
+        {
+            window.sync[i] += s.sync_ns[i];
+            window.sync_count[i] += s.sync_count[i];
+        }
         if (work > window.worst_work)
         {
             window.worst_work = work;
             window.worst = s.frame;
+            window.worst_sync = s.sync_ns;
+            window.worst_sync_count = s.sync_count;
             window.worst_entity = slowest;
             window.worst_entity_realize = slowest_realize;
             window.worst_entity_ns = slowest_ns;
@@ -191,6 +247,8 @@ inline void EndFrame()
             window.realize[type] += ns;
     }
     s.frame = {};
+    s.sync_ns = {};
+    s.sync_count = {};
     // The classes stay as keys (the same ones run every frame); only their times start again.
     for (auto &[type, ns] : s.execute)
         ns = 0;
@@ -250,7 +308,7 @@ inline std::string TopClasses(const ClassTimes &times, uint32_t frames, size_t c
 
 // The window as key=value pairs, ms per frame (empty without frames):
 // game_work_ms game_work_p95_ms <phase>_ms... worst_work_ms worst=<phase:ms,...> worst_entity=<stage:Class:ms>
-// execute_top=<Class:ms,...> realize_top=<Class:ms,...>.
+// sync=<kind:ms,...> worst_sync=<kind:msxcount,...> execute_top=<Class:ms,...> realize_top=<Class:ms,...>.
 inline std::string Describe(const Window &window, size_t top = 4)
 {
     if (window.frames == 0)
@@ -290,6 +348,25 @@ inline std::string Describe(const Window &window, size_t top = 4)
     snprintf(number, sizeof(number), ":%.1f", static_cast<double>(window.worst_entity_ns) * 1e-6);
     text += std::string(" worst_entity=") + (window.worst_entity ? (window.worst_entity_realize ? "realize:" : "execute:") : "") +
             ClassName(window.worst_entity) + (window.worst_entity ? number : "");
+    // The synchronous loads: per frame of the window, and those of the slowest frame with their counts.
+    std::string sync, worst_sync;
+    for (size_t i = 1; i < kSyncs; ++i)
+    {
+        if (window.sync_count[i])
+        {
+            snprintf(number, sizeof(number), "%s%s:%.2f", sync.empty() ? "" : ",", kSyncNames[i],
+                     static_cast<double>(window.sync[i]) * 1e-6 / frames);
+            sync += number;
+        }
+        if (window.worst_sync_count[i])
+        {
+            snprintf(number, sizeof(number), "%s%s:%.1fx%u", worst_sync.empty() ? "" : ",", kSyncNames[i],
+                     static_cast<double>(window.worst_sync[i]) * 1e-6, window.worst_sync_count[i]);
+            worst_sync += number;
+        }
+    }
+    text += " sync=" + (sync.empty() ? std::string("none") : sync);
+    text += " worst_sync=" + (worst_sync.empty() ? std::string("none") : worst_sync);
     text += " execute_top=" + TopClasses(window.execute, window.frames, top);
     text += " realize_top=" + TopClasses(window.realize, window.frames, top);
     return text;

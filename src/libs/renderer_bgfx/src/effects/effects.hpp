@@ -184,6 +184,8 @@ class Host
     bool post_broken_ = false; // ... or the post chain
     bool device_ready_ = false;
     bool renderer_state_changed_ = false;
+    uint32_t profile_scene_views_ = 0, profile_scene_passes_ = 0; // of the scene target, since the last profile line
+    bool profile_in_scene_ = false;
     std::map<std::string, double> profile_views_; // GPU ms per view name since the last profile line
     DynamicResolution dynamic_;           // the scene's height under renderer_state_ (dynamic_resolution.hpp)
     double dynamic_frame_ms_ = 0.0;       // the previous end_frame, a steady clock

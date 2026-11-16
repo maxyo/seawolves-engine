@@ -218,11 +218,27 @@ bool SEA::EnvMap_Render2()
 
 uint32_t SEA::CubeFacesDue()
 {
-    if (storm::loading::active) return (1u << 6) - 1;
+    const auto now = std::chrono::steady_clock::now();
+    const float elapsed = cubeTime_ == std::chrono::steady_clock::time_point{}
+                              ? 0.0f : std::chrono::duration<float>(now - cubeTime_).count();
+    cubeTime_ = now;
+    if (storm::loading::active)
+    {
+        if (cubeLoadingFrames_++ < kCubeLoadingFullFrames)
+            cubeRefreshAll_ = true;
+    }
+    else
+        cubeLoadingFrames_ = 0;
     if (cubeUnderSea_ != bUnderSea || storm::math::lengthSquared(vCamPos - cubeCamPos_) > kCubeJump * kCubeJump)
         cubeRefreshAll_ = true;
     cubeUnderSea_ = bUnderSea;
     cubeCamPos_ = vCamPos;
+    // No sea block in view: nothing reads the cubes. Every face when the sea is back.
+    if (!cubeSeaInView_ && !storm::loading::active)
+    {
+        cubeRefreshAll_ = true;
+        return 0;
+    }
     uint32_t faces[6], count = 0;
     for (uint32_t i = 0; i < 6; i++)
         if (bUnderSea || i != D3DCUBEMAP_FACE_NEGATIVE_Y)
@@ -230,10 +246,12 @@ uint32_t SEA::CubeFacesDue()
     if (cubeRefreshAll_)
     {
         cubeRefreshAll_ = false;
+        cubeDue_ = 0.0f;
         return (1u << 6) - 1;
     }
+    cubeDue_ = std::min(cubeDue_ + elapsed * kCubeFacesPerSecond, static_cast<float>(count));
     uint32_t due = 0;
-    for (uint32_t k = 0; k < kCubeFacesPerFrame; k++)
+    for (; cubeDue_ >= 1.0f; cubeDue_ -= 1.0f)
         due |= 1u << faces[cubeCursor_++ % count];
     return due;
 }
