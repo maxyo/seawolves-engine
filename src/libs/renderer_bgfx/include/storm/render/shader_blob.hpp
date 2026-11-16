@@ -17,7 +17,7 @@ struct ShaderBlob
     uint32_t spirv_size = 0;
 };
 
-// The two arrays of "<namespace>/<name>.bin.h" and "<namespace>/<name>.spv.bin.h".
+// The two arrays <name> and <name>_spv that "<namespace>/includes.inc" declares (cmake/shader_blobs.py).
 #define STORM_SHADER_BLOB(name)                                                                                        \
     ::storm::render::ShaderBlob                                                                                        \
     {                                                                                                                  \

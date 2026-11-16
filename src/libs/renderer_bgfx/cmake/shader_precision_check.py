@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Fails when an embedded shader blob (shaderc --bin2c header) is not highp everywhere.
+"""Fails when an embedded shader blob (shaderc output, cmake/shader_blobs.py) is not highp everywhere.
 
 GPUs differ in what mediump means: Adreno and Mali run it as fp16, others as fp32. Positions, depth, time and the
 HDR / tone / occlusion maths overflow or band in fp16, so every shader of the engine is highp. A shader that needs
 mediump for speed must be added here with a reason.
 
-ESSL blobs (OpenGL ES, <name>.bin.h): no `mediump` or `lowp` anywhere. shaderc's spirv-cross output declares most
+ESSL blobs (OpenGL ES, <name>.bin): no `mediump` or `lowp` anywhere. shaderc's spirv-cross output declares most
 variables with an explicit qualifier, but not all (OpUndef placeholders, for example), so its default precision is
 highp too (patches/bgfx-essl-highp-default.patch) and the default line `precision mediump float;` is an error like
 any other mediump.
 
-SPIR-V blobs (Vulkan, <name>.spv.bin.h): no RelaxedPrecision decoration, which is what mediump / lowp and HLSL's
+SPIR-V blobs (Vulkan, <name>.spv.bin): no RelaxedPrecision decoration, which is what mediump / lowp and HLSL's
 min16float become there and what lets a driver compute in fp16.
-  shader_precision_check.py <stamp> <blob.bin.h>...
+  shader_precision_check.py <stamp> <blob.bin>...
 """
 import pathlib
 import re
@@ -48,8 +48,8 @@ stamp, *blobs = sys.argv[1:]
 problems = []
 for blob in blobs:
     path = pathlib.Path(blob)
-    data = bytes(int(x, 16) for x in re.findall(r'0x([0-9a-fA-F]{2})', path.read_text()))
-    if path.name.endswith('.spv.bin.h'):
+    data = path.read_bytes()
+    if path.name.endswith('.spv.bin'):
         problems += relaxed_precision(data, path.name)
         continue
     text = data.decode('latin1')

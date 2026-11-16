@@ -181,8 +181,10 @@ ninja -C build/android engine
 
 `cmake/storm_shaders.cmake` (`storm_bgfx_embed_shaders`) compiles every `shaders/*.sc` and
 `shaders/ports/*.sc` with `shaderc` at build time, each variant twice: for OpenGL ES (the `300_es`
-profile, `STORM_BGFX_SHADER_PROFILE`) and for Vulkan (`spirv`), and embeds the blobs (`--bin2c`,
-`<name>` and `<name>_spv`) into the `storm_bgfx_shaders` library; the shim looks them up by name and
+profile, `STORM_BGFX_SHADER_PROFILE`) and for Vulkan (`spirv`), and embeds the blobs (`<name>` and
+`<name>_spv`) into the `storm_bgfx_shaders` library through the assembler's `.incbin`
+(`cmake/shader_blobs.py`: a C array of the ~120 MB took the compiler 3-4 minutes on every shader change; the
+blob object is built without LTO and libengine.so relinks from lld's ThinLTO cache); the shim looks them up by name and
 takes the blob of the running backend (`storm/render/shader_blob.hpp`; the effects package and the UI
 do the same with theirs). Nothing is compiled at run time and no shader files ship in the APK.
 

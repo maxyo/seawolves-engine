@@ -7,13 +7,15 @@
 #                        INCLUDES <dir>... SHADERS <entries>)
 #
 # Compiles every registered variant with the pinned bgfx shaderc:
-#   * for both backends of the engine as `--bin2c` headers under <build>/shaders-gen/<NAMESPACE>/:
-#     <name>.bin.h (OpenGL ES, STORM_FX_SHADER_PROFILE, default 300_es, array <name>) and <name>.spv.bin.h
-#     (Vulkan, profile spirv, array <name>_spv), exposed through the INTERFACE target together with
+#   * for both backends of the engine under <build>/shaders-gen/<NAMESPACE>/: <name>.bin (OpenGL ES,
+#     STORM_FX_SHADER_PROFILE, default 300_es, array <name>) and <name>.spv.bin (Vulkan, profile spirv, array
+#     <name>_spv), held as data by the static library TARGET (renderer_bgfx/cmake/shader_blobs.py), which exposes
 #     includes.inc (every blob) and table.inc (one FX_SHADER(name) line per variant);
 #     storm/render/shader_blob.hpp picks the blob of the running backend;
 #   * target `<TARGET>_all_profiles` additionally compiles each variant for Metal so that no shader
 #     silently loses that backend.
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/shader_blobs.cmake")
+
 function(storm_fx_add_shader list_var name source)
     cmake_parse_arguments(arg "" "" "DEFINES" ${ARGN})
     string(REPLACE ";" "," defines "${arg_DEFINES}")
@@ -37,7 +39,7 @@ function(storm_fx_build_shaders)
     endforeach()
     set(outputs)
     set(check_outputs)
-    set(includes "")
+    set(names)
     set(table "")
     foreach(entry ${arg_SHADERS})
         string(REPLACE "|" ";" fields "${entry}|")
@@ -56,15 +58,15 @@ function(storm_fx_build_shaders)
         string(REPLACE "," "$<SEMICOLON>" defines "FX_SHADER,${defines}")
         set(common --type ${type} --varyingdef "${arg_VARYING}" ${include_args})
         set(deps ${STORM_FX_SHADERC_DEPENDS} "${source}" "${arg_VARYING}" ${header_deps} "${STORM_SHADERC_LAUNCHER_SCRIPT}")
-        set(output "${gen_dir}/${name}.bin.h")
+        set(output "${gen_dir}/${name}.bin")
         add_custom_command(OUTPUT "${output}"
-            COMMAND ${STORM_SHADERC_LAUNCHER} "${STORM_FX_SHADERC_COMMAND}" -f "${source}" -o "${output}" --bin2c "${name}"
+            COMMAND ${STORM_SHADERC_LAUNCHER} "${STORM_FX_SHADERC_COMMAND}" -f "${source}" -o "${output}"
                 --platform android -p ${STORM_FX_SHADER_PROFILE} -O 3 ${common} --define "${defines}"
             DEPENDS ${deps} VERBATIM)
         list(APPEND outputs "${output}")
-        set(output_spirv "${gen_dir}/${name}.spv.bin.h")
+        set(output_spirv "${gen_dir}/${name}.spv.bin")
         add_custom_command(OUTPUT "${output_spirv}"
-            COMMAND ${STORM_SHADERC_LAUNCHER} "${STORM_FX_SHADERC_COMMAND}" -f "${source}" -o "${output_spirv}" --bin2c "${name}_spv"
+            COMMAND ${STORM_SHADERC_LAUNCHER} "${STORM_FX_SHADERC_COMMAND}" -f "${source}" -o "${output_spirv}"
                 --platform android -p spirv -O 3 ${common} --define "${defines}"
             DEPENDS ${deps} VERBATIM)
         list(APPEND outputs "${output_spirv}")
@@ -73,11 +75,11 @@ function(storm_fx_build_shaders)
                 --platform ios -p metal ${common} --define "${defines}"
             DEPENDS ${deps} VERBATIM)
         list(APPEND check_outputs "${check_dir}/metal/${name}.bin")
-        string(APPEND includes "#include \"${arg_NAMESPACE}/${name}.bin.h\"\n#include \"${arg_NAMESPACE}/${name}.spv.bin.h\"\n")
+        list(APPEND names "${name}")
         string(APPEND table "FX_SHADER(${name})\n")
     endforeach()
-    file(GENERATE OUTPUT "${gen_dir}/includes.inc" CONTENT "${includes}")
     file(GENERATE OUTPUT "${gen_dir}/table.inc" CONTENT "${table}")
+    set(blobs ${outputs})
     # Every blob is highp (renderer_bgfx/cmake/shader_precision_check.py) when the renderer provides the check.
     if(STORM_SHADER_PRECISION_CHECK)
         find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -89,7 +91,6 @@ function(storm_fx_build_shaders)
     endif()
     add_custom_target(${arg_TARGET}_build DEPENDS ${outputs})
     add_custom_target(${arg_TARGET}_all_profiles DEPENDS ${check_outputs})
-    add_library(${arg_TARGET} INTERFACE)
+    storm_shader_blob_library(${arg_TARGET} ${arg_NAMESPACE} "${gen_dir}" "${names}" "${blobs}")
     add_dependencies(${arg_TARGET} ${arg_TARGET}_build)
-    target_include_directories(${arg_TARGET} INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/shaders-gen")
 endfunction()

@@ -59,6 +59,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(STORM_ANDROID_RELEASE_LTO)
         add_compile_options(-flto=thin)
         add_link_options(-flto=thin)
+        # lld's ThinLTO cache: a relink code-generates only the modules that changed (a one-file edit relinked all
+        # of libengine.so's ~1000 modules, 35-150 s). Keyed by module content and options, shared by every worktree
+        # like ccache (objects are path-independent there), pruned to 8 GB / 7 days by lld itself.
+        add_link_options("-Wl,--thinlto-cache-dir=${STORM_DEPS_CACHE}/thinlto-cache"
+                         "-Wl,--thinlto-cache-policy=prune_after=168h:cache_size_bytes=8g")
     endif()
 endif()
 # fmt is linked statically into the engine (built here with the flags above, ThinLTO included).
