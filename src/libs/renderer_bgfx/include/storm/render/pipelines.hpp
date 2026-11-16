@@ -53,7 +53,8 @@ void RequireSceneTexture(shim::BaseTexture *texture);
 void FailSceneTexture(const char *name, const char *requester);
 // A texture the game's own models name but the game does not ship, in any folder or archive: a defect of its data, the
 // same in every session. Returns where the game names it, nullptr for any other texture (a missing one of those is a
-// real failure). Matched by file name, any folder, with or without "resource\textures\" and ".tx".
+// real failure). Matched with or without "resource\textures\" and ".tx", by file name in any folder, or by folder and file
+// name for a name the game ships in other folders.
 const char *KnownMissingGameTexture(const char *name);
 // Explicit retry keeps the same required assets but starts a new generation. Only in-flight texture uploads that made
 // no progress within effects::SceneTextureStall's budget are released by time (logged as an ERROR each).

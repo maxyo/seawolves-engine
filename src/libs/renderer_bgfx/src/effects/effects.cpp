@@ -1545,37 +1545,49 @@ void RequireSceneTexture(shim::BaseTexture *texture)
     if (store && effects::SceneTextureName(store->name))
         effects::ObserveSceneTexture(store);
 }
-const char *KnownMissingGameTexture(const char *name)
+namespace
 {
-    struct Known { std::string_view file; const char *named_by; };
-    // TEHO 1.7.3, checked against RESOURCE of the installer: no file of this name in any folder.
-    static constexpr Known kKnown[] = {
-        // Material of the masts: the original engine drew them without it too.
+// `texture`: a file name (no '/') matches in any folder; a path (normalized, fx::NormalizeTexturePath) matches only
+// that folder, for a name the game ships elsewhere.
+struct KnownMissing { std::string_view texture; const char *named_by; };
+const KnownMissing *FindKnownMissing(const std::string &normalized)
+{
+    // TEHO 1.7.3, checked against RESOURCE of the installer.
+    static constexpr KnownMissing kKnown[] = {
+        // Material of the masts, in no folder: the original engine drew them without it too.
         {"phong256_bw.gif", "RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm, sloop1_mast201.gm and "
                             "RESOURCE/MODELS/Ships/Frigate_h1/Frigate_h1.gm"},
+        // Third material of a blade: checker.tga is shipped in Textures/, Characters/ and MainMenu/, not in Ammo/
+        // (Caribbean Legend's blade_29.gm no longer names it).
+        {"ammo/checker", "RESOURCE/MODELS/Ammo/blade_29.gm"},
     };
-    const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
     const size_t slash = normalized.rfind('/');
     const std::string_view file = slash == std::string::npos ? std::string_view(normalized)
                                                              : std::string_view(normalized).substr(slash + 1);
-    for (const Known &known : kKnown)
-        if (file == known.file) return known.named_by;
+    for (const KnownMissing &known : kKnown)
+        if ((known.texture.find('/') == std::string_view::npos ? file : std::string_view(normalized)) == known.texture)
+            return &known;
     return nullptr;
+}
+} // namespace
+const char *KnownMissingGameTexture(const char *name)
+{
+    const KnownMissing *known = FindKnownMissing(fx::NormalizeTexturePath(name ? name : ""));
+    return known ? known->named_by : nullptr;
 }
 void FailSceneTexture(const char *name, const char *requester)
 {
-    if (const char *named_by = KnownMissingGameTexture(name))
+    if (const KnownMissing *known = FindKnownMissing(fx::NormalizeTexturePath(name ? name : "")))
     {
         // The same in every session and every scene: one line per texture per session, wherever it is first needed.
         static std::mutex mutex;
-        static std::unordered_set<std::string> reported;
-        const std::string normalized = fx::NormalizeTexturePath(name);
-        const std::string file = normalized.substr(normalized.rfind('/') + 1); // npos + 1: no folder
+        static std::unordered_set<std::string_view> reported;
         std::lock_guard lock(mutex);
-        if (reported.emplace(file).second)
-            shim::logf("WARNING: known game data defect: texture '%s' requested by %s is not shipped by the game (named by "
+        if (reported.emplace(known->texture).second)
+            shim::logf("WARNING: known game data defect: texture '%.*s' requested by %s is not shipped by the game (named by "
                        "%s); drawn with the engine's unbound-texture fallback (black)",
-                       file.c_str(), requester && *requester ? requester : "?", named_by);
+                       static_cast<int>(known->texture.size()), known->texture.data(),
+                       requester && *requester ? requester : "?", known->named_by);
         return;
     }
     auto &load = effects::location_load();
