@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds pbrify-upscale-int8.onnx (this folder) from PBRify's 4x SPAN upscaler (README.md, fx/upscale.hpp).
 
-1. Kim2091/PBRify_Remix release v1.7.2 (CC0-1.0; the build downloads and checks it, cmake/StormDerivedFiles.cmake, and
+1. Kim2091/PBRify_Remix release v1.7.2 (CC0-1.0; the check target downloads and checks it, cmake/StormDerivedFiles.cmake, and
    passes its folder as --sources), its Extras/Old_Models/4x-PBRify_UpscalerSPANV4.pth (checked by sha256 here).
 2. Exported to ONNX with spandrel (opset 17, input 1x3xHxW, output 1x3x4Hx4W, float 0..1, free size).
 3. The float graph converted for the GPU by pnnx (ncnn's .param / .bin, fp16 weights), as make_ncnn_models.py.
@@ -9,8 +9,11 @@
    procedural colour textures at 256 px with 16 px of wrap (even) or mirror (odd) padding, as the game pads its tiles:
    no game data goes into the model. What no node uses is dropped.
 
-Needs exactly upscale-requirements.txt (the build makes that venv). Run by the build (storm_derived_files in ../CMakeLists.txt) as: python -I make_upscale_model.py --sources <the release's
-folder> --output <dir>; it writes pbrify-upscale-int8.onnx, pbrify-upscale.ncnn.param and pbrify-upscale.ncnn.bin into --output.
+Needs exactly upscale-requirements.txt (the build makes that venv). The game's build fetches the files this script made
+on the reference machine (the bytes depend on the CPU's ISA; README.md); the host target storm_upscale_model_check
+(storm_derived_files in ../CMakeLists.txt) runs it as: python -I make_upscale_model.py --sources <the release's
+folder> --output <dir>; it writes pbrify-upscale-int8.onnx, pbrify-upscale.ncnn.param and pbrify-upscale.ncnn.bin into
+--output, and the target checks them against the published pins.
 """
 import argparse
 import hashlib

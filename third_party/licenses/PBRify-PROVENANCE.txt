@@ -44,7 +44,9 @@ Training:  the release's EXTRA_INFO.md: textures from ambientCG and PolyHaven (b
 Modified:  by src/libs/relief/model/make_upscale_model.py: exported to ONNX (opset 17, I/O 1x3xHxW float 0..1 and
            1x3x4Hx4W) with spandrel, weights and activations quantised to int8 (static QDQ, per-channel weights,
            calibrated on the procedural textures of make_models.py with 16 px wrap or mirror padding; no game data),
-           unused nodes dropped. Result (checked at build time):
+           unused nodes dropped; also converted by pnnx to ncnn (pbrify-upscale.ncnn.param / .bin). Published as the
+           engine's release models-upscale-v1 (github.com/maxyo/seawolves-engine) and fetched by sha256 at build
+           time:
            pbrify-upscale-int8.onnx, 521540 bytes,
            sha256 5148c5c90562bdff8567dd612b427ebe001371d4abb906fb1358d94e1480f552
            The modified file stays CC0-1.0.

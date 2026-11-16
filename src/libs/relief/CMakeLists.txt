@@ -80,32 +80,57 @@ storm_derived_files(storm_relief_ncnn_models storm_relief_ncnn_models
             pbrify-height.ncnn.bin=d54154e6179a217891516c7c8a00033a10c8447074728f89f234b7d49b6c5226
             pbrify-roughness.ncnn.param=6f6d55ceb44b7b0387e4c6cab96a10ee548ce0939e24d19de3189659627f5c9c
             pbrify-roughness.ncnn.bin=3fe407f25ac9f0d0585209483f8e4920f5d8698129e86b666fe1ffd9edf9c908)
-# PBRify's 4x upscaler (CC0-1.0, model/README.md, fx/upscale.hpp): the release's .pth, exported with spandrel, quantised
-# to int8 for the CPU and converted by pnnx for the GPU, by model/make_upscale_model.py; every file checked against its
-# pin (fx::kUpscaleModelDigest is the int8 file's prefix).
-storm_fetch_declare(storm_pbrify_upscaler
-    URL https://github.com/Kim2091/PBRify_Remix/releases/download/v1.7.2/PBRify_Remix-1.7.2.zip
-    URL_HASH SHA256=d787a88f644c542620f869e0c61e71f795488020fcece9a97e774ca2c2cecb0b
-    STORM_POPULATE_ONLY)
-FetchContent_MakeAvailable(storm_pbrify_upscaler)
+# PBRify's 4x upscaler (CC0-1.0, model/README.md, fx/upscale.hpp): model/make_upscale_model.py exports the release's
+# .pth with spandrel, quantises it to int8 for the CPU and converts it by pnnx for the GPU, but those bytes depend on the
+# CPU's ISA (an AVX2 machine makes other ones than the AVX-512 reference machine). So the build fetches the reference
+# machine's files by sha256 from the engine's release models-upscale-v1, one download per file; the host target
+# storm_upscale_model_check makes them again with the script and fails unless every file matches its pin (run it on
+# the reference machine after changing the script, its requirements or the release's .pth, then publish a new release
+# and change the pins here). fx::kUpscaleModelDigest is the int8 file's prefix.
+set(storm_upscale_release https://github.com/maxyo/seawolves-engine/releases/download/models-upscale-v1)
 set(storm_upscale_pin 5148c5c90562bdff8567dd612b427ebe001371d4abb906fb1358d94e1480f552)
+set(storm_upscale_files
+    "int8|pbrify-upscale-int8.onnx|${storm_upscale_pin}"
+    "param|pbrify-upscale.ncnn.param|2cbb837676788bcb187766e8e47f35cb312f1e63ca341a09a84ab02b1c90ebdd"
+    "bin|pbrify-upscale.ncnn.bin|a0a97f7dd9400708ff5fc784c6c96e62cc47a357d102939ea01a5ebed19e97be")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../renderer_bgfx/fx/include/storm/fx/upscale.hpp" upscale_header)
 string(REGEX MATCH "kUpscaleModelDigest = 0x([0-9a-f]+)ull" digest_line "${upscale_header}")
 string(SUBSTRING "${storm_upscale_pin}" 0 16 prefix)
 if(NOT CMAKE_MATCH_1 STREQUAL prefix)
     message(FATAL_ERROR "fx::kUpscaleModelDigest (${CMAKE_MATCH_1}) is not the sha256 prefix of pbrify-upscale-int8.onnx (${prefix})")
 endif()
-file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/model/make_models.py" storm_make_models_sha256)
-storm_derived_files(storm_upscale_model storm_upscale_model
-    SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/model/make_upscale_model.py"
-    REQUIREMENTS "${CMAKE_CURRENT_SOURCE_DIR}/model/upscale-requirements.txt"
-    SOURCES "${storm_pbrify_upscaler_SOURCE_DIR}"
-    # The script takes the calibration textures from make_models.py: its content is an input too.
-    INPUTS d787a88f644c542620f869e0c61e71f795488020fcece9a97e774ca2c2cecb0b ${storm_make_models_sha256}
-    OUTPUTS pbrify-upscale-int8.onnx=${storm_upscale_pin}
-            pbrify-upscale.ncnn.param=2cbb837676788bcb187766e8e47f35cb312f1e63ca341a09a84ab02b1c90ebdd
-            pbrify-upscale.ncnn.bin=a0a97f7dd9400708ff5fc784c6c96e62cc47a357d102939ea01a5ebed19e97be
-    PIP_ARGS --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple)
+set(storm_upscale_copies "")
+set(storm_upscale_pins "")
+foreach(entry ${storm_upscale_files})
+    string(REPLACE "|" ";" fields "${entry}")
+    list(GET fields 0 part)
+    list(GET fields 1 file)
+    list(GET fields 2 sha256)
+    storm_fetch_declare(storm_pbrify_upscale_${part}
+        URL ${storm_upscale_release}/${file}
+        URL_HASH SHA256=${sha256}
+        DOWNLOAD_NO_EXTRACT TRUE
+        STORM_POPULATE_ONLY)
+    FetchContent_MakeAvailable(storm_pbrify_upscale_${part})
+    list(APPEND storm_upscale_copies "${storm_pbrify_upscale_${part}_SOURCE_DIR}/${file}")
+    list(APPEND storm_upscale_pins "${file}=${sha256}")
+endforeach()
+if(NOT ANDROID)
+    storm_fetch_declare(storm_pbrify_upscaler
+        URL https://github.com/Kim2091/PBRify_Remix/releases/download/v1.7.2/PBRify_Remix-1.7.2.zip
+        URL_HASH SHA256=d787a88f644c542620f869e0c61e71f795488020fcece9a97e774ca2c2cecb0b
+        STORM_POPULATE_ONLY)
+    FetchContent_MakeAvailable(storm_pbrify_upscaler)
+    file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/model/make_models.py" storm_make_models_sha256)
+    storm_derived_files(storm_upscale_model_check storm_upscale_model
+        SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/model/make_upscale_model.py"
+        REQUIREMENTS "${CMAKE_CURRENT_SOURCE_DIR}/model/upscale-requirements.txt"
+        SOURCES "${storm_pbrify_upscaler_SOURCE_DIR}"
+        # The script takes the calibration textures from make_models.py: its content is an input too.
+        INPUTS d787a88f644c542620f869e0c61e71f795488020fcece9a97e774ca2c2cecb0b ${storm_make_models_sha256}
+        OUTPUTS ${storm_upscale_pins}
+        PIP_ARGS --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple)
+endif()
 set(storm_relief_model_files pbrify-normal-int8.onnx pbrify-height-int8.onnx pbrify-roughness-int8.onnx)
 set(storm_relief_ncnn_files pbrify-normal.ncnn.param pbrify-normal.ncnn.bin pbrify-height.ncnn.param pbrify-height.ncnn.bin
     pbrify-roughness.ncnn.param pbrify-roughness.ncnn.bin)
@@ -123,13 +148,13 @@ endforeach()
 foreach(file ${storm_relief_ncnn_files})
     list(APPEND storm_relief_copies COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${storm_relief_ncnn_models_DIR}/${file}" "${STORM_RELIEF_MODELS}/${file}")
 endforeach()
-foreach(file pbrify-upscale-int8.onnx pbrify-upscale.ncnn.param pbrify-upscale.ncnn.bin)
-    list(APPEND storm_relief_copies COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${storm_upscale_model_DIR}/${file}" "${STORM_RELIEF_MODELS}/${file}")
+foreach(path ${storm_upscale_copies})
+    list(APPEND storm_relief_copies COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${path}" "${STORM_RELIEF_MODELS}/")
 endforeach()
 add_custom_target(storm_relief_model_files
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${STORM_RELIEF_MODELS}" ${storm_relief_copies}
     VERBATIM)
-add_dependencies(storm_relief_model_files storm_relief_models storm_relief_ncnn_models storm_upscale_model)
+add_dependencies(storm_relief_model_files storm_relief_models storm_relief_ncnn_models)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/ncnn.cmake")
 
