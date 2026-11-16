@@ -118,10 +118,13 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, ASAN_OPTIONS=ASAN_OPTIONS, UBSAN_OPTIONS=UBSAN_OPTIONS)
     command = [sys.executable, root / 'tools/scene_sweep/run.py', '--game', args.game, '--engine', engine,
-               '--out', args.out, '--save', args.save, '--only', *SCENES, '--jobs', '1', '--render', 'gles-gpu',
+               '--out', args.out, '--save', args.save, '--only', *SCENES, '--jobs', '1', '--single-session',
+               '--render', 'gles-gpu',
                '--virtualgl', vgl, '--timeout', str(min(240, args.budget)),
                # Compiled scripts kept between runs (rebuilt when the game's scripts change): 20 s of the ASan boot.
                '--script-cache', args.build.resolve() / 'script-cache']
+    report = args.out / 'report.json'
+    report.unlink(missing_ok=True)  # a failed launch must never reuse a previous successful report
     sweep = subprocess.Popen([str(c) for c in command], cwd=root, env=env, start_new_session=True)
     try:
         code = sweep.wait(timeout=args.budget)
@@ -134,9 +137,9 @@ def main():
             sweep.wait()
         fail(f'over its time budget: the sweep took more than {args.budget} s (--budget, STORM_BOOT_BUDGET)')
     swept = time.monotonic()
-    report = args.out / 'report.json'
     if report.exists():
-        scenes = json.loads(report.read_text())['scenes']
+        result = json.loads(report.read_text())
+        scenes = result['scenes']
         for name, entry in scenes.items():
             load = f", load {entry['load_ms'] / 1000:.1f} s" if 'load_ms' in entry else ''
             began = f", began {entry['begin_ms'] / 1000:.1f} s after the engine started" if 'begin_ms' in entry else ''
@@ -145,6 +148,14 @@ def main():
     log(f'sweep {swept - built:.0f} s (budget {args.budget} s), total {swept - started:.0f} s; report {report}')
     if code:
         fail(f'the sweep failed (exit {code}): {args.out}/summary.txt')
+    if not report.is_file():
+        fail(f'the sweep produced no report: {report}')
+    if result.get('meta', {}).get('engine_sessions') != 1:
+        fail('the sweep must report exactly one engine session')
+    required = {'menu:main', 'save:boot', *SCENES}
+    missing = required - scenes.keys()
+    if missing:
+        fail(f'the sweep did not check required scenes: {sorted(missing)}')
     log('passed')
 
 

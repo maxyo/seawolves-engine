@@ -14,7 +14,7 @@
 tools/ci/gate.py --rebase            # rebase onto origin/develop, plan, run; no push
 tools/ci/gate.py --rebase --push     # ... and push HEAD to develop if everything passed and develop did not move
 tools/ci/gate.py --tests renderer_bgfx save_dangling_references   # add host checks by name
-tools/ci/gate.py --full              # everything, whatever changed: before a release build
+tools/ci/gate.py --full --boot on    # every stage, including one boot session: before a release build
 ```
 
 It plans from `git diff origin/develop...HEAD` and prints one line per stage, `RUN` with the reason or
@@ -26,7 +26,7 @@ It plans from `git diff origin/develop...HEAD` and prints one line per stage, `R
   `<workspace>/local-testing/extracted/app`; missing game = the gate fails, it is not skipped);
 - **ui_host**: `build/ui-host` (src/libs/ui) build + ctest;
 - **android**: `build/android-engine`, arm64 Release (LTO) `engine`, SDK/NDK from `$STORM_CI_WORK`;
-- **boot** (`--boot auto|on|off`, off by default until the owner approves it): `boot_stage.py`, below.
+- **boot** (`--boot auto|on|off`, off by default locally; the land queue uses auto): `boot_stage.py`, below.
 
 ## The engine boot stage (`boot_stage.py`)
 
@@ -34,8 +34,13 @@ The host checks replace the engine's seams (script VM, entity lifetimes, rendere
 stubs; this stage starts the real engine. `build/boot-asan` (RelWithDebInfo, `-fsanitize=address,undefined`,
 `-DSTORM_SCENE_SWEEP=ON`, kept warm through ccache) runs the scene sweep with one engine on OpenGL ES on the host
 GPU through VirtualGL: main menu → the canonical save loaded from it (`save:boot`, the town Сен-Пьер) → `sea:Martinique`
-→ the town again → `loc:FortFrance_tavern` → exit. It fails on a crash, an ASan report, a UBSan `runtime error:`, a
-fatal engine error, script errors, missing resources, a black or HUD-less frame, or its time budget (`--budget`,
+→ the town again → `loc:FortFrance_tavern` → exit. `--single-session` forbids engine retries,
+including after a crash; any remaining scenes fail. The stage requires a fresh report covering the menu,
+save, sea and tavern, and rejects incomplete results or a session count other than one. Existing known
+game-data defects (`tools/scene_sweep/known_defects.json`) remain reported as KNOWN; existing UBSan
+suppressions are listed with causes in `tools/ci/ubsan.supp`. All other matching errors fail the run:
+crash, ASan report, UBSan `runtime error:`, fatal engine error, script errors, missing resources, a black
+or HUD-less frame, or its time budget (`--budget`,
 `$STORM_BOOT_BUDGET`, default 300 s for the sweep; the build is logged separately). Three scenes from a save, selected
 only by changes that can affect the engine at run time; not the all-scenes sweep (`tools/scene_sweep/README.md`).
 
@@ -77,14 +82,29 @@ tools/ci/land.py --status        # queue, last results; runner log in <git commo
 All worktrees share one queue (`<git common dir>/storm-land`). The first agent without a running runner
 becomes the runner; the others wait. The runner works in `<workspace>/storm-engine-land` (warm build
 directories), rebases every queued entry onto origin/develop and the entries before it, gates the stack
-once and pushes it. A failing batch is gated entry by entry; the passing entries land, each failing entry
-gets its reason and its gate logs (`<git common dir>/storm-land/logs/<id>/`). A conflicting entry fails
-with the conflict. Nobody rebases under a moving develop any more: the queue is the only local pusher. After
-landing, `git fetch && git rebase origin/develop` in your worktree.
+once with `--boot auto` and pushes it. Runtime-affecting changes selected by `affected.py` run one boot
+smoke for the entire stacked tree; a passing batch never runs boot again per entry. Local developer/agent
+`gate.py` runs default to `--boot off`; use `--boot on` for an explicit local session. A failing batch is
+gated entry by entry; the passing entries land, each failing entry gets its reason and its gate logs (`<git common dir>/storm-land/logs/<id>/`). A conflicting entry fails
+with the conflict. During entry-by-entry isolation, other checks still cover the kept stack, but
+`--boot-base <previous-stack-tip>` selects boot from only the current entry’s changes. An earlier runtime
+entry therefore does not trigger boot again for a later documentation entry. If develop moves, the new
+stack must be gated again. Nobody rebases under a moving develop any more: the queue is the only local
+pusher. After landing, `git fetch && git rebase origin/develop` in your worktree.
+
+The gate's logs and the boot report (`report.json`, `summary.txt`, pictures; not the sweep's game copies) are
+copied into each entry's log directory; `gate.py` empties `build/gate` at start, so only that gate's results are
+there. The gate's environment is the runner's, updated by `<git common dir>/storm-land/env` (`NAME=VALUE`
+lines, `#` comments), so it does not depend on which agent became the runner. `STORM_VIRTUALGL` (the VirtualGL
+directory) must be set there or in the environment, or `land.py` refuses to queue:
+
+```
+echo "STORM_VIRTUALGL=$WORKSPACE/local-testing/gpu-sweep/vgl" >> "$(git rev-parse --git-common-dir)/storm-land/env"
+```
 
 ## Tiers
 
 - **Before every push**: `gate.py` / `land.py` (what the change affects).
 - **After a push**: CI (`.github/workflows/host.yml`) runs all host checks on develop.
-- **Before a release build**: `gate.py --full`, plus the on-demand engine suites (`tools/scene_sweep`, full
+- **Before a release build**: `gate.py --full --boot on`, plus the on-demand engine suites (`tools/scene_sweep`, full
   parity) only for engine/renderer changes; heavy runtime suites (lifecycle, resize) only when their code changed.

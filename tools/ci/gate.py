@@ -9,9 +9,9 @@ Steps (README.md here):
    (tools/game_checks, on the local game), the UI host build + ctest, the Android arm64 engine
    build and the engine boot stage (tools/ci/boot_stage.py: an ASan+UBSan host engine loads a save
    and three scenes; --boot auto runs it when the change can affect the engine at run time, on
-   always, off never; off is the default until the owner has approved it). Everything left out is
-   printed with the reason (SKIP lines); --full runs everything (before a release) and --tests adds
-   host checks by name;
+   always, off never; local runs default to off, the land queue uses auto once per batch). Everything
+   left out is printed with the reason (SKIP lines); --full selects all checks and builds (boot still
+   follows --boot) and --tests adds host checks by name;
 3. the stages run in parallel, each logging to build/gate/<stage>.log; a summary with the times;
 4. with --push: push HEAD to develop only if every stage passed and origin/develop has not moved
    since the plan (exit 3 when it moved: rebase and run again; the builds are incremental).
@@ -122,15 +122,20 @@ def main():
     parser.add_argument('--base', default='origin/develop')
     parser.add_argument('--rebase', action='store_true', help='rebase HEAD onto --base first')
     parser.add_argument('--push', action='store_true', help='push HEAD to develop when everything passed')
-    parser.add_argument('--full', action='store_true', help='every check and build, whatever changed (release)')
+    parser.add_argument('--full', action='store_true', help='every check and build, whatever changed; add --boot on for a release')
     parser.add_argument('--tests', nargs='*', default=[], help='host checks to run in addition')
     parser.add_argument('--jobs', type=int, default=6, help='host checks in parallel')
     parser.add_argument('--no-fetch', action='store_true')
-    # Off by default until the owner has seen its timing and a sample run (WP-2); then the default becomes auto.
     parser.add_argument('--boot', choices=('auto', 'on', 'off'), default='off',
-                        help='the engine boot stage: auto = when the change can affect the engine at run time')
+                        help='engine boot: off (default) locally; auto selects runtime changes (land queue); on forces a run')
+    parser.add_argument('--boot-base', help='diff base for boot selection only (default: --base); the queue uses the '
+                        'previous stack tip while isolating a failed batch')
     args = parser.parse_args()
-    logs.mkdir(parents=True, exist_ok=True)
+    if args.boot_base and (args.boot != 'auto' or args.full):
+        parser.error('--boot-base narrows the --boot auto selection; it is meaningless with --full or --boot on|off')
+    # Only this run's logs and boot report: the land queue copies the whole directory as the gate's evidence.
+    shutil.rmtree(logs, ignore_errors=True)
+    logs.mkdir(parents=True)
     started = time.monotonic()
     if not args.no_fetch:
         git('fetch', '-q', 'origin')
@@ -151,9 +156,12 @@ def main():
     selection = affected.plan(files, root / 'build/host-ci')
     checks, games = selection['host_checks'], selection['game_checks']
     ui, android = selection['ui_host'], selection['android']
-    boot = {'auto': selection['boot'], 'on': (True, 'on (--boot on)'),
-            'off': (False, f'off (--boot off, the default until approved); auto would {"RUN" if selection["boot"][0] else "SKIP"}: '
-                           f'{selection["boot"][1]}')}[args.boot]
+    boot_selection = selection['boot']
+    if args.boot_base:
+        boot_selection = affected.plan(affected.changed_files(args.boot_base), root / 'build/host-ci')['boot']
+    boot = {'auto': boot_selection, 'on': (True, 'on (--boot on)'),
+            'off': (False, f'off (--boot off, local default; land queue uses auto); auto would {"RUN" if boot_selection[0] else "SKIP"}: '
+                           f'{boot_selection[1]}')}[args.boot]
     reason = (lambda why: 'full gate (--full)') if args.full else (lambda why: why)
     names = sorted({n for n, (run, _) in checks.items() if run} | set(args.tests))
     plan_lines = [f'GATE {git("rev-parse", "--short", "HEAD")} over {args.base} {base_sha[:8]}: {len(files)} changed files']
@@ -163,8 +171,9 @@ def main():
     for name, (run, why) in games.items():
         plan_lines.append(f'{"RUN " if run else "SKIP"} game check {name}: {reason(why)}')
     plan_lines.append(f'{"RUN " if names else "SKIP"} host checks ({len(names)}): {" ".join(names) or "none affected"}')
-    for label, (run, why) in (('ui_host', ui), ('android', android), ('boot', boot)):
+    for label, (run, why) in (('ui_host', ui), ('android', android)):
         plan_lines.append(f'{"RUN " if run else "SKIP"} {label}: {reason(why)}')
+    plan_lines.append(f'{"RUN " if boot[0] else "SKIP"} boot: {boot[1]}')  # --boot decides, not --full
     (logs / 'plan.txt').write_text('\n'.join(plan_lines) + '\n')
     skipped = sum(1 for line in plan_lines if line.startswith('SKIP host check'))
     for line in plan_lines:

@@ -54,9 +54,12 @@ REPOSITORY = HERE.parents[1]
 # Log lines that fail the scene they were written in. (log file pattern, line pattern, reason)
 LOG_RULES = [
     (r'error\.log', r'.', 'script error'),
+    (r'.', r'Engine stopped: ', 'fatal engine error'),
     (r'.', r"Can't load texture .*[^\\/\s]\.tx", 'missing texture'),  # the game also asks for textures with no name
     (r'.', r"Invalid model|Can't load model|can't open file|can't open geometry file|Can't find model|No geometry",
      'missing model'),
+    (r'.', r"(?i)(?:cannot|can['`]t|unable to) (?:open (?:animation |ini )?file|load (?:animation|font|grass data file)|loaded patch data file)"
+     r"|Audio (?:decode|load/play) failed|not found: resource[\\/]", 'missing resource'),
     (r'compile\.log', r'Main character <.*> error teleportation', 'teleport failed'),  # characters_login.c
     (r'.', r'\[(critical|error)\]', 'engine error'),
     # The renderer's lines: in system.log once the engine set its log sink (storm/render/log.hpp), on stdout before.
@@ -103,6 +106,8 @@ def parse_arguments():
     parser.add_argument('--engine', type=Path, help='host engine binary built with -DSTORM_SCENE_SWEEP=ON')
     parser.add_argument('--out', type=Path, help='report directory (report.json, summary.txt, shots/, contact/)')
     parser.add_argument('--jobs', type=int)
+    parser.add_argument('--single-session', action='store_true',
+                        help='run exactly one engine without retries; preserve --only order (requires --jobs 1)')
     parser.add_argument('--only', nargs='+', default=[])
     parser.add_argument('--failed', action='store_true')
     parser.add_argument('--changed', action='store_true')
@@ -144,6 +149,10 @@ def parse_arguments():
                         help='a save file of this game: every engine loads it from the main menu (scene save:boot) '
                              'instead of starting a new game; the hero must be on land (the sea scenes return there)')
     arguments = parser.parse_args()
+    if arguments.single_session and arguments.jobs not in (None, 1):
+        parser.error('--single-session requires --jobs 1')
+    if arguments.single_session:
+        arguments.jobs = 1
     if not arguments.list and not (arguments.engine and arguments.out):
         parser.error('--engine and --out are required')
     if arguments.save and not arguments.save.is_file():
@@ -271,6 +280,9 @@ def select(scenes, arguments, previous, build):
     if arguments.only:
         chosen = [scene for scene in chosen if any(
             fnmatch.fnmatchcase(scene.id, pattern) or scene.category == pattern for pattern in arguments.only)]
+        if arguments.single_session:
+            chosen.sort(key=lambda scene: next(index for index, pattern in enumerate(arguments.only)
+                        if fnmatch.fnmatchcase(scene.id, pattern) or scene.category == pattern))
     if arguments.smoke:
         chosen = inventory.first_of_each_category(chosen)
     if arguments.failed or arguments.changed:
@@ -308,13 +320,14 @@ class LogTail:
     def __init__(self, stdout, logs):
         self.stdout, self.logs, self.offsets = stdout, logs, {}
 
-    def collect(self):
+    def collect(self, final=False):
         lines = []
         for path in [self.stdout, *sorted(self.logs.glob('*.log'))] if self.logs.is_dir() else [self.stdout]:
             with open(path, 'rb') as stream:
                 stream.seek(self.offsets.get(path, 0))
                 data = stream.read()
-            data = data[:data.rfind(b'\n') + 1]
+            if not final:
+                data = data[:data.rfind(b'\n') + 1]
             self.offsets[path] = self.offsets.get(path, 0) + len(data)
             name = 'stdout' if path == self.stdout else path.name
             lines += [(name, line) for line in data.decode('utf-8', 'replace').splitlines()]
@@ -698,7 +711,7 @@ class Shard(threading.Thread):
                 return
             time.sleep(0.02)
 
-        pending += tail.collect()
+        pending += tail.collect(final=True)
         code = engine.returncode
         how = f'killed by signal {signal.Signals(-code).name}' if code < 0 else f'exit code {code}'
         if finished and code == 0:
@@ -761,6 +774,11 @@ class Shard(threading.Thread):
     def sweep(self):
         while self.queue and not self.context['stop'].is_set():
             self.run_engine()
+            if self.arguments.single_session:
+                for scene in self.queue:
+                    self.record(scene, ['not run: the single engine session ended before this scene'])
+                self.queue.clear()
+                break
             if self.boot_failures >= 2:
                 for scene in self.queue:
                     self.record(scene, ['not run: the engine failed twice before the game was up'])
@@ -905,7 +923,11 @@ def main():
     print(f'{len(chosen)} scenes on {jobs} engines, rendering with {RENDER_DESCRIPTIONS[arguments.render]}',
           flush=True)
     started = time.monotonic()
-    shards = [Shard(index, queue, arguments, context) for index, queue in enumerate(make_shards(chosen, jobs))]
+    queues = [chosen] if arguments.single_session else make_shards(chosen, jobs)
+    shards = [Shard(index, queue, arguments, context) for index, queue in enumerate(queues)]
+    # SIGTERM (the boot stage's budget, timeout(1)) reaches this process, not the engines (their own process
+    # groups): stop the workers so each one kills and reaps its engine instead of leaving it running.
+    signal.signal(signal.SIGTERM, lambda *_: context['stop'].set())
     for shard in shards:
         shard.start()
     try:
@@ -946,6 +968,7 @@ def main():
     report = {
         'meta': {'started': datetime.datetime.now().astimezone().isoformat(timespec='seconds'),
                  'wall_seconds': round(time.monotonic() - started), 'jobs': jobs, 'size': arguments.size,
+                 'engine_sessions': sum(shard.runs for shard in shards),
                  'cores': os.cpu_count(), 'load_average': round(os.getloadavg()[0], 1),
                  'engine': str(arguments.engine), 'game': str(arguments.game),
                  'save': str(arguments.save) if arguments.save else None,

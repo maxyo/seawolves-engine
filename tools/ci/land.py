@@ -13,11 +13,16 @@ runner becomes the runner; the others wait for their result. The runner works in
    `git rebase`) onto origin/develop and the entries before it. An entry that conflicts fails
    ("rebase conflicts") and is left out;
 2. gate the stacked tree once (tools/ci/gate.py: what the union of the changes affects, plus every
-   entry's --tests);
+   entry's --tests), with --boot auto: one boot smoke for runtime-affecting changes in the batch;
 3. passed: push to develop when origin/develop has not moved (if it moved, start again: the builds are
    incremental), and report the landed commit to each entry;
    failed with several entries: gate them one by one on top of each other, keep the ones that pass,
-   push those, and report each failing entry with its gate logs.
+   push those, and report each failing entry with its gate logs. Boot is selected only from the current
+   entry's changes, so a passing entry does not cause another entry's boot run.
+
+The gate's environment is the runner's, updated by <git common dir>/storm-land/env (NAME=VALUE lines,
+# comments): the queue's own settings, the same whichever agent becomes the runner. The boot stage needs
+STORM_VIRTUALGL (the VirtualGL directory, tools/scene_sweep/README.md); without it land.py refuses to queue.
 
 A gate failure, conflict or refused push is reported to its entry with the logs
 (<git common dir>/storm-land/logs/<id>/); nothing is dropped silently. After landing, the agent's own
@@ -38,6 +43,7 @@ common = Path(subprocess.check_output(['git', '-C', str(root), 'rev-parse', '--p
                                       text=True).strip())
 state = common / 'storm-land'
 queue, done_dir, log_root = state / 'queue', state / 'done', state / 'logs'
+env_file = state / 'env'
 land_tree = Path(os.environ.get('STORM_LAND_WORKTREE', common.parent.parent / 'storm-engine-land'))
 BASE = 'origin/develop'
 
@@ -47,6 +53,27 @@ def git(*args, cwd=None, check=True):
     if check and result.returncode:
         raise RuntimeError(f'git {" ".join(args)}: {result.stderr.strip()}')
     return result
+
+
+def gate_env():
+    """The runner's environment updated by the queue's env file; RuntimeError when the boot stage could not run."""
+    settings = {}
+    if env_file.exists():
+        for number, line in enumerate(env_file.read_text().splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            name, equals, value = line.partition('=')
+            if not equals or not name.strip():
+                raise RuntimeError(f'{env_file}:{number}: expected NAME=VALUE, got {line!r}')
+            settings[name.strip()] = value.strip()
+    env = dict(os.environ, **settings)
+    vgl = env.get('STORM_VIRTUALGL')
+    if not vgl or not (Path(vgl) / 'usr/lib/libvglfaker.so').is_file():
+        raise RuntimeError(f'the queue gates with --boot auto, which renders through VirtualGL: STORM_VIRTUALGL is '
+                 f'{vgl or "not set"}, not a VirtualGL directory (usr/lib/libvglfaker.so). Set it in {env_file} '
+                 f'as STORM_VIRTUALGL=<dir> (tools/scene_sweep/README.md, Renderer)')
+    return env
 
 
 def say(message):
@@ -63,21 +90,28 @@ def finish(entry, status, detail, **extra):
     say(f'{entry["label"]} {entry["sha"][:8]}: {status}: {detail}')
 
 
-def gate(entries, tag):
-    """Runs the gate in the land worktree; returns (passed, moved, output) and keeps the logs."""
+def gate(entries, tag, boot_base=None):
+    """Runs the gate in the land worktree; returns (passed, output) and keeps the logs."""
     tests = sorted({t for e in entries for t in e.get('tests', [])})
-    command = [sys.executable, str(land_tree / 'tools/ci/gate.py'), '--no-fetch', '--base', BASE]
+    command = [sys.executable, str(land_tree / 'tools/ci/gate.py'), '--no-fetch', '--base', BASE, '--boot', 'auto']
+    if boot_base is not None:
+        command += ['--boot-base', boot_base]
     if tests:
         command += ['--tests', *tests]
     say(f'gate {tag}: ' + ', '.join(f'{e["label"]} {e["sha"][:8]}' for e in entries))
-    result = subprocess.run(command, cwd=land_tree, capture_output=True, text=True)
+    result = subprocess.run(command, cwd=land_tree, env=gate_env(), capture_output=True, text=True)
     output = result.stdout + result.stderr
     for e in entries:
         target = log_root / e['id'] / tag
         target.mkdir(parents=True, exist_ok=True)
         (target / 'gate.txt').write_text(output)
         for log in (land_tree / 'build/gate').glob('*'):
-            shutil.copy(log, target / log.name)
+            if log.is_dir():
+                # Boot reports/pictures are evidence; sweep work holds disposable copies of the whole game.
+                shutil.copytree(log, target / log.name, dirs_exist_ok=True,
+                                ignore=shutil.ignore_patterns('work'))
+            else:
+                shutil.copy(log, target / log.name)
     return result.returncode == 0, output
 
 
@@ -152,7 +186,7 @@ def run_batch(batch):
         if not ok:
             finish(entry, 'failed', f'rebase conflicts: {why}')
             continue
-        passed, output = gate(kept + [entry], f'single-{entry["id"]}')
+        passed, output = gate(kept + [entry], f'single-{entry["id"]}', boot_base=tip)
         if passed:
             kept.append(entry)
             last_gate_ok = True
@@ -189,6 +223,7 @@ def status():
     for p in sorted(done_dir.glob('*.json'), key=lambda p: p.stat().st_mtime)[-10:]:
         e = json.loads(p.read_text())
         print(f'{e["status"]:8} {e["label"]} {e["sha"][:8]}: {e["detail"][:150]}')
+    print(f'gate env: {env_file}' + ('' if env_file.exists() else ' (missing)'))
     if (state / 'runner.log').exists():
         print('runner log: ' + str(state / 'runner.log'))
 
@@ -204,6 +239,10 @@ def main():
     if args.status:
         status()
         return
+    try:
+        gate_env()  # every caller can become the runner: refuse to queue rather than fail every runtime batch later
+    except RuntimeError as error:
+        sys.exit(f'land: {error}')
     if git('status', '--porcelain', '--untracked-files=no', cwd=Path.cwd()).stdout.strip() and args.ref == 'HEAD':
         print('land: note, uncommitted changes are not landed (only the commits of HEAD)', flush=True)
     sha = git('rev-parse', '--verify', args.ref + '^{commit}', cwd=Path.cwd()).stdout.strip()
