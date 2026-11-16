@@ -9,7 +9,7 @@
 //           for the interface's click unless constants.pressSound is false.
 //           A hold (prop hold / data-hold) fills a <ui-ring> or the width of a [data-hold-fill] part; a
 //           release before it is full, and a tap on a disabled control without a reason, put the class
-//           "shake" on the part (or the component) for a moment.
+//           "shake" on the part (or the component) for a moment; that tap also reports `refused`.
 //   range   data-range="prop" on the track (props min, max, step)
 //   stick   data-stick="x|xy" on the travel area, data-knob on the knob; prop `floating`:
 //           the component's box is the zone, the travel area goes under the finger (atX, atY)
@@ -208,7 +208,15 @@ class PressBehavior final : public Behavior
             if (!reason.empty())
                 self.Host().Toast(reason, "info");
             else
-                Shake(self, part); // the reason stands next to the control: the control says "not now" by shaking
+            {
+                // No reason to show: the control says "not now" by shaking, and reports `refused` so the screen can
+                // point at what is missing (the root's id, or the part's data-action, as a tap would).
+                Shake(self, part);
+                if (part == &self)
+                    self.Emit("refused");
+                else if (const std::string verb = Attr(part, "data-action"); !verb.empty())
+                    self.Emit("refused", verb);
+            }
             return;
         }
         if (was_holding)

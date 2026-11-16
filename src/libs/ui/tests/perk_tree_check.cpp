@@ -294,6 +294,10 @@ static void CheckScreen(const std::string &directory)
     }
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null() && surface.sent.empty(), "a locked perk's hold learns nothing");
+    router.OnEvent({"perk-learn", "refused", ""});
+    Expect(surface.props["detail"]["requires"][0]["nudge"] == true && surface.props["detail"]["requires"][1]["nudge"] == false &&
+               surface.props["perkInfoNudge"] == false && surface.sent.empty(),
+           "a tap on the disabled «Изучить» makes the missing prerequisite pulse, not the met one");
     // «Требует» in the same group selects that perk.
     router.OnEvent({"perk-detail", "go", "ironwill"});
     Expect(surface.sent.empty() && Selected(surface.props) == "ironwill" && surface.props["detail"]["opens"].size() == 1 &&
@@ -355,6 +359,8 @@ static void CheckScreen(const std::string &directory)
         Expect(Node(poor_surface.props, "basicdefense")["state"] == "open" && Node(poor_surface.props, "trustworthy")["state"] == "locked" &&
                    poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.learn" && !poor_surface.props["detail"].contains("blocked"),
                "no free points: reachable perks stay open, the button is disabled");
+        poor_router.OnEvent({"perk-learn", "refused", ""});
+        Expect(poor_surface.props["perkInfoNudge"] == true && poor_surface.sent.empty(), "without free points a refused tap makes the points line pulse");
     }
     // Incomplete facts: shown, never learnable.
     auto incomplete = model;

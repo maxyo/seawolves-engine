@@ -95,6 +95,7 @@ constexpr NodeRule kNodes[] = {
     {"MSG_*", "text|button"},
 };
 
+constexpr double kNudgeSeconds = 0.8; // how long a refused «Изучить» makes what is missing pulse
 constexpr int kRevealMargin = 16;   // dp kept above and below a perk node scrolled into view
 constexpr double kStepTimeout = 3.0; // an intent whose step got no answer from the engine is dropped
 
@@ -356,6 +357,7 @@ class HeroScreen final : public Screen
     Intent intent_;
     std::string perk_;                  // the perk in the detail panel
     perk_tree::Cache perk_tree_;        // topology only; selection/state changes do not relayout
+    double nudge_until_ = 0.0;          // until then what keeps the selected perk from being learned pulses
     Json skill_help_ = nullptr;         // presentation-only stock skill description, never a game selection
     int wanted_ship_ = -1;              // the perk group the player asked for until the game shows it (0 personal, 1 ship)
     std::map<std::string, int> added_;  // points the player put into a skill during this visit
@@ -880,6 +882,7 @@ class HeroScreen final : public Screen
         const std::string progress =
             full && Number(rate) > 0 ? bindings.Text("hero.next_point") + " " + Thousands(exp.empty() ? "0" : exp) + " / " + Thousands(rate) : "";
         view["perksEmpty"] = bindings.Text("hero.no_perks");
+        view["perkInfoNudge"] = false;
         view["perkInfo"] = full ? bindings.Text("hero.free_points") + " " + std::to_string(std::max(free, 0)) + (progress.empty() ? "" : " · " + progress) : "";
         view["tree"] = nullptr;
         view["detail"] = nullptr;
@@ -970,7 +973,7 @@ class HeroScreen final : public Screen
             const bool other = ShipPerk(graph, id) != ship;
             targets[id] = {ShipPerk(graph, id), graph.rows.count(id) > 0};
             return Json{{"perk", id}, {"name", PerkName(graph, id)}, {"image", PerkPicture(graph, id, !Learned(graph, id))},
-                        {"met", met}, {"state", state(id)}, {"other", other}, {"groupIcon", other ? (ShipPerk(graph, id) ? "ship" : "hero") : ""}};
+                        {"met", met}, {"nudge", false}, {"state", state(id)}, {"other", other}, {"groupIcon", other ? (ShipPerk(graph, id) ? "ship" : "hero") : ""}};
         };
         // What is still missing first, then this tab's perks before the other group's; a row of the other group
         // carries that group's glyph, so it is never read as one of this tab.
@@ -1022,7 +1025,14 @@ class HeroScreen final : public Screen
                                    {"label", bindings.Text(learned ? "hero.learned" : "hero.learn")},
                                    {"disabled", !can_learn},
                                    {"busy", intent_.kind == Intent::Learn}};
-            bindings.On("perk-learn", "", [this, &bindings, can_learn, id = selected](const Event &) {
+            // A tap on the disabled button (it shakes, no caption): what is missing pulses for a moment, the missing
+            // prerequisites in the description or the free points over the tree.
+            bindings.On("perk-learn", "refused", [this, &bindings](const Event &) {
+                nudge_until_ = bindings.Now() + kNudgeSeconds;
+                bindings.Rebuild();
+                bindings.RebuildAfter(kNudgeSeconds + 0.05);
+            });
+            bindings.On("perk-learn", "click", [this, &bindings, can_learn, id = selected](const Event &) {
                 if (!can_learn || intent_.kind != Intent::None)
                     return;
                 Intent intent;
@@ -1038,6 +1048,12 @@ class HeroScreen final : public Screen
                 bindings.Rebuild();
             });
         }
+        // What a refused «Изучить» points at: the missing prerequisites (their icons), the free points (the line over
+        // the tree); only while the pulse runs, so a new refusal starts it again.
+        const bool nudge = full && !external && !learned && !can_learn && bindings.Now() < nudge_until_;
+        for (Json &row : detail["requires"])
+            row["nudge"] = nudge && !row["met"].get<bool>();
+        view["perkInfoNudge"] = nudge && free <= 0;
         view["detail"] = detail;
     }
 
