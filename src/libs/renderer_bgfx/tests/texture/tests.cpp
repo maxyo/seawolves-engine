@@ -662,6 +662,30 @@ void test_service(const fs::path &directory)
 }
 } // namespace
 
+// The alpha alone (the cut-out test of every loaded texture) is decode_rgba8's alpha, texel for texel: random levels
+// of every format, odd sizes (partial blocks) included (random endpoints: BC1 and BC3 blocks in both of their modes).
+void test_alpha_decode()
+{
+    uint32_t seed = 12345;
+    const auto random = [&seed] { return seed = seed * 1664525u + 1013904223u, uint8_t(seed >> 24); };
+    int mismatches = 0;
+    for (uint32_t format : {21u, 22u, 23u, 25u, 26u, 32u, 0x31545844u, 0x32545844u, 0x33545844u, 0x34545844u, 0x35545844u})
+        for (const auto [width, height] : {std::pair{64u, 64u}, std::pair{13u, 7u}, std::pair{1u, 1u}, std::pair{128u, 4u}})
+        {
+            std::vector<uint8_t> data(d3d_level_bytes(format, width, height));
+            for (uint8_t &b : data)
+                b = random();
+            std::vector<uint8_t> rgba(size_t(width) * height * 4), alpha(size_t(width) * height, 1);
+            CHECK(decode_rgba8(format, data.data(), width, height, rgba.data()));
+            CHECK(decode_alpha8(format, data.data(), width, height, alpha.data()));
+            for (size_t i = 0; i < alpha.size(); ++i)
+                mismatches += alpha[i] != rgba[i * 4 + 3];
+        }
+    CHECK(mismatches == 0);
+    uint8_t one = 0;
+    CHECK(!decode_alpha8(50, &one, 1, 1, &one));
+}
+
 int main()
 {
     const fs::path directory = fs::temp_directory_path() / ("storm_texture_tests_" + std::to_string(getpid()));
@@ -671,6 +695,7 @@ int main()
     test_eac();
     test_tx_formats();
     test_d3d_decode_exhaustive();
+    test_alpha_decode();
     test_hash();
     test_quality();
     test_cube();

@@ -2031,18 +2031,18 @@ void CheckLampShadows()
 // Materials whose texture alpha cuts holes (fx/cutout.hpp): the CPU passes cut what the colour pass's alpha test cuts.
 void CheckCutout()
 {
-    // A checkerboard of 8 x 8 squares, alpha 255 / 0, and an opaque image.
+    // The alpha of a checkerboard of 8 x 8 squares, 255 / 0, and of an opaque image.
     const int n = 64;
-    std::vector<uint8_t> checker(static_cast<size_t>(n) * n * 4, 255), solid(static_cast<size_t>(n) * n * 4, 255);
+    std::vector<uint8_t> checker(static_cast<size_t>(n) * n, 255), solid(static_cast<size_t>(n) * n, 255);
     for (int y = 0; y < n; ++y)
         for (int x = 0; x < n; ++x)
-            checker[(static_cast<size_t>(y) * n + x) * 4 + 3] = ((x / 8 + y / 8) & 1) ? 0 : 255;
+            checker[static_cast<size_t>(y) * n + x] = ((x / 8 + y / 8) & 1) ? 0 : 255;
     const float reference = 160.0f / 255.0f;
     AlphaMask mask, none;
-    CHECK(MakeAlphaMask(checker, n, n, reference, mask) && mask.width == n && mask.alpha.size() == static_cast<size_t>(n) * n);
-    CHECK(!MakeAlphaMask(solid, n, n, reference, none) && none.alpha.empty()); // no holes: no mask, the caster is whole
-    solid[3] = 0; // one transparent texel in 4096 is not a cut-out
-    CHECK(!MakeAlphaMask(solid, n, n, reference, none));
+    CHECK(MakeAlphaMask(std::vector<uint8_t>(checker), n, n, reference, mask) && mask.width == n && mask.alpha == checker);
+    CHECK(!MakeAlphaMask(std::vector<uint8_t>(solid), n, n, reference, none) && none.alpha.empty()); // no holes: whole
+    solid[0] = 0; // one transparent texel in 4096 is not a cut-out
+    CHECK(!MakeAlphaMask(std::move(solid), n, n, reference, none));
     CHECK(mask.At(0.06f, 0.06f) == 1.0f && mask.At(0.19f, 0.06f) == 0.0f && mask.At(1.06f, -0.94f) == 1.0f); // wraps
 }
 

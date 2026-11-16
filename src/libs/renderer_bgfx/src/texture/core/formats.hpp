@@ -96,6 +96,9 @@ void set_opaque(bimg::TextureFormat::Enum format, uint8_t *texels, size_t count)
 size_t d3d_level_bytes(uint32_t d3d, uint32_t width, uint32_t height);
 // One level as RGBA8 (R first), width x height texels, from `data` of d3d_level_bytes(). False for an unknown code.
 bool decode_rgba8(uint32_t d3d, const uint8_t *data, uint32_t width, uint32_t height, uint8_t *rgba);
+// Only the alpha of one level (width x height bytes), the same values as decode_rgba8's alpha, without decoding the
+// colours (the cut-out test of every loaded texture, effects/texture_pixels.hpp). False for an unknown code.
+bool decode_alpha8(uint32_t d3d, const uint8_t *data, uint32_t width, uint32_t height, uint8_t *alpha);
 
 // The formats a .tx file may hold (its header's TX_FORMAT), the subset of d3d_format() the game's files use.
 enum class TxFormat : uint32_t

@@ -24,8 +24,8 @@ struct AlphaMask
     float At(float u, float v) const;
 };
 
-// The mask of an RGBA8 image (R first), or nothing when its alpha cuts no holes: fewer than one texel in a hundred
-// at or below `reference` (0..1).
-bool MakeAlphaMask(std::span<const uint8_t> rgba, int width, int height, float reference, AlphaMask &mask);
+// The mask of an image's alpha (width * height bytes, row by row; texture::decode_alpha8), or nothing when it cuts no
+// holes: fewer than one texel in a hundred at or below `reference` (0..1). Takes the alpha only when it is a mask.
+bool MakeAlphaMask(std::vector<uint8_t> &&alpha, int width, int height, float reference, AlphaMask &mask);
 
 } // namespace storm::fx

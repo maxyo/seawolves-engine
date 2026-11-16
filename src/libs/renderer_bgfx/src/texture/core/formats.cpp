@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace storm::texture
 {
@@ -148,6 +149,90 @@ bool decode_rgba8(uint32_t d3d, const uint8_t *data, uint32_t width, uint32_t he
         bimg::imageDecodeToRgba8(&allocator, rgba, data, width, height, width * 4, format.format);
     if (format.opaque)
         set_opaque(bimg::TextureFormat::RGBA8, rgba, size_t(width) * height);
+    return true;
+}
+
+bool decode_alpha8(uint32_t d3d, const uint8_t *data, uint32_t width, uint32_t height, uint8_t *alpha)
+{
+    const D3dFormat format = d3d_format(d3d);
+    if (format.format == bimg::TextureFormat::Unknown || format.format == bimg::TextureFormat::RGBA32F)
+        return false;
+    const size_t texels = size_t(width) * height;
+    if (format.opaque || format.format == bimg::TextureFormat::B5G6R5)
+    {
+        std::fill_n(alpha, texels, uint8_t(255));
+        return true;
+    }
+    switch (format.format)
+    {
+    case bimg::TextureFormat::BGRA8:
+    case bimg::TextureFormat::RGBA8:
+        for (size_t i = 0; i < texels; ++i)
+            alpha[i] = data[i * 4 + 3];
+        return true;
+    case bimg::TextureFormat::BGRA4: // A in the top nibble
+        for (size_t i = 0; i < texels; ++i)
+            alpha[i] = uint8_t((read16(data + i * 2) >> 12) * 17);
+        return true;
+    case bimg::TextureFormat::BGR5A1: // A in the top bit
+        for (size_t i = 0; i < texels; ++i)
+            alpha[i] = read16(data + i * 2) & 0x8000u ? 255 : 0;
+        return true;
+    case bimg::TextureFormat::BC1:
+    case bimg::TextureFormat::BC2:
+    case bimg::TextureFormat::BC3:
+        break;
+    default:
+    {
+        // Not a format of the game's files: the whole decode, its alpha kept.
+        std::vector<uint8_t> rgba(texels * 4);
+        if (!decode_rgba8(d3d, data, width, height, rgba.data()))
+            return false;
+        for (size_t i = 0; i < texels; ++i)
+            alpha[i] = rgba[i * 4 + 3];
+        return true;
+    }
+    }
+    // The block formats, as bimg decodes them (image.cpp decodeBlockDxt1 / decodeBlockDxt23A / decodeBlockDxt45A).
+    const uint32_t bw = blocks_x(width), bh = blocks_x(height);
+    const size_t block_bytes = format.format == bimg::TextureFormat::BC1 ? 8 : 16;
+    uint8_t block[16];
+    for (uint32_t by = 0; by < bh; ++by)
+        for (uint32_t bx = 0; bx < bw; ++bx)
+        {
+            const uint8_t *src = data + (size_t(by) * bw + bx) * block_bytes;
+            if (format.format == bimg::TextureFormat::BC1)
+            {
+                const bool punch = read16(src) <= read16(src + 2);
+                const uint32_t indices = read32(src + 4);
+                for (int i = 0; i < 16; ++i)
+                    block[i] = punch && (indices >> (2 * i) & 3u) == 3u ? 0 : 255;
+            }
+            else if (format.format == bimg::TextureFormat::BC2)
+                for (int i = 0; i < 16; ++i)
+                    block[i] = uint8_t(((src[i >> 1] >> ((i & 1) * 4)) & 0xfu) * 17);
+            else
+            {
+                const uint32_t a0 = src[0], a1 = src[1];
+                uint8_t palette[8] = {uint8_t(a0), uint8_t(a1)};
+                if (a0 > a1)
+                    for (uint32_t k = 1; k < 7; ++k)
+                        palette[k + 1] = uint8_t(((7 - k) * a0 + k * a1) / 7);
+                else
+                {
+                    for (uint32_t k = 1; k < 5; ++k)
+                        palette[k + 1] = uint8_t(((5 - k) * a0 + k * a1) / 5);
+                    palette[6] = 0;
+                    palette[7] = 255;
+                }
+                const uint64_t indices = uint64_t(read16(src + 2)) | uint64_t(read32(src + 4)) << 16;
+                for (int i = 0; i < 16; ++i)
+                    block[i] = palette[(indices >> (3 * i)) & 7u];
+            }
+            for (uint32_t y = 0; y < 4 && by * 4 + y < height; ++y)
+                for (uint32_t x = 0; x < 4 && bx * 4 + x < width; ++x)
+                    alpha[size_t(by * 4 + y) * width + bx * 4 + x] = block[y * 4 + x];
+        }
     return true;
 }
 

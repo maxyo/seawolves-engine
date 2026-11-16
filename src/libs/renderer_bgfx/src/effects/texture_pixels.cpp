@@ -24,10 +24,11 @@ std::shared_ptr<const fx::AlphaMask> texture_cutout(shim::TexStore &store)
     if (data.empty())
         return nullptr;
     const uint32_t width = store.level_width(level), height = store.level_height(level);
-    std::vector<uint8_t> rgba(static_cast<size_t>(width) * height * 4);
-    texture::decode_rgba8(static_cast<uint32_t>(store.format), data.data(), width, height, rgba.data());
+    // The alpha only: decoding the colours too cost most of a town's texture loading on every preset.
+    std::vector<uint8_t> alpha(static_cast<size_t>(width) * height);
     fx::AlphaMask mask;
-    if (!fx::MakeAlphaMask(rgba, static_cast<int>(width), static_cast<int>(height), kGameAlphaReference, mask))
+    if (!texture::decode_alpha8(static_cast<uint32_t>(store.format), data.data(), width, height, alpha.data()) ||
+        !fx::MakeAlphaMask(std::move(alpha), static_cast<int>(width), static_cast<int>(height), kGameAlphaReference, mask))
         return nullptr;
     return std::make_shared<const fx::AlphaMask>(std::move(mask));
 }

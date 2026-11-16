@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace storm::fx
 {
@@ -17,21 +18,19 @@ float AlphaMask::At(float u, float v) const
     return static_cast<float>(alpha[static_cast<size_t>(wrap(v, height)) * width + wrap(u, width)]) / 255.0f;
 }
 
-bool MakeAlphaMask(std::span<const uint8_t> rgba, int width, int height, float reference, AlphaMask &mask)
+bool MakeAlphaMask(std::vector<uint8_t> &&alpha, int width, int height, float reference, AlphaMask &mask)
 {
     const size_t texels = static_cast<size_t>(width) * height;
-    if (texels == 0 || rgba.size() < texels * 4)
+    if (texels == 0 || alpha.size() != texels)
         return false;
     size_t holes = 0;
-    for (size_t i = 0; i < texels; ++i)
-        holes += static_cast<float>(rgba[i * 4 + 3]) <= reference * 255.0f ? 1 : 0;
+    for (const uint8_t a : alpha)
+        holes += static_cast<float>(a) <= reference * 255.0f ? 1 : 0;
     if (holes * 100 < texels)
         return false;
     mask.width = width;
     mask.height = height;
-    mask.alpha.resize(texels);
-    for (size_t i = 0; i < texels; ++i)
-        mask.alpha[i] = rgba[i * 4 + 3];
+    mask.alpha = std::move(alpha);
     return true;
 }
 

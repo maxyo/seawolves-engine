@@ -1317,11 +1317,11 @@ std::vector<UpscaleCandidate> UpscaleCandidates(const std::filesystem::path &tex
         const int level = tx.first;
         const uint32_t lw = std::max(1u, tx.width >> level), lh = std::max(1u, tx.height >> level);
         const std::span<const uint8_t> bytes = tx.Level(level);
-        std::vector<uint8_t> rgba(size_t(lw) * lh * 4);
+        std::vector<uint8_t> alpha(size_t(lw) * lh);
         fx::AlphaMask mask;
         const bool cutout = bytes.size() >= texture::d3d_level_bytes(tx.format, lw, lh) &&
-                            texture::decode_rgba8(tx.format, bytes.data(), lw, lh, rgba.data()) &&
-                            fx::MakeAlphaMask(rgba, static_cast<int>(lw), static_cast<int>(lh), 160.0f / 255.0f, mask);
+                            texture::decode_alpha8(tx.format, bytes.data(), lw, lh, alpha.data()) &&
+                            fx::MakeAlphaMask(std::move(alpha), static_cast<int>(lw), static_cast<int>(lh), 160.0f / 255.0f, mask);
         const fx::UpscaleTarget target = fx::ClassifyUpscale(name, relief, cutout);
         if (target != fx::UpscaleTarget::None && fx::UpscaleSize(static_cast<int>(tx.width), static_cast<int>(tx.height)))
             list.push_back({it->path(), name, target, static_cast<int>(tx.width), static_cast<int>(tx.height)});
