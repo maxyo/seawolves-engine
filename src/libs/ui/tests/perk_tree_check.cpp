@@ -292,9 +292,9 @@ static void CheckScreen(const std::string &directory)
                    detail["requires"][0]["groupIcon"] == "ship" && detail["requires"][1]["perk"] == "ironwill" &&
                    detail["requires"][1]["met"] == true && detail["requires"][1]["groupIcon"] == "",
                "missing requirements first; a row of the other group carries its glyph");
-        Expect(detail["lacking"] == "hero.lacking 1" && detail["learn"]["label"] == "items.unavailable" &&
-                   detail["learn"]["reason"] == "hero.learn_first advancedcommerce",
-               "a locked perk counts what is missing; its button says it is unavailable and why");
+        Expect(detail["blocked"] == "hero.learn_first advancedcommerce" && detail["learn"]["label"] == "items.unavailable" &&
+                   !detail["learn"].contains("reason"),
+               "a locked perk says what is missing right above its button, which says it is unavailable (no toast in the top bar)");
         Expect(surface.props["perkInfo"] == "hero.free_points 1 · hero.next_point 340 / 1\xC2\xA0" "000",
                "free points and the progress to the next one stay over the tree");
         bool focus_in = false, dim = false;
@@ -364,7 +364,7 @@ static void CheckScreen(const std::string &directory)
         poor_router.OnEvent({"header-tabs", "select", "perks1"});
         poor_router.OnEvent({"perks", "row", "basicdefense"});
         Expect(Node(poor_surface.props, "basicdefense")["state"] == "open" && Node(poor_surface.props, "trustworthy")["state"] == "locked" &&
-                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.no_points" && poor_surface.props["detail"]["lacking"] == "",
+                   poor_surface.props["detail"]["learn"]["disabled"] == true && poor_surface.props["detail"]["learn"]["label"] == "hero.no_points" && poor_surface.props["detail"]["blocked"] == "",
                "no free points: reachable perks stay open, the button and the panel say why it cannot be learned");
     }
     // Incomplete facts: shown, never learnable.

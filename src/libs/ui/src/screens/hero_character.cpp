@@ -919,7 +919,13 @@ class HeroScreen final : public Screen
             return;
         }
         const size_t builds = perk_tree_.Builds();
-        const perk_tree::Layout &layout = perk_tree_.Get(graph.ids, graph.edges);
+        std::vector<int> widths; // the longest word of each perk's name, as its node wraps it
+        for (const auto &id : graph.ids)
+        {
+            const auto words = perk_tree::LongestWords({BindShortWords(PerkName(graph, id))}, 1);
+            widths.push_back(words.empty() ? 0 : static_cast<int>(perk_tree::Letters(words.front())));
+        }
+        const perk_tree::Layout &layout = perk_tree_.Get(graph.ids, graph.edges, widths);
         const bool built = perk_tree_.Builds() != builds;
         if (!layout.valid)
         {
@@ -1001,7 +1007,9 @@ class HeroScreen final : public Screen
             for (const Json &node : nodes)
                 if (node["group"].get<std::string>().size() > group.size())
                     group = node["group"];
-            columns.push_back(Json{{"nodes", nodes}, {"lines", lines}, {"measure", perk_tree::LongestWords(names)}, {"measureGroup", group}});
+            const auto measure = perk_tree::LongestWords(names);
+            columns.push_back(Json{{"nodes", nodes}, {"lines", lines}, {"measure", measure}, {"measureGroup", group},
+                                   {"letters", measure.empty() ? 0 : static_cast<int>(perk_tree::Letters(measure.front()))}});
         }
         Json gutters = Json::array();
         for (const auto &gutter : layout.gutters)
@@ -1015,6 +1023,13 @@ class HeroScreen final : public Screen
                                       {"tone", line_class({arrow.edge}).starts_with("focus") ? "brass" : edge_met(arrow.edge) ? "green" : "dim"}});
             gutters.push_back(Json{{"width", gutter.width}, {"lines", lines}, {"arrows", arrows}});
         }
+        // Width left over goes mostly to the columns with short words: each column's flex-grow grows with how much
+        // shorter its longest word is than the longest of all (the narrow last tier no longer stays a sliver).
+        int longest = 1;
+        for (const Json &column : columns)
+            longest = std::max(longest, column["letters"].get<int>());
+        for (Json &column : columns)
+            column["grow"] = 1 + (longest - column["letters"].get<int>()) / 3;
         view["tree"] = Json{{"columns", columns}, {"gutters", gutters}, {"height", layout.height},
                             {"caption", layout.caption_top >= 0 ? bindings.Text("hero.perks_unlinked") : ""}, {"captionTop", layout.caption_top}};
         bindings.On("perks", "row", [this, &bindings, ids = graph.ids, rows = graph.rows](const Event &event) {
@@ -1046,17 +1061,13 @@ class HeroScreen final : public Screen
         };
         Json needs = Json::array(), opens = Json::array();
         std::string missing;
-        int lacking = 0;
         for (const Widget *edge : graph.incoming.count(selected) ? graph.incoming.at(selected) : std::vector<const Widget *>())
         {
             const std::string source = perk_tree::Id(Field(edge, "source"));
             const bool met = Field(edge, "met") == "1";
             needs.push_back(link(source, met));
             if (!met)
-            {
                 missing += (missing.empty() ? "" : ", ") + PerkName(graph, source);
-                ++lacking;
-            }
         }
         for (const Widget *edge : graph.outgoing.count(selected) ? graph.outgoing.at(selected) : std::vector<const Widget *>())
         {
@@ -1087,7 +1098,7 @@ class HeroScreen final : public Screen
                     {"image", PerkPicture(graph, selected, state(selected) != std::string("learned") && state(selected) != std::string("open"))},
                     {"group", external || ship_perk != ship ? GroupName(ship_perk) : ""},
                     {"groupIcon", ship_perk ? "ship" : "hero"},
-                    {"lacking", lacking > 0 ? bindings.Text("hero.lacking") + " " + std::to_string(lacking) : ""},
+                    {"blocked", !external && full && !learned && graph.complete && !missing.empty() ? reason : ""},
                     {"requires", grouped(needs)},
                     {"opens", grouped(opens)},
                     {"note", !external && Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : ""},
@@ -1103,13 +1114,14 @@ class HeroScreen final : public Screen
         }
         else if (full)
         {
-            // One line: what it costs and how many points are free, or why it cannot be learned.
+            // One line: what it costs and how many points are free, or why it cannot be learned. No tap reason:
+            // the label says it, and missing prerequisites stand in words right above the button (`blocked`),
+            // not in a toast in the top bar.
             detail["learn"] = Json{{"id", "perk-learn"},
                                    {"label", can_learn ? bindings.Text("hero.learn") + " · 1 (" + bindings.Text("hero.free_short") + " " +
                                                              std::to_string(free) + ")"
                                                        : refusal},
                                    {"disabled", !can_learn},
-                                   {"reason", reason},
                                    {"busy", intent_.kind == Intent::Learn}};
             // Learning is confirmed on a parchment card (the owner's exception to hold-to-confirm).
             bindings.On("perk-learn", "", [this, &bindings, can_learn](const Event &) {

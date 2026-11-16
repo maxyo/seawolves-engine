@@ -117,7 +117,9 @@ inline Line Vertical(int x, int y0, int y1, std::vector<int> edges)
     return Line{x, std::min(y0, y1) - Layout::thickness / 2, Layout::thickness, std::abs(y1 - y0) + Layout::thickness, false, std::move(edges)};
 }
 
-inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge> &edges)
+// `widths`: per perk (as `ids`) the letters of its longest word, which decide where perks without
+// links go in their rows (empty: the game's order).
+inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge> &edges, const std::vector<int> &widths)
 {
     Layout layout;
     const size_t n = ids.size();
@@ -258,10 +260,26 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
             layout.caption_top = y;
             y += Layout::caption;
         }
-        for (size_t k = 0; k < unlinked.size(); ++k)
+        // Row by row in the game's order; inside a row the longest word goes to the column that is already the
+        // widest, so packing them widens no narrow column (the columns share the width by their longest words).
+        const auto width = [&](int v) { return static_cast<size_t>(v) < widths.size() ? widths[v] : 0; };
+        std::vector<int> need(columns, 0);
+        for (size_t v = 0; v < n; ++v)
+            if (!parents[v].empty() || !children[v].empty())
+                need[tier[v]] = std::max(need[tier[v]], width(static_cast<int>(v)));
+        std::vector<int> by_need(columns);
+        for (int c = 0; c < columns; ++c)
+            by_need[c] = c;
+        std::stable_sort(by_need.begin(), by_need.end(), [&](int a, int b) { return need[a] > need[b]; });
+        for (size_t row_start = 0; row_start < unlinked.size(); row_start += columns)
         {
-            column[unlinked[k]] = static_cast<int>(k) % columns;
-            top[unlinked[k]] = y + static_cast<int>(k) / columns * Layout::pitch;
+            std::vector<int> row(unlinked.begin() + row_start, unlinked.begin() + std::min(unlinked.size(), row_start + columns));
+            std::stable_sort(row.begin(), row.end(), [&](int a, int b) { return width(a) > width(b); });
+            for (size_t k = 0; k < row.size(); ++k)
+            {
+                column[row[k]] = by_need[k];
+                top[row[k]] = y + static_cast<int>(row_start / columns) * Layout::pitch;
+            }
         }
         y += static_cast<int>((unlinked.size() + columns - 1) / columns) * Layout::pitch - (Layout::pitch - Layout::node_height);
     }
@@ -451,8 +469,8 @@ inline Layout Build(const std::vector<std::string> &ids, const std::vector<Edge>
 class Cache
 {
   public:
-    // `ids` in the game's order (the group's table, then the other group's prerequisites).
-    const Layout &Get(std::vector<std::string> ids, std::vector<Edge> edges)
+    // `ids` in the game's order (the group's table, then the other group's prerequisites); `widths` as Build.
+    const Layout &Get(std::vector<std::string> ids, std::vector<Edge> edges, std::vector<int> widths = {})
     {
         for (auto &id : ids)
             id = Id(std::move(id));
@@ -463,13 +481,14 @@ class Cache
         }
         std::sort(edges.begin(), edges.end());
         edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
-        if (initialized_ && ids == ids_ && edges == edges_)
+        if (initialized_ && ids == ids_ && edges == edges_ && widths == widths_)
             return layout_;
         initialized_ = true;
         ids_ = std::move(ids);
         edges_ = std::move(edges);
+        widths_ = std::move(widths);
         ++builds_;
-        layout_ = detail::Build(ids_, edges_);
+        layout_ = detail::Build(ids_, edges_, widths_);
         return layout_;
     }
     size_t Builds() const
@@ -482,6 +501,7 @@ class Cache
     size_t builds_ = 0;
     std::vector<std::string> ids_;
     std::vector<Edge> edges_;
+    std::vector<int> widths_;
     Layout layout_;
 };
 
@@ -494,17 +514,21 @@ inline bool CanLearn(bool local, bool full, bool learned, int points, const std:
            std::all_of(requirements.begin(), requirements.end(), [](bool met) { return met; });
 }
 
+// Letters (UTF-8 code points) of a word.
+inline size_t Letters(const std::string &word)
+{
+    size_t n = 0;
+    for (unsigned char c : word)
+        n += (c & 0xC0) != 0x80;
+    return n;
+}
+
 // The longest words of a column's names (by letters; names with their short words bound by a no-break
 // space, as ui-clamp wraps them): the page sizes each column so that its longest word fits on one
 // line at the smallest type size.
 inline std::vector<std::string> LongestWords(const std::vector<std::string> &names, size_t count = 3)
 {
-    const auto letters = [](const std::string &word) {
-        size_t n = 0;
-        for (unsigned char c : word)
-            n += (c & 0xC0) != 0x80;
-        return n;
-    };
+    const auto letters = Letters;
     std::set<std::string> distinct;
     for (const auto &name : names)
         for (size_t at = 0; at <= name.size();)

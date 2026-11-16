@@ -2085,7 +2085,7 @@ static void Hero(const std::string &models)
     router.OnEvent({"perks", "row", "criticalhit"});
     Expect(surface.commands.empty() && surface.props["detail"]["learn"]["disabled"] == true &&
                surface.props["detail"]["requires"].size() == 1 && surface.props["detail"]["requires"][0]["name"] == "Basic defense" &&
-               surface.props["detail"]["lacking"] == "<hero.lacking> 1" && surface.props["detail"]["learn"]["reason"] == "<hero.learn_first> Basic defense",
+               surface.props["detail"]["blocked"] == "<hero.learn_first> Basic defense",
            "the locked perk's detail names what it needs, in words");
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null(), "a perk that cannot be learned opens no card");
