@@ -5,6 +5,9 @@
 .idea
 *.user
 
+# Local agent instructions (each checkout keeps its own copy, never committed).
+/AGENTS.md
+
 # Local development audits, migration notes and diagnostic evidence.
 /docs/android-*.md
 /docs/*-migration.md
