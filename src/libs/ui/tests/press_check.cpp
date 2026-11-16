@@ -872,7 +872,7 @@ int main(int argc, char **argv)
     // the finger has none. The template places the knob at the value; the behaviour moves it on
     // to the finger with a transform and takes that away on release.
     // The live slider: the drag moves change its number and knob without a render; the middle
-    // (its shape) renders once; the update stays far under half a millisecond.
+    // (its shape) renders once; each move does a counted, small amount of work.
     Expect(host->LoadDocument("live-slide.rml"), "the live slider loads");
     frames(0.1);
     {
@@ -888,21 +888,35 @@ int main(int argc, char **argv)
         frames(1.0 / 60.0);
         int renders = 0, refreshed = 0;
         double worst = 0.0;
+        int moves = 0, touched = 0, fallbacks = 0, most_laid_out = 0, most_passes = 0, most_geometry = 0;
         for (float x = 150; x <= 300; x += 10) // values 12 … 50: below the middle
         {
             host->Touch(TouchPhase::Move, 1, x, 120, clock);
             clock += 1.0 / 60.0;
             host->Frame();
             const FrameStats moved = host->LastFrameStats();
+            ++moves;
             renders += moved.rebuilds;
             refreshed += moved.refreshed;
+            touched += moved.touched;
+            fallbacks += moved.patch_fallbacks;
+            most_laid_out = std::max(most_laid_out, moved.laid_out);
+            most_passes = std::max(most_passes, moved.layout_passes);
+            most_geometry = std::max(most_geometry, moved.geometry);
             worst = std::max(worst, moved.update_ms);
         }
         Rml::Element *num = find("live-num");
         Expect(renders == 0 && refreshed >= 10, "a drag below the middle renders the control " + std::to_string(renders) + " times (" +
                                                     std::to_string(refreshed) + " live refreshes)");
         Expect(num && num->GetInnerRML() == "50", "the number follows the finger: " + (num ? std::string(num->GetInnerRML()) : std::string("none")));
-        Expect(worst < 0.5, "a drag move's update is under 0.5 ms (worst " + std::to_string(worst) + " ms)");
+        // The cost of a move is counted, not timed (a loaded machine stretches milliseconds, not work): two live
+        // elements changed (the number and the knob), no morph, one box pair laid out in one pass, one mesh.
+        Expect(touched <= 2 * moves && fallbacks == 0 && most_laid_out <= 2 && most_passes <= 1 && most_geometry <= 1,
+               "a drag move changes the number and the knob only: " + std::to_string(touched) + " elements changed in " +
+                   std::to_string(moves) + " moves, " + std::to_string(fallbacks) + " morphs, at most " +
+                   std::to_string(most_laid_out) + " boxes in " + std::to_string(most_passes) + " layout passes, " +
+                   std::to_string(most_geometry) + " meshes per move");
+        std::printf("a drag move's update: worst %.3f ms (reported, not checked)\n", worst);
         host->Touch(TouchPhase::Move, 1, 340, 120, clock); // 60: above the middle
         clock += 1.0 / 60.0;
         host->Frame();
