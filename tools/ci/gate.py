@@ -37,6 +37,7 @@ import time
 root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(root / 'tools/ci'))
 import affected  # noqa: E402
+import check_tmp  # noqa: E402
 
 # The workspace holds local-testing/ and storm-engine-android/: the worktree's parent, or further up for a worktree
 # inside local-testing (as tools/ci/boot_stage.py).
@@ -75,13 +76,16 @@ def xvfb():
 
 def stage_ui_host():
     build = root / 'build/ui-host'
+    tmp = build / 'tmp'  # the stage's TMPDIR (tools/ci/check_tmp.py)
     commands = []
     if not (build / 'CMakeCache.txt').exists():
         commands.append(['cmake', '-S', root / 'src/libs/ui', '-B', build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release'])
     commands += [[root / 'tools/ccache/warmth', 'begin', build], ['cmake', '--build', build],
                  [root / 'tools/ccache/warmth', 'end', build],
                  [*xvfb(), 'ctest', '--test-dir', build, '-j8', '--output-on-failure']]
-    return run_logged('ui_host', commands)
+    passed = run_logged('ui_host', commands, check_tmp.prepare(tmp))
+    check_tmp.finish(tmp, passed)
+    return passed
 
 
 def stage_host_checks(names, jobs):
@@ -164,7 +168,9 @@ def run_game_check(name, game, compiler):
             f'{previous["when"]} ({previous["seconds"]:.0f} s); key {key[:16]}\n{previous["tail"]}\n')
     partial = game_deps / f'{name}.txt.partial'
     partial.unlink(missing_ok=True)
-    env = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'), STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'),
+    tmp = root / 'build/game-checks/tmp' / name
+    env = check_tmp.prepare(tmp)
+    env.update(CXX=str(root / 'tools/ccache/cxx'), STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'),
                STORM_CXX_DEPS=str(partial))
     done = subprocess.run([sys.executable, root / f'tools/game_checks/{name}/run.py', game_dir], cwd=root, env=env,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
@@ -179,6 +185,7 @@ def run_game_check(name, game, compiler):
     else:
         record.unlink(missing_ok=True)
     partial.unlink(missing_ok=True)
+    check_tmp.finish(tmp, done.returncode == 0)
     return done.returncode == 0, False, seconds, done.stdout
 
 

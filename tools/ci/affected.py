@@ -9,8 +9,8 @@ build it leaves out is reported with the reason.
 Rules (README.md here):
 - Markdown files (*.md) are documentation: they affect nothing.
 - The compiler launchers (tools/ccache) and tests/<file> select everything. The host check runner and what it
-  fetches for every check (tools/ci/run_host_tests.py, cmake/glm.cmake, tools/android/engine_sources.py,
-  tools/android/ci_dependencies.sh) select every host check. .github/ (the GitHub workflows) selects nothing
+  fetches for every check (tools/ci/run_host_tests.py, tools/ci/check_tmp.py, cmake/glm.cmake,
+  tools/android/engine_sources.py, tools/android/ci_dependencies.sh) select every host check. .github/ (the GitHub workflows) selects nothing
   here. The rest of tools/ci, cmake/ and the top-level CMakeLists.txt are files like any other: the checks
   that name them, the build graphs that read them (CMake configure inputs), the boot stage for its own tools.
 - A host check that is a CMake project and has been built in --work is decided by its build graph: it
@@ -49,8 +49,9 @@ import sys
 
 root = Path(__file__).resolve().parents[2]
 EVERYTHING = ('tools/ccache/',)
-# Read by tools/ci/run_host_tests.py for every check (the runner itself, the pinned sources and GLM it fetches).
-ALL_HOST_CHECKS = ('tools/ci/run_host_tests.py', 'cmake/glm.cmake', 'tools/android/engine_sources.py',
+# Read by tools/ci/run_host_tests.py for every check (the runner itself, its TMPDIR helper, the pinned sources and GLM
+# it fetches).
+ALL_HOST_CHECKS = ('tools/ci/run_host_tests.py', 'tools/ci/check_tmp.py', 'cmake/glm.cmake', 'tools/android/engine_sources.py',
                    'tools/android/ci_dependencies.sh')
 # The GitHub workflows: run by GitHub after the push, read by nothing here.
 NOT_LOCAL = ('.github/',)

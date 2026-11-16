@@ -13,6 +13,9 @@ any check failed. CI runs it on pushes and pull requests to develop.
 prints every check it leaves out with the reason. Checks start longest first (the times of the last
 run, <work>/durations.json), so the slowest one does not start last.
 
+Each check runs with its own TMPDIR, <work>/tmp/<name> (tools/ci/check_tmp.py): emptied before the check and
+removed after a pass, so no check leaves files in /tmp.
+
 The SDL input check needs a display: run under xvfb-run when headless.
 """
 import argparse
@@ -29,6 +32,9 @@ import time
 import urllib.request
 
 root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(root / 'tools/ci'))
+import check_tmp  # noqa: E402
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--work', type=Path, default=root / 'build/host-ci')
 parser.add_argument('--only', nargs='*', help='run only these test directory names')
@@ -86,7 +92,6 @@ if args.only is not None:
         sys.exit('--only names no such check (tests/<name>/run.py): ' + ', '.join(unknown))
     checks = [path for path in checks if path.parent.name in args.only]
 if args.changed_since:
-    sys.path.insert(0, str(root / 'tools/ci'))
     import affected
     plan = affected.host_checks(affected.changed_files(args.changed_since), work)
     for name, (selected, why) in plan.items():
@@ -122,8 +127,7 @@ def command_for(script):
 
 # Checks that run the compiler themselves compile through the Storm ccache launcher
 # (tools/ccache/cxx); CMake-based checks get it from cmake/StormBuildCache.cmake.
-direct_environment = dict(os.environ, CXX=str(root / 'tools/ccache/cxx'),
-                          STORM_CCACHE_CXX=os.environ.get('CXX', 'c++'))
+direct_compiler = {'CXX': str(root / 'tools/ccache/cxx'), 'STORM_CCACHE_CXX': os.environ.get('CXX', 'c++')}
 
 
 deps_dir = work / 'deps'
@@ -133,11 +137,13 @@ def run(script):
     """(name, exit code, output, seconds). Never raises: whatever stops a check is that check's FAIL.
 
     A check that runs the compiler itself records what its compiles read (tools/ccache/cxx STORM_CXX_DEPS) in
-    <work>/deps/<name>.txt when it passes; tools/ci/affected.py selects it by that list. A failed run leaves none."""
+    <work>/deps/<name>.txt when it passes; tools/ci/affected.py selects it by that list. A failed run leaves none.
+    Its TMPDIR is <work>/tmp/<name> (tools/ci/check_tmp.py): emptied before, removed after a pass."""
     name = script.parent.name
     started = time.monotonic()
     deps = deps_dir / f'{name}.txt'
     partial = deps_dir / f'{name}.txt.partial'
+    tmp = work / 'tmp' / name
     try:
         deps.unlink(missing_ok=True)
         partial.unlink(missing_ok=True)
@@ -145,15 +151,16 @@ def run(script):
         if problem:
             returncode, output = 1, problem + '\n'
         else:
-            environment = None
+            environment = check_tmp.prepare(tmp)
             if not (script.parent / 'CMakeLists.txt').exists():
-                environment = dict(direct_environment, STORM_CXX_DEPS=str(partial))
+                environment.update(direct_compiler, STORM_CXX_DEPS=str(partial))
             result = subprocess.run(command, cwd=root, env=environment,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             returncode, output = result.returncode, result.stdout
         if returncode == 0 and partial.exists():
             deps.write_text(''.join(f'{line}\n' for line in sorted(set(partial.read_text().splitlines()))))
         partial.unlink(missing_ok=True)
+        check_tmp.finish(tmp, returncode == 0)
     except Exception as error:  # reported as this check's FAIL; the other checks keep running
         returncode, output = 1, f'{script.relative_to(root)}: the runner could not run it: {error!r}\n'
     return name, returncode, output, time.monotonic() - started

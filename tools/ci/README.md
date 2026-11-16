@@ -34,6 +34,11 @@ It plans from `git diff origin/develop...HEAD` and prints one line per stage, `R
 - **android**: `build/android-engine`, arm64 Release (LTO) `engine`, SDK/NDK from `$STORM_CI_WORK`;
 - **boot** (`--boot auto|on|off`, off by default locally; the land queue uses auto): `boot_stage.py`, below.
 
+Temporary files: every host check, game check and the ui_host stage runs with its own `TMPDIR` in the build tree
+(`build/host-ci/tmp/<name>`, `build/game-checks/tmp/<name>`, `build/ui-host/tmp`; `check_tmp.py`), emptied before the
+run and removed after a pass. A failed or killed check's files stay there for diagnosis until it runs again; nothing
+the checks make lands in `/tmp`.
+
 ## The engine boot stage (`boot_stage.py`)
 
 The host checks replace the engine's seams (script VM, entity lifetimes, renderer, techniques, save loader) with
@@ -58,7 +63,7 @@ build, sweep and total time), the sweep's report in `build/gate/boot/`.
 Rules of `affected.py` (also in its docstring):
 
 - `*.md` affects nothing; `.github/` (run by GitHub after the push) affects nothing here. `tools/ccache/` and
-  `tests/<file>` affect everything; `tools/ci/run_host_tests.py` and what it fetches for every check
+  `tests/<file>` affect everything; `tools/ci/run_host_tests.py`, `tools/ci/check_tmp.py` and what it fetches for every check
   (`cmake/glm.cmake`, `tools/android/engine_sources.py`, `tools/android/ci_dependencies.sh`) every host check.
   The rest of `tools/ci/` (the checks naming it: `tests/ci_*`), `cmake/` and the top-level `CMakeLists.txt` (the
   builds that read them as configure inputs) are files like any other.
