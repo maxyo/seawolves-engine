@@ -366,7 +366,10 @@ static void Settings(const std::string &models)
     Expect(controls.size() == 2 && controls[0]["title"] == "<settings.camera>" && controls[1]["title"] == "<settings.screen_touch>",
            "controls page: the camera, the screen and touch");
     const Json screen = controls[1]["rows"];
-    Expect(screen.size() == 3 && screen[2]["id"] == "app-left_handed" && screen[2]["kind"] == "toggle" && screen[2]["on"] == false &&
+    Expect(screen.size() == 4 && screen[3]["id"] == "app-haptics" && screen[3]["kind"] == "toggle" && screen[3]["on"] == true &&
+               screen[3]["label"] == "<settings.haptics>",
+           "«Вибрация» as a toggle, on: " + screen.dump());
+    Expect(screen[2]["id"] == "app-left_handed" && screen[2]["kind"] == "toggle" && screen[2]["on"] == false &&
                screen[2]["label"] == "<settings.left_handed>",
            "«Под левую руку» as a toggle: " + screen.dump());
     Expect(screen[0]["id"] == "app-ui_scale" && screen[0]["selected"] == 0 && screen[0]["restart"] == false && screen[0]["disabled"] == false &&
@@ -458,7 +461,7 @@ static void Settings(const std::string &models)
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
-                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"hud_transparency\":60,\"left_handed\":1,\"pirate_frequency\":100,\"texture_quality\":2,\"ui_scale\":115}" &&
+                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"haptics\":1,\"hud_transparency\":60,\"left_handed\":1,\"pirate_frequency\":100,\"texture_quality\":2,\"ui_scale\":115}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the app options to the host and confirms the game's settings; the measured-preset flag "
            "fx_preset_auto and the measured scene height fx_auto_render_height stay with the host");

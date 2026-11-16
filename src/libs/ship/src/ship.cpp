@@ -1,5 +1,6 @@
 #include "loading_transaction.hpp"
 #include "ship.h"
+#include <platform/android_haptics.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -1990,6 +1991,9 @@ float SHIP::Cannon_Trace(int32_t iBallOwner, const glm::vec3 &vSrc, const glm::v
             }
         core.Event(SHIP_HULL_HIT, "illffflf", GetId(), iBallOwner, iOurIndex, vTemp.x, vTemp.y, vTemp.z, iBestIndex,
                    fMinDistance);
+        // «Вибрация»: a ball in the player's own hull (the script's nMainCharacterIndex names the hero)
+        if (auto *hero = static_cast<VDATA *>(core.GetScriptVariable("nMainCharacterIndex")); hero && hero->GetInt() == iOurIndex)
+            storm::android::haptic(storm::android::Haptic::Hit);
         core.Send_Message(blots_id, "lffffff", MSG_BLOTS_HIT, vTemp.x, vTemp.y, vTemp.z, vDir.x, vDir.y, vDir.z);
     }
     return fRes;

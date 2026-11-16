@@ -9,6 +9,7 @@
 //============================================================================================
 
 #include "player.h"
+#include <platform/android_haptics.hpp>
 #include "storm/render/effects.hpp"
 
 #include "location.h"
@@ -1091,4 +1092,10 @@ float Player::GetRotateH()
             dx -= 12.0f;
     }
     return dx;
+}
+
+void Player::HitChild(bool isInBlock)
+{
+    NPCharacter::HitChild(isInBlock);
+    storm::android::haptic(isInBlock ? storm::android::Haptic::Block : storm::android::Haptic::Hit);
 }

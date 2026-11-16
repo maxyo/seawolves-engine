@@ -205,6 +205,7 @@ class SettingsScreen final : public Screen
                     std::vector<int>(std::begin(storm::android::kHudTransparencies), std::end(storm::android::kHudTransparencies)),
                     transparencies, false);
             Toggle(bindings, screen, "left_handed", "settings.left_handed"); // the HUD mirrored left to right
+            Toggle(bindings, screen, "haptics", "settings.haptics"); // «Вибрация»: hits, broadsides, boarding (android_haptics.hpp)
             sections.push_back({"", {camera, screen}});
         }
         else if (tab_ == 2)

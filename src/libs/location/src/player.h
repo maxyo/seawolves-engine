@@ -29,6 +29,8 @@ class Player : public NPCharacter
 
     // Move the character to the desired position
     void Move(float dltTime) override;
+    // A blow that reached the hero (or his block): «Вибрация» (platform/android_haptics.hpp).
+    void HitChild(bool isInBlock) override;
     void Update(float dltTime) override;
 
     // Save parameters

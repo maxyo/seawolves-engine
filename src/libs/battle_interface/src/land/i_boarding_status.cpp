@@ -2,6 +2,7 @@
 #include <platform/android_hud_presenter.hpp>
 #endif
 #include "i_boarding_status.h"
+#include <platform/android_haptics.hpp>
 #include "entity.h"
 #include "core.h"
 #include "message.h"
@@ -23,7 +24,8 @@ bool IBoardingStatus::Init()
     {
         throw std::runtime_error("Can`t create render service");
     }
-
+    // The boarding fight's status bars come with the fight: «Вибрация» says it begins.
+    storm::android::haptic(storm::android::Haptic::Boarding);
     return true;
 }
 

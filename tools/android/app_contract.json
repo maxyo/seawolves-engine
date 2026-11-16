@@ -59,7 +59,7 @@
     "launcher": ["launcher"]
   },
   "settings": {
-    "keys": ["fx_preset", "texture_quality", "frame_rate", "pirate_frequency", "ui_scale", "hud_transparency", "left_handed"],
+    "keys": ["fx_preset", "texture_quality", "frame_rate", "pirate_frequency", "ui_scale", "hud_transparency", "left_handed", "haptics"],
     "host_facts": ["cache_bytes", "cache_clear_pending", "frame_rate_options", "fx_auto_render_height", "fx_preset_auto", "ui_scale_options"],
     "debug": {
       "fx_msaa": [-1, 1, 2, 4],
@@ -136,6 +136,7 @@
       ["GameActivity", "getCacheRoot", "()Ljava/lang/String;"],
       ["GameActivity", "getGameDataDirectory", "()Ljava/lang/String;"],
       ["GameActivity", "getGraphicsSetting", "(Ljava/lang/String;I)I"],
+      ["GameActivity", "onHaptic", "(Ljava/lang/String;)V"],
       ["GameActivity", "onLocationReadiness", "(Ljava/lang/String;)V"],
       ["GameActivity", "onUiAction", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V"],
       ["GameActivity", "onUiHudInput", "(Ljava/lang/String;Ljava/lang/String;)V"],

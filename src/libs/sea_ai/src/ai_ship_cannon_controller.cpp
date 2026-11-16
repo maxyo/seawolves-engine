@@ -3,6 +3,7 @@
 #include "ai_balls.h"
 #include "ai_ship.h"
 #include "fire_side.hpp"
+#include <platform/android_haptics.hpp>
 #include "math_inlines.h"
 
 float AIShipCannonController::fMaxCannonDamageDistance = 1.0f;
@@ -50,6 +51,8 @@ bool AIShipCannonController::Fire2Position(AISHIP_BORT &bort, const glm::vec3 &v
         }
     }
     bort.ClearCharge(); // FIX-ME
+    if (GetAIShip()->isMainCharacter())
+        storm::android::haptic(storm::android::Haptic::Broadside); // «Вибрация»: the player's side fired
 
     return true;
 }
