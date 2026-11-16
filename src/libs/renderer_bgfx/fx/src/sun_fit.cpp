@@ -223,9 +223,13 @@ struct Candidate
     float az, el;
 };
 
-// The best of `candidates`, rated on `threads` threads.
-std::pair<SunFit, Candidate> Best(const Occluders &occluders, std::span<const SunFitSample> samples, float reach,
-                                  const std::vector<Candidate> &candidates, unsigned threads)
+constexpr size_t kCoarseStride = 4;       // the coarse ranking's samples: every 4th
+constexpr size_t kCoarseMinSamples = 100; // ... when that leaves at least this many
+constexpr size_t kCoarseKept = 8;         // the coarse directions rated on all samples
+
+// Every one of `candidates` rated on `threads` threads.
+std::vector<SunFit> RateAll(const Occluders &occluders, std::span<const SunFitSample> samples, float reach,
+                            const std::vector<Candidate> &candidates, unsigned threads)
 {
     std::vector<SunFit> rated(candidates.size());
     ParallelRanges(
@@ -235,7 +239,14 @@ std::pair<SunFit, Candidate> Best(const Occluders &occluders, std::span<const Su
                 rated[i] = Rate(occluders, samples, Direction(candidates[i].az, candidates[i].el), reach);
         },
         1);
-    // The first of the best (as one thread would find it).
+    return rated;
+}
+
+// The best of `candidates`: the first of the best, as one thread would find it.
+std::pair<SunFit, Candidate> Best(const Occluders &occluders, std::span<const SunFitSample> samples, float reach,
+                                  const std::vector<Candidate> &candidates, unsigned threads)
+{
+    const std::vector<SunFit> rated = RateAll(occluders, samples, reach, candidates, threads);
     std::pair<SunFit, Candidate> best{SunFit{}, Candidate{0.0f, 45.0f}};
     for (size_t i = 0; i < candidates.size(); ++i)
         if (rated[i].r > best.first.r)
@@ -266,6 +277,27 @@ SunFit FitBakedSun(const Occluders &occluders, std::span<const SunFitSample> all
     for (float el = 8.0f; el <= 86.0f; el += 6.0f)
         for (float az = 0.0f; az < 360.0f; az += 8.0f)
             coarse.push_back({az, el});
+    // The coarse directions are ranked on every kCoarseStride-th sample (most of the fit's rays went there) and only
+    // the kCoarseKept best are rated on all of them: the coarse best is the same as rating all on all samples
+    // (the 30 towns of TEHO that bake a town light, 2026-11-16) with 0.45 instead of 1.08 million rays in a town.
+    if (samples.size() >= kCoarseStride * kCoarseMinSamples)
+    {
+        std::vector<SunFitSample> spread;
+        for (size_t i = 0; i < samples.size(); i += kCoarseStride)
+            spread.push_back(samples[i]);
+        const std::vector<SunFit> rough = RateAll(occluders, spread, reach, coarse, threads);
+        std::vector<size_t> order(coarse.size());
+        for (size_t i = 0; i < order.size(); ++i)
+            order[i] = i;
+        std::partial_sort(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(kCoarseKept), order.end(),
+                          [&](size_t a, size_t b) { return rough[a].r > rough[b].r || (rough[a].r == rough[b].r && a < b); });
+        order.resize(kCoarseKept);
+        std::sort(order.begin(), order.end()); // in the coarse order: Best keeps the first of equals
+        std::vector<Candidate> kept;
+        for (const size_t i : order)
+            kept.push_back(coarse[i]);
+        coarse.swap(kept);
+    }
     const auto [first, at] = Best(occluders, samples, reach, coarse, threads);
     std::vector<Candidate> fine;
     for (float el = at.el - 5.0f; el <= at.el + 5.0f; el += 1.0f)

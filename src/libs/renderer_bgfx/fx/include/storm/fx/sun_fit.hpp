@@ -91,7 +91,7 @@ struct SunFit
 inline constexpr float kSunFitMinR = 0.3f;
 
 // `samples`: about a thousand spread over the lightmapped ground (more add little); `reach` in metres; the candidate
-// directions are shared out over `threads`. FortFrance_town (114k triangles, 1000 samples): 1.2 s on one desktop core.
+// directions are shared out over `threads`. A town (1500 samples): about 0.45 million rays.
 SunFit FitBakedSun(const Occluders &occluders, std::span<const SunFitSample> samples, float reach = 200.0f,
                    unsigned threads = 1);
 
