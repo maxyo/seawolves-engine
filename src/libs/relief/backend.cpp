@@ -6,8 +6,8 @@
 #include "storm/fx/gpu_crash_guard.hpp"
 
 #include <gpu.h>
+#include <datareader.h>
 #include <net.h>
-#include <onnxruntime_c_api.h>
 
 #include <algorithm>
 #include <atomic>
@@ -34,13 +34,14 @@ double Ms(Clock::time_point since)
     return std::chrono::duration<double, std::milli>(Clock::now() - since).count();
 }
 
-bool OrtOk(const OrtApi *api, OrtStatus *status, std::string &error)
+// Loads an ncnn graph: the param text (copied: ncnn reads it up to its end) and the weights through a reader bounded by
+// their size (a short or damaged file fails instead of reading past it; the weights must be consumed to the byte).
+bool LoadGraph(ncnn::Net &net, std::string &param_text, std::span<const uint8_t> param, std::span<const uint8_t> bin)
 {
-    if (!status)
-        return true;
-    error = std::string("onnxruntime: ") + api->GetErrorMessage(status);
-    api->ReleaseStatus(status);
-    return false;
+    param_text.assign(reinterpret_cast<const char *>(param.data()), param.size());
+    const unsigned char *weights = bin.data();
+    const ncnn::DataReaderFromMemory reader(weights, bin.size());
+    return net.load_param_mem(param_text.c_str()) == 0 && net.load_model(reader) == 0 && weights == bin.data() + bin.size();
 }
 
 // Runs `image` (planar, width x height, the outer `halo` texels its padding) in tiles of `tile` inner texels (0 or a
@@ -104,13 +105,12 @@ bool RunTiles(const float *image, int width, int height, float *planes, int halo
     return true;
 }
 
-// Bound activations on every device, independently of physical RAM: ORT's arena is shared with the other models
-// and its largest contiguous available block can be much smaller than the device's free RAM.
+// Bound activations on every device, independently of physical RAM: a single convolution's activations at a whole
+// 560-texel image are hundreds of MB, more than a phone may have free.
 struct CpuLimits
 {
     double ram_gb = 0.0;
-    int tile = 0;     // inner texels of a tile; 0: the whole image at once
-    size_t arena = 0; // bytes
+    int tile = 0; // inner texels of a tile; 0: the whole image at once
 };
 
 const CpuLimits &Limits()
@@ -120,55 +120,33 @@ const CpuLimits &Limits()
         const long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGE_SIZE);
         l.ram_gb = pages > 0 && page > 0 ? static_cast<double>(pages) * static_cast<double>(page) / 1073741824.0 : 0.0;
         l.tile = DefaultCpuTile(l.ram_gb);
-        if (l.ram_gb <= 4.5)
-        {
-            l.arena = size_t{384} << 20;
-        }
-        else if (l.ram_gb <= 8.5)
-        {
-            l.arena = size_t{768} << 20;
-        }
-        else
-        {
-            l.arena = size_t{1536} << 20;
-        }
         return l;
     }();
     return limits;
 }
 
-// One int8 model in onnxruntime's CPU provider (MLAS kernels, NEON dot products on arm64). Its XNNPACK provider was
-// measured slower on a Galaxy S23 (1600 ms against 861 ms at 560², 4 threads); NNAPI is deprecated.
+// One ncnn graph on the CPU (the same fp16-weight graph the GPU runs; ncnn's NEON / fp16 kernels on arm64), its
+// threads ncnn's simpleomp pool (cmake/ncnn.cmake: waiting threads sleep). The image runs in tiles of `tile` inner
+// texels (CpuLimits), so a Cancel stops between tiles.
 class CpuNetwork final : public Network
 {
   public:
-    CpuNetwork(const OrtApi *api, std::string describe, int halo, int scale, int tile)
-        : api_(api), describe_(std::move(describe)), halo_(halo), scale_(scale), tile_(tile)
+    CpuNetwork(std::string describe, int threads, int halo, int scale, int tile)
+        : describe_(std::move(describe)), halo_(halo), scale_(scale), tile_(tile)
     {
-    }
-    ~CpuNetwork() override
-    {
-        if (session_)
-            api_->ReleaseSession(session_);
-        if (run_)
-            api_->ReleaseRunOptions(run_);
-        if (options_)
-            api_->ReleaseSessionOptions(options_);
-        if (memory_)
-            api_->ReleaseMemoryInfo(memory_);
+        net_.opt.use_vulkan_compute = false;
+        net_.opt.num_threads = threads;
+        net_.opt.lightmode = true; // intermediate blobs freed as soon as they are consumed
     }
 
-    bool Open(OrtEnv *env, std::span<const uint8_t> model, std::string &error)
+    bool Open(std::span<const uint8_t> param, std::span<const uint8_t> bin, std::string &error)
     {
-        return OrtOk(api_, api_->CreateSessionOptions(&options_), error) &&
-               OrtOk(api_, api_->SetSessionGraphOptimizationLevel(options_, ORT_ENABLE_ALL), error) &&
-               OrtOk(api_, api_->DisablePerSessionThreads(options_), error) &&
-               OrtOk(api_, api_->AddSessionConfigEntry(options_, "session.use_env_allocators", "1"), error) &&
-               OrtOk(api_, api_->CreateSessionFromArray(env, model.data(), model.size(), options_, &session_), error) &&
-               OrtOk(api_, api_->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_), error) &&
-               OrtOk(api_, api_->CreateRunOptions(&run_), error) &&
-               // The arena's memory back to the system after every run: between textures only the weights stay.
-               OrtOk(api_, api_->AddRunConfigEntry(run_, "memory.enable_memory_arena_shrinkage", "cpu:0"), error);
+        if (!LoadGraph(net_, param_, param, bin))
+        {
+            error = "ncnn could not load the network for the CPU (a damaged graph?)";
+            return false;
+        }
+        return true;
     }
 
     bool Infer(const float *image, int width, int height, float *planes, std::string &error) override
@@ -214,32 +192,30 @@ class CpuNetwork final : public Network
     {
         auto cpu_lease = cpu_admission_ ? cpu_admission_() : std::shared_ptr<void>{};
         if (cpu_admission_ && !cpu_lease) { error = "CPU admission cancelled"; return false; }
-        const int64_t shape[4] = {1, 3, height, width};
-        const size_t texels = static_cast<size_t>(width) * height;
-        OrtValue *input = nullptr, *output = nullptr;
-        bool ok = OrtOk(api_,
-                        api_->CreateTensorWithDataAsOrtValue(memory_, const_cast<float *>(image), texels * 3 * sizeof(float),
-                                                             shape, 4, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input),
-                        error);
-        const char *in_names[] = {"input"}, *out_names[] = {"output"};
-        ok = ok && OrtOk(api_, api_->Run(session_, run_, in_names, &input, 1, out_names, 1, &output), error);
-        float *data = nullptr;
-        ok = ok && OrtOk(api_, api_->GetTensorMutableData(output, reinterpret_cast<void **>(&data)), error);
-        if (ok)
-            std::memcpy(planes, data, texels * 3 * scale_ * scale_ * sizeof(float));
-        if (input)
-            api_->ReleaseValue(input);
-        if (output)
-            api_->ReleaseValue(output);
-        return ok;
+        ncnn::Mat in(width, height, 3);
+        if (in.empty()) { error = kCpuOutOfMemory; return false; }
+        for (int c = 0; c < 3; ++c)
+            for (int y = 0; y < height; ++y)
+                std::memcpy(in.channel(c).row(y), image + (static_cast<size_t>(c) * height + y) * width,
+                            static_cast<size_t>(width) * sizeof(float));
+        ncnn::Mat out;
+        ncnn::Extractor ex = net_.create_extractor();
+        const int status = ex.input("in0", in) != 0 ? -1 : ex.extract("out0", out);
+        if (status == -100) { error = kCpuOutOfMemory; return false; } // ncnn's "allocation failed" from any layer
+        const int ow = width * scale_, oh = height * scale_;
+        if (status != 0 || out.c != 3 || out.w != ow || out.h != oh)
+        {
+            error = "ncnn: CPU inference failed (status " + std::to_string(status) + ")";
+            return false;
+        }
+        for (int c = 0; c < 3; ++c)
+            for (int y = 0; y < oh; ++y)
+                std::memcpy(planes + (static_cast<size_t>(c) * oh + y) * ow, out.channel(c).row(y),
+                            static_cast<size_t>(ow) * sizeof(float));
+        return true;
     }
 
-    void Cancel() override
-    {
-        cancelled_ = true;
-        if (OrtStatus *status = api_->RunOptionsSetTerminate(run_))
-            api_->ReleaseStatus(status);
-    }
+    void Cancel() override { cancelled_ = true; }
 
     std::string Describe() const override
     {
@@ -248,83 +224,36 @@ class CpuNetwork final : public Network
 
   private:
     std::function<std::shared_ptr<void>()> cpu_admission_;
-    const OrtApi *api_;
     std::string describe_;
     int halo_, scale_, tile_;
     std::atomic<bool> cancelled_{false};
-    OrtSessionOptions *options_ = nullptr;
-    OrtSession *session_ = nullptr;
-    OrtMemoryInfo *memory_ = nullptr;
-    OrtRunOptions *run_ = nullptr;
+    std::string param_;
+    ncnn::Net net_;
 };
 
-class OrtRuntime final : public CpuRuntime
+class NcnnCpuRuntime final : public CpuRuntime
 {
   public:
-    explicit OrtRuntime(int tile) : tile_(tile) {}
-    ~OrtRuntime() override
+    NcnnCpuRuntime(int threads, int tile) : threads_(threads), tile_(tile)
     {
-        if (memory_)
-            api_->ReleaseMemoryInfo(memory_);
-        if (env_)
-            api_->ReleaseEnv(env_);
+        Log("relief CPU runtime: ncnn, %d threads, %.1f GB of RAM: %s", threads_, Limits().ram_gb,
+            tile_ ? ("tiles of " + std::to_string(tile_) + " texels").c_str() : "whole images");
     }
 
-    bool Open(int threads, std::string &error)
-    {
-        threads_ = threads;
-        api_ = OrtGetApiBase()->GetApi(ORT_API_VERSION);
-        if (!api_)
-        {
-            error = "onnxruntime does not offer API version " + std::to_string(ORT_API_VERSION);
-            return false;
-        }
-        // Waiting threads sleep instead of spinning: the game's threads share the cores, and spinning threads that
-        // wait for each other on an oversubscribed CPU cost many times the work itself.
-        OrtThreadingOptions *threading = nullptr;
-        bool ok = OrtOk(api_, api_->CreateThreadingOptions(&threading), error) &&
-                  OrtOk(api_, api_->SetGlobalIntraOpNumThreads(threading, threads), error) &&
-                  OrtOk(api_, api_->SetGlobalInterOpNumThreads(threading, 1), error) &&
-                  OrtOk(api_, api_->SetGlobalSpinControl(threading, 0), error) &&
-                  OrtOk(api_, api_->CreateEnvWithGlobalThreadPools(ORT_LOGGING_LEVEL_WARNING, "storm-relief", threading, &env_),
-                        error);
-        if (threading)
-            api_->ReleaseThreadingOptions(threading);
-        // No usage telemetry (onnxruntime's Android build would try its 1DS client); one arena for every network,
-        // capped by the RAM (Limits), growing only by what is asked.
-        const CpuLimits &limits = Limits();
-        const char *keys[] = {"max_mem", "arena_extend_strategy"};
-        const size_t values[] = {limits.arena, 1}; // 1: kSameAsRequested
-        OrtArenaCfg *arena = nullptr;
-        ok = ok && OrtOk(api_, api_->DisableTelemetryEvents(env_), error) &&
-             OrtOk(api_, api_->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_), error) &&
-             OrtOk(api_, api_->CreateArenaCfgV2(keys, values, 2, &arena), error) &&
-             OrtOk(api_, api_->CreateAndRegisterAllocator(env_, memory_, arena), error);
-        if (arena)
-            api_->ReleaseArenaCfg(arena);
-        if (ok)
-            Log("relief CPU memory: %.1f GB of RAM: %s, the arena capped at %zu MB and emptied after every run",
-                limits.ram_gb, tile_ ? ("tiles of " + std::to_string(tile_) + " texels").c_str() : "whole images",
-                limits.arena >> 20);
-        return ok;
-    }
-
-    std::unique_ptr<Network> Load(std::span<const uint8_t> onnx, int halo, int scale, std::string &error) override
+    std::unique_ptr<Network> Load(std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int scale,
+                                  std::string &error) override
     {
         auto network = std::make_unique<CpuNetwork>(
-            api_, "CPU, " + std::to_string(threads_) + " threads of " + std::to_string(std::thread::hardware_concurrency()) +
-                      " cores",
-            halo, scale, tile_);
-        if (!network->Open(env_, onnx, error))
+            "CPU (ncnn), " + std::to_string(threads_) + " threads of " +
+                std::to_string(std::thread::hardware_concurrency()) + " cores",
+            threads_, halo, scale, tile_);
+        if (!network->Open(param, bin, error))
             return nullptr;
         return network;
     }
 
   private:
-    const OrtApi *api_ = nullptr;
-    OrtEnv *env_ = nullptr;
-    OrtMemoryInfo *memory_ = nullptr;
-    int threads_ = 1;
+    int threads_;
     int tile_;
 };
 
@@ -363,11 +292,9 @@ class GpuNetwork final : public Network
         for (const auto bytes : {param, bin})
             for (const uint8_t byte : bytes)
                 model_id_ = (model_id_ ^ byte) * 0x100000001b3ull;
-        // ncnn reads the param text up to its end: a terminated copy.
-        param_.assign(reinterpret_cast<const char *>(param.data()), param.size());
-        if (net_.load_param_mem(param_.c_str()) != 0 || net_.load_model(bin.data()) <= 0)
+        if (!LoadGraph(net_, param_, param, bin))
         {
-            error = "ncnn could not load the network";
+            error = "ncnn could not load the network for the GPU (a damaged graph?)";
             return false;
         }
         return Calibrate(error);
@@ -585,16 +512,18 @@ std::string CacheLine(const GpuDevice &gpu, std::span<const uint8_t> param, std:
             digest = (digest ^ b) * 0x100000001b3ull;
     char hex[24];
     std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(digest));
-    return gpu.name + " | " + gpu.driver + " | " + hex + " | " + std::to_string(threads) + " threads | v2";
+    return gpu.name + " | " + gpu.driver + " | " + hex + " | " + std::to_string(threads) + " threads | v3 ncnn CPU";
 }
 } // namespace
 
 std::unique_ptr<CpuRuntime> CpuRuntime::Open(int threads, std::string &error, int tile)
 {
-    auto runtime = std::make_unique<OrtRuntime>(tile < 0 ? Limits().tile : tile);
-    if (!runtime->Open(threads, error))
+    if (threads < 1)
+    {
+        error = "no CPU threads for the relief networks";
         return nullptr;
-    return runtime;
+    }
+    return std::make_unique<NcnnCpuRuntime>(threads, tile < 0 ? Limits().tile : tile);
 }
 
 namespace
@@ -691,8 +620,7 @@ std::string GpuCrash(const std::filesystem::path &cache)
     return Guard(cache).crashed().what;
 }
 
-Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> cpu_onnx, std::span<const uint8_t> gpu_param,
-                    std::span<const uint8_t> gpu_bin, int halo, int threads, double &cpu_ms_per_texel)
+Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int threads, double &cpu_ms_per_texel)
 {
     cpu_ms_per_texel = 0.0;
     // The crash guard: the marker of GPU work (MarkGpuRunning) left from the last run means the process died in it.
@@ -731,7 +659,7 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
         return Device::Cpu;
     }
     const std::filesystem::path file = cache / "relief-device.txt";
-    const std::string key = CacheLine(gpu, gpu_param, gpu_bin, threads);
+    const std::string key = CacheLine(gpu, param, bin, threads);
     {
         std::ifstream in(file);
         std::string line, choice, numbers, per_texel;
@@ -762,7 +690,7 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
     double cpu_ms = 0.0, gpu_ms = 0.0;
     MarkGpuRunning(cache, GpuLabel(gpu));
     const Clock::time_point warm = Clock::now();
-    std::unique_ptr<Network> probe = LoadGpuNetwork(gpu_param, gpu_bin, halo, 1, error);
+    std::unique_ptr<Network> probe = LoadGpuNetwork(param, bin, halo, 1, error);
     const bool gpu_ok = probe && time(*probe, gpu_ms);
     const double gpu_first_ms = Ms(warm) - gpu_ms;
     probe.reset();
@@ -772,10 +700,9 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
         Log("relief device: CPU (the GPU %s failed the probe: %s)", gpu.name.c_str(), error.c_str());
         return Device::Cpu;
     }
-    // The CPU's probe network on a runtime of its own, gone after the probe (onnxruntime is opened again only when
-    // the CPU is chosen).
+    // The same graph on the CPU, gone after the probe (loaded again only when the CPU is chosen).
     const std::unique_ptr<CpuRuntime> runtime = CpuRuntime::Open(threads, error);
-    const std::unique_ptr<Network> cpu = runtime ? runtime->Load(cpu_onnx, halo, 1, error) : nullptr;
+    const std::unique_ptr<Network> cpu = runtime ? runtime->Load(param, bin, halo, 1, error) : nullptr;
     if (!cpu || !time(*cpu, cpu_ms))
     {
         Log("relief device: GPU %s (the CPU failed the probe: %s)", gpu.name.c_str(), error.c_str());

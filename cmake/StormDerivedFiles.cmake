@@ -1,5 +1,5 @@
 # storm_derived_files(): files a pinned Python script makes at build time from pinned downloads, instead of being kept in
-# the repository (the owner's rule for the relief models: no .onnx files in the repository). Made once per machine
+# the repository (the owner's rule for the relief models: no model files in the repository). Made once per machine
 # into ${STORM_DEPS_CACHE}/derived/<name>-<digest>, a read-only cache shared by every build directory and worktree; the
 # digest covers the script, its requirements, its arguments, the inputs' digests and the outputs' expected digests, so
 # any change makes them again. Every output is checked against its expected sha256: a toolchain that makes other bytes

@@ -501,24 +501,24 @@ struct Session::Impl
         if (cpu_upscaler)
             return true;
         std::lock_guard lock(networks_mutex);
-        // A failed load must leave no partial sessions. Their runtime must outlive them, including when
-        // the next Open fails (transient allocation/model errors can be retried on this Session).
+        // A failed load must leave no partial set of networks; a transient allocation/model error can be retried on
+        // this Session.
         const auto reopen_started = Clock::now();
         auto next_runtime = CpuRuntime::Open(threads, error);
         if (!next_runtime)
             return false;
         std::array<std::unique_ptr<Network>, 3> next_cpu;
-        next_cpu[0] = next_runtime->Load(models.normal, fx::kReliefModelPad, 1, error);
+        next_cpu[0] = next_runtime->Load(models.normal_param, models.normal_bin, fx::kReliefModelPad, 1, error);
         if (next_cpu[0])
-            next_cpu[1] = next_runtime->Load(models.height, fx::kReliefModelPad, 1, error);
+            next_cpu[1] = next_runtime->Load(models.height_param, models.height_bin, fx::kReliefModelPad, 1, error);
         if (next_cpu[1])
-            next_cpu[2] = next_runtime->Load(models.roughness, fx::kReliefModelPad, 1, error);
+            next_cpu[2] = next_runtime->Load(models.roughness_param, models.roughness_bin, fx::kReliefModelPad, 1, error);
         if (!next_cpu[2])
             return false;
-        auto upscale = next_runtime->Load(models.upscale, fx::kUpscalePad, 4, error);
+        auto upscale = next_runtime->Load(models.upscale_param, models.upscale_bin, fx::kUpscalePad, 4, error);
         if (!upscale)
             return false;
-        // Publish only a complete set, destroying any old sessions before replacing their runtime.
+        // Publish only a complete set, destroying any old networks before replacing their runtime.
         cpu_upscaler.reset();
         cpu = {};
         runtime = std::move(next_runtime);
@@ -565,7 +565,7 @@ struct Session::Impl
         Describe();
         return opened;
     }
-    // Back on the GPU: onnxruntime's memory goes.
+    // Back on the GPU: the CPU networks' memory goes.
     void ReleaseCpu()
     {
         std::lock_guard lock(networks_mutex);
@@ -601,20 +601,22 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     impl->threads = threads;
     impl->cache = cache;
     // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
-    const bool gpu_models = !models.normal_param.empty() && !models.height_param.empty() && !models.roughness_param.empty() &&
-                            !models.upscale_param.empty();
+    for (const auto &bytes : {models.normal_param, models.normal_bin, models.height_param, models.height_bin, models.roughness_param,
+                              models.roughness_bin, models.upscale_param, models.upscale_bin})
+        if (bytes.empty())
+        {
+            error = "relief: a network's ncnn graph is missing (relief.hpp kModelFiles)";
+            return nullptr;
+        }
     // Calibration may run CPU inference before persistent CPU networks exist.
     // Its fixed pool must participate in the same admission as normal tiles.
-    auto probe_permit = gpu_models ? fx::SharedCpuAdmission().acquire(static_cast<unsigned>(threads), cancelled) : std::shared_ptr<void>{};
-    if (gpu_models && !probe_permit) { error = "CPU probe admission cancelled"; return nullptr; }
-    const Device device = gpu_models ? ChooseDevice(cache, models.normal, models.normal_param, models.normal_bin,
-                                                    fx::kReliefModelPad, threads, impl->cpu_ms_per_texel)
-                                     : Device::Cpu;
+    auto probe_permit = fx::SharedCpuAdmission().acquire(static_cast<unsigned>(threads), cancelled);
+    if (!probe_permit) { error = "CPU probe admission cancelled"; return nullptr; }
+    const Device device = ChooseDevice(cache, models.normal_param, models.normal_bin, fx::kReliefModelPad, threads,
+                                       impl->cpu_ms_per_texel);
     probe_permit.reset();
-    if (!gpu_models)
-        Log("relief device: CPU (no ncnn graphs given)");
     impl->stats.gpu_crash = GpuCrash(cache);
-    impl->gpu_possible = gpu_models && impl->stats.gpu_crash.empty() && Gpu().available;
+    impl->gpu_possible = impl->stats.gpu_crash.empty() && Gpu().available;
     impl->stats.gpu_possible = impl->gpu_possible;
     impl->on_gpu = device == Device::Gpu;
     impl->cpu_since = Clock::now();
@@ -732,7 +734,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         return Outcome::Existing;
     const int selected = source_level(tx);
     const size_t source_area = size_t(std::max(1u, tx.width >> selected)) * std::max(1u, tx.height >> selected);
-    // Full-image vectors + maximum x4 tile I/O scratch. The ORT arena remains a separate runtime bound.
+    // Full-image vectors + maximum x4 tile I/O scratch. The networks' own activations are bounded by their tiles.
     if (impl_->compute_admission && !impl_->compute_admission(source_area * 256 + (size_t{32} << 20))) {
         failure = "cancelled"; return Outcome::Failed;
     }
@@ -915,7 +917,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     const double model_ms = lap(); // the inputs, padding and crops around the inferences, and the inferences
     if (impl_->cancelled)
     {
-        // onnxruntime's error for a stopped inference varies (and its output, if any, is not the model's).
+        // A stopped inference's error varies (and its output, if any, is not the model's).
         failure = "cancelled";
         Log("relief %s: cancelled", candidate->name.c_str());
         return Outcome::Failed;
@@ -1429,7 +1431,7 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
     const std::vector<std::filesystem::path> files = List(job.textures);
     Progress state;
     state.total = result.total = static_cast<int>(files.size());
-    Log("relief preparation: %d candidate textures in %s, maps up to %d px into %s, onnxruntime %s", state.total,
+    Log("relief preparation: %d candidate textures in %s, maps up to %d px into %s, %s", state.total,
         job.textures.string().c_str(), job.map_size, job.output.string().c_str(), result.provider.c_str());
     if (progress && progress(state))
         result.status = 1;

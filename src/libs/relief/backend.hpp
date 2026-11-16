@@ -1,6 +1,6 @@
-// Where the relief networks run (README.md): onnxruntime on the CPU (the int8 models) or ncnn on the GPU through
-// Vulkan compute (the fp16 graphs pnnx makes of the same float models). One interface for both, for the relief maps
-// (prepare.cpp) and the texture upscale. Which device a game uses is measured once, logged with both numbers and
+// Where the relief networks run (README.md): ncnn, the one inference runtime, on the GPU through Vulkan compute or on
+// the CPU, both running the same graphs (fp16 weights, made by pnnx of the float models). One interface for both, for
+// the relief maps (prepare.cpp) and the texture upscale. Which device a game uses is measured once, logged with both numbers and
 // kept in the cache root (ChooseDevice).
 #pragma once
 
@@ -34,17 +34,18 @@ class Network
     virtual std::string Describe() const = 0;
 };
 
-// onnxruntime's environment (one thread pool and one memory arena for all its networks, which run one after the other).
+// The CPU side of ncnn for the networks of one session (they run one after the other): its thread count and tile size.
 class CpuRuntime
 {
   public:
-    // `threads` cores, waiting threads sleeping. `tile`: the inner texels of the networks' tiles, -1 by the RAM (the
-    // checks set one). Null and `error` on failure.
+    // `threads` cores (ncnn's simpleomp pool, waiting threads sleeping). `tile`: the inner texels of the networks'
+    // tiles, -1 by the RAM (the checks set one; 0 whole images). Null and `error` on failure. Logged.
     static std::unique_ptr<CpuRuntime> Open(int threads, std::string &error, int tile = -1);
     virtual ~CpuRuntime() = default;
-    // An int8 ONNX model (model/README.md), its padding `halo` texels, its output `scale` times the input. On a device
-    // with little RAM it runs in tiles (the arena capped by the RAM; logged when the runtime opens).
-    virtual std::unique_ptr<Network> Load(std::span<const uint8_t> onnx, int halo, int scale, std::string &error) = 0;
+    // An ncnn graph (.ncnn.param text, .ncnn.bin weights; both must outlive the network) on the CPU, its padding
+    // `halo` texels, its output `scale` times the input; the image runs in tiles with the halo around each.
+    virtual std::unique_ptr<Network> Load(std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int scale,
+                                          std::string &error) = 0;
 };
 
 // The Vulkan compute device ncnn would use (its default one): created on first use, kept for the process.
@@ -76,12 +77,11 @@ const char *DeviceName(Device device);
 // The device for this game's relief networks: measured once (a probe tile of `probe` on both, after a warm-up),
 // the faster taken; kept in `cache` (the cache root: «Очистить кэш» measures again) for this GPU, driver, model and
 // thread count. Logged with both numbers either way; no Vulkan compute device: the CPU, logged with the reason.
-// `cpu_onnx`: the probe network for the CPU (opened only for a probe); `gpu_param` / `gpu_bin`: its ncnn graph. A
-// choice kept from before opens neither.
+// `param` / `bin`: the probe network's ncnn graph, run on both devices. A choice kept from before opens neither.
 // `cpu_ms_per_texel`: the CPU's probe time per input texel (measured now or kept with the choice), so the GPU's real
 // textures can be held against it (relief.hpp Session: the device per texture).
-Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> cpu_onnx, std::span<const uint8_t> gpu_param,
-                    std::span<const uint8_t> gpu_bin, int halo, int threads, double &cpu_ms_per_texel);
+Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo,
+                    int threads, double &cpu_ms_per_texel);
 
 // The crash guard of the GPU work (ChooseDevice), on the shared storm/fx/gpu_crash_guard.hpp: `cache`'s marker holds
 // GpuLabel of the GPU (kGpuOpening while Vulkan opens), written before GPU work starts and cleared after it succeeded.

@@ -102,7 +102,7 @@ class ReliefGenerator
     // Unqueued: looked up again when it is switched on) and the texture in progress for it stops at its next stage.
     // The current place's neighbours are made ahead only while either is on (a neighbour in progress stops too).
     void set_wanted(bool relief, bool gloss);
-    // Stops the worker (the texture in progress is abandoned: onnxruntime stops its inference).
+    // Stops the worker (the texture in progress is abandoned at its next inference tile).
     void shutdown();
     // Game thread, every frame: whether a perspective 3D scene was drawn. A few frames without a scene
     // (a loading or an interface screen), or no frame for a second (the game in the background), leave the GPU free:
@@ -214,7 +214,7 @@ class ReliefGenerator
     Stats stats_;
     // Worker only.
     std::unique_ptr<relief::Session> session_;
-    std::array<std::vector<uint8_t>, 12> models_; // relief::kModelFiles; onnxruntime keeps no copy of the bytes it was given
+    std::array<std::vector<uint8_t>, 8> models_; // relief::kModelFiles (checked in the .cpp); ncnn keeps no copy of the weights' bytes
     bool model_failed_ = false;
     std::unique_ptr<relief::FinalizeQueue> finalizer_queue_;
     std::unique_ptr<relief::Finalizer> inline_finalizer_; // oversized progress, only after the worker slot drains

@@ -53,8 +53,7 @@ int main(int argc, char **argv)
     if (!x2 && argc > 4 && std::strcmp(argv[4], "--files") == 0)
     {
         if (argc < 6) { std::fprintf(stderr, "--files needs at least one texture\n"); return 1; }
-        const Models models{files[0], files[1], files[2], files[3], files[4], files[5],
-                            files[6], files[7], files[8], files[9], files[10], files[11]};
+        const Models models{files[0], files[1], files[2], files[3], files[4], files[5], files[6], files[7]};
         std::string error;
         const auto session = Session::Open(models, 0, argv[2], error);
         if (!session) { std::fprintf(stderr, "%s\n", error.c_str()); return 1; }
@@ -72,8 +71,7 @@ int main(int argc, char **argv)
     if (x2)
     {
         std::string error;
-        const Models models{files[0], files[1], files[2], files[3], files[4],  files[5],
-                            files[6], files[7], files[8], files[9], files[10], files[11]};
+        const Models models{files[0], files[1], files[2], files[3], files[4], files[5], files[6], files[7]};
         // The device measured as the game measures it, kept beside the ×2.
         std::unique_ptr<Session> session = Session::Open(models, std::atoi(argv[6]), argv[3], error);
         if (!session)
@@ -104,8 +102,7 @@ int main(int argc, char **argv)
     Job job;
     job.textures = argv[1];
     job.output = argv[2];
-    job.models = {files[0], files[1], files[2], files[3], files[4],  files[5],
-                  files[6], files[7], files[8], files[9], files[10], files[11]};
+    job.models = {files[0], files[1], files[2], files[3], files[4], files[5], files[6], files[7]};
     job.map_size = argc > 4 ? std::atoi(argv[4]) : storm::fx::kReliefMapSize;
     job.threads = argc > 5 ? std::atoi(argv[5]) : 0;
     if (argc > 6)

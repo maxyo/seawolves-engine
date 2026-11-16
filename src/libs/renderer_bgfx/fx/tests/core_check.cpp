@@ -1512,9 +1512,9 @@ void CheckReliefModel()
               ReliefMethod(colour) != ReliefMethod(ReliefClass::HeightMap));
     CHECK(kReliefMethodVersion == 8);
     CHECK(ReliefMethod(ReliefClass::Stone) != 3 && key != ReliefKey("a/b", probe, 4, 4, 3, kReliefMapSize));
-    // The model files' sha256 prefixes (checked by CMake too).
-    CHECK(kReliefNormalModelDigest == 0xfc91ce30e48deaf5ull && kReliefHeightModelDigest == 0x01f251dc40e79fa7ull &&
-          kReliefRoughnessModelDigest == 0x860845c92142b7d1ull);
+    // The weights' sha256 prefixes (the ncnn graphs' .bin; checked by CMake too).
+    CHECK(kReliefNormalModelDigest == 0xbc13e7082ffb7053ull && kReliefHeightModelDigest == 0xd54154e6179a2178ull &&
+          kReliefRoughnessModelDigest == 0x3fe407f25ac9f0d0ull);
     // The gloss maps' method: the version, the roughness network, the class.
     CHECK(GlossMethod(GlossClass::Metal) != GlossMethod(GlossClass::Glass) && kGlossMethod == 0x47000005u);
 

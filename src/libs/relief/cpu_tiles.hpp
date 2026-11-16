@@ -5,19 +5,17 @@
 
 namespace storm::relief
 {
-// Physical RAM is not the free space in ORT's shared arena. Even a high-RAM phone must bound a single
-// convolution's activation size. The model, padding and output resolution stay unchanged.
+// Physical RAM is not the free memory. Even a high-RAM phone must bound a single convolution's activation size. The
+// model, padding and output resolution stay unchanged.
 inline int DefaultCpuTile(double ram_gb) { return ram_gb <= 4.5 ? 128 : 256; }
+
+// The CPU network's error when ncnn could not allocate (its layers return -100, or the input did not fit).
+inline constexpr const char *kCpuOutOfMemory = "ncnn: CPU inference out of memory";
 
 inline bool CpuAllocationFailure(std::string_view error)
 {
-    // ORT often wraps this in a QLinearConv ORT_FAIL, so the status code alone does not identify OOM.
-    // Unknown execution/shape/model errors must not be hidden by a retry.
-    return error.find("onnxruntime:") != error.npos &&
-           ((error.find("BFCArena::AllocateRawInternal") != error.npos &&
-             error.find("Available memory of ") != error.npos &&
-             error.find("is smaller than requested bytes of ") != error.npos) ||
-            error.find("Failed to allocate memory for requested buffer of size") != error.npos);
+    // Only an allocation failure is retried at a smaller tile; unknown execution/shape/model errors are not hidden.
+    return error == kCpuOutOfMemory;
 }
 
 inline int SmallerCpuTile(int current, int width, int height, int halo)

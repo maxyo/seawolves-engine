@@ -366,7 +366,8 @@ void ReliefGenerator::reconcile_upscales()
 void ReliefGenerator::run()
 {
 #if defined(__linux__) || defined(__ANDROID__)
-    // Below the game's threads; onnxruntime's thread pool, created on this thread, inherits it.
+    // Below the game's threads; ncnn's CPU thread pool (simpleomp), created on this thread at its first inference,
+    // inherits it.
     setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
 #endif
     for (;;)
@@ -572,6 +573,7 @@ bool ReliefGenerator::open_session()
     const Clock::time_point start = Clock::now();
     std::string error = "the relief models could not be read";
     bool read = true;
+    static_assert(std::tuple_size_v<decltype(models_)> == std::size(relief::kModelFiles));
     for (size_t i = 0; i < std::size(relief::kModelFiles); ++i)
     {
         models_[i] = setup_.model(relief::kModelFiles[i]);
@@ -582,8 +584,7 @@ bool ReliefGenerator::open_session()
         }
     }
     const int threads = static_cast<int>(fx::SharedCpuAdmission().threads());
-    const relief::Models models{models_[0], models_[1], models_[2], models_[3],  models_[4],  models_[5],
-                                models_[6], models_[7], models_[8], models_[9], models_[10], models_[11]};
+    const relief::Models models{models_[0], models_[1], models_[2], models_[3], models_[4], models_[5], models_[6], models_[7]};
     std::unique_ptr<relief::Session> session =
         read ? relief::Session::Open(models, threads, setup_.directory, error, [this] { return stopping_.load(); }) : nullptr;
     if (!session)

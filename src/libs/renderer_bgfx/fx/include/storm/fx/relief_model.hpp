@@ -1,8 +1,8 @@
 // The relief maps' models: PBRify's normal, height and roughness networks (Kim2091/PBRify_Remix, 1x-PBRify_NormalV3,
-// 1x-PBRify_Height and 1x-PBRify_RoughnessV2, CC0-1.0; the int8 files, made by the build, and their provenance: src/libs/relief/model,
+// 1x-PBRify_Height and 1x-PBRify_RoughnessV2, CC0-1.0; their ncnn graphs, made by the build, and their provenance: src/libs/relief/model,
 // third_party/licenses/PBRify-*), the owner's choice for the normals, the height and the gloss (gloss_map.hpp). Each is a 1x SPAN network: a colour texture 1x3xHxW (0..1) in, three
 // planes of the same size out. This header is the part around the models: their input (the texture at the map's size,
-// wrap-padded: the textures tile), the crop, the axes and the normal map's mips. Running them (onnxruntime) is
+// wrap-padded: the textures tile), the crop, the axes and the normal map's mips. Running them (ncnn) is
 // src/libs/relief's; these functions only call `infer`, so they are tested without the models.
 #pragma once
 
@@ -21,12 +21,12 @@ namespace storm::fx
 // padded texel costs an inference's worth: 24 instead of 48 takes 15 % off a 512 map, 25 % off a 256 one.
 inline constexpr int kReliefModelPad = 24;
 
-// The first 8 bytes of the sha256 of the model files the game runs (src/libs/relief/model/README.md): part of the relief maps'
-// method (ReliefMethod), so other models never reuse their maps. src/libs/relief/CMakeLists.txt fails the build when a
-// model file does not match its digest.
-inline constexpr uint64_t kReliefNormalModelDigest = 0xfc91ce30e48deaf5ull; // pbrify-normal-int8.onnx
-inline constexpr uint64_t kReliefHeightModelDigest = 0x01f251dc40e79fa7ull; // pbrify-height-int8.onnx
-inline constexpr uint64_t kReliefRoughnessModelDigest = 0x860845c92142b7d1ull; // pbrify-roughness-int8.onnx
+// The first 8 bytes of the sha256 of the weights the game runs (the ncnn graphs' .bin, the same on the GPU and the CPU:
+// src/libs/relief/model/README.md): part of the relief maps' method (ReliefMethod), so other models never reuse their
+// maps. src/libs/relief/CMakeLists.txt fails the build when a model file does not match its digest.
+inline constexpr uint64_t kReliefNormalModelDigest = 0xbc13e7082ffb7053ull;    // pbrify-normal.ncnn.bin
+inline constexpr uint64_t kReliefHeightModelDigest = 0xd54154e6179a2178ull;    // pbrify-height.ncnn.bin
+inline constexpr uint64_t kReliefRoughnessModelDigest = 0x3fe407f25ac9f0d0ull; // pbrify-roughness.ncnn.bin
 
 // A model's input: the texture's colour (R, G, B 0..1), box-downsampled from width x height to map_width x map_height
 // (halvings, as NormalMapSize gives them), wrapped around by kReliefModelPad texels, as three planes.

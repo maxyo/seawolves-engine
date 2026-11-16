@@ -23,4 +23,3 @@ __pycache__/
 *.pyc
 
 # The relief models are made at build time (src/libs/relief/CMakeLists.txt), never committed.
-src/libs/relief/model/*.onnx

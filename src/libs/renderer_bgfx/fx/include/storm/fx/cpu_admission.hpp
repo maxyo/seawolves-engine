@@ -10,8 +10,8 @@
 #include <thread>
 
 namespace storm::fx {
-// Shared CPU work admission. Exact inference permits reflect its immutable ORT
-// pool; bake pieces use one permit each. FIFO, cancellation polled while parked.
+// Shared CPU work admission. Exact inference permits reflect the relief CPU
+// networks' current thread count; bake pieces use one permit each. FIFO, cancellation polled while parked.
 //
 // Two budgets. Under a place's opaque loading picture the work takes every core: nothing is played and the load
 // ends sooner. While the game is played it takes the gameplay limit: a quarter of the cores, at most two (six of

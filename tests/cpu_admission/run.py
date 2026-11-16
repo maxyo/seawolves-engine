@@ -42,10 +42,10 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
  assert libs[0].identity()==libs[1].identity(), 'DSO consumers must share admission identity'
  print('actual static provider + two DSO consumer singleton identity PASS')
  # Execute the exact production CPU Run admission prefix and Session budget
- # method with inert ORT/model teardown doubles (not an inference speed test).
+ # method with inert ncnn/model teardown doubles (not an inference speed test).
  backend=(root/'src/libs/relief/backend.cpp').read_text()
  start=backend.index('        auto cpu_lease =')
- prefix=backend[start:backend.index('        const int64_t shape[4]',start)]
+ prefix=backend[start:backend.index('        ncnn::Mat in(width, height, 3);',start)]
  prepare=(root/'src/libs/relief/prepare.cpp').read_text()
  start=prepare.index('void Session::SetCpuBudget(')
  method=prepare[start:prepare.index('\nvoid Session::ReleaseIdleModels()',start)]
@@ -77,7 +77,7 @@ struct Session {
  void SetCpuBudget(unsigned);
 };
 METHOD
-std::shared_ptr<void> initial_open(unsigned threads,std::function<bool()> cancelled){bool gpu_models=true;std::string error;
+std::shared_ptr<void> initial_open(unsigned threads,std::function<bool()> cancelled){std::string error;
 PROBE
 return probe_permit;
 }

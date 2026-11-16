@@ -209,7 +209,7 @@ int main(int argc, char **argv)
     std::vector<std::vector<uint8_t>> files;
     for (const char *name : relief::kModelFiles)
         files.push_back(read(name));
-    const std::vector<uint8_t> &normal = files[0], &height = files[1], &roughness = files[2], &upscale = files[9];
+    const relief::Models all{files[0], files[1], files[2], files[3], files[4], files[5], files[6], files[7]};
     // Its own folder: gates of several worktrees run this check at once.
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("storm_relief_check-" + std::to_string(getpid()));
@@ -223,8 +223,8 @@ int main(int argc, char **argv)
     relief::Job job;
     job.textures = textures;
     job.output = output;
-    // The CPU (no ncnn graphs): the int8 models' maps; the GPU's are checked against them below.
-    job.models = {.normal = normal, .height = height, .roughness = roughness, .upscale = upscale};
+    // The device the session measures (the GPU where the host has a Vulkan compute device); both are checked below.
+    job.models = all;
     job.map_size = 128;
     job.threads = 2;
     if (argc == 3 && std::strcmp(argv[2], "--bulk-only") == 0)
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
     int calls = 0;
     relief::Result result = relief::Prepare(job, [&](const relief::Progress &) { return ++calls, false; });
     CHECK(result.status == 0 && result.prepared == 2 && result.failed == 0 && result.total == 2 && calls == 3);
-    CHECK(result.provider.rfind("CPU", 0) == 0);
+    CHECK(result.provider.rfind("CPU (ncnn)", 0) == 0 || result.provider.rfind("GPU", 0) == 0);
     // By name, only relief and gloss textures.
     {
         const std::filesystem::path game = root / "ordered";
@@ -310,12 +310,12 @@ int main(int argc, char **argv)
                 std::memcpy(&rolled[(size_t(y) * w + (x + 37) % w) * 4], &rgba[(size_t(y) * w + x) * 4], 4);
         const auto cpu_runtime = relief::CpuRuntime::Open(2, error);
         std::vector<uint8_t> cpu_x2;
-        // On the CPU (int8), and on the GPU (ncnn, fp16) where the host has a Vulkan compute device.
+        // On the CPU, and on the GPU where the host has a Vulkan compute device (ncnn, the same graph).
         for (int device = 0; device < (relief::Gpu().available ? 2 : 1); ++device)
         {
             std::unique_ptr<relief::Network> network =
-                device == 0 ? (cpu_runtime ? cpu_runtime->Load(upscale, fx::kUpscalePad, 4, error) : nullptr)
-                            : relief::LoadGpuNetwork(files[10], files[11], fx::kUpscalePad, 4, error);
+                device == 0 ? (cpu_runtime ? cpu_runtime->Load(files[6], files[7], fx::kUpscalePad, 4, error) : nullptr)
+                            : relief::LoadGpuNetwork(files[6], files[7], fx::kUpscalePad, 4, error);
             CHECK(network);
             if (!network)
                 continue;
@@ -345,8 +345,8 @@ int main(int argc, char **argv)
                     for (int c = 0; c < 3; ++c)
                         worst = std::max(worst, std::abs(int(x2_rolled[(size_t(y) * 2 * w + (x + 74) % (2 * w)) * 4 + c]) -
                                                          int(x2[(size_t(y) * 2 * w + x) * 4 + c])));
-            // The GPU's fp16 float graph against the CPU's int8: within the int8 model's own error (36.8 dB and up on
-            // game textures against the float model).
+            // The GPU against the CPU, the same graph: only their arithmetic differs (fp16 on the GPU; 57..59 dB on game
+            // textures).
             double psnr = 0.0;
             if (device == 0)
                 cpu_x2 = x2;
@@ -359,8 +359,8 @@ int main(int argc, char **argv)
             }
             std::printf("x2 on %s: boxed back %.2f/255 from the source; shifted by 37 texels: at most %d/255 off%s\n",
                         describe.c_str(), diff, worst,
-                        device ? (", against the CPU's int8: PSNR " + std::to_string(psnr) + " dB").c_str() : "");
-            CHECK(diff < 8.0 && worst <= 3 && (device == 0 || psnr > 33.0));
+                        device ? (", against the CPU: PSNR " + std::to_string(psnr) + " dB").c_str() : "");
+            CHECK(diff < 8.0 && worst <= 3 && (device == 0 || psnr > 45.0));
         }
     }
     // With a display output the maps of a small texture come from its ×2, which is kept for the game under the game's key.
@@ -383,7 +383,7 @@ int main(int argc, char **argv)
         job.display.reset();
         // The ×2 alone: a character's texture (no relief, no gloss) gets one, once; a texture without a target none.
         std::string error;
-        const std::unique_ptr<relief::Session> session = relief::Session::Open({.normal = normal, .height = height, .roughness = roughness, .upscale = upscale}, 2,
+        const std::unique_ptr<relief::Session> session = relief::Session::Open(all, 2,
                                                                                root / "device", error);
         CHECK(session);
         const relief::UpscaleOutput display{x2_dir, true};
@@ -395,10 +395,14 @@ int main(int argc, char **argv)
     }
     // A broken model is an error, not a crash.
     const std::vector<uint8_t> junk(100, 7);
-    job.models = {.normal = normal, .height = height, .roughness = junk, .upscale = upscale};
+    job.models = all;
+    job.models.roughness_bin = junk;
     CHECK(relief::Prepare(job, nullptr).status == 2);
-    // The GPU path (ncnn, fp16 graphs of the float models) against the CPU's int8 models, network by network, on a
-    // brick pattern with the game's padding: the same maps within the int8 models' own error, and the tiles join.
+    job.models = all;
+    job.models.normal_param = {};
+    CHECK(relief::Prepare(job, nullptr).status == 2);
+    // The GPU against the CPU (ncnn, the same graphs), network by network, on a brick pattern with the game's padding:
+    // the same maps within fp16's error, and the GPU's tiles join.
     if (relief::Gpu().available)
     {
         std::string error;
@@ -414,8 +418,8 @@ int main(int argc, char **argv)
                 }
         for (int n = 0; n < 3; ++n)
         {
-            const auto cpu = cpu_runtime ? cpu_runtime->Load(files[n], fx::kReliefModelPad, 1, error) : nullptr;
-            const auto gpu = relief::LoadGpuNetwork(files[3 + 2 * n], files[4 + 2 * n], fx::kReliefModelPad, 1, error);
+            const auto cpu = cpu_runtime ? cpu_runtime->Load(files[2 * n], files[2 * n + 1], fx::kReliefModelPad, 1, error) : nullptr;
+            const auto gpu = relief::LoadGpuNetwork(files[2 * n], files[2 * n + 1], fx::kReliefModelPad, 1, error);
             std::vector<float> a(image.size()), b(image.size());
             CHECK(cpu && gpu && cpu->Infer(image.data(), size, size, a.data(), error) &&
                   gpu->Infer(image.data(), size, size, b.data(), error));
@@ -431,15 +435,15 @@ int main(int argc, char **argv)
                         ++count;
                     }
             const double psnr = 10.0 * std::log10(1.0 / std::max(squared / static_cast<double>(count), 1e-12));
-            std::printf("%s: %s against the CPU's int8: PSNR %.1f dB\n", relief::kModelFiles[n], gpu ? gpu->Describe().c_str() : "-",
-                        psnr);
-            CHECK(psnr > 30.0);
+            std::printf("%s: %s against the CPU: PSNR %.1f dB\n", relief::kModelFiles[2 * n],
+                        gpu ? gpu->Describe().c_str() : "-", psnr);
+            CHECK(psnr > 45.0);
         }
     }
     else
         std::printf("no GPU check: %s\n", relief::Gpu().why.c_str());
-    // The CPU in tiles (a device with little RAM): the same output as the whole image, to the bit (the halo covers
-    // what the network sees).
+    // The CPU in tiles (a device with little RAM): the same output as the whole image (the halo covers what the network
+    // sees); not to the bit: ncnn picks its convolution kernels by the blob's size, so only rounding differs.
     {
         std::string error;
         const int size = 200 + 2 * fx::kReliefModelPad;
@@ -447,26 +451,23 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < image.size(); ++i)
             image[i] = static_cast<float>((i * 2654435761u) % 1000u) / 1000.0f;
         const auto whole = relief::CpuRuntime::Open(2, error, 0), tiled = relief::CpuRuntime::Open(2, error, 64);
-        const auto a = whole ? whole->Load(files[0], fx::kReliefModelPad, 1, error) : nullptr;
-        const auto b = tiled ? tiled->Load(files[0], fx::kReliefModelPad, 1, error) : nullptr;
+        const auto a = whole ? whole->Load(files[0], files[1], fx::kReliefModelPad, 1, error) : nullptr;
+        const auto b = tiled ? tiled->Load(files[0], files[1], fx::kReliefModelPad, 1, error) : nullptr;
         std::vector<float> pa(image.size()), pb(image.size());
         CHECK(a && b && a->Infer(image.data(), size, size, pa.data(), error) && b->Infer(image.data(), size, size, pb.data(), error));
-        bool same = true;
+        double worst = 0.0;
         for (int c = 0; c < 3; ++c)
             for (int y = fx::kReliefModelPad; y < size - fx::kReliefModelPad; ++y)
                 for (int x = fx::kReliefModelPad; x < size - fx::kReliefModelPad; ++x)
                 {
                     const size_t i = (static_cast<size_t>(c) * size + y) * size + x;
-                    same &= pa[i] == pb[i];
+                    worst = std::max(worst, static_cast<double>(std::fabs(pa[i] - pb[i])));
                 }
-        std::printf("CPU tiles of 64 against the whole image: %s (%s)\n", same ? "the same" : "DIFFERENT",
-                    b ? b->Describe().c_str() : "-");
-        CHECK(same);
+        std::printf("CPU tiles of 64 against the whole image: at most %.2g apart (%s)\n", worst, b ? b->Describe().c_str() : "-");
+        CHECK(worst < 1.0 / 4096.0);
     }
     // The crash guard (backend.hpp MarkGpuRunning): a marker left behind by a run that died in the GPU's driver.
     {
-        const relief::Models all{files[0], files[1], files[2], files[3], files[4],  files[5],
-                                 files[6], files[7], files[8], files[9], files[10], files[11]};
         const std::filesystem::path cache = root / "crash";
         std::string error;
         std::string logged; // what the library logged (stderr) during open()

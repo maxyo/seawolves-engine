@@ -326,7 +326,7 @@ struct ReliefConfig
 {
     std::filesystem::path directory;
     std::filesystem::path textures; // the game's RESOURCE/Textures (the generator reads the texture files)
-    // Reads a model file by its name (src/libs/relief/model/README.md: pbrify-{normal,height,roughness}-int8.onnx). Null:
+    // Reads a model file by its name (src/libs/relief/model/README.md, relief.hpp kModelFiles: the ncnn graphs). Null:
     // no maps are made (logged); textures without one get no relief.
     std::function<std::vector<uint8_t>(const char *file)> model;
     // The neural ×2 textures (fx/upscale.hpp), derived like the maps: in the cache root too.

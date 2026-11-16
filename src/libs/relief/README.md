@@ -3,15 +3,15 @@
 Normal maps and material textures (R the height of the parallax and the cavity, G the gloss) for the colour textures
 that get relief (fx `ClassifyTextureName`: every surface but characters, sails and flags, rigging, foliage, water,
 glass, sky, UI, effects and light maps) are made from the player's
-game files with PBRify's normal and height models (`fx/relief_model.hpp`) through onnxruntime, and kept in the relief
+game files with PBRify's normal and height models (`fx/relief_model.hpp`) through ncnn, and kept in the relief
 directory (`fx/relief_store.hpp`). Nothing derived is shipped. Grey "bump" textures are height maps; the game derives
 their maps itself. The owner's choice: PBRify for both maps, its normals as the model gives them (no rescale).
 
 ## The neural ×2 first
 
 A texture whose larger side is at most the map's size (`fx::ReliefMapsFromUpscale`, 512) is upscaled before its maps:
-PBRify's 4x SPAN upscaler (`upscale.hpp`, CC0-1.0) on the device the relief's networks use (`backend.hpp`: the int8
-model on the CPU, its ncnn fp16 graph on the GPU, which tiles it again at 128 + 24), in 256-texel tiles padded by 24
+PBRify's 4x SPAN upscaler (`upscale.hpp`, CC0-1.0) on the device the relief's networks use (`backend.hpp`: its ncnn
+graph on either, the GPU tiling it again by its calibrated size), in 256-texel tiles padded by 24
 (wrapped for the tiling stone, wood and plaster, mirrored for atlases), its ×4 box-filtered to ×2 in linear light, the
 alpha stretched bilinearly. The normal and height networks run on that ×2 at twice the map's size and their planes are
 box-filtered to the map; the roughness runs on it at the gloss's size. The maps keep their sizes. Measured against
@@ -27,7 +27,7 @@ lists a game's ×2 targets, `--x2` makes them (host renders).
 ## Where the maps are made
 
 In the game process, lazily (renderer_bgfx `src/effects/relief_generator.hpp`): a texture loaded without its map is
-requested; one worker thread (nice 10; while the game is played onnxruntime on a quarter of the cores, at most two,
+requested; one worker thread (nice 10; while the game is played ncnn's CPU networks on a quarter of the cores, at most two,
 one when the device is hot, paused at thermal status SEVERE and by explicit renderer holds; all cores while a place
 loads) makes the most recently drawn first, then the other required loaded textures.
 Normal/gloss and ×2 maps required by scene loading are prepared before the readiness gate reveals the scene;
@@ -61,11 +61,11 @@ class, before a host render that shows them.
 
 ## Models and runtime
 
-- Models: `pbrify-normal-int8.onnx`, `pbrify-height-int8.onnx` and `pbrify-roughness-int8.onnx` (CC0-1.0), int8
-  versions of Kim2091/PBRify_Remix's 1x-PBRify_NormalV3, 1x-PBRify_Height and 1x-PBRify_RoughnessV2, not kept in the
-  repository: the build fetches the float models by their pins and runs `model/make_models.py` once per machine
+- Models: `pbrify-normal.ncnn.*`, `pbrify-height.ncnn.*` and `pbrify-roughness.ncnn.*` (CC0-1.0), ncnn graphs (fp16
+  weights) of Kim2091/PBRify_Remix's 1x-PBRify_NormalV3, 1x-PBRify_Height and 1x-PBRify_RoughnessV2, not kept in the
+  repository: the build fetches the float models by their pins and converts them with pnnx once per machine
   (`model/README.md`; provenance in `third_party/licenses/PBRify-PROVENANCE.txt`). Their digests are pinned in this
-  folder's CMakeLists.txt and match `fx::kReliefNormalModelDigest`, `fx::kReliefHeightModelDigest` and
+  folder's CMakeLists.txt and the weights' match `fx::kReliefNormalModelDigest`, `fx::kReliefHeightModelDigest` and
   `fx::kReliefRoughnessModelDigest`. Per texture: one decode, then one inference of each
   model on the whole image at the map's size, wrap-padded by `fx::kReliefModelPad` (24 px, beyond the networks'
   receptive field: no seam where the texture tiles); the roughness model at the gloss map's size.
@@ -77,11 +77,11 @@ class, before a host render that shows them.
   material texture is stored beside the normals in the same file (EAC RG11 with mips) for every relief texture; the
   textures of a gloss class without relief (glass...) get their own gloss map
   (`<key>.gloss`: R the metal mask, G the gloss) from the roughness and the height models at 256², in the same queue.
-- Devices (`backend.hpp`): the GPU through ncnn 20261020 (BSD-3-Clause; Vulkan compute, its in-house loader opening
-  libvulkan at run time; `cmake/ncnn.cmake`; notices in `third_party/licenses/ncnn-*`, `glslang-*`), running ncnn
-  graphs of the same float models (fp16 weights, made at build time by pnnx: `model/make_ncnn_models.py`), or the CPU
-  through onnxruntime 1.31.1 (MIT; Microsoft's prebuilt Android AAR and Linux x64 release; notices in
-  `third_party/licenses/onnxruntime-*`), the int8 models on its CPU provider (MLAS), waiting threads sleeping. The
+- Devices (`backend.hpp`): ncnn 20261020 (BSD-3-Clause; `cmake/ncnn.cmake`; notices in `third_party/licenses/ncnn-*`,
+  `glslang-*`) is the one inference runtime, running the same graphs on the GPU (Vulkan compute, its in-house loader
+  opening libvulkan at run time) or on the CPU (its NEON / fp16 kernels on arm64, SSE / AVX picked at run time on
+  x86-64; its own minimal OpenMP runtime, waiting threads sleeping; the image in tiles of 128 or 256 texels by the RAM,
+  `cpu_tiles.hpp`, a smaller tile after an allocation failure, logged). The
   device is measured once per game: a probe tile on both (`ChooseDevice`), the faster taken, logged with both numbers
   (`relief device: GPU (measured now on <GPU>, driver <v>: ... GPU x ms ..., CPU y ms ...)`) and kept in the relief
   directory's `relief-device.txt` for that GPU, driver, model and thread count; «Очистить кэш» measures again. That is
@@ -100,18 +100,17 @@ class, before a host render that shows them.
   24-texel reach around each (no seams), each tile one GPU submission of at most 6 ms of GPU work, so the game's frames
   do not wait on a long one: the tile size is calibrated per network graph on the device (a submission's wall time is
   a fixed part, ~2.5–5 ms of recording, transfers and fence, plus the GPU's work per texel; logged as `relief GPU
-  tiles: ...`), 224 texels on an RTX 5070 Ti. ncnn's fp16 output against the CPU's int8 models:
-  PSNR 40–48 dB on a brick pattern (relief_check); against the float models 58 dB. Neither XNNPACK (slower than MLAS
-  on a Galaxy S23) nor NNAPI (deprecated) is used.
+  tiles: ...`), 224 texels on an RTX 5070 Ti. The GPU's output against the CPU's (the same graph): above 45 dB on a
+  brick pattern (relief_check), 57..62 dB on game textures; against the float models 58 dB. NNAPI (deprecated) is not
+  used.
 - Maps: the models run on the texture downscaled to 512 px (`fx::kReliefMapSize`, the owner's choice); the GPU's
   bilinear filter upsamples it over the texture. Высокая uses it whole, Средняя from its second mip. On an x86-64 host
   with 4 threads both models take about 0.4 s for a 512 texture.
 
 ## Android
 
-The engine build puts `libonnxruntime.so` (libengine.so links it) and `assets/pbrify-normal-int8.onnx`,
-`assets/pbrify-height-int8.onnx`, `assets/pbrify-roughness-int8.onnx` into `<build>/game`. The app packages the library next to libengine.so, the models as
-the assets of the same names (the engine reads them through SDL_RWFromFile), and the licence files above
-(`PBRify-CC0-1.0.txt`, `PBRify-PROVENANCE.txt`, `onnxruntime-*`) on its licences screen. The relief
-directory: the engine's cache root (`fs::GetCachePath()`: the app's `(getExternalCacheDir() ?: getCacheDir())/engine`)
-+ `/relief` (engine `Renderer`).
+The engine build puts the eight graph files (`relief.hpp` kModelFiles) into `<build>/game/assets`; ncnn is linked into
+libengine.so. The app packages them as the assets of the same names (the engine reads them through SDL_RWFromFile), and
+the licence files above (`PBRify-CC0-1.0.txt`, `PBRify-PROVENANCE.txt`, `ncnn-BSD-3-Clause.txt`, `glslang-LICENSE.txt`)
+on its licences screen. The relief directory: the engine's cache root (`fs::GetCachePath()`: the app's
+`(getExternalCacheDir() ?: getCacheDir())/engine`) + `/relief` (engine `Renderer`).

@@ -32,7 +32,7 @@ class Model final: public storm::relief::Network {
 class Runtime final: public storm::relief::CpuRuntime {
   int loads_=0;
  public:~Runtime() override {expect(live_cpu_models==0,"CPU runtime outlives every network");++cpu_released;}
- std::unique_ptr<storm::relief::Network> Load(std::span<const uint8_t>,int,int scale,std::string &error) override {
+ std::unique_ptr<storm::relief::Network> Load(std::span<const uint8_t>,std::span<const uint8_t>,int,int scale,std::string &error) override {
   if(++loads_==2 && fail_cpu_height){error="synthetic partial CPU height load failure";return nullptr;}
   return std::make_unique<Model>(false,scale);
  }
@@ -52,7 +52,7 @@ const GpuDevice &Gpu(){
 bool ReleaseGpu(){const bool was=gpu_open;gpu_open=false;return was;}
 std::unique_ptr<Network> LoadGpuNetwork(std::span<const uint8_t>,std::span<const uint8_t>,int,int scale,std::string &error) {if(fail_gpu_load){error="synthetic controlled GPU initialization failure";return nullptr;}return std::make_unique<Model>(true,scale);}
 const char *DeviceName(Device d){return d==Device::Gpu?"GPU":"CPU";}
-Device ChooseDevice(const std::filesystem::path&,std::span<const uint8_t>,std::span<const uint8_t>,std::span<const uint8_t>,int,int,double &cost){MarkGpuRunning({},kGpuOpening);Gpu();ClearGpuRunning({});cost=1.;return start_gpu?Device::Gpu:Device::Cpu;}
+Device ChooseDevice(const std::filesystem::path&,std::span<const uint8_t>,std::span<const uint8_t>,int,int,double &cost){MarkGpuRunning({},kGpuOpening);Gpu();ClearGpuRunning({});cost=1.;return start_gpu?Device::Gpu:Device::Cpu;}
 void MarkGpuRunning(const std::filesystem::path&,const std::string &what){gpu_marker=what;}
 void ClearGpuRunning(const std::filesystem::path&){gpu_marker.clear();}
 std::string GpuCrash(const std::filesystem::path&){return {};}
@@ -62,7 +62,7 @@ int main(int argc,char**argv) {
  using namespace storm::relief;
  expect(argc==2,"isolated fixture root supplied");std::filesystem::path root=std::filesystem::path(argv[1])/("run-"+std::to_string(getpid())+"-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())), textures=root/"Textures";
  std::filesystem::create_directories(textures/"Characters");
- const uint8_t m[]={1};Models models{m,m,m,m,m,m,m,m,m,m,m,m};std::string error;
+ const uint8_t m[]={1};Models models{m,m,m,m,m,m,m,m};std::string error;
  auto run=[&](Session &session,int i,const char *group){auto p=textures/"Characters"/(std::string("Face-")+group+std::to_string(i)+".tga.tx");write_tx(p);return session.Upscale(textures,p,{root/group,true},64,error);};
  // Actual Session consumption: no new provider stub or production test hook.
  {

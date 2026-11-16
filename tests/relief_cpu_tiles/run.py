@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual CPU Infer/RunTiles control, inert model callback; no ORT/models/device.
+"""Actual CPU Infer/RunTiles control, inert model callback; no ncnn/models/device.
 Optional --baseline <backend.cpp> must compile and fail the retry sentinel at runtime.
 """
 from pathlib import Path
@@ -39,8 +39,7 @@ struct Actual {
    if((fail_at&&calls==fail_at)||(fail_larger&&std::max(w-2*halo_,h-2*halo_)>fail_larger)){
      ++failures;if(cancel_on_failure)cancelled_=true;
      if(scratch)throw std::bad_alloc();
-     error=unknown?"onnxruntime: tensor shape mismatch":
-       "onnxruntime: Non-zero QLinearConv: BFCArena::AllocateRawInternal(size_t): Available memory of 349271808 is smaller than requested bytes of 496447744";
+     error=unknown?"ncnn: CPU inference failed (status -1): shape mismatch":kCpuOutOfMemory;
      return false;
    }
    // A local stencil uses the halo, detects layout/copy errors and runs at either output scale.
@@ -61,7 +60,7 @@ void EqualInner(const std::vector<float>&a,const std::vector<float>&b,int w,int 
 }
 int main(){
  Check(DefaultCpuTile(10.9)==256&&DefaultCpuTile(4)==128&&DefaultCpuTile(0)==128,"HIGH_RAM_TILE_UNBOUNDED");
- Check(!CpuAllocationFailure("onnxruntime: QLinearConv invalid shape")&&!CpuAllocationFailure("cancelled"),"UNKNOWN_IS_OOM");
+ Check(CpuAllocationFailure(kCpuOutOfMemory)&&!CpuAllocationFailure("ncnn: CPU inference failed (status -1)")&&!CpuAllocationFailure("cancelled"),"UNKNOWN_IS_OOM");
  Check(SmallerCpuTile(0,1072,560,24)==256&&SmallerCpuTile(256,112,96,24)==32&&SmallerCpuTile(32,80,80,24)==0,"RETRY_NOT_STRICTLY_SMALLER");
  for(int scale:{1,4}){
    const int w=349,h=237,halo=24;auto input=Image(w,h);std::vector<float>gold(size_t(w)*h*3*scale*scale,-7),output(gold.size(),-9);std::string error;

@@ -36,7 +36,7 @@ struct ComputedTexture
             gloss_height.capacity() + roughness_planes.capacity());
     }
     size_t staging_bytes() const {
-        // Owning vectors + conservative CPU scratch. Model/ORT/GPU arenas and renderer copies are separate;
+        // Owning vectors + conservative CPU scratch. Network activations and renderer copies are separate;
         // this is not a process RSS bound. Oversized jobs retain quality and drain before synchronous progress.
         const auto area = [](int w, int h) { return size_t(std::max(w, 0)) * size_t(std::max(h, 0)); };
         const size_t scratch = kind == Kind::Upscale ? 32 * area(width * 2, height * 2) :

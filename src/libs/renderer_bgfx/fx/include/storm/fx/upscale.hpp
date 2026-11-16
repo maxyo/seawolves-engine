@@ -1,5 +1,5 @@
-// Neural ×2 textures (the owner's choice): PBRify's 4x-PBRify_UpscalerSPANV4 (Kim2091/PBRify_Remix, CC0-1.0; the int8
-// file and its provenance: src/libs/relief/model, third_party/licenses/PBRify-*) upscales a colour texture ×4 on the
+// Neural ×2 textures (the owner's choice): PBRify's 4x-PBRify_UpscalerSPANV4 (Kim2091/PBRify_Remix, CC0-1.0; its ncnn
+// graph, made by the build, and its provenance: src/libs/relief/model, third_party/licenses/PBRify-*) upscales a colour texture ×4 on the
 // player's device, from the player's own game files; the result is box-filtered back to ×2 in linear light, its mip chain
 // rebuilt and encoded for the GPU's tier, and cached in the upscale directory (the engine's cache root,
 // fs::GetCachePath(), + "/upscale": on Android the app's cache, cleared with it). Never shipped, never committed.
@@ -22,13 +22,13 @@
 namespace storm::fx
 {
 
-// The first 8 bytes of the sha256 of src/libs/relief/model/pbrify-upscale-int8.onnx: part of UpscaleMethod and of the
-// relief maps' method (their textures of up to kReliefMapSize are upscaled first, ReliefMapsFromUpscale). The build
-// checks the file against it.
-inline constexpr uint64_t kUpscaleModelDigest = 0x5148c5c90562bdffull;
-// Bump when the ×2 changes in a way UpscaleMethod cannot see (padding, filters, mips, the file layout, the GPU graph
-// pbrify-upscale.ncnn.*, which the relief's device choice may run instead of the int8 model).
-inline constexpr uint32_t kUpscaleVersion = 2; // 2: on a GPU device the ×2 comes from ncnn's fp16 graph (backend.hpp)
+// The first 8 bytes of the sha256 of pbrify-upscale.ncnn.bin (src/libs/relief/model: the weights the GPU and the CPU
+// run): part of UpscaleMethod and of the relief maps' method (their textures of up to kReliefMapSize are upscaled first,
+// ReliefMapsFromUpscale). The build checks the file against it.
+inline constexpr uint64_t kUpscaleModelDigest = 0xa0a97f7dd9400708ull;
+// Bump when the ×2 changes in a way UpscaleMethod cannot see (padding, filters, mips, the file layout, the graph
+// pbrify-upscale.ncnn.param).
+inline constexpr uint32_t kUpscaleVersion = 3; // 3: ncnn's fp16 graph on both devices (no int8 CPU model)
 // The model's tiles (texels of the source) and their padding on every side: more than the network's receptive field
 // (21 3x3 convolutions in a row: 21 texels), so neither tiles nor a tiling texture's edges show a seam.
 inline constexpr int kUpscaleTile = 256;

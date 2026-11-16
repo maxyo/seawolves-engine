@@ -1,5 +1,5 @@
-// Relief maps from PBRify's normal, height and roughness models (fx/relief_model.hpp) on the GPU (ncnn) or the CPU
-// (onnxruntime), for the game's stone,
+// Relief maps from PBRify's normal, height and roughness models (fx/relief_model.hpp) through ncnn on the GPU or the CPU,
+// for the game's stone,
 // wood, building, plaster and ground textures, made from the player's game files into the relief directory (fx/relief_store.hpp) the game reads.
 // The game makes the maps of the textures it loads, and of its current place's neighbours, while it runs (renderer_bgfx
 // effects/relief_generator.hpp: Session, Listed); the host tool makes a whole game at once (Prepare: List, every texture,
@@ -38,17 +38,13 @@ enum class Outcome
     Failed,   // logged with the reason
 };
 
-// The model files (model/README.md): the int8 models for the CPU and their ncnn graphs for the GPU (empty: the CPU).
+// The model files (model/README.md): ncnn graphs, the same on the GPU and the CPU. All are required.
 struct Models
 {
-    std::span<const uint8_t> normal;    // pbrify-normal-int8.onnx
-    std::span<const uint8_t> height;    // pbrify-height-int8.onnx
-    std::span<const uint8_t> roughness; // pbrify-roughness-int8.onnx
     std::span<const uint8_t> normal_param, normal_bin;       // pbrify-normal.ncnn.param, .bin
     std::span<const uint8_t> height_param, height_bin;       // pbrify-height.ncnn.param, .bin
     std::span<const uint8_t> roughness_param, roughness_bin; // pbrify-roughness.ncnn.param, .bin
-    std::span<const uint8_t> upscale;                        // pbrify-upscale-int8.onnx (fx/upscale.hpp)
-    std::span<const uint8_t> upscale_param, upscale_bin;     // pbrify-upscale.ncnn.param, .bin
+    std::span<const uint8_t> upscale_param, upscale_bin;     // pbrify-upscale.ncnn.param, .bin (fx/upscale.hpp)
 };
 
 // Where the game's ×2 textures go (fx/upscale.hpp: the upscale directory) and the GPU tier they are encoded for.
@@ -58,15 +54,13 @@ struct UpscaleOutput
     bool bc = false; // BC1/BC3 (GPUs with S3TC), else ETC2
 };
 // The model files' names, in Models' order.
-inline constexpr const char *kModelFiles[] = {"pbrify-normal-int8.onnx",   "pbrify-height-int8.onnx",
-                                              "pbrify-roughness-int8.onnx", "pbrify-normal.ncnn.param",
-                                              "pbrify-normal.ncnn.bin",     "pbrify-height.ncnn.param",
-                                              "pbrify-height.ncnn.bin",     "pbrify-roughness.ncnn.param",
-                                              "pbrify-roughness.ncnn.bin",  "pbrify-upscale-int8.onnx",
-                                              "pbrify-upscale.ncnn.param",  "pbrify-upscale.ncnn.bin"};
+inline constexpr const char *kModelFiles[] = {"pbrify-normal.ncnn.param",    "pbrify-normal.ncnn.bin",
+                                              "pbrify-height.ncnn.param",    "pbrify-height.ncnn.bin",
+                                              "pbrify-roughness.ncnn.param", "pbrify-roughness.ncnn.bin",
+                                              "pbrify-upscale.ncnn.param",   "pbrify-upscale.ncnn.bin"};
 
-// The models loaded once for many textures, on the device measured for this game (backend.hpp ChooseDevice: the GPU
-// through ncnn, or the CPU through onnxruntime; logged). One thread at a time (Cancel aside).
+// The models loaded once for many textures, on the device measured for this game (backend.hpp ChooseDevice: ncnn on
+// the GPU or the CPU; logged). One thread at a time (Cancel aside).
 class Session
 {
   public:
@@ -75,7 +69,7 @@ class Session
         int prepared = 0;
         double infer_seconds = 0.0, max_texture_ms = 0.0;
         std::string provider;
-        bool gpu = false;      // the networks run on the GPU now (else onnxruntime on the CPU)
+        bool gpu = false;      // the networks run on the GPU now (else on the CPU)
         bool gpu_possible = false; // a GPU the session may use (its graphs, no crash recorded)
         std::string gpu_crash; // the GPU (and driver) whose inference crashed a previous run, so the CPU is used; else empty
     };
@@ -103,7 +97,7 @@ class Session
     ComputeResult ComputeUpscale(const std::filesystem::path &textures, const std::filesystem::path &file,
                                  const UpscaleOutput &display, int source_size, std::string &failure);
     void AccountFinalized(const FinalizeResult &result); // compute owner, originating session only
-    // Worker only; before decode/model work, with a conservative non-ORT workspace estimate.
+    // Worker only; before decode/model work, with a conservative workspace estimate (the networks' own memory aside).
     // False cancels this job. The callback holds no network mutex or admission permits.
     void SetComputeAdmission(std::function<bool(size_t)> admission);
     // Any thread (the game's shutdown): the texture being prepared fails at once, and every later one.

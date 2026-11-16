@@ -1,8 +1,10 @@
 # ncnn (Tencent, BSD-3-Clause; its bundled glslang under its own licences: third_party/licenses/ncnn-*, glslang-*): the
-# relief networks on the GPU through Vulkan compute (src/libs/relief/README.md). The release's full source (with
-# glslang, which compiles ncnn's compute shaders on the device) by its pin; built with the in-house Vulkan loader
-# (simplevk: libvulkan is opened at run time, no headers or loader needed to build), without OpenMP (its CPU path is
-# not used: onnxruntime runs the CPU path), with the layers the PBRify networks and the convolutions inside them use.
+# one inference runtime of the relief networks and the neural x2 (src/libs/relief/README.md), on the GPU through Vulkan
+# compute and on the CPU (NEON / fp16 kernels on arm64, SSE/AVX on x86-64). The release's full source (with glslang,
+# which compiles ncnn's compute shaders on the device) by its pin; built with the in-house Vulkan loader (simplevk:
+# libvulkan is opened at run time, no headers or loader needed to build), with ncnn's own minimal OpenMP runtime
+# (simpleomp: no libomp to ship, its waiting threads sleep on a condition variable instead of spinning), with the layers
+# the PBRify networks and the convolutions inside them use.
 include_guard(GLOBAL)
 include("${CMAKE_CURRENT_LIST_DIR}/StormBuildCache.cmake")
 
@@ -15,7 +17,8 @@ FetchContent_MakeAvailable(storm_ncnn)
 set(NCNN_VULKAN ON CACHE BOOL "" FORCE)
 set(NCNN_SIMPLEVK ON CACHE BOOL "" FORCE)
 set(NCNN_SYSTEM_GLSLANG OFF CACHE BOOL "" FORCE)
-set(NCNN_OPENMP OFF CACHE BOOL "" FORCE)
+set(NCNN_OPENMP ON CACHE BOOL "" FORCE)
+set(NCNN_SIMPLEOMP ON CACHE BOOL "" FORCE)
 set(NCNN_THREADS ON CACHE BOOL "" FORCE)
 set(NCNN_SHARED_LIB OFF CACHE BOOL "" FORCE)
 set(NCNN_INSTALL_SDK OFF CACHE BOOL "" FORCE)
@@ -50,5 +53,10 @@ foreach(line ${storm_ncnn_all})
         set(WITH_LAYER_${CMAKE_MATCH_1} OFF CACHE BOOL "" FORCE)
     endif()
 endforeach()
+# With simpleomp ncnn links "pthread" by name; Android's libc holds pthreads and has no libpthread, so that name is an
+# empty target there (CMake links a target of that name instead of -lpthread).
+if(ANDROID AND NOT TARGET pthread)
+    add_library(pthread INTERFACE)
+endif()
 add_subdirectory("${storm_ncnn_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/storm_ncnn-build" EXCLUDE_FROM_ALL)
 set_target_properties(ncnn PROPERTIES POSITION_INDEPENDENT_CODE ON)
