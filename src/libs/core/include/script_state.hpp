@@ -41,4 +41,18 @@ class ScriptStateReads
 // An interface opened or was released: the trees read so far stop counting until an adapter reads
 // them again.
 void ScriptStateForget();
+
+// What engine code asks the script state by name while no script runs (the VM's "script work:" line, compiler.cpp):
+// attributes looked up by a name or a path, of them inside a ScriptStateReads (an interface adapter), and global
+// variables found by name.
+struct ScriptNameLookups
+{
+    uint64_t attributes = 0;
+    uint64_t adapterAttributes = 0;
+    uint64_t variables = 0;
+};
+ScriptNameLookups &NameLookups() noexcept;
+// Scripts are running (the VM's own lookups are not the engine's).
+void ScriptRunning(bool running) noexcept;
+void CountVariableLookup() noexcept;
 } // namespace storm

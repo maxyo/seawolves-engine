@@ -41,7 +41,36 @@ void TreeRead(const ATTRIBUTES *attribute)
     if (readTrees)
         readTrees->insert(TreeOf(attribute));
 }
+
+ScriptNameLookups nameLookups;
+bool scriptRunning = false;
+
+// Engine code looks an attribute up by name.
+void NameLookup() noexcept
+{
+    if (scriptRunning)
+        return;
+    nameLookups.attributes++;
+    if (readTrees)
+        nameLookups.adapterAttributes++;
+}
 } // namespace
+
+ScriptNameLookups &NameLookups() noexcept
+{
+    return nameLookups;
+}
+
+void ScriptRunning(bool running) noexcept
+{
+    scriptRunning = running;
+}
+
+void CountVariableLookup() noexcept
+{
+    if (!scriptRunning)
+        nameLookups.variables++;
+}
 
 uint64_t ScriptStateGeneration() noexcept
 {
@@ -464,6 +493,7 @@ ATTRIBUTES * ATTRIBUTES::FindAClass(ATTRIBUTES *pRoot, const char *access_string
 {
     if (pRoot)
         storm::TreeRead(pRoot);
+    storm::NameLookup();
     uint32_t n = 0;
     ATTRIBUTES *pResult = nullptr;
     ATTRIBUTES *pTemp = nullptr;
@@ -671,6 +701,7 @@ ATTRIBUTES *ATTRIBUTES::FirstWithCode(uint32_t name_code) const
 // A name no attribute was ever given has no code, and no child bears it.
 ATTRIBUTES *ATTRIBUTES::FirstWithName(const std::string_view &name) const
 {
+    storm::NameLookup();
     const std::optional<uint32_t> code = stringCodec_.Find(name);
     ATTRIBUTES *const found = code ? FirstWithCode(*code) : nullptr;
 #ifdef STORM_VM_VERIFY

@@ -21,7 +21,11 @@
 #include "script_cache.h"
 #include "platform/platform.hpp"
 
+#include "platform/frame_work.hpp"
 #include "ringbuffer_stack.hpp"
+
+#include <chrono>
+#include <unordered_map>
 
 #define BCODE_BUFFER_BLOCKSIZE 4096
 #define IOBUFFER_SIZE 65535
@@ -177,6 +181,28 @@ class COMPILER : public VIRTUAL_COMPILER
 
     S_TOKEN_TYPE TokenLastReadResult;
     uint32_t execute_depth_ = 0;  // nested BC_Execute frames
+
+  private:
+    // "script work:" in the log every 30 s: where the script time of a frame comes from. Every event raised while no
+    // script runs is timed whole (the events and natives it calls included), by its name and by the frame phase it
+    // was raised from (CoreImpl::Event; an event the VM raises itself, a posted one, counts as "script").
+    struct EventWork
+    {
+        uint64_t calls = 0;
+        int64_t ns = 0;
+    };
+    std::unordered_map<uint64_t, EventWork> event_work_; // event code | phase << 32
+    storm::platform::frame_work::Phase event_origin_ = storm::platform::frame_work::Phase::Script;
+    std::chrono::steady_clock::time_point work_window_ = std::chrono::steady_clock::now();
+    uint32_t work_frames_ = 0;
+    void ReportScriptWork();
+
+  public:
+    void SetEventOrigin(storm::platform::frame_work::Phase phase)
+    {
+        if (execute_depth_ == 0)
+            event_origin_ = phase;
+    }
     bool abort_execution_ = false; // AbortExecution: unwinding the current script call stack
     uint32_t TLR_DataOffset;
     const char *pRunCodeBase;

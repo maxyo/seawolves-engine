@@ -719,6 +719,25 @@ VDATA *COMPILER::ProcessEvent(const char *event_name)
     const uint32_t event_code = EventTab.FindEvent(event_name);
     if (event_code == INVALID_EVENT_CODE)
         return nullptr; // no handlers
+
+    // An event raised by the engine (no script is running): its whole time goes to its name and origin.
+    struct Timed
+    {
+        COMPILER &compiler;
+        const uint64_t key;
+        const bool outermost;
+        const std::chrono::steady_clock::time_point start;
+        ~Timed()
+        {
+            if (!outermost)
+                return;
+            EventWork &work = compiler.event_work_[key];
+            work.calls++;
+            work.ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
+            compiler.event_origin_ = storm::platform::frame_work::Phase::Script;
+        }
+    } timed{*this, event_code | (static_cast<uint64_t>(event_origin_) << 32), execute_depth_ == 0,
+            execute_depth_ == 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}};
     // The handlers are read from the table before each call: a handler may add or drop handlers of this event.
     for (uint32_t n = 0;; n++)
     {
@@ -1140,6 +1159,49 @@ void COMPILER::ProcessFrame(uint32_t DeltaTime)
         }
     }
     EventMsg.RemoveInvalidated();
+
+    work_frames_++;
+    if (std::chrono::steady_clock::now() - work_window_ >= std::chrono::seconds(30))
+        ReportScriptWork();
+}
+
+// One line: the events by time per frame (ms, calls per frame, the phase they were raised from) and what engine
+// code looked up by name outside scripts.
+void COMPILER::ReportScriptWork()
+{
+    const auto now = std::chrono::steady_clock::now();
+    const double seconds = std::chrono::duration<double>(now - work_window_).count();
+    const double frames = work_frames_;
+    std::vector<std::pair<uint64_t, EventWork>> events(event_work_.begin(), event_work_.end());
+    std::sort(events.begin(), events.end(), [](const auto &a, const auto &b) { return a.second.ns > b.second.ns; });
+    double total = 0.0;
+    std::array<double, storm::platform::frame_work::kPhases> by_origin{};
+    for (const auto &[key, work] : events)
+    {
+        total += work.ns;
+        by_origin[key >> 32] += work.ns;
+    }
+    std::string line = fmt::format("script work: {:.1f} s, {} frames; events_ms={:.3f}", seconds, work_frames_,
+                                   total / 1e6 / frames);
+    for (size_t phase = 0; phase < by_origin.size(); phase++)
+        if (by_origin[phase] > 0.0)
+            line += fmt::format(" from_{}={:.3f}", storm::platform::frame_work::kPhaseNames[phase], by_origin[phase] / 1e6 / frames);
+    line += " top=";
+    for (size_t n = 0; n < events.size() && n < 12; n++)
+    {
+        const EVENTINFO *event = EventTab.GetEvent(static_cast<uint32_t>(events[n].first));
+        line += fmt::format("{}{}@{}:{:.3f}x{:.2f}", n ? "," : "", event && event->name ? event->name : "?",
+                            storm::platform::frame_work::kPhaseNames[events[n].first >> 32],
+                            events[n].second.ns / 1e6 / frames, events[n].second.calls / frames);
+    }
+    storm::ScriptNameLookups &lookups = storm::NameLookups();
+    line += fmt::format("; engine lookups by name per frame: attributes={:.1f} (interface adapters {:.1f}) variables={:.1f}",
+                        lookups.attributes / frames, lookups.adapterAttributes / frames, lookups.variables / frames);
+    spdlog::info("{}", line);
+    lookups = {};
+    event_work_.clear();
+    work_frames_ = 0;
+    work_window_ = now;
 }
 
 void COMPILER::ResizeBCodeBuffer(SEGMENT_DESC &Segment, uint32_t add_size)
@@ -3778,14 +3840,18 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
         const FuncFrame &frame;
         ~ExecuteDepth()
         {
-            if (--compiler.execute_depth_ == 0 && compiler.abort_execution_)
+            if (--compiler.execute_depth_ != 0)
+                return;
+            storm::ScriptRunning(false);
+            if (compiler.abort_execution_)
             {
                 compiler.abort_execution_ = false;
                 compiler.SStack.InvalidateFrom(frame.stack_offset);
             }
         }
     } execute_depth{*this, frame};
-    ++execute_depth_;
+    if (execute_depth_++ == 0)
+        storm::ScriptRunning(true);
     entid_t eid;
     //    ATTRIBUTES * pRoot;
     ATTRIBUTES *pLeftOperandAClass;

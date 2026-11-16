@@ -34,7 +34,7 @@ writes its script state into `$STORM_VM_STATE_DIR` at every scene's `loaded` and
 variables are read (`COMPILER::WriteStateDump`): every global variable, every attribute tree and the name codec,
 serialized as `SaveState` does it, so an equal state is an equal save. With that variable set every frame lasts 20 ms
 of game time, and the preloaded `repeatable_rand.c` gives `rand()` the same sequence in every run. Both engines then
-boot, create a new game and enter the first town (with `--save`: load the save and play its scene); up to there a
+boot, create a new game and enter the first town (with `--save`: load the save and enter its scene); up to there a
 session repeats exactly (about 5 MB of state per step; later steps depend on how many frames the background loading
 took and are not compared). The states must be equal byte for byte; only the sweep script's own frame counters may
 differ. `state_diff.py A.state B.state` names what differs between two states: variables, attribute paths, codec names.

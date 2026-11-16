@@ -12,6 +12,7 @@
 #include "controls.h"
 #include "fs.h"
 #include "platform/frame_work.hpp"
+#include "script_state.hpp"
 #include "platform/host_hooks.hpp"
 #include "profiler.hpp"
 #include "save_file.hpp"
@@ -634,12 +635,13 @@ uint32_t CoreImpl::PostEvent(const char *Event_name, uint32_t post_time, const c
 VDATA *CoreImpl::Event(const std::string_view &event_name)
 {
     MESSAGE message;
-    const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Script);
-    return Compiler->ProcessEvent(event_name.data(), message);
+    return Event(event_name, message);
 }
 
 VDATA *CoreImpl::Event(const std::string_view &event_name, MESSAGE &message)
 {
+    // The phase the event is raised from (the HUD adapters, an entity's Execute or Realize, ...) names its origin.
+    Compiler->SetEventOrigin(storm::platform::frame_work::state().current);
     const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Script);
     return Compiler->ProcessEvent(event_name.data(), message);
 }
@@ -1262,6 +1264,7 @@ void *CoreImpl::GetScriptVariable(const char *pVariableName, uint32_t *pdwVarInd
 {
     const VarInfo *real_var;
 
+    storm::CountVariableLookup();
     const auto dwVarIndex = Compiler->VarTab.FindVar(pVariableName);
     if (dwVarIndex == INVALID_VAR_CODE)
     {

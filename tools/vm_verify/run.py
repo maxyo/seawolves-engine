@@ -46,10 +46,11 @@ sweep = here.parent / 'scene_sweep/run.py'
 args.out.mkdir(parents=True, exist_ok=True)
 
 # The steps of a session up to which two runs of one engine give the same state: later ones depend on how many
-# frames the background loading took.
+# frames the background loading took (the save's scene after a second of play already differs between two runs of
+# one engine: character positions in the sixth digit).
 STATE_STEPS = {'newgame': ['loaded_menu_main', 'end_menu_main', 'loaded_newgame_intro', 'end_newgame_intro',
                            'loaded_loc_FortFrance_town'],
-               'save': ['loaded_menu_main', 'end_menu_main', 'load', 'loaded_save_boot', 'end_save_boot']}
+               'save': ['loaded_menu_main', 'end_menu_main', 'load', 'loaded_save_boot']}
 SWEEP_VARIABLE = re.compile(r'^ss[A-Z]')  # tools/scene_sweep/scene_sweep.c counts its own frames and time
 
 
