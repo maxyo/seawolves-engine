@@ -1,4 +1,5 @@
 #include "float_to_int.h"
+#include "sse.h"
 #include <xmmintrin.h> // x86 reference oracle; this test is intentionally host-only
 #include <cfenv>
 #include <cstring>
@@ -40,6 +41,38 @@ int main()
             check_conversion(value);
         }
     }
+    std::fesetround(FE_TONEAREST);
+    std::uniform_real_distribution<float> distribution(-100.f, 100.f);
+    for (int iteration = 0; iteration < 10000; ++iteration)
+    {
+        float x[4], y[4], z[4], output[3][4];
+        for (int i = 0; i < 4; ++i) { x[i] = distribution(random); y[i] = distribution(random); z[i] = distribution(random); }
+        SeaFloat4 vx, vy, vz, nx, ny, nz;
+        SSE_GatherFourFloats(x, x+1, x+2, x+3, &vx);
+        SSE_GatherFourFloats(y, y+1, y+2, y+3, &vy);
+        SSE_GatherFourFloats(z, z+1, z+2, z+3, &vz);
+        SSE_Normalise(vx, vy, vz, &nx, &ny, &nz);
+        SSE_ScatterFourFloats(output[0], output[0]+1, output[0]+2, output[0]+3, nx);
+        SSE_ScatterFourFloats(output[1], output[1]+1, output[1]+2, output[1]+3, ny);
+        SSE_ScatterFourFloats(output[2], output[2]+1, output[2]+2, output[2]+3, nz);
+        for (int i = 0; i < 4; ++i)
+        {
+            const double length = std::sqrt(double(x[i])*x[i] + double(y[i])*y[i] + double(z[i])*z[i]);
+            // SSE reciprocal square root is approximate. Scalar output is more
+            // accurate, so parity is numeric rather than bit-for-bit here.
+            require(std::abs(output[0][i] - x[i]/length) < .0005, "normal x");
+            require(std::abs(output[1][i] - y[i]/length) < .0005, "normal y");
+            require(std::abs(output[2][i] - z[i]/length) < .0005, "normal z");
+        }
+        const auto sum = SeaAdd(vx, vz);
+        const auto root = SeaSqrt(SeaAdd(sum, sum));
+        SSE_ScatterFourFloats(output[0], output[0]+1, output[0]+2, output[0]+3, root);
+        for (int i = 0; i < 4; ++i)
+        {
+            float expected = std::sqrt(2.f * (x[i] + z[i]));
+            require(output[0][i] == expected || (std::isnan(output[0][i]) && std::isnan(expected)), "sqrt/add lanes");
+        }
+    }
     std::fesetround(original);
-    std::cout << "PASS: 400056 float conversions; SSE=" << STORM_MATH_HAS_SSE << '\n';
+    std::cout << "PASS: 400056 float conversions; 40000 normal lanes; SSE=" << STORM_MATH_HAS_SSE << '\n';
 }

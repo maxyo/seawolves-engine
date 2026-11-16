@@ -151,8 +151,6 @@ class Context final : public render::FrameOwner
     // black and opaque white exist there (patches/bgfx-vk-builtin-border-colors.patch).
     bool border_colors() const { return border_colors_; }
     bgfx::UniformHandle sampler(uint32_t unit) const { return samplers_[unit]; }
-    // D3DVERTEXTEXTURESAMPLER0 of the vertex ports that sample it (ShaderPort::vertex_texture): s_vtex0, unit 13.
-    bgfx::UniformHandle vertex_port_sampler() const { return vertex_port_sampler_; }
     void draw_fullscreen(uint16_t view, bgfx::TextureHandle texture, uint32_t sampler_flags, uint64_t state,
                          float u0 = 0, float v0 = 0, float u1 = 1, float v1 = 1);
 
@@ -282,7 +280,6 @@ class Context final : public render::FrameOwner
     std::vector<Client> clients_;
     bgfx::ProgramHandle blit_program_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle samplers_[kSamplerUnits] = {};
-    bgfx::UniformHandle vertex_port_sampler_ = BGFX_INVALID_HANDLE;
     bgfx::VertexLayout blit_layout_;
     bgfx::VertexBufferHandle blit_vertices_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle blit_uv_ = BGFX_INVALID_HANDLE;

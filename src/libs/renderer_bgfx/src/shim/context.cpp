@@ -766,7 +766,6 @@ void Context::create_resources()
                                                 "s_bones"};
     for (uint32_t i = 0; i < kSamplerUnits; ++i)
         samplers_[i] = bgfx::createUniform(names[i], bgfx::UniformType::Sampler);
-    vertex_port_sampler_ = bgfx::createUniform("s_vtex0", bgfx::UniformType::Sampler);
     blit_program_ = bgfx::createProgram(create_embedded_shader(shader_id_by_name("vs_blit")),
                                         create_embedded_shader(shader_id_by_name("fs_blit")), true);
     blit_layout_.begin()

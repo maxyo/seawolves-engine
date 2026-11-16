@@ -7,7 +7,7 @@ foreach(variant sse scalar)
     add_executable(${variant} math.cpp)
     target_link_libraries(${variant} PRIVATE glm::glm-header-only)
     target_compile_features(${variant} PRIVATE cxx_std_17)
-    target_include_directories(${variant} PRIVATE ../../src/libs/math/include)
+    target_include_directories(${variant} PRIVATE ../../src/libs/math/include ../../src/libs/sea/src)
     target_compile_options(${variant} PRIVATE -O2 -frounding-math -ffp-contract=off
         -fsanitize=undefined,float-cast-overflow -fno-sanitize-recover=all)
     target_link_options(${variant} PRIVATE -fsanitize=undefined,float-cast-overflow)
