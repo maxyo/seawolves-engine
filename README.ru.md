@@ -1,9 +1,9 @@
 [English](README.md) | **Русский**
 
-# Seawolves Engine
+# seawolves-engine
 
 Android-форк [Storm Engine](https://github.com/storm-devs/storm-engine) (движка серии «Корсары» / Sea Dogs).
-На нём работает Seawolves — приложение, чтобы играть в «Корсары: Каждому своё» на телефоне
+На нём работает seawolves — приложение, чтобы играть в «Корсары: Каждому своё» на телефоне
 со своей копией игры. Лицензия GPL-3.0.
 
 **Файлов игры здесь нет и не будет.** Нужна своя легально полученная копия. Приложение копирует её через
@@ -39,7 +39,7 @@ Vulkan 1.1, если устройство поддерживает нужное 
 Этот репозиторий собирает только нативную библиотеку движка, без APK:
 `bash tools/android/ci_dependencies.sh`, затем `bash tools/android/ci_engine.sh`
 (подробности — [tools/android/README.md](tools/android/README.md)). Сборка под Linux-хост для разработки —
-см. `cmake/host.cmake`. Само Android-приложение, Seawolves, живёт в отдельном репозитории, который пока не публичен.
+см. `cmake/host.cmake`. Само Android-приложение, seawolves, живёт в отдельном репозитории, который пока не публичен.
 
 ## Если нашли ошибку
 

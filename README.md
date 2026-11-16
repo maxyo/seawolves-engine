@@ -1,9 +1,9 @@
 **English** | [Русский](README.ru.md)
 
-# Seawolves Engine
+# seawolves-engine
 
 An Android fork of [Storm Engine](https://github.com/storm-devs/storm-engine), the engine of the Sea Dogs games.
-It powers Seawolves, an app for playing Sea Dogs: To Each His Own («Корсары: Каждому своё») on a phone with
+It powers seawolves, an app for playing Sea Dogs: To Each His Own («Корсары: Каждому своё») on a phone with
 your own copy of the game. Licensed under GPL-3.0.
 
 **No game files are included, and none ever will be.** You need your own legally obtained copy. The app copies
@@ -39,7 +39,7 @@ capabilities, and anything turned off is logged.
 This repository builds the native engine library only, not an APK:
 `bash tools/android/ci_dependencies.sh`, then `bash tools/android/ci_engine.sh`
 (details in [tools/android/README.md](tools/android/README.md)). For the Linux host development build, see
-`cmake/host.cmake`. The Android app, Seawolves, lives in a separate repository that is not public yet.
+`cmake/host.cmake`. The Android app, seawolves, lives in a separate repository that is not public yet.
 
 ## Reporting bugs
 
