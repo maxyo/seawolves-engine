@@ -55,14 +55,13 @@ void S_EVENTTAB::Release()
     }
 }
 
-bool S_EVENTTAB::GetEvent(EVENTINFO &ei, uint32_t event_code)
+const EVENTINFO *S_EVENTTAB::GetEvent(uint32_t event_code) const
 {
     const auto ti = HASHT_INDEX(event_code);
     const auto tc = HASHT_CODE(event_code);
-    if (tc >= Event_num[ti])
-        return false;
-    ei = pTable[ti][tc];
-    return true;
+    if (ti >= HASHTABLE_SIZE || tc >= Event_num[ti])
+        return nullptr;
+    return &pTable[ti][tc];
 }
 
 uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code, uint32_t func_segment_id, int32_t flag,

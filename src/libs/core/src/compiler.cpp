@@ -85,8 +85,8 @@ using std::chrono::system_clock;
 COMPILER::COMPILER()
     : bBreakOnError(false), pRunCodeBase(nullptr), CompilerStage(CS_SYSTEM), pEventMessage(nullptr), SegmentsNum(0),
       InstructionPointer(0), pBuffer(nullptr), ProgramDirectory(nullptr), bCompleted(false), bEntityUpdate(true),
-      pDebExpBuffer(nullptr), nDebExpBufferSize(0), pRun_fi(nullptr), bRuntimeLog(false),
-      nRuntimeLogEventsBufferSize(0), nRuntimeLogEventsNum(0), nRuntimeTicks(0), bFirstRun(true), bWriteCodeFile(false),
+      pDebExpBuffer(nullptr), nDebExpBufferSize(0), pRun_fi(nullptr),
+      bFirstRun(true), bWriteCodeFile(false),
       bDebugInfo(false), DebugSourceLine(0), pCompileTokenTempBuffer(nullptr), bDebugExpressionRun(false),
       bTraceMode(true), nDebugTraceLineCode(0), nIOBufferSize(0), pIOBuffer(nullptr), rAP(nullptr),
       script_cache_mode_(kCacheDisabled)
@@ -167,8 +167,6 @@ void COMPILER::Release()
     pDebExpBuffer = nullptr;
     nDebExpBufferSize = 0;
 
-    nRuntimeLogEventsNum = 0;
-    nRuntimeLogEventsBufferSize = 0;
 
     rAX.Release();
     rBX.Release();
@@ -434,11 +432,6 @@ void COMPILER::LoadPreprocess()
         else
             bWriteCodeFile = true;
 
-        if (engine_ini->GetInt("script", "runtimelog", 0) == 0)
-            bRuntimeLog = false;
-        else
-            bRuntimeLog = true;
-
         // On by default: game scripts do not change while the game runs (see
         // tools/android/README.md, "Compiled script cache").
         script_cache_mode_ = engine_ini->GetInt("script", "cache_mode", kCacheEnabledNoRuntimeCheck);
@@ -696,11 +689,13 @@ bool COMPILER::HasActiveEventHandler(const char *event_name, const char *func_na
         return false;
     const uint32_t func_code = FuncTab.FindFunc(func_name);
     const uint32_t event_code = EventTab.FindEvent(event_name);
-    EVENTINFO ei;
-    if (func_code == INVALID_FUNC_CODE || event_code == INVALID_EVENT_CODE || !EventTab.GetEvent(ei, event_code))
+    if (func_code == INVALID_FUNC_CODE || event_code == INVALID_EVENT_CODE)
         return false;
-    for (uint32_t n = 0; n < ei.elements; n++)
-        if (ei.pFuncInfo[n].func_code == func_code && ei.pFuncInfo[n].status == FSTATUS_NORMAL)
+    const EVENTINFO *event = EventTab.GetEvent(event_code);
+    if (!event)
+        return false;
+    for (uint32_t n = 0; n < event->elements; n++)
+        if (event->pFuncInfo[n].func_code == func_code && event->pFuncInfo[n].status == FSTATUS_NORMAL)
             return true;
     return false;
 }
@@ -712,68 +707,36 @@ VDATA *COMPILER::ProcessEvent(const char *event_name)
     storm::ringbuffer_stack_push_guard push_guard(callStack_);
     push_guard.push(std::make_tuple("", 0U, event_name, kNoArguments, 0U));
 
-    uint32_t event_code;
-    uint32_t func_code;
-    VDATA *pVD;
-    DATA *pResult;
-    MESSAGE *pMem;
-    EVENTINFO ei;
-
-    uint64_t dwRDTSC, nTicks;
-
-    RDTSC_B(dwRDTSC);
-
     bEventsBreak = false;
 
-    uint32_t nTimeOnEvent = SDL_GetTicks();
-
-    pVD = nullptr;
+    VDATA *pVD = nullptr;
     if (event_name == nullptr)
     {
         SetError("Invalid event name in ProcessEvent");
         return nullptr;
     }
 
-    event_code = EventTab.FindEvent(event_name);
+    const uint32_t event_code = EventTab.FindEvent(event_name);
     if (event_code == INVALID_EVENT_CODE)
         return nullptr; // no handlers
-    EventTab.GetEvent(ei, event_code);
-    for (uint32_t n = 0; n < ei.elements; n++)
+    // The handlers are read from the table before each call: a handler may add or drop handlers of this event.
+    for (uint32_t n = 0;; n++)
     {
-        func_code = ei.pFuncInfo[n].func_code;
-        if (ei.pFuncInfo[n].status != FSTATUS_NORMAL)
+        const EVENTINFO *event = EventTab.GetEvent(event_code);
+        if (!event || n >= event->elements)
+            break;
+        if (event->pFuncInfo[n].status != FSTATUS_NORMAL)
             continue;
-        pMem = pEventMessage;
+        const uint32_t func_code = event->pFuncInfo[n].func_code;
+        MESSAGE *pMem = pEventMessage;
         if (pMem)
         {
             pMem->Move2Start();
         }
 
         const uint32_t nStackVars = SStack.GetDataNum(); // remember stack elements num
-        RDTSC_B(nTicks);
-        BC_Execute(ei.pFuncInfo[n].func_code, pResult);
-        RDTSC_E(nTicks);
-
-        FuncInfo fi;
-        // if(FuncTab.GetFuncX(fi,ei.pFuncInfo[n].func_code))
-        if (FuncTab.GetFuncX(fi, func_code))
-        {
-            if (fi.return_type != TVOID)
-            {
-                fi.return_type = TVOID;
-            }
-        } //*/
-
-        if (EventTab.GetEvent(ei, event_code)) // to be sure event still exist
-        {
-            if (n < ei.elements)
-            {
-                if (!FuncTab.AddTime(ei.pFuncInfo[n].func_code, nTicks))
-                {
-                    core_internal.Trace("Invalid func_code = %u for AddTime", ei.pFuncInfo[n].func_code);
-                }
-            }
-        }
+        DATA *pResult;
+        BC_Execute(func_code, pResult);
 
         pEventMessage = pMem;
         if (pResult)
@@ -792,22 +755,7 @@ VDATA *COMPILER::ProcessEvent(const char *event_name)
             break;
     }
 
-    nTimeOnEvent = SDL_GetTicks() - nTimeOnEvent;
-
-    nRuntimeTicks += nTimeOnEvent;
-
     pRun_fi = nullptr;
-
-    // SetFocus(core_internal.App_Hwnd);        // VANO CHANGES
-
-    RDTSC_E(dwRDTSC);
-
-    // VANO CHANGES - remove in release
-    if (core_internal.Controls->GetDebugAsyncKeyState('5') < 0 &&
-        core_internal.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0)
-    {
-        core_internal.Trace("evnt: %d, %s", dwRDTSC, event_name);
-    }
 
     return pVD;
 }
@@ -1147,9 +1095,6 @@ bool COMPILER::ProcessDebugExpression0(const char *pExpression, DATA &Result)
 
 void COMPILER::ProcessFrame(uint32_t DeltaTime)
 {
-    if (core_internal.Timer.Ring)
-        AddRuntimeEvent();
-
     for (uint32_t n = 0; n < SegmentsNum; n++)
     {
         if (!SegmentTable[n].bUnload)
@@ -1195,8 +1140,6 @@ void COMPILER::ProcessFrame(uint32_t DeltaTime)
         }
     }
     EventMsg.RemoveInvalidated();
-
-    PrintoutUsage();
 }
 
 void COMPILER::ResizeBCodeBuffer(SEGMENT_DESC &Segment, uint32_t add_size)
@@ -3699,15 +3642,6 @@ S_TOKEN_TYPE COMPILER::NextTokenType()
 
 bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult)
 {
-    // snapshot of the scalar fields the call needs after the callee has run
-    uint32_t mem_ip;
-    uint32_t mem_InstructionPointer;
-    FuncFrame *mem_pfi;
-    //    DATA * pV;
-    const char *mem_codebase;
-    uint32_t arguments;
-    uint32_t check_sp;
-
     CompilerStage = CS_RUNTIME;
 
     // get func info
@@ -3734,82 +3668,32 @@ bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult
         SetError("missing args_num token");
         return false;
     }
-    arguments = *((int32_t *)&pRunCodeBase[TLR_DataOffset]);
+    const uint32_t arguments = *((int32_t *)&pRunCodeBase[TLR_DataOffset]);
 
-    check_sp = SStack.GetDataNum() - arguments;
+    const uint32_t check_sp = SStack.GetDataNum() - arguments;
     push_guard.push(std::make_tuple(call_fi.decl_file_name.c_str(), call_fi.decl_line, call_fi.name.c_str(), check_sp, arguments));
-    /*
-    // arguments number check done on compilation stage now
-    // arguments pushed into stack before this function call
 
-      // push function arguments into stack ----------------------------------------------
-      if(BC_TokenGet() != OPEN_BRACKET)  { SetError("missed '('"); return false; }
-      arguments = 0;
-      check_sp = SStack.GetDataNum();
-      call_fi.stack_offset = check_sp;
+    // the caller's position, restored after the callee has run
+    const uint32_t mem_InstructionPointer = InstructionPointer;
+    const uint32_t mem_ip = ip;
+    FuncFrame *const mem_pfi = pRun_fi;
+    const char *const mem_codebase = pRunCodeBase;
+    const auto restore = [&] {
+        pRun_fi = mem_pfi;
+        InstructionPointer = mem_InstructionPointer;
+        ip = mem_ip;
+        if (pRun_fi)
+            RunningSegmentID = pRun_fi->segment_id;
+        pRunCodeBase = mem_codebase;
+    };
 
-      if(NextTokenType()!= CLOSE_BRACKET)
-      {
-        while(TokenType() != CLOSE_BRACKET)
-        {
-          pV = SStack.Push();
-          BC_ProcessExpression(pV);
-          arguments++;
-        }
-      } else
-      {
-        BC_TokenGet();
-      }
-      if(arguments != call_fi.arguments)
-      {
-        if(call_fi.segment_id != INTERNAL_SEGMENT_ID)
-        {
-          SetError("function '%s(args:%d)' doesnt accept %d arguments",call_fi.name,call_fi.arguments,arguments);
-          return false;
-        }
-        else
-        {
-          if(!IsIntFuncVarArgsNum(func_code))
-          {
-            SetError("function '%s(args:%d)' doesnt accept %d arguments",call_fi.name,call_fi.arguments,arguments);
-            return false;
-          }
-        }
-      }
-      //---------------------------------------------------------------------------------------
-    //*/
-
-    // save current pointers values
-    mem_InstructionPointer = InstructionPointer;
-    mem_ip = ip;
-    mem_pfi = pRun_fi;
-    mem_codebase = pRunCodeBase;
-
-    uint64_t nTicks;
     if (call_segment_id == INTERNAL_SEGMENT_ID)
     {
-        if (bRuntimeLog)
-        {
-            if (!FuncTab.AddCall(func_code))
-            {
-                core_internal.Trace("Invalid func_code = %u for AddCall", func_code);
-            }
-        }
-
-        // BC_CallIntFunction(func_code,pVResult,arguments);
-        RDTSC_B(nTicks);
         BC_CallIntFunction(func_code, pVResult, arguments);
-        RDTSC_E(nTicks);
-
-        if (!FuncTab.AddTime(func_code, nTicks))
-        {
-            core_internal.Trace("Invalid func_code = %u for AddTime", func_code);
-        }
     }
     else if (call_segment_id == IMPORTED_SEGMENT_ID)
     {
         pVResult = nullptr;
-        RDTSC_B(nTicks);
         const uint32_t nResult = call_imported_func(&SStack);
         if (nResult == IFUNCRESULT_OK)
         {
@@ -3818,76 +3702,23 @@ bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult
                 pVResult = SStack.Read();
             }
         }
-        RDTSC_E(nTicks);
-        if (!FuncTab.AddTime(func_code, nTicks))
-        {
-            core_internal.Trace("Invalid func_code = %u for AddTime", func_code);
-        }
     }
     else
     {
-        // BC_Execute(func_code,pVResult);
-        RDTSC_B(nTicks);
         BC_Execute(func_code, pVResult);
-        RDTSC_E(nTicks);
-        if (!FuncTab.AddTime(func_code, nTicks))
-        {
-            core_internal.Trace("Invalid func_code = %u for AddTime", func_code);
-        }
     }
+
+    restore();
 
     if (abort_execution_)
     {
         // A native function aborted the running scripts (AbortExecution): no stack check, the caller's frame
         // returns too and the outermost one drops what the aborted frames left.
-        pRun_fi = mem_pfi;
-        InstructionPointer = mem_InstructionPointer;
-        ip = mem_ip;
-        if (pRun_fi)
-            RunningSegmentID = pRun_fi->segment_id;
-        pRunCodeBase = mem_codebase;
         return false;
     }
 
-    if (pVResult)
-    {
-        if (check_sp != (SStack.GetDataNum() - 1))
-        {
-            SetError("function '%s' stack error", call_fi.name.c_str());
-
-            pRun_fi = mem_pfi;
-            InstructionPointer = mem_InstructionPointer;
-            ip = mem_ip;
-
-            RunningSegmentID = pRun_fi->segment_id;
-            pRunCodeBase = mem_codebase;
-
-            // return false;    // debug!
-        }
-    }
-    else
-    {
-        if (check_sp != SStack.GetDataNum())
-        {
-            SetError("function '%s' stack error", call_fi.name.c_str());
-            pRun_fi = mem_pfi;
-            InstructionPointer = mem_InstructionPointer;
-            ip = mem_ip;
-
-            RunningSegmentID = pRun_fi->segment_id;
-            pRunCodeBase = mem_codebase;
-
-            // return false;// debug!
-        }
-    }
-    //*/
-    // restore
-    pRun_fi = mem_pfi;
-    InstructionPointer = mem_InstructionPointer;
-    ip = mem_ip;
-    if (pRun_fi)
-        RunningSegmentID = pRun_fi->segment_id;
-    pRunCodeBase = mem_codebase;
+    if (check_sp != SStack.GetDataNum() - (pVResult ? 1 : 0))
+        SetError("function '%s' stack error", call_fi.name.c_str());
 
     return true;
 }
@@ -3972,14 +3803,6 @@ bool COMPILER::BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const c
     int32_t dwBXIndex;
 
     CompilerStage = CS_RUNTIME;
-
-    if (bRuntimeLog)
-    {
-        if (!FuncTab.AddCall(function_code))
-        {
-            core_internal.Trace("Invalid function_code = %u for AddCall", function_code);
-        }
-    }
 
     bDebugWaitForThisFunc = false;
 
@@ -6517,24 +6340,6 @@ void *COMPILER::GetSaveData(const char *file_name, int32_t &data_size)
     return pResult;
 }
 
-void COMPILER::AddRuntimeEvent()
-{
-    if (!bRuntimeLog)
-        return;
-    nRuntimeLogEventsNum++;
-    if (nRuntimeLogEventsNum >= nRuntimeLogEventsBufferSize)
-    {
-        if (nRuntimeLogEventsBufferSize == 0)
-            nRuntimeLogEventsBufferSize = 180;
-        else
-            nRuntimeLogEventsBufferSize *= 2;
-        // pRuntimeLogEvent = (uint32_t *)RESIZE(pRuntimeLogEvent,nRuntimeLogEventsBufferSize*sizeof(uint32_t));
-        pRuntimeLogEvent.resize(nRuntimeLogEventsBufferSize);
-    }
-    pRuntimeLogEvent[nRuntimeLogEventsNum - 1] = nRuntimeTicks;
-    nRuntimeTicks = 0;
-}
-
 uint32_t COMPILER::SetScriptFunction(IFUNCINFO *pFuncInfo)
 {
     FuncInfo fi;
@@ -6696,48 +6501,6 @@ void COMPILER::CollectCallStack() const
         }
 
         callStackCopy.pop();
-    }
-}
-
-void COMPILER::PrintoutUsage()
-{
-    if (bRuntimeLog && core.Controls->GetDebugAsyncKeyState(VK_BACK) < 0 &&
-        core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0)
-    {
-        logTrace_->debug("Script Function Time Usage[func name/code(release mode) : ticks]");
-        FuncInfo fi;
-        for (size_t n = 0; n < FuncTab.GetFuncNum(); n++)
-        {
-            FuncTab.GetFuncX(fi, n);
-            if (fi.number_of_calls == 0)
-            {
-                continue;
-            }
-
-            FuncTab.GetFunc(fi, n);
-            if (!fi.name.empty())
-            {
-                logTrace_->debug("  {}", fi.name);
-            }
-            else
-            {
-                logTrace_->debug("  {}", n);
-            }
-            logTrace_->debug("  ticks summary  : {}", fi.usage_time);
-            logTrace_->debug("  calls          : {}", fi.number_of_calls);
-            if (fi.number_of_calls != 0)
-            {
-                logTrace_->debug("  average ticks  : {}", static_cast<float>(fi.usage_time) / fi.number_of_calls);
-            }
-            logTrace_->debug("");
-        }
-        FuncTab.ResetTimeAndCalls();
-
-        logTrace_->debug("Script Run Time Log [sec : ms]");
-        for (size_t n = 0; n < nRuntimeLogEventsNum; n++)
-        {
-            logTrace_->debug("  {} : {}", n, pRuntimeLogEvent[n]);
-        }
     }
 }
 

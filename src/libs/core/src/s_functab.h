@@ -51,10 +51,6 @@ struct FuncInfo
     std::string decl_file_name;
     uint32_t decl_line;
 
-    // profile info
-    uint64_t usage_time;
-    uint32_t number_of_calls;
-
     // imported func info
     SIMPORTFUNC imported_func;
     uint32_t extern_arguments;
@@ -114,10 +110,6 @@ class FuncTable
     size_t FindVar(size_t func_index, const std::string &var_name) const;
     // get local var or arg by index
     bool GetVar(LocalVarInfo &lvi, size_t func_index, size_t var_index) const;
-
-    bool AddTime(size_t func_index, uint64_t time);
-    bool AddCall(size_t func_index);
-    void ResetTimeAndCalls();
 
     void Release(); // clear table
 

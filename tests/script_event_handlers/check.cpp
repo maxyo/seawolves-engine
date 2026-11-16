@@ -51,10 +51,9 @@ int main()
 
     // A removal shifts the later handlers down: the one moved onto index 0 must be looked at too.
     const auto handlers = [&](const char *name) {
-        EVENTINFO info{};
-        const bool found = compiler.EventTab.GetEvent(info, compiler.EventTab.FindEvent(name));
-        assert(found);
-        return info.elements;
+        const EVENTINFO *info = compiler.EventTab.GetEvent(compiler.EventTab.FindEvent(name));
+        assert(info);
+        return info->elements;
     };
     const char *unloaded = "Unloaded segment";
     compiler.EventTab.AddEventHandler(unloaded, 0, 7, 0);

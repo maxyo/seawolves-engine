@@ -249,7 +249,6 @@ class COMPILER : public VIRTUAL_COMPILER
     bool SetSaveData(const char *file_name, void *save_data, int32_t data_size);
     void *GetSaveData(const char *file_name, int32_t &data_size);
 
-    void AddRuntimeEvent();
 
     uint32_t SetScriptFunction(IFUNCINFO *pFuncInfo);
 
@@ -271,7 +270,6 @@ class COMPILER : public VIRTUAL_COMPILER
     void CollectCallStack() const;
 
     // printout script functions usage
-    void PrintoutUsage();
 
 private:
 #ifdef __ANDROID__
@@ -336,11 +334,6 @@ private:
 
     STRING_CODEC SCodec;
 
-    bool bRuntimeLog;
-    uint32_t nRuntimeLogEventsBufferSize;
-    uint32_t nRuntimeLogEventsNum;
-    std::vector<uint32_t> pRuntimeLogEvent;
-    uint32_t nRuntimeTicks;
 
     bool bFirstRun;
     bool bScriptTrace;

@@ -2,7 +2,7 @@
 
 FuncInfo::FuncInfo()
     : name(), local_vars(), segment_id(INVALID_SEGMENT_ID), offset(INVALID_FUNC_OFFSET), stack_offset(), arguments(),
-      return_type(TVOID), decl_file_name(), decl_line(), usage_time(), number_of_calls(), imported_func(),
+      return_type(TVOID), decl_file_name(), decl_line(), imported_func(),
       extern_arguments()
 {
 }
@@ -209,37 +209,6 @@ bool FuncTable::GetVar(LocalVarInfo &lvi, size_t func_index, size_t var_index) c
     lvi = vars[var_index];
 
     return true;
-}
-
-bool FuncTable::AddTime(size_t func_index, uint64_t time)
-{
-    if (func_index >= funcs_.size())
-    {
-        return false;
-    }
-
-    funcs_[func_index].usage_time += time;
-    return true;
-}
-
-bool FuncTable::AddCall(size_t func_index)
-{
-    if (func_index >= funcs_.size())
-    {
-        return false;
-    }
-
-    ++funcs_[func_index].number_of_calls;
-    return true;
-}
-
-void FuncTable::ResetTimeAndCalls()
-{
-    for (auto &func : funcs_)
-    {
-        func.usage_time = 0;
-        func.number_of_calls = 0;
-    }
 }
 
 void FuncTable::Release()
