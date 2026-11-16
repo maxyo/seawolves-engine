@@ -70,6 +70,8 @@ class SunShadows
     bool casting() const { return active_ && footprint_; }
     // Receiver: binds the map and its matrix for the draw's camera.
     void bind(const std::array<float, 16> &view, const fx::SunReceiver &receiver) { shadows_.Bind(view, receiver); }
+    // A draw of a shadowed program that receives nothing (fx::Shadows::BindUnshadowed).
+    void bind_unshadowed() { shadows_.BindUnshadowed(settings_); }
     // The still geometry's tiles that `reaches` (a tile's sphere, absolute world) into `view`, as depth-only casters
     // with their textures' holes; `origin`: the world position the view's coordinates are relative to. For the
     // static layer and for the place's sun map of the towns' relight (effects/town_light.hpp). {tiles, triangles}.

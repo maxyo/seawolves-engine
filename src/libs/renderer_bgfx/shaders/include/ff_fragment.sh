@@ -7,9 +7,20 @@
 //                   specular with FX_LIGHT_SPECULAR); features the settings leave off arrive with zero strength.
 //   FX_FF_BAKED     geometry with baked vertex colours (lighting off, vs_ff_lit): dynamic point lights are added,
 //                   as texture * light.
-//   lamps           FX_FF_LIT / FX_FF_BAKED: the location's lamps with their shadows (ffLampLight, off per draw by
-//                   u_fxLamps[0].x = 0) relight the baked colours and light the lit draws; lit draws of an interior
-//                   take the room light as their ambient (ffRoomLight, u_fxLampGrid[2].w).
+// Product blocks of the lit and baked families (renderer_bgfx/CMakeLists.txt; lighting.cpp ChooseFamily picks the
+// narrowest family that holds every block a draw reads; a block's per-draw switch still turns it off in a family
+// that has it):
+//   FX_FF_LAMPS     the location's lamps with their shadows (ffLampLight, off per draw by u_fxLamps[0].x = 0)
+//                   relight the baked colours and light the lit draws; lit draws of an interior take the room light
+//                   as their ambient (ffRoomLight, u_fxLampGrid[2].w).
+//   FX_FF_AO        the interior's ambient occlusion volume (ffAoVolume, off per draw by u_fxAoParams.x = 0): darkens
+//                   the ambient of lit draws and the baked colours.
+//   FX_FF_TOWN_WALL FX_FF_BAKED: a town's walls relit by our sun and sky (u_fxTownWall[0].w = 0: off for the draw).
+//   FX_FF_WET       wet surfaces: in the rain, outdoor surfaces where the sky's rain reaches them (the visibility
+//                   volume's openness: dry under roofs) are darker and glossier, their relief filled; the highlights
+//                   of the sun and the lamps (FX_LIGHT_SPECULAR) take the wet gloss, the overcast sky is reflected;
+//                   puddles in the relief's hollows (FX_LIGHT_PARALLAX). ff_wet.sh, off per draw by u_fxWet[0].x = 0.
+// Every family reads the visibility volume (ffVisibility).
 //   FX_LIGHT_NORMALMAP  with FX_FF_LIT / FX_FF_BAKED: relief from the normal map derived from stage 1's height texture
 //                   or stage 0's colour texture (stage 14, that stage's coordinates: u_fxFf.y): lit draws perturb the
 //                   normal, baked ones scale their colour.
@@ -24,18 +35,12 @@
 //                   dark blue; 4 the metal mask (cyan).
 //   FX_LIGHT_PARALLAX   with FX_LIGHT_NORMALMAP (a stage 0 map whose material, stage 7, has a height): parallax occlusion mapping;
 //                   stage 0's colour and the normal map are read where the eye's ray meets the relief.
-//   FX_LIGHT_SHADOW[_SOFT]  with FX_FF_LIT: the sun's diffuse and specular terms are scaled by the sun shadow maps
-//                   (stage 15, src/effects/shadows.hpp); with FX_FF_BAKED: a town's walls likewise, other baked
-//                   surfaces take the moving casters' shadows on the sun's part of their bake (u_fxShadow[3].w).
+//   FX_LIGHT_SHADOW with FX_FF_LIT: the sun's diffuse and specular terms are scaled by the sun shadow maps
+//                   (stage 15, src/effects/shadows.hpp; one tap or the soft filter: fx_lighting.sh fxSunShadow); with
+//                   FX_FF_BAKED: a town's walls likewise, other baked surfaces take the moving casters' shadows on
+//                   the sun's part of their bake (u_fxShadow[3].w).
 //   FX_FF_DYN       the plain combiner plus the moving casters' sun shadows (fs_ff_dyn with vs_ff[_unlit]_dyn: the
 //                   lightmapped and baked ground under characters and ships; fx_sun_map.sh fxSunGround).
-//   AO volume       FX_FF_LIT / FX_FF_BAKED: the interior's ambient occlusion (ffAoVolume, off per draw by
-//                   u_fxAoParams.x = 0): darkens the ambient of lit draws and the baked colours.
-//   wet surfaces    FX_FF_LIT / FX_FF_BAKED: in the rain, outdoor surfaces where the sky's rain reaches them (the
-//                   visibility volume's openness: dry under roofs) are darker and glossier, their relief filled; the
-//                   highlights of the sun and the lamps (FX_LIGHT_SPECULAR) take the wet gloss, the overcast sky is
-//                   reflected; puddles in the relief's hollows (FX_LIGHT_PARALLAX). ff_wet.sh, off per draw by
-//                   u_fxWet[0].x = 0.
 //   FX_FF_COVERAGE  alpha to coverage instead of the alpha-test discard (fx_coverage.sh); in the FX_FF_LIT /
 //                   FX_FF_BAKED variants it is switched per draw by u_fxCoverage.z.
 #include "ff_finish.sh"
@@ -81,6 +86,7 @@ uniform vec4 u_fxGloss; // the gloss of the material texture (s_fxMaterial, fx_l
 // u_fxAoVolume: view space -> volume uvw. u_fxAoParams: x strength (0 = no volume for this draw; times fx_ao_gain), y contrast,
 // z normal offset in metres (one cell: every cell the filter mixes lies before the surface), w 1 / what an open surface sees.
 // The volume holds four cosine lobes (fx::AoLobeAxes, RGBA); Nw is the world-space normal.
+#ifdef FX_FF_AO
 SAMPLER3D(s_fxAoVolume, 12);
 uniform mat4 u_fxAoVolume;
 uniform vec4 u_fxAoParams;
@@ -96,6 +102,7 @@ float ffAoVolume(vec3 P, vec3 Ng, vec3 Nw)
     float ao = clamp(seen * u_fxAoParams.w, 0.0, 1.0);
     return max(mix(1.0, pow(ao, u_fxAoParams.y), u_fxAoParams.x), 0.0); // (the strength may pass 1: fx_ao_gain)
 }
+#endif
 
 // How open to the sky the pixel's place is (src/effects/visibility.hpp, fx/visibility.hpp; stage 5 =
 // fx::kVisibilityStage, the stage 0 cube map's unit, which no lit or baked variant has): x sky (cosine-weighted, to the
@@ -133,6 +140,7 @@ float ffSunReach(float open)
 // The town walls' relight (src/effects/town_light.hpp, lighting.cpp bind_town_wall): [0] the lightmaps' tone a, b, c and
 // w 1 = on for this draw; [1] towards the live sun (view space); [2] towards the sun the game baked with; [3], [4] the
 // game's sky per bin of ours (bin centres (i + 0.5) / 8).
+#ifdef FX_FF_TOWN_WALL
 uniform vec4 u_fxTownWall[5];
 float ffWallSky(float k)
 {
@@ -143,7 +151,12 @@ float ffWallSky(float k)
     float hi = at + 1 < 4 ? u_fxTownWall[3][at + 1] : u_fxTownWall[4][at - 3];
     return max(k, mix(lo, hi, x - i));
 }
+#endif
+#ifdef FX_FF_WET
+#include "ff_wet.sh"
+#endif
 
+#ifdef FX_FF_LAMPS
 // The lamps of a location, per pixel and with their shadows (src/effects/lamp_shadows.hpp; fx/lamp_shadows.hpp for
 // the face convention). All of it in absolute world space.
 // u_fxLampView: view space -> world.
@@ -173,7 +186,6 @@ SAMPLER3D(s_fxRoomLight, 8);
 SAMPLER3D(s_fxLampGrid, 9);
 SAMPLER2DSHADOW(s_fxLampDynamic, 10);
 SAMPLER2DSHADOW(s_fxLampStatic, 11);
-#include "ff_wet.sh"
 
 // Shadow compare taps of this pixel (the debug view u_fxLampGrid[0].w = 3); a global of the shader (HLSL, which the
 // SPIR-V path compiles, reads a global without `static` as a uniform).
@@ -364,9 +376,8 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
         rgb = ffLampDebugColor(slot) * dot(rgb, vec3(0.299, 0.587, 0.114));
     // Light the picture cannot show (under half a step, fx::kLampNegligible) is not filtered against its shadow.
     float shown = max(rgb.r, max(rgb.g, rgb.b)) * light;
-#ifdef FX_LIGHT_LINEAR
-    shown = sqrt(shown);
-#endif
+    if (fxLinear())
+        shown = sqrt(shown);
     float seen = 1.0;
     if (shown >= u_fxLampGrid[4].w)
     {
@@ -443,33 +454,37 @@ vec4 ffLampLight(vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, out vec3 lampM
             }
         }
     }
-    // The lights that move (at most two) are few and anywhere: every pixel asks them, without the grid.
-    vec4 moved = vec4_splat(0.0);
-    if (u_fxLampGrid[4].y > 0.5)
-        ffLampAdd(u_fxLampGrid[4].x + 1.0, Pw, Ng, N, specV, spec, strongest, moved, lampSpec);
-    if (u_fxLampGrid[4].y > 1.5)
-        ffLampAdd(u_fxLampGrid[4].x + 2.0, Pw, Ng, N, specV, spec, strongest, moved, lampSpec);
-    // The debug views show every light the same way.
-    if (u_fxLampGrid[0].w > 0.5)
-        sum = moved;
-    else
-        lampMoved = moved.rgb;
-    ffLampAdd(near.x, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-    if (cap > 1.5)
-        ffLampAdd(near.y, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-    if (cap > 2.5)
-        ffLampAdd(near.z, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-    if (cap > 3.5)
-        ffLampAdd(near.w, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-    if (cap > 4.5)
+    // One loop over the pixel's lights, so the program holds ffLampAdd (its filters, its aggregate loop) once: ten
+    // inlined copies made the lamp programs four times the size of the others, and their links as slow. First the
+    // lights that move (at most two: few and anywhere, every pixel asks them, without the grid), which leave the sum
+    // as `lampMoved`, then the lamps of the grid's cell, the first always, the others up to the cap.
+    for (int i = 0; i < 10; ++i)
     {
-        ffLampAdd(more.x, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-        if (cap > 5.5)
-            ffLampAdd(more.y, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-        if (cap > 6.5)
-            ffLampAdd(more.z, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
-        if (cap > 7.5)
-            ffLampAdd(more.w, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
+        float id = 0.0;
+        if (i < 2)
+        {
+            if (u_fxLampGrid[4].y > float(i) + 0.5)
+                id = u_fxLampGrid[4].x + float(i) + 1.0;
+        }
+        else
+        {
+            if (i == 2)
+            {
+                // The debug views show every light the same way: the grid's lamps add to the moving ones.
+                if (u_fxLampGrid[0].w <= 0.5)
+                {
+                    lampMoved = sum.rgb;
+                    sum = vec4_splat(0.0);
+                }
+            }
+            int k = i - 2;
+            if (k > 0 && cap < float(k) + 0.5)
+                break;
+            vec4 cellIds = k < 4 ? near : more;
+            int c = k < 4 ? k : k - 4;
+            id = c == 0 ? cellIds.x : c == 1 ? cellIds.y : c == 2 ? cellIds.z : cellIds.w;
+        }
+        ffLampAdd(id, Pw, Ng, N, specV, spec, strongest, sum, lampSpec);
     }
     return sum;
 }
@@ -481,6 +496,7 @@ vec3 ffRoomLight(vec3 Pw, vec3 Nw)
     vec3 uvw = (Pw + Nw * 0.5 - u_fxLampGrid[2].xyz) * u_fxLampGrid[3].xyz;
     return texture3D(s_fxRoomLight, clamp(uvw, 0.0, 1.0)).rgb;
 }
+#endif // FX_FF_LAMPS
 #define FF_DIFFUSE ffDiffuse
 #else
 #define FF_DIFFUSE v_color0
@@ -692,6 +708,7 @@ void main()
     float sunReach = ffSunReach(skySeen.y);
     // The rain (ff_wet.sh): where it reaches (the openness above 15°: dry under roofs), the surface is wet, its relief
     // filled with water and its gloss raised, before the lamps and the sun take them; puddles in the relief's hollows.
+#ifdef FX_FF_WET
     float ffHeight = 1.0;
 #ifdef FX_LIGHT_PARALLAX
     if (u_fxWet[0].y > 0.5)
@@ -703,19 +720,32 @@ void main()
         N = ffWetNormal(N, Ng, ffWet);
         ffSpec = ffWetSpec(ffSpec, N, V, ffWet);
     }
+#else
+    vec4 ffWet = vec4(0.0, 0.0, 0.0, 1.0); // dry (ffWetPrepare's)
+#endif
     // The lamps' highlights: with the gloss on (u_fxGloss.w), or wet.
     vec2 ffLampSpecOf = ffSpec;
 #ifdef FX_LIGHT_SPECULAR
     if (u_fxGloss.w <= 0.0 && ffWet.x <= 0.0)
         ffLampSpecOf.y = 0.0;
 #endif
-    // The place's lamps with their shadows (nothing where there are none).
     vec3 ffPointDiffuse, ffPointSpecular;
     fxPointTerms(Ng,N,P,V,ffSpec,ffPointDiffuse,ffPointSpecular);
+    // The place's lamps with their shadows (nothing where there are none).
+#ifdef FX_FF_LAMPS
     vec3 ffLampMoved;
     vec3 ffLampSpec;
     vec4 lamps = ffLampLight(Pw, Nw, normalize(mul(u_fxLampView, vec4(N, 0.0)).xyz), ffSpecV, ffLampSpecOf, ffLampMoved, ffLampSpec);
+#else
+    vec3 ffLampMoved = vec3_splat(0.0);
+    vec3 ffLampSpec = vec3_splat(0.0);
+    vec4 lamps = vec4_splat(0.0);
+#endif
+#ifdef FX_FF_AO
     float aoVolume = mix(ffAoVolume(P, Ng, Nw), 1.0, skySeen.x);
+#else
+    float aoVolume = 1.0;
+#endif
     // The relief's cavity: an occlusion at the texture's scale, under the light as the volume's is (ambient
     // in full, half of the direct light); a puddle's water fills it.
     float cavity = 1.0;
@@ -733,6 +763,7 @@ void main()
 #endif
     vec3 ambient = fxAmbient(N);
     float lampSeen = dot(lamps.rgb, vec3(0.299, 0.587, 0.114));
+#ifdef FX_FF_LAMPS
     if (u_fxLampGrid[2].w > 0.5)
     {
         // Indoors the model stands in the room's own light: the baked colours around it are its ambient (the global
@@ -747,6 +778,7 @@ void main()
         ambient = roomAmbient; // (without the hemisphere the weather's ambient is in the vertex sum, switched off here)
 #endif
     }
+#endif
     // A lamp's light on a model is at most that of a fully lit surface: above half of it the sum is compressed
     // towards 1 (a model at a candle's flame is lit, not burnt out).
     float lampShown = lampSeen <= 0.5 ? lampSeen : 0.5 + (lampSeen - 0.5) / (1.0 + 2.0 * (lampSeen - 0.5));
@@ -812,6 +844,15 @@ void main()
                                                      ffPomFrame.normal, u_fxLight[0].xyz));
 #endif
 #endif
+    // The baked colour holds the sky and the sun together: three quarters of the cavity.
+    aoVolume *= mix(1.0, cavity, 0.75);
+    // The moving casters' shadows (characters, ships) take the sun's part of the bake, not the lamps' light.
+#ifdef FX_LIGHT_SHADOW
+    float movingShade = fxSunGroundAt(P, Ng);
+#else
+    float movingShade = 1.0;
+#endif
+#ifdef FX_FF_LAMPS
     // The place's lamps relight the baked colour b: b * (b + G * lit) / (b + k * G * unshadowed). Where no lamp
     // reaches, the colour is the bake; the side towards a lamp gets its light, what the lamp cannot see loses the
     // part of that light the bake is taken to hold (k). The AO volume occludes all of it: the room's own look stays.
@@ -821,20 +862,19 @@ void main()
     // and takes light in that tone, with only a share of the lamp's own, far more saturated colour
     // (u_fxLampGrid[4].z; with all of it a candle-lit wall goes orange-red where the game's is warm white).
     vec3 lampTone = mix(vec3_splat(dot(lamps.rgb, vec3(0.299, 0.587, 0.114))), lamps.rgb, u_fxLampGrid[4].z);
-    // The baked colour holds the sky and the sun together: three quarters of the cavity.
-    aoVolume *= mix(1.0, cavity, 0.75);
-    // The moving casters' shadows (characters, ships) take the sun's part of the bake, not the lamps' light.
-#ifdef FX_LIGHT_SHADOW
-    float movingShade = fxSunGroundAt(P, Ng);
+    if (fxLinear())
+        current.rgb *= aoVolume * sqrt((vec3_splat(baked * baked * movingShade * movingShade) + gain * gain * lampTone) /
+                                       (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a));
+    else
+        current.rgb *= aoVolume * (vec3_splat(baked * movingShade) + gain * lampTone) / (baked + u_fxLamps[0].w * gain * lamps.a);
+    // The lamps' highlights on the baked colours, at the lamps' gain on them.
+    vec3 ffLampBakedSpec = ffLampSpec * (fxLinear() ? gain * gain : gain);
 #else
-    float movingShade = 1.0;
+    // Without the lamps the relight leaves the bake: only the moving casters' shadow takes its sun.
+    current.rgb *= aoVolume * movingShade;
+    vec3 ffLampBakedSpec = vec3_splat(0.0);
 #endif
-#ifdef FX_LIGHT_LINEAR
-    current.rgb *= aoVolume * sqrt((vec3_splat(baked * baked * movingShade * movingShade) + gain * gain * lampTone) /
-                                   (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a));
-#else
-    current.rgb *= aoVolume * (vec3_splat(baked * movingShade) + gain * lampTone) / (baked + u_fxLamps[0].w * gain * lamps.a);
-#endif
+#ifdef FX_FF_TOWN_WALL
     if (u_fxTownWall[0].w > 0.5)
     {
         // A town's wall (src/effects/town_light.hpp TownWallTone): its baked colour carries the game's sun along the
@@ -847,21 +887,15 @@ void main()
         float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(skySeen.x);
         current.rgb *= clamp(now / max(then, 0.02), 0.33, 3.0);
     }
+#endif
     current.rgb = fxLit(current.rgb, tex0.rgb, (ffPointDiffuse + ffLampMoved) * cavityDirect, vec3_splat(0.0),
                         vec3_splat(0.0));
 #ifdef FX_LIGHT_SPECULAR
     // Highlights the bake cannot hold: the sun's (outdoors: u_fxLight[1] is black indoors), the lamps' with their
     // shadows (at the lamps' gain on baked colours), the dynamic lights'; with a gloss map, or wet in the rain.
     if (u_fxGloss.w > 0.0 || ffWet.x > 0.0)
-    {
-#ifdef FX_LIGHT_LINEAR
-        float lampGain = gain * gain;
-#else
-        float lampGain = gain;
-#endif
-        current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * bakedSun * sunReach + ffLampSpec * lampGain +
+        current.rgb = fxAddSpecular(current.rgb, specTint * (fxSunSpecular(N, V, ffSpec) * bakedSun * sunReach + ffLampBakedSpec +
                                                              ffPointSpecular));
-    }
 #endif
 #endif
 #if defined(FX_FF_PIXEL_LIGHTING) && defined(FX_LIGHT_SPECULAR)
@@ -890,8 +924,11 @@ void main()
     }
 #endif
 #ifdef FX_FF_PIXEL_LIGHTING
+#ifdef FX_FF_WET
     // The overcast sky in the wet surfaces outdoors, on the lit colour.
     current.rgb = ffWetFinish(current.rgb, N, V, mul(u_fxLampView, vec4(reflect(-V, N), 0.0)).y, ffWet);
+#endif
+#ifdef FX_FF_LAMPS
     if (u_fxLamps[0].x > 0.5 && u_fxLampGrid[0].w > 0.5)
     {
         // Debug views: the lamps' light in the slots' colours over a grey picture, or what the shadows remove.
@@ -903,6 +940,7 @@ void main()
         else
             current.rgb = vec3_splat(ffLampTaps * 2.0 / 255.0); // two steps of 8 bits per tap
     }
+#endif
 #ifndef STAGE0_CUBE
     if (u_fxVisibilityParams.x > 1.5)
     {

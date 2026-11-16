@@ -35,6 +35,12 @@ inline constexpr uint8_t kNormalMapStage = 14;
 // gloss_map.hpp) in the lit and baked programs: unit 7 is the stage-2 cube of the plain fixed-function cube variants,
 // which those programs never are (cube-mapped draws keep the fixed-function path).
 inline constexpr uint8_t kMaterialStage = 7;
+// The point lights' and lamps' aggregate payload (fx_lighting.sh s_fxAggregate): the unit of the stage 1 cube map.
+inline constexpr uint8_t kAggregateStage = 6;
+// Every unit above, with the emulator's own stages 0..4 (and the renderer's bone palette at 13, shim/device.hpp),
+// is claimed once: src/effects/lighting.cpp checks at compile time that no two claims meet (FfUnitsDistinct).
+inline constexpr uint8_t kFxStages[] = {kVisibilityStage, kAggregateStage, kMaterialStage, kRoomLightStage, kLampGridStage,
+                                        kLampDynamicStage, kLampStaticStage, kAoVolumeStage, kNormalMapStage, kShadowMapStage};
 
 enum class QualityPreset : uint8_t
 {

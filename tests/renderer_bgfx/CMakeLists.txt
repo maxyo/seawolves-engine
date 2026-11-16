@@ -30,6 +30,15 @@ target_compile_definitions(perf_check PRIVATE NOMINMAX)
 target_compile_options(perf_check PRIVATE -fsigned-char)
 target_link_libraries(perf_check PRIVATE storm_bgfx storm_check_sdl)
 
+# program_family_check: every lit / baked program Lighting can pick is embedded with its opaque twin, and the family
+# rule gives each draw the narrowest family that holds what it reads (no GPU).
+add_executable(program_family_check program_family_check.cpp)
+target_include_directories(program_family_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+target_compile_definitions(program_family_check PRIVATE NOMINMAX)
+target_compile_options(program_family_check PRIVATE -fsigned-char)
+target_link_libraries(program_family_check PRIVATE storm_bgfx storm_check_sdl)
+
 add_executable(grass_vertex_check grass_vertex_check.cpp)
 target_include_directories(grass_vertex_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
 target_link_libraries(grass_vertex_check PRIVATE storm_bgfx storm_check_sdl)

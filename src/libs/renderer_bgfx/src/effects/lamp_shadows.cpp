@@ -1153,19 +1153,23 @@ void LampShadows::draw_static(shim::Device &device, bool all, Casters &casters)
     }
 }
 
-void LampShadows::bind(bool active, const std::array<float, 16> &view, bool room,
-                       const std::array<float, fx::kMaxShadowLamps> &aggregate,
-                       const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides)
+void LampShadows::bind_view(const std::array<float, 16> &view)
 {
     ensure_targets();
-    const bool on = active && active_;
     if (view != bound_view_)
     {
         bx::mtxInverse(view_to_world_.data(), view.data());
         bound_view_ = view;
     }
-    static const std::array<std::array<float, 4>, 2 + 3 * fx::kMaxShadowLamps> none{};
     bgfx::setUniform(u_view_, view_to_world_.data());
+}
+
+void LampShadows::bind(bool active, bool room, const std::array<float, fx::kMaxShadowLamps> &aggregate,
+                       const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides)
+{
+    ensure_targets();
+    const bool on = active && active_;
+    static const std::array<std::array<float, 4>, 2 + 3 * fx::kMaxShadowLamps> none{};
     auto lamps = uniforms_;
     for (int i = 0; i < fx::kMaxShadowLamps; ++i)
     {

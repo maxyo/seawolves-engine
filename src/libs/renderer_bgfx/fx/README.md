@@ -132,8 +132,8 @@ if (settings.sea_soft_edges)                     // before the game's sea draws;
 post_frame.scene_grade = fx::SceneGrade(sky.State(), overcast, interior);
 post.Submit(settings, post_frame);               // scene colour (+ depth for occlusion) -> back buffer
 
-// Per lit draw call of the fixed-function emulator (variant compiled with fx::LightingDefines(settings)):
-lighting.Apply(fx::ComputeLighting(input, fx::LightingMaterial::Hull(), &sky.State()));
+// Per lit draw call of the fixed-function emulator (its program chosen by src/effects/lighting.cpp):
+lighting.Apply(fx::ComputeLighting(input, fx::LightingMaterial::Hull(), &sky.State(), settings));
 lighting.Apply(fx::PackPointLights(fx::SelectLights(lights, center, radius, fx::PointLightBudget(settings)), view));
 shadows.Bind(view, fx::SunReceiver{});          // both layers; SunReceiver::ground: the moving casters only
 ```

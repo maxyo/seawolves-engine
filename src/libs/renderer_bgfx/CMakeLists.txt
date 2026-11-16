@@ -74,42 +74,64 @@ include(cmake/storm_shaders.cmake)
 
 file(GLOB shader_sources CONFIGURE_DEPENDS shaders/*.sc shaders/ports/*.sc)
 list(FILTER shader_sources EXCLUDE REGEX "varying\\.def\\.sc$")
-# Graphics effects variants of the fixed-function emulator (src/effects/lighting.cpp picks them by name):
-# s = FX_LIGHT_SPECULAR, n = FX_LIGHT_NORMALMAP, p = FX_LIGHT_PARALLAX (only with n), l = FX_LIGHT_LINEAR, then the sun
-# shadow: h = FX_LIGHT_SHADOW (one tap), o = FX_LIGHT_SHADOW + FX_LIGHT_SHADOW_SOFT (fs_ff_baked: the town's walls, relit
-# by our sun, src/effects/town_light.hpp; its s variants add the gloss maps' highlights). The base sources fs_ff_lit.sc and
-# fs_ff_baked.sc are the variants without a suffix.
+# The lit and baked families of the fixed-function emulator (src/effects/lighting.hpp FfFamily: the same table, in the
+# same order; src/effects/lighting.cpp ChooseFamily picks one per draw). A family compiles the product blocks of
+# ff_fragment.sh it names and nothing else: the lamps' code only in the programs of the draws the lamps light.
+#   lit          lit draws without lamps or the AO volume (rain: FX_FF_WET)
+#   lit_lamps    lit draws lit by the place's lamps or in the AO volume (with the room light)
+#   baked        baked colours without lamps or the AO volume (rain, a town's walls relit by our sun: FX_FF_TOWN_WALL)
+#   baked_lamps  baked colours relit by the lamps or in the AO volume
+# Every family has as many programs per preset as the one uber-shader had: each extra family adds 12 programs to the
+# «Высокая» switch (6 relief/specular variants and their opaque twins), so the small blocks (AO, town wall) ride
+# with a family instead of having their own.
+# Each family in every combination of s = FX_LIGHT_SPECULAR, n = FX_LIGHT_NORMALMAP, np = and FX_LIGHT_PARALLAX,
+# h = FX_LIGHT_SHADOW (the presets with sun shadows: all their lit / baked draws). Linear light and the soft sun filter
+# are run-time switches of these programs (fx_lighting.sh), not variants. fs_ff_lit.sc / fs_ff_baked.sc are compiled
+# only here.
+list(FILTER shader_sources EXCLUDE REGEX "/fs_ff_(lit|baked)\\.sc$")
+set(ff_families
+    "lit|fs_ff_lit.sc|FX_FF_WET"
+    "lit_lamps|fs_ff_lit.sc|FX_FF_LAMPS,FX_FF_AO,FX_FF_WET"
+    "baked|fs_ff_baked.sc|FX_FF_TOWN_WALL,FX_FF_WET"
+    "baked_lamps|fs_ff_baked.sc|FX_FF_LAMPS,FX_FF_AO,FX_FF_TOWN_WALL,FX_FF_WET")
 set(ff_fx_variants)
-foreach(suffix _l _s _sl _n _nl _sn _snl _h _lh _sh _slh _nh _nlh _snh _snlh _o _lo _so _slo _no _nlo _sno _snlo
-               _np _npl _snp _snpl _nph _nplh _snph _snplh _npo _nplo _snpo _snplo)
-    set(defines)
-    if(suffix MATCHES "s")
-        list(APPEND defines FX_LIGHT_SPECULAR)
-    endif()
-    if(suffix MATCHES "l")
-        list(APPEND defines FX_LIGHT_LINEAR)
-    endif()
-    if(suffix MATCHES "n")
-        list(APPEND defines FX_LIGHT_NORMALMAP)
-    endif()
-    if(suffix MATCHES "p")
-        list(APPEND defines FX_LIGHT_PARALLAX)
-    endif()
-    if(suffix MATCHES "[ho]")
-        list(APPEND defines FX_LIGHT_SHADOW)
-    endif()
-    if(suffix MATCHES "o")
-        list(APPEND defines FX_LIGHT_SHADOW_SOFT)
-    endif()
-    list(JOIN defines "," defines)
-    list(APPEND ff_fx_variants "fs_ff_lit${suffix}|${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ff_lit.sc|${defines}")
-    # fs_ff_baked: every combination too (its specular is the gloss maps' highlights).
-    list(APPEND ff_fx_variants "fs_ff_baked${suffix}|${CMAKE_CURRENT_SOURCE_DIR}/shaders/fs_ff_baked.sc|${defines}")
+foreach(family ${ff_families})
+    string(REPLACE "|" ";" fields "${family}")
+    list(GET fields 0 family_name)
+    list(GET fields 1 family_source)
+    list(GET fields 2 family_defines)
+    string(REPLACE "," ";" family_defines "${family_defines}")
+    foreach(specular "" s)
+        foreach(relief "" n np)
+            foreach(shadow "" h)
+                set(defines ${family_defines})
+                # (String comparisons: if("n") is false in CMake.)
+                if(specular STREQUAL "s")
+                    list(APPEND defines FX_LIGHT_SPECULAR)
+                endif()
+                if(NOT relief STREQUAL "")
+                    list(APPEND defines FX_LIGHT_NORMALMAP)
+                endif()
+                if(relief STREQUAL "np")
+                    list(APPEND defines FX_LIGHT_PARALLAX)
+                endif()
+                if(shadow STREQUAL "h")
+                    list(APPEND defines FX_LIGHT_SHADOW)
+                endif()
+                set(suffix "${specular}${relief}${shadow}")
+                if(NOT suffix STREQUAL "")
+                    set(suffix "_${suffix}")
+                endif()
+                list(JOIN defines "," defines)
+                list(APPEND ff_fx_variants "fs_ff_${family_name}${suffix}|${CMAKE_CURRENT_SOURCE_DIR}/shaders/${family_source}|${defines}")
+            endforeach()
+        endforeach()
+    endforeach()
 endforeach()
 # Opaque twins (FF_OPAQUE, ff_finish.sh without its discards) of every fixed-function fragment shader the shim
 # chooses: draw.cpp uses "<name>_opaque" when the draw has no clip plane and no alpha test, so early depth stays on.
 set(ff_opaque_variants)
-foreach(base fs_ff fs_ff_dyn fs_ff_cube0 fs_ff_cube1 fs_ff_cube2 fs_ff_lit fs_ff_baked)
+foreach(base fs_ff fs_ff_dyn fs_ff_cube0 fs_ff_cube1 fs_ff_cube2)
     list(APPEND ff_opaque_variants "${base}_opaque|${CMAKE_CURRENT_SOURCE_DIR}/shaders/${base}.sc|FF_OPAQUE")
 endforeach()
 foreach(variant ${ff_fx_variants})

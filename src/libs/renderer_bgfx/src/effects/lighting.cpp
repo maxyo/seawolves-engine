@@ -22,6 +22,21 @@ namespace
 // shade / sun 0.4-0.6, fx/shadow_model.hpp SunShadowStrength). An assumption, not a measurement of the surface.
 constexpr float kUnmeasuredSunShade = 0.5f;
 
+// The 16 texture units of a lit or baked program (GLES 3.0's minimum): the emulator's stages 0..4, the effects' units
+// (fx::kFxStages) and the skinned vertex shaders' bone palette. A second claim of a unit fails here.
+constexpr bool FfUnitsDistinct()
+{
+    uint32_t used = (1u << 5) - 1; // stages 0..4
+    for (const uint32_t unit : fx::kFxStages)
+    {
+        if (unit >= 16 || (used & (1u << unit)))
+            return false;
+        used |= 1u << unit;
+    }
+    return shim::kBonePaletteUnit < 16 && !(used & (1u << shim::kBonePaletteUnit));
+}
+static_assert(FfUnitsDistinct(), "two texture units of the lit and baked programs meet (fx::kFxStages)");
+
 // Absolute world -> view from the device's camera-relative world -> view (row vectors): (p - origin) * view.
 std::array<float, 16> AbsoluteView(const std::array<float, 16> &view, const std::array<float, 3> &origin)
 {
@@ -180,6 +195,50 @@ void Lighting::prepare_aggregates(FfDraw &draw, const fx::LightSelection &select
         }
 }
 
+FfBlocks FamilyBlocks(FfFamily family)
+{
+    switch (family)
+    {
+    case FfFamily::Lit:
+        return {.wet = true};
+    case FfFamily::LitLamps:
+        return {.lamps = true, .ao = true, .wet = true};
+    case FfFamily::Baked:
+        return {.town_wall = true, .wet = true};
+    case FfFamily::BakedLamps:
+        return {.lamps = true, .ao = true, .town_wall = true, .wet = true};
+    }
+    return {};
+}
+
+const char *FamilyName(FfFamily family)
+{
+    static const char *const names[kFfFamilies] = {"lit", "lit_lamps", "baked", "baked_lamps"};
+    return names[static_cast<size_t>(family)];
+}
+
+FfFamily ChooseFamily(bool lit, const FfBlocks &needs)
+{
+    const auto holds = [&needs](FfFamily family) {
+        const FfBlocks has = FamilyBlocks(family);
+        return (has.lamps || !needs.lamps) && (has.ao || !needs.ao) && (has.town_wall || !needs.town_wall) &&
+               (has.wet || !needs.wet);
+    };
+    // Narrowest first; the last family of each kind holds every block of that kind.
+    static constexpr FfFamily kLit[] = {FfFamily::Lit, FfFamily::LitLamps};
+    static constexpr FfFamily kBaked[] = {FfFamily::Baked, FfFamily::BakedLamps};
+    for (const FfFamily family : lit ? std::span<const FfFamily>(kLit) : std::span<const FfFamily>(kBaked))
+        if (holds(family))
+            return family;
+    // Only a lit draw that reads the town wall gets here (no lit family has it; prepare() never asks for one).
+    static bool reported = false;
+    if (!reported)
+        shim::logf("ERROR: effects: no %s program family holds lamps=%d ao=%d town_wall=%d wet=%d: the widest one draws "
+                   "without the rest", lit ? "lit" : "baked", needs.lamps, needs.ao, needs.town_wall, needs.wet);
+    reported = true;
+    return lit ? FfFamily::LitLamps : FfFamily::BakedLamps;
+}
+
 void Lighting::configure(const fx::Settings &settings, const fx::RendererState &state, fx::LampDepth lamp_depth)
 {
     settings_ = settings;
@@ -209,21 +268,20 @@ void Lighting::find_shaders()
         vs_lit_ = shim::shader_id_by_name("vs_ff_lit");
         vs_lit_skin_ = shim::shader_id_by_name("vs_ff_lit_skin");
         fs_coverage_ = shim::shader_id_by_name("fs_ff_coverage");
-        // Suffix letters in the order of CMakeLists.txt: s, n, p, l, then h / o.
+        // fs_ff_<family>[_<suffix>], the suffix letters in the order of CMakeLists.txt: s, n / np, h.
         static const char *const relief[3] = {"", "n", "np"};
-        const auto variant = [](const char *base, const std::string &suffix) {
-            return shim::shader_id_by_name((suffix.empty() ? std::string(base) : std::string(base) + "_" + suffix).c_str());
-        };
-        for (int s = 0; s < 2; ++s)
-            for (int n = 0; n < 3; ++n)
-                for (int l = 0; l < 2; ++l)
-                    for (int h = 0; h < 3; ++h)
+        for (size_t f = 0; f < kFfFamilies; ++f)
+        {
+            const FfFamily family = static_cast<FfFamily>(f);
+            for (int s = 0; s < 2; ++s)
+                for (int n = 0; n < 3; ++n)
+                    for (int h = 0; h < 2; ++h)
                     {
-                        const std::string suffix = std::string(s ? "s" : "") + relief[n] + (l ? "l" : "") +
-                                                   (h == 1 ? "h" : h == 2 ? "o" : "");
-                        fs_lit_[s][n][l][h] = variant("fs_ff_lit", suffix);
-                        fs_baked_[s][n][l][h] = variant("fs_ff_baked", suffix);
+                        const std::string suffix = std::string(s ? "s" : "") + relief[n] + (h ? "h" : "");
+                        const std::string name = std::string("fs_ff_") + FamilyName(family) + (suffix.empty() ? "" : "_" + suffix);
+                        fs_[f][s][n][h] = shim::shader_id_by_name(name.c_str());
                     }
+        }
     }
 }
 
@@ -245,36 +303,46 @@ bool Lighting::prepare_programs(shim::Device &device, const fx::Settings &settin
     const bool lighting = (flags & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0;
     const bool per_pixel = (flags & fx::kLightingPerPixel) != 0;
     const int specular = per_pixel && (flags & fx::kLightingSpecular) ? 1 : 0;
-    const int linear = (flags & fx::kLightingLinear) ? 1 : 0;
     // 1: the normal maps, 2: and the parallax variants (draws whose map has no height keep the plain relief ones).
     const bool height = settings.parallax != fx::ParallaxQuality::Off || settings.relief_cavity;
     const int relief = lighting && (flags & fx::kLightingNormalMap) ? (height ? 2 : 1) : 0;
-    const int shadow = per_pixel && settings.shadows != fx::ShadowQuality::Off
-                           ? (settings.shadows == fx::ShadowQuality::Soft ? 2 : 1)
-                           : 0;
+    const int shadow = per_pixel && settings.shadows != fx::ShadowQuality::Off ? 1 : 0;
     if (fx::RendererStateFor(settings).alpha_to_coverage && !device.prepare_program(vs_ff_, fs_coverage_, budget))
         return false;
     if (lighting)
-        for (int n = 0; n <= relief; ++n)
+    {
+        // The families the draws of these settings can choose (ChooseFamily over what prepare() turns on).
+        const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings);
+        const bool lamps = per_pixel && products.lamp_shadows, ao = products.ao_volume;
+        const int character = settings.character_relief == fx::CharacterRelief::Off ? 0
+                              : settings.character_relief == fx::CharacterRelief::Normals ? std::min(relief, 1)
+                                                                                          : relief;
+        // Baked draws with a gloss map (or every one under the gloss debug view) or wet in the rain take the
+        // specular variant.
+        const int baked_specular = specular && (settings.gloss || settings.wet_surfaces) ? 1 : 0;
+        for (size_t f = 0; f < kFfFamilies; ++f)
         {
-            for (const int h : {0, shadow})
+            const FfFamily family = static_cast<FfFamily>(f);
+            const bool lit = family == FfFamily::Lit || family == FfFamily::LitLamps;
+            if ((family == FfFamily::LitLamps || family == FfFamily::BakedLamps) && !lamps && !ao)
+                continue;
+            for (int n = 0; n <= relief; ++n)
             {
-                if (!device.prepare_program(vs_lit_, fs_lit_[specular][n][linear][h], budget))
-                    return false;
-                // Characters (the skinned draws): their relief variants with their relief (Settings::character_relief).
-                const int character = settings.character_relief == fx::CharacterRelief::Off ? 0
-                                      : settings.character_relief == fx::CharacterRelief::Normals ? std::min(relief, 1)
-                                                                                                  : relief;
-                if (n <= character && !device.prepare_program(vs_lit_skin_, fs_lit_[specular][n][linear][h], budget))
-                    return false;
-            }
-            // Baked draws outdoors take the shadowed twin (the town's walls: both layers; the others the moving casters'
-            // shadows); those with a gloss map (or every one under the gloss debug view) or wet in the rain the specular one.
-            for (const int h : {0, shadow})
-                for (int s = 0; s <= (specular && (settings.gloss || settings.wet_surfaces) ? 1 : 0); ++s)
-                    if (!device.prepare_program(vs_lit_, fs_baked_[s][n][linear][h], budget))
+                if (lit)
+                {
+                    if (!device.prepare_program(vs_lit_, fs_[f][specular][n][shadow], budget))
                         return false;
+                    // Characters (the skinned draws): their relief variants with their relief (Settings::character_relief).
+                    if (n <= character && !device.prepare_program(vs_lit_skin_, fs_[f][specular][n][shadow], budget))
+                        return false;
+                    continue;
+                }
+                for (int s = 0; s <= baked_specular; ++s)
+                    if (!device.prepare_program(vs_lit_, fs_[f][s][n][shadow], budget))
+                        return false;
+            }
         }
+    }
     if (per_pixel && settings.lamp_shadows && !casters_.prepare_programs(device, Casters::Pass::Lamp, budget))
         return false;
     if (!per_pixel || settings.shadows == fx::ShadowQuality::Off)
@@ -489,7 +557,6 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         draw.state = BGFX_STATE_BLEND_ALPHA_TO_COVERAGE;
         ++frame_.coverage;
     }
-    const bool linear = (flags_ & fx::kLightingLinear) != 0;
     if (!lit && !baked)
     {
         draw.vs_id = vs_ff_;
@@ -506,6 +573,9 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     }
     draw.lit = true;
     draw.vs_id = vs_lit_;
+    // A preset with sun shadows draws every lit and baked draw with its shadowed program (one program per draw kind
+    // to prepare, not two): the draws that receive nothing bind the map unshadowed (submit()).
+    draw.shadow_variant = per_pixel && shadows_.enabled();
     if (ao)
     {
         draw.ao = true;
@@ -778,8 +848,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
             memcpy(draw.view.data(), &device.s.view.m[0][0], sizeof(float) * 16);
             draw.shadow = shadows_.prepare(const_cast<shim::Device &>(device), draw.view, origin_, casters_, shadow_casters_);
         }
-        const int shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
-        draw.fs_id = fs_lit_[specular][relief][linear][shadow];
+        draw.family = ChooseFamily(true, {.lamps = draw.lamps, .ao = draw.ao, .wet = wet});
+        draw.fs_id = fs_[static_cast<size_t>(draw.family)][specular][relief][draw.shadow_variant ? 1 : 0];
         frame_.shadowed += draw.shadow ? 1 : 0;
         ++frame_.lit;
     }
@@ -796,7 +866,6 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                 const auto raw=select(device_dynamic_lights_,sphere.center,sphere.radius,budget_,true,&ignored);
                 draw.points=fx::PackPointLights(raw,input.view);
             }
-        int shadow = 0;
         if (town_wall)
         {
             draw.town_wall = true;
@@ -814,9 +883,9 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         }
         else
             ground_receiver();
-        shadow = draw.shadow ? (settings_.shadows == fx::ShadowQuality::Soft ? 2 : 1) : 0;
         frame_.shadowed += draw.shadow ? 1 : 0;
-        draw.fs_id = fs_baked_[baked_specular ? 1 : 0][relief][linear][shadow];
+        draw.family = ChooseFamily(false, {.lamps = draw.lamps, .ao = draw.ao, .town_wall = draw.town_wall, .wet = wet});
+        draw.fs_id = fs_[static_cast<size_t>(draw.family)][baked_specular ? 1 : 0][relief][draw.shadow_variant ? 1 : 0];
         ++frame_.baked;
     }
 }
@@ -1002,8 +1071,12 @@ void Lighting::submit(const FfDraw &draw)
             shadows_.bind(draw.view, draw.sun_receiver); // the coverage twin of the ground variant
         return;
     }
+    // The uniforms and textures of the blocks the draw's program family compiles (FamilyBlocks), with their "off"
+    // values where this draw does not use a block its family has.
+    const FfBlocks blocks = FamilyBlocks(draw.family);
     bgfx::setUniform(u_ff_, draw.ff.data());
-    bgfx::setUniform(u_wet_, draw.wet.data(), 2);
+    if (blocks.wet)
+        bgfx::setUniform(u_wet_, draw.wet.data(), 2);
     fx_.Apply(draw.light);
     fx_.Apply(draw.points);
     if (bgfx::isValid(draw.normal_map))
@@ -1020,10 +1093,16 @@ void Lighting::submit(const FfDraw &draw)
         fx_.SetParallax(draw.parallax);
     if (draw.shadow)
         shadows_.bind(draw.view, draw.sun_receiver);
-    bind_ao_volume(draw);
+    else if (draw.shadow_variant)
+        shadows_.bind_unshadowed();
+    if (blocks.ao)
+        bind_ao_volume(draw);
     bind_visibility(draw);
-    bind_town_wall(draw);
-    lamps_.bind(draw.lamps, draw.world_view, draw.room_light, draw.aggregate_lamps, draw.aggregate_lamp_overrides);
+    if (blocks.town_wall)
+        bind_town_wall(draw);
+    lamps_.bind_view(draw.world_view);
+    if (blocks.lamps)
+        lamps_.bind(draw.lamps, draw.room_light, draw.aggregate_lamps, draw.aggregate_lamp_overrides);
     if (!bgfx::isValid(s_aggregate_))
         s_aggregate_ = bgfx::createUniform("s_fxAggregate", bgfx::UniformType::Sampler);
     if (!bgfx::isValid(aggregate_open_))
@@ -1032,7 +1111,7 @@ void Lighting::submit(const FfDraw &draw)
         aggregate_open_ = bgfx::createTexture2D(1,1,false,1,bgfx::TextureFormat::RGBA8,
             BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP, bgfx::copy(zero.data(),sizeof(zero)));
     }
-    bgfx::setTexture(6, s_aggregate_, draw.aggregate ? draw.aggregate->texture : aggregate_open_,
+    bgfx::setTexture(fx::kAggregateStage, s_aggregate_, draw.aggregate ? draw.aggregate->texture : aggregate_open_,
                      BGFX_SAMPLER_POINT|BGFX_SAMPLER_UVW_CLAMP);
 }
 

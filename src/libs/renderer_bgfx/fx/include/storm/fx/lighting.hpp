@@ -1,7 +1,7 @@
 // bgfx side of the per-pixel lighting upgrade: owns the u_fxLight and u_fxPoint
 // uniforms that shaders/include/fx_lighting.sh declares. The fixed-function
-// emulator compiles its shader variants with LightingDefines(settings) and
-// calls Apply() before submitting a lit draw call.
+// emulator picks its lit / baked program (src/effects/lighting.cpp) and calls
+// Apply() before submitting a lit draw call.
 #pragma once
 
 #include "storm/fx/light_set.hpp"

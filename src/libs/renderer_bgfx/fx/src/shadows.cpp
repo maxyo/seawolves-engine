@@ -171,6 +171,23 @@ void Shadows::End()
     }
 }
 
+bool Shadows::BindUnshadowed(const Settings &settings)
+{
+    const int size = SunShadowBudgetFor(settings.shadows).size;
+    if (size == 0 || !SupportsShadowMap())
+    {
+        STORM_FX_ERROR_ONCE(reported_bind_, "Shadows::BindUnshadowed(): no shadow map for these settings");
+        return false;
+    }
+    EnsureResources(size);
+    static const std::array<float, 16> identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    static const std::array<std::array<float, 4>, 4> unshadowed{};
+    bgfx::setUniform(u_matrix_, identity.data());
+    bgfx::setUniform(u_params_, unshadowed.data(), 4);
+    bgfx::setTexture(kShadowMapStage, s_map_, map_);
+    return true;
+}
+
 void Shadows::Bind(const std::array<float, 16> &camera_view, const SunReceiver &receiver)
 {
     if (!bgfx::isValid(map_))

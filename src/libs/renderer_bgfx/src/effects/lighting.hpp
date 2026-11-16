@@ -3,13 +3,16 @@
 // vertex-lighting terms move to the fragment shader, then calls submit() before bgfx::submit.
 //
 // What the shim sees and what it decides (documented in FX.md, "Lighting"):
-//   * lit draw (D3DRS_LIGHTING on, vertex normals, not pre-transformed): vs_ff_lit + fs_ff_lit*. The first enabled
+//   * lit draw (D3DRS_LIGHTING on, vertex normals, not pre-transformed): vs_ff_lit + a lit family. The first enabled
 //     directional light is the sun (per pixel with kLightingPerPixel), the global ambient becomes the hemisphere
 //     (kLightingHemisphere), and the strongest point / spot lights up to the budget (4 / 8) are evaluated per
 //     pixel (kLightingPoint); the rest stay in the vertex sum, so no light is lost.
 //   * baked draw (lighting off, vertex normals): the location's static models with baked colours. They get the
-//     dynamic lights the engine reports (SetEffectsDynamicLights: carried lanterns), fs_ff_baked*; without any of
+//     dynamic lights the engine reports (SetEffectsDynamicLights: carried lanterns), a baked family; without any of
 //     this list's effects the legacy program draws them.
+//   * program families (FfFamily, renderer_bgfx/CMakeLists.txt): each lit or baked program compiles only the product
+//     blocks of ff_fragment.sh its family names (lamps, AO volume, town wall, rain); ChooseFamily gives a draw the
+//     narrowest family that holds all it receives, so a draw without lamps does not carry the lamps' code.
 //   * lamps (Settings::lamp_shadows, effects/lamp_shadows.hpp): lit and baked draws into the game picture are relit
 //     by the location's own lamps around the camera, each with its shadow maps; a lit draw's D3D point lights that
 //     are such lamps leave its sums (LampShadows::relit). Lit draws of an interior take their ambient from the room
@@ -26,7 +29,8 @@
 //   * parallax (Settings::parallax): a relief draw whose map follows stage 0 (not projected) and has a height takes the
 //     FX_LIGHT_PARALLAX variant with the height at stage 7 (stage 0's sampler flags) and u_fxParallax.
 //   * sun shadows (Settings::shadows, effects/shadows.hpp): lit draws into the game picture receive both layers
-//     (FX_LIGHT_SHADOW[_SOFT] variants), as the towns' relit walls do. Surfaces with their own static light
+//     (every lit and baked program of such a preset is its FX_LIGHT_SHADOW variant; a draw that receives none binds
+//     the map unshadowed), as the towns' relit walls do. Surfaces with their own static light
 //     (lightmapped and baked ground, decks) under a moving caster take its shadow from the dynamic layer alone:
 //     baked draws in the shadowed variant's ground mode, plain ones through fs_ff_dyn (FfDraw::ground). What casts
 //     is not decided here: the lights publish their shadow volumes (shadow_volumes()) and the shim's caster entry
@@ -125,6 +129,28 @@ class DrawSphereSource
     mutable bool computed_ = false;
 };
 
+// The lit and baked program families (renderer_bgfx/CMakeLists.txt ff_families: the same names in the same order).
+enum class FfFamily : uint8_t
+{
+    Lit,        // lit draws without lamps or the AO volume
+    LitLamps,   // lit draws lit by the place's lamps or in the AO volume (the room light)
+    Baked,      // baked colours without lamps or the AO volume (a town's walls)
+    BakedLamps, // baked colours relit by the lamps or in the AO volume
+};
+inline constexpr size_t kFfFamilies = 4;
+// The product blocks of ff_fragment.sh a draw reads (ChooseFamily) or a family's programs compile (FamilyBlocks).
+struct FfBlocks
+{
+    bool lamps = false;     // FX_FF_LAMPS (with the room light)
+    bool ao = false;        // FX_FF_AO
+    bool town_wall = false; // FX_FF_TOWN_WALL
+    bool wet = false;       // FX_FF_WET
+};
+FfBlocks FamilyBlocks(FfFamily family);
+const char *FamilyName(FfFamily family); // "lit_lamps": the programs are fs_ff_<name>[_<s><n|np><h>]
+// The narrowest family of a lit (D3DRS_LIGHTING) or baked draw whose programs hold every block in `needs`.
+FfFamily ChooseFamily(bool lit, const FfBlocks &needs);
+
 struct AggregateUpload
 {
     fx::AggregatePayload payload;
@@ -145,6 +171,8 @@ struct FfDraw
     uint64_t state = 0;              // extra bgfx state bits (alpha to coverage)
     // fragment uniforms, set by submit()
     bool lit = false; // FX_FF_LIT / FX_FF_BAKED program: u_fxLight, u_fxPoint, u_fxFf
+    FfFamily family = FfFamily::Lit; // the program's family: submit() binds the uniforms of its blocks
+    bool shadow_variant = false;     // the program reads the sun's maps (FX_LIGHT_SHADOW): `shadow` or unshadowed
     fx::LightingUniforms light{};
     fx::PointLightUniforms points{};
     std::shared_ptr<const AggregateUpload> aggregate;
@@ -182,7 +210,7 @@ struct FfDraw
     bool has_parallax() const { return parallax_variant && parallax[2] > 0.0f && parallax[0] > 0.0f && parallax[1] > 0.0f; }
     bool parallax_untrusted = false; // ... but the texture's mask or a list takes the parallax from it (the cavity still draws)
     const NormalMapEntry *relief_entry = nullptr; // the relief texture's entry (its map ready or not): the parallax probe
-    bool shadow = false;           // reads the sun's shadow maps: submit() / submit_ground() bind them for `view`
+    bool shadow = false;           // receives the sun's shadow maps: submit() / submit_ground() bind them for `view`
     // A plain fixed-function draw that receives the moving casters' sun shadows. Not `active`: the shim picks
     // vs_ff[_unlit]_dyn / fs_ff_dyn and calls submit_ground(). `active` (alpha to coverage): vs_id / fs_id are the
     // ground variant's coverage twin and submit() binds the maps.
@@ -316,7 +344,7 @@ class Lighting
     {
         NoReliefClass, // the texture's class has no relief: what the parallax cannot work on (its rule says which)
         Ported,        // a ported vertex or pixel shader of the game's technique
-        Decal,         // a slope-biased decal (projected shadows)
+        Decal,         // a slope-biased decal
         Pretransformed, // RHW vertices
         NoNormals,     // no vertex normals: no per-pixel lighting variant
         Cube,          // a cube-mapped stage: the legacy path
@@ -399,9 +427,8 @@ class Lighting
     void find_shaders();
 
     uint32_t vs_ff_ = 0, vs_lit_ = 0, vs_lit_skin_ = 0, fs_coverage_ = 0;
-    // [specular][relief: none, normal map, normal map + parallax][linear][shadow: none, one tap, soft]
-    uint32_t fs_lit_[2][3][2][3] = {};
-    uint32_t fs_baked_[2][3][2][3] = {}; // [specular][relief][linear][sun shadow: none, one tap, soft]
+    // [family][specular][relief: none, normal map, normal map + parallax][sun shadow: the preset's, not the draw's]
+    uint32_t fs_[kFfFamilies][2][3][2] = {};
     uint32_t vs_ground_[2] = {}, fs_ground_ = 0, fs_ground_coverage_ = 0; // FfDraw::ground: [lit per vertex, unlit]
     void find_ground_shaders();
     NormalMaps normal_maps_;

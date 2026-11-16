@@ -411,17 +411,18 @@ void CheckLighting()
     CHECK(tinted.u_fxLight[4][0] > tinted.u_fxLight[4][2]);
 
     Settings s;
-    CHECK(LightingDefines(s).empty() && PointLightBudget(s) == 0);
-    s.lighting_flags = kLightingPerPixel | kLightingHemisphere;
-    CHECK(LightingDefines(s) == "FX_LIGHT_PER_PIXEL;FX_LIGHT_HEMISPHERE");
+    CHECK(PointLightBudget(s) == 0);
     s.lighting_flags = kLightingPoint; // baked geometry: dynamic point lights only
-    CHECK(LightingDefines(s) == "FX_LIGHT_POINT;FX_LIGHT_POINT_MAX=4" && PointLightBudget(s) == 4);
-    CHECK(LightingDefines(Settings::FromPreset(QualityPreset::Medium)) ==
-          "FX_LIGHT_PER_PIXEL;FX_LIGHT_TRANSLUCENT;FX_LIGHT_SHADOW;FX_LIGHT_RIM;FX_LIGHT_POINT;FX_LIGHT_POINT_MAX=4;"
-          "FX_LIGHT_NORMALMAP;FX_AERIAL");
-    CHECK(LightingDefines(Settings::FromPreset(QualityPreset::High)) ==
-          "FX_LIGHT_PER_PIXEL;FX_LIGHT_SPECULAR;FX_LIGHT_TRANSLUCENT;FX_LIGHT_SHADOW;FX_LIGHT_SHADOW_SOFT;"
-          "FX_LIGHT_RIM;FX_LIGHT_POINT;FX_LIGHT_POINT_MAX=8;FX_LIGHT_NORMALMAP;FX_AERIAL");
+    CHECK(PointLightBudget(s) == 4);
+    // The programs' run-time switches (fx_lighting.sh): the soft sun filter on Высокая, linear light only when asked.
+    for (QualityPreset preset : {QualityPreset::Low, QualityPreset::Medium, QualityPreset::High})
+    {
+        Settings profile = Settings::FromPreset(preset);
+        const auto light = ComputeLighting(input, LightingMaterial::Stone(), nullptr, profile);
+        CHECK(light.u_fxLight[4][3] == (preset == QualityPreset::High ? 1.0f : 0.0f) && light.u_fxLight[5][3] == 0.0f);
+        profile.lighting_flags |= kLightingLinear;
+        CHECK(ComputeLighting(input, LightingMaterial::Stone(), nullptr, profile).u_fxLight[5][3] == 1.0f);
+    }
     CHECK(PointLightBudget(Settings::FromPreset(QualityPreset::High)) == 8);
 }
 
@@ -473,7 +474,6 @@ void CheckSupport()
     changes.clear();
     constrained = ConstrainSettings(high, no_shadow, changes);
     CHECK(constrained.shadows == ShadowQuality::Off && constrained.lamp_shadows == high.lamp_shadows && changes.size() == 1); // sun
-    CHECK(LightingDefines(constrained).find("FX_LIGHT_SHADOW") == std::string::npos);
     // No 24-bit or float depth target: no lamp shadows (their faces' perspective depth), said once; the sun stays.
     Support no_lamp_depth = all;
     no_lamp_depth.lamp_depth = LampDepth::None;
@@ -690,7 +690,6 @@ void CheckSupport()
     CHECK(changes.size() == 6 && !constrained.gloss && !constrained.parallax_shadow && !constrained.relief_cavity &&
           constrained.character_relief == CharacterRelief::Off &&
           !(constrained.lighting_flags & kLightingNormalMap) && constrained.parallax == ParallaxQuality::Off);
-    CHECK(LightingDefines(constrained).find("NORMALMAP") == std::string::npos);
     CHECK(high.parallax == ParallaxQuality::Occlusion && Settings::FromPreset(QualityPreset::Medium).parallax == ParallaxQuality::Offset &&
           Settings::FromPreset(QualityPreset::Low).parallax == ParallaxQuality::Off);
     // The self-shadow on Высокая only (it needs occlusion mapping); the classes' depths: stone deepest, wood shallowest.

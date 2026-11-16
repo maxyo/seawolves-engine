@@ -1,21 +1,23 @@
 // Per-pixel lighting upgrade for the fixed-function emulator.
 //
-// Compile-time feature flags (the emulator adds them to its variant key; with
-// none defined this header adds nothing and the legacy per-vertex path is the
-// whole lighting model). fx::LightingDefines(settings) returns the set to use.
+// Compile-time feature flags (the lit and baked programs of the emulator, renderer_bgfx/CMakeLists.txt; with
+// none defined this header adds nothing and the legacy per-vertex path is the whole lighting model).
 //   FX_LIGHT_PER_PIXEL    sun diffuse evaluated per pixel
 //   FX_LIGHT_HEMISPHERE   sky / ground ambient instead of the flat global ambient
 //   FX_LIGHT_SPECULAR     Blinn-Phong highlights
 //   FX_LIGHT_TRANSLUCENT  sunlight passing through thin two-sided surfaces (sails, flags): fxSunTransmission
 //   FX_LIGHT_POINT        the enabled D3D point / spot lights evaluated per pixel;
 //                         FX_LIGHT_POINT_MAX = 4 or 8 lights per draw call
-//   FX_LIGHT_SHADOW       sun shadow maps (fx_sun_map.sh); FX_LIGHT_SHADOW_SOFT = four taps of the still geometry's layer instead of one
+//   FX_LIGHT_SHADOW       sun shadow maps (fx_sun_map.sh; every lit / baked program of a preset with sun shadows: a
+//                         draw that receives none has strength 0); u_fxLight[4].w = 1: four taps of the still
+//                         geometry's layer instead of one (fxSunShadow, Settings::shadows Soft)
 //   FX_LIGHT_RIM          rim light on silhouettes seen against the sun (characters, ships)
-//   FX_LIGHT_LINEAR       lights are summed in linear light: overlapping lights no longer burn out and
-//                         the terminator is soft. Combine with fxLit() / fxAddSpecular().
 //   FX_LIGHT_NORMALMAP    relief from a normal map derived from the game's height ("bump") texture of texture
 //                         stage 1 or the colour texture of stage 0 (fx/normal_map.hpp); no mesh tangents needed
 //   FX_LIGHT_PARALLAX     with FX_LIGHT_NORMALMAP: parallax occlusion mapping from the relief's height (stage 0 maps)
+// Run-time switch of the same programs (a uniform, not a variant: no program to compile or link for it):
+//   u_fxLight[5].w = 1    lights are summed in linear light (fxLinear, kLightingLinear): overlapping lights no
+//                         longer burn out and the terminator is soft. Combine with fxLit() / fxAddSpecular().
 //
 // Contract with the emulator's vertex shader when FX_LIGHT_PER_PIXEL is on:
 //   * pass the view-space normal and position to the fragment shader;
@@ -33,13 +35,13 @@
 // fx/gloss_map.hpp).
 // and with FX_LIGHT_TRANSLUCENT, for two-sided surfaces (the sun's visibility taken on the surface's sunlit side):
 //   color.rgb = fxAddSpecular(color.rgb, fxSunTransmission(N, V, luminance of the colour texture) * fxSunShadow(P, -N))
-// Without FX_LIGHT_LINEAR everything is in the gamma space of the legacy pipeline and uses the D3D9
+// Without linear light everything is in the gamma space of the legacy pipeline and uses the D3D9
 // formulas, so a surface keeps its fixed-function brightness; only the interpolation changes (per pixel
-// instead of per vertex). With FX_LIGHT_LINEAR light colours (and point-light falloff, which the game tuned
+// instead of per vertex). With linear light colours (and point-light falloff, which the game tuned
 // in gamma space) are squared before they are summed and the result is square-rooted (gamma 2.0): a surface
 // lit by one light at full strength keeps its brightness and a torch its reach, while the cosine term and
 // overlapping lights add up the way light does. Render targets stay gamma encoded; the
-// «Оригинал» preset never defines this flag.
+// «Оригинал» preset never sets it.
 //
 // FX_LIGHT_NORMALMAP (only for draw calls whose stage 1 or stage 0 texture has a derived normal map, bound with
 // fx::Lighting::BindNormalMap): replace the interpolated normal before any of the calls above,
@@ -66,16 +68,21 @@
 // [1] rgb: sun diffuse colour (D3DLIGHT9.Diffuse), w: specular strength
 // [2] xyz: world up in VIEW space, w: translucency 0..1
 // [3] rgb: ambient from the sky, w: wrap 0..1 (softens the terminator)
-// [4] rgb: ambient from the ground / sea
-// [5] x: normal map strength for this material (0 = flat), y: rim light strength, z: light desaturation (0 = unchanged)
+// [4] rgb: ambient from the ground / sea, w: 1 = the soft sun shadow filter (fxSunShadow)
+// [5] x: normal map strength for this material (0 = flat), y: rim light strength, z: light desaturation (0 = unchanged),
+//     w: 1 = linear light (fxLinear)
 uniform vec4 u_fxLight[6];
+
+bool fxLinear()
+{
+    return u_fxLight[5].w > 0.5;
+}
 
 // Light colour as the sums below expect it.
 vec3 fxLightColor(vec3 c)
 {
-#ifdef FX_LIGHT_LINEAR
-    c *= c;
-#endif
+    if (fxLinear())
+        c *= c;
     // Tone down the light, not the painted texture. The preset's zero keeps Low/Medium's exact old path.
     if (u_fxLight[5].z > 0.0)
         c = mix(c, vec3_splat(dot(c, vec3(0.2126, 0.7152, 0.0722))), u_fxLight[5].z);
@@ -85,20 +92,16 @@ vec3 fxLightColor(vec3 c)
 // Lit colour from the per-vertex part and the per-pixel diffuse and ambient sums.
 vec3 fxLit(vec3 vertexLit, vec3 matDiffuse, vec3 diffuse, vec3 matAmbient, vec3 ambient)
 {
-#ifdef FX_LIGHT_LINEAR
-    return sqrt(vertexLit * vertexLit + matDiffuse * matDiffuse * diffuse + matAmbient * matAmbient * ambient);
-#else
+    if (fxLinear())
+        return sqrt(vertexLit * vertexLit + matDiffuse * matDiffuse * diffuse + matAmbient * matAmbient * ambient);
     return vertexLit + matDiffuse * diffuse + matAmbient * ambient;
-#endif
 }
 
 vec3 fxAddSpecular(vec3 color, vec3 specular)
 {
-#ifdef FX_LIGHT_LINEAR
-    return sqrt(color * color + specular);
-#else
+    if (fxLinear())
+        return sqrt(color * color + specular);
     return color + specular;
-#endif
 }
 
 // A highlight's Blinn-Phong power (x) and strength (y). The material's (fx::LightingMaterial):
@@ -350,7 +353,7 @@ float fxBakedRelief(vec3 Ng, vec3 N, vec3 V)
 #endif // FX_LIGHT_NORMALMAP
 
 // The falloff of every light (fx/light_falloff.hpp): a windowed inverse square with a soft core, per unit colour.
-// Linear light; in gamma space (without FX_LIGHT_LINEAR, colours not squared) its square root, so a single light
+// Linear light; in gamma space (without linear light, colours not squared) its square root, so a single light
 // looks the same either way. dist: metres, radius: no light beyond, core2: the core squared.
 float fxLightFalloff(float dist, float radius, float intensity, float core2)
 {
@@ -358,11 +361,7 @@ float fxLightFalloff(float dist, float radius, float intensity, float core2)
     float x2 = x * x;
     float window = 1.0 - x2 * x2;
     float light = intensity * window * window / (dist * dist + core2);
-#ifdef FX_LIGHT_LINEAR
-    return light;
-#else
-    return sqrt(light);
-#endif
+    return fxLinear() ? light : sqrt(light);
 }
 
 #ifdef FX_FF_PIXEL_LIGHTING
@@ -392,9 +391,8 @@ void fxAggregateAdd(float group, vec3 P, vec3 Ng, vec3 N, vec3 V, vec2 spec, flo
         if (ndl <= 0.0 || (geometric > 0.5 && dot(Ng,L) <= 0.0)) continue;
         vec3 rgb = fxLightColor(fxAggregateTexel(address+1.0).rgb);
         float fade = scale; // one common ENERGY fade, never square a group gamma color
-#ifndef FX_LIGHT_LINEAR
-        fade = sqrt(max(fade,0.0));
-#endif
+        if (!fxLinear())
+            fade = sqrt(max(fade,0.0));
         float falloff = fxLightFalloff(distance,header.z,header.w,shape.x) * fade;
         diffuse.rgb += rgb * (ndl * falloff);
         diffuse.a += dot(rgb,vec3(0.299,0.587,0.114)) * ndl * falloff;
@@ -510,6 +508,9 @@ void fxPointTerms(vec3 Ng, vec3 N, vec3 P, vec3 V, vec2 spec, out vec3 diffuse, 
 // the preset's filter, the moving casters' with one tap; each only where it holds something for this draw.
 float fxSunShadow(vec3 P, vec3 N)
 {
+    // A draw that receives nothing (fx::Shadows::BindUnshadowed: strength 0; the result below would be 1 too).
+    if (u_fxShadow[0].y <= 0.0)
+        return 1.0;
     vec3 base = mul(u_fxShadowMtx, vec4(P, 1.0)).xyz;
     vec3 along = mul(u_fxShadowMtx, vec4(N, 0.0)).xyz; // the map moves this far per view unit along the normal
     float lit = 1.0;
@@ -517,17 +518,18 @@ float fxSunShadow(vec3 P, vec3 N)
     {
         vec3 coord = base + along * u_fxShadow[0].z;
         coord.z -= u_fxShadow[0].w;
-#ifdef FX_LIGHT_SHADOW_SOFT
-        // Four hardware-filtered taps on a rotated square: a 4x4 texel soft edge.
-        vec2 o = u_fxShadow[0].xx;
-        lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-1.1 * o.x, -0.4 * o.y), 0.0, coord.z));
-        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(0.4 * o.x, -1.1 * o.y), 0.0, coord.z));
-        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(1.1 * o.x, 0.4 * o.y), 0.0, coord.z));
-        lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-0.4 * o.x, 1.1 * o.y), 0.0, coord.z));
-        lit *= 0.25;
-#else
-        lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy, 0.0, coord.z));
-#endif
+        if (u_fxLight[4].w > 0.5)
+        {
+            // Four hardware-filtered taps on a rotated square: a 4x4 texel soft edge.
+            vec2 o = u_fxShadow[0].xx;
+            lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-1.1 * o.x, -0.4 * o.y), 0.0, coord.z));
+            lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(0.4 * o.x, -1.1 * o.y), 0.0, coord.z));
+            lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(1.1 * o.x, 0.4 * o.y), 0.0, coord.z));
+            lit += shadow2DArray(s_fxShadowMap, vec4(coord.xy + vec2(-0.4 * o.x, 1.1 * o.y), 0.0, coord.z));
+            lit *= 0.25;
+        }
+        else
+            lit = shadow2DArray(s_fxShadowMap, vec4(coord.xy, 0.0, coord.z));
     }
     vec3 moving = base + along * u_fxShadow[2].x;
     vec2 uvDynamic = moving.xy * u_fxShadow[1].x + u_fxShadow[1].yz;

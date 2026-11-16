@@ -75,6 +75,11 @@ class Shadows
     // `camera_view`: the receiver's world -> view matrix (receivers shade in view space; draws of one frame may use
     // different cameras). Required for every draw of a receiver program; before the first Begin() it is an error.
     void Bind(const std::array<float, 16> &camera_view, const SunReceiver &receiver);
+    // The same for a draw of a receiver program that receives nothing (no sun, an interior, a lightmapped surface): the
+    // map of `settings` (made here if no frame made it yet) and u_fxShadow zero (strength 0: fx_lighting.sh returns
+    // "fully lit" without a tap; not a ground receiver). The preset's lit / baked programs all have the sun shadow
+    // (Lighting::prepare_programs), so the draws without it bind this. False: no map for these settings (an error).
+    bool BindUnshadowed(const Settings &settings);
 
     void Shutdown();
     void OnDeviceLost();

@@ -120,10 +120,12 @@ class LampShadows
     std::array<fx::AggregateRef, fx::kMaxShadowLamps> aggregate_refs() const;
     // This frame's lit models take their ambient from the room light.
     bool room_light() const { return active_ && room_ready_; }
-    // Receiver uniforms and textures for a draw with the camera `view` (row-vector absolute world -> view);
+    // u_fxLampView (view -> absolute world) for every lit or baked draw with the camera `view` (row-vector absolute
+    // world -> view): fx_lighting.sh and ff_fragment.sh place every such pixel with it, lamps or not.
+    void bind_view(const std::array<float, 16> &view);
+    // Receiver uniforms and textures of a draw whose program has the lamps (FX_FF_LAMPS), after bind_view();
     // `active` false: the open textures and no lamps. `room`: the draw's ambient is the room light.
-    void bind(bool active, const std::array<float, 16> &view, bool room,
-              const std::array<float, fx::kMaxShadowLamps> &aggregate = {},
+    void bind(bool active, bool room, const std::array<float, fx::kMaxShadowLamps> &aggregate = {},
               const std::array<fx::AggregateRef, fx::kMaxShadowLamps> &overrides = {});
     int initial_state() const {
         if (!enabled()) return 0;
