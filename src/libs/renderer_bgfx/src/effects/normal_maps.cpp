@@ -66,7 +66,9 @@ void NormalMaps::configure(bool enabled, int max_size, bool material)
     enabled_ = enabled;
     max_size_ = max_size;
     material_ = material;
-    ReliefGenerator::instance().set_active(enabled_ || gloss_enabled_); // the neighbours' maps only then
+    // The generator takes no request of a product that is off, and drops its queue when it goes off;
+    // the current place's neighbours are made ahead only while either is on.
+    ReliefGenerator::instance().set_wanted(enabled_, gloss_enabled_);
     if (!changed)
         return;
     std::erase_if(entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
@@ -465,7 +467,7 @@ void NormalMaps::configure_gloss(bool enabled, int max_size)
     const bool changed = enabled != gloss_enabled_ || max_size != gloss_max_size_;
     gloss_enabled_ = enabled;
     gloss_max_size_ = max_size;
-    ReliefGenerator::instance().set_active(enabled_ || gloss_enabled_); // the neighbours' maps only then
+    ReliefGenerator::instance().set_wanted(enabled_, gloss_enabled_);
     if (!changed)
         return;
     std::erase_if(gloss_entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });

@@ -34,6 +34,7 @@ void configure(effects::ReliefGenerator&g) {
  {std::lock_guard lock(gate_mutex);committed.clear();}
  computes=tails=active_tails=max_tails=0;released=false;
  g.configure({"unused","unused",[](const char*){return std::vector<uint8_t>{1};}});
+ g.set_wanted(true,true); // relief and gloss drawn (NormalMaps::configure in the renderer)
 }
 }
 namespace storm::shim {void logf(const char*,...) {}}

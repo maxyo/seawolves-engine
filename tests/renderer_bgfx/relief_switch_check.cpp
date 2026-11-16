@@ -11,6 +11,7 @@
 #include "effects/lighting.hpp"
 #include "effects/normal_maps.hpp"
 #include "effects/relief_generator.hpp"
+#include "effects/thermal.hpp"
 #include "shim.hpp"
 #include "storm/fx/lighting.hpp"
 #include "storm/fx/gloss_map.hpp"
@@ -215,6 +216,28 @@ int main()
     maps.configure(true, 512, true);
     const effects::NormalMaps::Stats again = Settle(maps, {stone.get(), bump.get(), brick.get()});
     expect(again.unqueued == 0, "off and on again leaves nothing unqueued");
+
+    // Switched off while maps wait in the generator's queue (the preset lowered while it works, «Высокая» → «Низкая»):
+    // the queued requests are dropped (their entries Unqueued, looked up again when it is on), and a request of a
+    // product that is off is not taken. Held, so that the request stays queued.
+    WriteTx(textures / "stone_arch.tga.tx", colour);
+    auto arch = Store(colour);
+    effects::hold_background_work("relief_switch_check");
+    maps.on_texture_loaded(*arch, "resource\\textures\\stone_arch.tga.tx", textures / "stone_arch.tga.tx");
+    Settle(maps, {arch.get()});
+    expect(arch->normal_map && arch->normal_map->state == effects::NormalMapEntry::Waiting,
+           "a texture loaded with relief on waits in the generator's queue while the work is held");
+    maps.configure(false, 512, false);
+    expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued,
+           "switching relief off drops its queued request: the entry is unqueued, nothing is made for it");
+    effects::ReliefGenerator::instance().request(arch->normal_map, textures / "stone_arch.tga.tx");
+    expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued, "a relief request while relief is off is not taken");
+    expect(effects::ReliefGenerator::instance().stats().requested == 0, "nothing of relief stays queued while it is off");
+    effects::hold_background_work(nullptr);
+    maps.configure(true, 512, true);
+    const effects::NormalMaps::Stats back = Settle(maps, {stone.get(), bump.get(), brick.get(), arch.get()});
+    expect(back.unqueued == 0 && arch->normal_map->state != effects::NormalMapEntry::Unqueued,
+           "switching relief on again requests the dropped texture");
 
     // The stores of earlier builds go at start (the files directory's relief, the old "NormalMaps" cache).
     const std::filesystem::path files = root / "files", cache = root / "cache";

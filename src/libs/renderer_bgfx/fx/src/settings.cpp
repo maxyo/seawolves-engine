@@ -120,6 +120,37 @@ bool Settings::PostIsIdentity() const
     return !tonemap && !graded && !bloom && !smaa && !sun_shafts && !ssao && !dither && !lens_flare && !scene_grading;
 }
 
+BackgroundProducts BackgroundProductsFor(const Settings &s)
+{
+    const bool lit = (s.lighting_flags & (kLightingPerPixel | kLightingPoint)) != 0;
+    BackgroundProducts p;
+    p.far_lods = s.far_lod_pixels > 0.0f;
+    // The visibility volume is read by the lit draws only (and through them by the bounce and the town walls).
+    p.visibility = s.visibility && lit;
+    p.bounce = s.bounce && p.visibility;
+    p.ao_volume = s.ao_volume > 0;
+    p.town_light = s.town_light;
+    p.town_walls = s.town_light && s.town_walls;
+    p.lamp_shadows = s.lamp_shadows > 0;
+    p.sun_shadows = s.shadows != ShadowQuality::Off;
+    p.relief = lit && (s.lighting_flags & kLightingNormalMap);
+    p.gloss = (s.lighting_flags & kLightingPerPixel) && (s.lighting_flags & kLightingSpecular) && s.gloss;
+    p.upscale = s.upscale;
+    return p;
+}
+
+std::string BackgroundProducts::Describe() const
+{
+    std::string text;
+    for (const auto &[on, name] : {std::pair{far_lods, "far LODs"}, {visibility, "visibility volume"}, {bounce, "bounce"},
+                                   {ao_volume, "AO volume"}, {town_light, "town light"}, {town_walls, "town walls"},
+                                   {lamp_shadows, "lamp shadow faces"}, {sun_shadows, "sun shadow casters"},
+                                   {relief, "relief maps"}, {gloss, "gloss maps"}, {upscale, "upscale x2"}})
+        if (on)
+            text += (text.empty() ? "" : ", ") + std::string(name);
+    return text.empty() ? "none" : text;
+}
+
 float RenderScale(uint16_t render_height, uint32_t display_height)
 {
     if (render_height == 0 || display_height <= render_height)

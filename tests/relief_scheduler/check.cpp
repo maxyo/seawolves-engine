@@ -71,7 +71,7 @@ std::shared_ptr<effects::UpscaleEntry> upscale(const char *name, uint64_t key) {
 void configure(effects::ReliefGenerator &g) {
     g.configure({cache,cache,[](const char*){return std::vector<uint8_t>{1};}});
     g.set_display(true,cache,false);
-    g.set_active(true);
+    g.set_wanted(true,true);
 }
 }
 std::chrono::steady_clock::time_point test_now() { return std::chrono::steady_clock::now()+std::chrono::seconds(clock_offset.load()); }
@@ -450,11 +450,11 @@ int main(int argc,char **argv) {
         expect(started==2,"a scene without neighbours prepares nothing");
         g.shutdown();
         // Relief and gloss off: neighbours wait, made once either is on again.
-        reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_active(false);
+        reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_wanted(false,false);
         g.set_neighbours("Off",{N{"off",std::nullopt,{"off-a"}}});
         std::this_thread::sleep_for(50ms);
         expect(started==0,"no neighbour map while relief and gloss are off");
-        g.set_active(true);
+        g.set_wanted(true,true);
         until([&]{return started==1 && idle();},"neighbours made once relief is on");
         g.shutdown();
     }

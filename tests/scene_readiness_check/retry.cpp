@@ -33,6 +33,8 @@ int main() {
     gloss_store.normal_map->material_gloss = fx::GlossClass::None;
     assert(gloss_only.prepare_scene(gloss_store,lighting,&required_inference) == 0 && !required_inference); // disabled normal not a thermal wait
     puts("gloss-only normal-map material accounting: PASS");
+    // The generator takes the products of the last configured NormalMaps (the renderer has one): relief on again.
+    maps.configure(true,512,false);
     shim::TexStore store;
     store.normal_map = std::make_shared<effects::NormalMapEntry>();
     auto &entry = *store.normal_map;

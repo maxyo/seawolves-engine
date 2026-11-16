@@ -462,6 +462,12 @@ int main()
             render::ConfigureEffects(2, {});
             ok &= expect(frames_until_ready(std::chrono::seconds(20)) == effects::Visibility::State::Ready,
                          "«Высокая»: the location's visibility is baked");
+            render::ConfigureEffects(0, {}); // and down again in the same location
+            for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
+                frames.render();
+            frames.render();
+            ok &= expect(visibility.state() == effects::Visibility::State::None,
+                         "«Высокая» → «Низкая»: the volume is dropped and nothing waits for it");
             render::SetEffectsLocationGeometry({});
             render::ConfigureEffects(0, {});
             for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)

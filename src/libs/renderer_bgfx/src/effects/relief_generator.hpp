@@ -89,13 +89,18 @@ class ReliefGenerator
     // Main thread: the neighbours of `place` to make ahead (see above); replaces the previous place's, empty clears.
     // Only the textures the game makes maps for by their name are kept (relief::Listed).
     void set_neighbours(std::string place, std::vector<ReliefNeighbour> neighbours);
-    // Main thread: relief or gloss maps are drawn (NormalMaps::configure); off, no neighbour is made.
-    void set_active(bool active);
     // Main thread: the controlled character or ship (absolute world), for the order of the neighbours.
     void set_anchor(const std::array<float, 3> &position);
     // Main thread: the game shows the ×2 textures (Settings::upscale): the requested relief maps made from a ×2 also
     // keep it in `directory`, encoded for the tier (`bc`). No other game textures are discovered here.
+    // Off also drops the queued ×2 requests (their entries Missing: the residency plan asks again when it is on) and
+    // stops a ×2 in progress at its next stage.
     void set_display(bool on, std::filesystem::path directory, bool bc);
+    // Main thread (NormalMaps::configure / configure_gloss): whether the settings read the relief / the gloss maps
+    // (fx::BackgroundProducts). Off: no request of that product is taken, the queued ones are dropped (their entries
+    // Unqueued: looked up again when it is switched on) and the texture in progress for it stops at its next stage.
+    // The current place's neighbours are made ahead only while either is on (a neighbour in progress stops too).
+    void set_wanted(bool relief, bool gloss);
     // Stops the worker (the texture in progress is abandoned: onnxruntime stops its inference).
     void shutdown();
     // Game thread, every frame: whether a perspective 3D scene was drawn. A few frames without a scene
@@ -174,6 +179,9 @@ class ReliefGenerator
     const char *neighbour_wait();                 // under mutex_: why the neighbours wait now (logged on change); null: go
     void neighbours_finished();                   // under mutex_: logs the place's result once nothing is left or in flight
     void prepare_neighbour(const NeighbourJob &job);
+    void put_back(NeighbourJob job); // under mutex_: a neighbour's file taken but not made goes back to the front of its list
+    bool wanted(const NormalMapEntry &entry) const; // under mutex_: its product is switched on (set_wanted)
+    bool running_wanted() const; // under mutex_: the job in progress is still wanted (set_wanted, set_display)
 
     std::mutex mutex_;
     std::condition_variable wake_;
@@ -192,10 +200,11 @@ class ReliefGenerator
     std::deque<Request> requests_;
     std::deque<std::weak_ptr<UpscaleEntry>> upscales_;
     Neighbours neighbours_;
-    bool active_ = false;
+    bool active_ = false; // relief or gloss is wanted (set_wanted): the neighbours are made ahead
     std::optional<std::array<float, 3>> anchor_;
     std::string neighbour_wait_; // the logged reason
     bool display_ = false, display_bc_ = false;
+    bool want_relief_ = false, want_gloss_ = false;
     std::filesystem::path display_directory_;
     uint64_t order_ = 0, admitted_ = 0;
     bool next_upscale_ = false; // a live lane never waits behind the entire other queue
@@ -210,7 +219,7 @@ class ReliefGenerator
     std::unique_ptr<relief::Finalizer> inline_finalizer_; // oversized progress, only after the worker slot drains
     std::optional<PendingFinalize> finalizing_; // under mutex_: includes unconsumed completion
     uint64_t next_finalize_ = 0;
-    bool computing_ = false, computing_normal_ = false; // under mutex_
+    bool computing_ = false, computing_normal_ = false, computing_gloss_ = false, computing_neighbour_ = false; // under mutex_
 
     relief::Session *running_ = nullptr; // under mutex_: the session shutdown() cancels
 };

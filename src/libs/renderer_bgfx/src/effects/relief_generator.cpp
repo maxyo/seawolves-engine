@@ -66,7 +66,7 @@ void ReliefGenerator::configure(ReliefSetup setup)
     last_frame_us_ = 0;
     next_upscale_ = false;
     admitted_ = 0;
-    next_finalize_ = 0; finalizing_.reset(); computing_ = computing_normal_ = false;
+    next_finalize_ = 0; finalizing_.reset(); computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
     auto finalizer = std::make_shared<relief::Finalizer>();
     finalizer_queue_ = std::make_unique<relief::FinalizeQueue>(
         [finalizer](std::unique_ptr<relief::ComputedTexture> product) { return finalizer->Run(std::move(product)); },
@@ -121,7 +121,7 @@ void ReliefGenerator::shutdown()
             if (entry->state == UpscaleEntry::Waiting) entry->state = UpscaleEntry::Missing;
     }
     finalizing_.reset(); finalizer_queue_.reset(); inline_finalizer_.reset();
-    computing_ = computing_normal_ = false;
+    computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
     running_ = nullptr;
     session_.reset();
     // The Vulkan instance closes with the generator, not in ncnn's exit handler: by then the driver's own exit
@@ -135,7 +135,7 @@ bool ReliefGenerator::request_upscale(const std::shared_ptr<UpscaleEntry> &entry
 {
     {
         std::lock_guard lock(mutex_);
-        if (!worker_.joinable() || stopping_ || model_failed_)
+        if (!worker_.joinable() || stopping_ || model_failed_ || !display_)
             return false;
         std::erase_if(upscales_, [](const std::weak_ptr<UpscaleEntry> &weak) { return weak.expired(); });
         if (upscales_.size() >= kUpscaleQueue)
@@ -177,15 +177,6 @@ void ReliefGenerator::set_neighbours(std::string place, std::vector<ReliefNeighb
     wake_.notify_all();
 }
 
-void ReliefGenerator::set_active(bool active)
-{
-    {
-        std::lock_guard lock(mutex_);
-        active_ = active;
-    }
-    wake_.notify_all();
-}
-
 void ReliefGenerator::set_anchor(const std::array<float, 3> &position)
 {
     std::lock_guard lock(mutex_);
@@ -198,6 +189,59 @@ void ReliefGenerator::set_display(bool on, std::filesystem::path directory, bool
     display_ = on;
     display_directory_ = std::move(directory);
     display_bc_ = bc;
+    if (on)
+        return;
+    size_t dropped = 0;
+    for (const std::weak_ptr<UpscaleEntry> &weak : upscales_)
+        if (const std::shared_ptr<UpscaleEntry> entry = weak.lock(); entry && entry->state == UpscaleEntry::Waiting)
+        {
+            entry->state = UpscaleEntry::Missing;
+            ++dropped;
+        }
+    upscales_.clear();
+    if (dropped || (computing_ && !computing_normal_))
+        shim::logf("effects: relief generation: ×2 textures switched off: %zu queued dropped%s", dropped,
+                   computing_ && !computing_normal_ ? ", the one in progress stops" : "");
+}
+
+void ReliefGenerator::set_wanted(bool relief, bool gloss)
+{
+    std::lock_guard lock(mutex_);
+    want_relief_ = relief;
+    want_gloss_ = gloss;
+    active_ = relief || gloss; // the neighbours' maps only then
+    wake_.notify_all();
+    size_t dropped = 0;
+    std::erase_if(requests_, [&](const Request &request) {
+        const std::shared_ptr<NormalMapEntry> entry = request.entry.lock();
+        if (!entry)
+            return true;
+        if (wanted(*entry))
+            return false;
+        if (entry->state == NormalMapEntry::Waiting)
+            entry->state = NormalMapEntry::Unqueued; // looked up again when its product is switched on
+        ++dropped;
+        return true;
+    });
+    const bool stops = computing_normal_ && !running_wanted();
+    if (dropped || stops)
+        shim::logf("effects: relief generation: %s off: %zu queued textures dropped%s",
+                   !relief && !gloss ? "relief and gloss maps" : !relief ? "relief maps" : "gloss maps", dropped,
+                   stops ? ", the one in progress stops" : "");
+}
+
+bool ReliefGenerator::wanted(const NormalMapEntry &entry) const
+{
+    return entry.gloss != fx::GlossClass::None ? want_gloss_ : want_relief_;
+}
+
+bool ReliefGenerator::running_wanted() const
+{
+    if (!computing_)
+        return true;
+    if (computing_normal_)
+        return computing_gloss_ ? want_gloss_ : want_relief_;
+    return computing_neighbour_ ? active_ : display_;
 }
 
 void ReliefGenerator::request(const std::shared_ptr<NormalMapEntry> &entry, std::filesystem::path file)
@@ -207,6 +251,11 @@ void ReliefGenerator::request(const std::shared_ptr<NormalMapEntry> &entry, std:
         if (!worker_.joinable() || stopping_)
         {
             entry->state = NormalMapEntry::Missing;
+            return;
+        }
+        if (!wanted(*entry))
+        {
+            entry->state = NormalMapEntry::Unqueued; // switched off meanwhile: looked up again when switched on
             return;
         }
         entry->queued_after = admitted_;
@@ -327,16 +376,6 @@ void ReliefGenerator::run()
         std::shared_ptr<UpscaleEntry> upscale;
         std::optional<NeighbourJob> neighbour;
         std::shared_ptr<relief::LoadingRetry> loading_retry;
-        // A neighbour's file taken but not started goes back to the front of its list.
-        const auto put_back = [this](NeighbourJob &job) {
-            if (job.place != neighbours_.serial)
-                return;
-            neighbours_.taken.erase(job.file);
-            for (ReliefNeighbour &n : neighbours_.list)
-                if (n.name == job.neighbour)
-                    return void(n.files.insert(n.files.begin(), std::move(job.file)));
-            neighbours_.list.push_back({job.neighbour, std::nullopt, {std::move(job.file)}});
-        };
         {
             std::unique_lock lock(mutex_);
             for (;;)
@@ -438,13 +477,31 @@ void ReliefGenerator::run()
                 loading_retry = loading_retry_;
             stats_.working = true;
             computing_ = true; computing_normal_ = request.has_value();
+            const std::shared_ptr<NormalMapEntry> normal = request ? request->entry.lock() : nullptr;
+            computing_gloss_ = normal && normal->gloss != fx::GlossClass::None;
+            computing_neighbour_ = !request && !upscale && neighbour.has_value();
+            if (!running_wanted())
+            {
+                // Its product was switched off after it was taken: nothing is loaded or computed for it.
+                if (normal && normal->state == NormalMapEntry::Waiting)
+                    normal->state = NormalMapEntry::Unqueued;
+                if (upscale && upscale->state == UpscaleEntry::Waiting)
+                    upscale->state = UpscaleEntry::Missing;
+                if (neighbour && neighbour->place == neighbours_.serial)
+                {
+                    --neighbours_.in_flight;
+                    put_back(*neighbour); // made when relief or gloss is on again
+                }
+                stats_.working = false; computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
+                continue;
+            }
         }
         if (!fx::SharedCpuAdmission().wait_for_opaque([this] { return stopping_.load(); })) {
             std::lock_guard lock(mutex_);
             if (request) requests_.push_front(std::move(*request));
             if (upscale) upscales_.push_front(upscale);
             if (neighbour && neighbour->place == neighbours_.serial) { --neighbours_.in_flight; put_back(*neighbour); }
-            stats_.working = false; computing_ = computing_normal_ = false;
+            stats_.working = false; computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
             continue; // generation changed: reselect; shutdown checked at loop top
         }
         if (!open_session())
@@ -464,10 +521,15 @@ void ReliefGenerator::run()
                 if (const std::shared_ptr<NormalMapEntry> entry = r.entry.lock())
                     entry->state = NormalMapEntry::Missing;
             requests_.clear();
-            stats_.working = false; computing_ = computing_normal_ = false;
+            stats_.working = false; computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
             continue;
         }
         session_->SetComputeAdmission([this](size_t workspace) {
+            {
+                std::lock_guard lock(mutex_);
+                if (!running_wanted())
+                    return false; // its product was switched off: the job stops here (finish)
+            }
             return workspace <= kAddedStageBytes ? !stopping_.load() : wait_finalizer();
         });
         session_->SetCpuBudget(fx::SharedCpuAdmission().threads());
@@ -489,7 +551,7 @@ void ReliefGenerator::run()
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
         inference_released_ = false; // the job reopened what it needed
-        stats_.working = false; computing_ = computing_normal_ = false;
+        stats_.working = false; computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
     }
 }
 
@@ -596,6 +658,17 @@ void ReliefGenerator::prepare_neighbour(const NeighbourJob &job)
     }
 }
 
+void ReliefGenerator::put_back(NeighbourJob job)
+{
+    if (job.place != neighbours_.serial)
+        return;
+    neighbours_.taken.erase(job.file);
+    for (ReliefNeighbour &n : neighbours_.list)
+        if (n.name == job.neighbour)
+            return void(n.files.insert(n.files.begin(), std::move(job.file)));
+    neighbours_.list.push_back({job.neighbour, std::nullopt, {std::move(job.file)}});
+}
+
 std::optional<ReliefGenerator::NeighbourJob> ReliefGenerator::next_neighbour()
 {
     const auto distance = [this](const ReliefNeighbour &n) {
@@ -693,7 +766,7 @@ void ReliefGenerator::stage(std::unique_ptr<relief::ComputedTexture> product, Pe
         relief::FinalizeResult failed; failed.failure = "finalizer slot unavailable";
         finish(pending, failed); return; // never publish an uncommitted entry
     }
-    computing_ = computing_normal_ = false;
+    computing_ = computing_normal_ = computing_gloss_ = computing_neighbour_ = false;
 }
 
 void ReliefGenerator::drain_finalized()
@@ -723,6 +796,10 @@ void ReliefGenerator::finish(const PendingFinalize &pending, const relief::Final
     if (pending.neighbour) {
         if (pending.neighbour->place != neighbours_.serial) return; // another place by now
         --neighbours_.in_flight;
+        if (!active_ && result.outcome != relief::Outcome::Prepared && result.outcome != relief::Outcome::Existing) {
+            put_back(*pending.neighbour); // relief and gloss switched off while it was made: made when one is on again
+            return;
+        }
         switch (result.outcome) {
         case relief::Outcome::Prepared:
             ++neighbours_.made; ++stats_.made; stats_.made_ms += result.total_ms;
@@ -742,7 +819,7 @@ void ReliefGenerator::finish(const PendingFinalize &pending, const relief::Final
     if (pending.is_upscale) {
         const auto entry = pending.upscale.lock();
         if (!entry || entry->key != pending.key || entry->state != UpscaleEntry::Waiting) return;
-        if (stopping_) { entry->state = UpscaleEntry::Missing; return; }
+        if (stopping_ || !display_) { entry->state = UpscaleEntry::Missing; return; } // switched off: asked again when on
         if ((result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing ||
             result.upscale_written == pending.key) && display_ && fx::HasUpscaled(display_directory_, pending.key)) {
             if (result.outcome == relief::Outcome::Prepared) { ++stats_.upscaled; stats_.upscale_ms += result.total_ms; }
@@ -756,6 +833,7 @@ void ReliefGenerator::finish(const PendingFinalize &pending, const relief::Final
     const auto entry = pending.request ? pending.request->entry.lock() : nullptr;
     if (!entry || entry->key != pending.key || entry->state != NormalMapEntry::Waiting) return;
     if (stopping_) { entry->state = NormalMapEntry::Missing; return; }
+    if (!wanted(*entry)) { entry->state = NormalMapEntry::Unqueued; return; } // switched off: looked up again when on
     if (result.outcome == relief::Outcome::Prepared) {
         ++stats_.made; stats_.made_ms += result.total_ms;
         stats_.slowest_ms = std::max(stats_.slowest_ms, result.total_ms);

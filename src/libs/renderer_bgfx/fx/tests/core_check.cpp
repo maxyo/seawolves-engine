@@ -552,6 +552,26 @@ void CheckSupport()
     CHECK(!ConstrainSettings(flat_bounce, all, changes).bounce && changes.size() == 1);
     CHECK(high.bounce && Settings::FromPreset(QualityPreset::Medium).bounce && !Settings::FromPreset(QualityPreset::Low).bounce);
 
+    // «Низкая» makes nothing in the background but the far LODs (and even on a device that supports everything);
+    // Высокая every product. What the gates of the renderer read (effects/), and its log line.
+    {
+        std::vector<std::string> low_changes;
+        const BackgroundProducts low = BackgroundProductsFor(ConstrainSettings(Settings::FromPreset(QualityPreset::Low), all, low_changes));
+        BackgroundProducts far_only;
+        far_only.far_lods = true;
+        CHECK(low == far_only);
+        CHECK(low.Describe() == "far LODs");
+        CHECK(BackgroundProducts{}.Describe() == "none");
+        const BackgroundProducts top = BackgroundProductsFor(high);
+        CHECK(top.far_lods && top.visibility && top.ao_volume && top.town_light && top.town_walls && top.lamp_shadows &&
+              top.sun_shadows && top.relief && top.gloss && top.upscale);
+        // The bounce and the town walls ride on what they need: no visibility volume, no bounce.
+        Settings unlit = high;
+        unlit.lighting_flags = kLightingNone;
+        const BackgroundProducts dark = BackgroundProductsFor(unlit);
+        CHECK(!dark.visibility && !dark.bounce && !dark.relief && !dark.gloss);
+    }
+
     // No 3D textures: the post chain is reduced to its plain copy; MSAA is the renderer's and stays.
     Support no_lut = all;
     no_lut.lut_3d = false;

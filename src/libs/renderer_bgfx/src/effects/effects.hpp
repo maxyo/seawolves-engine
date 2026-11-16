@@ -164,6 +164,8 @@ class Host
     std::vector<render::EffectsOption> options_;
     fx::Settings requested_{};
     fx::Settings settings_{}; // the active ones: what draws
+    fx::BackgroundProducts products_{}; // what settings_ make in the background (activate)
+    bool products_logged_ = false;
     fx::Settings target_{};   // the request constrained to the device: active once prepared (advance_switch)
     bool switching_ = false;
     std::chrono::steady_clock::time_point switch_started_{};

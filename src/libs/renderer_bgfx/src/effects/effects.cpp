@@ -129,10 +129,9 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
     uint64_t progress = resources.failed;
     bool inference_pending = false;
     load.loading_normal.clear(); load.loading_upscale.clear();
-    const auto &loading_settings = host.settings();
-    const auto lf = loading_settings.lighting_flags;
-    const bool loading_normals = (lf & (fx::kLightingPerPixel | fx::kLightingPoint)) && (lf & fx::kLightingNormalMap);
-    const bool loading_gloss = (lf & fx::kLightingPerPixel) && (lf & fx::kLightingSpecular) && loading_settings.gloss;
+    const fx::BackgroundProducts loading_products = fx::BackgroundProductsFor(host.settings());
+    const bool loading_normals = loading_products.relief;
+    const bool loading_gloss = loading_products.gloss;
     const auto mix = [](uint64_t x) { x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
         x ^= x >> 27; x *= 0x94d049bb133111ebULL; return x ^ (x >> 31); };
     load.detail.clear();
@@ -685,6 +684,13 @@ void Host::activate(const fx::Settings &settings, const fx::Support &support)
     bgfx::vk::g_stormMaxAnisotropy.store(static_cast<float>(state.max_anisotropy), std::memory_order_relaxed);
     lighting_.configure(settings_, renderer_state_);
     upscales().configure(settings_.upscale, settings_.upscale_budget_mb);
+    // One line per change of what runs in the background: «Низкая» makes the far LODs only, no bake and no texture.
+    const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings_);
+    if (!products_logged_ || !(products == products_))
+        shim::logf("effects: background products for preset %d (%s): %s", preset_,
+                   std::string(fx::NameRu(static_cast<fx::QualityPreset>(preset_))).c_str(), products.Describe().c_str());
+    products_ = products;
+    products_logged_ = true;
 }
 
 bool Host::needs_self_test(const fx::Settings &settings)
@@ -910,18 +916,17 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         lighting_.town_light().update(weather_.sun_dir, weather_.sun_color, weather_last_frame_ && weather_.sun_present,
                                       std::min(dt, 0.25f));
     }
-    ao_bound_ = ao_.update(settings_.ao_volume > 0); // for the next frame's draws
+    ao_bound_ = ao_.update(products_.ao_volume); // for the next frame's draws
     lighting_.set_ao_volume(ao_bound_);
     {
         // The visibility volume and the bounce in its second block, for the next frame's draws.
         // Read by the lit draws only (and through them by the bounce and the town walls, which need per-pixel
         // lighting): Низкая has none, so it bakes none; fx_visibility=0 switches it off for comparisons.
-        visibility_.set_enabled(settings_.visibility &&
-                                (settings_.lighting_flags & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0);
+        visibility_.set_enabled(products_.visibility);
         const Visibility::Bound *volume = visibility_.update();
         TownLight &town = lighting_.town_light();
-        town.set_bounce_scene(settings_.bounce ? bounce_.scene() : nullptr);
-        town.set_volume(visibility_.volume());
+        town.set_bounce_scene(products_.bounce ? bounce_.scene() : nullptr);
+        town.set_volume(products_.town_walls ? visibility_.volume() : nullptr); // the walls are calibrated with it
         Bounce::Light light;
         light.sun = weather_.sun_dir;
         light.sun_present = weather_last_frame_ && weather_.sun_present;
@@ -933,7 +938,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         light.lamp_layout = lamps.layout();
         light.town_sun = town.active();
         light.town_field = town.sun_bounce();
-        bounce_.set_enabled(settings_.bounce);
+        bounce_.set_enabled(products_.bounce);
         bounce_.update(visibility_, volume, light);
         lighting_.set_visibility(volume);
         // Wet surfaces stay dry where the volume shows no open sky: without it (still baking, or failed) the rain

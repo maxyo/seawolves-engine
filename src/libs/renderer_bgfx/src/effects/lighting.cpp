@@ -184,12 +184,13 @@ void Lighting::configure(const fx::Settings &settings, const fx::RendererState &
     budget_ = fx::PointLightBudget(settings);
     shadows_.configure(settings);
     // Our own lightmaps for the towns with the per-pixel lighting (Средняя / Высокая); Низкая keeps the game's.
-    town_light_.set_enabled(settings.town_light);
+    town_light_.set_enabled(fx::BackgroundProductsFor(settings).town_light);
     town_light_.set_debug(settings.town_light_debug);
     lamps_.configure(settings);
-    gloss_ = (flags_ & fx::kLightingPerPixel) && (flags_ & fx::kLightingSpecular) && settings.gloss;
+    const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings);
+    gloss_ = products.gloss;
     // The relief's material texture (height and gloss) is uploaded when the parallax, the cavity or the gloss reads it.
-    normal_maps_.configure(lighting_ && (flags_ & fx::kLightingNormalMap), settings.normal_map_size,
+    normal_maps_.configure(products.relief, settings.normal_map_size,
                            settings.parallax != fx::ParallaxQuality::Off || settings.relief_cavity || gloss_);
     normal_maps_.configure_gloss(gloss_, settings.gloss_map_size);
     find_shaders();

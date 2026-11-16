@@ -271,6 +271,30 @@ struct Settings
     bool operator==(const Settings &) const = default;
 };
 
+// The products the renderer makes in the background (worker threads, the GPU between frames) for these settings:
+// the one place that says which bake or texture generation runs. Each runs only while the settings read what it makes;
+// switching a product off cancels its queued and running work (the renderer's gates, effects/), switching it on
+// starts it for what is loaded. «Низкая» needs the far LODs only.
+struct BackgroundProducts
+{
+    bool far_lods = false;     // the simplified far models (far_lod_pixels)
+    bool visibility = false;   // the location's visibility volume (lit draws: per-pixel or point lighting)
+    bool bounce = false;       // the bounced light in the visibility volume's second block
+    bool ao_volume = false;    // an interior's AO volume
+    bool town_light = false;   // our town lightmaps (place bake, sun relight)
+    bool town_walls = false;   // the town walls' calibration (with town_light)
+    bool lamp_shadows = false; // the lamps' shadow faces of the still geometry
+    bool sun_shadows = false;  // the sun's shadow cascade and its caster tiles
+    bool relief = false;       // relief maps (PBRify normal / height) of the loaded textures
+    bool gloss = false;        // gloss maps (PBRify roughness) of the loaded textures
+    bool upscale = false;      // neural ×2 textures near the camera
+
+    // "far LODs, visibility volume, ...", or "none".
+    std::string Describe() const;
+    bool operator==(const BackgroundProducts &) const = default;
+};
+BackgroundProducts BackgroundProductsFor(const Settings &settings);
+
 // What the device and the renderer can do, decided once at start-up (fx::DetectSupport() in capabilities.hpp
 // fills the GPU part; the renderer fills `scene_depth`). Show it on the settings screen: an option whose
 // requirement is missing must be disabled there, not quietly ignored.
