@@ -1,4 +1,6 @@
 // Real worker/cache retry, Noop submission only: no model inference and no GPU pixel claim.
+// Waits are on the worker's progress, never on a clock: a step that cannot finish hangs and tests/renderer_bgfx/run.py's
+// deadlock guard reports the last "step:" line.
 #include <bits/stdc++.h>
 #include "effects/normal_maps.hpp"
 #define private public
@@ -40,8 +42,8 @@ int main() {
     auto &entry = *store.normal_map;
     entry.name="scene_retry_stone"; entry.relief=fx::ReliefClass::Stone; entry.key=0x5343454e45;
     entry.state=effects::NormalMapEntry::Unqueued;
-    const auto until = std::chrono::steady_clock::now()+std::chrono::seconds(5);
-    while (maps.prepare_scene(store,lighting) != 2 && std::chrono::steady_clock::now()<until)
+    puts("step: the unavailable generator reports the entry Missing"); fflush(stdout);
+    while (maps.prepare_scene(store,lighting) != 2)
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     assert(entry.state == effects::NormalMapEntry::Missing); // actual unavailable generator result
     assert(maps.prepare_scene(store,lighting)==2);
@@ -65,9 +67,9 @@ int main() {
     sun.tiles_vb_ = {1}; sun.tiles_failed_ = true; assert(sun.initial_state() == 2); // required solid/cut IB failed
     sun.tiles_failed_ = false; assert(sun.initial_state() == 0); // cut-only tile needs no solid IB
     sun.tiles_vb_ = BGFX_INVALID_HANDLE;
-    const auto complete = std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    puts("step: the retried entry is read, uploaded and faded in"); fflush(stdout);
     int result=1;
-    while ((result=maps.prepare_scene(store,lighting))==1 && std::chrono::steady_clock::now()<complete) {
+    while ((result=maps.prepare_scene(store,lighting))==1) {
         maps.end_frame(); bgfx::frame(); std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     assert(result==0 && entry.state==effects::NormalMapEntry::Uploaded && bgfx::isValid(entry.handle));

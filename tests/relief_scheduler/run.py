@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the production generator worker with deterministic inference and thermal inputs, no GPU/models."""
 from pathlib import Path
-import os, subprocess, tempfile
+import os, subprocess, sys, tempfile
 root=Path(__file__).resolve().parents[2]
 check=Path(__file__).resolve().parent
 with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
@@ -26,4 +26,13 @@ with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
         '-I'+str(root/'src/libs/relief'),str(check/'check.cpp'),
         str(worker),
         str(root/'src/libs/renderer_bgfx/fx/src/upscale.cpp'),'-o',str(output)],check=True)
-    subprocess.run([str(output),directory],check=True,timeout=120) # a hang guard
+    # The check waits on progress only; DEADLOCK_GUARD is not a time budget but the point at which a step that
+    # cannot finish is reported (with the last step it printed). An idle run takes about 2 s.
+    DEADLOCK_GUARD=300
+    try:
+        result=subprocess.run([str(output),directory],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=DEADLOCK_GUARD)
+    except subprocess.TimeoutExpired as hung:
+        steps=(hung.stdout or b'').decode(errors='replace').strip().splitlines()
+        sys.exit(f'FAIL: no progress for {DEADLOCK_GUARD} s (a worker deadlock) at {steps[-1] if steps else "start"}')
+    print(result.stdout,end='')
+    sys.exit(result.returncode)

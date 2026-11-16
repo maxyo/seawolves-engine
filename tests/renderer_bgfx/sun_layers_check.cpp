@@ -277,7 +277,7 @@ int main()
             };
             const auto settle = [&](const Scene &s) {
                 std::vector<uint8_t> picture;
-                for (int f = 0, active = 0; f < 400; ++f)
+                for (int f = 0, active = 0;; ++f) // on the preparation's progress, no frame budget
                 {
                     picture = frame(s);
                     active = render::CurrentEffects().pending ? 0 : active + 1;

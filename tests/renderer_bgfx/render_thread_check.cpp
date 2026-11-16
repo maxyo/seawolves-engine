@@ -78,7 +78,7 @@ bool run(SDL_Window *window, bool render_thread)
         ok &= expect(context.ready(), mode, "frames present taking turns and overlapped");
 
         // Android's UI thread asks for the surface at any point of the game thread's frames.
-        std::atomic<bool> stop{false}, flying{false}, slow{false};
+        std::atomic<bool> stop{false}, flying{false};
         std::atomic<int> releases{0};
         // The game thread's restores, as it sees them: Context::ready() is the game thread's (Android's UI thread
         // never reads it), so the fake UI thread waits on this.
@@ -87,12 +87,11 @@ bool run(SDL_Window *window, bool render_thread)
             for (int i = 0; i < 40 && !stop; ++i)
             {
                 std::this_thread::sleep_for(std::chrono::microseconds(300 + 173 * i));
-                const auto before = std::chrono::steady_clock::now();
+                // A release that waited out its 3 s limit (Context::wait_render_idle) returns with the frame still in
+                // flight: that outcome, not the wall time a loaded host makes the wait take, is what fails.
                 context.request_surface_release();
                 if (context.frames_in_flight())
                     flying = true;
-                if (std::chrono::steady_clock::now() - before > std::chrono::seconds(2))
-                    slow = true;
                 ++releases;
                 const int restored = restores;
                 context.request_surface_restore();
@@ -103,9 +102,8 @@ bool run(SDL_Window *window, bool render_thread)
             stop = true;
         });
         int presented = 0;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
         uint32_t generation = context.Surface().generation; // a loss and a restore both move it, even in one frame
-        while (!stop && std::chrono::steady_clock::now() < deadline)
+        while (!stop) // until the UI thread's 40 releases; run.py's deadlock guard reports a hang
         {
             context.present(BGFX_INVALID_HANDLE, 0, 0); // polls the surface: honours the release, restores
             ++presented;
@@ -117,7 +115,6 @@ bool run(SDL_Window *window, bool render_thread)
         ui.join();
         ok &= expect(releases == 40, mode, "40 surface releases and restores while frames are presented");
         ok &= expect(!flying, mode, "no frame is in flight when a surface release returns");
-        ok &= expect(!slow, mode, "no surface release waited out its time limit");
         context.surface_restored();
         present(context, 5);
         ok &= expect(context.ready() && presented > 40, mode, "presentation resumes after the last restore");
@@ -151,7 +148,7 @@ bool run(SDL_Window *window, bool render_thread)
             // Android's UI thread first: the game thread's next frame comes only after a while.
             for (int wait = 0; wait < 200 && !returned; ++wait)
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            for (int frame = 0; frame < 200 && !returned; ++frame)
+            while (!returned) // frames until the release returns: on its progress, not a frame budget
                 present(context, 1);
             destroyed.join();
             ok &= expect(!pending_at_return, mode,

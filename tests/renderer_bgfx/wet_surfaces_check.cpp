@@ -312,17 +312,18 @@ float mean_columns(const std::vector<uint8_t> &p, uint32_t first, uint32_t last)
     return static_cast<float>(sum / (kSize * (last - first)));
 }
 
-bool settle(Harness &harness, int preset, const std::vector<render::EffectsOption> &options)
+// Until the preset is prepared: on the preparation's progress, never a frame or time budget a loaded host could
+// exhaust (a preparation that never finishes hangs and run.py's deadlock guard reports it).
+void settle(Harness &harness, int preset, const std::vector<render::EffectsOption> &options)
 {
     render::ConfigureEffects(preset, options);
-    for (int frame = 0; frame < 400; ++frame)
+    for (int frame = 0;; ++frame)
     {
         harness.render();
         if (!render::CurrentEffects().pending && frame > 30)
-            return true;
+            return;
         SDL_Delay(5);
     }
-    return !render::CurrentEffects().pending;
 }
 
 } // namespace
@@ -366,7 +367,7 @@ int main()
             expect(low > 120.0f, "Низкая: the floor's own colour");
 
             harness.rain = -1.0f;
-            expect(settle(harness, 2, {}), "Высокая prepared");
+            settle(harness, 2, {});
             const float interior = mean(harness.render());
             std::printf("Высокая without the weather: %.1f\n", interior);
             expect(std::fabs(interior - low) <= 2.0f, "Высокая without a weather frame (interior): dry");
@@ -414,9 +415,13 @@ int main()
             settle(harness, 0, {});
             const std::vector<uint8_t> dry = harness.render();
             settle(harness, 2, {{"fx_wet_force", 100}});
-            // The volume bakes on its thread: until it is there the rain reaches everywhere (logged).
+            // The volume bakes on its thread: until it is there the rain reaches everywhere (logged). Wait until the floor
+            // under the roof is dry again, without a frame or time budget (a volume that never arrives hangs here and
+            // run.py's deadlock guard names this step).
+            std::printf("step: the roof's visibility volume keeps the floor under it dry\n");
+            std::fflush(stdout);
             float roofed = 0.0f, open = 0.0f, roofed_dry = mean_columns(dry, 4, 36), open_dry = mean_columns(dry, 60, 92);
-            for (int frame = 0; frame < 1500; ++frame)
+            for (;;)
             {
                 const std::vector<uint8_t> wet = harness.render();
                 roofed = mean_columns(wet, 4, 36);
@@ -465,7 +470,7 @@ int main()
                     // It rains in both; fx_wet_force holds the street dry or soaked (the rise takes 45 s otherwise).
                     street.rain = 1.0f;
                     render::ConfigureEffects(2, {{"fx_light_normal_map", 0}, {"fx_wet_force", wet ? 100 : 0}});
-                    for (int frame = 0; frame < 400; ++frame)
+                    for (int frame = 0;; ++frame)
                     {
                         street.render(lamp);
                         if (!render::CurrentEffects().pending && frame > 30)

@@ -1,6 +1,8 @@
 // Host check of the engine's loggers (src/libs/diagnostics/src/logging.cpp): every logger's errors also land in
 // error.log, with the logger that wrote them; lines below error stay in their own log; and the periodic flush puts
-// the lines of a producer that stops (a hung game thread) on disk within kFlushPeriod.
+// the lines of a producer that stops (a hung game thread) on disk by spdlog's flush thread alone. That wait is on
+// the file, not on a clock (kFlushPeriod is the production constant handed to spdlog::flush_every): a flusher that
+// never runs hangs here and run.py's deadlock guard reports it.
 #include "logging.hpp"
 
 #include <SDL2/SDL.h>
@@ -87,15 +89,11 @@ int main(int argc, char **argv)
     hung->info("the last line before the hang");
     check(count(read(logs + "hung.log"), "the last line before the hang") == 0, "unflushed, the line is only in the buffer");
     storm::logging::startPeriodicFlush();
-    const auto written = std::chrono::steady_clock::now();
-    bool onDisk = false;
-    while (!onDisk && std::chrono::steady_clock::now() - written < storm::logging::kFlushPeriod + std::chrono::milliseconds(500))
-    {
+    std::puts("step: the periodic flush puts the hung producer's last line on disk");
+    std::fflush(stdout);
+    while (count(read(logs + "hung.log"), "the last line before the hang") != 1)
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        onDisk = count(read(logs + "hung.log"), "the last line before the hang") == 1;
-    }
-    check(onDisk, "a hung producer's last line is on disk within the flush period");
     spdlog::shutdown();
-    std::puts("PASS: every logger's errors are in error.log, once, with their logger; lines flushed within the period");
+    std::puts("PASS: every logger's errors are in error.log, once, with their logger; lines flushed by the periodic flush");
     return 0;
 }

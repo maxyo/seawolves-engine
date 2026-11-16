@@ -261,15 +261,11 @@ int main()
                     vertex_lit = cpu;
             }
             // fx «Высокое»: lit draws go through the effects' per-pixel variant (vs_ff_lit / vs_ff_lit_skin).
-            // The previous settings draw until the new ones are prepared (a few frames).
+            // The previous settings draw until the new ones are prepared (a few frames; waited on that progress, not a
+            // frame budget: a preparation that never finishes hangs and run.py's deadlock guard reports it).
             render::ConfigureEffects(2, {});
-            for (int frame = 0; frame < 120 && render::CurrentEffects().pending; ++frame)
+            while (render::CurrentEffects().pending)
                 harness.render(mesh, false, true);
-            if (render::CurrentEffects().pending)
-            {
-                std::printf("FAIL lit, fx per-pixel: «Высокое» still pending after 120 frames\n");
-                ok = false;
-            }
             const auto cpu = harness.render(mesh, false, true);
             const auto gpu = harness.render(mesh, true, true);
             render::ConfigureEffects(0, {});

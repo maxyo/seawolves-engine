@@ -84,8 +84,22 @@ vulkan_checks = [name for name in gpu_checks if name != 'uniform_commit_check']
 SLOW = ('ao_volume_check', 'render_thread_check', 'program_cache_check', 'cutout_caster_check')
 
 
+# The checks wait on progress (preparation, bakes, workers), never on a frame or time budget; DEADLOCK_GUARD is not
+# a time budget but the point at which a check that cannot finish is reported, with the last line (step) it printed.
+# The ctest command has a guard per test (CMakeLists.txt TIMEOUT).
+DEADLOCK_GUARD = 300  # seconds, per check process
+
+
 def run_check(command, env=None):
-    return subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    guard = None if command[0] == 'ctest' else DEADLOCK_GUARD
+    try:
+        return subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors='replace', timeout=guard)
+    except subprocess.TimeoutExpired as hung:
+        output = (hung.output or b'').decode(errors='replace')
+        steps = output.strip().splitlines()
+        return subprocess.CompletedProcess(command, 1, output + f'\nFAIL: no progress for {guard} s (a deadlock) at '
+                                           f'{steps[-1] if steps else "start"}\n')
 
 
 failures = []

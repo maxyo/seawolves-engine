@@ -181,7 +181,7 @@ void expect(bool pass, const char *what, const char *detail)
 // reports this frame's lights first.
 template <typename Lights> void settle(Harness &harness, Lights lamps, bool lit_floor = false)
 {
-    for (int frame = 0, active = 0; frame < 400; ++frame)
+    for (int frame = 0, active = 0;; ++frame) // on the preparation's progress, no frame budget
     {
         lamps();
         harness.render(false, 0.0f, 0.0f, lit_floor);

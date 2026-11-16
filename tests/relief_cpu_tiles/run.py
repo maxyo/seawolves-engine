@@ -94,7 +94,7 @@ int main(){
 with tempfile.TemporaryDirectory(prefix='cpu-tiles-',dir=os.environ.get('TMPDIR')) as tmp:
     tmp=Path(tmp);(tmp/'check.cpp').write_text(code)
     subprocess.run(['c++','-std=c++20','-O1','-g','-pthread','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/relief'),str(tmp/'check.cpp'),'-o',str(tmp/'check')],check=True)
-    result=subprocess.run([str(tmp/'check')],text=True,capture_output=True,timeout=60) # a hang guard: the host suite runs many checks at once
+    result=subprocess.run([str(tmp/'check')],text=True,capture_output=True,timeout=300) # deadlock guard, not a time budget: the host suite runs many checks at once
     if a.baseline:
         assert result.returncode==23 and 'ALLOCATION_RETRY_DID_NOT_RECOVER' in result.stderr,(result.returncode,result.stdout,result.stderr)
         print('old actual Infer compiler0, exact ALLOCATION_RETRY_DID_NOT_RECOVER negative PASS')

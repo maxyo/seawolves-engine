@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='storm-window-') as d:
                     str(Path(__file__).with_name('check.cpp')), str(source),
                     '-Wl,-l:'+a.sdl_library, '-o', str(binary)], check=True)
     env = dict(os.environ, SDL_VIDEODRIVER='dummy')
-    subprocess.run([str(binary)], env=env, check=True, timeout=30)
+    subprocess.run([str(binary)], env=env, check=True, timeout=300)  # deadlock guard (a mailbox deadlock), not a time budget
     print('PASS: production SDLWindow focus/flush race, thread ownership, callback arrival, bounded overflow', flush=True)
     if a.ndk:
         compiler = a.ndk.resolve()/'toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++'

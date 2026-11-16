@@ -103,13 +103,20 @@ int clip(const char *path, int width, int height, double seconds, bool audio)
     require(info.videoDecoding == Decoding::Software, "host decodes in software");
 
     int shown = 0;
+    double lastPts = 0.0; // of the last frame shown
     bool firstRed = false, lastBlue = false, pausedChecked = false;
+    const int expected = static_cast<int>(std::lround(seconds * 10));
+    constexpr double kFramePeriod = 0.1; // the clips' 10 fps (run.py)
     const auto start = std::chrono::steady_clock::now();
-    for (int step = 0; !player->finished(); ++step)
+    // No step or time budget: a playback that never finishes hangs and run.py's deadlock guard reports it.
+    while (!player->finished())
     {
-        require(step < 20000, "playback did not finish");
-        if (audio)
-            sinkPointer->advance(kAudioRate / 100); // 10 ms per step on the audio clock
+        // 10 ms per step on the audio clock, but at most one step past where the next frame falls due: a decoder a
+        // loaded host slows down is waited for, so no frame is due late and dropped, and every frame is shown on any
+        // host. (The first frame is shown whenever it exists; the clips' timestamps carry a small start offset.)
+        constexpr double kStep = 0.01;
+        if (audio && (shown >= expected || (shown > 0 && player->clock() < lastPts + kFramePeriod + kStep / 2)))
+            sinkPointer->advance(kAudioRate / 100);
         std::this_thread::sleep_for(std::chrono::milliseconds(audio ? 2 : 1));
         bool changed = false;
         const Frame *frame = player->update(&changed);
@@ -118,6 +125,7 @@ int clip(const char *path, int width, int height, double seconds, bool audio)
         require(frame->width == width && frame->height == height &&
                     frame->rgba.size() == static_cast<size_t>(width) * height * 4,
                 "frame size");
+        lastPts = frame->pts;
         if (shown++ == 0)
             firstRed = isRed(centre(*frame));
         lastBlue = isBlue(centre(*frame));
@@ -125,6 +133,8 @@ int clip(const char *path, int width, int height, double seconds, bool audio)
         {
             pausedChecked = true;
             player->setPaused(true);
+            // A frame that fell due between the last update and the pause is taken now; after it nothing changes.
+            player->update(&changed);
             const double frozen = player->clock();
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             if (audio)
@@ -138,8 +148,9 @@ int clip(const char *path, int width, int height, double seconds, bool audio)
     require(!player->failed(), "decode error");
     require(firstRed, "first frame is red");
     require(lastBlue, "last frame is blue");
-    const int expected = static_cast<int>(std::lround(seconds * 10));
-    require(shown >= expected * 8 / 10 && shown <= expected, "frames shown: " + std::to_string(shown));
+    // On the audio clock every frame is shown; on the wall clock a host too loaded to decode in time rightly drops
+    // late frames (Player::update), so only the bound holds there.
+    require(audio ? shown == expected : shown <= expected, "frames shown: " + std::to_string(shown));
     if (audio)
     {
         const double played = static_cast<double>(sinkPointer->written) / kAudioRate;

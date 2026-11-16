@@ -54,7 +54,8 @@ for name, video, audio, seconds in clips:
             command += ['-f', 'lavfi', '-i', f'sine=frequency=440:sample_rate=44100:duration={seconds}', *audio, '-ac', '2']
         command += [*video, '-pix_fmt', 'yuv420p', str(clip)]
         subprocess.run(command, check=True)
-    subprocess.run([str(binary), 'clip', str(clip), '160', '120', str(seconds), '1' if audio else '0'], check=True, timeout=120)
+    subprocess.run([str(binary), 'clip', str(clip), '160', '120', str(seconds), '1' if audio else '0'], check=True,
+                   timeout=300)  # a deadlock guard, not a time budget
 for media in a.smoke:
     subprocess.run([str(binary), 'smoke', str(media), str(a.smoke_seconds)], check=True, timeout=a.smoke_seconds + 60)
 print('PASS: video decode (VP9/Vorbis, VP8/Opus, ASF/WMAv2, silent), audio clock, wall clock, pause', flush=True)

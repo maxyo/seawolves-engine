@@ -380,14 +380,17 @@ int main()
             effects::TownLight &town = effects::Host::instance().lighting().town_light();
             // The game's own lightmap first (the place's bake runs on its thread), then ours.
             std::vector<uint8_t> game = frame(), picture;
-            for (int f = 0; f < 3000 && !town.active(); ++f)
+            // On the bake's progress, no frame or time budget: a bake that never finishes hangs here and run.py's
+            // deadlock guard reports the step.
+            std::printf("step: the place's lightmap is relit (its bake finished and its tone explains the game's)\n");
+            std::fflush(stdout);
+            for (int f = 0; !town.active(); ++f)
             {
                 picture = frame();
                 if (!render::CurrentEffects().pending && f < 3)
                     game = picture;
                 SDL_Delay(5);
             }
-            expect(town.active(), "the place's lightmap is relit (its bake finished and its tone explains the game's)");
             for (int f = 0; f < 5; ++f)
                 picture = frame();
             dump(game, "game");

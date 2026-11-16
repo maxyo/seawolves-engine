@@ -462,7 +462,7 @@ int main()
             {
                 std::vector<uint8_t> picture;
                 // The preset switches over a few frames; then the map is of the frame that draws it.
-                for (int frame = 0, active = 0; frame < 400; ++frame)
+                for (int frame = 0, active = 0;; ++frame) // on the preparation's progress, no frame budget
                 {
                     render::SetEffectsLamps({});
                     render::SetEffectsWeather(weather);

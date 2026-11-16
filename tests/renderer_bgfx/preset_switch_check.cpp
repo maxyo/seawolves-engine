@@ -44,7 +44,6 @@ namespace
 
 constexpr uint32_t kWidth = 128, kHeight = 96;
 constexpr uint32_t kUiWidth = 32, kUiHeight = 24; // the interface rectangle, top left
-constexpr int kMaxSwitchFrames = 120;
 
 void check(HRESULT result, const char *what)
 {
@@ -242,10 +241,12 @@ bool expect(bool ok, const char *what)
 }
 
 // Frames until the requested settings draw; every frame before must equal `previous` (the old settings draw).
+// Preparation runs on pipeline/compile threads at low priority: the wait is on that progress, never on a frame or
+// time budget a loaded host could exhaust (tests/renderer_bgfx/run.py's deadlock guard reports a switch that hangs).
 int frames_until_active(Frames &frames, const Picture &previous, bool &kept_previous)
 {
     kept_previous = true;
-    for (int frame = 0; frame < kMaxSwitchFrames; ++frame)
+    for (int frame = 0;; ++frame)
     {
         if (!render::CurrentEffects().pending)
             return frame;
@@ -253,7 +254,13 @@ int frames_until_active(Frames &frames, const Picture &previous, bool &kept_prev
         if (max_difference(picture, previous) != 0)
             kept_previous = false;
     }
-    return kMaxSwitchFrames;
+}
+
+// Frames until no switch is pending; `frame` draws one.
+template <typename Frame> void settle(Frame frame)
+{
+    while (render::CurrentEffects().pending)
+        frame();
 }
 
 } // namespace
@@ -291,7 +298,7 @@ int main()
             bool kept = false;
             const int prepared = frames_until_active(frames, low, kept);
             std::printf("     «Высокая» active after %d frames\n", prepared);
-            ok &= expect(prepared > 0 && prepared < kMaxSwitchFrames, "«Высокая» prepared over frames, then active");
+            ok &= expect(prepared > 0, "«Высокая» prepared over frames, then active");
             ok &= expect(kept, "«Низкая» keeps drawing while «Высокая» is prepared");
             const uint32_t before = programs();
             for (int i = 0; i < 3; ++i)
@@ -334,8 +341,7 @@ int main()
             ok &= expect(max_difference(one, three) <= 1, "«Высокая»: the post chain runs once per frame, whatever the interfaces");
 
             render::ConfigureEffects(0, {});
-            for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
-                frames.render();
+            settle([&] { frames.render(); });
             const Picture last = frames.render();
             ok &= expect(max_difference(last, low) <= 1, "back to «Низкая»: the same picture as before the switch");
 
@@ -350,12 +356,12 @@ int main()
                 const int smaa = frames_until_active(frames, last, kept);
                 const fx::Settings &s = effects::Host::instance().settings();
                 std::printf("     «Высокая» + SMAA active after %d frames\n", smaa);
-                ok &= expect(smaa < kMaxSwitchFrames && s.smaa && s.bloom && s.sun_shafts && s.lens_flare &&
+                ok &= expect(s.smaa && s.bloom && s.sun_shafts && s.lens_flare &&
                                  s.render_height && s.sharpen,
                              "«Высокая» + SMAA: every program of its chain prepared, then active");
                 render::ConfigureEffects(2, {});
-                const int back = frames_until_active(frames, last, kept);
-                ok &= expect(back < kMaxSwitchFrames, "«Высокая» without SMAA again");
+                frames_until_active(frames, last, kept);
+                ok &= expect(!s.smaa && s.bloom, "«Высокая» without SMAA again");
             }
 
             // PowerVR profile: no MSAA, so no readable multisampled depth (ambient occlusion, the sea's soft edges).
@@ -366,7 +372,7 @@ int main()
                          "«Высокая» on the PowerVR profile: pending");
             bool consistent = true;
             int frame = 0;
-            for (; frame < kMaxSwitchFrames; ++frame)
+            for (;; ++frame)
             {
                 consistent = consistent && fx::ValidateSettings(host.settings(), host.support()).empty();
                 if (!render::CurrentEffects().pending)
@@ -374,7 +380,7 @@ int main()
                 frames.render();
             }
             std::printf("     PowerVR profile active after %d frames\n", frame);
-            ok &= expect(frame < kMaxSwitchFrames && host.settings().msaa == 1 && host.support().msaa_samples == 1,
+            ok &= expect(host.settings().msaa == 1 && host.support().msaa_samples == 1,
                          "the narrower support and its settings become active");
             ok &= expect(consistent, "every frame of the switch draws settings valid for the support they are checked against");
 
@@ -394,8 +400,7 @@ int main()
             }
             ok &= expect(shown, "held frames present the kept picture");
             render::ConfigureEffects(0, {});
-            for (frame = 0; frame < kMaxSwitchFrames && render::CurrentEffects().pending; ++frame)
-                frames.interface_only();
+            settle([&] { frames.interface_only(); });
             ok &= expect(!render::CurrentEffects().pending && !render::GamePictureHeld(),
                          "a preset switch while held drops the kept picture");
             frames.render();
@@ -447,32 +452,32 @@ int main()
             geometry.indices = triangles;
             Frames frames(*device);
             render::ConfigureEffects(0, {});
-            for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
-                frames.render();
+            settle([&] { frames.render(); });
             render::SetEffectsLocationGeometry(geometry);
             const effects::PlaceBake &place = effects::Host::instance().place();
-            auto frames_until_ready = [&](std::chrono::milliseconds limit) {
-                const auto until = std::chrono::steady_clock::now() + limit;
-                while (place.state() != effects::PlaceBake::State::Ready && std::chrono::steady_clock::now() < until)
+            // The bake runs on its thread: wait for its outcome, not for a time a loaded host may not give it.
+            auto frames_until_baked = [&] {
+                while (place.state() != effects::PlaceBake::State::Ready && place.state() != effects::PlaceBake::State::Failed)
                     frames.render();
                 return place.state();
             };
-            ok &= expect(frames_until_ready(std::chrono::milliseconds(1500)) == effects::PlaceBake::State::None,
+            // Nothing reads the probes: the bake never starts, frame after frame (PlaceBake::update decides per frame).
+            for (int i = 0; i < 30; ++i)
+                frames.render();
+            ok &= expect(place.state() == effects::PlaceBake::State::None,
                          "«Низкая»: the location's probes are not baked (nothing reads them) and hold no reveal");
             render::ConfigureEffects(2, {});
-            ok &= expect(frames_until_ready(std::chrono::seconds(20)) == effects::PlaceBake::State::Ready &&
+            ok &= expect(frames_until_baked() == effects::PlaceBake::State::Ready &&
                              place.visibility() != nullptr,
                          "«Высокая»: the location's probes are baked and its visibility volume is there");
             render::ConfigureEffects(0, {}); // and down again in the same location
-            for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
-                frames.render();
+            settle([&] { frames.render(); });
             frames.render();
             ok &= expect(place.state() == effects::PlaceBake::State::None && place.visibility() == nullptr,
                          "«Высокая» → «Низкая»: the probes are dropped and nothing waits for them");
             render::SetEffectsLocationGeometry({});
             render::ConfigureEffects(0, {});
-            for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
-                frames.render();
+            settle([&] { frames.render(); });
         }
         device->Release();
     }

@@ -55,5 +55,5 @@ int main(){
 with tempfile.TemporaryDirectory(prefix='cpu-run-admission-') as tmp:
  p=Path(tmp);(p/'check.cpp').write_text(source)
  subprocess.run(['c++','-std=c++20','-O0','-pthread','-fsanitize=address,undefined','-fno-sanitize-recover=all',str(p/'check.cpp'),'-o',str(p/'check')],check=True)
- subprocess.run([str(p/'check')],check=True,timeout=60)
+ subprocess.run([str(p/'check')],check=True,timeout=300) # deadlock guard only: every wait is on progress
 print('actual CPU Run: permit held across ORT Run, cancelled admission, tensor/Run failures PASS')

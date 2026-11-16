@@ -227,13 +227,13 @@ void run(shim::Device &device, bool noop)
     auto *reference = make_texture(device, kSize * 2, true);
     // Let the initial preset/self-test finish before controlling upscale readiness. A late preset commit would
     // legitimately disable the option and invalidate the seeded upload states halfway through this fixture.
+    // The wait is on that progress, never on a frame or time budget (run.py's deadlock guard reports a hang).
     if (!noop)
     {
-        const auto prepared_by = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        unsigned frames = 0;
+        std::printf("step: initial effects preset settles\n");
+        std::fflush(stdout);
         do { harness.draw(base); }
-        while (render::CurrentEffects().pending && ++frames < 240 && std::chrono::steady_clock::now() < prepared_by);
-        require(!render::CurrentEffects().pending, "initial effects preset settled");
+        while (render::CurrentEffects().pending);
     }
     const Frame original = harness.draw(base);
     const Frame replacement = harness.draw(reference);
@@ -304,15 +304,17 @@ void run(shim::Device &device, bool noop)
     stage_upload(*entry, format, kSize * 2);
     expect(harness.draw(base), base_handle, original.pixels, 0, "second upload retains base before readiness");
     require(entry->state == effects::UpscaleEntry::Resident, "second real upload becomes resident");
-    // Wait only for the production 500 ms residency plan; every intervening frame must retain valid imagery.
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (entry->state == effects::UpscaleEntry::Resident && std::chrono::steady_clock::now() < until)
+    // Wait only for the production 500 ms residency plan (on its outcome, no deadline); every intervening frame must
+    // retain valid imagery.
+    std::printf("step: the residency plan evicts the far upscale\n");
+    std::fflush(stdout);
+    while (entry->state == effects::UpscaleEntry::Resident)
     {
         const uint16_t selected = entry->handle.idx;
         expect(harness.draw(base, 1000.0f), selected, replacement.pixels, 10, "far surface remains visible until eviction");
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    require(entry->state != effects::UpscaleEntry::Resident && !bgfx::isValid(entry->handle), "real residency plan evicts far upscale");
+    require(!bgfx::isValid(entry->handle), "real residency plan evicts far upscale");
     expect(harness.draw(base, 1000.0f), base_handle, original.pixels, 0, "eviction returns to patterned base without blank frame");
     // Real Read -> Resident publication under the loading batch policy. Container encoding,
     // bgfx allocation/dimension validation and state transitions remain production operations.

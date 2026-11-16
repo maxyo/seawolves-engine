@@ -32,8 +32,12 @@ for name, (url, digest) in inputs.items():
     if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
         raise SystemExit(f'checksum mismatch: {target}')
 
-def run(cmd):
-    subprocess.run(list(map(str, cmd)), check=True)
+# The checks wait on the decoder/stream workers' progress, never on a time budget; DEADLOCK_GUARD is only the point
+# at which one that cannot finish is reported.
+DEADLOCK_GUARD = 300
+
+def run(cmd, timeout=None):
+    subprocess.run(list(map(str, cmd)), check=True, timeout=timeout)
 
 # Preserve original hashes/notices and patch a separate compilation copy.
 patched = build/'patched'
@@ -59,8 +63,8 @@ else:
         run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', fixtures/'tone.wav', '-c:a', codec, fixtures/('tone.'+ext)])
     for ext, codec in [('wav','pcm_s16le'),('mp3','libmp3lame'),('ogg','libvorbis')]:
         run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', fixtures/'tone.wav', '-ar', '44100', '-c:a', codec, fixtures/('tone441.'+ext)])
-    run([build/'audio-probe', fixtures])
-    run([build/'audio-service-check', fixtures])
+    run([build/'audio-probe', fixtures], DEADLOCK_GUARD)
+    run([build/'audio-service-check', fixtures], DEADLOCK_GUARD)
 
     long_fixtures = build/'long-fixtures'
     long_fixtures.mkdir(exist_ok=True)

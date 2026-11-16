@@ -153,7 +153,7 @@ int main()
         // Vulkan: a scene draw waits for a new pipeline off the render thread (shim draw.cpp, may_wait); the frames
         // to read are the ones after the last frame that left a draw out, and the copy kept for the thumbnail is
         // taken from such a frame (Device::copy_frame drops one that is not).
-        for (int i = 0; i < 600 && bgfx::getVkLastWaitingFrame() + 4 > context.last_frame(); ++i)
+        while (bgfx::getVkLastWaitingFrame() + 4 > context.last_frame()) // on the pipeline threads' progress
             frame(*device);
         for (int i = 0; i < 4; ++i)
             frame(*device);

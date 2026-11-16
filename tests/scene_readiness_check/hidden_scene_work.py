@@ -33,8 +33,9 @@ def run():
                  '-I' + str(ROOT / 'src/libs/util/include')]
         def compile_run(source, name, negative=False):
             exe = tmp / name
-            subprocess.run(flags + [str(source), '-o', str(exe)], check=True, timeout=12)
-            result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=3)
+            # No timeouts: compiles under a loaded land queue take long; the ctest TIMEOUT is the deadlock guard.
+            subprocess.run(flags + [str(source), '-o', str(exe)], check=True)
+            result = subprocess.run([str(exe)], capture_output=True, text=True)
             print(name, 'exit', result.returncode, result.stdout, result.stderr, flush=True)
             if negative:
                 assert result.returncode != 0 and 'beauty == 0' in result.stderr, 'negative must fail the beauty assertion'

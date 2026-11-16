@@ -107,17 +107,17 @@ std::unique_ptr<shim::TexStore> Store(const std::vector<std::vector<uint8_t>> &l
     return store;
 }
 
-// Waits until the entries leave the worker (Pending), at most 10 s.
+// Waits until the entries leave the worker (Pending): on its progress, no deadline (a worker that never finishes
+// hangs here and tests/renderer_bgfx/run.py's deadlock guard reports it).
 effects::NormalMaps::Stats Settle(effects::NormalMaps &maps, const std::vector<shim::TexStore *> &stores)
 {
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     for (;;)
     {
         bool pending = false;
         for (shim::TexStore *store : stores)
             pending |= (store->normal_map && store->normal_map->state == effects::NormalMapEntry::Pending) ||
                        (store->gloss_map && store->gloss_map->state == effects::NormalMapEntry::Pending);
-        if (!pending || std::chrono::steady_clock::now() > until)
+        if (!pending)
             return maps.stats();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -238,7 +238,14 @@ int main()
            "switching relief off drops its queued request: the entry is unqueued, nothing is made for it");
     effects::ReliefGenerator::instance().request(arch->normal_map, textures / "stone_arch.tga.tx");
     expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued, "a relief request while relief is off is not taken");
-    expect(effects::ReliefGenerator::instance().stats().requested == 0, "nothing of relief stays queued while it is off");
+    // The queued requests go at once (ReliefGenerator::set_wanted); a job of an earlier texture still in progress or
+    // finalizing stops or ends on the worker's own time, which a loaded host stretches: wait for it (no deadline, a
+    // job that never stops hangs here and run.py's deadlock guard reports the step).
+    std::printf("step: nothing of relief stays queued while it is off\n");
+    std::fflush(stdout);
+    while (effects::ReliefGenerator::instance().stats().requested != 0)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::printf("ok: nothing of relief stays queued while it is off\n");
     effects::hold_background_work(nullptr);
     maps.configure(true, 512, true);
     const effects::NormalMaps::Stats back = Settle(maps, {stone.get(), bump.get(), brick.get(), arch.get()});

@@ -198,6 +198,8 @@ foreach(pair IN ITEMS "scene_readiness_check;check" "scene_resources_check;resou
     target_link_libraries(${target} PRIVATE storm_bgfx storm_check_sdl)
 endforeach()
 
+# The scene_* ctest TIMEOUTs below are deadlock guards, not time budgets: each test compiles its sanitized fixtures
+# first, which takes long on a loaded land queue.
 # Actual post-target handoff followed by Present qualification. CPU-only extracted
 # production latch/bridge control; no GPU/window and no historical git dependency.
 add_test(NAME scene_post_handoff_check
@@ -205,7 +207,7 @@ add_test(NAME scene_post_handoff_check
         "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
         "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/post_handoff.py")
 set_tests_properties(scene_post_handoff_check PROPERTIES
-    LABELS "scene_readiness;cpu" TIMEOUT 60)
+    LABELS "scene_readiness;cpu" TIMEOUT 300)
 
 # A lazy texture request during hidden rendering must not recursively Present or
 # replace the reflection target; the outer loading RunEnd remains authoritative.
@@ -214,7 +216,7 @@ add_test(NAME scene_nested_progress_check
         "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
         "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/nested_progress.py")
 set_tests_properties(scene_nested_progress_check PROPERTIES
-    LABELS "scene_readiness;cpu" TIMEOUT 60)
+    LABELS "scene_readiness;cpu" TIMEOUT 300)
 
 # Native stock ownership/cadence, using actual core and host-controller bodies.
 # No renderer window, model inference or GPU completion assumption.
@@ -224,7 +226,7 @@ foreach(check IN ITEMS transaction scheduler progress consumers)
             "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
             "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/stock_${check}.py")
     set_tests_properties(scene_stock_${check}_check PROPERTIES
-        LABELS "scene_readiness;cpu" TIMEOUT 60)
+        LABELS "scene_readiness;cpu" TIMEOUT 300)
 endforeach()
 
 # Hidden loading frames: no beauty, probe or opaque acknowledgement, while resource preparation goes on.
@@ -233,7 +235,7 @@ add_test(NAME scene_hidden_work_check
         "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"
         "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/../scene_readiness_check/hidden_scene_work.py")
 set_tests_properties(scene_hidden_work_check PROPERTIES
-    LABELS "scene_readiness;cpu" TIMEOUT 60)
+    LABELS "scene_readiness;cpu" TIMEOUT 300)
 
 add_executable(upscale_swap_check upscale_swap_check.cpp)
 target_include_directories(upscale_swap_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"

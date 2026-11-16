@@ -155,24 +155,20 @@ struct Renderer
     }
 };
 
-using Clock = std::chrono::steady_clock;
-constexpr std::chrono::seconds kPatience{30}; // pipeline threads run at low priority: a loaded host makes them slow
-
 struct Settled
 {
     uint32_t left_out; // draws left out on the way
     uint32_t after;    // draws left out in the last frames, once nothing was pending
 };
 
-// Frames of `scene` (blend) until nothing is pending (by time, not by frame count: frames run far faster than a
-// starved pipeline thread).
+// Frames of `scene` (blend) until nothing is pending: on the pipeline threads' progress, not by frame count or time
+// (they run at low priority, so a loaded host starves them; run.py's deadlock guard reports one that never finishes).
 Settled settle(Device &d, int scene)
 {
     const uint32_t before = bgfx::getVkDrawsLeftOut();
     for (int i = 0; i < 4; ++i)
         frame(d, scene, 0, 0);
-    const auto end = Clock::now() + kPatience;
-    while (bgfx::getVkPipelinesPending() != 0 && Clock::now() < end)
+    while (bgfx::getVkPipelinesPending() != 0)
         frame(d, scene, 0, 0);
     const uint32_t settled = bgfx::getVkDrawsLeftOut();
     for (int i = 0; i < 4; ++i)
@@ -222,14 +218,14 @@ bool file_has_waiting_recipe(const fs::path &file)
     return text.find("ext_vs") != std::string::npos;
 }
 
-// Polls (the file is written by a thread of its own) until the recipe is gone from the file.
-bool waiting_recipe_goes(const fs::path &file)
+// Polls (the file is written by a thread of its own) until the recipe is gone from the file; no deadline (a writer
+// that never drops it hangs here and run.py's deadlock guard reports the step).
+void await_waiting_recipe_gone(const fs::path &file)
 {
-    for (const auto end = Clock::now() + std::chrono::seconds(5); Clock::now() < end;
-         std::this_thread::sleep_for(std::chrono::milliseconds(20)))
-        if (!file_has_waiting_recipe(file))
-            return true;
-    return false;
+    std::printf("step: the asked-for recipe leaves the pipeline sets file\n");
+    std::fflush(stdout);
+    while (file_has_waiting_recipe(file))
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 bool vulkan(SDL_Window *window, const fs::path &root)
@@ -269,14 +265,15 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         Device &d = *r.device;
         render::BeginScenePipelines(kScene);
         int held = 0;
-        const auto end = Clock::now() + kPatience;
+        // On the prewarm's progress, no deadline: a hold that never ends hangs here (run.py's deadlock guard).
+        std::printf("step: the fade-in ends once the scene's pipelines exist\n");
+        std::fflush(stdout);
         do
         {
             frame(d, -1, 0, 0); // the loading picture
             ++held;
-        } while (render::HoldSceneReveal() && Clock::now() < end);
-        std::printf("     the fade-in waited %d frames\n", held);
-        ok &= expect(!render::HoldSceneReveal(), "the fade-in ends once the scene's pipelines exist");
+        } while (render::HoldSceneReveal());
+        std::printf("PASS the fade-in ended once the scene's pipelines existed, after %d frames\n", held);
         const uint32_t before = bgfx::getVkDrawsLeftOut();
         for (int i = 0; i < 4; ++i)
             frame(d, 3, 0, 0);
@@ -325,7 +322,8 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         for (int i = 0; i < 5; ++i)
             frame(d, -1, 0, 0);
         render::BeginScenePipelines("elsewhere again");
-        ok &= expect(waiting_recipe_goes(sets), "registered: it is asked for (refused here: not a bgfx recipe)");
+        await_waiting_recipe_gone(sets);
+        std::printf("PASS registered: it is asked for (refused here: not a bgfx recipe)\n");
         owner.UnregisterPipelineProgram(program.idx);
         frame(d, -1, 0, 0);
         bgfx::destroy(program);

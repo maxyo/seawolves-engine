@@ -37,10 +37,13 @@ void expect(bool value, const char *message) {
     if (!value) { std::fprintf(stderr,"FAIL: %s\n",message); std::exit(1); }
     std::printf("ok: %s\n",message); std::fflush(stdout);
 }
+// Waits on the worker's progress, never on a clock: a step that cannot finish hangs here and run.py's deadlock guard
+// reports it (the last "step:" line). The short sleeps before "must not have started" controls only weaken those
+// negatives under load; they never fail a correct worker.
 template<class Predicate> void until(Predicate predicate, const char *message) {
-    const auto end=std::chrono::steady_clock::now()+7s;
-    while (!predicate() && std::chrono::steady_clock::now()<end) std::this_thread::sleep_for(5ms);
-    expect(predicate(),message);
+    std::printf("step: %s\n",message); std::fflush(stdout);
+    while (!predicate()) std::this_thread::sleep_for(1ms);
+    expect(true,message);
 }
 void reset() {
     // Independent cases cannot inherit exact-key completed files from a prior case.
@@ -95,7 +98,8 @@ struct Session::Impl { Stats stats; std::chrono::steady_clock::time_point since=
 Session::Session(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 Session::~Session()=default;
 std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::path&,std::string&,std::function<bool()> cancel) {
-    ++opened; if (slow_open) {const auto end=std::chrono::steady_clock::now()+150ms;while(std::chrono::steady_clock::now()<end){if(cancel&&cancel())return {};std::this_thread::sleep_for(1ms);}}
+    // A slow model load lasts until the worker is cancelled, so shutdown always lands during loading.
+    ++opened; if (slow_open) {while(!(cancel&&cancel()))std::this_thread::sleep_for(1ms);return {};}
     if(cancel&&cancel())return {};
     auto impl=std::make_unique<Impl>();impl->stats.gpu_possible=cpu_detour;return std::unique_ptr<Session>(new Session(std::move(impl)));
 }

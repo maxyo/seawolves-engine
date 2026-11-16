@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
+"""Actual CPU admission governor, bake helpers and Run/Session admission prefixes. The checks wait on progress
+only; DEADLOCK_GUARD is not a time budget but the point at which a waiter that cannot progress is reported (with
+the last step it printed)."""
 from pathlib import Path
 import subprocess,tempfile,sys
+DEADLOCK_GUARD=300 # seconds; an idle run of each binary takes well under 1 s
+def guarded(command):
+ try:r=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=DEADLOCK_GUARD)
+ except subprocess.TimeoutExpired as hung:
+  steps=(hung.stdout or b'').decode(errors='replace').strip().splitlines()
+  sys.exit(f'FAIL: {Path(command[0]).name}: no progress for {DEADLOCK_GUARD} s (an admission deadlock) at {steps[-1] if steps else "start"}')
+ assert r.returncode==0,(command,r.returncode,r.stdout)
 root=Path(__file__).resolve().parents[2]
 fx=root/'src/libs/renderer_bgfx/fx'
 with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
@@ -10,9 +20,8 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
  stub=p/'log.cpp';stub.write_text('#include "storm/fx/log.hpp"\nnamespace storm::fx {void Log(LogLevel,const char*,...) {}}\n')
  exe=p/'check'
  subprocess.run(['c++','-std=c++20','-O0','-pthread','-I'+str(fx/'include'),str(Path(__file__).with_name('check.cpp')),str(bake),str(stub),'-o',str(exe)],check=True)
- r=subprocess.run([str(exe)],capture_output=True,text=True,timeout=8)
- assert r.returncode==0,r.stderr
- subprocess.run([str(exe),'--exit-waiting-bake'],check=True,timeout=3)
+ guarded([str(exe)])
+ guarded([str(exe),'--exit-waiting-bake'])
  print('actual bake/nested + concurrent FIFO/cancel/phase/invalid-request + two-core boost/exit PASS')
 
  # One real static provider archive is linked into an engine-like shared object;
@@ -81,7 +90,7 @@ int main(){
  auto &g=fx::SharedCpuAdmission();auto all=g.acquire(g.threads(),{});std::atomic<bool> stop=false;
  auto initial=std::async(std::launch::async,[&]{return initial_open(g.threads(),[&]{return stop.load();});});
  while(!g.queued())std::this_thread::yield();stop=true;
- assert(initial.wait_for(std::chrono::milliseconds(500))==std::future_status::ready&&!initial.get());all.reset();
+ assert(!initial.get());all.reset();
  Session s;auto *finalizer=s.impl_->synchronous_finalizer.get();
  s.SetCpuBudget(1);s.SetCpuBudget(0);
  assert(s.impl_->releases==0&&s.impl_->synchronous_finalizer.get()==finalizer&&s.impl_->threads==1);
@@ -102,7 +111,7 @@ int main(){
 '''.replace('PREFIX',prefix).replace('METHOD',method).replace('PROBE',probe_prefix)
  source=p/'hook.cpp';source.write_text(fixture);binary=p/'hook'
  subprocess.run(['c++','-std=c++20','-O0','-pthread','-I'+str(fx/'include'),str(source),str(production_bake),str(stub),'-o',str(binary)],check=True)
- subprocess.run([str(binary)],check=True,timeout=3)
+ guarded([str(binary)])
  import hashlib
  print('actual CPU Run hook + Session finalizer-reset/budget boundary/no-op controls PASS; backend sha256 '+hashlib.sha256(backend.encode()).hexdigest())
 subprocess.run([sys.executable,str(Path(__file__).with_name('run_admission.py'))],check=True)

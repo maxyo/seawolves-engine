@@ -129,8 +129,9 @@ int main(int argc,char**argv) try {
         auto id=longs.play(dir+"/tone.wav",fx);
         require(longs.find(id)->resource->streamed && longs.cachedBytes()==0,"oversized sample is streamed");
         require(id>2,"streamed effect keeps an effect ID, not a music slot");
-        double energy=0;for(int i=0;i<40 && energy<1;++i) {energy+=render(longs,1024);std::this_thread::sleep_for(std::chrono::milliseconds(5));}
-        require(energy>1 && longs.find(id)->cursor>0,"streamed effect renders PCM");
+        // Until the stream's worker has refilled: on its progress, no budget (run.py's deadlock guard reports a hang).
+        double energy=0;while(energy<1) {energy+=render(longs,1024);std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+        require(longs.find(id)->cursor>0,"streamed effect renders PCM");
         longs.stop(0);require(longs.logicalCount()==0,"streamed effect stops");
     }
     {   // Background decoding: play() returns before the sample is decoded.
@@ -138,15 +139,14 @@ int main(int argc,char**argv) try {
         Mixer bg(true,8,async);Play fx;
         auto id=bg.play(dir+"/tone441.ogg",fx);
         require(bg.playing(id),"voice exists while decoding");
-        unsigned waited=0;
-        while(bg.pendingDecodes() && waited++<5000) {require(bg.find(id)->cursor==0,"cursor held while decoding");std::this_thread::sleep_for(std::chrono::milliseconds(1));bg.update();}
+        while(bg.pendingDecodes()) {require(bg.find(id)->cursor==0,"cursor held while decoding");std::this_thread::sleep_for(std::chrono::milliseconds(1));bg.update();}
         require(bg.pendingDecodes()==0 && bg.cachedBytes()>0,"decode completes");
         require(render(bg,4800)>1,"decoded sample plays from the start");
         require(std::abs(bg.find(id)->cursor-4800)<600,"no audio skipped during decode");
         // Stop before the decode finishes: the voice ends, the sample is still cached afterwards.
         auto early=bg.play(dir+"/tone441.mp3",fx);bg.stop(early);bg.update();
         require(!bg.playing(early),"stop while decoding");
-        waited=0;while(bg.pendingDecodes() && waited++<5000) {std::this_thread::sleep_for(std::chrono::milliseconds(1));bg.update();}
+        while(bg.pendingDecodes()) {std::this_thread::sleep_for(std::chrono::milliseconds(1));bg.update();}
         require(bg.pendingDecodes()==0 && bg.takeFailures().empty(),"abandoned decode is collected");
         bool missing=false;try{bg.play(dir+"/missing.wav",fx);}catch(const std::runtime_error&){missing=true;}
         require(missing,"missing file still fails synchronously");

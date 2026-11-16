@@ -1,6 +1,7 @@
 #include "parallel_for.hpp"
 
 #include <cassert>
+#include <condition_variable>
 #include <cstdio>
 #include <numeric>
 #include <set>
@@ -27,13 +28,18 @@ int main()
                 assert(total.load() == count * (count + 1) / 2);
             }
         }
-        // Work really is spread across threads when helpers exist and the job is long enough.
+        // Work really is spread across threads when helpers exist: with helpers, every piece waits until a second
+        // thread has taken one, which a pool that leaves its helpers parked never gets past (run.py's deadlock
+        // guard reports it). Waiting on that progress, not on a sleep, keeps a loaded host from deciding it.
         std::mutex mutex;
+        std::condition_variable joined;
         std::set<std::thread::id> threads;
         pool.run(64, [&](size_t) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            std::lock_guard lock(mutex);
+            std::unique_lock lock(mutex);
             threads.insert(std::this_thread::get_id());
+            joined.notify_all();
+            if (helpers > 0)
+                joined.wait(lock, [&] { return threads.size() > 1; });
         });
         assert(threads.size() >= 1 && threads.size() <= helpers + 1);
         if (helpers > 0)

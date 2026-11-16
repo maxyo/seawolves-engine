@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -23,4 +24,13 @@ with tempfile.TemporaryDirectory(prefix='storm-logging-') as directory:
                     '-fsanitize=address,undefined', '-fno-sanitize-recover=all',
                     *['-I' + str(path) for path in includes], *map(str, sources), '-pthread', '-o', str(work / 'check')], check=True)
     (work / 'stash').mkdir()
-    subprocess.run([str(work / 'check'), str(work / 'stash')], check=True)
+    # Deadlock guard, not a time budget: the flush is awaited on the file (an idle run waits one kFlushPeriod, 2 s).
+    DEADLOCK_GUARD = 300
+    try:
+        result = subprocess.run([str(work / 'check'), str(work / 'stash')], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, timeout=DEADLOCK_GUARD)
+    except subprocess.TimeoutExpired as hung:
+        steps = (hung.stdout or b'').decode(errors='replace').strip().splitlines()
+        sys.exit(f'FAIL: no progress for {DEADLOCK_GUARD} s at {steps[-1] if steps else "start"}')
+    print(result.stdout, end='')
+    sys.exit(result.returncode)

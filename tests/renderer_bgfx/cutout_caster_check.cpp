@@ -363,7 +363,7 @@ int main()
                 render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", c.lamps ? 8 : 0}, {"fx_shadows", c.lamps ? 0 : 2}});
                 std::vector<uint8_t> picture;
                 // The lamps draw their atlases over the frames after the preset is active: 20 frames past it.
-                for (int frame = 0, active = 0; frame < 400; ++frame)
+                for (int frame = 0, active = 0;; ++frame) // on the preparation's progress, no frame budget
                 {
                     if (c.ship)
                     {

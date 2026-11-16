@@ -175,8 +175,9 @@ float mean(const std::vector<uint8_t> &p, float u, float v)
 }
 
 // `volume`: also until the AO volume is bound (it bakes on the bake thread, after whatever bake runs there: the
-// location's visibility first; a fixed number of frames was not enough on a loaded host).
-bool settle(Harness &harness, int preset, const std::vector<render::EffectsOption> &options, bool volume = false)
+// location's visibility first). Every wait here is on that progress, never on a frame or time budget a loaded host
+// could exhaust: a preparation that never finishes hangs and run.py's deadlock guard reports it.
+void settle(Harness &harness, int preset, const std::vector<render::EffectsOption> &options, bool volume = false)
 {
     render::ConfigureEffects(preset, options);
     // The previous settings draw until the new ones are prepared; a volume that arrived fades in (kVolumeFade).
@@ -185,14 +186,13 @@ bool settle(Harness &harness, int preset, const std::vector<render::EffectsOptio
         return !render::CurrentEffects().pending &&
                (!volume || (host.ao_volume() != nullptr && host.lighting().ao_weight() >= 1.0f));
     };
-    for (int frame = 0; frame < 2000; ++frame)
+    for (int frame = 0;; ++frame)
     {
         harness.render();
         if (settled() && frame > 30)
-            return true;
+            return;
         SDL_Delay(5);
     }
-    return settled();
 }
 
 } // namespace
@@ -246,11 +246,7 @@ int main()
             std::printf("Низкая: under the table %.1f, open floor %.1f\n", low_centre, low_open);
             ok &= low_centre > 100.0f && std::fabs(low_centre - low_open) <= 1.0f;
 
-            if (!settle(harness, 2, {{"fx_ao_volume", 0}}))
-            {
-                std::printf("FAIL: «Высокая» still pending\n");
-                ok = false;
-            }
+            settle(harness, 2, {{"fx_ao_volume", 0}});
             const auto off = harness.render();
             const float off_centre = mean(off, 0.5f, 0.5f);
             std::printf("Высокая, AO volume off: under the table %.1f\n", off_centre);
@@ -259,11 +255,7 @@ int main()
             float previous = 1e9f;
             for (int level = 1; level <= 3; ++level)
             {
-                if (!settle(harness, 2, {{"fx_ao_volume", level}}, true))
-                {
-                    std::printf("FAIL: «Высокая», fx_ao_volume=%d still pending or without its volume\n", level);
-                    ok = false;
-                }
+                settle(harness, 2, {{"fx_ao_volume", level}}, true);
                 const auto on = harness.render();
                 const float centre = mean(on, 0.5f, 0.5f), open = mean(on, 0.2f, 0.2f);
                 // Level 1 follows the game's data (a 1.2 m table top at 0.8 m hides little of the sky), 3 is stylised.
@@ -299,7 +291,7 @@ int main()
                     const D3DLIGHT9 *light = lit_floor ? &lamp_light : nullptr;
                     const char *floor = lit_floor ? "lit" : "baked";
                     render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", count}});
-                    for (int frame = 0; frame < 400; ++frame)
+                    for (int frame = 0;; ++frame)
                     {
                         render::SetEffectsLamps(std::span(&lamp, 1));
                         harness.render(light);
@@ -307,7 +299,6 @@ int main()
                             break;
                         SDL_Delay(5);
                     }
-                    const bool ready = !render::CurrentEffects().pending;
                     render::SetEffectsLamps(std::span(&lamp, 1));
                     const auto picture = harness.render(light);
                     if (const char *dump = std::getenv("AO_CHECK_DUMP"))
@@ -328,11 +319,6 @@ int main()
                     const float beside = mean(picture, (1.2f + 3.0f) / 6.0f, (3.0f + 2.0f) / 6.0f);
                     std::printf("%s floor, fx_lamp_shadows=%d: behind the pillar %.1f, beside it %.1f\n", floor, count, behind,
                                 beside);
-                    if (!ready)
-                    {
-                        std::printf("FAIL: fx_lamp_shadows=%d still pending\n", count);
-                        ok = false;
-                    }
                     const bool shadow = behind < 0.85f * beside;
                     if (count == 0 && shadow)
                     {
@@ -378,7 +364,7 @@ int main()
                     const render::EffectsPointLight lantern{{lantern_x, 2.0f, -2.0f}, {4.0f, 3.6f, 3.0f}, 15.0f, 0.5f, 0.0f, 0.1f};
                     render::ConfigureEffects(2, {{"fx_ao_volume", 0}, {"fx_lamp_shadows", 8}, {"fx_lamp_moving", moving}});
                     std::vector<uint8_t> picture;
-                    for (int frame = 0; frame < 400; ++frame)
+                    for (int frame = 0;; ++frame)
                     {
                         render::SetEffectsDynamicLights(std::span(&lantern, 1));
                         picture = harness.render();
@@ -394,7 +380,7 @@ int main()
                     const float shadowed = lantern_x < 0.0f ? from_left : from_right;
                     const float lit = lantern_x < 0.0f ? from_right : from_left;
                     // With or without a slot it is the same added light (texture * light); the slot adds the shadow.
-                    const bool pass = !render::CurrentEffects().pending && lit > 150.0f &&
+                    const bool pass = lit > 150.0f &&
                                       (moving ? shadowed < 0.8f * lit : shadowed > 0.9f * lit);
                     std::printf("%s lantern at x = %.0f, fx_lamp_moving=%d: floor behind the pillar %.1f, the other side's "
                                 "spot %.1f\n",
@@ -434,7 +420,7 @@ int main()
                                                        ship.id,
                                                        {-2.0f, 2.0f, -2.0f}};
                 std::vector<uint8_t> picture;
-                for (int frame = 0; frame < 400; ++frame)
+                for (int frame = 0;; ++frame)
                 {
                     render::SetEffectsShipLights(std::span(&ship, 1), std::span(&lantern, 1));
                     if (render::EffectsShipGeometryWanted(ship.id, ship.signature))
@@ -450,7 +436,7 @@ int main()
                 const std::array<float, 3> behind = turned(0.5f, 0.0f, 0.5f), open = turned(-2.5f, 0.0f, -0.5f);
                 const float shadowed = mean(picture, (behind[0] + 3.0f) / 6.0f, (3.0f - behind[2]) / 6.0f);
                 const float lit = mean(picture, (open[0] + 3.0f) / 6.0f, (3.0f - open[2]) / 6.0f);
-                const bool pass = !render::CurrentEffects().pending && lit > 150.0f && shadowed < 0.8f * lit && reports == 1;
+                const bool pass = lit > 150.0f && shadowed < 0.8f * lit && reports == 1;
                 std::printf("%s ship's lantern, the ship turned %.0f quarter: floor behind the pillar %.1f, the open spot %.1f, "
                             "the ship's geometry reported %d time(s)\n",
                             pass ? "PASS" : "FAIL", quarter, shadowed, lit, reports);

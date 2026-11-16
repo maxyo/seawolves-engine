@@ -100,8 +100,8 @@ int main(int argc, char** argv) try {
             // Mixer consumes the seek request; refill then completes on a worker.
             render(b,256);
             require(s->cursor()>=24000 && s->cursor()<=24256,"stream seek dispatched");
-            auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
-            while (s->cursor()<25024 && std::chrono::steady_clock::now()<deadline) {
+            // On the refill's progress, no deadline (run.py's deadlock guard reports a refill that never lands).
+            while (s->cursor()<25024) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 render(b,256);
             }
