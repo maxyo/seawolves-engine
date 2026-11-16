@@ -19,15 +19,15 @@ namespace storm::effects
 
 namespace
 {
-constexpr float kTexelMetres = 0.3f;       // the footprint the hour's sun is read over on a texel (fx::SunVisibility's)
+constexpr float kTexelMetres = 0.3f; // the footprint the bake's sun is read over on a texel by the fit's rays (fx::SunVisibility)
 constexpr bgfx::ViewId kPlaceView = render::kPreGameViewBegin + 4;   // the place's sun map
 constexpr bgfx::ViewId kComposeView = render::kPreGameViewBegin + 5; // one lightmap a frame
 constexpr size_t kFitSamples = 1500;
 // A lightmap set's section of the place's cache file (effects/place.hpp PlaceStore), keyed by the place and the set
 // (its lightmapped triangles and its lightmaps' texels): the fit of the direction the set was baked with and, when
-// that fit is trusted, that sun's light on the texels, the lightmaps' tones and the walls'. Bump kSetVersion on any
-// change of what a set's bake makes.
-constexpr uint32_t kSetVersion = 1;
+// that fit is trusted, the lightmaps' tones and the walls'. Bump kSetVersion on any change of what a set's bake makes.
+// 2: the bake's sun on the texels is no longer kept (the GPU reads it from the place map, fx/sun_relight.hpp).
+constexpr uint32_t kSetVersion = 2;
 constexpr size_t kSetsKept = 8; // the sets of a town's hours (morning, day1..4, evening) and spare
 
 // A section written in order, or read back in order.
@@ -250,10 +250,7 @@ void TownLight::start_place()
             if (whole && job->bake.valid)
             {
                 for (Map &map : job->maps)
-                {
-                    map.baked.resize(map.texels->texel.size());
-                    whole = whole && cached.take(map.baked.data(), map.baked.size()) && Take(cached, map.tone);
-                }
+                    whole = whole && Take(cached, map.tone);
                 whole = whole && Take(cached, job->wall) && Take(cached, job->wall_light);
             }
             if (!whole || cached.cursor != cached.bytes.size())
@@ -323,9 +320,8 @@ void TownLight::start_place()
             const Map *first = nullptr;
             for (Map &map : job->maps)
             {
-                map.baked = fx::SunVisibility(occluders, *map.texels, job->bake.dir, kTexelMetres, 4, threads);
-                map.tone = fx::CalibrateTownLight(*map.texels, map.game, map.baked, map.sky);
-                section.put(map.baked.data(), map.baked.size());
+                const std::vector<uint8_t> baked = fx::SunVisibility(occluders, *map.texels, job->bake.dir, kTexelMetres, 4, threads);
+                map.tone = fx::CalibrateTownLight(*map.texels, map.game, baked, map.sky);
                 Put(section, map.tone);
                 if (!first && map.tone.valid)
                     first = &map;
@@ -439,7 +435,7 @@ void TownLight::upload_map(Map &map)
     const fx::LightmapTexels &texels = *map.texels;
     const size_t count = static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height);
     std::vector<float> position(count * 4, 0.0f);
-    std::vector<uint8_t> normal_sky(count * 4, 0), baked(count * 4, 0);
+    std::vector<uint8_t> normal_sky(count * 4, 0);
     for (size_t i = 0; i < texels.texel.size(); ++i)
     {
         const size_t at = static_cast<size_t>(texels.texel[i]) * 4;
@@ -450,17 +446,38 @@ void TownLight::upload_map(Map &map)
         }
         position[at + 3] = 1.0f;
         normal_sky[at + 3] = map.sky[i];
-        baked[at + 3] = map.baked[i];
     }
     for (size_t g = 0; g + 1 < texels.gutter.size(); g += 2)
     {
         const size_t to = static_cast<size_t>(texels.gutter[g]) * 4, from = static_cast<size_t>(texels.gutter[g + 1]) * 4;
         std::copy_n(&position[from], 4, &position[to]);
         std::copy_n(&normal_sky[from], 4, &normal_sky[to]);
-        std::copy_n(&baked[from], 4, &baked[to]);
     }
-    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, baked, map.game});
+    map.texel_metres = TexelMetres(texels);
+    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, map.game});
     map.compose_due = true;
+}
+
+float TownLight::TexelMetres(const fx::LightmapTexels &texels)
+{
+    // The median distance between covered texels side by side in a row: a lightmap spreads its texels unevenly
+    // (a town's 512 x 512 over a few hundred metres: 0.3-1 m), the median ignores the seams between its charts.
+    std::vector<int32_t> at(static_cast<size_t>(texels.width) * texels.height, -1);
+    for (size_t i = 0; i < texels.texel.size(); ++i)
+        at[texels.texel[i]] = static_cast<int32_t>(i);
+    std::vector<float> step;
+    for (size_t i = 0; i < texels.texel.size(); i += 3)
+    {
+        const uint32_t t = texels.texel[i];
+        if (static_cast<int>(t % texels.width) + 1 >= texels.width || at[t + 1] < 0)
+            continue;
+        const fx::Vec3 &a = texels.position[i], &b = texels.position[static_cast<size_t>(at[t + 1])];
+        step.push_back(std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2])));
+    }
+    if (step.empty())
+        return kTexelMetres; // scattered texels, none beside another: the fit's footprint
+    std::nth_element(step.begin(), step.begin() + static_cast<std::ptrdiff_t>(step.size() / 2), step.end());
+    return std::clamp(step[step.size() / 2], 0.05f, 4.0f);
 }
 
 void TownLight::compose_all()
@@ -494,19 +511,47 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
                 map.compose_due = false;
             }
         }
-    // The place's sun map: when the sun moved a step, or what it was drawn with changed.
     const bool up = sun_present_ && live_sun_[1] > 0.0f;
     const uint64_t cut = shadows.cut_signature();
-    const bool place_void = place_sun_ == std::array<float, 3>{0.0f, 0.0f, 0.0f} || !relight_.PlaceDrawn() || cut != place_cut_signature_;
-    if (up && (place_void || Angle(live_sun_, place_sun_) > fx::kSunStepDegrees))
+    if (cut != place_cut_signature_ && relight_.PlaceDrawn())
     {
-        const fx::SunPlace place = fx::ComputeSunPlace({live_sun_[0], live_sun_[1], live_sun_[2]}, lightmapped_->positions, fx::kSunRayReach,
+        // The still geometry casts otherwise now (a cut-out texture): both suns are read again.
+        relight_.InvalidateBakes();
+        place_sun_ = {0.0f, 0.0f, 0.0f};
+    }
+    const auto draw_place = [&](const std::array<float, 3> &sun) {
+        const fx::SunPlace place = fx::ComputeSunPlace({sun[0], sun[1], sun[2]}, lightmapped_->positions, fx::kSunRayReach,
                                                        fx::SunRelight::kPlaceSize);
         relight_.BeginPlace(kPlaceView, place, {0.0f, 0.0f, 0.0f});
         shadows.draw_tiles(device, casters, kPlaceView, {0.0f, 0.0f, 0.0f},
                            [&place](const fx::Vec3 &center, float radius) { return place.Reaches(center, radius); });
-        place_sun_ = live_sun_;
+        place_sun_ = sun;
         place_cut_signature_ = shadows.cut_signature();
+    };
+    // The bake's sun on each lightmap's texels, once: the place map along the bake's direction, one lightmap a frame.
+    // Nothing is composed before (the compose divides by it).
+    const auto bake_due = std::find_if(maps_.begin(), maps_.end(), [this](const Map &m) {
+        return m.relight != fx::SunRelight::kNoMap && !relight_.BakeReady(m.relight);
+    });
+    if (bake_due != maps_.end())
+    {
+        const std::array<float, 3> bake{bake_dir_[0], bake_dir_[1], bake_dir_[2]};
+        if (!place_is_bake_ || place_sun_ != bake || !relight_.PlaceDrawn())
+        {
+            draw_place(bake);
+            place_is_bake_ = true;
+            ++sun_counters_.bake_draws;
+        }
+        relight_.BakeVisibility(kComposeView, bake_due->relight, 0.5f * bake_due->texel_metres);
+        compose_all();
+        return;
+    }
+    // The place's sun map: when the sun moved a step, or what it was drawn with changed.
+    const bool place_void = place_sun_ == std::array<float, 3>{0.0f, 0.0f, 0.0f} || !relight_.PlaceDrawn();
+    if (up && (place_void || place_is_bake_ || Angle(live_sun_, place_sun_) > fx::kSunStepDegrees))
+    {
+        draw_place(live_sun_);
+        place_is_bake_ = false;
         ++sun_counters_.place_draws;
         compose_all();
     }
@@ -515,13 +560,14 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
         night_ = !up;
         compose_all();
     }
-    // One lightmap a frame (one view): a town has one to four.
+    // One lightmap a frame (one view): a town has one to four. The taps spread over the texel (its sun is the share
+    // of it the sun reaches: no stair steps of whole texels along a shadow's edge).
     for (Map &map : maps_)
         if (map.compose_due && map.relight != fx::SunRelight::kNoMap)
         {
             fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
             std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
-            relight_.Compose(kComposeView, map.relight, tone, up, 0.35f * kTexelMetres, debug_);
+            relight_.Compose(kComposeView, map.relight, tone, up, 0.5f * map.texel_metres, debug_);
             map.compose_due = false;
             ++sun_counters_.composes;
             break;

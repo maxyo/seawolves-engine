@@ -1,13 +1,15 @@
 $input v_uv
 // One of our relit town lightmaps (fx/sun_relight.hpp), composed where it is sampled from: per texel the game's
 // paint times the lighting of the hour's sun over the lighting it was baked with (fx/town_light.hpp:
-// a + b sun + c sky). The hour's sun on the texel is read from the place's sun map: four
-// hardware-filtered taps over the texel's footprint. Alpha: the game's.
+// a + b sun + c sky). The sun on the texel is read from the place's sun map: four hardware-filtered taps over the
+// texel's footprint. The bake's sun on it was read the same way once, from the place map drawn along the bake's
+// direction (u_fxRelight[5].z = 1: this pass writes that visibility), so a caster the map cannot resolve (a railing,
+// a pole) is missed by both and its painted shadow stays. Alpha: the game's.
 #include "fx_common.sh"
 
 SAMPLER2D(s_fxRelightPosition, 0); // xyz world, w 1 = a texel of the lightmap's triangles (or their gutter)
 SAMPLER2D(s_fxRelightNormal, 1);   // xyz the surface normal * 0.5 + 0.5, w the sky's visibility
-SAMPLER2D(s_fxRelightBaked, 2);    // w the bake's sun on the texel
+SAMPLER2D(s_fxRelightBaked, 2);    // r the bake's sun on the texel (this pass with u_fxRelight[5].z = 1)
 SAMPLER2D(s_fxRelightGame, 4);     // the game's lightmap
 SAMPLER2DSHADOW(s_fxRelightSun, 5);
 uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
@@ -15,7 +17,7 @@ uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [1] xyz towards the sun (world), w: 1 = the sun is up
 // [2], [3] the game's sky per bin of ours
 // [4] x: the footprint's radius, y: the offset off the surface, z: depth bias
-// [5] xy: 1 / the lightmap's size
+// [5] xy: 1 / the lightmap's size, z: 1 = write the sun's visibility (the bake's) instead of the relit paint
 uniform vec4 u_fxRelight[6];
 
 float gameSky(float k)
@@ -62,10 +64,15 @@ void main()
                   sunTap(o + (-t * 0.7071 - b * 0.7071) * r) + sunTap(o + (t * 0.7071 - b * 0.7071) * r);
         visible *= 0.25 * facing;
     }
+    if (u_fxRelight[5].z > 0.5)
+    {
+        gl_FragColor = vec4(visible, visible, visible, 1.0);
+        return;
+    }
     float k = normalSky.w;
     float a = u_fxRelight[0].x, bs = u_fxRelight[0].y, c = u_fxRelight[0].z;
     float now = a + bs * visible + c * k;
-    float then = a + bs * baked.w + c * gameSky(k);
+    float then = a + bs * baked.r + c * gameSky(k);
     // The paint under the game's light, lit by ours (a texel the game had in a shadow we do not see, or the other
     // way round, at most 3x brighter / darker).
     float ratio = clamp(now / max(then, 0.02), 0.33, 3.0);

@@ -1,13 +1,16 @@
 // The towns' relit lightmaps take the hour's sun from the place's sun map on the GPU (src/effects/town_light.hpp,
 // fx/sun_relight.hpp), on OpenGL ES and Vulkan in an SDL window (an X display, like cutout_caster_check).
-// A 40 x 40 m square with three houses; its lightmap (DXT1, 256 x 256) is painted as the game's are: dark where the
+// A 40 x 40 m square with three houses and a thin pole; its lightmap (DXT1, 256 x 256) is painted as the game's are: dark where the
 // houses shade it from a sun 200° round and 60° up. The place is reported as a town; the hour's sun stands opposite
 // (20° round, 60° up). The square is drawn with the game's lightmap at stage 0 and nothing else:
 //   * where only the bake's sun was shaded the ground is bright now, where only the hour's sun is shaded it is dark
 //     (the shadows moved to the other side of the houses), open ground keeps its light;
 //   * the result agrees with the same formula over fx::SunVisibility's rays (the CPU path this replaced);
 //   * the place's sun map is drawn once and every lightmap composed once: not again while the sun stands, once more
-//     per step of the sun; no sun bake runs on the bake thread;
+//     per step of the sun; no sun bake runs on the bake thread; the bake's sun is read once, from the place map drawn
+//     along it;
+//   * with the hour's sun at the bake's the relit lightmap is the game's: both suns are read through the same map
+//     and filter, so what it misses (a pole thinner than its texels) keeps its painted shadow;
 //   * a plate drawn lit over open ground (a moving caster) darkens the ground by the sun's share of the lightmap's
 //     tone, and adds nothing where the houses shade the ground already.
 #include "device.hpp"
@@ -294,6 +297,8 @@ int main()
             add_box(houses, house_idx, {-8.0f, 0.0f, -6.0f}, {-2.0f, 6.0f, 0.0f});
             add_box(houses, house_idx, {4.0f, 0.0f, 3.0f}, {9.0f, 9.0f, 7.0f});
             add_box(houses, house_idx, {-3.0f, 0.0f, 8.0f}, {1.0f, 4.0f, 12.0f});
+            // A pole of 1.5 cm (a railing's post, a rope): under a texel of the place's sun map.
+            add_box(houses, house_idx, {12.0f, 0.0f, 5.0f}, {12.015f, 6.0f, 5.015f});
 
             // The game's lightmap, as the CPU would light it: a + b sun + c sky for the bake's sun.
             const fx::Vec3 bake_sun = sun_of(200.0f, 60.0f), hour_sun = sun_of(20.0f, 60.0f);
@@ -447,6 +452,30 @@ int main()
             for (int f = 0; f < 5; ++f)
                 frame();
             expect(town.sun_counters().place_draws == 2 && town.sun_counters().composes == 2, "a sun step draws the place's map and composes once");
+            expect(town.sun_counters().bake_draws == 1, "the bake's sun is read from the place map once");
+
+            // The hour's sun at the bake's: the game's lightmap comes back, painted shadows and all.
+            set_sun(bake_sun);
+            std::vector<uint8_t> at_bake;
+            for (int f = 0; f < 5; ++f)
+                at_bake = frame();
+            dump(at_bake, "at_bake");
+            {
+                size_t compared = 0, close = 0;
+                double sum = 0.0;
+                for (float z = -kHalf + 1.0f; z < kHalf - 1.0f; z += 0.25f)
+                    for (float x = -kHalf + 1.0f; x < kHalf - 1.0f; x += 0.25f)
+                    {
+                        const float d = std::fabs(ground_at(at_bake, x, z) - ground_at(game, x, z));
+                        ++compared;
+                        sum += d;
+                        close += d <= 6.0f ? 1 : 0;
+                    }
+                std::printf("relit at the bake's sun against the game's: mean difference %.2f, %.2f %% within 6 levels\n",
+                            sum / static_cast<double>(compared), 100.0 * static_cast<double>(close) / static_cast<double>(compared));
+                expect(sum / static_cast<double>(compared) < 2.0 && close >= compared * 97 / 100,
+                       "with the hour's sun at the bake's the relit lightmap is the game's");
+            }
             set_sun(hour_sun);
             for (int f = 0; f < 5; ++f)
                 picture = frame();

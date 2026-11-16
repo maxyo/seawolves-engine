@@ -4,16 +4,18 @@
 // (render::SetEffectsLightmaps); the place's probes, rays and cache file come from effects/place_bake.hpp (set_place).
 // Once per lightmap set the game shows there (it swaps sets by the hour: morning, day1..4, evening), read from the
 // place's cache file on the bakes' load thread or made on the bake thread: the direction the set was baked with
-// (fx::FitBakedSun), that sun's light on the texels, the set's tone (fx::CalibrateTownLight) and the walls'
+// (fx::FitBakedSun), the set's tone (fx::CalibrateTownLight, fitted with that sun's rays on the texels) and the walls'
 // (fx::CalibrateTownWalls). The sky on the texels is read from the place's probes.
 //
 // A set whose sun the fit cannot tell (fx::SunFit::valid: the game's shadows agree with no direction) is not relit:
 // dividing by the light of a wrong sun leaves the game's painted shadows and adds ours on top. Its lightmaps and
 // walls stay the game's, nothing is made for it, and the verdict is cached with the set. Nothing is fitted at night.
 //
-// The hour's sun needs no bake: whenever it has moved by fx::kSunStepDegrees the place's still geometry is drawn once
-// into the place's sun map and every lightmap is composed again on the GPU, one a frame, into its own texture
-// (fx/sun_relight.hpp; render(), in two pre-game views). A draw that samples one of the game's lightmaps samples ours
+// The suns on the texels need no bake: the place's still geometry is drawn into the place's sun map once along the
+// bake's direction (each lightmap reads that sun's visibility once, one a frame) and then whenever the hour's sun has
+// moved by fx::kSunStepDegrees; every lightmap is then composed again on the GPU, one a frame, into its own texture
+// (fx/sun_relight.hpp; render(), in two pre-game views). Both suns are read through the same map and filter, over
+// the footprint of a lightmap texel. A draw that samples one of the game's lightmaps samples ours
 // instead at the same stage (Lighting::prepare / submit): one texture fetch as before. Until a place's set is there,
 // and on Низкая, the game's lightmaps stay; nothing is made while fx_town_light is off (Низкая), and switching it off
 // cancels the bake still running.
@@ -85,10 +87,11 @@ class TownLight
     void end_frame();
     // Draws of the last frame that bound a game town lightmap / were given ours instead.
     std::array<uint32_t, 2> last_counts() const { return last_counts_; }
-    // Since the start: the place's sun map drawn, lightmaps composed (host checks, the profile line).
+    // Since the start: the place's sun map drawn for the hour's sun, lightmaps composed, the place map drawn along the
+    // bake's sun (its visibility read once per lightmap) (host checks, the profile line).
     struct SunCounters
     {
-        uint32_t place_draws = 0, composes = 0;
+        uint32_t place_draws = 0, composes = 0, bake_draws = 0;
     };
     const SunCounters &sun_counters() const { return sun_counters_; }
     bool active() const { return enabled_ && ready_; }
@@ -108,8 +111,8 @@ class TownLight
         std::shared_ptr<const fx::LightmapTexels> texels; // shared with the sun jobs on the bake thread
         std::vector<uint8_t> game;   // its RGBA8 texels at texels' size
         std::vector<uint8_t> sky;    // per texel
-        std::vector<uint8_t> baked;  // per texel: the sun's visibility along the direction the game's was baked with
         fx::TownLightTone tone;
+        float texel_metres = 0.0f;   // the world size of one of its texels (the sun is read over that footprint)
         fx::SunRelight::Map relight = fx::SunRelight::kNoMap; // its inputs and target on the GPU
         bool compose_due = true;
     };
@@ -134,6 +137,7 @@ class TownLight
     void start_place();
     void upload_map(Map &map);
     void compose_all();
+    static float TexelMetres(const fx::LightmapTexels &texels);
 
     bool enabled_ = false;
     bool ready_ = false;
@@ -145,6 +149,7 @@ class TownLight
     std::vector<Map> maps_;
     fx::SunRelight relight_;
     std::array<float, 3> place_sun_{0.0f, 0.0f, 0.0f}; // the direction the place's sun map was drawn for (0: not drawn)
+    bool place_is_bake_ = false;                        // ... the bake's (for the lightmaps' bake visibility)
     uint64_t place_cut_signature_ = 0;                  // ... and the cut-out textures it was drawn with
     bool night_ = false;                                // the lightmaps were composed without a sun
     bool unsupported_reported_ = false;

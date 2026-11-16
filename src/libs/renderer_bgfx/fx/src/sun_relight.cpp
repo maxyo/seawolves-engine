@@ -59,7 +59,7 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels)
 {
     const size_t count = static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height);
     if (texels.width <= 0 || texels.height <= 0 || texels.position.size() != count * 4 || texels.normal_sky.size() != count * 4 ||
-        texels.baked.size() != count * 4 || texels.game.size() != count * 4)
+        texels.game.size() != count * 4)
         return kNoMap;
     EnsureResources();
     MapData map;
@@ -69,7 +69,6 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels)
     map.position = bgfx::createTexture2D(w, h, false, 1, bgfx::TextureFormat::RGBA32F, kStatic,
                                          bgfx::copy(texels.position.data(), static_cast<uint32_t>(texels.position.size_bytes())));
     map.normal_sky = Bytes(texels.width, texels.height, texels.normal_sky);
-    map.baked = Bytes(texels.width, texels.height, texels.baked);
     map.game = Bytes(texels.width, texels.height, texels.game);
     // The lightmap itself: the draws sample it with their own sampler state (trilinear, anisotropic), so it has mips;
     // the backend makes them when the pass ends.
@@ -77,10 +76,15 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels)
     bgfx::Attachment attachment;
     attachment.init(map.target_texture, bgfx::Access::Write, 0, 1, 0, BGFX_ATTACHMENT_AUTO_GEN_MIPS);
     map.target = bgfx::createFrameBuffer(1, &attachment, false);
-    if (!bgfx::isValid(map.target))
+    // The bake's sun on the texels (BakeVisibility): read point-sampled by the compose.
+    map.bake_texture = bgfx::createTexture2D(w, h, false, 1, bgfx::TextureFormat::RGBA8, BGFX_TEXTURE_RT | kClampPoint);
+    map.bake_target = bgfx::createFrameBuffer(1, &map.bake_texture, false);
+    if (!bgfx::isValid(map.target) || !bgfx::isValid(map.bake_target))
     {
         Log(LogLevel::Error, "SunRelight: a %d x %d lightmap target could not be made", texels.width, texels.height);
-        for (bgfx::TextureHandle *t : {&map.position, &map.normal_sky, &map.baked, &map.game, &map.target_texture})
+        Destroy(map.target);
+        Destroy(map.bake_target);
+        for (bgfx::TextureHandle *t : {&map.position, &map.normal_sky, &map.game, &map.target_texture, &map.bake_texture})
             Destroy(*t);
         return kNoMap;
     }
@@ -99,9 +103,10 @@ void SunRelight::ClearMaps()
     {
         Destroy(m.target);
         Destroy(m.target_texture);
+        Destroy(m.bake_target);
+        Destroy(m.bake_texture);
         Destroy(m.position);
         Destroy(m.normal_sky);
-        Destroy(m.baked);
         Destroy(m.game);
     }
     maps_.clear();
@@ -127,12 +132,30 @@ void SunRelight::BeginPlace(bgfx::ViewId view, const SunPlace &place, Vec3 origi
     place_drawn_ = true;
 }
 
+void SunRelight::BakeVisibility(bgfx::ViewId view, Map map, float footprint)
+{
+    if (map >= maps_.size() || !bgfx::isValid(compose_) || !place_drawn_)
+        return;
+    Pass(view, maps_[map], RelightTone{}, true, footprint, false, true);
+    maps_[map].bake_ready = true;
+}
+
+void SunRelight::InvalidateBakes()
+{
+    for (MapData &m : maps_)
+        m.bake_ready = false;
+}
+
 void SunRelight::Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bool sun_up, float footprint, bool debug)
 {
-    if (map >= maps_.size() || !bgfx::isValid(compose_))
+    if (map >= maps_.size() || !bgfx::isValid(compose_) || !maps_[map].bake_ready)
         return;
-    MapData &m = maps_[map];
-    const bool sun = sun_up && place_drawn_;
+    Pass(view, maps_[map], tone, sun_up && place_drawn_, footprint, debug, false);
+    maps_[map].composed = true;
+}
+
+void SunRelight::Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bool sun, float footprint, bool debug, bool bake)
+{
     // World -> the place map's uv and 0..1 depth.
     float world_to_clip[16], matrix[16];
     bx::mtxMul(world_to_clip, place_.View().data(), place_.Projection().data());
@@ -149,18 +172,19 @@ void SunRelight::Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bo
         {tone.game_sky[0], tone.game_sky[1], tone.game_sky[2], tone.game_sky[3]},
         {tone.game_sky[4], tone.game_sky[5], tone.game_sky[6], tone.game_sky[7]},
         {footprint, std::max(kSurfaceOffset, 1.5f * texel), 1.5f * texel / depth, 0.0f},
-        {1.0f / static_cast<float>(m.width), 1.0f / static_cast<float>(m.height), 0.0f, 0.0f},
+        {1.0f / static_cast<float>(m.width), 1.0f / static_cast<float>(m.height), bake ? 1.0f : 0.0f, 0.0f},
     }};
-    SetupView(view, "fx town lightmap", m.target, static_cast<uint16_t>(m.width), static_cast<uint16_t>(m.height), true);
+    SetupView(view, bake ? "fx town lightmap, the bake's sun" : "fx town lightmap", bake ? m.bake_target : m.target,
+              static_cast<uint16_t>(m.width), static_cast<uint16_t>(m.height), true);
     bgfx::setUniform(u_matrix_, matrix);
     bgfx::setUniform(u_params_, params.data(), 6);
     bgfx::setTexture(0, s_position_, m.position);
     bgfx::setTexture(1, s_normal_, m.normal_sky);
-    bgfx::setTexture(2, s_baked_, m.baked);
+    // The pass that writes the bake's visibility does not read it (its own target): the game's paint stands in.
+    bgfx::setTexture(2, s_baked_, bake ? m.game : m.bake_texture);
     bgfx::setTexture(4, s_game_, m.game);
     bgfx::setTexture(5, s_sun_, place_map_);
     SubmitScreenTriangle(view, compose_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
-    m.composed = true;
 }
 
 void SunRelight::Shutdown()
