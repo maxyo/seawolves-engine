@@ -185,14 +185,19 @@ class SEA : public SEA_BASE
 
     // Environment and sun-road cube faces rendered this frame (bit per D3DCUBEMAP_FACES): all of them after the
     // entity starts, a camera jump, a switch above/below the surface or the sea coming back into view, otherwise
-    // round-robin at kCubeFacesPerSecond by the clock (5 faces above the surface: a full refresh every 83 ms, at
-    // 30 fps two faces a frame as before, at 60 fps one: the faces' cost no longer doubles with the frame rate).
+    // round-robin by the clock: kCubeFacesPerSecond while the camera stands (5 faces above the surface: a full
+    // refresh every 83 ms, at 60 fps one face a frame), kCubeMovingFacesPerSecond while it moves faster than
+    // kCubeMovingSpeed (the cubes are drawn from the camera: a moving camera sees the reflections of ships and the
+    // island trail behind it by the age of the oldest face; a full refresh every 33 ms keeps that within two frames
+    // at 60 fps).
     // None while no sea block is in view (the frame before drew none: nothing reads the cubes; in a town the two
     // cubes' faces drew more triangles than the main view). While a place loads: every face in its first
     // kCubeLoadingFullFrames frames, then the same round-robin (every face of both cubes in every frame of a
     // ten-second wait for the place's products was 5.5 ms of GPU a frame on a phone, under the loading picture).
     // The fx water reads the same cube (env_cube).
     static constexpr float kCubeFacesPerSecond = 60.0f;
+    static constexpr float kCubeMovingFacesPerSecond = 150.0f;
+    static constexpr float kCubeMovingSpeed = 0.5f; // m/s of the camera above which the moving rate applies
     static constexpr uint32_t kCubeLoadingFullFrames = 2;
     static constexpr float kCubeJump = 10.0f; // camera movement in one frame that refreshes every face
     uint32_t CubeFacesDue();

@@ -229,8 +229,11 @@ uint32_t SEA::CubeFacesDue()
     }
     else
         cubeLoadingFrames_ = 0;
-    if (cubeUnderSea_ != bUnderSea || storm::math::lengthSquared(vCamPos - cubeCamPos_) > kCubeJump * kCubeJump)
+    const float moved = std::sqrt(storm::math::lengthSquared(vCamPos - cubeCamPos_));
+    if (cubeUnderSea_ != bUnderSea || moved > kCubeJump)
         cubeRefreshAll_ = true;
+    const float rate = elapsed > 0.0f && moved > kCubeMovingSpeed * elapsed ? kCubeMovingFacesPerSecond
+                                                                            : kCubeFacesPerSecond;
     cubeUnderSea_ = bUnderSea;
     cubeCamPos_ = vCamPos;
     // No sea block in view: nothing reads the cubes. Every face when the sea is back.
@@ -249,7 +252,7 @@ uint32_t SEA::CubeFacesDue()
         cubeDue_ = 0.0f;
         return (1u << 6) - 1;
     }
-    cubeDue_ = std::min(cubeDue_ + elapsed * kCubeFacesPerSecond, static_cast<float>(count));
+    cubeDue_ = std::min(cubeDue_ + elapsed * rate, static_cast<float>(count));
     uint32_t due = 0;
     for (; cubeDue_ >= 1.0f; cubeDue_ -= 1.0f)
         due |= 1u << faces[cubeCursor_++ % count];
