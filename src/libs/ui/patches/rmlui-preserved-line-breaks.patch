@@ -1,0 +1,83 @@
+diff --git a/Source/Core/ElementText.cpp b/Source/Core/ElementText.cpp
+--- a/Source/Core/ElementText.cpp
++++ b/Source/Core/ElementText.cpp
+@@ -278,6 +278,14 @@
+ 
+ 			if (token_width > max_token_width)
+ 			{
++				// Preserved spaces (pre-wrap) that do not fit at the end of a line hang there instead of starting the
++				// next line: they are consumed with this line and not drawn.
++				if (!collapse_white_space && !line.empty() && token.find_first_not_of(' ') == String::npos)
++				{
++					line_length += (int)(next_token_begin - token_begin);
++					return false;
++				}
++
+ 				if (word_break == WordBreak::BreakAll || (word_break == WordBreak::BreakWord && line.empty()))
+ 				{
+ 					// Try to break up the word
+diff --git a/Source/Core/Layout/InlineLevelBox.cpp b/Source/Core/Layout/InlineLevelBox.cpp
+--- a/Source/Core/Layout/InlineLevelBox.cpp
++++ b/Source/Core/Layout/InlineLevelBox.cpp
+@@ -163,11 +163,18 @@
+ 		out_overflow_handle = line_begin + line_length;
+ 
+ 	LayoutFragmentHandle fragment_handle = (LayoutFragmentHandle)fragments.size();
++	// Known before Submit moves the text out of the fragment.
++	preserved_breaks.push_back(line_contents == "\n");
+ 	fragments.push_back(std::move(line_contents));
+ 
+ 	return FragmentConstructor{FragmentType::TextRun, line_width, fragment_handle, out_overflow_handle};
+ }
+ 
++bool InlineLevelBox_Text::IsPreservedLineBreak(LayoutFragmentHandle handle) const
++{
++	return (size_t)handle < preserved_breaks.size() && preserved_breaks[handle];
++}
++
+ void InlineLevelBox_Text::Submit(const PlacedFragment& placed_fragment)
+ {
+ 	RMLUI_ASSERT((size_t)placed_fragment.handle < fragments.size());
+diff --git a/Source/Core/Layout/InlineLevelBox.h b/Source/Core/Layout/InlineLevelBox.h
+--- a/Source/Core/Layout/InlineLevelBox.h
++++ b/Source/Core/Layout/InlineLevelBox.h
+@@ -25,6 +25,10 @@
+ 	// Submit a fragment's position and size to be displayed on the underlying element.
+ 	virtual void Submit(const PlacedFragment& placed_fragment) = 0;
+ 
++	// True when the fragment is only a preserved line break (white-space: pre, pre-wrap, pre-line): an empty line that
++	// must keep its height, as a blank line between paragraphs does.
++	virtual bool IsPreservedLineBreak(LayoutFragmentHandle /*handle*/) const { return false; }
++
+ 	float GetHeightAboveBaseline() const { return height_above_baseline; }
+ 	float GetDepthBelowBaseline() const { return depth_below_baseline; }
+ 	Style::VerticalAlign::Type GetVerticalAlign() const { return vertical_align_type; }
+@@ -103,6 +107,8 @@
+ 
+ 	void Submit(const PlacedFragment& placed_fragment) override;
+ 
++	bool IsPreservedLineBreak(LayoutFragmentHandle handle) const override;
++
+ 	String DebugDumpNameValue() const override;
+ 
+ private:
+@@ -110,6 +116,7 @@
+ 
+ 	Vector2f element_offset;
+ 	StringList fragments;
++	Vector<bool> preserved_breaks;
+ };
+ 
+ } // namespace Rml
+diff --git a/Source/Core/Layout/LineBox.cpp b/Source/Core/Layout/LineBox.cpp
+--- a/Source/Core/Layout/LineBox.cpp
++++ b/Source/Core/Layout/LineBox.cpp
+@@ -373,6 +373,8 @@
+ 			return false;
+ 		else if (fragment.type == FragmentType::SizedBox)
+ 			return false;
++		else if (fragment.type == FragmentType::TextRun && fragment.box->IsPreservedLineBreak(fragment.fragment_handle))
++			return false;
+ 		else if (fragment.type == FragmentType::InlineBox && fragment.children_end_index > 0)
+ 		{
+ 			const bool any_spacing_left = (!fragment.split_left && fragment.box->GetSpacingLeft() != 0.f);

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/ElementText.h>
 #include <RmlUi/Core/Transform.h>
 #include <RmlUi/Core/TransformPrimitive.h>
 
@@ -1124,6 +1125,42 @@ int main(int argc, char **argv)
                 frames(0.1);
                 Expect(list->GetScrollTop() == 0 && visible(second), "an already visible selection does not shift the list");
             }
+        }
+    }
+
+    // Preserved white space (patches/rmlui-preserved-line-breaks.patch): a blank line between
+    // paragraphs keeps its height, and a space that does not fit at the end of a pre-wrap line
+    // hangs there instead of starting the next line.
+    if (Rml::Context *context = Rml::GetContext("storm-ui"))
+    {
+        // The pre-wrap text at every width from 80 to 200 px: at some of them a space meets the line end.
+        std::string wraps;
+        for (int width = 80; width <= 200; ++width)
+            wraps += "<div class=\"wrap\" style=\"white-space: pre-wrap; width: " + std::to_string(width) + "px;\">aaaa bbbb cccc dddd eeee ffff gggg</div>";
+        Rml::ElementDocument *doc = context->LoadDocumentFromMemory(
+            "<rml><head><style>body { font-family: LatoLatin; font-size: 20px; line-height: 20px; }"
+            " div { display: block; width: 300px; }</style></head><body>"
+            "<div id=\"one\" style=\"white-space: pre-line;\">a\nb</div>"
+            "<div id=\"two\" style=\"white-space: pre-line;\">a\n\nb</div>" +
+            wraps + "</body></rml>");
+        Expect(doc != nullptr, "the white-space document loads");
+        if (doc)
+        {
+            doc->Show();
+            context->Update();
+            const float one = doc->GetElementById("one")->GetClientHeight(), two = doc->GetElementById("two")->GetClientHeight();
+            Expect(two > one + 15, "a blank line between paragraphs keeps its height (" + std::to_string(one) + " vs " + std::to_string(two) + ")");
+            Rml::ElementList wrapped;
+            doc->GetElementsByClassName(wrapped, "wrap");
+            int leading = 0;
+            for (Rml::Element *element : wrapped)
+                if (auto *text = rmlui_dynamic_cast<Rml::ElementText *>(element->GetFirstChild()))
+                    for (size_t i = 1; i < text->GetLines().size(); ++i)
+                        leading += text->GetLines()[i].text.rfind(' ', 0) == 0;
+            Expect(wrapped.size() == 121, "the pre-wrap texts are laid out");
+            Expect(leading == 0, "no wrapped pre-wrap line starts with a space (" + std::to_string(leading) + " do)");
+            doc->Close();
+            context->Update();
         }
     }
 
