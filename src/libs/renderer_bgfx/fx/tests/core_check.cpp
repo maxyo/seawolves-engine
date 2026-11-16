@@ -37,6 +37,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <condition_variable>
 #include <cmath>
 #include <cstdio>
 #include <optional>
@@ -2754,22 +2755,37 @@ void CheckBakeBudget()
     // the loading picture goes while it runs, the threads beyond the budget wait at their next piece.
     CpuAdmission &admission = SharedCpuAdmission();
     const uint64_t generation = 77;
+    // Counted, not timed: a thread is "late" on its second piece begun after the picture went, which proves it asked
+    // the budget again since (its first may be the one it had already taken). With four cores or more the shrinking
+    // bake first waits until more than kPlayBakeThreads threads run pieces, then lets the picture go.
+    const bool wide = std::thread::hardware_concurrency() >= 4;
     const auto threads_of = [&](unsigned asked, bool shrink) {
         std::mutex mutex;
+        std::condition_variable wider;
         std::set<std::thread::id> seen, late;
-        std::atomic<int> pieces{0};
+        std::map<std::thread::id, int> after;
+        bool gone = false;
         ParallelRanges(4000, asked, [&](size_t, size_t) {
-            const int piece = pieces.fetch_add(1);
-            if (shrink && piece == 8)
-                admission.end(generation);
-            std::this_thread::sleep_for(std::chrono::microseconds(300));
-            std::lock_guard lock(mutex);
-            seen.insert(std::this_thread::get_id());
-            // The last fifth of the 125 pieces: every thread has asked again long before. (Right after the picture
-            // went, a thread descheduled between taking its piece and working it still counted: on a loaded host
-            // "8 + 16" saw a third thread.)
-            if (piece >= 100)
-                late.insert(std::this_thread::get_id());
+            {
+                std::unique_lock lock(mutex);
+                const auto id = std::this_thread::get_id();
+                seen.insert(id);
+                if (gone && ++after[id] >= 2)
+                    late.insert(id);
+                if (shrink && !gone)
+                {
+                    wider.notify_all();
+                    if (wide)
+                        wider.wait(lock, [&] { return gone || seen.size() > kPlayBakeThreads; });
+                    if (!gone)
+                    {
+                        admission.end(generation);
+                        gone = true;
+                        wider.notify_all();
+                    }
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(300)); // pieces long enough for helpers to join
         }, 10);
         return std::pair<size_t, size_t>(seen.size(), late.size());
     };
@@ -2785,7 +2801,7 @@ void CheckBakeBudget()
                 "loading picture ended on %zu after it went\n",
                 kPlayBakeThreads, in_play.first, shrunk.first, shrunk.second);
     CHECK(in_play.first <= kPlayBakeThreads && shrunk.second <= kPlayBakeThreads && shrunk.second >= 1);
-    CHECK(std::thread::hardware_concurrency() < 4 || shrunk.first > kPlayBakeThreads); // it did start wider
+    CHECK(!wide || shrunk.first > kPlayBakeThreads); // it did start wider
 }
 
 // fx::SeaWaves' steps (WaveClock): game time, all of it while a frame holds at most kMaxSteps * kMaxStep; 60 Hz
