@@ -2066,28 +2066,36 @@ static void Hero(const std::string &models)
     surface.commands.clear();
     router.OnEvent({"header-tabs", "select", "perks1"});
     view = surface.props;
-    Expect(surface.commands.empty() && view["tab"] == "perks" && view["tabs"][1]["selected"] == true && view["perks"].size() == 2 &&
+    const auto perk_nodes = [](const Json &v) {
+        Json nodes = Json::array();
+        for (const Json &column : v["tree"]["columns"])
+            for (const Json &node : column["nodes"])
+                nodes.push_back(node);
+        return nodes;
+    };
+    Expect(surface.commands.empty() && view["tab"] == "perks" && view["tabs"][1]["selected"] == true && perk_nodes(view).size() == 2 &&
                view["detail"]["title"] == "Basic defense" && view["detail"]["learn"]["disabled"] == false &&
-               view["detail"]["learn"]["sub"] == "<hero.points> 1" && view["progress"] == "<hero.next_point> 340 / 1\xC2\xA0" "000",
-           "the game's open perk group: its tiles, the detail and the progress to the next point");
-    Expect(view["perks"][0]["state"] == "open" && view["perks"][1]["state"] == "locked" && view["perks"][1]["image"]["enamel"] == "iron",
-           "a perk with a missing requirement is locked");
-    Expect(view["filters"][0]["count"] == 2 && view["filters"][1]["count"] == 1 && view["filters"][2]["count"] == 0, "the chips count all, open, learned");
-    router.OnEvent({"perk-filter", "select", "1"});
-    Expect(surface.props["perks"].size() == 1 && surface.props["perks"][0]["name"] == "Basic defense", "«open» keeps what can be learned now");
-    router.OnEvent({"perk-filter", "select", "0"});
-    router.OnEvent({"perks", "row", "1"});
-    Expect(surface.props["detail"]["learn"]["disabled"] == true &&
-               surface.props["detail"]["conditions"] == Json::array({Json{{"name", "Basic defense"}, {"met", false}}}),
-           "the locked perk's detail names what it needs");
+               view["detail"]["learn"]["sub"] == "<hero.cost> 1 · <hero.free_points> 1" &&
+               view["detail"]["progress"] == "<hero.next_point> 340 / 1\xC2\xA0" "000" &&
+               view["detail"]["text"] == "Damage taken is 10% lower.\n\nStacks with armour.",
+           "the game's open perk group: its tree, the detail with cost, free points, the progress, the text's paragraphs");
+    Expect(perk_nodes(view)[0]["state"] == "open" && perk_nodes(view)[1]["state"] == "locked" && perk_nodes(view)[1]["image"]["enamel"] == "iron" &&
+               view["detail"]["opens"].size() == 1 && view["detail"]["opens"][0]["id"] == "perk-go-criticalhit",
+           "a perk with a missing requirement is locked; the open one names what it opens");
+    router.OnEvent({"perks", "row", "criticalhit"});
+    Expect(surface.commands.empty() && surface.props["detail"]["learn"]["disabled"] == true &&
+               surface.props["detail"]["requires"].size() == 1 && surface.props["detail"]["requires"][0]["name"] == "Basic defense" &&
+               surface.props["detail"]["missing"] == "<hero.learn_first> Basic defense",
+           "the locked perk's detail names what it needs, in words");
     router.OnEvent({"perk-learn", "click", ""});
     Expect(surface.props["dialog"].is_null(), "a perk that cannot be learned opens no card");
-    router.OnEvent({"perks", "row", "0"});
+    router.OnEvent({"perk-go-basicdefense", "click", ""});
+    Expect(surface.commands.empty() && surface.props["detail"]["title"] == "Basic defense", "«Требует» selects that perk");
     router.OnEvent({"perk-learn", "click", ""});
     {
         const Json &card = surface.props["dialog"];
-        Expect(surface.commands.empty() && card["kind"] == "learn" && card["title"] == "Basic defense" && card["text"] == "Damage taken is 10% lower." &&
-                   card["actions"][1]["id"] == "learn-ok" && card["actions"][1]["sub"] == "<hero.points> 1" && router.WantsBack(),
+        Expect(surface.commands.empty() && card["kind"] == "learn" && card["title"] == "Basic defense" && card["text"] == "Damage taken is 10% lower.\n\nStacks with armour." &&
+                   card["actions"][1]["id"] == "learn-ok" && card["actions"][1]["sub"] == "<hero.cost> 1" && router.WantsBack(),
                "learning asks on a card: the perk's text and its cost; nothing is sent yet: " + card.dump());
     }
     router.OnEvent({"learn-cancel", "click", ""});

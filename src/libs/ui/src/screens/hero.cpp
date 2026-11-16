@@ -144,6 +144,22 @@ Json Subject(const Admission &admitted, Bindings &bindings, SubjectSwitch &subje
     });
 }
 
+std::string StockText(const std::string &raw)
+{
+    std::string out;
+    for (size_t at = 0; at <= raw.size();)
+    {
+        const size_t end = std::min(raw.find('\n', at), raw.size());
+        std::string line = raw.substr(at, end - at);
+        std::erase(line, '\r');
+        if (Trim(line) == "~")
+            line.clear();
+        out += (at ? "\n" : "") + line;
+        at = end + 1;
+    }
+    return Trim(out);
+}
+
 std::string AfterColon(const std::string &text)
 {
     const size_t colon = text.find(':');

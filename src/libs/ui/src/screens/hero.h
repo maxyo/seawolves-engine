@@ -23,6 +23,9 @@ std::string LowerText(const std::string &text);
 std::string Decimal(const std::string &text, const std::string &language);
 // "41440" → "41 440" (no-break space).
 std::string Thousands(const std::string &digits);
+// A description from the game's text files (AbilityDescribe, RPGDescribe): carriage returns dropped and a
+// line holding only "~", the stock paragraph separator, an empty line; trimmed. Shown with white-space: pre-line.
+std::string StockText(const std::string &raw);
 // The text after "Caption:" of a game line ("Мораль команды: Повышенная" → "Повышенная").
 std::string AfterColon(const std::string &text);
 // A crew's quality as the ship screen draws it (a c-stat-row each): the experience of the three

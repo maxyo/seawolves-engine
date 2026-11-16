@@ -11,6 +11,7 @@
 // itself is the engine command, and the engine consumes the generation with it, so at most
 // one goes out per model revision.
 #include "controls.h"
+#include "hero.h"
 
 #include <map>
 
@@ -110,32 +111,6 @@ const char *RelationIcon(const std::string &image)
     if (name == "friend" || name == "ally")
         return "rel-ally";
     return "";
-}
-
-// The text of the game's help (RPGDescribe): a line holding only "~" is a blank paragraph.
-std::string HelpText(const std::string &raw)
-{
-    std::string out, line;
-    std::vector<std::string> lines;
-    for (size_t at = 0; at <= raw.size(); ++at)
-    {
-        if (at == raw.size() || raw[at] == '\n')
-        {
-            if (!line.empty() && line.back() == '\r')
-                line.pop_back();
-            lines.push_back(line);
-            line.clear();
-        }
-        else
-            line += raw[at];
-    }
-    for (size_t i = 0; i < lines.size(); ++i)
-    {
-        if (i > 0 && i + 1 < lines.size() && Trim(lines[i]) == "~")
-            lines[i].clear();
-        out += (i ? "\n" : "") + lines[i];
-    }
-    return out;
 }
 
 class NationsScreen final : public Screen
@@ -314,7 +289,7 @@ class NationsScreen final : public Screen
                 if (widget->type == "heading" && heading.empty())
                     heading = Trim(widget->label);
                 else if (widget->type == "text" && !Trim(widget->label).empty())
-                    text += (text.empty() ? "" : "\n\n") + HelpText(widget->label);
+                    text += (text.empty() ? "" : "\n\n") + hero::StockText(widget->label);
             }
         view["help"] = close && !text.empty() ? Json{{"title", heading.empty() ? bindings.Text("common.description") : heading}, {"text", text}}
                                               : Json(nullptr);

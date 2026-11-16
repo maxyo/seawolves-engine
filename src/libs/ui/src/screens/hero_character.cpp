@@ -4,9 +4,11 @@
 //
 // Tabs of our own: «Умения» (the PIRATES column, personal and ship skills, ‹ › while points
 // are free), the game's two perk groups as a tab each with its free points («Личные»,
-// «Корабельные»: a grid of perk tiles that shows learned / open / locked at a glance, narrowed
-// by all / open / learned, the description beside it; learning is confirmed on a parchment card
-// with the perk's full text, what it needs and what it costs) and «Офицеры» (posts, free posts,
+// «Корабельные»: the group's perks as a tree that scrolls vertically, a column per tier with the
+// links between them (perk_tree.hpp), learned / open / locked at a glance; beside it the selected
+// perk with what it needs and what it opens, each a row that jumps to that perk, across groups too;
+// learning is confirmed on a parchment card with the perk's full text, what it needs and what it
+// costs) and «Офицеры» (posts, free posts,
 // passengers). The stock interface keeps its rules:
 // every change goes through its own controls, and actions that need several of them (a skill
 // arrow sits on the selected row only, a perk is learned in its window, a post is changed in
@@ -17,6 +19,7 @@
 // (ANDROID_SUBJECT, ANDROID_POSTS, ANDROID_PASSENGERS, ANDROID_CANDIDATES, ANDROID_PERKS);
 // the hidden PIRATES table is exported read-only by the engine (xinterface mobile_facts.inc).
 #include "hero.h"
+#include "perk_tree.hpp"
 
 #include <algorithm>
 #include <cstdlib>
@@ -39,6 +42,7 @@ constexpr NodeRule kNodes[] = {
     {"ANDROID_PASSENGERS", "fact"},
     {"ANDROID_CANDIDATES", "fact"},
     {"ANDROID_PERKS", "fact"},
+    {"ANDROID_PERKEDGES", "fact"}, // structured runtime prerequisite IDs (including other-group ancestors)
     {"ANDROID_SKILLHELP", "fact"}, // stock RPGDescribe text, keyed by table and skill ID
     {"TITLE", "heading"},
     {"CHARACTER_BIG_PICTURE", "image"},
@@ -212,6 +216,7 @@ class HeroScreen final : public Screen
                   : admitted.One("ACCEPT_ADD_OFFICER") || admitted.One("CANCEL_ADD_OFFICER")         ? Window::Assign
                   : admitted.One("MSG_OK")                                                           ? Window::Message
                                                                                                      : Window::None;
+        if (learn_open_ && !SameLearnContext(learn_character_, learn_ship_)) learn_open_ = false;
         Walk(bindings);
         if (full && subject_request_ && intent_.kind == Intent::None && window_ == Window::None)
             OpenOnSubject(bindings);
@@ -248,6 +253,7 @@ class HeroScreen final : public Screen
                 return;
             tab_ = next;
             learn_open_ = false;
+            if (intent_.kind == Intent::Learn) intent_ = {};
             skill_help_ = nullptr;
             sent_revision_ = 0; // a player action: its first step may go at once
             if (window_ != Window::None && window_ != Window::Message)
@@ -262,6 +268,8 @@ class HeroScreen final : public Screen
         });
         view["tab"] = tab_ == Tab::Skills ? "skills" : tab_ == Tab::Perks ? "perks" : "officers";
         view["subject"] = full ? hero::Subject(admitted, bindings, subjects_, [this, &bindings](const Widget &row) {
+            learn_open_ = false;
+            if (intent_.kind == Intent::Learn) intent_ = {};
             sent_revision_ = 0; // a player action: its first step may go at once
             Step(bindings, &row, "select", row.row_id);
         })
@@ -338,6 +346,8 @@ class HeroScreen final : public Screen
         std::string node, row, verb;
         std::string candidate_character; // Assign: identity shown at the tap, not a reusable row index
         int candidate_post = -1;
+        std::string learn_character; // Learn: actual subject identity, never a reusable slot
+        bool learn_ship = false;
         double since = 0.0;
     };
 
@@ -352,11 +362,28 @@ class HeroScreen final : public Screen
     Window window_ = Window::None;
     Intent intent_;
     std::string perk_;                  // the perk in the detail panel
-    int perk_filter_ = 0;               // 0 all, 1 open to learn, 2 learned
+    perk_tree::Cache perk_tree_;        // topology only; selection/state changes do not relayout
+    std::string learn_character_;
+    bool learn_ship_ = false;
     bool learn_open_ = false;           // the parchment card that confirms learning perk_
     Json skill_help_ = nullptr;         // presentation-only stock skill description, never a game selection
     int wanted_ship_ = -1;              // the perk group the player asked for until the game shows it (0 personal, 1 ship)
     std::map<std::string, int> added_;  // points the player put into a skill during this visit
+
+    bool SameLearnContext(const std::string &character, bool ship) const
+    {
+        const Widget *group = a_->One("TABBTN_2");
+        return !character.empty() && character == Field(a_->One("ANDROID_SUBJECT"), "character") &&
+            ship == (group && group->value == "1");
+    }
+
+    void OpenLearn(bool allowed)
+    {
+        learn_character_ = Field(a_->One("ANDROID_SUBJECT"), "character");
+        const Widget *group = a_->One("TABBTN_2");
+        learn_ship_ = group && group->value == "1";
+        learn_open_ = allowed && !learn_character_.empty();
+    }
 
     // One engine step per model revision: a step is sent only after the engine answered the last.
     bool Step(Bindings &bindings, const Widget *widget, const std::string &verb, const std::string &value = {})
@@ -447,6 +474,8 @@ class HeroScreen final : public Screen
             return;
         }
         case Intent::Learn: {
+            if (!SameLearnContext(intent_.learn_character, intent_.learn_ship))
+                return Drop(bindings, "perk learning subject or group changed");
             if (window_ == Window::Perk)
             {
                 const Widget *accept = a_->One("PERK_ACCEPT");
@@ -712,19 +741,9 @@ class HeroScreen final : public Screen
             for (const Widget *fact : a_->All("ANDROID_SKILLHELP"))
                 if (Field(fact, "node") == node && Field(fact, "skill") == source[index]->row_id)
                 {
-                    std::string text = Trim(Field(fact, "text"));
+                    const std::string text = StockText(Field(fact, "text"));
                     if (text.empty())
                         return;
-                    std::erase(text, '\r');
-                    // RPGDescribe separates paragraphs with a standalone '~' line, as the stock tooltip does.
-                    for (size_t at = 0; at < text.size();)
-                    {
-                        const size_t end = text.find('\n', at);
-                        const size_t size = (end == std::string::npos ? text.size() : end) - at;
-                        if (Trim(text.substr(at, size)) == "~")
-                            text.erase(at, size);
-                        at = end == std::string::npos ? text.size() : text.find('\n', at) + 1;
-                    }
                     skill_help_ = Json{{"title", Trim(source[index]->CellText(1))}, {"text", text}};
                     bindings.Rebuild();
                     return;
@@ -745,25 +764,111 @@ class HeroScreen final : public Screen
         view["points"] = points;
     }
 
-    // What a perk needs: every required perk with whether the character has it. The adapter names all of
-    // them (`conditions`) and those still missing (`need`), both as the game's captions joined by ", ".
-    static Json Conditions(const Widget *fact)
+    // The perks of the snapshot. Rows: the stock table of the group shown (TABLE_PERKS); facts: the
+    // adapter's (ANDROID_PERKS: label, text, type self|ship, learned, officer, rule, requirements,
+    // eligible) for those rows and for every prerequisite of theirs, also of the other group;
+    // edges: ANDROID_PERKEDGES (source, target, met, rule).
+    struct PerkGraph
     {
-        const auto split = [](const std::string &text) {
-            std::vector<std::string> parts;
-            for (size_t at = 0; at < text.size();)
-            {
-                const size_t comma = text.find(", ", at);
-                parts.push_back(Trim(text.substr(at, comma == std::string::npos ? std::string::npos : comma - at)));
-                at = comma == std::string::npos ? text.size() : comma + 2;
-            }
-            return parts;
-        };
-        const std::vector<std::string> missing = split(Field(fact, "need"));
+        std::vector<std::string> ids; // the table's order, then other-group prerequisites as first needed
+        std::map<std::string, const Widget *> rows, facts;
+        std::map<std::string, std::vector<const Widget *>> incoming, outgoing;
+        std::vector<perk_tree::Edge> edges;
+        bool complete = true; // every perk has its fact with the stock ALL rule and all its edges
+    };
+
+    PerkGraph Graph() const
+    {
+        PerkGraph graph;
+        for (const Widget *fact : a_->All("ANDROID_PERKS"))
+            graph.facts[perk_tree::Id(fact->row_id)] = fact;
+        std::set<std::string> known;
+        for (const Widget *row : a_->All("TABLE_PERKS"))
+        {
+            const std::string id = perk_tree::Id(row->row_id);
+            if (known.insert(id).second)
+                graph.ids.push_back(id);
+            graph.rows[id] = row;
+        }
+        for (const Widget *edge : a_->All("ANDROID_PERKEDGES"))
+        {
+            const std::string source = perk_tree::Id(Field(edge, "source")), target = perk_tree::Id(Field(edge, "target"));
+            graph.incoming[target].push_back(edge);
+            graph.outgoing[source].push_back(edge);
+            graph.edges.push_back({source, target});
+        }
+        for (size_t at = 0; at < graph.ids.size(); ++at) // the prerequisites the shown perks need, breadth first
+            for (const Widget *edge : graph.incoming[graph.ids[at]])
+                if (const std::string source = perk_tree::Id(Field(edge, "source")); known.insert(source).second)
+                    graph.ids.push_back(source);
+        // Links among perks that are neither (stale or damaged facts): drawn, so the snapshot stays readable,
+        // and the incomplete graph below locks learning. A link to a perk without any fact fails the layout.
+        for (const auto &edge : graph.edges)
+            for (const auto &end : {edge.from, edge.to})
+                if (graph.facts.count(end) && known.insert(end).second)
+                    graph.ids.push_back(end);
+        for (const auto &id : graph.ids)
+        {
+            const Widget *fact = graph.facts.count(id) ? graph.facts.at(id) : nullptr;
+            graph.complete &= fact && Field(fact, "rule") == "stock-all-v1" && !Field(fact, "requirements").empty() &&
+                              Number(Field(fact, "requirements")) == static_cast<int>(graph.incoming[id].size());
+            for (const Widget *edge : graph.incoming[id])
+                graph.complete &= Field(edge, "rule") == "stock-all-v1";
+        }
+        return graph;
+    }
+
+    static const Widget *FactOf(const PerkGraph &graph, const std::string &id)
+    {
+        const auto found = graph.facts.find(id);
+        return found == graph.facts.end() ? nullptr : found->second;
+    }
+    static bool Learned(const PerkGraph &graph, const std::string &id)
+    {
+        return Field(FactOf(graph, id), "learned") == "1";
+    }
+    // The stock caption: the table's, else the adapter's label, else the ID itself.
+    static std::string PerkName(const PerkGraph &graph, const std::string &id)
+    {
+        if (graph.rows.count(id))
+            if (std::string name = Trim(graph.rows.at(id)->CellText(1)); !name.empty())
+                return name;
+        const std::string label = Trim(Field(FactOf(graph, id), "label"));
+        return label.empty() ? id : label;
+    }
+    Json PerkPicture(const PerkGraph &graph, const std::string &id, bool dim) const
+    {
+        if (graph.rows.count(id))
+            return PerkImage(*graph.rows.at(id), dim);
+        if (HasPerkIcon(id))
+            return Json{{"kind", "token"}, {"icon", "perk-" + id}, {"enamel", dim ? "iron" : "red"}};
+        return Json{{"kind", "item"}, {"texture", std::string("atlas:") + (dim ? "PERK_DISABLE/" : "PERK_ENABLE/") + id}};
+    }
+    // The group of a perk (fact type: self or ship) and the caption of its tab.
+    static bool ShipPerk(const PerkGraph &graph, const std::string &id)
+    {
+        return Field(FactOf(graph, id), "type") == "ship";
+    }
+    std::string GroupName(bool ship) const
+    {
+        return GroupCaption(a_->Label(ship ? "TABSTR_2" : "TABSTR_1")).first;
+    }
+    bool Available(const PerkGraph &graph, const std::string &id, bool full, int free) const
+    {
+        const Widget *fact = FactOf(graph, id);
+        std::vector<bool> met;
+        for (const Widget *edge : graph.incoming.count(id) ? graph.incoming.at(id) : std::vector<const Widget *>())
+            met.push_back(Field(edge, "met") == "1" && Field(edge, "rule") == "stock-all-v1");
+        return graph.complete && perk_tree::CanLearn(graph.rows.count(id) > 0, full, Learned(graph, id), free, Field(fact, "rule"),
+                                                     Field(fact, "eligible") == "1", met);
+    }
+
+    // What a perk needs, for the learning card: every required perk with whether the character has it.
+    Json Conditions(const PerkGraph &graph, const std::string &id) const
+    {
         Json conditions = Json::array();
-        for (const std::string &name : split(Field(fact, "conditions").empty() ? Field(fact, "need") : Field(fact, "conditions")))
-            if (!name.empty())
-                conditions.push_back(Json{{"name", name}, {"met", std::find(missing.begin(), missing.end(), name) == missing.end()}});
+        for (const Widget *edge : graph.incoming.count(id) ? graph.incoming.at(id) : std::vector<const Widget *>())
+            conditions.push_back(Json{{"name", PerkName(graph, perk_tree::Id(Field(edge, "source")))}, {"met", Field(edge, "met") == "1"}});
         return conditions;
     }
 
@@ -774,91 +879,237 @@ class HeroScreen final : public Screen
         return PictureOf(row.cells.empty() || row.cells[0].images.empty() ? nullptr : &row.cells[0].images[0]);
     }
 
+    // Selects a perk named in the panel (a prerequisite, a dependent, a node of the other group): in this
+    // tree when it is one of the group's perks, else the game switches to its group and it is selected
+    // there. Nothing is learned or changed in the game but the shown group.
+    void JumpTo(Bindings &bindings, const std::string &id, bool ship_perk, bool local, bool shown_ship)
+    {
+        learn_open_ = false;
+        perk_ = id;
+        if (!local && ship_perk != shown_ship && window_ == Window::None && intent_.kind == Intent::None)
+        {
+            const Widget *group = a_->One(ship_perk ? "TABBTN_2" : "TABBTN_1");
+            if (!group)
+                bindings.Error("perk group button " + std::string(ship_perk ? "TABBTN_2" : "TABBTN_1") + " missing: stays in this group");
+            else
+            {
+                wanted_ship_ = ship_perk ? 1 : 0;
+                sent_revision_ = 0; // a player action: its first step may go at once
+                Step(bindings, group, "press");
+            }
+        }
+        bindings.Rebuild();
+    }
+
     void PerksView(Json &view, Bindings &bindings, const Widget *subject, bool full, bool ship, int free)
     {
         const std::string exp = Field(subject, ship ? "expship" : "expself");
         const std::string rate = Field(subject, ship ? "rateship" : "rateself");
-        view["progress"] = full && Number(rate) > 0 ? bindings.Text("hero.next_point") + " " + Thousands(exp.empty() ? "0" : exp) + " / " + Thousands(rate) : "";
-
-        std::map<std::string, const Widget *> facts;
-        for (const Widget *fact : a_->All("ANDROID_PERKS"))
-            facts[fact->row_id] = fact;
-        const std::vector<const Widget *> all = a_->All("TABLE_PERKS");
-        // The tiles: learned, open to learn, locked by a missing perk; narrowed by the chips.
-        std::vector<const Widget *> rows;
-        int learned_count = 0, open_count = 0;
-        Json list = Json::array();
-        for (const Widget *row : all)
-        {
-            const Widget *fact = facts.count(row->row_id) ? facts[row->row_id] : nullptr;
-            const bool learned = Field(fact, "learned") == "1";
-            const bool locked = !learned && !Field(fact, "need").empty();
-            learned_count += learned;
-            open_count += !learned && !locked;
-            if ((perk_filter_ == 1 && (learned || locked)) || (perk_filter_ == 2 && !learned))
-                continue;
-            rows.push_back(row);
-        }
-        if (perk_.empty() || std::find_if(rows.begin(), rows.end(), [this](const Widget *row) { return row->row_id == perk_; }) == rows.end())
-            perk_ = rows.empty() ? "" : rows.front()->row_id;
-        for (const Widget *row : rows)
-        {
-            const Widget *fact = facts.count(row->row_id) ? facts[row->row_id] : nullptr;
-            const bool learned = Field(fact, "learned") == "1";
-            const bool locked = !learned && !Field(fact, "need").empty();
-            list.push_back(Json{{"name", Trim(row->CellText(1))},
-                                {"image", PerkImage(*row, locked)},
-                                {"state", learned ? "learned" : locked ? "locked" : "open"},
-                                {"selected", row->row_id == perk_}});
-        }
-        view["perks"] = list;
+        const std::string progress =
+            full && Number(rate) > 0 ? bindings.Text("hero.next_point") + " " + Thousands(exp.empty() ? "0" : exp) + " / " + Thousands(rate) : "";
         view["perksEmpty"] = bindings.Text("hero.no_perks");
-        view["filters"] = Json::array({Json{{"label", bindings.Text("common.all")}, {"count", all.size()}, {"selected", perk_filter_ == 0}},
-                                       Json{{"label", bindings.Text("hero.filter_open")}, {"count", open_count}, {"selected", perk_filter_ == 1}},
-                                       Json{{"label", bindings.Text("hero.filter_learned")}, {"count", learned_count}, {"selected", perk_filter_ == 2}}});
-        bindings.On("perk-filter", "select", [this, &bindings](const Event &event) {
-            perk_filter_ = std::clamp(std::atoi(event.value.c_str()), 0, 2);
-            bindings.Rebuild();
-        });
-        bindings.On("perks", "row", [this, &bindings, rows](const Event &event) {
-            const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
-            if (index < rows.size())
-            {
-                perk_ = rows[index]->row_id;
-                bindings.Rebuild();
-            }
-        });
-
-        // The detail panel of the perk the player looks at.
-        const Widget *row = Row("TABLE_PERKS", perk_);
-        const Widget *fact = facts.count(perk_) ? facts[perk_] : nullptr;
-        if (!row)
+        view["tree"] = nullptr;
+        view["detail"] = nullptr;
+        const PerkGraph graph = Graph();
+        if (graph.rows.empty())
         {
-            view["detail"] = nullptr;
             learn_open_ = false;
             return;
         }
-        const bool learned = Field(fact, "learned") == "1";
-        const std::string need = Field(fact, "need");
-        Json detail{{"title", Trim(row->CellText(1))}, {"text", Field(fact, "text")}, {"image", PerkImage(*row, !learned && !need.empty())},
-                    {"conditions", Conditions(fact)}};
-        if (Field(fact, "officer") == "1")
-            detail["note"] = bindings.Text("hero.officer_has");
-        const bool can_learn = full && !learned && need.empty() && free > 0;
-        if (full)
+        const size_t builds = perk_tree_.Builds();
+        const perk_tree::Layout &layout = perk_tree_.Get(graph.ids, graph.edges);
+        const bool built = perk_tree_.Builds() != builds;
+        if (!layout.valid)
         {
-            const std::string reason = learned ? bindings.Text("hero.learned") : !need.empty() ? bindings.Text("hero.needs") + " " + need
-                                                                   : free <= 0                ? bindings.Text("hero.no_points")
-                                                                                              : std::string();
+            // A cyclic graph or an edge to a perk outside the snapshot: no invented partial tree.
+            if (built)
+                bindings.Error("Perk prerequisite graph is cyclic or names a perk without a fact; the perk tree is not shown");
+            view["perksEmpty"] = bindings.Text("items.unavailable");
+            learn_open_ = false;
+            return;
+        }
+        if (built && !graph.complete)
+            bindings.Error("Perk facts are incomplete (missing fact, rule or edge); perks are shown as unavailable and cannot be learned");
+
+        std::string selected = perk_tree::Id(perk_);
+        if (!layout.nodes.count(selected))
+        {
+            // The group's first perk in reading order: the top row, from the left.
+            selected = graph.ids.front();
+            for (const auto &[id, row] : graph.rows)
+            {
+                const auto &place = layout.nodes.at(id), &best = layout.nodes.at(selected);
+                if (std::tie(place.top, place.column) < std::tie(best.top, best.column))
+                    selected = id;
+            }
+            learn_open_ = false;
+        }
+        perk_ = graph.rows.count(selected) ? graph.rows.at(selected)->row_id : selected;
+
+        // A node is locked only by a missing prerequisite; free points and the stock window's other checks
+        // decide the learn button, so a tree without points still reads which perks are reachable.
+        const auto state = [&](const std::string &id) {
+            if (Learned(graph, id))
+                return "learned";
+            if (!graph.complete)
+                return "unavailable";
+            for (const Widget *edge : graph.incoming.count(id) ? graph.incoming.at(id) : std::vector<const Widget *>())
+                if (Field(edge, "met") != "1")
+                    return "locked";
+            return "open";
+        };
+        const auto edge_met = [&](int e) { return Learned(graph, layout.edges[e].from); };
+        const auto line_class = [&](const std::vector<int> &edges) {
+            bool focus = false, met = !edges.empty();
+            for (int e : edges)
+            {
+                focus |= layout.edges[e].from == selected || layout.edges[e].to == selected;
+                met &= edge_met(e);
+            }
+            return std::string(focus ? "focus" : "") + (met ? " met" : "");
+        };
+        const auto line_json = [&](const perk_tree::Line &line) {
+            return Json{{"x", line.x}, {"y", line.y}, {"w", line.width}, {"h", line.height}, {"cls", line_class(line.edges)}};
+        };
+        const std::string reveal_group = ship ? "ship:" : "self:";
+        Json columns = Json::array();
+        for (const auto &column : layout.columns)
+        {
+            Json nodes = Json::array();
+            std::vector<std::string> names;
+            for (const auto &id : column.nodes)
+            {
+                const bool external = !graph.rows.count(id);
+                const std::string st = state(id);
+                const bool other = ShipPerk(graph, id) != ship;
+                const std::string name = PerkName(graph, id);
+                names.push_back(BindShortWords(name)); // words as the node's text wraps them
+                nodes.push_back(Json{{"id", id}, {"name", name}, {"image", PerkPicture(graph, id, st != std::string("learned") && st != std::string("open"))},
+                                     {"state", st}, {"selected", id == selected}, {"external", external},
+                                     {"group", external || other ? GroupName(ShipPerk(graph, id)) : ""},
+                                     {"groupIcon", ShipPerk(graph, id) ? "ship" : "hero"},
+                                     {"top", layout.nodes.at(id).top},
+                                     {"reveal", id == selected ? reveal_group + id : ""}});
+            }
+            Json lines = Json::array();
+            for (const auto &line : column.lines)
+                lines.push_back(line_json(line));
+            std::string group; // the widest group caption under a node of this column also sizes it
+            for (const Json &node : nodes)
+                if (node["group"].get<std::string>().size() > group.size())
+                    group = node["group"];
+            columns.push_back(Json{{"nodes", nodes}, {"lines", lines}, {"measure", perk_tree::LongestWords(names)}, {"measureGroup", group}});
+        }
+        Json gutters = Json::array();
+        for (const auto &gutter : layout.gutters)
+        {
+            Json lines = Json::array(), arrows = Json::array();
+            for (const auto &line : gutter.lines)
+                lines.push_back(line_json(line));
+            for (const auto &arrow : gutter.arrows)
+                arrows.push_back(Json{{"y", arrow.y - perk_tree::Layout::arrow / 2 - 1}, {"x", gutter.width - perk_tree::Layout::arrow},
+                                      {"cls", line_class({arrow.edge})},
+                                      {"tone", line_class({arrow.edge}).starts_with("focus") ? "brass" : edge_met(arrow.edge) ? "green" : "dim"}});
+            gutters.push_back(Json{{"width", gutter.width}, {"lines", lines}, {"arrows", arrows}});
+        }
+        view["tree"] = Json{{"columns", columns}, {"gutters", gutters}, {"height", layout.height},
+                            {"caption", layout.caption_top >= 0 ? bindings.Text("hero.perks_unlinked") : ""}, {"captionTop", layout.caption_top}};
+        bindings.On("perks", "row", [this, &bindings, ids = graph.ids, rows = graph.rows](const Event &event) {
+            if (std::find(ids.begin(), ids.end(), event.value) == ids.end())
+                return;
+            perk_ = rows.count(event.value) ? rows.at(event.value)->row_id : event.value;
+            learn_open_ = false;
+            bindings.Rebuild(); // the description only: no engine command
+        });
+
+        // The panel of the selected perk: what it needs and what it opens, each a row that selects that perk.
+        const Widget *fact = FactOf(graph, selected);
+        const bool learned = Learned(graph, selected), can_learn = Available(graph, selected, full, free);
+        const bool external = !graph.rows.count(selected), ship_perk = ShipPerk(graph, selected);
+        const auto link = [&](const std::string &id, bool met) {
+            const bool other = ShipPerk(graph, id) != ship;
+            bindings.On("perk-go-" + id, "", [this, &bindings, id, ship_perk = ShipPerk(graph, id), local = graph.rows.count(id) > 0, ship](const Event &) {
+                JumpTo(bindings, id, ship_perk, local, ship);
+            });
+            return Json{{"id", "perk-go-" + id}, {"name", PerkName(graph, id)}, {"image", PerkPicture(graph, id, !Learned(graph, id))},
+                        {"meta", bindings.Text(met ? "hero.learned" : "hero.not_learned")}, {"met", met}, {"other", other},
+                        {"groupHead", ""}, {"groupIcon", ShipPerk(graph, id) ? "ship" : "hero"}};
+        };
+        // What is still missing first; a caption with the group's glyph and name wherever the rows change
+        // to the other group (and back), so a perk of the other group is never read as one of this tab.
+        const auto grouped = [&](Json rows) {
+            std::stable_sort(rows.begin(), rows.end(), [](const Json &a, const Json &b) {
+                return std::make_pair(a["met"].get<bool>(), a["other"].get<bool>()) < std::make_pair(b["met"].get<bool>(), b["other"].get<bool>());
+            });
+            bool other = false;
+            for (Json &row : rows)
+                if (row["other"].get<bool>() != other)
+                {
+                    other = row["other"].get<bool>();
+                    row["groupHead"] = GroupName(other ? !ship : ship);
+                }
+            return rows;
+        };
+        Json needs = Json::array(), opens = Json::array();
+        std::string missing;
+        for (const Widget *edge : graph.incoming.count(selected) ? graph.incoming.at(selected) : std::vector<const Widget *>())
+        {
+            const std::string source = perk_tree::Id(Field(edge, "source"));
+            const bool met = Field(edge, "met") == "1";
+            needs.push_back(link(source, met));
+            if (!met)
+                missing += (missing.empty() ? "" : ", ") + PerkName(graph, source);
+        }
+        for (const Widget *edge : graph.outgoing.count(selected) ? graph.outgoing.at(selected) : std::vector<const Widget *>())
+        {
+            const std::string target = perk_tree::Id(Field(edge, "target"));
+            opens.push_back(link(target, Learned(graph, target)));
+        }
+        // Why it cannot be learned now, in the order the stock window checks it.
+        std::string reason;
+        if (learned)
+            reason = bindings.Text("hero.learned");
+        else if (!graph.complete)
+            reason = bindings.Text("items.unavailable");
+        else if (!missing.empty())
+            reason = bindings.Text("hero.learn_first") + " " + missing;
+        else if (free <= 0)
+            reason = bindings.Text("hero.no_points");
+        else if (!can_learn)
+            reason = bindings.Text("items.unavailable");
+        Json detail{{"id", "detail:" + reveal_group + selected}, // a reveal key of its own: the panel scrolls back to its top
+                    {"title", PerkName(graph, selected)},
+                    {"text", StockText(Field(fact, "text"))},
+                    {"image", PerkPicture(graph, selected, state(selected) != std::string("learned") && state(selected) != std::string("open"))},
+                    {"group", external || ship_perk != ship ? GroupName(ship_perk) : ""},
+                    {"groupIcon", ship_perk ? "ship" : "hero"},
+                    {"missing", !external && full && !learned ? reason : ""},
+                    {"requires", grouped(needs)},
+                    {"opens", grouped(opens)},
+                    {"note", !external && Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : ""},
+                    {"progress", external ? "" : progress},
+                    {"learn", nullptr},
+                    {"go", nullptr}};
+        if (external)
+        {
+            // A perk of the other group is read here; it is learned in its own tab.
+            detail["go"] = Json{{"id", "perk-open-group"}, {"label", bindings.Text("hero.open_group")}}; // the group: the header's sub line
+            bindings.On("perk-open-group", "", [this, &bindings, selected, ship_perk, ship](const Event &) {
+                JumpTo(bindings, selected, ship_perk, false, ship);
+            });
+        }
+        else if (full)
+        {
             detail["learn"] = Json{{"id", "perk-learn"},
-                                   {"label", learned ? bindings.Text("hero.learned") : bindings.Text("hero.learn")},
-                                   {"sub", learned ? "" : bindings.Text("hero.points") + " " + std::to_string(std::max(free, 0))},
-                                   {"disabled", !reason.empty()},
+                                   {"label", bindings.Text(learned ? "hero.learned" : "hero.learn")},
+                                   {"sub", learned ? "" : bindings.Text("hero.cost") + " 1 · " + bindings.Text("hero.free_points") + " " +
+                                                              std::to_string(std::max(free, 0))},
+                                   {"disabled", !can_learn},
                                    {"reason", reason},
                                    {"busy", intent_.kind == Intent::Learn}};
             // Learning is confirmed on a parchment card (the owner's exception to hold-to-confirm).
             bindings.On("perk-learn", "", [this, &bindings, can_learn](const Event &) {
-                learn_open_ = can_learn;
+                OpenLearn(can_learn);
                 bindings.Rebuild();
             });
         }
@@ -933,10 +1184,9 @@ class HeroScreen final : public Screen
         if (learn_open_ && tab_ == Tab::Perks && window_ == Window::None && intent_.kind == Intent::None)
             if (const Widget *row = Row("TABLE_PERKS", perk_))
             {
-                const Widget *fact = nullptr;
-                for (const Widget *candidate : a_->All("ANDROID_PERKS"))
-                    if (candidate->row_id == perk_)
-                        fact = candidate;
+                const PerkGraph graph = Graph();
+                const std::string id = perk_tree::Id(perk_);
+                const Widget *fact = FactOf(graph, id);
                 const auto cancel = [this, &bindings](const Event &) {
                     learn_open_ = false;
                     bindings.Rebuild();
@@ -947,20 +1197,23 @@ class HeroScreen final : public Screen
                 bindings.On("learn-ok", "", [this, &bindings](const Event &) {
                     learn_open_ = false;
                     Intent intent;
+                    if (!SameLearnContext(learn_character_, learn_ship_)) { bindings.Rebuild(); return; }
                     intent.kind = Intent::Learn;
                     intent.row = perk_;
+                    intent.learn_character = learn_character_;
+                    intent.learn_ship = learn_ship_;
                     Start(bindings, intent);
                     bindings.Rebuild();
                 });
                 return Json{{"kind", "learn"},
                             {"title", Trim(row->CellText(1))},
-                            {"text", Field(fact, "text")},
+                            {"text", StockText(Field(fact, "text"))},
                             {"image", PerkImage(*row, false)},
-                            {"conditions", Conditions(fact)},
+                            {"conditions", Conditions(graph, id)},
                             {"note", Field(fact, "officer") == "1" ? bindings.Text("hero.officer_has") : std::string()},
                             {"actions", Json::array({Json{{"id", "learn-cancel"}, {"label", bindings.Text("common.cancel")}, {"variant", "quiet"}},
                                                      Json{{"id", "learn-ok"}, {"label", bindings.Text("hero.learn")},
-                                                          {"sub", bindings.Text("hero.points") + " 1"}, {"variant", "primary"}}})}};
+                                                          {"sub", bindings.Text("hero.cost") + " 1"}, {"variant", "primary"}}})}};
             }
         const auto close = [this, &bindings](const Event &) {
             sent_revision_ = 0; // a player action: its first step may go at once

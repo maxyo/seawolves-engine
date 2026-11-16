@@ -1031,11 +1031,14 @@
    "cells": [],
    "context": {
     "label": "Basic defense",
-    "text": "Damage taken is 10% lower.",
+    "text": "Damage taken is 10% lower.\r\n~\r\nStacks with armour.",
     "type": "self",
     "learned": "0",
     "officer": "0",
-    "need": ""
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "points": "1",
+    "eligible": "1"
    }
   },
   {
@@ -1055,7 +1058,28 @@
     "type": "self",
     "learned": "0",
     "officer": "0",
-    "need": "Basic defense"
+    "rule": "stock-all-v1",
+    "requirements": "1",
+    "points": "1",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "criticalhit_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "basicdefense",
+    "target": "criticalhit",
+    "rule": "stock-all-v1",
+    "met": "0"
    }
   }
  ]
