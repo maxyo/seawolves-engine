@@ -206,11 +206,6 @@ class SavesScreen final : public Screen
             records.push_back(Record::Of(row));
         const bool saving = std::any_of(records.begin(), records.end(), [](const Record &r) { return r.fresh; });
 
-        // The game lists the records newest first: «Продолжить» takes the first.
-        const Widget *newest = nullptr;
-        for (const Record &record : records)
-            if (!newest && !record.fresh)
-                newest = record.row;
         // Autosaves are never an overwrite target; when loading they form their own group
         // at the top. The new record leads the list (V2-Save-Save). The player's choice
         // holds while it exists, else the new record when saving, else the game's selection.
@@ -228,24 +223,6 @@ class SavesScreen final : public Screen
         if (!chosen && !records.empty())
             chosen = &records.front();
         chosen_ = chosen ? chosen->row->row_id : std::string();
-
-        // «Продолжить» from the title screen: the newest record (the game lists them newest
-        // first) is loaded at once; with no record the list stays open.
-        if (ContinueRequested())
-        {
-            SetContinueRequested(false);
-            if (!saving && newest && newest->Offers("activate"))
-            {
-                asked_ = "load";
-                asked_row_ = newest->label;
-                asked_name_ = newest->label;
-                chosen_ = newest->row_id;
-                for (const Record &record : records)
-                    if (record.row == newest)
-                        chosen = &record;
-                bindings.Send(*newest, "activate", newest->row_id);
-            }
-        }
 
         Json rows = Json::array();
         for (const Record &record : records)

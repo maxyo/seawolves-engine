@@ -36,4 +36,8 @@ std::vector<SaveRecord> SaveRecordsOfAllProfiles();
 // description cannot be read) with the record's facts as context; nothing without records.
 // Scanned once per opening of the screen.
 std::optional<MobileWidget> ContinueWidget(uint64_t opening);
+
+// The record ContinueWidget names for this opening of the title screen, the one «Продолжить»
+// loads directly (main:Continue → AndroidContinue script handler); nothing without records.
+std::optional<SaveRecord> ContinueRecord(uint64_t opening);
 } // namespace storm::mobile

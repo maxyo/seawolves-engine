@@ -165,7 +165,7 @@ std::vector<SaveRecord> SaveRecordsOfAllProfiles()
     return records;
 }
 
-std::optional<MobileWidget> ContinueWidget(uint64_t opening)
+std::optional<SaveRecord> ContinueRecord(uint64_t opening)
 {
     static std::pair<uint64_t, std::optional<SaveRecord>> newest{~0ull, {}};
     if (newest.first != opening)
@@ -173,10 +173,16 @@ std::optional<MobileWidget> ContinueWidget(uint64_t opening)
         const auto records = SaveRecordsOfAllProfiles();
         newest = {opening, records.empty() ? std::nullopt : std::optional<SaveRecord>(records.front())};
     }
-    if (!newest.second) return {};
-    const SaveFacts &facts = saveFacts.get("SAVE\\" + newest.second->profile + "\\" + newest.second->file).facts;
+    return newest.second;
+}
+
+std::optional<MobileWidget> ContinueWidget(uint64_t opening)
+{
+    const auto newest = ContinueRecord(opening);
+    if (!newest) return {};
+    const SaveFacts &facts = saveFacts.get("SAVE\\" + newest->profile + "\\" + newest->file).facts;
     // A record whose description cannot be read is still the one «Продолжить» loads: its file name names it.
-    const std::string label = facts.location.empty() ? newest.second->file : facts.hero.empty() ? facts.location : facts.hero + " · " + facts.location;
+    const std::string label = facts.location.empty() ? newest->file : facts.hero.empty() ? facts.location : facts.hero + " · " + facts.location;
     MobileWidget widget{"ANDROID_CONTINUE", "text", label, "", -1, -1, true};
     if (!facts.location.empty()) widget.context["location"] = facts.location;
     if (!facts.hero.empty()) widget.context["hero"] = facts.hero;

@@ -960,10 +960,15 @@ int main(int argc, char *argv[])
                 }
                 else if (command.starts_with("main:"))
                 {
-                    // The title screen's five commands (EngineCommand); one that arrives after the title closed is stale.
+                    // The title screen's commands (EngineCommand); one that arrives after the title closed is stale.
+                    // «Продолжить» loads the newest record directly (xinterface: the ANDROID_CONTINUE action), the
+                    // others are the game's own menu events.
                     const auto action = command.substr(5);
-                    if (action != "New" && action != "Load" && action != "Options" && action != "Credits" && action != "Exit")
+                    if (action != "New" && action != "Load" && action != "Continue" && action != "Options" && action != "Credits" &&
+                        action != "Exit")
                         __android_log_print(ANDROID_LOG_ERROR, "StormInput", "unknown title command '%s'", command.c_str());
+                    else if (storm::android::mobileScreen == "mainmenu" && action == "Continue")
+                        storm::android::uiWidgetActions.push_back({"mainmenu", "ANDROID_CONTINUE", "activate", -1});
                     else if (storm::android::mobileScreen == "mainmenu")
                         core_private->Event("backgroundcommand", "s", action.c_str());
                 }

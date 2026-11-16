@@ -2686,6 +2686,29 @@ storm::mobile::ActionOutcome XINTERFACE::MobileApplyAction(storm::android::UiWid
             return applied;
     }
 
+    if (action.screen == "mainmenu" && action.node == "ANDROID_CONTINUE")
+    {
+        // «Продолжить» (main:Continue): the record the title names is loaded directly, with no save list in
+        // between. The app's mainmenu.c AndroidContinue closes the title and posts evntLoad as save_load.c
+        // ProcessLoad does; watched until the record is applied (load_watch.hpp).
+        const auto record = storm::mobile::ContinueRecord(storm::android::mobileScreenRevision);
+        if (!record)
+        {
+            spdlog::error("title: «Продолжить» asked, but there is no record to continue");
+            return refused("no record to continue");
+        }
+        const std::string path = "SAVE\\" + record->profile + "\\" + record->file;
+        VDATA *answer = core.Event("AndroidContinue", "ss", record->profile.c_str(), record->file.c_str());
+        int32_t started = 0;
+        if (!answer || !answer->Get(started) || started != 1)
+        {
+            spdlog::error("title: no AndroidContinue script handler loaded '{}': «Продолжить» did nothing", path);
+            return refused("no AndroidContinue script handler");
+        }
+        spdlog::info("load watch: '{}' asked for", path);
+        storm::loadWatch().Requested(path);
+        return applied;
+    }
     if (action.screen == "save_load" && action.node == "ANDROID_SAVE_LIST")
     {
         auto *window = FindNode("MAIN_WINDOW", nullptr);

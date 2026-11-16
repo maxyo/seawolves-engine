@@ -23,21 +23,6 @@ inline void SetFromTitle(bool from_title)
     FromTitleFlag() = from_title;
 }
 
-// «Продолжить» on the title screen: the saves screen loads the newest record as it opens.
-inline bool &ContinueFlag()
-{
-    static bool requested = false;
-    return requested;
-}
-inline bool ContinueRequested()
-{
-    return ContinueFlag();
-}
-inline void SetContinueRequested(bool requested)
-{
-    ContinueFlag() = requested;
-}
-
 // The death screen's choice (menu_game_over.cpp): the game goes to its title screen after a
 // defeat; there the title screen opens what the player chose ("Load", "Options"; empty = the
 // title itself) once, as if tapped.

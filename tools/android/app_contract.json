@@ -115,6 +115,7 @@
     }
   },
   "script_events": {
+    "AndroidContinue": [],
     "AndroidInterfaceFacts": [],
     "AndroidLandRefresh": [],
     "AndroidLoadFailed": [],

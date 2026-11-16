@@ -526,23 +526,14 @@ static void Title(const std::string &models)
     ExpectEqual(surface.Last(), "host app-about ", "«О программе» asks the host for its about page");
 
     router.OnEvent({"continue", "click", ""});
-    Expect(surface.Last() == "main:Load" && ContinueRequested(), "«Продолжить» opens the saves");
-    router.SetInterface(Load(models, "saves-load.json"));
-    Expect(!ContinueRequested() && surface.Last() == "widget:save_load\tANDROID_SAVE_LIST\t0\tactivate@9:1",
-           "the saves screen loads the newest record at once");
-    InterfaceModel question = Load(models, "saves-confirm.json");
-    surface.commands.clear();
-    router.SetInterface(question);
-    Expect(surface.commands.size() == 1 && surface.Last() == "widget:save_load\tCONFIRM_YES\t-1\tpress", "and answers the load question");
+    ExpectEqual(surface.Last(), "main:Continue", "«Продолжить» asks the engine to load the newest record directly, no save list");
     SetFromTitle(false);
     {
         // The host's «Продолжить» (titleIntent, the app's Test Lab Game Loop): once, at the next title build or at once.
         surface.commands.clear();
         router.SetState("titleIntent", Json{{"intent", "Continue"}});
         router.SetInterface(Load(models, "title.json"));
-        Expect(surface.commands.size() == 1 && surface.Last() == "main:Load" && ContinueRequested(),
-               "titleIntent Continue opens the saves to load the newest record");
-        SetContinueRequested(false);
+        Expect(surface.commands.size() == 1 && surface.Last() == "main:Continue", "titleIntent Continue loads the newest record directly");
         router.SetInterface(Load(models, "title.json"));
         Expect(surface.commands.size() == 1, "only once");
         InterfaceModel none = Load(models, "title.json");
@@ -556,9 +547,7 @@ static void Title(const std::string &models)
         router.SetInterface(Load(models, "title.json"));
         surface.commands.clear();
         router.SetState("titleIntent", Json{{"intent", "Continue"}});
-        Expect(surface.commands.size() == 1 && surface.Last() == "main:Load" && ContinueRequested(),
-               "titleIntent while the title is up acts at once");
-        SetContinueRequested(false);
+        Expect(surface.commands.size() == 1 && surface.Last() == "main:Continue", "titleIntent while the title is up acts at once");
         const size_t errors2 = surface.errors.size();
         router.SetState("titleIntent", Json{{"intent", "New"}});
         Expect(surface.errors.size() == errors2 + 1, "an unknown intent is an error (title up)");
