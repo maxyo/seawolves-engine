@@ -344,7 +344,12 @@ static void Settings(const std::string &models)
     Expect(columns[0]["title"] == "<settings.volume>" && columns[0]["rows"].size() == 3 && columns[0]["rows"][0]["label"] == "<settings.music>" &&
                columns[0]["rows"][0]["value"] == 70,
            "volume sliders with our labels");
-    Expect(columns[1]["rows"].size() == 3 && columns[1]["rows"][0]["label"] == "Автозапись", "game toggles keep the game's labels");
+    Expect(columns[1]["rows"].size() == 4 && columns[1]["rows"][0]["label"] == "Автозапись", "game toggles keep the game's labels");
+    const Json pirates = columns[1]["rows"][3];
+    Expect(pirates["id"] == "app-pirate_frequency" && pirates["label"] == "<settings.pirate_frequency>" && pirates["selected"] == 0 &&
+               pirates["restart"] == false && pirates["disabled"] == false &&
+               pirates["options"] == Json::array({"<settings.pirates_rare>", "<settings.pirates_fewer>", "<settings.pirates_game>"}),
+           "«Частота пиратов на карте» from the host, 20% («Редко») chosen, applied without a restart: " + pirates.dump());
 
     const std::string prefix = "widget:option_screen\t";
     router.OnEvent({columns[0]["rows"][0]["id"], "change", "40"});
@@ -353,6 +358,11 @@ static void Settings(const std::string &models)
     ExpectEqual(surface.Last(), prefix + "MUSIC_SLIDE\t-1\tset@12:40", "slider release sets the position");
     router.OnEvent({columns[1]["rows"][2]["id"], "change", "1"});
     ExpectEqual(surface.Last(), prefix + "ENHANCEDSAILING_CHECKBOX\t0\t1", "toggle on");
+
+    surface.commands.clear();
+    router.OnEvent({"app-pirate_frequency", "change", "2"});
+    Expect(surface.commands.empty() && surface.props["sections"][0]["columns"][1]["rows"][3]["selected"] == 2,
+           "the pirate frequency is a draft until «Готово»");
 
     router.OnEvent({"tabs", "select", "2"});
     Json image = surface.props["sections"];
@@ -393,7 +403,7 @@ static void Settings(const std::string &models)
     router.OnEvent({"done", "click", ""});
     Expect(surface.commands.size() == 2 &&
                surface.commands[0] ==
-                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"texture_degradation\":0}" &&
+                   "host app-settings {\"frame_rate\":120,\"fx_preset\":2,\"pirate_frequency\":100,\"texture_degradation\":0}" &&
                surface.commands[1] == prefix + "BTN_OK\t-1\tpress",
            "«Готово» hands the renderer options to the host and confirms the game's settings; the measured-preset "
            "flag fx_preset_auto, the measured scene height fx_auto_render_height and the graphics API in use stay with "

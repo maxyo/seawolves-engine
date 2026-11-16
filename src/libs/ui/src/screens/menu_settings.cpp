@@ -12,8 +12,12 @@
 // «Частота кадров» among the rates the host reports for the display (applied at once). The
 // single fx_* effect overrides are developer-only engine.ini keys (and STORM_FX_OPTIONS).
 // Keyboard bindings are not offered at all (mobile only); colour correction is not
-// available in the Android renderer. Fills the pack screen <s-settings>.
+// available in the Android renderer. The first page also carries the application's «Частота пиратов на карте»
+// (pirate_frequency, platform/pirate_frequency.hpp), a draft sent with «Готово» like the renderer options.
+// Fills the pack screen <s-settings>.
 #include "controls.h"
+
+#include <platform/pirate_frequency.hpp>
 
 namespace storm::ui::screens
 {
@@ -133,6 +137,12 @@ class SettingsScreen final : public Screen
             game(play, "AUTOSAVE_CHECKBOX");
             game(play, "DIRECTSAIL_CHECKBOX");
             game(play, "ENHANCEDSAILING_CHECKBOX");
+            // «Частота пиратов на карте» (platform/pirate_frequency.hpp): an app setting the game's encounter script
+            // asks for at every random encounter, so it counts from the next one after «Готово».
+            Segment(bindings, play, "pirate_frequency", "settings.pirate_frequency",
+                    std::vector<int>(std::begin(storm::game::kPirateFrequencies), std::end(storm::game::kPirateFrequencies)),
+                    {bindings.Text("settings.pirates_rare"), bindings.Text("settings.pirates_fewer"), bindings.Text("settings.pirates_game")},
+                    false);
             sections.push_back({"", {volume, play}});
         }
         else if (tab_ == 1)
