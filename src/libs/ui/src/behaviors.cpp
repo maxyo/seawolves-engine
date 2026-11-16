@@ -5,7 +5,8 @@
 //           [data-step="±n" | data-set="n" | data-toggle="prop" | data-select="arrayProp"
 //            data-index="i"] [data-prop="value"]
 //           Without a marked part the whole component is the button (verb "click") unless
-//           the spec sets constants.pressRoot to false.
+//           the spec sets constants.pressRoot to false. On a game interface a press start asks
+//           for the interface's click unless constants.pressSound is false.
 //   range   data-range="prop" on the track (props min, max, step)
 //   stick   data-stick="x|xy" on the travel area, data-knob on the knob; prop `floating`:
 //           the component's box is the zone, the travel area goes under the finger (atX, atY)

@@ -1614,6 +1614,9 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         // launcher and the downloads, state channels of their own process) have none.
         if (!game_interface_ || !screen_root_ || component.GetOwnerDocument() != screen_root_)
             return;
+        // A part that is no button in the game (the interlude: its Esc is silent) sets constants.pressSound false.
+        if (!component.Spec().constants.value("pressSound", true))
+            return;
         Action action;
         action.screen = "sound";
         action.verb = "press";
