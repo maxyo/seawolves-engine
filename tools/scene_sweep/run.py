@@ -568,7 +568,7 @@ class Shard(threading.Thread):
             saves.mkdir(parents=True)
             shutil.copyfile(self.arguments.save, inside(game, saves / 'boot'))
         if (source / 'options').exists():
-            shutil.copy(source / 'options', own('options'))
+            shutil.copyfile(source / 'options', own('options'))  # not copy(): the game's read-only mode would stop its writes
         settings = inventory.read_script(source / 'engine.ini')
         for key, value in (('full_screen', 0), ('screen_x', self.size[0]), ('screen_y', self.size[1]),
                            ('vsync', 0), ('show_fps', 0),
