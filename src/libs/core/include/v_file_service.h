@@ -56,6 +56,8 @@ class VFILE_SERVICE
     // Resource paths
     virtual void ScanResourcePaths() = 0;
     virtual std::string ConvertPathResource(const char *path) = 0;
+    // The text of a resource held in memory (a patched script), nullptr for a file on disk.
+    virtual const std::string *MemoryFile(const char *filename) = 0;
 
     virtual uint64_t GetPathFingerprint(const std::filesystem::path& path) = 0;
 };

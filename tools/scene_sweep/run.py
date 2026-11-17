@@ -322,21 +322,20 @@ def derive_script_patches(arguments):
     tool = work / 'script_patch_tool'
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-O1', '-I', str(REPOSITORY / 'src/libs/util/include'),
                     str(REPOSITORY / 'tools/script_patches/script_patch_tool.cpp'), '-o', str(tool)], check=True)
-    # Derived files are written only when missing or damaged (their times stay: --script-cache holds).
+    # Patched scripts are written only when their text changed (their times stay: --script-cache holds).
     applied = subprocess.run([str(tool), 'apply', str(layer), str(arguments.game), str(derived)],
                              capture_output=True, text=True)
     if applied.returncode:
         sys.exit(f'script patches from {source} do not apply to {arguments.game} (exit {applied.returncode}):\n'
                  f'{applied.stdout}{applied.stderr}')
     patched = {}
-    for directory in derived.iterdir():
-        for path in directory.rglob('*'):
-            if path.is_file():
-                relative = path.relative_to(directory)
-                actual = inventory.find_case_insensitive(arguments.game, str(relative))
-                if actual is None:
-                    sys.exit(f'script patches: {relative} has no file in {arguments.game}')
-                patched[str(actual.relative_to(arguments.game))] = path
+    for path in derived.rglob('*'):
+        if path.is_file():
+            relative = path.relative_to(derived)
+            actual = inventory.find_case_insensitive(arguments.game, str(relative))
+            if actual is None:
+                sys.exit(f'script patches: {relative} has no file in {arguments.game}')
+            patched[str(actual.relative_to(arguments.game))] = path
     digest = hashlib.sha256(files['manifest.json']).hexdigest()
     print(f'script patches: {len(patched)} scripts from {source} (layer {digest[:12]})')
     return patched, digest

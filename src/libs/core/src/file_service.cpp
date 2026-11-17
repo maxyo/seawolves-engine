@@ -36,15 +36,6 @@ namespace
 {
 FILE_SERVICE file_service;
 
-#ifdef __ANDROID__
-// The directory of the derived (patched) scripts, with a trailing separator; set by ScanResourcePaths.
-std::string &scriptPatchRoot()
-{
-    static std::string root;
-    return root;
-}
-#endif
-
 // True for the save data root and everything below it: the engine's own save
 // folder, or a game-relative "save" folder on installations that use one.
 bool underSaveRoot(const std::filesystem::path &path)
@@ -90,7 +81,13 @@ FILE_SERVICE::~FILE_SERVICE()
 
 std::fstream FILE_SERVICE::_CreateFile(const char *filename, std::ios::openmode mode)
 {
-    const auto path = filename ? std::filesystem::u8path(ConvertPathResource(filename)) : std::filesystem::path();
+    const auto resolved = filename ? ConvertPathResource(filename) : std::string();
+    if (PatchedScripts.contains(resolved))
+    {
+        spdlog::error("'{}' is a patched script held in memory: read it with MemoryFile, not a stream", filename);
+        return {};
+    }
+    const auto path = std::filesystem::u8path(resolved);
     errno = 0;
     std::fstream fileS(path, mode);
     const int error = errno;
@@ -150,7 +147,10 @@ bool FILE_SERVICE::_ReadFile(std::fstream &fileS, void *s, std::streamsize count
 
 bool FILE_SERVICE::_FileOrDirectoryExists(const char *p)
 {
-    std::filesystem::path path = std::filesystem::u8path(ConvertPathResource(p));
+    const auto resolved = ConvertPathResource(p);
+    if (PatchedScripts.contains(resolved))
+        return true;
+    std::filesystem::path path = std::filesystem::u8path(resolved);
     auto ec = std::error_code{};
     bool result = std::filesystem::exists(path, ec);
     if (ec)
@@ -322,6 +322,8 @@ std::string FILE_SERVICE::_GetExecutableDirectory()
 
 std::uintmax_t FILE_SERVICE::_GetFileSize(const char *filename)
 {
+    if (const auto *memory = MemoryFile(filename))
+        return memory->size();
     std::filesystem::path path = std::filesystem::u8path(ConvertPathResource(filename));
     std::error_code error;
     const auto size = std::filesystem::file_size(path, error);
@@ -454,6 +456,14 @@ bool FILE_SERVICE::LoadFile(const char *file_name, char **ppBuffer, uint32_t *dw
 {
     if (ppBuffer == nullptr)
         return false;
+    if (const auto *memory = MemoryFile(file_name))
+    {
+        if (dwSize)
+            *dwSize = static_cast<uint32_t>(memory->size());
+        *ppBuffer = new char[memory->size()];
+        memcpy(*ppBuffer, memory->data(), memory->size());
+        return true;
+    }
 
     auto fileS = fio->_CreateFile(file_name, std::ios::binary | std::ios::in);
     if (!fileS.is_open())
@@ -535,12 +545,9 @@ void FILE_SERVICE::ScanResourcePaths()
         ResourcePaths[key] = std::move(path);
     }
     storm::android::indexUiOverlay(internal / "engine-shaders/current", ResourcePaths, true);
-    // Fixes to the player's own scripts; throws LayerError if the layer is damaged. The patched files are
-    // derived data: they live under the cache root, which «Очистить кэш» empties (ConvertPathResource
-    // makes a file again when it went missing while the game runs).
-    scriptPatchRoot() = (fs::GetCachePath() / "script-patches").string() + PATH_SEP;
+    // Fixes to the player's own scripts, held in memory (MemoryFile); throws LayerError if the layer is damaged.
     storm::script_patches::lastReport() = storm::script_patches::applyLayer(
-        internal / "script-patches/current", fs::GetCachePath() / "script-patches", ResourcePaths, overlaid);
+        internal / "script-patches/current", ResourcePaths, PatchedScripts, overlaid);
 #endif
     ResourcePathsFirstScan = false;
 }
@@ -607,13 +614,16 @@ std::string FILE_SERVICE::ConvertPathResource(const char *path)
     }
     else
     {
-#ifdef __ANDROID__
-        if (result.starts_with(scriptPatchRoot()) && !std::filesystem::exists(std::filesystem::u8path(result)) &&
-            storm::script_patches::rederive(result))
-            spdlog::warn("Script patch: {} was missing (the cache was cleared while the game ran), derived again", result);
-#endif
         return result;
     }
+}
+
+const std::string *FILE_SERVICE::MemoryFile(const char *filename)
+{
+    if (filename == nullptr || PatchedScripts.empty())
+        return nullptr;
+    const auto found = PatchedScripts.find(ConvertPathResource(filename));
+    return found == PatchedScripts.end() ? nullptr : &found->second;
 }
 
 uint64_t FILE_SERVICE::GetPathFingerprint(const std::filesystem::path &path)

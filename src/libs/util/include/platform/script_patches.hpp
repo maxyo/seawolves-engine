@@ -24,12 +24,11 @@
 //   fix       <fix id>  <target>[,<target>...]  <licence>  <source>  <title>
 //
 // Decisions (tools/script_patches/README.md has the full description):
-// - Patches are applied into derived files, not in memory. The compiler and the
-//   rest of the engine open scripts by path through the resource index, so a
-//   derived file under <cache>/<sha256(base sha256 ":" patch sha256)>/ is mapped
-//   in place of the player's file. The file is only written when missing or
-//   damaged: its mtime stays stable, so the compiled-script cache (keyed by the
-//   program tree and this layer) is not invalidated on every start.
+// - Patched scripts live in memory, never on disk. applyLayer derives every target at start-up and
+//   points the resource index at memoryPath(target), which no file system holds; the file service
+//   serves those paths from the derived text (FILE_SERVICE::MemoryFile). A full or trimmed cache
+//   cannot stop a running game, and the compiled-script cache (keyed by the program tree and this
+//   layer) does not depend on them.
 // - Hunks apply at their exact line numbers with exact context. The base sha256
 //   is checked first and the result sha256 after, so there is no fuzz and no
 //   "close enough".
@@ -47,12 +46,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -497,56 +496,16 @@ inline Report &lastReport()
     return report;
 }
 
-// What a derived file is made from, kept by applyLayer for every redirected file: the cache root that
-// holds the derived files may be emptied while the game runs (Android «Очистить кэш», low storage), and
-// a script opened after that is derived again (rederive) instead of reading a missing file.
-struct DerivedSource
+// Patched scripts by the path the resource index maps them to (memoryPath).
+using Derived = std::unordered_map<std::string, std::string>;
+
+// The resource index entry of a patched script: not a path any file system holds.
+inline std::string memoryPath(std::string_view target)
 {
-    fs::path original, patch; // the player's file, the diff
-    std::string path, base, result; // game-relative path, sha256 of the original and of the derived file
-};
-inline std::map<std::string, DerivedSource> &derivedSources()
-{
-    static std::map<std::string, DerivedSource> sources; // derived file (string) -> source
-    return sources;
+    return "<script patch>/" + std::string(target);
 }
 
 // ---------------------------------------------------------- application ----
-
-namespace detail
-{
-// Writes `data` to `path` through a temporary file in the same directory.
-inline bool writeAtomically(const fs::path &path, std::string_view data, std::string &error)
-{
-    std::error_code ec;
-    fs::create_directories(path.parent_path(), ec);
-    if (ec)
-    {
-        error = "cannot create " + path.parent_path().string() + ": " + ec.message();
-        return false;
-    }
-    const auto temporary = fs::path(path).concat(".tmp");
-    {
-        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
-        file.write(data.data(), static_cast<std::streamsize>(data.size()));
-        file.close();
-        if (!file)
-        {
-            fs::remove(temporary, ec);
-            error = "cannot write " + temporary.string();
-            return false;
-        }
-    }
-    fs::rename(temporary, path, ec);
-    if (ec)
-    {
-        fs::remove(temporary, ec);
-        error = "cannot move " + temporary.string() + " into place";
-        return false;
-    }
-    return true;
-}
-} // namespace detail
 
 inline std::vector<Set> loadLayer(const fs::path &layer)
 {
@@ -577,17 +536,17 @@ inline std::vector<Set> loadLayer(const fs::path &layer)
     return sets;
 }
 
-// `overlaid` the keys of it the UI overlay replaces. Selects the set that
-// identifies the player's game, patches what it can into `derivedRoot` and
-// redirects `paths` there. Returns what happened; throws LayerError when the
-// layer is broken, a target the UI overlay replaces included. A missing layer
-// directory means "no patches" (desktop builds, tests).
-inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
-                         std::unordered_map<std::string, std::string> &paths,
+// `paths` the resource index (key -> file), `overlaid` the keys of it the UI overlay replaces.
+// Selects the set that identifies the player's game, patches what it can into `derived` and
+// redirects `paths` there (memoryPath). Returns what happened; throws LayerError when the layer
+// is broken, a target the UI overlay replaces included. A missing layer directory means
+// "no patches" (desktop builds, tests).
+inline Report applyLayer(const fs::path &layer, std::unordered_map<std::string, std::string> &paths, Derived &derived,
                          const std::set<std::string> &overlaid = {})
 {
+    const auto started = std::chrono::steady_clock::now();
     Report report;
-    derivedSources().clear();
+    derived.clear();
     std::error_code ec;
     if (!fs::is_directory(layer, ec))
     {
@@ -621,21 +580,8 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
             throw LayerError("patch sets " + selected->id + " and " + set.id + " both identify this game");
         selected = &set;
     }
-    // Derived files of other bases, patch versions or games are dropped.
-    std::set<fs::path> keep;
-    const auto dropStale = [&] {
-        if (fs::is_directory(derivedRoot, ec))
-            for (const auto &entry : fs::directory_iterator(derivedRoot, ec))
-                if (!keep.contains(entry.path().filename()))
-                {
-                    fs::remove_all(entry.path(), ec);
-                    if (ec)
-                        report.errors.push_back("cannot remove stale " + entry.path().string() + ": " + ec.message());
-                }
-    };
     if (!selected)
     {
-        dropStale();
         report.info.push_back("no script patch set identifies this game (" + std::to_string(sets.size()) +
                               " set(s) in the layer); scripts are used unchanged");
         return report;
@@ -649,9 +595,9 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
     report.game = set.game;
     report.version = set.version;
 
-    // 1. Each target: check the base, apply, verify, make sure the derived file exists.
+    // 1. Each target: check the base, apply, verify.
     std::map<std::string, std::string> problems; // key -> reason (target cannot be patched)
-    std::map<std::string, fs::path> derived;     // key -> derived file
+    std::map<std::string, std::string> patched;  // key -> derived text
     for (const auto &target : set.targets)
     {
         const auto &actual = playerHash(target.key);
@@ -681,23 +627,11 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
             problems[target.key] = target.path + " changed while it was being read";
             continue;
         }
-        const auto patched = applyUnifiedDiff(base, patch, target.path);
-        if (sha256(patched) != target.result)
-            throw LayerError("patch for " + target.path + " gives sha256 " + sha256(patched) + ", expected " +
+        auto result = applyUnifiedDiff(base, patch, target.path);
+        if (sha256(result) != target.result)
+            throw LayerError("patch for " + target.path + " gives sha256 " + sha256(result) + ", expected " +
                              target.result);
-        const auto file = derivedRoot / sha256(target.base + ":" + sha256(patch)) / fs::path(std::u8string(target.path.begin(), target.path.end()));
-        std::string existing;
-        if (!detail::readFile(file, existing) || sha256(existing) != target.result)
-        {
-            std::string error;
-            if (!detail::writeAtomically(file, patched, error))
-            {
-                problems[target.key] = target.path + ": " + error;
-                continue;
-            }
-        }
-        derived[target.key] = file;
-        derivedSources()[file.string()] = {original->second, target.patch, target.path, target.base, target.result};
+        patched[target.key] = std::move(result);
     }
 
     // 2. All-or-nothing per fix, and fixes sharing a withheld target are withheld too.
@@ -737,52 +671,29 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
     }
 
     // 3. Redirect the applied targets (every key spelling of the original file).
+    size_t bytes = 0;
     for (const auto &target : set.targets)
     {
-        const auto file = derived.find(target.key);
-        if (file == derived.end())
+        const auto text = patched.find(target.key);
+        if (text == patched.end() || withheld.contains(target.key))
             continue;
-        keep.insert(file->second.lexically_relative(derivedRoot).begin()->string());
-        if (withheld.contains(target.key))
-            continue;
+        const auto file = memoryPath(target.path);
         const auto original = paths.at(target.key);
         for (auto &[key, value] : paths)
             if (value == original)
-                value = file->second.string();
-        report.info.push_back("script patch " + set.id + ": " + target.path + " -> " + file->second.string());
+                value = file;
+        bytes += text->second.size();
+        derived[file] = std::move(text->second);
+        report.info.push_back("script patch " + set.id + ": " + target.path + " served from memory");
     }
 
-    dropStale();
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
     report.info.push_back("script patch set " + set.id + " (" + set.game + " " + set.version + "): " +
                           std::to_string(report.applied.size()) + " fix(es) applied, " +
-                          std::to_string(report.unapplied.size()) + " not applied");
+                          std::to_string(report.unapplied.size()) + " not applied; " + std::to_string(derived.size()) +
+                          " script(s), " + std::to_string(bytes) + " bytes in memory, derived in " +
+                          std::to_string(elapsed.count()) + " ms");
     return report;
-}
-
-// A derived file applyLayer redirected to is gone (its cache root was emptied while the game runs): make it
-// again from the same original and diff. Returns false for a path that is not a derived file. Throws
-// LayerError when it cannot be made again (the original changed, the cache cannot be written): the redirect
-// stays, so reading the unpatched original instead would be a silent fallback.
-inline bool rederive(const std::string &file)
-{
-    static std::mutex mutex;
-    const std::lock_guard lock(mutex);
-    const auto source = derivedSources().find(file);
-    if (source == derivedSources().end())
-        return false;
-    const auto &from = source->second;
-    std::string base, patch;
-    if (!detail::readFile(from.original, base) || sha256(base) != from.base)
-        throw LayerError("cannot derive " + from.path + " again: the game's file changed or cannot be read");
-    if (!detail::readFile(from.patch, patch))
-        throw LayerError("cannot read patch " + from.patch.string());
-    const auto patched = applyUnifiedDiff(base, patch, from.path);
-    if (sha256(patched) != from.result)
-        throw LayerError("patch for " + from.path + " gives sha256 " + sha256(patched) + ", expected " + from.result);
-    std::string error;
-    if (!detail::writeAtomically(fs::path(file), patched, error))
-        throw LayerError("cannot derive " + from.path + " again: " + error);
-    return true;
 }
 
 // Text of the one-time notice. `russian` selects the language.

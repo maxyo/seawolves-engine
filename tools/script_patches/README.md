@@ -62,14 +62,14 @@ and patched, so a target the overlay replaces is a damaged layer (`applyLayer` t
   own verified base, a result with the wrong sha256, two sets for one game):
   `LayerError`. The game does not start and says why; this is an application
   bug, caught by the host checks before release.
-- **Derived files, not memory.** The engine opens scripts by path through the
-  resource index, so applied targets are written to
-  `<cache root>/script-patches/<sha256(base ":" patch)>/<target>` (Android:
-  `fs::GetCachePath()`, which «Очистить кэш» empties) and the index points there.
-  A file is written only when missing or damaged, keeping its mtime stable;
-  directories of other bases or patch versions are removed. A file that went
-  missing while the game runs is derived again when it is next opened; if that
-  cannot be done the game stops (`LayerError`).
+- **Memory, not files.** Every applied target is derived at start-up (base and
+  result sha256 verified) and kept in memory; the resource index points the
+  target at `memoryPath(<target>)`, which no file system holds, and the file
+  service serves it from memory (`FILE_SERVICE::MemoryFile`: the compiler,
+  `LoadFile`, `_GetFileSize`, `_FileOrDirectoryExists`; opening one as a stream
+  is an error). Nothing is written, so a full or trimmed cache cannot stop a
+  running game. The start-up log line of the set gives the scripts' count, bytes
+  and derive time.
 - **Script cache.** The compiled script cache key covers the program tree and
   the patch layer (`programLayers`, `FILE_SERVICE::GetPathFingerprint`): a new
   patch, a new set or a changed player file recompiles.
@@ -88,5 +88,9 @@ c++ -std=c++20 -I src/libs/util/include tools/script_patches/script_patch_tool.c
 ./script_patch_tool check <layer>
 ./script_patch_tool apply <layer> <game dir> <out dir>
 ```
+
+`apply` writes the patched scripts to `<out dir>/<game-relative path>` (the scene
+sweep copies them into its game copies), rewriting a file only when its text
+changed and removing files no longer patched.
 
 Checks: `tests/script_patches/run.py`.

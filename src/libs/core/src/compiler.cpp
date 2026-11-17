@@ -219,6 +219,14 @@ char *COMPILER::LoadFile(const char *file_name, uint32_t &file_size, bool bFullP
         fName = &buffer[0];
     }
 
+    if (const auto *memory = fio->MemoryFile(fName))
+    {
+        auto *const pData = new char[memory->size() + 1];
+        memcpy(pData, memory->data(), memory->size());
+        pData[memory->size()] = 0;
+        file_size = static_cast<uint32_t>(memory->size());
+        return pData;
+    }
     auto fileS = fio->_CreateFile(fName, std::ios::binary | std::ios::in);
     if (!fileS.is_open())
     {

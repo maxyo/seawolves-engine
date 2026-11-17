@@ -1,5 +1,5 @@
 // Host checks for platform/script_patches.hpp: apply, base mismatch, all-or-nothing
-// fixes, set selection, damaged layers and cache invalidation.
+// fixes, set selection, damaged layers, cache invalidation and memory-only results.
 #include "platform/path_fingerprint.hpp"
 #include "platform/resource_overlay.hpp"
 #include "platform/script_patches.hpp"
@@ -71,10 +71,11 @@ const std::string kSeaPatch = "--- a/PROGRAM/sea_ai/s.c\n+++ b/PROGRAM/sea_ai/s.
 
 struct Fixture
 {
-    fs::path game, layer, derived;
+    fs::path game, layer;
     Paths paths;
+    Derived derived;
 
-    explicit Fixture(const fs::path &root) : game(root / "game"), layer(root / "layer"), derived(root / "derived")
+    explicit Fixture(const fs::path &root) : game(root / "game"), layer(root / "layer")
     {
         fs::remove_all(root);
         write(game / "PROGRAM/version.h", kIdentity);
@@ -112,8 +113,14 @@ struct Fixture
                 paths[storm::android::resourceKey(entry.path().lexically_relative(game))] = entry.path().string();
     }
 
-    Report apply() { return applyLayer(layer, derived, paths); }
-    std::string resolved(const std::string &key) { return read(paths.at(key)); }
+    Report apply() { return applyLayer(layer, paths, derived); }
+    // As FILE_SERVICE: a patched script from memory, any other file from disk.
+    std::string resolved(const std::string &key)
+    {
+        const auto &path = paths.at(key);
+        const auto memory = derived.find(path);
+        return memory != derived.end() ? memory->second : read(path);
+    }
 };
 
 void checkSha256()
@@ -213,24 +220,35 @@ void checkApply(const fs::path &root)
     CHECK(f.resolved("program/quests/q.c") == kQuestFixed);
     CHECK(f.resolved("program/sea_ai/s.c") == kSeaFixed);
     CHECK(read(original) == kDialog); // the player's file is never written
-    CHECK(fs::path(f.paths.at("program/dialog.c")).string().starts_with(f.derived.string()));
+    CHECK(f.paths.at("program/dialog.c") == memoryPath("PROGRAM/dialog.c"));
+    CHECK(f.derived.size() == 3);
+    CHECK(report.info.back().find("3 script(s), " +
+                                  std::to_string(kDialogFixed.size() + kQuestFixed.size() + kSeaFixed.size()) +
+                                  " bytes in memory") != std::string::npos);
+}
 
-    // A second start reuses the derived files without rewriting them, so the
-    // compiled script cache is not invalidated by the patch layer itself.
-    const auto derivedFile = f.paths.at("program/dialog.c");
-    const auto written = fs::last_write_time(derivedFile);
-    fs::last_write_time(derivedFile, written - std::chrono::hours(1));
-    const auto earlier = fs::last_write_time(derivedFile);
+// Patched scripts never touch the disk: nothing is written next to the game or the layer, so a full
+// or trimmed cache cannot stop a running game.
+void checkMemoryOnly(const fs::path &root)
+{
+    const auto base = root / "memory";
+    Fixture f(base);
+    std::set<fs::path> before;
+    for (const auto &entry : fs::recursive_directory_iterator(base))
+        before.insert(entry.path());
+    f.apply();
+    std::set<fs::path> after;
+    for (const auto &entry : fs::recursive_directory_iterator(base))
+        after.insert(entry.path());
+    CHECK(after == before);
+    for (const auto &[key, path] : f.paths)
+        if (path.starts_with(memoryPath("")))
+            CHECK(f.derived.contains(path) && !fs::exists(path));
+    // A new scan forgets the scripts of the previous one.
+    write(f.game / "PROGRAM/version.h", "#define VERSION \"2.0\"\r\n");
     f.reindex();
     f.apply();
-    CHECK(f.paths.at("program/dialog.c") == derivedFile);
-    CHECK(fs::last_write_time(derivedFile) == earlier);
-
-    // A damaged derived file is rewritten.
-    write(derivedFile, "garbage");
-    f.reindex();
-    f.apply();
-    CHECK(f.resolved("program/dialog.c") == kDialogFixed);
+    CHECK(f.derived.empty());
 }
 
 void checkBaseMismatch(const fs::path &root)
@@ -285,9 +303,7 @@ void checkSetSelection(const fs::path &root)
     CHECK(none.layerPresent && none.set.empty() && none.applied.empty() && none.unapplied.empty());
     CHECK(f.resolved("program/dialog.c") == kDialog);
     CHECK(none.noticeKey().empty()); // other games are not told about fixes not meant for them
-    write(f.derived / "0123/PROGRAM/dialog.c", "derived for the previous game");
-    f.apply();
-    CHECK(!fs::exists(f.derived / "0123")); // nor do they keep its derived files
+    CHECK(f.derived.empty());
 
     Fixture g(root / "ambiguous");
     fs::copy(g.layer / "sets/test-1.0", g.layer / "sets/test-copy");
@@ -325,10 +341,9 @@ void checkCacheInvalidation(const fs::path &root)
 {
     Fixture f(root / "cache");
     f.apply();
-    const auto first = f.paths.at("program/sea_ai/s.c");
     const auto layerPrint = storm::fingerprint::tree(f.layer);
 
-    // A new patch version for the same base: a new derived file, the old one is removed.
+    // A new patch version for the same base: the new text.
     const std::string fixed2 = "float S = 4.0;\n";
     write(f.layer / "sets/test-1.0/s.patch",
           "--- a/PROGRAM/sea_ai/s.c\n+++ b/PROGRAM/sea_ai/s.c\n@@ -1 +1 @@\n-float S = 1.0;\n+float S = 4.0;\n");
@@ -338,18 +353,10 @@ void checkCacheInvalidation(const fs::path &root)
     f.reindex();
     f.apply();
     CHECK(f.resolved("program/sea_ai/s.c") == fixed2);
-    CHECK(f.paths.at("program/sea_ai/s.c") != first);
-    CHECK(!fs::exists(first));
     // The compiled script cache key covers the patch layer (GetPathFingerprint).
     CHECK(storm::fingerprint::tree(f.layer) != layerPrint);
     const auto layers = storm::android::programLayers("/internal");
     CHECK(std::find(layers.begin(), layers.end(), fs::path("/internal/script-patches/current")) != layers.end());
-
-    // Stale derived files of bases the player no longer has are dropped.
-    write(f.derived / "0123/PROGRAM/old.c", "old");
-    f.reindex();
-    f.apply();
-    CHECK(!fs::exists(f.derived / "0123"));
 }
 // program/interface/ is a patch target and the UI overlay's directory: a target the
 // overlay replaces is a damaged layer, never patched and overlaid at once.
@@ -359,32 +366,10 @@ void checkOverlaidTarget(const fs::path &root)
     const auto report = f.apply();
     CHECK(report.unapplied.empty());
     Fixture g(root / "overlaid2");
-    CHECK(throwsLayerError([&] { applyLayer(g.layer, g.derived, g.paths, {"program/sea_ai/s.c"}); },
+    CHECK(throwsLayerError([&] { applyLayer(g.layer, g.paths, g.derived, {"program/sea_ai/s.c"}); },
                            "replaced by the UI overlay"));
 }
 } // namespace
-
-// The cache root holding the derived files is emptied while the game runs («Очистить кэш», low storage):
-// a redirected file opened after that is derived again from the same original and diff.
-void checkClearedCache(const fs::path &root)
-{
-    Fixture f(root / "cleared");
-    f.apply();
-    const auto dialog = f.paths.at("program/dialog.c");
-    fs::remove_all(f.derived);
-    CHECK(!fs::exists(dialog));
-    CHECK(rederive(dialog));
-    CHECK(read(dialog) == kDialogFixed);
-    CHECK(!rederive((f.game / "PROGRAM/dialog.c").string())); // not a derived file
-    // The original changed under a running game: no silent use of the unpatched file.
-    fs::remove_all(f.derived);
-    write(f.game / "PROGRAM/dialog.c", kDialog + "// edited\r\n");
-    CHECK(throwsLayerError([&] { rederive(dialog); }, "game's file changed"));
-    // A new scan forgets the files of the previous one.
-    f.reindex();
-    f.apply();
-    CHECK(!rederive(dialog));
-}
 
 int main(int argc, char **argv)
 {
@@ -395,11 +380,11 @@ int main(int argc, char **argv)
     checkUnifiedDiff();
     checkIndexErrors(root);
     checkApply(root);
+    checkMemoryOnly(root);
     checkBaseMismatch(root);
     checkSetSelection(root);
     checkDamagedLayer(root);
     checkCacheInvalidation(root);
     checkOverlaidTarget(root);
-    checkClearedCache(root);
     std::puts("script patches: all checks passed");
 }
