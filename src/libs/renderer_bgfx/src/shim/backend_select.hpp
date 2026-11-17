@@ -75,7 +75,9 @@ BackendDecision DecideBackend(render::Backend request, const VulkanDevice &devic
 // The crash guard of a Vulkan start (storm/fx/gpu_crash_guard.hpp, <cache>/RenderBackend/vulkan-*.txt): the marker
 // holds the device's cache_key from before bgfx::init until frames were presented (Context::present) or the device
 // was shut down in an orderly way. One left at the next start is logged at error; that device and driver run OpenGL
-// ES until the driver changes or «Очистить кэш». A failed bgfx::init or self-test is recorded the same way.
+// ES until the driver changes or «Очистить кэш». A failed bgfx::init or self-test is recorded the same way. A marker
+// left by a process the system ended for another reason (killed for memory, stopped: previous-exit.txt in the cache
+// root, `directory`'s parent, fx::PreviousExit) is logged and not recorded: Vulkan stays possible.
 class VulkanStartGuard
 {
   public:

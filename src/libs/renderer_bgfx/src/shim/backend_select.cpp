@@ -231,7 +231,14 @@ VulkanStartGuard::VulkanStartGuard(std::filesystem::path directory, const Vulkan
         logf("render backend: no cache directory configured: a Vulkan start that kills the process is not remembered");
         return;
     }
-    if (const fx::GpuCrashGuard::Record left = guard_.take_leftover(); !left.empty())
+    // The system's word on how the previous process ended (the app writes previous-exit.txt into the cache root, the
+    // state directory's parent): a marker left by a process the system killed for memory or stopped is not a crash.
+    if (const fx::GpuCrashGuard::Record left = guard_.take_leftover(fx::PreviousExit(directory.parent_path()));
+        !left.empty() && !left.counted)
+        logf("render backend: the previous Vulkan start on %s had not presented its first frames when the process "
+             "ended, but %s: Vulkan stays possible",
+             left.what.c_str(), left.why.c_str());
+    else if (!left.empty())
         logf("ERROR: render backend: the previous Vulkan start never presented its first frames: the process died in "
              "it on %s",
              left.what.c_str());

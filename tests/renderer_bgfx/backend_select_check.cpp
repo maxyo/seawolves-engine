@@ -4,6 +4,8 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <string>
 #include <unistd.h>
 
 using namespace storm;
@@ -13,9 +15,9 @@ using shim::VulkanStartGuard;
 
 namespace
 {
-bool expect(bool ok, const char *what)
+bool expect(bool ok, const std::string &what)
 {
-    std::printf("%s %s\n", ok ? "PASS" : "FAIL", what);
+    std::printf("%s %s\n", ok ? "PASS" : "FAIL", what.c_str());
     return ok;
 }
 
@@ -77,9 +79,34 @@ int main()
                  "auto: not without ETC2 or BC textures (8x the texture memory)");
     ok &= expect(shim::VulkanDenied(good).empty(), "the denylist holds no driver without evidence");
 
-    const std::filesystem::path directory =
+    // The cache root holds the app's previous-exit.txt; the guard's files are in its RenderBackend directory.
+    const std::filesystem::path cache_root =
         std::filesystem::temp_directory_path() / ("storm-backend-select-check-" + std::to_string(getpid()));
-    std::filesystem::remove_all(directory);
+    const std::filesystem::path directory = cache_root / "RenderBackend";
+    const auto previous_exit = [&](const char *line) {
+        std::filesystem::create_directories(cache_root);
+        std::ofstream(cache_root / "previous-exit.txt", std::ios::trunc) << line << "\n";
+    };
+    std::filesystem::remove_all(cache_root);
+    // The system killed the process for memory, or stopped it (the lock screen's cleaner), while the start ran: logged,
+    // not a crash. A crash, an ANR, a signal or an unknown reason still are.
+    for (const char *reason : {"low_memory", "other", "user_requested", "user_stopped", "exit_self", "package_updated"})
+    {
+        previous_exit((std::string(reason) + " 1763300000000 LockScreenClean").c_str());
+        VulkanStartGuard(directory, good).begin();
+        ok &= expect(VulkanStartGuard(directory, good).crash().empty(),
+                     std::string("a marker left by a process the system ended (") + reason + ") is no crash");
+        ok &= expect(VulkanStartGuard(directory, good).crash().empty(), "... and nothing is recorded");
+    }
+    for (const char *reason : {"crash", "crash_native", "anr", "signaled", "unknown"})
+    {
+        previous_exit((std::string(reason) + " 1763300000000 description").c_str());
+        VulkanStartGuard(directory, good).begin();
+        ok &= expect(VulkanStartGuard(directory, good).crash() == crashed,
+                     std::string("a marker left by a process that ended with ") + reason + " is a crash");
+        std::filesystem::remove(directory / "vulkan-crashed.txt");
+    }
+    std::filesystem::remove_all(cache_root);
     {
         VulkanStartGuard first(directory, good);
         ok &= expect(first.crash().empty(), "no marker: no crash");
