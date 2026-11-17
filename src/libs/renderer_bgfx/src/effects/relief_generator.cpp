@@ -345,21 +345,34 @@ std::shared_ptr<UpscaleEntry> ReliefGenerator::next_upscale()
     return result;
 }
 
-void ReliefGenerator::reconcile_upscales()
+void ReliefGenerator::reconcile_upscales(std::unique_lock<std::mutex> &lock)
 {
     // A normal-map job can also write this exact display texture. Publishing that completed file is not inference:
     // do it before the thermal gate, or a warm phone can leave an already prepared texture invisible indefinitely.
     // The texture worker still validates its header, dimensions and payload before any GPU replacement is bound.
+    // The file checks run with mutex_ released: request() takes it on the game thread.
+    std::vector<std::shared_ptr<UpscaleEntry>> waiting;
     std::erase_if(upscales_, [&](const std::weak_ptr<UpscaleEntry> &weak) {
         const auto entry = weak.lock();
         if (!entry || entry->state != UpscaleEntry::Waiting)
             return true;
-        if (display_ && fx::HasUpscaled(display_directory_, entry->key))
-        {
-            entry->state = UpscaleEntry::Stored;
-            return true;
-        }
+        waiting.push_back(entry);
         return false;
+    });
+    if (!display_ || waiting.empty())
+        return;
+    const std::filesystem::path directory = display_directory_;
+    lock.unlock();
+    std::erase_if(waiting, [&](const std::shared_ptr<UpscaleEntry> &entry) { return !fx::HasUpscaled(directory, entry->key); });
+    lock.lock();
+    if (waiting.empty() || !display_ || display_directory_ != directory)
+        return;
+    for (const std::shared_ptr<UpscaleEntry> &entry : waiting)
+        if (entry->state == UpscaleEntry::Waiting)
+            entry->state = UpscaleEntry::Stored;
+    std::erase_if(upscales_, [](const std::weak_ptr<UpscaleEntry> &weak) {
+        const auto entry = weak.lock();
+        return !entry || entry->state != UpscaleEntry::Waiting;
     });
 }
 
@@ -395,7 +408,12 @@ void ReliefGenerator::run()
                 const Clock::time_point now = Clock::now();
                 if (session_)
                     session_->SetGpuFree(gpu_free());
-                reconcile_upscales();
+                reconcile_upscales(lock);
+                // Everything below is read again after the file checks; only these two were checked before them.
+                if (stopping_)
+                    return;
+                if (finalizer_queue_->completed())
+                    continue;
                 // Reselect from fresh player-distance observations before every job; keep lane fairness.
                 request = next_request();
                 upscale = next_upscale();
@@ -793,6 +811,26 @@ void ReliefGenerator::drain_finalized()
 
 void ReliefGenerator::finish(const PendingFinalize &pending, const relief::FinalizeResult &result)
 {
+    // The committed file is looked up before mutex_ is taken (request() takes it on the game thread). setup_ changes
+    // only in configure(), with this worker joined; the display directory is compared again under the lock.
+    const bool produced = result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing;
+    std::filesystem::path upscale_directory;
+    bool present = false;
+    if (pending.is_upscale) {
+        {
+            std::lock_guard lock(mutex_);
+            if (display_) upscale_directory = display_directory_;
+        }
+        present = (produced || result.upscale_written == pending.key) && !upscale_directory.empty() &&
+                  fx::HasUpscaled(upscale_directory, pending.key);
+    } else if (!pending.neighbour) {
+        if (const auto entry = pending.request ? pending.request->entry.lock() : nullptr) {
+            const bool gloss = entry->gloss != fx::GlossClass::None;
+            const bool committed = (gloss ? result.gloss_written : result.relief_written) == pending.key;
+            present = (produced || committed) &&
+                      (gloss ? fx::HasGlossMap(setup_.directory, pending.key) : fx::HasReliefMap(setup_.directory, pending.key));
+        }
+    }
     std::lock_guard lock(mutex_);
     if (pending.neighbour) {
         if (pending.neighbour->place != neighbours_.serial) return; // another place by now
@@ -821,8 +859,8 @@ void ReliefGenerator::finish(const PendingFinalize &pending, const relief::Final
         const auto entry = pending.upscale.lock();
         if (!entry || entry->key != pending.key || entry->state != UpscaleEntry::Waiting) return;
         if (stopping_ || !display_) { entry->state = UpscaleEntry::Missing; return; } // switched off: asked again when on
-        if ((result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing ||
-            result.upscale_written == pending.key) && display_ && fx::HasUpscaled(display_directory_, pending.key)) {
+        if (display_directory_ != upscale_directory) { entry->state = UpscaleEntry::Missing; return; } // moved meanwhile
+        if (present) {
             if (result.outcome == relief::Outcome::Prepared) { ++stats_.upscaled; stats_.upscale_ms += result.total_ms; }
             entry->state = UpscaleEntry::Stored;
         } else {
@@ -840,9 +878,7 @@ void ReliefGenerator::finish(const PendingFinalize &pending, const relief::Final
         stats_.slowest_ms = std::max(stats_.slowest_ms, result.total_ms);
     }
     const bool gloss = entry->gloss != fx::GlossClass::None;
-    const bool committed = (gloss ? result.gloss_written : result.relief_written) == pending.key;
-    if ((result.outcome == relief::Outcome::Prepared || result.outcome == relief::Outcome::Existing || committed) &&
-        (gloss ? fx::HasGlossMap(setup_.directory, pending.key) : fx::HasReliefMap(setup_.directory, pending.key))) {
+    if (present) {
         entry->state = NormalMapEntry::Stored;
     } else {
         shim::logf("ERROR: effects: %s map of %s not made (%s)", gloss ? "gloss" : "relief", entry->name.c_str(),

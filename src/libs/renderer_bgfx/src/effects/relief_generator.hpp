@@ -169,7 +169,7 @@ class ReliefGenerator
     void run();
     std::optional<Request> next_request(); // under mutex_
     std::shared_ptr<UpscaleEntry> next_upscale(); // under mutex_: nearest live candidate
-    void reconcile_upscales(); // under mutex_: publish completed files; prune expired/stale requests
+    void reconcile_upscales(std::unique_lock<std::mutex> &lock); // holding mutex_ (released for the file checks): publish completed files; prune expired/stale requests
     bool open_session();
     void prepare_request(const Request &request);
     // Worker, under mutex_. keep_policy: an idle CPU detour keeps its device-policy shell (low memory does not).
