@@ -8,12 +8,12 @@ and GitHub Releases live in a separate repository that is not public yet.
 Run `bash tools/android/ci_dependencies.sh`, then
 `bash tools/android/ci_engine.sh` with JDK 17, CMake, C++ compiler, Python venv,
 FFmpeg, curl and unzip installed. `STORM_CI_WORK` overrides the build workspace.
-The pinned NDK archive is checksum verified. This builds `libengine.so`,
-`libmimalloc.so` and the runtime dependencies; it never builds or publishes APKs.
+The pinned NDK archive is checksum verified. This builds `libengine.so`
+and the runtime dependencies; it never builds or publishes APKs.
 See `tools/android/README.md` for manual native build commands.
 
 Historical APK/device evidence remains in `docs/android-install-audit.md`.
 Native linking does not establish installation, rendering (bgfx on OpenGL ES 3.0) or gameplay.
 
-Android uses platform C/C++ allocation to avoid mimalloc TLS recursion and
-shared-libc++ heap ownership mismatches. See [allocator audit](../docs/android-allocator-audit.md).
+Android uses platform C/C++ allocation (no mimalloc: its TLS recursion and
+shared-libc++ heap ownership mismatches). See [allocator audit](../docs/android-allocator-audit.md).

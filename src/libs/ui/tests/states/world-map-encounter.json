@@ -1,5 +1,5 @@
 {
- "schemaVersion": 1, "revision": 44, "activity": 2, "modalProtocol": 1, "modalToken": 0, "modalMask": 0, "modalActiveToken": 0, "modalFailure": 0,
+ "schemaVersion": 1, "revision": 44, "activity": 2,
  "gameplayRevision": 9, "available": true, "mask": 7, "commandsReady": true, "shipsVisible": true, "instrumentsVisible": true,
  "date": "7 октября 1654", "hour": 21.0, "windForce": 0.4, "windAngle": 1.0, "heading": 0.5, "speed": 0.2,
  "morale": 62.0, "foodDays": 2, "rumDays": null, "coordinates": "15° 32' N 61° 4' W", "flag": null, "stormState": 1, "moonPhase": 1, "rainState": 2,

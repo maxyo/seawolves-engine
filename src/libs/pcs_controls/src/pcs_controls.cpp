@@ -9,7 +9,6 @@
 #ifdef __ANDROID__
 #include <platform/android_combat_input.hpp>
 #include <platform/android_held_controls.hpp>
-#include <platform/android_worldmap.hpp>
 #include <SDL2/SDL.h>
 #include <android/log.h>
 #include <sys/system_properties.h>
@@ -314,14 +313,6 @@ int PCS_CONTROLS::AndroidHeldInverse(int32_t code) const
 
 bool PCS_CONTROLS::GetControlState(int32_t control_code, CONTROL_STATE &_state_struct)
 {
-#ifdef __ANDROID__
-    // Realize precedes Controls::Update. Fence even a previous-frame cached
-    // activation/tree/axis before it can bypass the physical SDL input gate.
-    if(storm::android::worldMapHud.modal.ownsInput(SDL_GetTicks())){
-        _state_struct.state=CST_INACTIVE;_state_struct.lValue=0;_state_struct.fValue=0.f;
-        return control_code>=0&&control_code<nControlsNum;
-    }
-#endif
     const bool found = GetPhysicalControlState(control_code, _state_struct);
 #ifdef __ANDROID__
     static_assert(CST_INACTIVE == 0 && CST_ACTIVE == 1 && CST_INACTIVATED == 2 && CST_ACTIVATED == 3);

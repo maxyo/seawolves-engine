@@ -1,9 +1,11 @@
 #pragma once
 #include "android_ship_telemetry.hpp"
 #include "android_hud_presenter.hpp"
-#include "android_worldmap_modal.hpp"
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <optional>
+#include <string>
 
 namespace storm::android
 {
@@ -106,56 +108,32 @@ inline bool leavesForOpenSea(std::string_view command)
 }
 class WorldMapHud
 {
+public:
+    struct Owner { uint64_t revision=0, activity=0, gameplay=0, world=0; bool operator==(const Owner &) const = default; };
+private:
     std::optional<std::array<uint32_t, 6>> labelCompass_;
-    WorldMapModal::Owner labelCompassOwner_;
+    Owner labelCompassOwner_;
     WorldMapFrame frame_;
     uint64_t revision_ = 0, activity_ = 0;
-    // Coverage of the instruments, fleet and command icon: said once per revision, kept until
-    // the revision changes (android_hud_presenter.hpp).
-    uint32_t covered_ = 0, tick_ = 0;
     std::string pending_;
     uint32_t pendingAt_ = 0;
-    uint64_t ackProof_=0;
-    bool drawing_=false;
-    mutable uint32_t drawnMask_=0;
-    uint32_t presentedMask_=0;
-    WorldMapModal::Owner drawnOwner_;
 public:
-    WorldMapModal modal;
-    WorldMapModal::Owner owner() const { return {revision_,activity_,frame_.gameplayRevision,frame_.owner}; }
-    void clock(uint32_t tick) { tick_=tick; }
-    void beginDraw(uint32_t tick) { clock(tick);drawing_=true;drawnMask_=presentedMask_=0;drawnOwner_=owner(); }
-    void presented(bool success) { if(drawing_)presentedMask_=success?drawnMask_:0; }
-    void resume(bool focused,uint32_t tick) {
-        clock(tick);if(!focused)return;
-        const auto proof=modal.resumeAck();
-        if(!proof.proof||proof.owner!=owner()||!frame_.available||(proof.mask&frame_.availableMask())!=proof.mask)return;
-        if(proof.proof>=ackProof_ && tick-proof.at<=1000){
-            ackProof_=proof.proof;covered_=proof.mask;
-        }
-        if(ackProof_>=proof.proof&&covered(proof.mask,frame_.owner))modal.resumed(owner(),ackProof_);
-    }
-    void finishDraw(uint32_t tick) {
-        clock(tick);drawing_=false;
-        if(drawnOwner_==owner())modal.presented(owner(),presentedMask_,ackProof_,tick);
-    }
+    Owner owner() const { return {revision_,activity_,frame_.gameplayRevision,frame_.owner}; }
     MapInstrumentFrame source;
     uint64_t contextActionOwner=0;
     std::string contextAction;
-    void update(WorldMapFrame frame, uint32_t tick)
+    void update(WorldMapFrame frame)
     {
-        tick_ = tick;
         if (frame.available != frame_.available || frame.owner != frame_.owner || frame.identity != frame_.identity || frame.context != frame_.context ||
             frame.commands != frame_.commands || frame.commandsReady != frame_.commandsReady ||
             frame.instruments.flag!=frame_.instruments.flag || frame.instruments.coordinates!=frame_.instruments.coordinates ||
             frame.instruments.rumDays.has_value()!=frame_.instruments.rumDays.has_value() ||
             frame.gameplayRevision != frame_.gameplayRevision || frame.availableMask() != frame_.availableMask())
-        { ++revision_; covered_ = 0; pending_.clear(); }
+        { ++revision_; pending_.clear(); }
         frame_ = std::move(frame);
-        if (!frame_.available) { covered_ = 0; pending_.clear(); }
-        modal.owner(frame_.available?owner():WorldMapModal::Owner{});
+        if (!frame_.available) pending_.clear();
     }
-    void resetActivity() { ++activity_; covered_ = 0; pending_.clear();ackProof_=0;modal.owner(owner()); } // revision_ >= 1 once available
+    void resetActivity() { ++activity_; pending_.clear(); } // revision_ >= 1 once available
     const WorldMapFrame &frame() const { return frame_; }
     uint64_t revision() const { return revision_; }
     // Last drawn UI compass box, including date/days, in its display's pixels.
@@ -167,16 +145,11 @@ public:
     bool covered(uint32_t mask, uint64_t owner) const
     {
         // One coverage rule (android_hud_presenter.hpp): while the UI presents the world map HUD
-        // every native part is replaced; otherwise what the UI answered (no UI: nothing).
-        const uint32_t replaced = hudPresenters.worldMap ? 7u : covered_;
-        const bool result=frame_.available && owner == frame_.owner && (replaced & frame_.availableMask() & mask) == mask;
-        if(result&&drawing_&&drawnOwner_==this->owner())drawnMask_|=mask;
-        return result;
+        // every native part is replaced; otherwise the native parts draw.
+        return hudPresenters.worldMap && frame_.available && owner == frame_.owner && (frame_.availableMask() & mask) == mask;
     }
-    bool covered(uint32_t mask,uint64_t owner,uint32_t tick) { clock(tick);return covered(mask,owner); }
     bool offer(std::string_view request, uint32_t tick)
     {
-        clock(tick); // ACK drain precedes RunFrame: never compare a new ACK with the previous frame clock.
         if (request.size() > 256 || !frame_.available || !activity_) return false;
         std::array<std::string_view, 4> fields;
         for (size_t i=0;i<4;++i)
@@ -205,49 +178,24 @@ public:
             if(!area[0]||!area[1]||!area[4]||!area[5]||area[2]+area[4]>area[0]||area[3]+area[5]>area[1])return false;
             labelCompass_=area;labelCompassOwner_=owner();return true;
         }
-        if(fields[2]=="ack")
-        {
-            const auto colon=fields[3].find(':');
-            uint64_t mask=0,proof=0;
-            if(!number(fields[3].substr(0,colon),mask)||mask>7 ||
-                (colon!=std::string_view::npos&&!number(fields[3].substr(colon+1),proof)))return false;
-            if(proof&&proof<ackProof_)return false;
-            mask&=frame_.availableMask();
-            if(!modal.ack(owner(),static_cast<uint32_t>(mask),proof,tick))return false;
-            covered_=static_cast<uint32_t>(mask);if(proof)ackProof_=proof;return true;
-        }
-        if(fields[2]=="prepare")
-        {
-            auto value=fields[3];const auto first=value.find(':');const auto second=value.find(':',first==std::string_view::npos?value.size():first+1);
-            uint64_t token=0,mask=0,proof=0;
-            if(first==std::string_view::npos||second==std::string_view::npos||!number(value.substr(0,first),token)||
-                !number(value.substr(first+1,second-first-1),mask)||!number(value.substr(second+1),proof)||mask==0||mask>7||
-                (mask&frame_.availableMask())!=mask||!modal.request(owner(),token,static_cast<uint32_t>(mask),proof,tick))return false;
-            pending_.clear();return true;
-        }
-        if(fields[2]!="activate" || modal.ownsInput(tick) || !frame_.commandsReady || !pending_.empty())return false;
+        if(fields[2]!="activate" || !frame_.commandsReady || !pending_.empty())return false;
         for(const auto &command:frame_.commands)if(command.id==fields[3])
         {pending_=command.id;pendingAt_=tick;return true;}
         return false;
     }
     std::optional<std::string> take(uint32_t tick)
     {
-        clock(tick);
-        if(modal.ownsInput(tick)){pending_.clear();return {};}
         auto result=std::move(pending_);pending_.clear();
         if(result.empty()||!frame_.available||!frame_.commandsReady||tick-pendingAt_>1000)return {};
         // Consume the lease before native callbacks can change or destroy a scene.
-        ++revision_;covered_=0;return result;
+        ++revision_;return result;
     }
     std::string json() const
     {
         const auto q=[](const std::string &s){return gameplayJsonString(s);};
         const auto n=[](const auto &v){return v?std::to_string(*v):std::string("null");};
         const auto &i=frame_.instruments;
-        const auto prepared=modal.receipt(tick_);
         std::string out="{\"schemaVersion\":1,\"revision\":"+std::to_string(revision_)+",\"activity\":"+std::to_string(activity_)+
-            ",\"modalProtocol\":1,\"modalToken\":"+std::to_string(prepared.token)+",\"modalMask\":"+std::to_string(prepared.mask)+
-            ",\"modalActiveToken\":"+std::to_string(prepared.active)+",\"modalFailure\":"+std::to_string(prepared.failed)+
             ",\"gameplayRevision\":"+std::to_string(frame_.gameplayRevision)+",\"available\":"+(frame_.available?"true":"false")+
             ",\"mask\":"+std::to_string(frame_.availableMask())+",\"commandsReady\":"+(frame_.commandsReady?"true":"false")+
             ",\"shipsVisible\":"+(frame_.shipsVisible?"true":"false")+

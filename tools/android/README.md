@@ -31,7 +31,7 @@ pinned SDL checkout; use a checkout dedicated to this experiment.
 ## Full engine after dependency build
 
 Prepare the other pinned sources with `engine_sources.py --directory /path/to/sources`
-(fmt 12.1.0, spdlog 1.17.0, fast_float 3.4.0, mimalloc 2.0.3, Catch2 2.13.7, FFmpeg 8.1.3; exact Git
+(fmt 12.1.0, spdlog 1.17.0, fast_float 3.4.0, mimalloc 2.0.3 (host builds only), Catch2 2.13.7, FFmpeg 8.1.3; exact Git
 hashes are in that script). fmt is built by the engine's CMake and linked statically into the engine.
 On a machine where several worktrees build, use the shared directory instead:
 `engine_sources.py --shared "$STORM_CI_WORK"` prints `$STORM_CI_WORK/pins-<digest>`, a directory of
@@ -79,7 +79,7 @@ STORM_NATIVE_BUILD_DIR="$PWD/build/android-ci/engine-relwithdebinfo" \
   bash tools/android/ci_engine.sh
 ```
 
-Package both `game/libengine.so` and `runtime/libmimalloc.so` from that build.
+Package `game/libengine.so` from that build.
 Compare the same source revision, scene/save, camera, resolution and settings;
 do not compare while other emulator instances or native builds compete for the
 host. Emulator measurements of arm64 builds include ARM translation; use an x86_64

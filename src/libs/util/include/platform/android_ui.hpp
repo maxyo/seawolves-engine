@@ -81,15 +81,6 @@ inline void traceContextAction(const char *stage, const std::string &action, con
     __android_log_print(ANDROID_LOG_DEBUG, "StormInput", "context %s action=%s %s",
                         stage, action.c_str(), detail.c_str());
 }
-// JNI admission and native Present run on different threads; keep this bounded
-// diagnostic independent of the game-thread-only input trace above.
-inline void traceWorldMapModal(const char *event,const std::string &detail)
-{
-    static std::atomic<unsigned> budget{128};
-    unsigned remaining=budget.load(std::memory_order_relaxed);
-    while(remaining&&!budget.compare_exchange_weak(remaining,remaining-1,std::memory_order_relaxed)){}
-    if(remaining)__android_log_print(ANDROID_LOG_INFO,"StormMapModalNative","%s tick=%u %s",event,SDL_GetTicks(),detail.c_str());
-}
 inline int cinematicState = -1;
 // The game's death picture is up (xinterface info_handler.cpp): the death screen's choice may
 // end it at once ("widget:game_over\tEND", main.cpp).
@@ -150,18 +141,14 @@ inline void publishShipTelemetry()
 inline uint64_t worldMapHost = 0;
 inline uint32_t worldMapPublishedAt = 0;
 inline uint64_t worldMapPublishedRevision = UINT64_MAX;
-inline uint64_t worldMapPublishedReady=0,worldMapPublishedActive=0,worldMapPublishedFailure=0;
-inline void publishWorldMapHud(bool force=false)
+inline void publishWorldMapHud()
 {
     if(worldMapHost!=ui::generation()){worldMapHost=ui::generation();worldMapHud.resetActivity();worldMapPublishedAt=0;}
     const auto tick=SDL_GetTicks();
-    const auto modal=worldMapHud.modal.receipt(tick);
-    if(force || tick-worldMapPublishedAt>=200 || worldMapPublishedRevision!=worldMapHud.revision() ||
-        modal.token!=worldMapPublishedReady || modal.active!=worldMapPublishedActive || modal.failed!=worldMapPublishedFailure)
+    if(tick-worldMapPublishedAt>=200 || worldMapPublishedRevision!=worldMapHud.revision())
     {
         ui::state("worldMap",worldMapHud.json());
         worldMapPublishedAt=tick;worldMapPublishedRevision=worldMapHud.revision();
-        worldMapPublishedReady=modal.token;worldMapPublishedActive=modal.active;worldMapPublishedFailure=modal.failed;
     }
 }
 inline uint64_t seaOrdersHost = 0;

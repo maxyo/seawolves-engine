@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 p = argparse.ArgumentParser(description=__doc__)
-for name in ('ndk', 'sdl-source', 'spdlog-source', 'fmt-source', 'mimalloc-source', 'glm-source'):
+for name in ('ndk', 'sdl-source', 'spdlog-source', 'fmt-source', 'glm-source'):
     p.add_argument('--' + name, type=Path, required=True)
 a = p.parse_args()
 r = Path(__file__).resolve().parents[2]
@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='storm-entry-') as d:
     watermark = b / 'storm_build_watermark.hpp'
     watermark.write_text('#define STORM_BUILD_WATERMARK android_compile_check\n')
     includes = list((r / 'src/libs').glob('*/include')) + [r / 'src/libs/core/src', b]
-    includes += [a.spdlog_source / 'include', a.fmt_source / 'include', a.mimalloc_source / 'include',
+    includes += [a.spdlog_source / 'include', a.fmt_source / 'include',
                  r/'src/libs/renderer_bgfx/include', a.glm_source]
     compiler = a.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++'
     for source in ('src/apps/engine/src/main.cpp', 'src/libs/core/src/file_service.cpp'):

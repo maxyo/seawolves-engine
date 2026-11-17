@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import android_abi
-p=argparse.ArgumentParser();p.add_argument('--library',type=Path,required=True);p.add_argument('--ndk',type=Path,required=True);p.add_argument('--allocator-library',type=Path)
+p=argparse.ArgumentParser();p.add_argument('--library',type=Path,required=True);p.add_argument('--ndk',type=Path,required=True)
 p.add_argument('--abi',choices=sorted(android_abi.ABIS),default=android_abi.DEFAULT);a=p.parse_args()
 try:android_abi.check_elf(a.library,a.abi)
 except RuntimeError as error:raise SystemExit(str(error))
@@ -28,11 +28,13 @@ deps=subprocess.check_output([str(bin/'llvm-readelf'),'-d',str(a.library)],text=
 # FFmpeg (in-game video) ships beside libengine.so; see tools/ffmpeg/README.md.
 # libbgfx.so (bgfx, bx, bimg) and libstorm_ui.so (the UI runtime) are shared with the application
 # screens; the process must have exactly one bgfx, so libengine.so must not carry its own.
-for library in ['libSDL2.so','libGLESv3.so','libbgfx.so','libstorm_ui.so','libmimalloc.so','libc++_shared.so',
+for library in ['libSDL2.so','libGLESv3.so','libbgfx.so','libstorm_ui.so','libc++_shared.so',
                 'libavformat.so','libavcodec.so','libswscale.so','libswresample.so','libavutil.so']:
     if library not in deps:raise SystemExit('Missing runtime dependency: '+library)
 # fmt is linked statically (cmake/android.cmake); the APK carries no libfmt.so.
 if 'libfmt.so' in deps:raise SystemExit('libengine.so needs libfmt.so; fmt must be linked statically')
+# Android allocates with Bionic and libc++ (cmake/android.cmake): no mimalloc in the process.
+if 'mimalloc' in deps:raise SystemExit('libengine.so needs mimalloc; Android must use the platform allocator')
 if 'bgfx::init(' in symbols:raise SystemExit('libengine.so links its own bgfx; it must use libbgfx.so')
 if 'fmod' in deps.lower():raise SystemExit('Unexpected FMOD dependency')
 print(f'PASS: full engine {a.abi} linked, SDL_main and real SoundService/miniaudio symbols, no FMOD')
@@ -75,16 +77,10 @@ unexpected=sorted(absent&linked)
 if unexpected:raise SystemExit('Registrations linked although their build option is off: '+', '.join(unexpected))
 print(f'PASS: all {len(declared)} entity/service/script-library registrations of this configuration are linked'+(f', {len(absent)} option-gated ones absent' if absent else ''))
 
-if a.allocator_library:
-    exports=subprocess.check_output([str(bin/'llvm-nm'),'-D','--defined-only',str(a.allocator_library)],text=True)
-    names={line.split()[-1] for line in exports.splitlines() if line.split()}
-    if 'mi_malloc' not in names:raise SystemExit('Missing real mimalloc allocator')
-    if names.intersection({'malloc','calloc','realloc','free'}):
-        raise SystemExit('Android mimalloc must not interpose libc allocation: emulated TLS recursion')
-    # Placement new is harmless; owning global new/delete must remain in libc++.
-    # Exact names: a class's own operator new (RmlUi's layout boxes) is not the global one.
-    defined={line.split(' ',2)[2] for line in symbols.splitlines() if line.count(' ')>=2}
-    for symbol in ('operator new(unsigned long)', 'operator new[](unsigned long)',
-                   'operator delete(void*)', 'operator delete[](void*)'):
-        if symbol in defined:raise SystemExit('Android must use the platform C++ allocator: '+symbol)
-    print('PASS: mimalloc API retained; Android uses platform C/C++ allocation without heap interposition')
+# Placement new is harmless; owning global new/delete must remain in libc++.
+# Exact names: a class's own operator new (RmlUi's layout boxes) is not the global one.
+defined={line.split(' ',2)[2] for line in symbols.splitlines() if line.count(' ')>=2}
+for symbol in ('operator new(unsigned long)', 'operator new[](unsigned long)',
+               'operator delete(void*)', 'operator delete[](void*)'):
+    if symbol in defined:raise SystemExit('Android must use the platform C++ allocator: '+symbol)
+print('PASS: Android uses the platform C/C++ allocation (no mimalloc, no global new/delete of its own)')

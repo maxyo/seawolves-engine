@@ -82,7 +82,7 @@ int main(){
  assert(frame.ships[0].crewMax==80&&frame.ships[0].picture&&frame.ships[0].picture->texture=="battle_interface/ship_icons2"&&
         frame.ships[0].picture->uv==(std::array<float,4>{0.25f,0.0625f,0.3125f,0.125f})&&!frame.ships[1].picture);
  assert(frame.ships[0].type=="Lugger"&&frame.ships[1].type=="Lugger");
- WorldMapHud typedHud;typedHud.update(frame,1);
+ WorldMapHud typedHud;typedHud.update(frame);
  assert(typedHud.json().find("\"type\":\"Lugger\"")!=std::string::npos);
  SHIP_BASE seaShip{&captain,&shipType};auto sea=shipEntry(&seaShip);
  assert(sea.type=="Lugger"&&sea.shipClass==6&&sea.name=="Adelina");
@@ -97,7 +97,7 @@ int main(){
  put(captain,"Ship.Name","Frigate");assert(shipEntry(&seaShip).type=="Lugger");
  shipType.SetAttribute("Name","");assert(shipEntry(&seaShip).type.empty());
  auto unknownType=readWorldMapFrame(game,true);assert(unknownType.ships[0].type.empty()&&unknownType.availableMask()==frame.availableMask());
- typedHud.update(unknownType,2);assert(typedHud.json().find("\"type\":")==std::string::npos);
+ typedHud.update(unknownType);assert(typedHud.json().find("\"type\":")==std::string::npos);
  shipType.SetAttribute("Name","Lugger");put(captain,"Ship.Name","Adelina");
  assert(!frame.instrumentsVisible&&frame.availableMask()==6); // No fake instruments before renderer supplies them.
  // The rain the sea will have (WeatherParams, the start kept on the hero), read with the map's instruments.

@@ -20,7 +20,9 @@
 #if !defined(__ANDROID__) && !defined(STORM_ASAN)
 #include <mimalloc-new-delete.h>
 #endif
+#ifndef __ANDROID__ // Android allocates with Bionic and libc++ (cmake/android.cmake): no mimalloc there
 #include <mimalloc.h>
+#endif
 #include <spdlog/spdlog.h>
 
 #include "core_private.h"
@@ -280,6 +282,7 @@ void AnnounceScriptPatches()
 }
 #endif
 
+#ifndef __ANDROID__
 void mimalloc_fun(const char *msg, void *arg)
 {
     static std::filesystem::path mimalloc_log_path;
@@ -298,6 +301,7 @@ void mimalloc_fun(const char *msg, void *arg)
         fclose(mimalloc_log);
     }
 }
+#endif
 
 } // namespace
 
@@ -410,15 +414,6 @@ void HandleWindowEventInSdl(const storm::OSWindow::Event &event)
     {
         bActive = false;
         audioGate.windowFocused = false;
-#ifdef __ANDROID__
-        // AppState/audio fading can block this thread beyond the opening grace.
-        // Observe the real SDL focus event before those calls, at its actual time.
-        const auto observedAt=SDL_GetTicks();
-        if(storm::android::worldMapHud.modal.ownsInput(observedAt)){
-            storm::android::worldMapHud.modal.hold(false,observedAt);
-            storm::android::traceWorldMapModal("focus-lost-observed",storm::android::worldMapHud.modal.debug());
-        }
-#endif
         if (core_private->initialized())
         {
             core_private->AppState(bActive);
@@ -504,6 +499,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 #endif
+#ifndef __ANDROID__
     mi_register_output(mimalloc_fun, nullptr);
     mi_option_set(mi_option_show_errors, 1);
     mi_option_set(mi_option_show_stats, 0);
@@ -516,6 +512,7 @@ int main(int argc, char *argv[])
     mi_option_set(mi_option_segment_cache, 16);
 #ifdef _DEBUG
     mi_option_set(mi_option_verbose, 4);
+#endif
 #endif
 
 #ifdef __ANDROID__
@@ -556,7 +553,9 @@ int main(int argc, char *argv[])
                  "tcp:8086 tcp:8086; tools/android/README.md)",
                  tracy::Version::Major, tracy::Version::Minor, tracy::Version::Patch);
 #endif
+#ifndef __ANDROID__
     spdlog::info("mimalloc-redirect status: {}", mi_is_redirected());
+#endif
 #ifdef __ANDROID__
     AnnounceScriptPatches();
     storm::android::readStartAtMainMenu();
@@ -678,7 +677,7 @@ int main(int argc, char *argv[])
     storm::android::updateCombatState(gameplayState, core_private);
     storm::android::publishCombatState();
     storm::android::publishGameplayState(gameplayState);
-    storm::android::worldMapHud.update({},SDL_GetTicks());
+    storm::android::worldMapHud.update({});
     storm::android::publishWorldMapHud();
     storm::android::shipTelemetry.update(gameplayState.revision(), {});
     storm::android::publishShipTelemetry();
@@ -799,7 +798,6 @@ int main(int argc, char *argv[])
             if (const auto work = frameWork.lap(storm::platform::FrameWorkClock::Clock::now()))
                 storm::platform::reportFrameWork(std::chrono::duration_cast<std::chrono::nanoseconds>(*work));
 #ifdef __ANDROID__
-            storm::android::worldMapHud.clock(SDL_GetTicks());
             const auto combatDrainEpoch = storm::android::combatCancelEpoch.load(std::memory_order_acquire);
             // The UI host first: it applies the touches the platform sent, and what they produce
             // is read in this iteration, together with the activity's own queue.
@@ -835,10 +833,6 @@ int main(int argc, char *argv[])
                     }
                     continue;
                 }
-                if(storm::android::worldMapHud.modal.ownsInput(SDL_GetTicks()) &&
-                    (command.starts_with("gameplay:") || command.starts_with("shortcut:") || command.starts_with("context:") ||
-                     command.starts_with("move:") || command.starts_with("combat:") || command.starts_with("sails:") ||
-                     command.starts_with("hold:") || command.starts_with("deckwalk:") || command.starts_with("seaquick:") || command.starts_with("camera:")))continue;
                 if (command.starts_with("combat:"))
                 {
                     storm::android::combatInput.offer(std::string_view(command).substr(7), SDL_GetTicks(), combatDrainEpoch);
@@ -886,12 +880,8 @@ int main(int argc, char *argv[])
                 else if (command.starts_with("worldmap:"))
                 {
                     const bool accepted=storm::android::worldMapHud.offer(std::string_view(command).substr(9),SDL_GetTicks());
-                    if(accepted && command.find("\tprepare\t")!=std::string::npos){
-                        while(gameplayState.take(SDL_GetTicks())){} // discard actions already across the Java mailbox
-                        gameplayShortcuts.clear();storm::android::requestedContextAction.clear();
-                    }
                     static unsigned mapTraceBudget=160;
-                    if(mapTraceBudget && (command.find("\tprepare\t")!=std::string::npos || !accepted)){
+                    if(mapTraceBudget && !accepted){
                         --mapTraceBudget;
                         storm::android::traceContextAction("worldmap-mailbox",accepted?"accepted":"rejected",command);
                     }
@@ -1073,7 +1063,7 @@ int main(int argc, char *argv[])
                 storm::android::updateCombatState(gameplayState, core_private);
                 storm::android::publishCombatState();
                 storm::android::publishGameplayState(gameplayState);
-                storm::android::worldMapHud.update({},SDL_GetTicks());
+                storm::android::worldMapHud.update({});
                 storm::android::publishWorldMapHud();
                 storm::android::shipTelemetry.update(gameplayState.revision(), {});
                 storm::android::publishShipTelemetry();
@@ -1083,9 +1073,6 @@ int main(int argc, char *argv[])
             }
             if (androidLifecycle.terminating())
                 isRunning = false;
-            if(storm::android::worldMapHud.modal.ownsInput(SDL_GetTicks()))storm::android::publishWorldMapHud();
-            storm::android::worldMapHud.resume(bActive,SDL_GetTicks());
-            const bool mapModalHold=storm::android::worldMapHud.modal.hold(bActive,SDL_GetTicks());
 #else
             // SDL turns SIGINT/SIGTERM into SDL_QUIT: the host shuts down in order, like closing the window.
             if (SDL_HasEvent(SDL_QUIT))
@@ -1103,7 +1090,7 @@ int main(int argc, char *argv[])
             // adapters below; waiting never fabricates frame/stability observations.
             bool canPaceLoading = bActive;
 #ifdef __ANDROID__
-            canPaceLoading = canPaceLoading && androidLifecycle.canRun() && !mapModalHold;
+            canPaceLoading = canPaceLoading && androidLifecycle.canRun();
 #endif
             // The synchronous native stock loop invokes this same controller
             // itself. The outer loop never supplies a second heartbeat for it.
@@ -1119,7 +1106,7 @@ int main(int argc, char *argv[])
 
             if ((bActive || run_in_background)
 #ifdef __ANDROID__
-                && androidLifecycle.canRun() && !mapModalHold
+                && androidLifecycle.canRun()
 #endif
             )
             {
@@ -1188,9 +1175,6 @@ int main(int argc, char *argv[])
                 }
 #endif
                 {
-#ifdef __ANDROID__
-                    storm::android::worldMapHud.beginDraw(SDL_GetTicks());
-#endif
                     STORM_PROFILE_ZONE("frame: script, entities, render");
                     loadingSchedule(storm::render::GetSceneLoadStatus().generation,
                                     storm::platform::LoadingSchedulePhase::FrameStarted);
@@ -1244,17 +1228,12 @@ int main(int argc, char *argv[])
                 storm::android::updateCombatState(gameplayState, core_private);
                 storm::android::publishCombatState();
                 storm::android::publishGameplayState(gameplayState);
-                storm::android::worldMapHud.update(storm::android::readWorldMapFrame(gameplayState,gameplayReady),SDL_GetTicks());
-                storm::android::worldMapHud.finishDraw(SDL_GetTicks());
-                if(storm::android::worldMapHud.modal.receipt(SDL_GetTicks()).token){
-                    storm::android::traceWorldMapModal("presented",storm::android::worldMapHud.modal.debug());
-                }
-                storm::android::publishWorldMapHud(storm::android::worldMapHud.modal.receipt(SDL_GetTicks()).token!=0);
-                if(storm::android::worldMapHud.modal.hold(bActive,SDL_GetTicks()))continue;
+                storm::android::worldMapHud.update(storm::android::readWorldMapFrame(gameplayState,gameplayReady));
+                storm::android::publishWorldMapHud();
                 if(const auto command=storm::android::worldMapHud.take(SDL_GetTicks()))
                 {
                     storm::android::executeWorldMapCommand(*command);
-                    storm::android::worldMapHud.update(storm::android::readWorldMapFrame(gameplayState,gameplayReady),SDL_GetTicks());
+                    storm::android::worldMapHud.update(storm::android::readWorldMapFrame(gameplayState,gameplayReady));
                     storm::android::publishWorldMapHud();
                 }
                 storm::android::shipTelemetry.update(gameplayState.revision(), storm::android::readShipFrame(gameplayState, storm::android::seaOrders.frame().active));
@@ -1287,11 +1266,13 @@ int main(int argc, char *argv[])
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
 
+#ifndef __ANDROID__
             if (core.Controls && core.Controls->GetDebugAsyncKeyState(VK_F1) && core.Controls->GetDebugAsyncKeyState(VK_SHIFT))
             {
                 mi_stats_print_out(mimalloc_fun, nullptr);
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
+#endif
         }
     }
     catch (const std::exception &error)
@@ -1326,7 +1307,7 @@ int main(int argc, char *argv[])
         storm::android::gameplayReadEpoch = 0;
     }
     storm::android::publishGameplayState(gameplayState);
-    storm::android::worldMapHud.update({},SDL_GetTicks());
+    storm::android::worldMapHud.update({});
     storm::android::publishWorldMapHud();
     storm::android::shipTelemetry.update(gameplayState.revision(), {});
     storm::android::publishShipTelemetry();
@@ -1354,7 +1335,7 @@ int main(int argc, char *argv[])
     }
     if (auto logger = spdlog::default_logger())
         logger->flush();
-#if _DEBUG
+#if _DEBUG && !defined(__ANDROID__)
     mi_option_set(mi_option_verbose, 0); // disable statistics writing in Linux
 #endif
     SDL_Quit();

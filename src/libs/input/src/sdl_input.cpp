@@ -8,7 +8,6 @@
 #include <map>
 #include <string_view>
 #ifdef __ANDROID__
-#include <platform/android_worldmap.hpp>
 #endif
 #if defined(__ANDROID__) && !defined(STORM_INPUT_HOST_TEST)
 #include <jni.h>
@@ -45,8 +44,6 @@ bool IsInputEvent(const SDL_Event &event)
 {
     return event.type >= SDL_KEYDOWN && event.type <= SDL_CONTROLLERDEVICEREMAPPED;
 }
-
-bool MapModalInputBlocked() { return android::worldMapHud.modal.ownsInput(SDL_GetTicks()); }
 
 bool IsInputBoundary(const SDL_Event &event)
 {
@@ -370,9 +367,6 @@ void SDLInput::Unsubscribe(int id)
 
 void SDLInput::ProcessEvent(const SDL_Event &event)
 {
-#ifdef __ANDROID__
-    if(IsGameplayInputEvent(event)&&MapModalInputBlocked())return;
-#endif
     InputEvent out;
     out.type = InputEvent::Unknown;
 
@@ -448,9 +442,6 @@ void SDLInput::ProcessEvent(const SDL_Event &event)
 
 bool SDLInput::KeyboardModState(const KeyboardKey &key) const
 {
-#ifdef __ANDROID__
-    if(MapModalInputBlocked())return false;
-#endif
     if (key == VK_NUMLOCK)
         return SDL_GetModState() & KMOD_NUM;
     else if (key == VK_CAPITAL)
@@ -464,7 +455,7 @@ bool SDLInput::KeyboardModState(const KeyboardKey &key) const
 bool SDLInput::KeyboardKeyState(const KeyboardKey &key) const
 {
 #ifdef __ANDROID__
-    return !MapModalInputBlocked() && keyboard_.Active(keyToSDL(key)) && SnapshotCurrent();
+    return keyboard_.Active(keyToSDL(key)) && SnapshotCurrent();
 #else
     return keyStates_[keyToSDL(key)] != 0;
 #endif
@@ -473,7 +464,7 @@ bool SDLInput::KeyboardKeyState(const KeyboardKey &key) const
 bool SDLInput::KeyboardSDLKeyState(const SDL_Scancode &key) const
 {
 #ifdef __ANDROID__
-    return !MapModalInputBlocked() && keyboard_.Active(static_cast<std::size_t>(key)) && SnapshotCurrent();
+    return keyboard_.Active(static_cast<std::size_t>(key)) && SnapshotCurrent();
 #else
     return keyStates_[key] != 0;
 #endif
@@ -481,9 +472,6 @@ bool SDLInput::KeyboardSDLKeyState(const SDL_Scancode &key) const
 
 bool SDLInput::ControllerButtonState(const ControllerButton &button) const
 {
-#ifdef __ANDROID__
-    if(MapModalInputBlocked())return false;
-#endif
     if (!controller_)
         return false;
 
@@ -492,9 +480,6 @@ bool SDLInput::ControllerButtonState(const ControllerButton &button) const
 
 int SDLInput::ControllerAxisValue(const ControllerAxis &axis) const
 {
-#ifdef __ANDROID__
-    if(MapModalInputBlocked())return 0;
-#endif
     if (!controller_)
         return 0;
 
@@ -504,7 +489,6 @@ int SDLInput::ControllerAxisValue(const ControllerAxis &axis) const
 bool SDLInput::MouseKeyState(const MouseKey &key) const
 {
 #ifdef __ANDROID__
-    if(MapModalInputBlocked())return false;
     switch (key)
     {
     case MouseKey::Left: return mouse_.Active(SDL_BUTTON_LEFT) && SnapshotCurrent();
@@ -568,7 +552,6 @@ int SDLInput::SDLEventHandler(void *userdata, SDL_Event *evt)
     // JNI may push events from Android's UI thread. Dispatch game callbacks
     // only from PCS_CONTROLS::Update, never while holding this queue mutex.
     if (IsInputEvent(*evt) || IsInputBoundary(*evt)) {
-        if(IsGameplayInputEvent(*evt)&&MapModalInputBlocked())return 0;
         std::lock_guard<std::mutex> guard(in->pendingMutex_);
         // Reject a producer which crossed either boundary, even if the complete
         // transaction ended while it was delayed before this mutex.
@@ -608,7 +591,6 @@ void SDLInput::PumpEvents()
     }
     keyboard_.BeginFrame();
     mouse_.BeginFrame();
-    if(MapModalInputBlocked()){keyboard_.Clear();mouse_.Clear();}
     for (const auto& event : events)
     {
         if (IsInputBoundary(event))
@@ -626,7 +608,6 @@ void SDLInput::PumpEvents()
         }
         // Keep lifecycle/device events even in an invalidated batch: losing a
         // background transition here could enable input before foregrounding.
-        if(IsGameplayInputEvent(event)&&MapModalInputBlocked()){keyboard_.Clear();mouse_.Clear();continue;}
         if (IsKeyboardMouseEvent(event) && (!focused_ || !foreground_ || !SnapshotCurrent())) continue;
         if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
             keyboard_.Set(static_cast<std::size_t>(event.key.keysym.scancode), event.type == SDL_KEYDOWN,

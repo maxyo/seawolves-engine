@@ -80,7 +80,7 @@ int ProjectionChecks()
     frame.available = true;
     frame.owner = 19;
     frame.gameplayRevision = 2;
-    hud.update(frame, 1);
+    hud.update(frame);
     hud.resetActivity();
     const auto area = [&](const std::string &geometry) {
         assert(hud.offer(std::to_string(hud.revision()) + "\t" + std::to_string(hud.owner().activity) +

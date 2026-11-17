@@ -32,20 +32,12 @@ add_library(catch2 INTERFACE)
 target_include_directories(catch2 INTERFACE "${STORM_ANDROID_SOURCES}/catch2/single_include")
 # Catch2 writes its output to the Android log (__android_log_write) on Android.
 target_link_libraries(catch2 INTERFACE log)
-set(MI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_STATIC OFF CACHE BOOL "" FORCE)
-set(MI_BUILD_OBJECT OFF CACHE BOOL "" FORCE)
-# Android API 24 uses emulated TLS. Its first allocation calls libc malloc;
-# interposing malloc with mimalloc re-enters the uninitialized heap recursively.
-# Keep both C and C++ allocations on Bionic on Android: shared libc++ may
-# free storage internally, so mixing its heap with an engine-only new override
-# also corrupts allocator ownership. Explicit mi_* diagnostics remain available.
-set(MI_OVERRIDE OFF CACHE BOOL "" FORCE)
-add_subdirectory("${STORM_ANDROID_SOURCES}/mimalloc" "${CMAKE_BINARY_DIR}/mimalloc")
-set_target_properties(mimalloc PROPERTIES OUTPUT_NAME mimalloc VERSION "" SOVERSION "" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/runtime")
+# No mimalloc on Android: API 24's emulated TLS makes its first allocation call libc malloc, so
+# interposing malloc re-enters the uninitialized heap, and shared libc++ frees storage internally,
+# so an engine-only new override corrupts allocator ownership. C and C++ allocation stay on Bionic.
 # Release = the RelWithDebInfo flags (-O2 -g -DNDEBUG, set in src/CMakeLists.txt)
 # plus hidden visibility, section GC and ThinLTO for the engine's own targets
-# (declared after this point; mimalloc above keeps its exported C API).
+# (declared after this point).
 # Hidden visibility drops ~11.5k C++ symbols from .dynsym, which shortens
 # load-time symbol resolution and lets the linker discard and inline across
 # modules. What must stay exported is marked in the sources: SDL_main

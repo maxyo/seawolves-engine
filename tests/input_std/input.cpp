@@ -1,9 +1,6 @@
 #define SDL_MAIN_HANDLED
 #include "sdl_input.hpp"
 #include "platform/host_hooks.hpp"
-#ifdef __ANDROID__
-#include <platform/android_worldmap.hpp>
-#endif
 #include <SDL2/SDL.h>
 #include <cassert>
 #include <iostream>
@@ -199,35 +196,6 @@ static void checkCancellationDuringPump(storm::SDLInput &input)
 }
 #endif
 
-#ifdef __ANDROID__
-static void checkMapModalPhysicalInput(storm::SDLInput &input)
-{
-    const int device=SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER,6,15,0);
-    assert(device==0); // isolated virtual-device fixture, never an external controller
-    char guid[33];SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(device),guid,sizeof(guid));
-    const auto mapping=std::string(guid)+",Modal fixture,a:b0,leftx:a0,platform:Linux,";
-    assert(SDL_GameControllerAddMapping(mapping.c_str())>=0);
-    SDL_Joystick *joystick=SDL_JoystickOpen(device);assert(joystick);
-    SDL_PumpEvents();input.PumpEvents();
-    assert(SDL_JoystickSetVirtualAxis(joystick,0,12345)==0);assert(SDL_JoystickSetVirtualButton(joystick,0,1)==0);
-    SDL_JoystickUpdate();input.PumpEvents();
-    assert(input.ControllerAxisValue(storm::ControllerAxis::LeftX)==12345);
-    assert(input.ControllerButtonState(storm::ControllerButton::A));
-    auto &modal=storm::android::worldMapHud.modal;
-    assert(modal.request({1,1,1,1},17,7,1,SDL_GetTicks()));
-    int callbacks=0;const int subscription=input.Subscribe([&](const storm::InputEvent &){++callbacks;});
-    pushKey(SDL_KEYDOWN,SDL_SCANCODE_W);pushMouse(SDL_MOUSEBUTTONDOWN,SDL_BUTTON_LEFT);pushMotion(17,29);
-    assert(SDL_JoystickSetVirtualAxis(joystick,0,23456)==0);SDL_JoystickUpdate();input.PumpEvents();
-    assert(SDL_JoystickGetAxis(joystick,0)==23456); // actual SDL hardware state still exists beneath the gate
-    assert(!input.KeyboardKeyState('W')&&!input.MouseKeyState(storm::MouseKey::Left));
-    assert(input.ControllerAxisValue(storm::ControllerAxis::LeftX)==0&&!input.ControllerButtonState(storm::ControllerButton::A));
-    assert(callbacks==0);
-    assert(modal.operate(1,1,1,17,1,0,SDL_GetTicks()));input.PumpEvents();assert(callbacks==0); // modal events were not buffered for resume
-    assert(!input.KeyboardKeyState('W'));
-    input.Unsubscribe(subscription);
-    SDL_JoystickClose(joystick);assert(SDL_JoystickDetachVirtual(device)==0);SDL_PumpEvents();input.PumpEvents();
-}
-#endif
 #if defined(__ANDROID__) && defined(STORM_LOADING_RACE_CHECK)
 static std::atomic<int> loadingRacePhase{0};
 void LoadingRaceOuterCheckpoint(const SDL_Event &event)
@@ -386,7 +354,6 @@ int main(int argc, char **argv)
 #ifdef __ANDROID__
         checkFrameButtons(input);
         checkCancellationDuringPump(input);
-        checkMapModalPhysicalInput(input);
 #endif
     }
     assert(SDL_GetRelativeMouseMode() == SDL_FALSE); // Service teardown releases capture.

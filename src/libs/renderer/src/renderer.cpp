@@ -1644,17 +1644,11 @@ bool Renderer::DrawFrameStats()
 
     if (CHECKD3DERR(EndScene()))
     {
-#ifdef __ANDROID__
-        storm::android::worldMapHud.presented(false);
-#endif
         return false;
     }
 
     const auto presentStart = renderMetricsEnabled ? SDL_GetPerformanceCounter() : 0;
     const HRESULT hRes = d3d9->Present();
-#ifdef __ANDROID__
-    storm::android::worldMapHud.presented(hRes==D3D_OK);
-#endif
 #ifdef STORM_SCENE_SWEEP
     storm::scene_sweep::framePresented(dwNumDrawPrimitive);
 #endif
@@ -4870,10 +4864,6 @@ void Renderer::DrawProgressView(bool present)
     if (present)
     {
         EndScene();
-#ifdef __ANDROID__
-        // A synchronous progress/loading present is not the admitted world-map frame.
-        storm::android::worldMapHud.presented(false);
-#endif
         d3d9->Present();
         BeginScene();
     }

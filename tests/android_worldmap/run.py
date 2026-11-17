@@ -14,10 +14,6 @@ with tempfile.TemporaryDirectory(prefix='storm-worldmap-') as temp:
     common=[os.environ.get('CXX','c++'),'-std=c++20','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/util/include'),'-I'+temp]
     subprocess.run(common+[str(here/'check.cpp'),'-o',str(out/'check')],check=True)
     subprocess.run([str(out/'check')],check=True)
-    main=(root/'src/apps/engine/src/main.cpp').read_text()
-    (out/'window_focus.inc').write_text(main[main.index('void HandleWindowEventInSdl('):main.index('int main(')])
-    subprocess.run(common+['-D__ANDROID__','-I'+str(root/'src/libs/window/include'),str(here/'focus.cpp'),'-o',str(out/'focus')],check=True)
-    subprocess.run([str(out/'focus')],check=True)
     controls=(root/'src/libs/pcs_controls/src/pcs_controls.cpp').read_text()
     (out/'control_poll.inc').write_text(controls[controls.index('bool PCS_CONTROLS::GetControlState(int32_t'):controls.index('bool PCS_CONTROLS::GetPhysicalControlState')])
     subprocess.run(common+['-D__ANDROID__','-I'+str(root/'src/libs/core/include'),'-I'+str(root/'src/libs/shared_headers/include'),str(here/'control_cache.cpp'),'-o',str(out/'control-cache')],check=True)

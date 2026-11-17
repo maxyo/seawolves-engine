@@ -27,4 +27,4 @@ cmake -S "$repo" -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE="$build_type" \
 "$repo/tools/ccache/warmth" begin "$build_dir"
 cmake --build "$build_dir" --target engine --parallel "${STORM_BUILD_JOBS:-2}"
 "$repo/tools/ccache/warmth" end "$build_dir"
-python3 "$repo/tools/android/verify_engine.py" --library "$build_dir/game/libengine.so" --ndk "$ndk" --abi "$abi" --allocator-library "$build_dir/runtime/libmimalloc.so"
+python3 "$repo/tools/android/verify_engine.py" --library "$build_dir/game/libengine.so" --ndk "$ndk" --abi "$abi"
