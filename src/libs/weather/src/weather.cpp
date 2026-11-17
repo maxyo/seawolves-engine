@@ -4,7 +4,6 @@
 #include "lightning.h"
 #include "rain.h"
 #include "sun_glow.h"
-#include "water_flare.h"
 #include "math_inlines.h"
 #include "storm/render/effects.hpp"
 
@@ -20,8 +19,6 @@ CREATE_CLASS(SUNGLOW)
 CREATE_CLASS(LIGHTNING)
 
 CREATE_CLASS(SKY)
-
-CREATE_CLASS(WATERFLARE)
 
 CREATE_CLASS(Astronomy)
 
@@ -69,10 +66,6 @@ void WEATHER::SetBeginData()
     fMoonBegTime = 23.5f;
     fMoonEndAngle = -PId2;
     fMoonEndTime = 4.5f;
-}
-
-void WEATHER::Move()
-{
 }
 
 void WEATHER::Realize(uint32_t Delta_Time)
@@ -212,16 +205,6 @@ void WEATHER::UpdateSunMoonPos()
         RotateAroundY(vMoon.x, vMoon.z, cosf(fFloats[whf_sun_azimuth_angle]), sinf(fFloats[whf_sun_azimuth_angle]));
         vVectors[whv_sun_pos] = vMoon;
     }
-}
-
-bool WEATHER::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool WEATHER::LoadState(ENTITY_STATE *state)
-{
-    return true;
 }
 
 void WEATHER::CleanUP()

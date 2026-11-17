@@ -7,7 +7,7 @@
 
 //--------------------------------------------------------------------
 TSinkSplash::TSinkSplash()
-    : ps(nullptr), enabled(false), sea(nullptr), time(0), distortDivider(0), center(), dir(), growK(0)
+    : enabled(false), sea(nullptr), time(0), distortDivider(0), center(), dir(), growK(0)
 {
 }
 

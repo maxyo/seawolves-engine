@@ -392,36 +392,6 @@ int32_t XSERVICE::GetImageNum(const char *sImageListName, const char *sImageName
 //    COMBINE STRINGS CLASS
 //============================================================================
 
-ComboString::ComboString()
-{
-}
-
-ComboString::~ComboString()
-{
-}
-
-void ComboString::AddToCombo(char *fontName, const XYPOINT &posStrStart, char *str)
-{
-}
-
-void ComboString::AddToCombo(XYRECT posPic, char *picTexName, FXYRECT picUV)
-{
-}
-
-void ComboString::PrintComboString(int comboStrID)
-{
-}
-
-int ComboString::GetComboString(int align, int x, int y, int needWidth, int needHeight, int *allHeight, char *formatStr,
-                                char *fontlist)
-{
-    return -1;
-}
-
-void ComboString::ComboStringRelease(int comboStrID)
-{
-}
-
 // Resolve atlas metadata without creating or retaining a renderer texture.
 bool XSERVICE::ResolveImageSource(const char *group, const char *image, std::string &path, FXYRECT &uv, int32_t &width,
                                   int32_t &height)

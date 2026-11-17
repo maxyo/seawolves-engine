@@ -257,14 +257,6 @@ bool WorldMap::Init()
     windUI->SetAttributes(AttributesPointer);
     AddLObject(AddObject(windUI, 1001), 10100);
 
-    // Compass
-    // ro = CreateModel(new WdmWindRose(), "WindRose");
-    // AddLObject(ro, 10099);
-    // The calendar
-    // WdmCounter * cnt = new WdmCounter();
-    // if(!cnt->Init()) core.Trace("Counter not created");
-
-    // AddLObject(cnt, 10099);
     // Icon
     AddLObject(AddObject(new WdmIcon(), 1000), 10099);
 
@@ -1155,12 +1147,6 @@ bool WorldMap::CreateWarringShips(const char *modelName1, const char *modelName2
     ship1->SetSaveAttribute(save1);
     ship2->SetSaveAttribute(save2);
     return true;
-}
-
-// Find coordinates and radius by destination
-bool WorldMap::FindIslandPosition(const char *name, float &x, float &z, float &r)
-{
-    return false;
 }
 
 void WorldMap::ResetScriptInterfaces() const

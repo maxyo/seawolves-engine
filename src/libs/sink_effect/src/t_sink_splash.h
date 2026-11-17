@@ -4,7 +4,7 @@
 #include "v_sound_service.h"
 #include "renderer.h"
 #include "sea_base.h"
-#include "seps.h"
+#include "v_file_service.h"
 
 ///////////////////////////////////////////////////////////////////
 // CLASS DEFINITION
@@ -33,7 +33,6 @@ class TSinkSplash
   private:
     float HeightF(uint32_t time, float _r, float _k);
 
-    SEPS_PS *ps;
     bool enabled;
     SEA_BASE *sea;
     uint32_t time;

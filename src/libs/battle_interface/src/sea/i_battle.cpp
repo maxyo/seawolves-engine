@@ -20,14 +20,11 @@
 
 #include "../active_perk_shower.h"
 #include "../log_and_action.h"
-#include "../item_entity/item_entity.h"
 #include "../world_map_interface/interface.h"
 #include "../spyglass/spyglass.h"
 #include "../timer/timer.h"
 
 #include "shared/battle_interface/msg_control.h"
-
-#include "../interface_manager/interface_manager.h"
 
 #include "ship_info_images.h"
 #include "string_compare.hpp"
@@ -48,11 +45,8 @@ CREATE_CLASS(ActivePerkShower)
 
 CREATE_CLASS(BITimer)
 
-CREATE_CLASS(ItemEntity)
-
 CREATE_CLASS(WM_INTERFACE)
 
-CREATE_CLASS(BI_InterfaceManager)
 
 SHIP_DESCRIBE_LIST g_ShipList;
 ISLAND_DESCRIBER g_IslandDescr;
@@ -423,27 +417,6 @@ void BATTLE_INTERFACE::CheckSeaState()
     core.Event(BI_EVENT_SET_SEA_STATE, "lllllll", bSailTo, bLandTroops, bMap, bAttack, bDefend, bReload,
                nReloadTargetIndex);
     m_bShowBattleBorder = !bMap;
-}
-
-void BATTLE_INTERFACE::EnableMessageIcons(VDATA *pvdat)
-{
-    /*if(!m_pMessageIcons) return;
-    m_pMessageIcons->SetShowMsg(false);
-    if(!pvdat) return;
-    m_pMessageIcons->SetShowMsg(true);
-
-    ATTRIBUTES * pAttr[4];
-    int32_t pLeft[4];
-
-    int nCommandos = 0;
-
-    for(int i=0; i<4; i++)
-    {
-      pAttr[i] = null;
-      if(i<nCommandos)    pAttr[i] = pvdat->GetAClass(i);
-    }
-
-    m_pMessageIcons->StartData( pAttr, pLeft );*/
 }
 
 #ifdef __ANDROID__
