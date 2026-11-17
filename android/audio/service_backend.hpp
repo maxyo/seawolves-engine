@@ -8,11 +8,14 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 namespace storm_audio {
+// play() of a file that does not exist; it never appears during a session.
+struct MissingFile : std::runtime_error { using std::runtime_error::runtime_error; };
 struct Vec3 { float x=0, y=0, z=0; };
 struct Play {
     bool stream=false, spatial=false, loop=false, paused=false;

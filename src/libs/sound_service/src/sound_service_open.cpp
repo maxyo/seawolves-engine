@@ -56,6 +56,7 @@ TSD_ID SoundService::SoundPlay(const char* name,eSoundType type,eVolumeType cate
         }
     }
     file=fio->ConvertPathResource((std::string("resource\\sounds\\")+file).c_str());
+    if(missingFiles.count(file))return 0;
     storm_audio::Play p;
     p.stream=type==MP3_STEREO;p.spatial=type==PCM_3D; // MP3_3D retains its legacy non-spatial behavior.
     p.category=category;p.loop=looped;p.paused=simpleCache;p.volume=volume;p.pitch=fPitch;p.priority=priority;p.fade=std::max(0,time)*.001f;
@@ -64,6 +65,11 @@ TSD_ID SoundService::SoundPlay(const char* name,eSoundType type,eVolumeType cate
     p.minDistance=minDistance>0 ? minDistance:1.f;p.maxDistance=maxDistance>p.minDistance ? maxDistance:10000.f;
     if(pos)p.position={pos->x,pos->y,pos->z};
     try {return TSD_ID(audio->play(file,p));}
+    catch(const storm_audio::MissingFile& e) {
+        missingFiles.insert(file);
+        core.Trace("Audio load/play failed '%s': %s (requested as '%s'; reported once, not retried)",file.c_str(),e.what(),name);
+        return 0;
+    }
     catch(const std::exception& e) {core.Trace("Audio load/play failed '%s': %s",file.c_str(),e.what());return 0;}
 }
 void SoundService::SoundSet3DParam(TSD_ID id,eSoundMessage message,const void* value) {if(audio)audio->spatial(uint32_t(int32_t(id)),message,value);}

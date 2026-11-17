@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include "storm_glm.h"
 #include "renderer.h"
@@ -22,6 +23,8 @@ class SoundService : public VSoundService
     bool initialized;
 
     std::unique_ptr<storm_audio::Mixer> audio;
+    // Files reported missing once; later plays of them are not retried.
+    std::unordered_set<std::string> missingFiles;
   public:
     void SetDucking(float gain) override;
     uint64_t TrimCaches() override;

@@ -152,7 +152,9 @@ std::shared_ptr<Mixer::Resource> Mixer::load(const std::string& path,bool stream
     // Header-only probe: fails here, synchronously, for missing or unsupported files.
     ma_decoder decoder{};
     auto config=ma_decoder_config_init(ma_format_f32,0,48000);
-    check(ma_decoder_init_file(path.c_str(),&config,&decoder));
+    const ma_result opened=ma_decoder_init_file(path.c_str(),&config,&decoder);
+    if(opened==MA_DOES_NOT_EXIST) throw MissingFile(ma_result_description(opened));
+    check(opened);
     r->rate=decoder.outputSampleRate;r->channels=decoder.outputChannels;
     auto result=ma_decoder_get_length_in_pcm_frames(&decoder,&r->frames);
     ma_decoder_uninit(&decoder);

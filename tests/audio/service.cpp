@@ -148,7 +148,7 @@ int main(int argc,char**argv) try {
         require(!bg.playing(early),"stop while decoding");
         while(bg.pendingDecodes()) {std::this_thread::sleep_for(std::chrono::milliseconds(1));bg.update();}
         require(bg.pendingDecodes()==0 && bg.takeFailures().empty(),"abandoned decode is collected");
-        bool missing=false;try{bg.play(dir+"/missing.wav",fx);}catch(const std::runtime_error&){missing=true;}
+        bool missing=false;try{bg.play(dir+"/missing.wav",fx);}catch(const storm_audio::MissingFile&){missing=true;}
         require(missing,"missing file still fails synchronously");
         bg.duck(.5f);double ducked=render(bg,2400);bg.duck(1);double full=render(bg,2400);
         require(ducked>0 && ducked<full*.5,"ducking attenuates the master group");
