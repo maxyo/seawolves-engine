@@ -143,10 +143,11 @@ inline bool isPatchTargetPath(const fs::path &relative)
     const auto extension = android::resourceKey(relative.extension());
     if (extension != ".c" && extension != ".h")
         return false;
-    // Exact reviewed root scripts for loading completion and pirate frequency;
-    // keep unrelated root scripts and the rest of Encounters closed.
+    // Exact reviewed scripts: loading completion, pirate frequency and the PGG travel
+    // target (scripts/PsHero.c); keep unrelated root scripts, the rest of Encounters and
+    // the rest of program/scripts/ closed.
     if (key == "program/dialog.c" || key == "program/encounters/encounters_map.c" ||
-        key == "program/reload.c" || key == "program/seadogs.c")
+        key == "program/reload.c" || key == "program/seadogs.c" || key == "program/scripts/pshero.c")
         return true;
     // Dialog texts are per language: program/dialogs/<language>/..., each
     // language file is a target of its own.

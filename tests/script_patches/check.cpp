@@ -145,6 +145,10 @@ void checkWhitelist()
     CHECK(isPatchTargetPath("PROGRAM/seadogs.c"));
     CHECK(isPatchTargetPath("program/reload.c"));
     CHECK(!storm::android::isUiOverlayPath("PROGRAM/seadogs.c"));
+    // The PGG script only, not the rest of program/scripts/.
+    CHECK(isPatchTargetPath("PROGRAM/scripts/PsHero.c"));
+    CHECK(!isPatchTargetPath("PROGRAM/scripts/food.c"));
+    CHECK(!isPatchTargetPath("PROGRAM/interface/../scripts/PsHero.c"));
     for (const char *path : {"program/controls/init.c", "program/dialogs/x.c",
                              "program/encounters/encounters.c", "program/encounters/encounters_init.c",
                              "program/encounters/encounters_map.h", "program/encounters/encounters_map.c/other.c",
