@@ -226,7 +226,9 @@ class HeroScreen final : public Screen
         // Header: tabs, the officer switch, the sections.
         const int free_self = FieldAmount(bindings, subject, "freeself");
         const int free_ship = FieldAmount(bindings, subject, "freeship");
-        const int free_skill = Amount(bindings, admitted.Label("FREE_SKILL"), "FREE_SKILL");
+        // The game writes no number when no points are free (character_all.c: SetFormatedText "").
+        const auto free_text = admitted.Label("FREE_SKILL");
+        const int free_skill = free_text.empty() ? 0 : Amount(bindings, free_text, "FREE_SKILL");
         Json tabs = Json::array();
         tabs.push_back(Json{{"id", "skills"}, {"label", bindings.Text("hero.tab_skills")}, {"selected", tab_ == Tab::Skills},
                             {"badge", free_skill > 0 ? Json(free_skill) : Json("")}});
