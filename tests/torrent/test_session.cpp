@@ -145,6 +145,18 @@ int main(int argc,char** argv) {
         std::string message;try{full.start({0});}catch(std::exception const& e){message=e.what();}
         require(message=="Not enough free storage for selected payload","Insufficient storage must fail before download");
         }
+        {
+        // A game folder: tens of thousands of small files share pieces. The reserve is the
+        // unselected bytes in shared pieces, not two pieces per file (60000 x 2 x 16 MiB = 1.9 TB).
+        lt::file_storage many;for(int i=0;i<60000;++i)many.add_file("game/RESOURCE/f"+std::to_string(i),1024);
+        many.add_file("game/readme.txt",3*1024*1024);
+        lt::create_torrent folder(many,16*1024*1024,lt::create_torrent::v1_only);
+        for(lt::piece_index_t i(0);i<lt::piece_index_t(folder.num_pieces());++i)folder.set_hash(i,lt::sha1_hash("01234567890123456789"));
+        write(root/"many.torrent",folder.generate());
+        storm::torrent::Session game((root/"many.torrent").string(),(root/"many").string(),true);
+        std::vector<int> all(60000);for(int i=0;i<60000;++i)all[i]=i;
+        game.start(all); // only the readme is unselected: about 3 MiB reserved
+        }
         std::cout<<"PASS metadata v2, traversal, exclusive staging, zero-payload magnet, setup-only then superset, explicit unknown file, local transfer, bytes, checkpoint, resume repair, checkpoint-free recovery, symlink rejection, invalid magnets, stall time, free-space check\n";
         fs::remove_all(root);return 0;
     }catch(std::exception const& e){std::cerr<<e.what()<<'\n';return 1;}

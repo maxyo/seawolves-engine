@@ -328,6 +328,31 @@ lt::settings_pack settings(bool local=false) {
 }
 }
 std::string inspect_file(std::string const& path) { return manifest(*load(path)).json; }
+// Bytes of unselected files inside pieces that selected files also touch: libtorrent keeps
+// them in its part file. Only the first and last piece of an unselected file can be shared
+// (its inner pieces hold nothing else), so a game of tens of thousands of small files does
+// not reserve two whole pieces per file.
+static std::int64_t part_file_bytes(lt::file_storage const& files,std::vector<lt::download_priority_t> const& priorities) {
+    std::vector<bool> touched(static_cast<std::size_t>(files.num_pieces()),false);
+    for(auto i:files.file_range()) {
+        auto size=files.file_size(i);
+        if(priorities[static_cast<int>(i)]==lt::dont_download || size==0) continue;
+        auto first=files.map_file(i,0,0).piece, last=files.map_file(i,size-1,0).piece;
+        for(auto p=first;p<=last;++p) touched[static_cast<std::size_t>(static_cast<int>(p))]=true;
+    }
+    std::int64_t const piece=files.piece_length();
+    std::int64_t bytes=0;
+    for(auto i:files.file_range()) {
+        auto size=files.file_size(i);
+        if(priorities[static_cast<int>(i)]!=lt::dont_download || size==0) continue;
+        auto offset=files.file_offset(i);
+        int first=static_cast<int>(offset/piece), last=static_cast<int>((offset+size-1)/piece);
+        auto overlap=[&](int p){ return std::min(offset+size,(p+1)*piece)-std::max(offset,p*piece); };
+        if(touched[static_cast<std::size_t>(first)]) bytes+=overlap(first);
+        if(last!=first && touched[static_cast<std::size_t>(last)]) bytes+=overlap(last);
+    }
+    return bytes;
+}
 std::string storage_kind(lt::error_code const& ec) {
     if(ec==boost::system::errc::no_space_on_device) return "storage-full";
     return ec.category()==boost::system::generic_category()||ec.category()==boost::system::system_category()?"storage":"transfer";
@@ -454,9 +479,10 @@ void Session::start(std::vector<int> const& selected) {
         if(::stat(path.c_str(),&statbuf)==0 && S_ISREG(statbuf.st_mode))
             existing+=std::min<std::int64_t>(std::int64_t(statbuf.st_blocks)*512,ti->files().file_size(i));
     }
-    // Includes boundary pieces in the part file and a filesystem reserve. Extraction
-    // space is checked separately by the archive importer before extraction.
-    required=std::max<std::int64_t>(0,required-existing)+std::int64_t(selected.size())*2*ti->piece_length()+64*1024*1024;
+    // Plus the bytes of unselected files that share a piece with a selected one (libtorrent's
+    // part file) and a filesystem reserve. Extraction space is checked separately by the
+    // archive importer before extraction.
+    required=std::max<std::int64_t>(0,required-existing)+part_file_bytes(ti->files(),priorities)+64*1024*1024;
     if(fs::space(impl->staging).available<static_cast<std::uintmax_t>(required)) throw std::runtime_error("Not enough free storage for selected payload");
     impl->alerts();
     impl->handle.clear_error(); // a retry after freeing space or reconnecting starts clean
