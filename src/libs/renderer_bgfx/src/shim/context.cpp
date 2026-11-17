@@ -217,6 +217,27 @@ void SetRenderBackend(Backend backend, const std::filesystem::path &state_direct
     shim::Context::instance().set_backend(backend, state_directory);
 }
 
+void SetMissingTextureLook(MissingTextureLook look)
+{
+    shim::Context::instance().set_missing_texture_look(look);
+}
+
+MissingTextureLook CurrentMissingTextureLook()
+{
+    return shim::Context::instance().missing_texture_look();
+}
+
+std::array<uint32_t, kMissingTextureSize * kMissingTextureSize> MissingTextureTexels(MissingTextureLook look)
+{
+    std::array<uint32_t, kMissingTextureSize * kMissingTextureSize> texels{};
+    for (uint32_t y = 0; y < kMissingTextureSize; ++y)
+        for (uint32_t x = 0; x < kMissingTextureSize; ++x)
+            texels[y * kMissingTextureSize + x] = look == MissingTextureLook::Neutral ? 0xFF808080u
+                                                  : ((x / 4 + y / 4) & 1) == 0     ? 0xFFFF00FFu
+                                                                                   : 0xFF000000u;
+    return texels;
+}
+
 void FailRenderBackendSelfTest(bool fail)
 {
     shim::Context::instance().fail_self_test(fail);
@@ -301,6 +322,29 @@ void Context::set_backend(render::Backend backend, std::filesystem::path state_d
         logf("ERROR: render_backend is set while the device exists; it applies to the next device");
     backend_request_ = backend;
     backend_state_directory_ = std::move(state_directory);
+}
+
+void Context::set_missing_texture_look(render::MissingTextureLook look)
+{
+    if (look == missing_look_)
+        return;
+    missing_look_ = look;
+    if (bgfx::isValid(missing_texture_))
+        bgfx::destroy(missing_texture_);
+    missing_texture_ = BGFX_INVALID_HANDLE;
+}
+
+bgfx::TextureHandle Context::missing_texture()
+{
+    if (!bgfx::isValid(missing_texture_))
+    {
+        // D3DCOLOR 0xAARRGGBB in memory is B, G, R, A: bgfx's BGRA8.
+        const auto texels = render::MissingTextureTexels(missing_look_);
+        missing_texture_ = bgfx::createTexture2D(render::kMissingTextureSize, render::kMissingTextureSize, false, 1,
+                                                 bgfx::TextureFormat::BGRA8, BGFX_SAMPLER_NONE,
+                                                 bgfx::copy(texels.data(), sizeof(texels)));
+    }
+    return missing_texture_;
 }
 
 void Context::set_async_pipelines(bool enabled)
@@ -666,6 +710,7 @@ bool Context::start_backend(bgfx::RendererType::Enum type, const VulkanDevice *v
 void Context::stop_backend()
 {
     bgfx::shutdown(); // joins the render thread; every bgfx handle is gone with it
+    missing_texture_ = BGFX_INVALID_HANDLE;
     bgfx::setRenderFrameDone(nullptr);
     if (vulkan_backend_)
         bgfx::setVkUnboundTextures(BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE);

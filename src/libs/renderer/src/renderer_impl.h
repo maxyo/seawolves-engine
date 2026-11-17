@@ -163,6 +163,7 @@ class Renderer : public VRenderer
     // Renderer: Textures Section
     int32_t TextureCreate(const char *fname) override;
     int32_t TextureCreate(UINT width, UINT height, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) override;
+    int32_t TextureMissing() override;
     int32_t CubeTextureCreate(UINT edgeLength, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) override;
     int32_t VolumeTextureCreate(UINT width, UINT height, UINT depth, UINT levels, uint32_t usage, D3DFORMAT format,
                                 D3DPOOL pool) override;
@@ -515,6 +516,7 @@ private:
         bool opaque = false; // X8R8G8B8
     };
     std::unordered_map<int32_t, KeptPixels> keptPixels_; // keepTexturePixels, by texture ID
+    int32_t missingTexture_ = -1; // TextureMissing's stand-in; the renderer keeps one reference of its own
     // The buffer handle table (LiveBuffer). -1 is "no buffer"; the table is never indexed with it.
     bool LiveBuffer(int32_t id, bool index, const char *call) const;
     INDEX_BUFFER IndexBuffers[MAX_BUFFERS]{};

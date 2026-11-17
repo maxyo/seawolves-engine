@@ -88,6 +88,7 @@ struct TexStore
     uint64_t target_frame = 0;
     bool target_recurring = false;
     bool needs_clear = false; // a render target whose GPU memory was never written (see Device::clear_if_new)
+    bool gpu_failed = false;  // bgfx refused its GPU texture (logged): sampled, it draws the missing-texture stand-in
     bool depth_stencil = false;
     bool system_memory = false; // never uploaded (offscreen plain surfaces)
     bool backbuffer = false;    // the game's offscreen backbuffer colour/depth

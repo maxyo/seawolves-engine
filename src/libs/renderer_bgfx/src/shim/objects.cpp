@@ -178,9 +178,10 @@ void TexStore::create_gpu()
                                        static_cast<uint16_t>(depth), mips, gpu_format, flags);
         break;
     }
-    if (!bgfx::isValid(handle))
-        logf("ERROR: texture creation failed: %ux%ux%u levels=%u d3dformat=%u", width, height, depth, levels,
-             static_cast<uint32_t>(format));
+    gpu_failed = !bgfx::isValid(handle);
+    if (gpu_failed)
+        logf("ERROR: texture creation failed: %ux%ux%u levels=%u d3dformat=%u; drawn with the missing-texture stand-in",
+             width, height, depth, levels, static_cast<uint32_t>(format));
     else if (render_target)
         needs_clear = true;
 }
@@ -461,9 +462,10 @@ void TexStore::create_sampled()
                  : gpu_compressed                 ? bc_format(format)
                                                   : bgfx::TextureFormat::RGBA8;
     handle = bgfx::createTexture(counted_texture_upload(make_dds(*this, gpu_format)));
-    if (!bgfx::isValid(handle))
-        logf("ERROR: texture creation failed: %ux%u levels=%u d3dformat=%u", width, height, levels,
-             static_cast<uint32_t>(format));
+    gpu_failed = !bgfx::isValid(handle);
+    if (gpu_failed)
+        logf("ERROR: texture creation failed: %ux%u levels=%u d3dformat=%u; drawn with the missing-texture stand-in",
+             width, height, levels, static_cast<uint32_t>(format));
     // a decoded DXT texture cannot take partial DXT updates: re-locking recreates it
     transcoded = tier == Tier::Rgba && format_info(format).block_bytes != 0;
     for (Sub &s : subs)

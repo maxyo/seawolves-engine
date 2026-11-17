@@ -255,6 +255,11 @@ GEOS::ID GEOM_SERVICE_R::CreateTexture(const char *fname, const char *requester)
     return INVALID_TEXTURE_ID;
 }
 
+GEOS::ID GEOM_SERVICE_R::MissingTexture()
+{
+    return RenderService ? RenderService->TextureMissing() : INVALID_TEXTURE_ID;
+}
+
 void GEOM_SERVICE_R::SetCausticMode(bool bSet)
 {
     bCaustic = bSet;

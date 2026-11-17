@@ -237,6 +237,27 @@ inline void publishGameMessage(const std::string &text, const std::string &targe
 // the settings screen stored new renderer preferences); the renderer re-applies the graphics
 // effects from the preferences at its next frame (renderer.cpp).
 inline std::atomic<bool> graphicsSettingsChanged{false};
+// A debuggable build of the app (ApplicationInfo.FLAG_DEBUGGABLE: the debug APK): developer looks and notices.
+// False when there is no activity to ask.
+inline bool debuggable() {
+    auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
+    auto activity=static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !activity) return false;
+    bool result=false;
+    auto type=env->GetObjectClass(activity);
+    auto method=type ? env->GetMethodID(type,"getApplicationInfo","()Landroid/content/pm/ApplicationInfo;") : nullptr;
+    auto info=method ? env->CallObjectMethod(activity,method) : nullptr;
+    auto info_type=info ? env->GetObjectClass(info) : nullptr;
+    auto flags=info_type ? env->GetFieldID(info_type,"flags","I") : nullptr;
+    constexpr jint kFlagDebuggable=2; // ApplicationInfo.FLAG_DEBUGGABLE
+    if (flags) result=(env->GetIntField(info,flags)&kFlagDebuggable)!=0;
+    if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); result=false; }
+    if (info_type) env->DeleteLocalRef(info_type);
+    if (info) env->DeleteLocalRef(info);
+    if (type) env->DeleteLocalRef(type);
+    env->DeleteLocalRef(activity);
+    return result;
+}
 inline int graphicsSetting(const char *key, int fallback) {
     auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity=static_cast<jobject>(SDL_AndroidGetActivity());

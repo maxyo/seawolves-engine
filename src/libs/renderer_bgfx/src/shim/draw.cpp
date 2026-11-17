@@ -1398,7 +1398,17 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             effects::ObserveSceneTexture(shared_store_of(s.textures[stage]));
         store->sync();
         if (!bgfx::isValid(store->handle))
+        {
+            // No GPU copy will come (bgfx refused it, logged): the stand-in, not the unbound-texture fallback's black
+            // (storm/render/missing_texture.hpp). One still on its way draws the fallback until it arrives.
+            if (store->gpu_failed && store->kind == TexKind::Tex2D)
+            {
+                bgfx::setTexture(static_cast<uint8_t>(stage), Context::instance().sampler(stage),
+                                 Context::instance().missing_texture(), sampler_flags(stage, *store));
+                ++perf().texture_binds;
+            }
             continue;
+        }
         if (store->render_target && store->levels > 1 && (std::max(store->width, store->height) >> store->levels) != 0)
             // bgfx allocates the full chain for render targets; the levels below the D3D ones are never written.
             trap("sampling a mipped render target with a partial mip chain (lower levels undefined)");

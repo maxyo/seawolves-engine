@@ -5,6 +5,7 @@
 #include "frame_overlap.hpp"
 #include "shim.hpp"
 #include "storm/render/frame_owner.hpp"
+#include "storm/render/missing_texture.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -151,6 +152,11 @@ class Context final : public render::FrameOwner
     // black and opaque white exist there (patches/bgfx-vk-builtin-border-colors.patch).
     bool border_colors() const { return border_colors_; }
     bgfx::UniformHandle sampler(uint32_t unit) const { return samplers_[unit]; }
+    // The stand-in of a texture whose GPU copy could not be made (storm/render/missing_texture.hpp), made at its
+    // first use; gone with the device.
+    bgfx::TextureHandle missing_texture();
+    void set_missing_texture_look(render::MissingTextureLook look);
+    render::MissingTextureLook missing_texture_look() const { return missing_look_; }
     void draw_fullscreen(uint16_t view, bgfx::TextureHandle texture, uint32_t sampler_flags, uint64_t state,
                          float u0 = 0, float v0 = 0, float u1 = 1, float v1 = 1);
 
@@ -280,6 +286,8 @@ class Context final : public render::FrameOwner
     std::vector<Client> clients_;
     bgfx::ProgramHandle blit_program_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle samplers_[kSamplerUnits] = {};
+    bgfx::TextureHandle missing_texture_ = BGFX_INVALID_HANDLE;
+    render::MissingTextureLook missing_look_ = render::MissingTextureLook::Loud;
     bgfx::VertexLayout blit_layout_;
     bgfx::VertexBufferHandle blit_vertices_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle blit_uv_ = BGFX_INVALID_HANDLE;

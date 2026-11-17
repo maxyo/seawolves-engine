@@ -93,7 +93,13 @@ bgfx is built with two backends, OpenGL ES 3.0 and Vulkan; a device runs one, ch
   in the Vulkan start: logged at error and recorded (`vulkan-crashed.txt`); a failed `bgfx::init` or self-test is
   recorded the same way with its reason. That device and driver then run OpenGL ES, with an error line, until the
   driver changes or «Очистить кэш». Developer key `render_backend_self_test = fail` makes the self-test fail
-  (tests the fallback).
+  (tests the fallback). A leftover marker of a process the system ended for another reason (killed for memory,
+  stopped; the app's `previous-exit.txt` in the cache root) is logged and not recorded.
+- A texture that failed (a model's base texture the game does not ship or that cannot be read, a texture bgfx refused)
+  draws a stand-in, not the unbound-texture fallback's black (`storm/render/missing_texture.hpp`): flat mid-grey in
+  release builds, a magenta and black checker in debuggable Android builds and on the host; developer key
+  `missing_texture_look = neutral | loud` overrides it. The failure itself stays an ERROR (a WARNING for a known
+  game data defect).
 - A Vulkan that fails `bgfx::init` or the self-test makes the device start again on OpenGL ES: the one deliberate
   fallback of the renderer, said as an error with the reason. Every start logs one line, which the
   application's diagnostics export keeps and the graphics settings show (backend and reason):

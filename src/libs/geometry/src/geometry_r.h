@@ -50,6 +50,7 @@ class GEOM_SERVICE_R final : public GEOM_SERVICE
 
     GEOS::ID CreateTexture(const char *fname, const char *requester) override;
     std::string TextureFile(const char *fname) const override;
+    GEOS::ID MissingTexture() override;
     void SetMaterial(const GEOS::MATERIAL &mt);
     void ReleaseTexture(GEOS::ID tex);
 

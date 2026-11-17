@@ -34,6 +34,7 @@
 #include "storm/fx/settings.hpp"
 #include "storm/render/frame_rate.hpp"
 #include "storm/render/log.hpp"
+#include "storm/render/missing_texture.hpp"
 #include "storm/render/perf_stats.hpp"
 #include "storm/render/program_cache.hpp"
 #include "storm/render/texture_cache.hpp"
@@ -872,6 +873,22 @@ bool Renderer::Init()
         renderBackend = std::clamp(storm::android::graphicsSetting("render_backend", renderBackend), 0, 2);
 #endif
         storm::render::SetRenderBackend(static_cast<storm::render::Backend>(renderBackend), fs::GetCachePath() / "RenderBackend");
+        // What a model texture that cannot be created draws with (storm/render/missing_texture.hpp): developer key
+        // missing_texture_look = neutral (release's flat grey) or loud (the checker); by default loud in debuggable
+        // Android builds and on the host, neutral in release builds.
+        ini->ReadString(nullptr, "missing_texture_look", str, sizeof(str), "");
+#ifdef __ANDROID__
+        bool loudMissing = storm::android::debuggable();
+#else
+        bool loudMissing = true;
+#endif
+        if (std::string_view(str) == "neutral" || std::string_view(str) == "loud")
+            loudMissing = std::string_view(str) == "loud";
+        else if (str[0])
+            spdlog::error("engine.ini missing_texture_look = '{}' is not neutral or loud; ignored", str);
+        storm::render::SetMissingTextureLook(loudMissing ? storm::render::MissingTextureLook::Loud
+                                                         : storm::render::MissingTextureLook::Neutral);
+        spdlog::info("missing textures draw as {}", loudMissing ? "a magenta checker (loud)" : "flat grey (neutral)");
         // Developer key render_backend_self_test = fail (frame_owner.hpp FailRenderBackendSelfTest): tests the
         // OpenGL ES fallback of a Vulkan start.
         ini->ReadString(nullptr, "render_backend_self_test", str, sizeof(str), "");
@@ -1839,6 +1856,32 @@ int32_t Renderer::TextureCreate(UINT width, UINT height, UINT levels, uint32_t u
         return -1;
     }
     return AddCodeTexture(texture, width * height * 4, false);
+}
+
+int32_t Renderer::TextureMissing()
+{
+    if (missingTexture_ < 0)
+    {
+        const int32_t id = TextureCreate(storm::render::kMissingTextureSize, storm::render::kMissingTextureSize, 1, 0,
+                                         D3DFMT_A8R8G8B8, D3DPOOL_MANAGED);
+        if (id < 0)
+            return -1; // logged by TextureCreate
+        D3DLOCKED_RECT locked{};
+        if (!TextureLock(id, 0, locked, 0))
+        {
+            TextureRelease(id);
+            return -1;
+        }
+        const auto texels = storm::render::MissingTextureTexels(storm::render::CurrentMissingTextureLook());
+        for (uint32_t y = 0; y < storm::render::kMissingTextureSize; ++y)
+            std::memcpy(static_cast<uint8_t *>(locked.pBits) + y * locked.Pitch,
+                        texels.data() + y * storm::render::kMissingTextureSize,
+                        storm::render::kMissingTextureSize * sizeof(uint32_t));
+        TextureUnlock(id, 0);
+        missingTexture_ = id;
+    }
+    ++Textures[missingTexture_].ref;
+    return missingTexture_;
 }
 
 int32_t Renderer::CubeTextureCreate(UINT edgeLength, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool)

@@ -335,6 +335,9 @@ class GEOM_SERVICE
     virtual GEOS::ID CreateTexture(const char *fname, const char *requester) = 0;
     // The file CreateTexture loads for `fname` (relative to resource\textures, without the .tx).
     virtual std::string TextureFile(const char *fname) const = 0;
+    // The stand-in a model's base texture draws with when CreateTexture failed (storm/render/missing_texture.hpp),
+    // with a reference for the caller (ReleaseTexture); -1 when there is none.
+    virtual GEOS::ID MissingTexture() = 0;
     virtual void ReleaseTexture(GEOS::ID tex) = 0;
     virtual void SetMaterial(const GEOS::MATERIAL &mt) = 0;
 

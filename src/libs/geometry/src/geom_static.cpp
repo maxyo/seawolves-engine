@@ -350,6 +350,14 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
             if (rmat[m].texture_type[tl] != TEXTURE_NONE && rmat[m].texture[tl] >= 0 &&
                 rmat[m].texture[tl] < rhead.ntextures)
                 referenced[rmat[m].texture[tl]] = true;
+    // A base texture on the first stage (the surface's colour, GEOM_SERVICE_R::SetMaterial) that cannot be created
+    // draws the missing-texture stand-in instead of the unbound-texture fallback's black hole. The other stages keep
+    // -1: a detail or light map stage that samples nothing adds nothing or darkens as before, and the lightmap
+    // (shadow.tga) is the location's to report.
+    std::vector<bool> base(rhead.ntextures, false);
+    for (int32_t m = 0; m < rhead.nmaterials; m++)
+        if (rmat[m].texture_type[0] == TEXTURE_BASE && rmat[m].texture[0] >= 0 && rmat[m].texture[0] < rhead.ntextures)
+            base[rmat[m].texture[0]] = true;
     for (int32_t t = 0; t < rhead.ntextures; t++)
     {
         if (!referenced[t] && globname[tname[t]] == '\0')
@@ -358,6 +366,8 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
             continue;
         }
         tlookup[t] = srv.CreateTexture(&globname[tname[t]], fname);
+        if (tlookup[t] < 0 && base[t] && globname[tname[t]] != '\0' && !storm::iEquals(&globname[tname[t]], "shadow.tga"))
+            tlookup[t] = srv.MissingTexture(); // released with the others (~GEOM)
         if (storm::iEquals(&globname[tname[t]], "shadow.tga"))
         {
             lightmap_file_ = "resource\\textures\\" + srv.TextureFile(&globname[tname[t]]) + ".tx";

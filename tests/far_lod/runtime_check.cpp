@@ -150,6 +150,7 @@ class Service final : public GEOM_SERVICE
     void free(void *p) override { std::free(p); }
     GEOS::ID CreateTexture(const char *, const char *) override { return -1; }
     std::string TextureFile(const char *) const override { return {}; }
+    GEOS::ID MissingTexture() override { return -1; }
     void ReleaseTexture(GEOS::ID) override {}
     void SetMaterial(const GEOS::MATERIAL &) override {}
     GEOS::ID CreateVertexBuffer(int32_t, int32_t size) override

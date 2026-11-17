@@ -233,6 +233,10 @@ class VRenderer : public SERVICE, public storm::render::TextureColorReader
     // Textures made by code share the id table with file textures; TextureRelease frees them.
     // Returns -1 (logged) when the device rejects the texture.
     virtual int32_t TextureCreate(UINT width, UINT height, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) = 0;
+    // The stand-in of a texture that could not be created (storm/render/missing_texture.hpp: flat grey in release
+    // builds, a loud checker in debug ones), one shared id with a reference for the caller (TextureRelease). The
+    // caller logs the failure. -1 (logged) when the device rejects it.
+    virtual int32_t TextureMissing() = 0;
     virtual int32_t CubeTextureCreate(UINT edgeLength, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) = 0;
     virtual int32_t VolumeTextureCreate(UINT width, UINT height, UINT depth, UINT levels, uint32_t usage,
                                         D3DFORMAT format, D3DPOOL pool) = 0;

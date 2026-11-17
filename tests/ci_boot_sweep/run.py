@@ -73,8 +73,8 @@ def check_not_failures():
                            'done: 3 maps made, 0 had theirs, 0 without a map, 0 failed; idle until a texture is loaded'),
             ('system.log', "[x] [system] [warning] [storm-bgfx] WARNING: known game data defect: texture 'phong256_bw.gif' "
                            "requested by resource\\models\\ships\\Sloop1\\Sloop1_mast2.gm is not shipped by the game "
-                           "(named by RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm); drawn with the engine's unbound-texture "
-                           "fallback (black)")):
+                           "(named by RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm); a base texture draws the missing-texture "
+                           "stand-in")):
         assert sweep.log_reasons([(filename, line)]) == [], line
 
 

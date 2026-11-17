@@ -170,12 +170,12 @@ void SampleSceneResources(bool scene_frame, uint32_t frame, bool completed = tru
         // Drawing its fallback (or a previous upload) while its full chain is still on the way: a quality product.
         if (drawable && working) products.add(SceneProduct::Transcode);
         // Failed when no work is left: no GPU copy, or a finished transcode without its full mip chain. It will
-        // never be complete, so it never holds the reveal: drawn with what it has (or the unbound-texture fallback).
+        // never be complete, so it never holds the reveal: drawn with what it has (or the missing-texture stand-in).
         if (!working && (!drawable || (store->transcoded && !store->full_chain)) &&
             load.fallback_textures.insert(store->serial).second)
             shim::logf("ERROR: location readiness: %s: texture %s failed (%s); drawn with %s, the reveal does not wait for it",
                        load.scene.c_str(), store->name.c_str(), drawable ? "transcode without its full mip chain" : "no GPU copy",
-                       drawable ? "the levels it has" : "the engine's unbound-texture fallback (black)");
+                       drawable ? "the levels it has" : "the missing-texture stand-in");
         // The x2 and the relief/gloss maps are prepared with loading priority while the transaction runs; the reveal
         // waits for them within kSceneProductBudgetMs (SceneProductWait). Only the x2 the residency plan chose (near
         // the camera) counts, or any while the first plan is not made; the far ones are made in the background.
@@ -1632,17 +1632,18 @@ void FailSceneTexture(const char *name, const char *requester)
         std::lock_guard lock(mutex);
         if (reported.emplace(known->texture).second)
             shim::logf("WARNING: known game data defect: texture '%.*s' requested by %s is not shipped by the game (named by "
-                       "%s); drawn with the engine's unbound-texture fallback (black)",
+                       "%s); a base texture draws the missing-texture stand-in",
                        static_cast<int>(known->texture.size()), known->texture.data(),
                        requester && *requester ? requester : "?", known->named_by);
         return;
     }
     auto &load = effects::location_load();
     const std::string normalized = fx::NormalizeTexturePath(name ? name : "");
-    // It will never get a GPU copy: the scene draws the unbound-texture fallback and the reveal does not wait for it.
+    // It will never get a GPU copy: a base texture draws the missing-texture stand-in (GEOM, storm/render/
+    // missing_texture.hpp), the other stages sample nothing; the reveal does not wait for it.
     if (!load.sealed && effects::SceneTextureName(normalized) && load.failed_textures.emplace(normalized).second)
         shim::logf("ERROR: location readiness: %s: texture '%s' requested by %s could not be created; drawn with the "
-                   "engine's unbound-texture fallback (black), the reveal does not wait for it",
+                   "missing-texture stand-in where it is a base texture, the reveal does not wait for it",
                    load.scene.c_str(), normalized.c_str(), requester && *requester ? requester : "?");
 }
 void CompleteSceneReveal() {
