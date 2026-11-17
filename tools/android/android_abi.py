@@ -31,10 +31,6 @@ def suffix(abi):
     return '' if abi == DEFAULT else '-' + arch(abi)
 
 
-def toolchain(root, abi):
-    return root / 'cmake/toolchains' / f'android-{arch(abi)}.cmake'
-
-
 def check_elf(path, abi):
     header = path.read_bytes()[:20]
     if header[:6] != b'\x7fELF\x02\x01' or int.from_bytes(header[18:20], 'little') != elf_machine(abi):

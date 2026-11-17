@@ -5,6 +5,8 @@ Does not download tools, accept licenses, build the engine, or package an APK.
 """
 import argparse
 from pathlib import Path
+import re
+import shutil
 import subprocess
 
 import android_abi
@@ -28,6 +30,21 @@ def run(command, **kwargs):
     subprocess.run(list(map(str, command)), check=True, **kwargs)
 
 
+def drop_other_toolchain(build, toolchain):
+    """CMake keeps the toolchain of a build directory's first configure (CMakeFiles/<version>/CMakeSystem.cmake
+    includes it) and ignores a different CMAKE_TOOLCHAIN_FILE later, so a directory configured with another
+    toolchain (an older layout, another NDK) is configured again from scratch."""
+    cache = build / "CMakeCache.txt"
+    if not cache.is_file():
+        return
+    found = re.search(r"^CMAKE_TOOLCHAIN_FILE:[A-Z]+=(.*)$", cache.read_text(errors="replace"), re.M)
+    if found and found.group(1) == str(toolchain):
+        return
+    print(f"{build}: configured with the toolchain {found.group(1) if found else '(none)'}, not {toolchain}: "
+          "configuring it again", flush=True)
+    shutil.rmtree(build)
+
+
 def check_source(path, revision):
     actual = subprocess.check_output(["git", "-C", str(path), "rev-parse", "HEAD"], text=True).strip()
     if actual != revision:
@@ -46,7 +63,11 @@ def main():
     compiler = ndk / "toolchains/llvm/prebuilt/linux-x86_64/bin"
     if not (compiler / f"{android_abi.triple(args.abi)}24-clang++").is_file():
         raise RuntimeError(f"Expected a Linux-host Android NDK with API 24 {args.abi} compiler")
-    toolchain = android_abi.toolchain(ROOT, args.abi)
+    # The NDK's own toolchain file, not cmake/toolchains of this checkout: the build directory is shared by every
+    # worktree ($STORM_CI_WORK/dependencies*), and CMake would keep including the toolchain file of the worktree that
+    # configured it first, which fails every later configure once that worktree is deleted. The NDK lives in the
+    # shared work directory too; the ABI, API level and C++ runtime are those of cmake/toolchains/android-common.cmake.
+    toolchain = ndk / "build/cmake/android.toolchain.cmake"
     check_source(sdl, SDL_REVISION)
     patch = ROOT / "tools/android/patches/sdl2-android-ndk30.patch"
     applied = subprocess.run(["git", "-C", str(sdl), "apply", "--reverse", "--check", str(patch)],
@@ -56,9 +77,11 @@ def main():
         run(["git", "-C", sdl, "apply", "--check", patch])
         run(["git", "-C", sdl, "apply", patch])
     build.mkdir(parents=True, exist_ok=True)
+    drop_other_toolchain(build / "sdl", toolchain)
     run(["cmake", "-S", sdl, "-B", build / "sdl", "-G", "Ninja",
          "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_TOOLCHAIN_FILE={toolchain}",
-         f"-DSTORM_ANDROID_NDK={ndk}", f"-DCMAKE_INSTALL_PREFIX={prefix}",
+         f"-DANDROID_ABI={args.abi}", "-DANDROID_PLATFORM=android-24", "-DANDROID_STL=c++_shared",
+         f"-DCMAKE_INSTALL_PREFIX={prefix}",
          "-DSDL_SHARED=ON", "-DSDL_STATIC=OFF", "-DSDL_TEST=OFF", *LAUNCHER,
          f"-DCMAKE_PROJECT_INCLUDE={ROOT / 'tools/android/sdl-ndk-cpufeatures.cmake'}"])
     build_cached(build / "sdl", args.jobs)
