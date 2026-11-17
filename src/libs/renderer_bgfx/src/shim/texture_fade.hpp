@@ -1,7 +1,7 @@
 // A texture a store's draws bind that is swapped for another in front of the player fades over kTextureFadeMs
 // instead of popping: a finished transcode in place of its interim copy (TexStore::finish_transcode), the neural ×2
-// in place of the texture and back (effects/upscale.hpp), our town lightmap in place of the game's and the relight at
-// another scale (effects/town_light.hpp).
+// in place of the texture and back (effects/upscale.hpp). (The town light's ratio map fades by its own weight,
+// effects/town_light.hpp; kTextureFadeMs and TextureFade::Share are its clock too.)
 //
 // The swap layer is Device::draw's texture binding: each store remembers the handle its draws bound last
 // (TextureFade). When that changes while the store was on screen a moment before, the previous handle is bound
@@ -10,7 +10,7 @@
 // The previous one goes to the first FF unit the draw leaves free (stage 0's to unit 4, stage 1's to unit 3); a draw
 // that has none free, a game shader port and a cube or volume stage swap at once, counted in the fade line.
 //
-// A handle that is replaced and destroyed (the interim copy, an evicted ×2, our lightmap made again) is retired, not
+// A handle that is replaced and destroyed (the interim copy, an evicted ×2, a town's ratio map let go) is retired, not
 // destroyed: TextureRetirement keeps it until no fade can read it (kTextureRetireMs). A fade starts only for a store
 // drawn within kTextureFadeRecentMs before the swap, so it always ends before its previous handle is destroyed; a
 // store that was off screen just shows the new texture.
@@ -31,11 +31,10 @@ inline constexpr uint64_t kTextureFadeRecentMs = 250;
 inline constexpr uint64_t kTextureRetireMs = kTextureFadeRecentMs + kTextureFadeMs + 250;
 inline constexpr uint16_t kNoTexture = UINT16_MAX;
 
-// What made the handle a store's draws bind: its own texture, our town lightmap or its ×2.
+// What made the handle a store's draws bind: its own texture or its ×2.
 enum class TextureSource : uint8_t
 {
     Own,
-    Lightmap,
     Upscale,
 };
 
@@ -43,7 +42,6 @@ enum class TextureSource : uint8_t
 enum class TextureFadeKind : uint8_t
 {
     Transcode, // the store's own texture changed: a finished transcode
-    Lightmap,  // our town lightmap came, went or was made again
     Upscale,   // its ×2 came or went
     Count
 };
@@ -106,9 +104,9 @@ struct TextureFade
         sample.kind = Kind(source, handle_source);
         if (from != kNoTexture && now - since < kTextureFadeMs / 2)
         {
-            // Swapped again in the first half of a fade (our lightmap made again: the game's for a frame, then ours
-            // at the new scale): the player still sees mostly the texture fading out, so the new one fades in over
-            // it, at its share, and the one in between is skipped. Its fade ends by since + kTextureFadeMs, within its
+            // Swapped again in the first half of a fade (a ×2 evicted and another resident at once): the player still
+            // sees mostly the texture fading out, so the new one fades in over it, at its share, and the one in
+            // between is skipped. Its fade ends by since + kTextureFadeMs, within its
             // retirement.
             current = handle;
             source = handle_source;
@@ -137,9 +135,7 @@ struct TextureFade
 
     static TextureFadeKind Kind(TextureSource a, TextureSource b)
     {
-        return a == TextureSource::Upscale || b == TextureSource::Upscale     ? TextureFadeKind::Upscale
-               : a == TextureSource::Lightmap || b == TextureSource::Lightmap ? TextureFadeKind::Lightmap
-                                                                              : TextureFadeKind::Transcode;
+        return a == TextureSource::Upscale || b == TextureSource::Upscale ? TextureFadeKind::Upscale : TextureFadeKind::Transcode;
     }
     // The previous texture's share `t` ms into the fade: 1 -> 0, eased at both ends.
     static float Share(uint64_t t)
@@ -194,7 +190,7 @@ struct TextureFadeCounts
     uint32_t no_unit = 0, port = 0, not_2d = 0; // swaps drawn at once: why
     uint32_t reversed = 0; // swaps back to the texture that was fading out (of `started`): many say a store's draws
                            // disagree about its texture
-    uint32_t total_started() const { return started[0] + started[1] + started[2]; }
+    uint32_t total_started() const { return started[0] + started[1]; }
     uint32_t total_skipped() const { return no_unit + port + not_2d; }
     bool empty() const { return !total_started() && !total_skipped(); }
 };

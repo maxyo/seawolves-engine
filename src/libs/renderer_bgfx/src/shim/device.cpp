@@ -139,6 +139,7 @@ Device::Device(SDL_Window *sdl_window, const D3DPRESENT_PARAMETERS &present) : w
         {U_TEXMTX, "u_ffTexMtx", bgfx::UniformType::Mat4, kFfStages},
         {U_STAGE, "u_ffStage", bgfx::UniformType::Vec4, kFfStages * 3},
         {U_FS, "u_ffFs", bgfx::UniformType::Vec4, 4},
+        {U_TOWN_RATIO, "u_ffTownRatio", bgfx::UniformType::Vec4, 1},
         {U_VSC, "u_vsc", bgfx::UniformType::Vec4, kVsConstants},
         {U_PSC, "u_psc", bgfx::UniformType::Vec4, kPsConstants},
         {U_BEM, "u_psBem", bgfx::UniformType::Vec4, kFfStages},

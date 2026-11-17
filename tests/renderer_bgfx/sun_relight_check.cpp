@@ -1,22 +1,25 @@
-// The towns' relit lightmaps take the hour's sun from the place's sun map on the GPU (src/effects/town_light.hpp,
-// fx/sun_relight.hpp), on OpenGL ES and Vulkan in an SDL window (an X display, like cutout_caster_check).
+// The towns' lightmaps take the hour's sun from the place's sun map on the GPU as a light ratio map the lightmapped draw
+// multiplies the game's lightmap by (src/effects/town_light.hpp, fx/sun_relight.hpp, ff_fragment.sh ffTownRatio), on
+// OpenGL ES and Vulkan in an SDL window (an X display, like cutout_caster_check).
 // A 40 x 40 m square with three houses and a thin pole; its lightmap (DXT1, 256 x 256) is painted as the game's are: dark where the
 // houses shade it from a sun 200° round and 60° up. The place is reported as a town; the hour's sun stands opposite
 // (20° round, 60° up). The square is drawn with the game's lightmap at stage 0 and nothing else:
 //   * where only the bake's sun was shaded the ground is bright now, where only the hour's sun is shaded it is dark
 //     (the shadows moved to the other side of the houses), open ground keeps its light;
 //   * the result agrees with the same formula over fx::SunVisibility's rays (the CPU path this replaced);
-//   * the place's sun map is drawn once and every lightmap composed once: not again while the sun stands, once more
+//   * the place's sun map is drawn once and every ratio map composed once: not again while the sun stands, once more
 //     per step of the sun; no sun bake runs on the bake thread; the bake's sun is read once, from the place map drawn
 //     along it;
-//   * with the hour's sun at the bake's the relit lightmap is the game's: both suns are read through the same map
+//   * with the hour's sun at the bake's the relit lightmap is the game's (the ratio is 1): both suns are read through the same map
 //     and filter, so what it misses (a pole thinner than its texels) keeps its painted shadow;
 //   * a plate drawn lit over open ground (a moving caster) darkens the ground by the sun's share of the lightmap's
 //     tone, and adds nothing where the houses shade the ground already;
 //   * the game's lightmap texture has four times the texels of the level the town light fits on (a town's 2048 over
 //     its 512, location.cpp ReadLightmap), and a patch of open ground is painted with joints finer than a texel of
 //     that level: seen from close by, the relit lightmap keeps them as the game's does (its paint is the game's
-//     texture, not the fitted level interpolated).
+//     texture itself, only multiplied by the ratio);
+//   * the ratio map's size follows the place map's texel (fx::SunRelight::RatioSize), never finer than the game's
+//     lightmap texture.
 #include "device.hpp"
 #include "check_backend.hpp"
 
@@ -271,6 +274,20 @@ void dump(const std::vector<uint8_t> &picture, const char *name)
 
 int main()
 {
+    {
+        // A town's 512 lightmap with texels 0.24 m apart under a place map of 0.08 m: three times the texels per side;
+        // never coarser than the lightmap, never finer than the largest size given (the game's texture, 2048).
+        const std::array<int, 2> town = fx::SunRelight::RatioSize(512, 512, 0.24f, 0.08f, 2048);
+        const std::array<int, 2> fine = fx::SunRelight::RatioSize(512, 256, 0.24f, 0.01f, 2048);
+        const std::array<int, 2> coarse = fx::SunRelight::RatioSize(512, 512, 0.24f, 0.5f, 2048);
+        std::printf("ratio map sizes: town %dx%d, fine place map %dx%d, coarse %dx%d\n", town[0], town[1], fine[0], fine[1],
+                    coarse[0], coarse[1]);
+        if (town[0] != 1536 || town[1] != 1536 || fine[0] != 2048 || fine[1] != 1024 || coarse[0] != 512 || coarse[1] != 512)
+        {
+            std::printf("FAIL: the ratio map's size follows the place map's texel within the lightmap's and the texture's\n");
+            return 1;
+        }
+    }
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
         std::fprintf(stderr, "FAIL: SDL video: %s (an X display is needed)\n", SDL_GetError());

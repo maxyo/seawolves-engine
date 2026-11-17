@@ -17,7 +17,7 @@ namespace storm::effects
 
 namespace
 {
-// A surface's light without the sun over its light with it, where no relit lightmap of ours says (the game's own
+// A surface's light without the sun over its light with it, where no town light ratio says (the game's own
 // lightmaps, baked vertex colours): about half of a sunlit bake is the direct sun (the towns' lightmaps measure
 // shade / sun 0.4-0.6, fx/shadow_model.hpp SunShadowStrength). An assumption, not a measurement of the surface.
 constexpr float kUnmeasuredSunShade = 0.5f;
@@ -257,7 +257,6 @@ void Lighting::configure(const fx::Settings &settings, const fx::RendererState &
     // Our own lightmaps for the towns with the per-pixel lighting (Средняя / Высокая); Низкая keeps the game's.
     town_light_.set_enabled(fx::BackgroundProductsFor(settings).town_light);
     town_light_.set_debug(settings.town_light_debug);
-    town_light_.set_scale(settings.town_light_scale);
     lamps_.configure(settings, lamp_depth);
     const fx::BackgroundProducts products = fx::BackgroundProductsFor(settings);
     gloss_ = products.gloss;
@@ -515,7 +514,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     // the baked variant) and lit models (characters, props). Reflections and other targets keep their look.
     const bool ao = ao_volume_ && lighting_ && layout.has_normal && target && target == picture;
     baked |= !lit_state && ao;
-    // Under a location lightmap (ours in its place: the shim binds TownLight::replacement): no cascade, see below.
+    // Under a location lightmap (relit by the town light's ratio, TownLight::ratio): no cascade, see below.
     bool lightmapped = false;
     const shim::TexStore *lightmap = nullptr;
     for (int stage = 0; stage < 4 && !lightmapped; ++stage)
@@ -526,7 +525,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
                 lightmap = store;
             }
     // The moving casters' sun shadows on a surface with its own static light (a lightmap, baked colours): an opaque
-    // unskinned draw into the game picture outdoors that a caster's shadow can reach. Under our relit lightmap its
+    // unskinned draw into the game picture outdoors that a caster's shadow can reach. Under a relit lightmap its
     // tone says how much of an open texel's light is the sun's; elsewhere kUnmeasuredSunShade stands in. The static
     // layer keeps the shadow out of the place's own shade.
     const auto ground_receiver = [&]() {
@@ -548,7 +547,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
         return true;
     };
     // A town's walls and props without a lightmap, drawn with the game's baked colours into the game picture: our
-    // sun and sky relight them as our lightmaps relight the ground (town_light.hpp TownWallTone).
+    // sun and sky relight them as the town light relights the lightmapped ground (town_light.hpp TownWallTone).
     const bool town_wall = per_pixel && lighting_ && layout.has_normal && !lit_state && !lightmapped && target &&
                            target == picture && !lamps_.interior() && settings_.town_walls && town_light_.walls_active();
     baked |= town_wall;

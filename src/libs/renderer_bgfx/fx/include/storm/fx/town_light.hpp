@@ -1,6 +1,6 @@
-// Our own lightmaps for the towns (Средняя / Высокая): the sun's shadows of the real hour and the sky's occlusion
-// (alleys, under awnings, by the walls), on the texels of the game's lightmaps (the same texture stage and texture
-// coordinates, one texture fetch as before).
+// The town light (Средняя / Высокая): the sun's shadows of the real hour and the sky's occlusion (alleys, under
+// awnings, by the walls) on the game's lightmaps, as a light ratio the lightmapped draws multiply them by (the same
+// texture coordinates, one more texture fetch).
 //
 // The game's lightmaps (lighting\<time>\...\shadow.tga) were baked by hand for a near-noon sun, whatever the hour:
 // a 8:00 street has noon shadows. Measured on FortFrance / SentJons ground: luminance = 0.04 + 0.14 sun + 0.26 sky
@@ -14,8 +14,9 @@
 //     the texel), once per lightmap set, through the place's still geometry (fx::Occluders);
 //   * CalibrateTownLight: how the game's lightmap was lit, fitted on its texels to its sun (the fitted bake
 //     direction) and sky;
-//   * the game's lightmap relit for the hour's sun is composed on the GPU (fx/sun_relight.hpp, from the place's sun
-//     map): its paint (the ground's colours are painted into it) and tone stay, its shadows move.
+//   * the light's ratio for the hour's sun is composed on the GPU (fx/sun_relight.hpp, from the place's sun map) and
+//     multiplied into the game's lightmap where it is drawn: its paint (the ground's colours are painted into it) and
+//     tone stay at the game's full resolution, its shadows move.
 #pragma once
 
 #include "storm/fx/sky_model.hpp"

@@ -98,7 +98,7 @@ class SunLayerTracker
     SunLayers drawn_{};
 };
 
-// The sun's map of a whole place, for what the place keeps per texel instead of per frame: our relit lightmaps
+// The sun's map of a whole place, for what the place keeps per texel instead of per frame: the town light's ratio maps
 // (effects/town_light.hpp) read the hour's sun on their texels from it. An orthographic view along the sun over the
 // box of `ground` (the lightmapped geometry), casters up to `reach` metres towards the sun.
 struct SunPlace

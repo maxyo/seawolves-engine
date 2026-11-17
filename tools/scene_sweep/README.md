@@ -181,9 +181,8 @@ value is logged as an error, which fails the scene. The products of the shadow a
 | Lamp shadow view | `fx_lamp_debug=2` | the shadow mask over the picture |
 | Visibility volume | `fx_visibility=0` / `1` | sky visibility and rain shelter |
 | Interior AO volume | `fx_ao_volume=0` / `1`..`3` | |
-| Town light (our lightmaps for the live sun) | `fx_town_light=0` / `1` | `fx_town_light_debug=1` shows its sun visibility |
+| Town light (the live sun on the lightmaps) | `fx_town_light=0` / `1` | `fx_town_light_debug=1` shows its sun visibility |
 | Relit town walls | `fx_town_walls=0` / `1` | with `fx_town_light=1` |
-| Town light resolution | `fx_town_light_scale=1` / `2` / `4` | our lightmaps' texels per side for each of the game's (Средняя 2, Высокая 4) |
 | Relief self-shadow | `fx_parallax_shadow=0` / `1` | with `fx_parallax=2` |
 
 The baked products (visibility, AO, town light) are made in the background once switched on: compare them with

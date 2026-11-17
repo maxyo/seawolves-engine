@@ -574,6 +574,27 @@ SAMPLERCUBE(s_cube1, 6);
 SAMPLERCUBE(s_cube2, 7);
 #endif
 
+// The town light (src/effects/town_light.hpp): the stage that samples a town's lightmap multiplies it by the hour's sun
+// over the bake's, a light ratio map (fx/sun_relight.hpp) the shim binds at a fixed-function unit the draw leaves
+// free, read with the lightmap's own coordinates. x: the lightmap's stage (-1: none), y: the ratio's unit (2, 3, 4),
+// z: its weight (0 -> 1 while it fades in), w: 1 = debug view (the map holds the hour's sun visibility: grey).
+uniform vec4 u_ffTownRatio;
+vec3 ffTownRatio(vec3 lightmap, vec2 uv)
+{
+    float e;
+    if (u_ffTownRatio.y < 2.5)
+        e = texture2D(s_tex2, uv).r;
+    else if (u_ffTownRatio.y < 3.5)
+        e = texture2D(s_tex3, uv).r;
+    else
+        e = texture2D(s_tex4, uv).r;
+    if (u_ffTownRatio.w > 0.5)
+        return mix(lightmap, vec3_splat(0.125 + 0.75 * e), u_ffTownRatio.z); // MODULATE2X: 0.25..1.0 of the paint x2
+    // fx/sun_relight.hpp: 3^((255 e - 127) / 127).
+    float ratio = exp2((e * 255.0 - 127.0) * (1.5849625 / 127.0));
+    return min(lightmap * mix(1.0, ratio, u_ffTownRatio.z), vec3_splat(1.0));
+}
+
 // diffuse: FF_DIFFUSE; specular: v_color1 (stage inputs, passed in: storm_common.sh).
 vec4 ffArg(float arg, vec4 current, vec4 tex, vec4 temp, vec4 diffuse, vec4 specular)
 {
@@ -621,18 +642,24 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
 }
 
 #define FF_ARG(arg) ffArg(arg, current, tex, temp, FF_DIFFUSE, v_color1)
-// ms.z above 1: the stage's texture was swapped a moment ago (a finished transcode, its x2, our town lightmap:
-// src/shim/texture_fade.hpp) and the previous one, bound at the first unit the draw leaves free, still shows by ms.z - 1.
+// ms.z above 1: the stage's texture was swapped a moment ago (a finished transcode, its x2: src/shim/texture_fade.hpp)
+// and the previous one, bound at the first unit the draw leaves free, still shows by ms.z - 1.
 #define FF_FADE(tex, ms, PREV) if (ms.z > 1.0) { tex = mix(tex, PREV, ms.z - 1.0); }
 #define FF_NO_FADE(tex, ms, PREV)
-#define FF_STAGE(i, SAMPLE, FADE, PREV) \
+// TC: the stage's coordinates (a town lightmap's light ratio is read with them, ffTownRatio).
+#define FF_STAGE(i, SAMPLE, FADE, PREV, TC) \
     if (running && float(i) < u_ffFs[3].z) \
     { \
         vec4 cs = u_ffStage[3 * i]; \
         vec4 as = u_ffStage[3 * i + 1]; \
         vec4 ms = u_ffStage[3 * i + 2]; \
         vec4 tex = vec4(0.0, 0.0, 0.0, 1.0); \
-        if (ms.z > 0.5) { tex = SAMPLE; FADE(tex, ms, PREV) } \
+        if (ms.z > 0.5) \
+        { \
+            tex = SAMPLE; \
+            FADE(tex, ms, PREV) \
+            if (float(i) == u_ffTownRatio.x) tex.rgb = ffTownRatio(tex.rgb, FF_UV(TC, ms)); \
+        } \
         FF_KEEP_TEX(i, tex) \
         vec4 c = ffCombine(cs.x, FF_ARG(cs.y), FF_ARG(cs.z), FF_ARG(cs.w), current, tex, FF_DIFFUSE); \
         vec4 a = as.x < 1.5 ? current : ffCombine(as.x, FF_ARG(as.y), FF_ARG(as.z), FF_ARG(as.w), current, tex, FF_DIFFUSE); \
@@ -874,11 +901,11 @@ void main()
     vec4 current = FF_DIFFUSE;
     vec4 temp = vec4_splat(0.0);
     bool running = true;
-    FF_STAGE(0, STAGE0_SAMPLE, FF_FADE, STAGE0_PREV)
-    FF_STAGE(1, STAGE1_SAMPLE, FF_FADE, STAGE1_PREV)
-    FF_STAGE(2, STAGE2_SAMPLE, FF_NO_FADE, tex)
-    FF_STAGE(3, STAGE3_SAMPLE, FF_NO_FADE, tex)
-    FF_STAGE(4, STAGE4_SAMPLE, FF_NO_FADE, tex)
+    FF_STAGE(0, STAGE0_SAMPLE, FF_FADE, STAGE0_PREV, v_texcoord0)
+    FF_STAGE(1, STAGE1_SAMPLE, FF_FADE, STAGE1_PREV, v_texcoord1)
+    FF_STAGE(2, STAGE2_SAMPLE, FF_NO_FADE, tex, v_texcoord2)
+    FF_STAGE(3, STAGE3_SAMPLE, FF_NO_FADE, tex, v_texcoord3)
+    FF_STAGE(4, STAGE4_SAMPLE, FF_NO_FADE, tex, v_texcoord4)
 #ifdef FX_FF_DYN
     current.rgb *= fxSunGround(v_shadow.xyz, v_shadow.w);
 #endif
@@ -969,7 +996,7 @@ void main()
     {
         // A town's wall (src/effects/town_light.hpp TownWallTone): its baked colour carries the game's sun along the
         // direction the game baked with and the game's sky, which takes no account of alleys and gaps between
-        // houses. Relit as our lightmaps are: a + b sun + c sky with our sun (its shadow, where the sun reaches at
+        // houses. Relit as the lightmaps are (the town light's ratio): a + b sun + c sky with our sun (its shadow, where the sun reaches at
         // all) and our sky now, over the game's sun and sky then.
         float sunNow = max(0.0, dot(N, u_fxTownWall[1].xyz)) * fxSunShadow(P, Ng) * sunReach;
         float sunThen = max(0.0, dot(N, u_fxTownWall[2].xyz));

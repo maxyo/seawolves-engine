@@ -341,7 +341,7 @@ class Lighting
     ParallaxProbe &probe() { return probe_; }
     SunShadows &shadows() { return shadows_; }
     TownLight &town_light() { return town_light_; }
-    // After TownLight::update(): the hour's sun on our lightmaps (the place's sun map, the lightmaps' compose).
+    // After TownLight::update(): the hour's sun on the town's lightmaps (the place's sun map, the ratio maps' compose).
     void relight_town(shim::Device &device) { town_light_.render(device, shadows_, casters_); }
     // The shadow volumes of the frame for the picture the device is drawing now: on the first call of a frame the
     // lights prepare their maps for the device's camera and publish them (effects/shadow_casters.hpp). False: this

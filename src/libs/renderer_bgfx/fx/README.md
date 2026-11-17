@@ -102,7 +102,7 @@ own D3D cannon light on the ships.
 | `include/storm/fx/height_map.hpp` | the relief's material texture: PBRify's height (normalised per atlas region) for the parallax and the cavity, the gloss beside it |
 | `include/storm/fx/normal_map.hpp` | normal maps of the grey "bump" heights; the path/name rules table that gives each texture its relief class |
 | `include/storm/fx/shadows.hpp` | `Shadows`: the sun's shadow maps, two layers of one array: the still geometry (drawn when `SunLayerTracker` asks) and the moving casters (every frame that has any) |
-| `include/storm/fx/sun_relight.hpp` | `SunRelight`: the place's sun map and the GPU compose of the towns' relit lightmaps |
+| `include/storm/fx/sun_relight.hpp` | `SunRelight`: the place's sun map and the GPU compose of the towns' light ratio maps (the hour's sun over the bake's, multiplied into the game's own lightmaps by the lightmapped draws) |
 | `include/storm/fx/wetness.hpp` | the rain's wetness outdoors: rise and drying over time, the puddle pattern's wrapped origin (the shader: `renderer_bgfx/shaders/include/ff_wet.sh`; option `fx_wet_force` forces a wetness for review) |
 | `include/storm/fx/ao_volume.hpp` | ambient-occlusion volume of interiors: CPU bake from the static geometry, disk-cache format (the renderer side: `src/effects/ao_volume.hpp`) |
 | `shaders/include/fx_aerial.sh`, `fx_wind.sh`, `fx_coverage.sh` | aerial perspective, wind sway (not wired), alpha to coverage for the emulator |

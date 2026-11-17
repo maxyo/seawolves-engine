@@ -671,6 +671,7 @@ void Device::apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_p
             stage_count = stage + 1;
         }
         set_uniform(U_STAGE, &stage_data[0][0], kFfStages * 3);
+        set_uniform(U_TOWN_RATIO, town_ratio_, 1);
     }
     float fs[4][4] = {};
     color_to_float(rs[D3DRS_TEXTUREFACTOR], fs[0]);
@@ -1412,6 +1413,12 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
         ++ff_stages;
     std::fill(std::begin(stage_fade_), std::end(stage_fade_), 0.0f);
     TextureFades &fades = texture_fades();
+    // A town's lightmap keeps the game's texture; the hour's sun on it is a light ratio the stage multiplies it by
+    // (effects/town_light.hpp), bound after the stages at a unit they and the fades leave free.
+    effects::TownLight::Ratio town_ratio;
+    const TexStore *town_store = nullptr;
+    uint32_t town_stage = 0, town_flags = 0;
+    bool fade_unit[kFfStages] = {};
     for (uint32_t stage = 0; stage < stage_limit; ++stage)
     {
         TexStore *store = store_of(s.textures[stage]);
@@ -1481,16 +1488,18 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             if (pending_upscale) store->upscale->priority.observe(player_distance, generation_at);
         }
         const uint32_t flags = sampler_flags(stage, *store);
+        if (store->lightmap && store->kind == TexKind::Tex2D)
+            if (const effects::TownLight::Ratio r = fx_lighting.town_light().ratio(store); bgfx::isValid(r.texture))
+            {
+                town_ratio = r;
+                town_store = store;
+                town_stage = stage;
+                town_flags = flags;
+            }
         bgfx::TextureHandle handle = store->handle;
         uint32_t skin_width = store->width, skin_height = store->height;
         uint32_t skin_levels = store->full_chain ? 0 : store->levels;
         TextureSource source = TextureSource::Own;
-        if (store->lightmap) // a town's lightmap: ours for the hour's sun in its place (effects/town_light.hpp)
-            if (const bgfx::TextureHandle ours = fx_lighting.town_light().replacement(store); bgfx::isValid(ours))
-            {
-                handle = ours;
-                source = TextureSource::Lightmap;
-            }
         // A resident ×2 is the store's texture for every draw (one without bounds reports no distance but binds it
         // too): draws that disagreed about it would make it flicker and keep restarting its fade.
         if (store->upscale && upscales.active())
@@ -1525,6 +1534,7 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
                 ++perf().texture_binds;
                 last_draw.texture[from_unit] = fade.from;
                 stage_fade_[stage] = fade.share;
+                fade_unit[from_unit] = true;
             }
             if (fade.started)
             {
@@ -1534,11 +1544,6 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
                     ++counts.started[size_t(fade.kind)];
                 else
                     ++(ps_port ? counts.port : store->kind != TexKind::Tex2D ? counts.not_2d : counts.no_unit);
-                if (fade.kind == TextureFadeKind::Lightmap)
-                    logf("texture fade: town lightmap %s: %s over %llu ms", store->name.c_str(),
-                         !fades_here          ? "swapped at once (no free unit)"
-                         : source == TextureSource::Lightmap ? "ours fades in" : "the game's fades back in",
-                         static_cast<unsigned long long>(kTextureFadeMs));
             }
         }
         if (last_draw.texture[unit] != handle.idx || last_draw.sampler[unit] != flags)
@@ -1546,6 +1551,33 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             ++perf().texture_changes;
             last_draw.texture[unit] = handle.idx;
             last_draw.sampler[unit] = flags;
+        }
+    }
+
+    town_ratio_[0] = -1.0f;
+    if (town_store)
+    {
+        uint32_t unit = 2;
+        while (unit < kFfStages && (unit < ff_stages || fade_unit[unit]))
+            ++unit;
+        if (ps_port)
+            fx_lighting.town_light().ratio_missed(town_store, "a game shader port");
+        else if (unit >= kFfStages)
+            fx_lighting.town_light().ratio_missed(town_store, "no fixed-function unit left free");
+        else
+        {
+            bgfx::setTexture(static_cast<uint8_t>(unit), Context::instance().sampler(unit), town_ratio.texture, town_flags);
+            ++perf().texture_binds;
+            if (last_draw.texture[unit] != town_ratio.texture.idx || last_draw.sampler[unit] != town_flags)
+            {
+                ++perf().texture_changes;
+                last_draw.texture[unit] = town_ratio.texture.idx;
+                last_draw.sampler[unit] = town_flags;
+            }
+            town_ratio_[0] = static_cast<float>(town_stage);
+            town_ratio_[1] = static_cast<float>(unit);
+            town_ratio_[2] = town_ratio.weight;
+            town_ratio_[3] = town_ratio.debug ? 1.0f : 0.0f;
         }
     }
 

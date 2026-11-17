@@ -635,6 +635,7 @@ struct Device final : Object
         U_TEXMTX,
         U_STAGE,
         U_FS,
+        U_TOWN_RATIO,
         U_VSC,
         U_PSC,
         U_BEM,
@@ -662,6 +663,9 @@ struct Device final : Object
     LastDraw last_draw;
     // This draw's share of each stage's previous texture while it fades (texture_fade.hpp; u_ffStage ms.z - 1).
     float stage_fade_[kFfStages] = {};
+    // This draw's town light ratio (effects/town_light.hpp, ff_fragment.sh u_ffTownRatio): the lightmap's stage (-1:
+    // none), the unit the ratio map is bound at, its weight, 1 = debug view.
+    float town_ratio_[4] = {-1.0f, 0.0f, 0.0f, 0.0f};
 
     // Vertex ranges of buffers written in this frame that are already in transient memory: later
     // draws of the same (or a contained) range bind the copy instead of copying again. Valid until

@@ -1,5 +1,5 @@
 // The texture swap fade (src/shim/texture_fade.hpp): when a store's draws start binding another handle (a finished
-// transcode, its ×2, our town lightmap) the previous one fades out over kTextureFadeMs; a store that was off screen
+// transcode, its ×2) the previous one fades out over kTextureFadeMs; a store that was off screen
 // swaps at once; a swap back mid-fade turns round without a jump; a retired handle outlives every fade from it.
 #include "texture_fade.hpp"
 
@@ -74,19 +74,19 @@ int main()
         require(s.from == kNoTexture, "the turned fade ends within kTextureFadeMs");
     }
     {
-        // Our lightmap made again at another scale: the game's for one frame, then ours. The new one fades in over the
-        // one the player saw (the old one), never showing the game's whole.
+        // A ×2 evicted (the texture's own for one frame) and another resident at once: the new one fades in over the
+        // one the player saw (the old ×2), never showing the texture's own whole.
         TextureFade fade;
-        fade.observe(50, TextureSource::Lightmap, 0, epoch);
+        fade.observe(50, TextureSource::Upscale, 0, epoch);
         TextureFade::Sample s = fade.observe(51, TextureSource::Own, 16, epoch);
-        require(s.started && s.from == 50, "our old lightmap fades out to the game's");
-        s = fade.observe(52, TextureSource::Lightmap, 19, epoch);
+        require(s.started && s.from == 50, "the old x2 fades out to the texture's own");
+        s = fade.observe(52, TextureSource::Upscale, 19, epoch);
         require(s.started && s.from == 50 && s.share > 0.95f, "a second swap early in the fade keeps fading from the old one");
-        s = fade.observe(52, TextureSource::Lightmap, 16 + kTextureFadeMs, epoch);
+        s = fade.observe(52, TextureSource::Upscale, 16 + kTextureFadeMs, epoch);
         require(s.from == kNoTexture, "and ends kTextureFadeMs after the first swap");
         // Late in a fade a new swap fades from the one fading in.
-        fade.observe(53, TextureSource::Lightmap, 400, epoch);
-        s = fade.observe(54, TextureSource::Lightmap, 400 + kTextureFadeMs * 2 / 3, epoch);
+        fade.observe(53, TextureSource::Upscale, 400, epoch);
+        s = fade.observe(54, TextureSource::Upscale, 400 + kTextureFadeMs * 2 / 3, epoch);
         require(s.started && s.from == 53 && near(s.share, 1.0f), "a swap late in a fade fades from the texture fading in");
         // The worst case for the retirement: the carried fade still ends before kTextureRetireMs after the retire.
         require(kTextureFadeRecentMs + kTextureFadeMs < kTextureRetireMs, "a carried fade ends within the retirement");
@@ -94,8 +94,8 @@ int main()
     {
         TextureFade fade;
         fade.observe(30, TextureSource::Own, 0, epoch);
-        TextureFade::Sample s = fade.observe(31, TextureSource::Lightmap, 16, epoch);
-        require(s.started && s.kind == TextureFadeKind::Lightmap, "our town lightmap fades in over the game's (lightmap)");
+        TextureFade::Sample s = fade.observe(31, TextureSource::Own, 16, epoch);
+        require(s.started && s.kind == TextureFadeKind::Transcode, "the store's own texture replaced fades as a transcode");
         fade.reset();
         s = fade.observe(32, TextureSource::Own, 32, epoch);
         require(s.from == kNoTexture, "a re-locked texture made again has nothing to fade from");

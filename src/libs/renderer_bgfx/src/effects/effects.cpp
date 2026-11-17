@@ -391,7 +391,7 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.ao_gain = static_cast<float>(std::clamp(v, 50, 200)) / 100.0f; }},
     {"fx_shadows", "0 off, 1 low, 2 soft",
      [](fx::Settings &s, int v) { s.shadows = static_cast<fx::ShadowQuality>(std::clamp(v, 0, 2)); }},
-    {"fx_town_light", "0 the game's town lightmaps, 1 our own for the live sun",
+    {"fx_town_light", "0 the game's town lightmaps, 1 relit for the live sun (a light ratio over them)",
      [](fx::Settings &s, int v) { s.town_light = on(v); }},
     {"fx_town_walls", "0 the game's baked walls in towns, 1 relit by our sun and sky (with fx_town_light)",
      [](fx::Settings &s, int v) { s.town_walls = on(v); }},
@@ -399,9 +399,7 @@ const Option kOptions[] = {
      [](fx::Settings &s, int v) { s.visibility = on(v); }},
     {"fx_visibility_debug", "0 off, 1 lit and baked surfaces show the visibility volume (red sky, green open)",
      [](fx::Settings &s, int v) { s.visibility_debug = on(v); }},
-    {"fx_town_light_scale", "1, 2, 4: our town lightmaps' texels per side for each of the game's (finer sun shadow edges)",
-     [](fx::Settings &s, int v) { s.town_light_scale = v >= 4 ? 4 : v >= 2 ? 2 : 1; }},
-    {"fx_town_light_debug", "0 off, 1 our town lightmaps show the sun's visibility",
+    {"fx_town_light_debug", "0 off, 1 the town lightmaps show the hour's sun visibility",
      [](fx::Settings &s, int v) { s.town_light_debug = on(v); }},
     {"fx_flash_lights", "flash lights of shots and explosions at once, 0..8",
      [](fx::Settings &s, int v) { s.flash_lights = static_cast<uint8_t>(std::clamp(v, 0, 8)); }},
@@ -1172,10 +1170,10 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             // The sun's layers over the kProfileFrames frames of this line: how often the static one was drawn (and
             // with how much), in how many frames the dynamic one, its casters.
             const SunShadows::Counters sun = lighting_.shadows().take_counters();
-            // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
+            // The towns' relight since the start: the place's sun map drawn, ratio maps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
             shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u scene_views=%.1f scene_passes=%.1f sea_backdrop_draws=%.0f gpu_views=%s post_views=%u lit_draws=%u "
-                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u flash_events=%u flashes=%u flashed_draws=%u %s%s",
+                       "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_ratio_missed=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u flash_events=%u flashes=%u flashed_draws=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
                        storm::platform::frame_work::Describe(storm::platform::frame_work::Take(storm::platform::frame_work::Reader::Profile)).c_str(),
@@ -1186,7 +1184,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        static_cast<double>(sea_backdrop_draws_) / kProfileFrames, views.c_str(),
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
-                       sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
+                       sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], lighting_.town_light().last_counts()[2], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        lighting_.take_flash_events(), counts.flashes, counts.flashed,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;

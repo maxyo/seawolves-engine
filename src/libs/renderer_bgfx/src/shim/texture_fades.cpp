@@ -42,12 +42,11 @@ void TextureFades::frame()
     retirement_.collect(now_, Destroy);
     if (counts_.empty() || now_ - logged_at_ < 1000)
         return;
-    logf("texture fades: %u swaps faded over %llu ms (transcode %u, x2 %u, town lightmap %u); %u swapped at once "
+    logf("texture fades: %u swaps faded over %llu ms (transcode %u, x2 %u); %u swapped at once "
          "(no free unit %u, game shader port %u, cube/volume %u); %u turned back mid-fade; %zu replaced handles kept for them",
          counts_.total_started(), static_cast<unsigned long long>(kTextureFadeMs),
          counts_.started[size_t(TextureFadeKind::Transcode)], counts_.started[size_t(TextureFadeKind::Upscale)],
-         counts_.started[size_t(TextureFadeKind::Lightmap)], counts_.total_skipped(), counts_.no_unit, counts_.port,
-         counts_.not_2d, counts_.reversed, retirement_.size());
+         counts_.total_skipped(), counts_.no_unit, counts_.port, counts_.not_2d, counts_.reversed, retirement_.size());
     counts_ = {};
     logged_at_ = now_;
 }
