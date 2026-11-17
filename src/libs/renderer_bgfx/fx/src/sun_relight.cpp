@@ -93,7 +93,7 @@ void SunRelight::DestroyMap(MapData &m)
 {
     Destroy(m.target);
     Destroy(m.bake_target);
-    for (bgfx::TextureHandle *t : {&m.position_hi, &m.position_lo, &m.normal, &m.target_texture, &m.bake_texture})
+    for (bgfx::TextureHandle *t : {&m.target_texture, &m.bake_texture})
         Destroy(*t);
 }
 
@@ -126,7 +126,10 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
         map.origin[k] = lo[k];
         map.extent[k] = std::max(hi[k] - lo[k], 1e-3f);
     }
-    std::vector<uint8_t> position_hi(count * 4), position_lo(count * 4), normal(count * 2);
+    std::vector<uint8_t> &position_hi = map.position_hi, &position_lo = map.position_lo, &normal = map.normal;
+    position_hi.resize(count * 4);
+    position_lo.resize(count * 4);
+    normal.resize(count * 2);
     for (size_t i = 0; i < count; ++i)
     {
         const bool covered = texels.position[i * 4 + 3] > 0.0f;
@@ -144,9 +147,6 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
         normal[i * 2] = n[0];
         normal[i * 2 + 1] = n[1];
     }
-    map.position_hi = Static(texels.width, texels.height, bgfx::TextureFormat::RGBA8, position_hi);
-    map.position_lo = Static(texels.width, texels.height, bgfx::TextureFormat::RGBA8, position_lo);
-    map.normal = Static(texels.width, texels.height, bgfx::TextureFormat::RG8, normal);
     // The ratio map: the draws sample it with the lightmap's own sampler state (trilinear, anisotropic), so it has
     // mips; the backend makes them when the pass ends.
     const auto fw = static_cast<uint16_t>(map.width), fh = static_cast<uint16_t>(map.height);
@@ -198,10 +198,18 @@ size_t SunRelight::Bytes() const
     size_t total = 0;
     for (const MapData &m : maps_)
     {
-        const size_t target = static_cast<size_t>(m.width) * m.height, src = static_cast<size_t>(m.src_width) * m.src_height;
-        total += target * ratio * 4 / 3 + target * bake + src * (4 + 4 + 2);
+        const size_t target = static_cast<size_t>(m.width) * m.height;
+        total += target * ratio * 4 / 3 + target * bake;
     }
     return total;
+}
+
+size_t SunRelight::PassBytes() const
+{
+    size_t most = 0;
+    for (const MapData &m : maps_)
+        most = std::max(most, m.position_hi.size() + m.position_lo.size() + m.normal.size());
+    return most;
 }
 
 bgfx::TextureHandle SunRelight::Texture(Map map) const
@@ -295,13 +303,19 @@ void SunRelight::Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bo
               static_cast<uint16_t>(m.width), static_cast<uint16_t>(m.height), true);
     bgfx::setUniform(u_matrix_, matrix);
     bgfx::setUniform(u_params_, params.data(), static_cast<uint16_t>(params.size()));
-    bgfx::setTexture(0, s_position_hi_, m.position_hi);
-    bgfx::setTexture(1, s_position_lo_, m.position_lo);
+    // The inputs for this pass only: bgfx destroys them once the frame that reads them is drawn.
+    bgfx::TextureHandle position_hi = Static(m.src_width, m.src_height, bgfx::TextureFormat::RGBA8, m.position_hi);
+    bgfx::TextureHandle position_lo = Static(m.src_width, m.src_height, bgfx::TextureFormat::RGBA8, m.position_lo);
+    bgfx::TextureHandle normal = Static(m.src_width, m.src_height, bgfx::TextureFormat::RG8, m.normal);
+    bgfx::setTexture(0, s_position_hi_, position_hi);
+    bgfx::setTexture(1, s_position_lo_, position_lo);
     // The pass that writes the bake's visibility does not read it (its own target): the normals stand in.
-    bgfx::setTexture(2, s_baked_, bake ? m.normal : m.bake_texture);
-    bgfx::setTexture(3, s_normal_, m.normal);
+    bgfx::setTexture(2, s_baked_, bake ? normal : m.bake_texture);
+    bgfx::setTexture(3, s_normal_, normal);
     bgfx::setTexture(5, s_sun_, place_map_);
     SubmitScreenTriangle(view, compose_, BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A);
+    for (bgfx::TextureHandle *t : {&position_hi, &position_lo, &normal})
+        Destroy(*t);
 }
 
 void SunRelight::Shutdown()

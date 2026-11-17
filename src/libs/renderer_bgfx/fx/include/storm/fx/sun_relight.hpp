@@ -16,9 +16,11 @@
 // Its encoding (fs_fx_sun_relight.sc encodeRatio writes it, ff_fragment.sh ffTownRatio reads it): a texel e (0..255)
 // holds the ratio 3^((e - 127) / 127): 127 is exactly 1 (the game's light kept), 0 a third, 254 three times; steps of
 // 0.9 %, filtered in the log (a blend of two ratios is their geometric mean).
-// What does not depend on the hour (the texels' positions, normals, sky) is uploaded once per lightmap, at the
-// resolution the lighting is fitted at (a mip of the game's lightmap, location.cpp ReadLightmap: 512 of a town's 2048),
-// packed into 10 bytes a texel (positions to 1/65535 of the lightmap's bounds).
+// What does not depend on the hour (the texels' positions, normals, sky) is packed once per lightmap, at the resolution
+// the lighting is fitted at (a mip of the game's lightmap, location.cpp ReadLightmap: 512 of a town's 2048), into 10
+// bytes a texel (positions to 1/65535 of the lightmap's bounds), and kept on the CPU: it is uploaded for each pass (the
+// bake's sun once, then a compose per sun step, a few seconds apart) and let go after it, so the GPU keeps only the
+// ratio map and the bake's sun between steps (2.5 MB less for a town's 512 lightmap).
 #pragma once
 
 #include "storm/fx/shadow_model.hpp"
@@ -75,8 +77,9 @@ class SunRelight
     // A lightmap's static inputs and its targets, the ratio map `ratio_width` x `ratio_height`; kNoMap when a span has
     // the wrong size or a target cannot be made (logged).
     Map AddMap(const RelightTexels &texels, int ratio_width, int ratio_height);
-    // GPU bytes of the maps' inputs and targets (the log, the sheet's budget).
+    // GPU bytes the maps keep between passes (their targets), and the inputs one pass uploads at most (the log).
     size_t Bytes() const;
+    size_t PassBytes() const;
     // The ratio map (invalid until the map was composed once).
     bgfx::TextureHandle Texture(Map map) const;
     // Every map goes; a composed ratio map is retired (`retire`), the rest destroyed.
@@ -106,8 +109,8 @@ class SunRelight
         int width = 0, height = 0;         // the targets'
         int src_width = 0, src_height = 0; // the inputs'
         Vec3 origin{}, extent{};           // the bounds the positions are packed in
-        bgfx::TextureHandle position_hi = BGFX_INVALID_HANDLE, position_lo = BGFX_INVALID_HANDLE, normal = BGFX_INVALID_HANDLE,
-                            target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
+        std::vector<uint8_t> position_hi, position_lo, normal; // the packed inputs (RGBA8, RGBA8, RG8), uploaded per pass
+        bgfx::TextureHandle target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE, bake_target = BGFX_INVALID_HANDLE;
         bool composed = false, bake_ready = false;
     };

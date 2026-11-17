@@ -523,9 +523,11 @@ void TownLight::upload_map(Map &map)
     map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky}, size[0], size[1]);
     if (map.relight != fx::SunRelight::kNoMap)
         shim::logf("effects: town light of %s: a %dx%d lightmap (texels %.2f m apart) takes a %dx%d light ratio map (%.2f m, "
-                   "the place's sun map %.2f m from above), %.1f MB of GPU memory for the town's relight",
+                   "the place's sun map %.2f m from above), %.1f MB of GPU memory for the town's relight (and %.1f MB "
+                   "uploaded for a compose, let go after it)",
                    name_.c_str(), texels.width, texels.height, map.texel_metres, size[0], size[1], map.ratio_metres, place_texel,
-                   static_cast<double>(relight_.Bytes()) / (1024.0 * 1024.0));
+                   static_cast<double>(relight_.Bytes()) / (1024.0 * 1024.0),
+                   static_cast<double>(relight_.PassBytes()) / (1024.0 * 1024.0));
     map.compose_due = true;
 }
 
