@@ -21,6 +21,9 @@
 #define MSG_MODEL_SET_TECHNIQUE 20510 // "s" = technique
 #define MSG_MODEL_SET_FOG 20511
 #define MSG_MODEL_SET_MAX_VIEW_DIST 20512
+// "ls": as MSG_MODEL_LOAD_GEO, but while the game is played the files are read in the background and the model is
+// drawn from a later frame (VGEOMETRY::CreateGeometryDeferred); for characters and what they hold
+#define MSG_MODEL_LOAD_GEO_DEFERRED 20513
 
 #define MSG_MODEL_SUBSTITUTE_GEOMETRY_NODE 20600 // "ss", geometry, new model name
 #define MSG_MODEL_PLAY_ACTION 20601 // "lls", player, action name

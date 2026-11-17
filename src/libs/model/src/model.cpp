@@ -2,6 +2,7 @@
 #include "entity.h"
 #include "modelr.h"
 #include "skinned_trace.hpp"
+#include "loading_transaction.hpp"
 
 #include <algorithm>
 #include "shared/messages.h"
@@ -262,13 +263,19 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
         alpha2 = message.Float();
         break;
     case MSG_MODEL_LOAD_GEO: // set geometry
+    case MSG_MODEL_LOAD_GEO_DEFERRED:
+    {
         // GUARD(MSG_MODEL_LOAD_GEO)
         str = message.String();
         NODER::gs = GeometyService;
         NODER::rs = rs;
         root = new NODER();
-        if (!root->Init(LightPath.c_str(), str.c_str(), "", storm::math::eulerMatrix(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mtx, nullptr,
-                        lmPath.c_str()))
+        // Deferred only while the game is played: under a loading screen the model is loaded at once, as it is shown
+        // when the screen goes (a deferred one left at a loading transaction is ended there: Realize at load).
+        const bool deferred = code == MSG_MODEL_LOAD_GEO_DEFERRED && !storm::loading::screen_up && !storm::loading::active;
+        const glm::mat4 local = storm::math::eulerMatrix(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        if (!(deferred ? root->InitDeferred(LightPath.c_str(), str.c_str(), local, mtx, lmPath.c_str())
+                       : root->Init(LightPath.c_str(), str.c_str(), "", local, mtx, nullptr, lmPath.c_str())))
         {
             delete root;
             root = nullptr;
@@ -279,7 +286,7 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
         root->Update(mtx, tmp);
         return 1;
         // UNGUARD
-        break;
+    }
     case MSG_MODEL_LOAD_ANI: // set animation
     {
         str = message.String();
@@ -442,6 +449,8 @@ float MODELR::Trace(const glm::vec3 &src, const glm::vec3 &dst)
     // collision with skinned geometry
     if (ani)
     {
+        if (root->geo->Pending())
+            return 2.0f; // its files are still being read: nothing to hit yet
         // check for bounding spheres intersection
         glm::vec3 lmn = dst - src;
         float dist2ray2 = storm::math::lengthSquared(glm::cross(storm::math::transformPoint(root->glob_mtx, root->center) - src, lmn));

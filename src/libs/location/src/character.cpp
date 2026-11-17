@@ -3211,7 +3211,9 @@ bool Character::zLoadModel(MESSAGE &message)
             gs->SetTexturePath("");
         return false;
     }
-    if (!core.Send_Message(mdl, "ls", MSG_MODEL_LOAD_GEO, mpath))
+    // While the game is played its files are read in the background and it is drawn a few frames later; the
+    // character, its animation and actions are there at once.
+    if (!core.Send_Message(mdl, "ls", MSG_MODEL_LOAD_GEO_DEFERRED, mpath))
     {
         if (gs)
             gs->SetTexturePath("");

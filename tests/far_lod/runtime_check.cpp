@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <new>
 #include <stdexcept>
 #include <utility>
@@ -134,18 +136,23 @@ class Service final : public GEOM_SERVICE
     size_t fail_create = 0, fail_lock = 0;
     enum class FailCopy { None, Triangles, Vertices } fail_copy = FailCopy::None;
     int32_t triangle_bytes = 0, vertex_bytes = 0;
-    std::fstream OpenFile(const char *) override { return std::fstream(file, std::ios::in | std::ios::binary); }
-    bool ReadFile(std::fstream &s, void *data, int32_t bytes) override
+    GEOM_FILE OpenFile(const char *) override
     {
-        if (bytes) s.read(static_cast<char *>(data), bytes);
+        std::ifstream in(file, std::ios::binary);
+        return {std::make_shared<const std::vector<char>>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>())};
+    }
+    bool ReadFile(GEOM_FILE &f, void *data, int32_t bytes) override
+    {
+        const bool whole = f.position + size_t(bytes) <= f.size();
+        if (bytes && whole) std::memcpy(data, f.bytes->data() + f.position, size_t(bytes));
+        f.position += size_t(bytes);
         if (fail_copy == FailCopy::Triangles && bytes == triangle_bytes && !indices.empty() && data == indices[0].data())
             fail_size = size_t(bytes);
         if (fail_copy == FailCopy::Vertices && bytes == vertex_bytes && !vertices.empty() && data == vertices[0].data())
             fail_size = size_t(bytes);
-        return bool(s);
+        return whole;
     }
-    int FileSize(const char *) override { return int(std::filesystem::file_size(file)); }
-    void CloseFile(std::fstream &s) override { s.close(); }
+    void CloseFile(GEOM_FILE &f) override { f = {}; }
     void *malloc(int32_t bytes) override { return std::calloc(std::max(bytes, 1), 1); }
     void free(void *p) override { std::free(p); }
     GEOS::ID CreateTexture(const char *, const char *) override { return -1; }

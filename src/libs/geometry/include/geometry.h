@@ -35,6 +35,12 @@ class VGEOMETRY : public SERVICE
     ~VGEOMETRY() override{};
     virtual GEOS *CreateGeometry(const char *file_name, const char *light_file_name, int32_t flags,
                                  const char *lmPath = nullptr) = 0;
+    // The same model for a load the game starts while it is played (a character walking in): its files (the model,
+    // its vertex colours, the textures not loaded yet) are read on the background reader thread and the model is
+    // built from them in a later frame (RunStart). Until then the returned geometry is Pending(). The texture path is
+    // the one set now. nullptr when the model file does not exist (as CreateGeometry, reported).
+    virtual GEOS *CreateGeometryDeferred(const char *file_name, const char *light_file_name, int32_t flags,
+                                         const char *lmPath = nullptr) = 0;
     virtual void DeleteGeometry(GEOS *) = 0;
     virtual ANIMATION *LoadAnimation(const char *anim) = 0;
     virtual void SetTechnique(const char *name) = 0;

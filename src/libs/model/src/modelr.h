@@ -29,6 +29,11 @@ class NODER : public NODE
     float max_view_dist;
     float distance_blend;
 
+    bool deferLoad_ = false; // InitDeferred
+    bool deferred_ = false;  // the geometry is pending: no size or child nodes taken from it yet
+    bool AttachGeometry(const char *lightPath, const char *pname, const char *lmPath);
+    void FinishDeferred();
+
   public:
     // local radius and center of whole node with children
     float radius;
@@ -39,6 +44,12 @@ class NODER : public NODE
 
     bool Init(const char *lightPath, const char *pname, const char *oname, const glm::mat4 &m, const glm::mat4 &globm,
               NODER *par, const char *lmPath) override;
+    // A model's root loaded while the game is played (VGEOMETRY::CreateGeometryDeferred): its geometry is empty
+    // (GEOS::Pending) until it is built in a later frame; Update then takes its size and child nodes.
+    bool InitDeferred(const char *lightPath, const char *pname, const glm::mat4 &m, const glm::mat4 &globm,
+                      const char *lmPath);
+    // Ends a pending load now (a loading screen is up).
+    void LoadNow();
     NODER();
     ~NODER() override;
     void Draw();
@@ -117,6 +128,8 @@ class MODELR : public MODEL
             // case Stage::execute:
             //    Execute(delta); break;
         case Stage::loading_realize:
+            if (root)
+                root->LoadNow(); // the loading screen hides the wait
             Realize(0);
             break;
         case Stage::realize:

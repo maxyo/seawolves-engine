@@ -42,14 +42,10 @@ std::vector<uint32_t> getColData(GEOM_SERVICE &srv, const std::string_view &file
     std::vector<uint32_t> result;
 
     auto ltfl = srv.OpenFile(file_name.data());
-    if (ltfl.is_open())
+    if (ltfl.size() >= sizeof(uint32_t))
     {
-        const auto file_size = srv.FileSize(file_name.data());
-        if (file_size > 0)
-        {
-            result.resize(file_size / sizeof(uint32_t));
-            srv.ReadFile(ltfl, result.data(), file_size);
-        }
+        result.resize(ltfl.size() / sizeof(uint32_t));
+        srv.ReadFile(ltfl, result.data(), static_cast<int32_t>(result.size() * sizeof(uint32_t)));
     }
     missing = !ltfl.is_open();
     srv.CloseFile(ltfl);

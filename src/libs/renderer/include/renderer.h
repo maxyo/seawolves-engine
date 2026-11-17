@@ -3,7 +3,9 @@
 
 #include <cstdint>
 #include "storm_render_types.h"
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "entity.h"
 #include "storm_glm.h"
@@ -230,6 +232,10 @@ class VRenderer : public SERVICE, public storm::render::TextureColorReader
 
     // Renderer: Textures Section
     virtual int32_t TextureCreate(const char *fname) = 0;
+    // The files TextureCreate(fname) would try in order (resolved paths, one per texture path variant), up to the
+    // variant it already has: what a background read (storm::io::ReadInBackground) may read ahead for it. Empty when
+    // it has the texture under its first variant or loads no textures now.
+    virtual std::vector<std::string> TextureFileCandidates(const char *fname) = 0;
     // Textures made by code share the id table with file textures; TextureRelease frees them.
     // Returns -1 (logged) when the device rejects the texture.
     virtual int32_t TextureCreate(UINT width, UINT height, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) = 0;

@@ -1,11 +1,20 @@
 #include "storm/render/pipelines.hpp"
+#include "background_read.hpp"
 #include "core.h"
 #include "platform/frame_work.hpp"
 #include "fs.h"
 
+#include <algorithm>
+#include <chrono>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
+
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
 
 #include "geometry_r.h"
+#include "geom_deferred.h"
 #include "string_compare.hpp"
 
 CREATE_SERVICE(GEOMETRY)
@@ -90,18 +99,36 @@ bool GEOMETRY::LoadState(ENTITY_STATE *state)
 char lightPath[256];
 int vrtSize;
 
+void SetModelLightPath(const char *file_name, const char *lmPath)
+{
+    sprintf_s(lightPath, "%s\\%s", lmPath, file_name);
+    auto *const bs = strrchr(lightPath, '\\');
+    if (bs != nullptr)
+        *bs = 0;
+}
+
+std::string ModelFile(const char *file_name)
+{
+    return fmt::format("resource\\models\\{}.gm", file_name);
+}
+
+std::string ModelColoursFile(const char *file_name, const char *light_file_name)
+{
+    if (light_file_name == nullptr || light_file_name[0] == 0)
+        return {};
+    const auto *elf = light_file_name;
+    if (elf[0] == '\\')
+        elf++;
+    if (elf[0] == '\\')
+        elf++;
+    return fmt::format("resource\\models\\{}_{}.col", file_name, elf);
+}
+
 GEOS *GEOMETRY::CreateGeometry(const char *file_name, const char *light_file_name, int32_t flags, const char *lmPath)
 {
     const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::ModelLoad);
-    char fnt[256], lfn[256];
     if (light_file_name != nullptr)
-    {
-        sprintf_s(lightPath, "%s\\%s", lmPath, file_name);
-        // strcpy_s(lightPath, light_file_name);
-        auto *const bs = strrchr(lightPath, '\\');
-        if (bs != nullptr)
-            *bs = 0;
-    }
+        SetModelLightPath(file_name, lmPath);
 
     static auto first = 0;
     FILE *fl;
@@ -116,33 +143,20 @@ GEOS *GEOMETRY::CreateGeometry(const char *file_name, const char *light_file_nam
     }
 
     GEOS *gp;
+    const std::string fnt = ModelFile(file_name);
     try
     {
-        sprintf_s(fnt, "resource\\models\\%s.gm", file_name);
-        if (light_file_name == nullptr || strlen(light_file_name) == 0)
-        {
-            gp = ::CreateGeometry(fnt, nullptr, GSR, flags);
-        }
-        else
-        {
-            // sprintf_s(lfn, "resource\\lighting\\%s.col", light_file_name);
-            const auto *elf = light_file_name;
-            if (elf[0] == '\\')
-                elf++;
-            if (elf[0] == '\\')
-                elf++;
-            sprintf_s(lfn, "resource\\models\\%s_%s.col", file_name, elf);
-            gp = ::CreateGeometry(fnt, lfn, GSR, flags);
-        }
+        const std::string lfn = ModelColoursFile(file_name, light_file_name);
+        gp = ::CreateGeometry(fnt.c_str(), lfn.empty() ? nullptr : lfn.c_str(), GSR, flags);
     }
     catch (const std::exception &e)
     {
-        core.Trace("%s: %s", fnt, e.what());
+        core.Trace("%s: %s", fnt.c_str(), e.what());
         return nullptr;
     }
     catch (...)
     {
-        core.Trace("Invalid model: %s", fnt);
+        core.Trace("Invalid model: %s", fnt.c_str());
         return nullptr;
     }
 
@@ -160,6 +174,50 @@ GEOS *GEOMETRY::CreateGeometry(const char *file_name, const char *light_file_nam
     }
 
     return gp;
+}
+
+GEOS *GEOMETRY::CreateGeometryDeferred(const char *file_name, const char *light_file_name, int32_t flags,
+                                       const char *lmPath)
+{
+    // A model that does not exist is refused now, as CreateGeometry refuses it: the caller's script sees it fail.
+    if (!fio->_FileOrDirectoryExists(ModelFile(file_name).c_str()))
+        return CreateGeometry(file_name, light_file_name, flags, lmPath);
+    auto *geometry = new DeferredGeometry(*this, file_name, light_file_name ? light_file_name : "", flags,
+                                          lmPath ? lmPath : "", texturePath);
+    deferred_.push_back(geometry);
+    return geometry;
+}
+
+void GEOMETRY::Forget(DeferredGeometry *geometry)
+{
+    std::erase(deferred_, geometry);
+}
+
+// The models loaded while the game is played whose files have all been read are built here, in the order asked, from
+// the frame after the one that asked for them (that frame already ran the script that spawned them). One is always
+// built; more only while the frame has spent less than kBuildBudget on them, so that a crowd that walks in at once
+// is spread over a few frames.
+void GEOMETRY::RunStart()
+{
+    constexpr auto kBuildBudget = std::chrono::microseconds(2000);
+    if (deferred_.empty())
+        return;
+    const auto start = std::chrono::steady_clock::now();
+    bool built = false;
+    // Building can load another model (a child node): iterate over a copy; one forgotten meanwhile is skipped.
+    const std::vector<DeferredGeometry *> pending = deferred_;
+    for (DeferredGeometry *geometry : pending)
+    {
+        if (std::find(deferred_.begin(), deferred_.end(), geometry) == deferred_.end() || !geometry->Pending())
+            continue;
+        const bool asked = geometry->AskedThisFrame();
+        if (!geometry->Advance() || asked)
+            continue;
+        if (built && std::chrono::steady_clock::now() - start >= kBuildBudget)
+            continue; // the next frame (its reads still move on)
+        geometry->Build();
+        built = true;
+    }
 }
 
 ANIMATION *GEOMETRY::LoadAnimation(const char *anim)
@@ -194,34 +252,53 @@ void GEOM_SERVICE_R::SetRenderService(VRenderer *render_service)
     vertexDecl_ = RenderService->CreateVertexDeclaration(VertexElements);
 }
 
-std::fstream GEOM_SERVICE_R::OpenFile(const char *fname)
+GEOM_FILE GEOM_SERVICE_R::OpenFile(const char *fname)
 {
     if (RenderService)
     {
         RenderService->ProgressView();
     }
-    auto fileS = fio->_CreateFile(fname, std::ios::binary | std::ios::in);
+    GEOM_FILE file;
+    const std::string resolved = fio->ConvertPathResource(fname);
+    if (const storm::io::Prefetched *prefetched = storm::io::FindPrefetched(resolved))
+    {
+        file.bytes = prefetched->bytes; // read by the background reader (none: it found no such file)
+    }
+    else if (std::ifstream stream(std::filesystem::u8path(resolved), std::ios::binary | std::ios::ate); stream.is_open())
+    {
+        const std::streamoff size = stream.tellg();
+        auto bytes = std::make_shared<std::vector<char>>(size > 0 ? static_cast<size_t>(size) : 0);
+        stream.seekg(0);
+        if (size < 0 || !stream.read(bytes->data(), static_cast<std::streamsize>(bytes->size())))
+            throw std::runtime_error("can't read geometry file");
+        file.bytes = std::move(bytes);
+    }
     // A missing vertex colour (.col) file is reported by the caller (geom_static.cpp getColData); a missing model
     // is an error.
-    if (!fileS.is_open() && !storm::iEquals(&fname[strlen(fname) - 4], ".col"))
+    if (!file.is_open() && !storm::iEquals(&fname[strlen(fname) - 4], ".col"))
         throw std::runtime_error("can't open geometry file");
 
-    return fileS;
+    return file;
 }
 
-int GEOM_SERVICE_R::FileSize(const char *fname)
+bool GEOM_SERVICE_R::ReadFile(GEOM_FILE &file, void *data, int32_t bytes)
 {
-    return fio->_GetFileSize(fname);
+    const size_t wanted = bytes > 0 ? static_cast<size_t>(bytes) : 0;
+    const size_t available = file.position < file.size() ? file.size() - file.position : 0;
+    const size_t copied = std::min(wanted, available);
+    if (copied)
+        std::memcpy(data, file.bytes->data() + file.position, copied);
+    file.position += copied;
+    if (copied == wanted)
+        return true;
+    std::memset(static_cast<char *>(data) + copied, 0, wanted - copied);
+    spdlog::error("geometry: a model file ends {} bytes early (zeroes read instead)", wanted - copied);
+    return false;
 }
 
-bool GEOM_SERVICE_R::ReadFile(std::fstream &fileS, void *data, int32_t bytes)
+void GEOM_SERVICE_R::CloseFile(GEOM_FILE &file)
 {
-    return fio->_ReadFile(fileS, data, bytes);
-}
-
-void GEOM_SERVICE_R::CloseFile(std::fstream &fileS)
-{
-    fio->_CloseFile(fileS);
+    file = {};
 }
 
 void *GEOM_SERVICE_R::malloc(int32_t bytes)

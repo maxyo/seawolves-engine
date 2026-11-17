@@ -1,3 +1,4 @@
+#include "background_read.hpp"
 #include "loading_transaction.hpp"
 #include "storm/render/pipelines.hpp"
 #include "renderer_impl.h"
@@ -1747,46 +1748,21 @@ int32_t Renderer::TextureCreate(const char *fname)
 
     for (int32_t i = 3; i >= -1; i--)
     {
-        char _fname[256];
-
-        if (i >= 0 && TexPaths[i].str[0] == 0)
+        const std::optional<std::string> variant = TextureVariantName(fname, i);
+        if (!variant)
             continue;
-        if (i >= 0)
+        const std::string &_fname = *variant;
+        bTrace = i < 0;
+
+        const uint32_t hf = MakeHashValue(_fname.c_str());
+
+        int32_t t = FindLoadedTexture(_fname, hf);
+        if (t >= 0)
         {
-            const uint32_t dwLen = strlen(fname);
-
-            int32_t j;
-            for (j = dwLen - 1; j >= 0; j--)
-                if (fname[j] == '\\')
-                    break;
-
-            _fname[0] = 0;
-            strncpy_s(_fname, fname, j + 1);
-            _fname[j + 1] = 0;
-            strcat_s(_fname, TexPaths[i].str);
-            strcat_s(_fname, &fname[j + 1]);
-            bTrace = false;
+            Textures[t].ref++;
+            storm::render::RequireSceneTexture(Textures[t].d3dtex);
+            return t;
         }
-        else
-        {
-            bTrace = true;
-            strcpy_s(_fname, fname);
-        }
-
-        std::ranges::for_each(_fname, [](char &c) { c = std::toupper(c); });
-
-        const uint32_t hf = MakeHashValue(_fname);
-
-        int32_t t;
-        for (t = 0; t < MAX_STEXTURES; t++)
-            if (Textures[t].ref != 0)
-                if (Textures[t].name)
-                    if (Textures[t].hash == hf && storm::iEquals(Textures[t].name, _fname))
-                    {
-                        Textures[t].ref++;
-                        storm::render::RequireSceneTexture(Textures[t].d3dtex);
-                        return t;
-                    }
 
         for (t = 0; t < MAX_STEXTURES; t++)
             if (Textures[t].ref == 0)
@@ -1794,10 +1770,10 @@ int32_t Renderer::TextureCreate(const char *fname)
 
         Textures[t].hash = hf;
 
-        const auto len = strlen(_fname) + 1;
+        const auto len = _fname.size() + 1;
         if ((Textures[t].name = new char[len]) == nullptr)
             throw std::runtime_error("allocate memory error");
-        strcpy_s(Textures[t].name, len, _fname);
+        strcpy_s(Textures[t].name, len, _fname.c_str());
         Textures[t].isCubeMap = false;
         Textures[t].loaded = false;
         Textures[t].ref++;
@@ -1810,6 +1786,63 @@ int32_t Renderer::TextureCreate(const char *fname)
         Textures[t].name = nullptr;
     }
     return -1;
+}
+
+static std::string TextureFileName(const std::string &name);
+
+std::optional<std::string> Renderer::TextureVariantName(const char *fname, int32_t variant) const
+{
+    char _fname[256];
+    if (variant >= 0)
+    {
+        if (TexPaths[variant].str[0] == 0)
+            return std::nullopt;
+        const uint32_t dwLen = strlen(fname);
+
+        int32_t j;
+        for (j = dwLen - 1; j >= 0; j--)
+            if (fname[j] == '\\')
+                break;
+
+        _fname[0] = 0;
+        strncpy_s(_fname, fname, j + 1);
+        _fname[j + 1] = 0;
+        strcat_s(_fname, TexPaths[variant].str);
+        strcat_s(_fname, &fname[j + 1]);
+    }
+    else
+    {
+        strcpy_s(_fname, fname);
+    }
+    std::string name = _fname;
+    std::ranges::for_each(name, [](char &c) { c = static_cast<char>(std::toupper(static_cast<unsigned char>(c))); });
+    return name;
+}
+
+int32_t Renderer::FindLoadedTexture(const std::string &name, uint32_t hash) const
+{
+    for (int32_t t = 0; t < MAX_STEXTURES; t++)
+        if (Textures[t].ref != 0 && Textures[t].name && Textures[t].hash == hash &&
+            storm::iEquals(Textures[t].name, name))
+            return t;
+    return -1;
+}
+
+std::vector<std::string> Renderer::TextureFileCandidates(const char *fname)
+{
+    std::vector<std::string> files;
+    if (fname == nullptr || iSetupPath || !bLoadTextureEnabled)
+        return files;
+    for (int32_t i = 3; i >= -1; i--)
+    {
+        const std::optional<std::string> name = TextureVariantName(fname, i);
+        if (!name)
+            continue;
+        if (FindLoadedTexture(*name, MakeHashValue(name->c_str())) >= 0)
+            break; // TextureCreate stops at this variant: it has it
+        files.push_back(fio->ConvertPathResource(TextureFileName(*name).c_str()));
+    }
+    return files;
 }
 
 int32_t Renderer::AddCodeTexture(storm::shim::BaseTexture *texture, uint32_t size, bool cubeMap)
@@ -2053,26 +2086,17 @@ bool Renderer::TextureIncReference(int32_t texid)
     return true;
 }
 
-bool Renderer::TextureLoad(int32_t t)
+// The .tx file TextureLoad reads for a texture name (TextureVariantName): under resource\textures, with the .tx
+// suffix, without doubled separators.
+static std::string TextureFileName(const std::string &name)
 {
-    using namespace std::literals;
-    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::TextureLoad);
-
-    ProgressView();
-    // Form the path to the texture
     char fn[_MAX_FNAME];
-    Textures[t].dwSize = 0;
-    if (Textures[t].name == nullptr)
-    {
-        return false;
-    }
-
-    auto lTexture = std::string(Textures[t].name);
+    auto lTexture = name;
     std::transform(lTexture.begin(), lTexture.end(), lTexture.begin(), [](unsigned char c) { return std::tolower(c); });
     auto has_resource_prefix = starts_with(lTexture, "resource\\textures\\");
     auto has_tx_postfix = ends_with(lTexture, ".tx");
 
-    sprintf_s(fn, "%s%s%s", has_resource_prefix ? "" : "resource\\textures\\", Textures[t].name, has_tx_postfix ? "" : ".tx");
+    sprintf_s(fn, "%s%s%s", has_resource_prefix ? "" : "resource\\textures\\", name.c_str(), has_tx_postfix ? "" : ".tx");
 
     for (int32_t s = 0, d = 0; fn[d]; s++)
     {
@@ -2083,9 +2107,84 @@ bool Renderer::TextureLoad(int32_t t)
         }
         fn[d++] = fn[s];
     }
-    // Opening the file
-    auto fileS = fio->_CreateFile(fn, std::ios::binary | std::ios::in);
-    if (!fileS.is_open())
+    return fn;
+}
+
+bool TextureFileReader::open(const char *fn)
+{
+    if (const storm::io::Prefetched *prefetched =
+            storm::io::AnyPrefetched() ? storm::io::FindPrefetched(fio->ConvertPathResource(fn)) : nullptr)
+    {
+        bytes_ = prefetched->bytes; // none: the background read found no such file
+        return bytes_ != nullptr;
+    }
+    file_ = fio->_CreateFile(fn, std::ios::binary | std::ios::in);
+    return file_.is_open();
+}
+
+bool TextureFileReader::read(void *data, size_t bytes)
+{
+    if (!bytes_)
+        return fio->_ReadFile(file_, data, static_cast<std::streamsize>(bytes));
+    if (position_ + bytes > bytes_->size())
+    {
+        spdlog::error("Failed to ReadFile: a texture file ends {} bytes early", position_ + bytes - bytes_->size());
+        position_ = bytes_->size();
+        return false;
+    }
+    std::memcpy(data, bytes_->data() + position_, bytes);
+    position_ += bytes;
+    return true;
+}
+
+bool TextureFileReader::skip(size_t bytes)
+{
+    if (!bytes_)
+    {
+        fio->_SetFilePointer(file_, static_cast<std::streamoff>(bytes), std::ios::cur);
+        return file_.good();
+    }
+    position_ += bytes;
+    return position_ <= bytes_->size();
+}
+
+std::streamoff TextureFileReader::size()
+{
+    if (bytes_)
+        return static_cast<std::streamoff>(bytes_->size());
+    const std::streamoff position = file_.tellg();
+    file_.seekg(0, std::ios::end);
+    const std::streamoff size = file_.tellg();
+    file_.clear();
+    file_.seekg(position);
+    return size;
+}
+
+void TextureFileReader::close()
+{
+    if (bytes_)
+        bytes_.reset();
+    else
+        fio->_CloseFile(file_);
+}
+
+bool Renderer::TextureLoad(int32_t t)
+{
+    using namespace std::literals;
+    const storm::platform::frame_work::SyncScope sync(storm::platform::frame_work::Sync::TextureLoad);
+
+    ProgressView();
+    // Form the path to the texture
+    Textures[t].dwSize = 0;
+    if (Textures[t].name == nullptr)
+    {
+        return false;
+    }
+    const std::string file = TextureFileName(Textures[t].name);
+    const char *fn = file.c_str();
+    // Opening the file (or taking the bytes a background read brought for it)
+    TextureFileReader fileS;
+    if (!fileS.open(fn))
     {
         // One the game's data names but does not ship is reported once per session by its requester (FailSceneTexture).
         if (bTrace && !storm::render::KnownMissingGameTexture(fn))
@@ -2101,7 +2200,7 @@ bool Renderer::TextureLoad(int32_t t)
     TX_FILE_HEADER head{};
     static_assert(sizeof(head) == sizeof(storm::texture::TxHeader));
     const char *damaged = nullptr;
-    if (!fio->_ReadFile(fileS, &head, sizeof(head)))
+    if (!fileS.read(&head, sizeof(head)))
         damaged = "short header";
     else
     {
@@ -2110,12 +2209,9 @@ bool Renderer::TextureLoad(int32_t t)
         damaged = storm::texture::tx_header_problem(checked);
         if (!damaged)
         {
-            fileS.seekg(0, std::ios::end);
-            const std::streamoff size = fileS.tellg();
+            const std::streamoff size = fileS.size();
             if (size < 0 || static_cast<uint64_t>(size) < storm::texture::kTxHeaderBytes + storm::texture::tx_payload_bytes(checked))
                 damaged = size < 0 ? "file size unavailable" : "truncated levels";
-            fileS.clear();
-            fileS.seekg(static_cast<std::streamoff>(storm::texture::kTxHeaderBytes));
         }
     }
     if (damaged)
@@ -2125,7 +2221,7 @@ bool Renderer::TextureLoad(int32_t t)
                       head.mip_size);
         delete[] Textures[t].name;
         Textures[t].name = nullptr;
-        fio->_CloseFile(fileS);
+        fileS.close();
         return false;
     }
     // Analyzing the format
@@ -2146,7 +2242,7 @@ bool Renderer::TextureLoad(int32_t t)
         }
         delete[] Textures[t].name;
         Textures[t].name = nullptr;
-        fio->_CloseFile(fileS);
+        fileS.close();
         return false;
     }
     d3dFormat = textureFormats[textureFI].d3dFormat;
@@ -2173,7 +2269,7 @@ bool Renderer::TextureLoad(int32_t t)
         // Position in file
         if (seekposition)
         {
-            fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+            fileS.skip(seekposition);
         }
         // create the texture
         storm::shim::Texture2D *tex = nullptr;
@@ -2189,7 +2285,7 @@ bool Renderer::TextureLoad(int32_t t)
             }
             delete[] Textures[t].name;
             Textures[t].name = nullptr;
-            fio->_CloseFile(fileS);
+            fileS.close();
             return false;
         }
         // Filling the levels
@@ -2225,7 +2321,7 @@ bool Renderer::TextureLoad(int32_t t)
                 }
                 delete[] Textures[t].name;
                 Textures[t].name = nullptr;
-                fio->_CloseFile(fileS);
+                fileS.close();
                 tex->Release();
                 return false;
             }
@@ -2250,7 +2346,7 @@ bool Renderer::TextureLoad(int32_t t)
             }
             delete[] Textures[t].name;
             Textures[t].name = nullptr;
-            fio->_CloseFile(fileS);
+            fileS.close();
             return false;
         }
         // Number of mips
@@ -2264,7 +2360,7 @@ bool Renderer::TextureLoad(int32_t t)
             }
             delete[] Textures[t].name;
             Textures[t].name = nullptr;
-            fio->_CloseFile(fileS);
+            fileS.close();
             return false;
         }
         if (!(devcaps.TextureCaps & D3DPTEXTURECAPS_MIPCUBEMAP))
@@ -2284,14 +2380,14 @@ bool Renderer::TextureLoad(int32_t t)
             }
             delete[] Textures[t].name;
             Textures[t].name = nullptr;
-            fio->_CloseFile(fileS);
+            fileS.close();
             return false;
         }
         // Loading the sides
         bool isError = false;
         if (seekposition)
         {
-            fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+            fileS.skip(seekposition);
         }
         uint32_t sz =
             LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_Z, head.nmips, head.mip_size, head.width, isSwizzled,
@@ -2301,7 +2397,7 @@ bool Renderer::TextureLoad(int32_t t)
             Textures[t].dwSize += sz;
             if (seekposition)
             {
-                fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+                fileS.skip(seekposition);
             }
             sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_X, head.nmips, head.mip_size, head.width,
                                 isSwizzled, fn);
@@ -2310,7 +2406,7 @@ bool Renderer::TextureLoad(int32_t t)
                 Textures[t].dwSize += sz;
                 if (seekposition)
                 {
-                    fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+                    fileS.skip(seekposition);
                 }
                 sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_Z, head.nmips, head.mip_size, head.width,
                                     isSwizzled, fn);
@@ -2319,7 +2415,7 @@ bool Renderer::TextureLoad(int32_t t)
                     Textures[t].dwSize += sz;
                     if (seekposition)
                     {
-                        fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+                        fileS.skip(seekposition);
                     }
                     sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_X, head.nmips, head.mip_size, head.width,
                                         isSwizzled, fn);
@@ -2328,7 +2424,7 @@ bool Renderer::TextureLoad(int32_t t)
                         Textures[t].dwSize += sz;
                         if (seekposition)
                         {
-                            fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+                            fileS.skip(seekposition);
                         }
                         sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_POSITIVE_Y, head.nmips, head.mip_size,
                                             head.width, isSwizzled, fn);
@@ -2337,7 +2433,7 @@ bool Renderer::TextureLoad(int32_t t)
                             Textures[t].dwSize += sz;
                             if (seekposition)
                             {
-                                fio->_SetFilePointer(fileS, seekposition, std::ios::cur);
+                                fileS.skip(seekposition);
                             }
                             sz = LoadCubmapSide(fileS, tex, D3DCUBEMAP_FACE_NEGATIVE_Y, head.nmips, head.mip_size,
                                                 head.width, isSwizzled, fn);
@@ -2381,7 +2477,7 @@ bool Renderer::TextureLoad(int32_t t)
             }
             delete[] Textures[t].name;
             Textures[t].name = nullptr;
-            fio->_CloseFile(fileS);
+            fileS.close();
             tex->Release();
             return false;
         }
@@ -2414,11 +2510,11 @@ bool Renderer::TextureLoad(int32_t t)
     Textures[t].loaded = true;
     storm::render::MarkTextureImmutable(Textures[t].d3dtex); // the shim keeps no CPU copy after the upload
     // Close the file
-    fio->_CloseFile(fileS);
+    fileS.close();
     return true;
 }
 
-uint32_t Renderer::LoadCubmapSide(std::fstream &fileS, storm::shim::CubeTexture *tex, D3DCUBEMAP_FACES face,
+uint32_t Renderer::LoadCubmapSide(TextureFileReader &fileS, storm::shim::CubeTexture *tex, D3DCUBEMAP_FACES face,
                                    uint32_t numMips, uint32_t mipSize, uint32_t size, bool isSwizzled,
                                    const char *name)
 {
@@ -2461,7 +2557,7 @@ uint32_t Renderer::LoadCubmapSide(std::fstream &fileS, storm::shim::CubeTexture 
     return texsize;
 }
 
-bool Renderer::LoadTextureSurface(std::fstream &fileS, storm::shim::Surface *suface, uint32_t mipSize, uint32_t width,
+bool Renderer::LoadTextureSurface(TextureFileReader &fileS, storm::shim::Surface *suface, uint32_t mipSize, uint32_t width,
                                    uint32_t height, bool isSwizzled, const char *name)
 {
     // The file holds mipSize bytes for this level (the header's level-0 size over 4 per level); the surface holds the
@@ -2475,12 +2571,9 @@ bool Renderer::LoadTextureSurface(std::fstream &fileS, storm::shim::Surface *suf
     const uint32_t rows = isSwizzled ? std::max(1u, (height + 3) / 4) : std::max(1u, height); // DXT: block rows
     const uint32_t capacity = static_cast<uint32_t>(lock.Pitch) * rows;
     const uint32_t read = std::min(mipSize, capacity);
-    bool ok = fio->_ReadFile(fileS, lock.pBits, read);
+    bool ok = fileS.read(lock.pBits, read);
     if (ok && read < mipSize)
-    {
-        fio->_SetFilePointer(fileS, mipSize - read, std::ios::cur);
-        ok = fileS.good();
-    }
+        ok = fileS.skip(mipSize - read);
     if (mipSize != capacity)
         spdlog::error("texture {}: a {}x{} level holds {} bytes in the file and {} in the texture: {} read{}", name,
                       width, height, mipSize, capacity, read, read < capacity ? ", the rest left black" : "");

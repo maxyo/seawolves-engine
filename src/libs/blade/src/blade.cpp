@@ -81,6 +81,8 @@ void BLADE::BLADE_INFO::DrawBlade(VRenderer *rs, unsigned int blendValue, MODEL 
         glm::mat4 perMtx;
 
         auto *bladeNode = obj->GetNode(0);
+        if (bladeNode->geo->Pending())
+            return; // its files are still being read (MSG_MODEL_LOAD_GEO_DEFERRED): drawn, with its trail, once built
         if ((blendValue & 0xff000000) == 0xff000000)
         {
             bladeNode->SetTechnique("EnvAmmoShader");
@@ -215,7 +217,7 @@ bool BLADE::BLADE_INFO::LoadBladeModel(MESSAGE &message)
             gs->SetTexturePath("Ammo\\");
         // Create a model
         eid = core.CreateEntity("modelr");
-        if (!core.Send_Message(eid, "ls", MSG_MODEL_LOAD_GEO, path))
+        if (!core.Send_Message(eid, "ls", MSG_MODEL_LOAD_GEO_DEFERRED, path))
         {
             core.EraseEntity(eid);
             if (gs)
@@ -278,7 +280,8 @@ void BLADE::Realize(uint32_t Delta_Time)
         return;
 
     auto *manNode = mdl->GetNode(0);
-    if (!characterInView(rs, mdl, manNode))
+    // A character whose model is still being read is not drawn: neither is what it holds.
+    if (manNode->geo->Pending() || !characterInView(rs, mdl, manNode))
         return;
     rs->TextureSet(0, -1);
     rs->TextureSet(1, -1);
@@ -391,7 +394,7 @@ bool BLADE::LoadGunModel(MESSAGE &message)
             gs->SetTexturePath("Ammo\\");
         // Create a model
         gun = core.CreateEntity("modelr");
-        if (!core.Send_Message(gun, "ls", MSG_MODEL_LOAD_GEO, path))
+        if (!core.Send_Message(gun, "ls", MSG_MODEL_LOAD_GEO_DEFERRED, path))
         {
             core.EraseEntity(gun);
             if (gs)
@@ -428,6 +431,8 @@ void BLADE::GunFire()
     if (obj != nullptr)
     {
         auto *gunNode = obj->GetNode(0);
+        if (manNode->geo->Pending() || gunNode->geo->Pending())
+            return; // not drawn yet (its files are still being read): no flash either
         sti = -1;
         auto idGun = manNode->geo->FindName(currentGunLocName);
 
@@ -708,7 +713,7 @@ bool BLADE::TIEITEM_INFO::LoadItemModel(const char *mdlName, const char *locName
         gs->SetTexturePath("Ammo\\");
     // Create a model
     eid = core.CreateEntity("modelr");
-    if (!core.Send_Message(eid, "ls", MSG_MODEL_LOAD_GEO, path))
+    if (!core.Send_Message(eid, "ls", MSG_MODEL_LOAD_GEO_DEFERRED, path))
     {
         core.EraseEntity(eid);
         if (gs)

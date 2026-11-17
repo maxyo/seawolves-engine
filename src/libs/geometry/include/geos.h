@@ -11,7 +11,7 @@ Import library main header
 #pragma once
 
 #include <cstdint>
-#include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -314,20 +314,46 @@ class GEOS
     virtual bool AppendLightmapTriangles(std::vector<glm::vec3> &positions, std::vector<glm::vec2> &uvs,
                                          std::vector<uint32_t> &indices) const = 0;
 
+    // A model loaded while the game is played (VGEOMETRY::CreateGeometryDeferred) whose files are still being read:
+    // it has no names, labels, objects or textures yet, draws nothing and is hit by no ray.
+    virtual bool Pending() const
+    {
+        return false;
+    }
+    // Ends a pending load now, on this thread (waits for the files): a loading screen is up.
+    virtual void LoadNow()
+    {
+    }
+
     //-----------------------------------------
     // unused
     //-----------------------------------------
     virtual ~GEOS(){};
 };
 
+// A model file's bytes, read whole by GEOM_SERVICE::OpenFile (or handed over by a background read) and parsed in place.
+struct GEOM_FILE
+{
+    std::shared_ptr<const std::vector<char>> bytes;
+    size_t position = 0;
+    bool is_open() const
+    {
+        return bytes != nullptr;
+    }
+    size_t size() const
+    {
+        return bytes ? bytes->size() : 0;
+    }
+};
+
 class GEOM_SERVICE
 {
   public:
     virtual ~GEOM_SERVICE(){};
-    virtual std::fstream OpenFile(const char *fname) = 0;
-    virtual bool ReadFile(std::fstream &fileS, void *data, int32_t bytes) = 0;
-    virtual int FileSize(const char *fname) = 0;
-    virtual void CloseFile(std::fstream &fileS) = 0;
+    virtual GEOM_FILE OpenFile(const char *fname) = 0;
+    // Copies the next `bytes` bytes of the file; false (and zeroes for what the file does not hold) past its end.
+    virtual bool ReadFile(GEOM_FILE &file, void *data, int32_t bytes) = 0;
+    virtual void CloseFile(GEOM_FILE &file) = 0;
     virtual void *malloc(int32_t bytes) = 0;
     virtual void free(void *ptr) = 0;
 

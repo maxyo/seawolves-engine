@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <optional>
 
+#include <spdlog/spdlog.h>
+
 VGEOMETRY *NODER::gs = nullptr;
 VRenderer *NODER::rs = nullptr;
 int32_t NODER::depth = -1;
@@ -102,6 +104,8 @@ bool NODER::Clip()
 //-------------------------------------------------------------------
 float NODER::Update(glm::mat4 &mtx, glm::vec3 &cnt)
 {
+    if (deferred_ && !geo->Pending())
+        FinishDeferred(); // built this frame (GEOMETRY::RunStart)
     glob_mtx = mtx * loc_mtx;
 
     center = geo_center;
@@ -208,21 +212,55 @@ bool NODER::Init(const char *lightPath, const char *pname, const char *oname, co
 
     sys_TexPath = gs->GetTexturePath();
 
-    geo = gs->CreateGeometry(sys_modelName_full.c_str(), sys_LightPath.c_str(), 0, lmPath);
+    geo = deferLoad_ && par == nullptr
+              ? gs->CreateGeometryDeferred(sys_modelName_full.c_str(), sys_LightPath.c_str(), 0, lmPath)
+              : gs->CreateGeometry(sys_modelName_full.c_str(), sys_LightPath.c_str(), 0, lmPath);
     if (!geo)
     {
         return false;
     }
 
+    parent = par;
+    if (parent == nullptr)
+        strcpy_s(name, pname);
+    // Its files are still being read: no size and no child nodes until it is built (Update).
+    deferred_ = geo->Pending();
+    if (deferred_)
+        return true;
+    return AttachGeometry(lightPath, pname, lmPath);
+}
+
+bool NODER::InitDeferred(const char *lightPath, const char *pname, const glm::mat4 &m, const glm::mat4 &globm,
+                         const char *lmPath)
+{
+    deferLoad_ = true;
+    return Init(lightPath, pname, "", m, globm, nullptr, lmPath);
+}
+
+void NODER::FinishDeferred()
+{
+    deferred_ = false;
+    if (!AttachGeometry(sys_LightPath.c_str(), sys_modelName_base.c_str(), sys_lmPath.c_str()))
+        spdlog::error("model {}: a child node's geometry could not be loaded", sys_modelName_full);
+}
+
+void NODER::LoadNow()
+{
+    if (!deferred_ || !geo)
+        return;
+    geo->LoadNow();
+    FinishDeferred();
+}
+
+// The geometry's size and the child nodes its "geometry" labels name (each a model file of its own).
+bool NODER::AttachGeometry(const char *lightPath, const char *pname, const char *lmPath)
+{
     // load geometry radius and center
     GEOS::INFO gi;
     geo->GetInfo(gi);
     geo_radius = gi.radius;
     geo_center = glm::vec3(gi.boxcenter.x, gi.boxcenter.y, gi.boxcenter.z);
 
-    parent = par;
-    if (parent == nullptr)
-        strcpy_s(name, pname);
     // calculate number of labels
     const auto idGeo = geo->FindName("geometry");
     int32_t node_count = 0;

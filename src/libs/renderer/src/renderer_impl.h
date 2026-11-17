@@ -15,6 +15,9 @@
 #include "storm/render/perf_stats.hpp"
 #include "script_libriary.h"
 
+#include <fstream>
+#include <memory>
+#include <optional>
 #include <stack>
 #include <vector>
 #include <unordered_map>
@@ -98,6 +101,22 @@ class DX9RENDER_SCRIPT_LIBRIARY : public SCRIPT_LIBRIARY
 };
 
 //-----------SDEVICE-----------
+// A .tx file TextureLoad reads: from disk, or the bytes a background read brought for it (storm::io::PrefetchScope).
+class TextureFileReader
+{
+  public:
+    bool open(const char *fn);
+    bool read(void *data, size_t bytes);
+    bool skip(size_t bytes);
+    std::streamoff size(); // the whole file's, -1 when unknown; the read position stays
+    void close();
+
+  private:
+    std::fstream file_;
+    std::shared_ptr<const std::vector<char>> bytes_;
+    size_t position_ = 0;
+};
+
 class Renderer : public VRenderer
 {
 #define RS_RECT_VERTEX_FORMAT (D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1)
@@ -162,6 +181,7 @@ class Renderer : public VRenderer
 
     // Renderer: Textures Section
     int32_t TextureCreate(const char *fname) override;
+    std::vector<std::string> TextureFileCandidates(const char *fname) override;
     int32_t TextureCreate(UINT width, UINT height, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) override;
     int32_t TextureMissing() override;
     int32_t CubeTextureCreate(UINT edgeLength, UINT levels, uint32_t usage, D3DFORMAT format, D3DPOOL pool) override;
@@ -317,9 +337,9 @@ class Renderer : public VRenderer
     HRESULT ImageBlt(const char *pName, RECT *pDstRect, RECT *pSrcRect) override;
     HRESULT ImageBlt(int32_t nTextureId, RECT *pDstRect, RECT *pSrcRect) override;
 
-    bool LoadTextureSurface(std::fstream &fileS, storm::shim::Surface *suface, uint32_t mipSize, uint32_t width,
+    bool LoadTextureSurface(TextureFileReader &fileS, storm::shim::Surface *suface, uint32_t mipSize, uint32_t width,
                             uint32_t height, bool isSwizzled, const char *name);
-    uint32_t LoadCubmapSide(std::fstream &fileS, storm::shim::CubeTexture *tex, D3DCUBEMAP_FACES face, uint32_t numMips,
+    uint32_t LoadCubmapSide(TextureFileReader &fileS, storm::shim::CubeTexture *tex, D3DCUBEMAP_FACES face, uint32_t numMips,
                             uint32_t mipSize, uint32_t size, bool isSwizzled, const char *name);
 
     // core interface
@@ -567,4 +587,9 @@ private:
 
 
     bool TextureLoad(int32_t texid);
+    // TextureCreate's name of `fname` under texture path variant `variant` (TexPaths[variant] put before the file
+    // name; -1: as given), upper case; none when that variant is not set.
+    std::optional<std::string> TextureVariantName(const char *fname, int32_t variant) const;
+    // The slot of a loaded texture of that name (TextureVariantName), or -1.
+    int32_t FindLoadedTexture(const std::string &name, uint32_t hash) const;
 };
