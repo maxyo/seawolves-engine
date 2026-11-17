@@ -3078,6 +3078,13 @@ static void Launcher()
     router.Back();
     ExpectEqual(verb(), "APP files-close ", "← returns to the ready launcher");
 
+    // The game did not start on a full storage: the megabytes to free, in place of {1}.
+    surface.texts["launcher.result.start_no_space"] = "<free {1} MB>";
+    router.SetState("launcher", launcher({{"phase", "ready"}, {"library", true}, {"hasGame", true},
+                                          {"result", {{"key", "start_no_space"}, {"args", {41.2}}}}}));
+    ExpectEqual(surface.props["notices"][0]["text"].get<std::string>(), "<free 41 MB>", "a start on a full storage says what to free");
+    ExpectEqual(surface.props["notices"][0]["tone"].get<std::string>(), "danger", "and is a danger notice");
+
     // Nothing reaches the screen unlogged, the launcher's notices included: each is logged when it appears,
     // once while it stays, and again when it comes back.
     const auto shownCount = [&surface](const std::string &line) {

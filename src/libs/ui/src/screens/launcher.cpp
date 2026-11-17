@@ -218,6 +218,12 @@ Json ResultNotice(Bindings &bindings, const Json &result, bool has_game)
     {
         notice["text"] = Fill(bindings.Text("launcher.result.import_no_space_need"), {gib(0), gib(1), gib(2)});
     }
+    else if (key == "start_no_space")
+    {
+        // The game did not start on a full storage (the app's GameActivity): the megabytes still to free.
+        const std::string mib = !args.empty() && args[0].is_number() ? std::to_string(std::max(1LL, std::llround(args[0].get<double>()))) : "?";
+        notice["text"] = Fill(bindings.Text(StringKey("launcher.result.start_no_space")), {mib});
+    }
     else if (std::find_if(std::begin(kKnown), std::end(kKnown), [&table](const char *k) { return table == k; }) != std::end(kKnown))
     {
         // The file names the reader reported (missing volumes, the clashing names) go where the text puts {1}.
