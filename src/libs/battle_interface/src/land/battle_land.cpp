@@ -125,9 +125,17 @@ uint64_t BATTLE_LAND_INTERFACE::ProcessMessage(MESSAGE &message)
         }
         break;
 
-    case MSG_BATTLE_LAND_SET_SHOW:
-        m_bShowCommandos = (message.Long() != 0);
+    case MSG_BATTLE_LAND_SET_SHOW: {
+        const bool show = message.Long() != 0;
+#ifdef __ANDROID__
+        // The scripts show the commands again one event after a dialogue ends (EVENT_DIALOG_EXIT),
+        // after the touch HUD's refresh on leaving the dialogue found them hidden: a change of the list.
+        if (show != m_bShowCommandos && m_pManSign)
+            m_pManSign->MarkAndroidChanged();
+#endif
+        m_bShowCommandos = show;
         break;
+    }
 
     case MSG_BATTLE_LAND_SET_MSGICONS:
         EnableMessageIcons(message.ScriptVariablePointer());

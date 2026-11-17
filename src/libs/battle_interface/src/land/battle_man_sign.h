@@ -44,6 +44,7 @@ class BIManSign
     // The list changed since the last call: the scripts' update message, a new land interface,
     // the menu opened or closed or a command executed (the touch HUD asks the scripts only then).
     bool TakeAndroidChanged() { return std::exchange(m_bAndroidChanged, false); }
+    void MarkAndroidChanged() { m_bAndroidChanged = true; }
 #endif
 
   protected:
