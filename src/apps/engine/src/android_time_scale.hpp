@@ -1,16 +1,20 @@
 #pragma once
-#ifdef __ANDROID__
 // Four steps of the game's time acceleration for a touch HUD (owner decision): x1, x2, x4, x8.
 // The scripts keep the logic: TimeScaleCounter (scale = 1 + counter * 0.25) is set one step of
 // their own ladder below the target and one TimeScaleFaster / TimeScaleSlower activation runs
 // their handler, which applies their guards (underwater, quest locks), clamps (x6 in a fight,
 // x3 on land, x2.5 on the world map), logs the new scale once and keeps the TimeSpeed perk in
 // step.
-#include "core.h"
-#include "platform/android_ui.hpp"
-#include "v_data.h"
-
+//
+// The engine's time scale is the truth, not the counter: the HUD's button shows the scale and
+// asks for the step after it, and the scripts do not keep the counter in step with the scale.
+// Leaving any interface (Start_InterfaceDoExit) sets x2 (GetSeaTimeScale) whenever the
+// TimeSpeed perk is active and leaves the counter at x4 or x8; a dialogue sets the scale
+// without the counter. Deciding by the counter, x4 → ship screen → x2 then asked for x4 found
+// the counter at x4 already and did nothing, at every tap.
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <string_view>
 
 namespace storm::android
@@ -28,24 +32,55 @@ inline int timeScaleStep(std::string_view control)
     return -1;
 }
 
+// One HUD request for a step. `Game` is the scripts' side:
+//   bool counter(int32_t &value)      TimeScaleCounter (false: no such variable)
+//   void setCounter(int32_t value)
+//   float scale()                     the time scale the engine runs at
+//   void activate(const char *control) one "Control Activation" of the control
+template <class Game> void requestTimeScaleStep(Game &game, int step)
+{
+    int32_t current = 0;
+    if (step < 0 || step >= static_cast<int>(TimeScaleCounters.size()) || !game.counter(current)) return;
+    const float before = game.scale();
+    const float target = 1.f + static_cast<float>(TimeScaleCounters[step]) * 0.25f;
+    if (current == TimeScaleCounters[step] && std::fabs(before - target) < 0.01f) return;
+    game.setCounter(TimeScaleFrom[step]);
+    game.activate(step == 0 ? "TimeScaleSlower" : "TimeScaleFaster");
+    if (std::fabs(game.scale() - before) >= 0.01f) return;
+    // Nothing changed: the scripts refused (underwater, a quest lock) or their limit (x2.5 on the
+    // world map, x6 in a fight) already holds the scale. Their counter goes back to what it was;
+    // a step up asked again from there goes round to x1 instead of standing still on a button
+    // that no longer changes anything.
+    game.setCounter(current);
+    if (step > 0) requestTimeScaleStep(game, 0);
+}
+} // namespace storm::android
+
+#ifdef __ANDROID__
+#include "core.h"
+#include "platform/android_ui.hpp"
+#include "v_data.h"
+
+namespace storm::android
+{
 // Runs at a completed frame boundary, like every other control activation.
 inline void applyTimeScaleStep(int step)
 {
-    auto *counter = static_cast<VDATA *>(core.GetScriptVariable("TimeScaleCounter"));
-    int32_t current = 0;
-    if (step < 0 || step >= static_cast<int>(TimeScaleCounters.size()) || !counter || !counter->Get(current)) return;
-    if (current == TimeScaleCounters[step]) return;
-    counter->Set(TimeScaleFrom[step]);
-    // No toast for the new scale (owner decision): the HUD's time button shows it.
-    ++gameMessagesMuted;
-    core.Event("Control Activation", "s", step == 0 ? "TimeScaleSlower" : "TimeScaleFaster");
-    --gameMessagesMuted;
-    // A step beyond the scripts' limit (x2.5 on the world map, x6 in a fight) leaves the scale
-    // where the limit holds it; asked again from there, the ladder goes round to x1 instead of
-    // standing still on a button that no longer changes anything.
-    int32_t after = current;
-    if (step > 0 && counter->Get(after) && after == current)
-        applyTimeScaleStep(0);
+    struct Scripts
+    {
+        VDATA *variable = static_cast<VDATA *>(core.GetScriptVariable("TimeScaleCounter"));
+        bool counter(int32_t &value) const { return variable && variable->Get(value); }
+        void setCounter(int32_t value) const { variable->Set(value); }
+        float scale() const { return core.GetTimeScale(); }
+        void activate(const char *control) const
+        {
+            // No toast for the new scale (owner decision): the HUD's time button shows it.
+            ++gameMessagesMuted;
+            core.Event("Control Activation", "s", control);
+            --gameMessagesMuted;
+        }
+    } scripts;
+    requestTimeScaleStep(scripts, step);
 }
 } // namespace storm::android
 #endif
