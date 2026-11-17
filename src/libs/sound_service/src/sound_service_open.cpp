@@ -45,7 +45,8 @@ void SoundService::RunStart() {
 }
 void SoundService::RunEnd() { if(audio) {try {audio->update();} catch(const std::exception& e){core.Trace("Audio update failed: %s",e.what());}} }
 TSD_ID SoundService::SoundPlay(const char* name,eSoundType type,eVolumeType category,bool simpleCache,bool looped,bool cached,int32_t time,const glm::vec3* pos,float minDistance,float maxDistance,int32_t loopPause,float volume,int32_t priority) {
-    if(!audio || !name)return 0;
+    // The game's scripts pass "" for "no sound" (e.g. CreateLocationParticles(..., "")).
+    if(!audio || !name || !*name)return 0;
     std::string file=name;
     if(!strchr(name,'\\')) {
         int index=GetAliasIndexByName(name);
