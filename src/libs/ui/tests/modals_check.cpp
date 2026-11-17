@@ -230,7 +230,7 @@ static std::vector<Case> Cases()
          {}},
         {"downloads «⋯» sheet",
          [](Router &router) {
-             router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"sets", DownloadSets()}}}});
+             router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"loaded", true}, {"sets", DownloadSets()}}}});
              router.OnEvent({"set-1", "menu", ""});
          },
          "sheet",
@@ -240,7 +240,7 @@ static std::vector<Case> Cases()
              router.SetState("launcher",
                              Json{{"screen", "downloads"},
                                   {"language", "english"},
-                                  {"downloads", {{"sets", DownloadSets()},
+                                  {"downloads", {{"loaded", true}, {"sets", DownloadSets()},
                                                  {"dialog", {{"kind", "candidates"}, {"id", "1"},
                                                              {"candidates", {{{"label", "Game"}, {"kind", "loose-game-candidate"}, {"files", 3}, {"bytes", 10}}}},
                                                              {"all", {{"files", 9}, {"bytes", 40}}}}}}}});

@@ -336,6 +336,8 @@ static void Settings(const std::string &models)
     ExpectEqual(router.Using(), "option_screen", "settings is a ported screen");
     ExpectEqual(surface.tag, "s-settings", "settings mounted");
     Expect(surface.errors.empty(), "no errors");
+    Expect(std::count(surface.commands.begin(), surface.commands.end(), "host app-cache-measure ") == 1,
+           "an opened settings screen has the host measure the cache as it is now");
     const Json extras = surface.props["extras"];
     Expect(extras.is_null() || extras["rows"].empty(),
            "keyboard nodes, their defaults button and colour correction are not offered: " + extras.dump());
@@ -445,9 +447,17 @@ static void Settings(const std::string &models)
     surface.commands.clear();
     router.OnEvent({"app-cache-clear", "click", ""});
     const Json cleared = surface.props["sections"][0]["columns"][1]["rows"][3];
-    Expect(surface.commands.size() == 1 && surface.commands[0] == "host app-cache-clear " && cleared["disabled"] == false &&
-               cleared["display"] == "" && cleared["hint"] == "<settings.cache_pending>",
-           "«Очистить» asks the host at once (it clears at the next start) and the row says so: " + Json(surface.commands).dump() + cleared.dump());
+    Expect(surface.commands.size() == 1 && surface.commands[0] == "host app-cache-clear " && cleared["display"] == "<settings.cache_clear>",
+           "«Очистить» asks the host at once (it clears at the next start): " + Json(surface.commands).dump() + cleared.dump());
+    {
+        std::ifstream again(models + "/app-settings.json", std::ios::binary);
+        Json reported = Json::parse(again);
+        reported["cache_clear_pending"] = true;
+        router.SetState("appSettings", reported);
+    }
+    const Json pending = surface.props["sections"][0]["columns"][1]["rows"][3];
+    Expect(pending["disabled"] == false && pending["display"] == "" && pending["hint"] == "<settings.cache_pending>",
+           "the host's report of the pending clear shows on the open screen: " + pending.dump());
     surface.commands.clear();
     router.OnEvent({"app-cache-clear", "click", ""});
     Expect(surface.commands.empty(), "a pending clear is not asked twice");
@@ -555,6 +565,7 @@ static void Settings(const std::string &models)
         debug.OnEvent({"app-fx_render_height", "change", "2"});
         debug.OnEvent({"app-fx_gpu_profile", "change", "1"});
         debug.OnEvent({"app-fx_pom_toggle", "change", "1"});
+        debug_surface.commands.clear();
         debug.OnEvent({"done", "click", ""});
         Expect(!debug_surface.commands.empty() && debug_surface.commands[0].find("\"fx_render_height\":900") != std::string::npos &&
                    debug_surface.commands[0].find("\"fx_gpu_profile\":1") != std::string::npos &&

@@ -52,7 +52,7 @@
     "shortcut": ["mainmenu", "character", "characterscreen", "shipscreen", "journalscreen", "itemsscreen"],
     "presence": ["hidden", "menu", "shown"]
   },
-  "host_actions": ["app-about", "app-cache-clear", "app-exit-to-main-menu", "app-settings"],
+  "host_actions": ["app-about", "app-cache-clear", "app-cache-measure", "app-exit-to-main-menu", "app-settings"],
   "state_channels": {
     "game": ["appSettings", "presentation"],
     "launcher": ["launcher"]

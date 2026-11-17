@@ -48,7 +48,7 @@ payload`). `poll` returns JSON:
 {"state":"downloading","downloadedBytes":0,"wantedBytes":123,"bytesPerSecond":0,
  "peers":0,"seeds":0,"stalledSeconds":95,"networkError":"Tracker udp://…: timed out",
  "checkpointPending":false,"error":"","errorKind":"",
- "payloadDirectory":"/private/library/set-id/payload","metadataReady":true}
+ "payloadDirectory":"/private/library/set-id/payload","checkProgress":0,"metadataReady":true}
 ```
 
 `poll` never carries the file list: a game torrent lists tens of thousands of files
@@ -56,8 +56,9 @@ payload`). `poll` returns JSON:
 is true, `metadata` returns the immutable metadata JSON below; fetch it once per set
 and keep it (it throws before the metadata has arrived).
 
-States are `metadata`, `awaiting-selection`, `downloading`, `paused`, `complete`,
-and `error`. Nothing fails silently:
+States are `metadata`, `awaiting-selection`, `checking`, `downloading`, `paused`,
+`complete`, and `error`. `checking` is the hash check of the files already on disk
+after a resume; `checkProgress` is its share (0…1). Nothing fails silently:
 
 * `error` carries the first fatal cause and `errorKind`: `storage-full` (no space
   for payload or checkpoint), `storage` (other disk errors), `transfer` (other

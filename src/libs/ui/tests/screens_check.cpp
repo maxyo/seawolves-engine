@@ -3077,6 +3077,20 @@ static void Launcher()
     Expect(surface.props["back"].get<bool>(), "changing files of a ready game has ←");
     router.Back();
     ExpectEqual(verb(), "APP files-close ", "← returns to the ready launcher");
+    ExpectEqual(surface.props["setup"]["prompt"].get<std::string>(), "<launcher.replace>", "a ready game's files: another copy replaces it");
+    ExpectEqual(surface.props["installed"]["title"].get<std::string>(), "<launcher.installed>", "the installed game before it was read");
+    router.SetState("launcher", launcher({{"phase", "setup"}, {"library", true}, {"hasGame", true}, {"files", true},
+                                          {"installed", {{"name", "Sea Dogs"}, {"version", "ver. 1.7.3"}, {"languages", {"russian"}},
+                                                         {"defaultLanguage", "russian"}, {"bytes", 1073741824.0}, {"patches", Json::array()}}}}));
+    ExpectEqual(surface.props["installed"]["title"].get<std::string>(), "Sea Dogs 1.7.3", "the installed game by its name and version");
+    ExpectEqual(surface.props["installed"]["meta"].get<std::string>(), "<launcher.language.russian> · <launcher.gb>", "its languages and size");
+    router.OnEvent({"delete-game", "click", ""});
+    ExpectEqual(verb(), "APP delete-game ", "the held «Удалить» deletes the game");
+    router.SetState("launcher", launcher({{"phase", "ready"}, {"library", true}, {"hasGame", true},
+                                          {"result", {{"key", "import_interrupted"}, {"args", Json::array()}}}}));
+    Expect(surface.props["notices"][0]["tone"].get<std::string>() == "warn" &&
+               surface.props["notices"][0]["text"].get<std::string>() == "<launcher.result.import_interrupted> <launcher.kept>",
+           "an interrupted install found at start is said once, with the game that is left");
 
     // The game did not start on a full storage: the megabytes to free, in place of {1}.
     surface.texts["launcher.result.start_no_space"] = "<free {1} MB>";
@@ -3131,6 +3145,10 @@ static void Launcher()
     Expect(surface.props["busy"]["status"].get<std::string>().find("<launcher.left>") != std::string::npos, "time left once the rate is known");
     router.OnEvent({"cancel", "click", ""});
     ExpectEqual(verb(), "APP cancel ", "cancel import");
+    router.SetState("launcher", launcher({{"phase", "busy"}, {"hasGame", true}, {"import", {{"stage", "deleting"}, {"canCancel", false}}}}));
+    Expect(surface.props["busy"]["title"].get<std::string>() == "<launcher.stage.deleting>" && surface.props["cancel"].is_null() &&
+               surface.props["title"].get<std::string>() == "<launcher.title_setup>",
+           "deleting the game: said so on the game files screen, nothing to cancel");
 
     router.SetState("launcher", launcher({{"phase", "busy"}, {"hasGame", false},
                                           {"import", {{"stage", "choosing"}, {"canCancel", true},
@@ -3150,7 +3168,35 @@ static void Launcher()
     router.SubmitText(surface.text.token, "secret", true);
     ExpectEqual(verb(), "PASSWORD edit secret", "the typed password goes to the host");
 
-    // Download library.
+    // Download library: nothing, not even «empty», until the host has read it.
+    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"loaded", false}, {"sets", Json::array()}}}});
+    Expect(!surface.props["empty"].get<bool>() && surface.props["actions"].empty(), "an unread library says nothing");
+    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"loaded", true}, {"sets", Json::array()}}}});
+    Expect(surface.props["empty"].get<bool>(), "a read library without sets is empty");
+    {
+        constexpr double kGiB = 1073741824.0;
+        const Json rows = Json::array({Json{{"id", "a"}, {"kind", "torrent"}, {"name", "A"}, {"state", "downloading"}, {"downloaded", 1.2 * kGiB},
+                                            {"wanted", 12.7 * kGiB}, {"rate", 3.5 * 1048576.0}},
+                                       Json{{"id", "b"}, {"kind", "torrent"}, {"name", "B"}, {"state", "downloading"}, {"downloaded", 1.0 * kGiB},
+                                            {"wanted", 12.0 * kGiB}, {"rate", 20000.0}, {"offline", true}, {"stalled", true}},
+                                       Json{{"id", "c"}, {"kind", "torrent"}, {"name", "C"}, {"state", "checking"}, {"checked", 0.345},
+                                            {"wanted", 12.0 * kGiB}},
+                                       Json{{"id", "d"}, {"kind", "torrent"}, {"name", "D"}, {"state", "paused"}, {"downloaded", 6.0 * kGiB},
+                                            {"wanted", 12.0 * kGiB}},
+                                       Json{{"id", "e"}, {"kind", "torrent"}, {"name", "E"}, {"state", "downloading"}, {"downloaded", 1.0 * kGiB},
+                                            {"wanted", 12.0 * kGiB}, {"rate", 20000.0}}});
+        router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"loaded", true}, {"sets", rows}}}});
+        const auto meta = [&surface](int i) { return surface.props["sets"][i]["meta"].get<std::string>(); };
+        ExpectEqual(meta(0), "<downloads.state.downloading> · <downloads.size_of> · <downloads.speed> · <launcher.left>",
+                    "downloading: done of total, speed, time left");
+        ExpectEqual(meta(1), "<downloads.state.downloading> · <downloads.offline>", "no network: said so, no time left and no peers' blame");
+        ExpectEqual(surface.props["sets"][1]["metaTone"].get<std::string>(), "danger", "no network is a problem");
+        ExpectEqual(meta(2), "<downloads.state.checking> · 34%", "the hash check after a resume is its own state with its share");
+        Expect(surface.props["sets"][2]["progress"].get<double>() == 34, "the check fills the bar");
+        ExpectEqual(meta(3), "<downloads.state.paused> · <downloads.size_of>", "paused: done of total");
+        ExpectEqual(meta(4), "<downloads.state.downloading> · <downloads.size_of> · <downloads.speed>",
+                    "a time left of days is not shown");
+    }
     const Json sets = Json::array({Json{{"id", "1"}, {"kind", "torrent"}, {"name", "Full"}, {"state", "downloading"}, {"downloaded", 50.0}, {"wanted", 100.0},
                                         {"rate", 10.0}, {"main", "pause"}, {"menu", {"details", "delete"}}},
                                    Json{{"id", "2"}, {"kind", "archive"}, {"name", "a.zip"}, {"state", "complete"}, {"main", "import"}, {"menu", {"delete"}}},
@@ -3158,7 +3204,7 @@ static void Launcher()
                                         {"networkError", "Tracker x: 404"}, {"main", "pause"}},
                                    Json{{"id", "4"}, {"kind", "magnet"}, {"name", "Full disk"}, {"state", "error"}, {"errorKind", "storage-full"},
                                         {"error", "No space left on device"}, {"main", "resume"}, {"menu", {"delete"}}}});
-    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"sets", sets}}}});
+    router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"}, {"downloads", {{"loaded", true}, {"sets", sets}}}});
     ExpectEqual(surface.tag, "s-downloads", "downloads screen");
     ExpectEqual(surface.props["sets"][0]["action"].get<std::string>(), "pause", "an active set pauses inline");
     Expect(surface.props["sets"][0]["progress"].get<double>() == 50, "download progress");
@@ -3183,7 +3229,7 @@ static void Launcher()
     router.OnEvent({"menu-delete", "click", ""});
     ExpectEqual(verb(), "APP delete 1", "held delete");
     router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"},
-                                     {"downloads", {{"sets", sets}, {"dialog", {{"kind", "candidates"}, {"id", "1"},
+                                     {"downloads", {{"loaded", true}, {"sets", sets}, {"dialog", {{"kind", "candidates"}, {"id", "1"},
                                                     {"candidates", {{{"label", "Game"}, {"kind", "loose-game-candidate"}, {"files", 3}, {"bytes", 10}},
                                                                     {{"label", "setup.exe"}, {"kind", "installer-candidate"}, {"files", 2}, {"bytes", 20}}}},
                                                     {"all", {{"files", 9}, {"bytes", 40}}}}}}}});
@@ -3197,7 +3243,7 @@ static void Launcher()
     ExpectEqual(verb(), "APP download 1:-1", "every file");
     // Failures in our words by their kind; the host's message only in the log.
     router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"},
-                                     {"downloads", {{"sets", sets}, {"error", "Invalid magnet link: it must start with magnet:?"}, {"errorKind", "magnet-prefix"},
+                                     {"downloads", {{"loaded", true}, {"sets", sets}, {"error", "Invalid magnet link: it must start with magnet:?"}, {"errorKind", "magnet-prefix"},
                                                     {"dialog", {{"kind", "error"}, {"text", "Cannot open selected document"}, {"errorKind", "open-failed"}}}}}});
     ExpectEqual(surface.props["error"].get<std::string>(), "<downloads.problem.magnet-prefix>", "a failure above the sets in our words");
     ExpectEqual(surface.props["dialog"]["text"].get<std::string>(), "<downloads.problem.open-failed>", "an error dialog in our words");
@@ -3206,7 +3252,7 @@ static void Launcher()
            "the host's messages are logged");
     const size_t problemErrors = surface.errors.size();
     router.SetState("launcher", Json{{"screen", "downloads"}, {"language", "english"},
-                                     {"downloads", {{"sets", sets}, {"dialog", {{"kind", "error"}, {"text", "x"}, {"errorKind", "new-kind"}}}}}});
+                                     {"downloads", {{"loaded", true}, {"sets", sets}, {"dialog", {{"kind", "error"}, {"text", "x"}, {"errorKind", "new-kind"}}}}}});
     Expect(surface.props["dialog"]["text"].get<std::string>() == "<downloads.problem.failed>" && surface.errors.size() > problemErrors,
            "a kind without our words is an error and reads as the general failure");
 

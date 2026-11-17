@@ -7,12 +7,14 @@
 //   {screen: launcher|downloads|about, language: <game language name>, <screen>: {...}}
 // with the raw data of that screen; every text the player reads is formatted here from the
 // pack's string table.
-//   launcher:  {phase: setup|ready|busy, starting, files, library, hasGame, problem: ""|no_game|
+//   launcher:  {phase: setup|ready|busy, starting, files, library, hasGame, installed (the game's copy as
+//               the choices describe one, absent until read), problem: ""|no_game|
 //               recovery_required|start_failed, result: {key, args}, exit: {reason, when},
 //               import: {recovering, cancelling, canCancel, stage, bytes, total, files,
 //               choices: [{id, name, version, languages, defaultLanguage, bytes, files,
 //               patches, place, missing}], password: {for, retry}}}
-//   downloads: {sets: [{id, kind, name, state, downloaded, wanted, rate, peers, stalled,
+//   downloads: {loaded (the library was read once), sets: [{id, kind, name, state, downloaded, wanted, rate, peers, stalled,
+//               offline (the phone has no network), checked (0…1 of the hash check in state checking),
 //               networkError, error (log only), errorKind (what the player reads), discovered: ""|checking|game|none|undecided,
 //               main: <verb>, menu: [<verb>], busy}],
 //               error, errorKind, magnetDraft, dialog: {kind: candidates|details|error (text, errorKind), ...}}
@@ -126,14 +128,36 @@ std::string Join(const Json &strings, const std::string &separator)
     return text;
 }
 
-// "осталось ~3 мин" for `seconds` left, empty while unknown.
+// "осталось ~3 мин" (from an hour and a half "~2 ч") for `seconds` left; empty while unknown or beyond two
+// days, where a rate says nothing about the end.
 std::string TimeLeft(const Bindings &bindings, double seconds)
 {
-    if (!(seconds > 0) || seconds > 7 * 24 * 3600)
+    if (!(seconds > 0) || seconds > 48 * 3600)
         return {};
     if (seconds < 60)
         return bindings.Text("launcher.left_minute");
+    if (seconds >= 90 * 60)
+        return Fill(bindings.Text("launcher.left_hours"), {std::to_string(static_cast<long>(std::lround(seconds / 3600)))});
     return Fill(bindings.Text("launcher.left"), {std::to_string(static_cast<long>(std::ceil(seconds / 60)))});
+}
+
+// A transfer below this rate shows no speed and no time left: it says nothing about the end.
+constexpr double kMinRate = 1024.0;
+
+// "3,4 МБ/с", "512 КБ/с".
+std::string Speed(const Bindings &bindings, double rate)
+{
+    constexpr double kMiB = 1048576.0;
+    const std::string amount = rate < kMiB ? Fill(bindings.Text("launcher.kb"), {std::to_string(static_cast<long>(rate / 1024))})
+                                           : Size(bindings, rate, rate);
+    return Fill(bindings.Text("downloads.speed"), {amount});
+}
+
+// "1,2 из 12,7 ГБ": the done part in the unit of the total.
+std::string SizeOf(const Bindings &bindings, double done, double total)
+{
+    constexpr double kMiB = 1048576.0, kGiB = 1073741824.0;
+    return Fill(bindings.Text("downloads.size_of"), {Decimal(bindings, done / (total >= kGiB / 10 ? kGiB : kMiB)), Size(bindings, total)});
 }
 
 // A command the host receives as Action{node "APP", verb, value}.
@@ -171,12 +195,12 @@ class Rate
 
 // --- launcher ------------------------------------------------------------------------
 
-const char *const kStages[] = {"copying", "reading", "nested", "choosing", "installing", "verifying", "finishing"};
+const char *const kStages[] = {"copying", "reading", "nested", "choosing", "installing", "verifying", "finishing", "deleting"};
 // Their texts, "launcher.stage." + stage, named here for the pack build's key check.
 [[maybe_unused]] const char *const kStageKeys[] = {
     StringKey("launcher.stage.copying"),    StringKey("launcher.stage.reading"),   StringKey("launcher.stage.nested"),
     StringKey("launcher.stage.choosing"),   StringKey("launcher.stage.installing"), StringKey("launcher.stage.verifying"),
-    StringKey("launcher.stage.finishing"),
+    StringKey("launcher.stage.finishing"),  StringKey("launcher.stage.deleting"),
 };
 // What the import's discovery found in a finished set's files (the app's SetDiscovery; never
 // file names): "downloads.discovered." + result. "undecided" (password, missing volumes) says
@@ -210,7 +234,8 @@ Json ResultNotice(Bindings &bindings, const Json &result, bool has_game)
         StringKey("launcher.result.import_archive_no_game"),   StringKey("launcher.result.import_archive_too_deep"),
         StringKey("launcher.result.import_archive_multiple"),  StringKey("launcher.result.picker_unavailable"),
         StringKey("launcher.result.exit_game_first"),          StringKey("launcher.result.recovery_required"),
-        StringKey("launcher.result.start_failed"),
+        StringKey("launcher.result.start_failed"),             StringKey("launcher.result.import_interrupted"),
+        StringKey("launcher.result.game_deleted"),             StringKey("launcher.result.delete_failed"),
     };
     Json notice = Json::object();
     const std::string table = "launcher.result." + key;
@@ -240,10 +265,17 @@ Json ResultNotice(Bindings &bindings, const Json &result, bool has_game)
         bindings.Error("launcher: unknown result key " + key);
         notice["text"] = key;
     }
-    if (key == "import_finished")
+    if (key == "import_finished" || key == "game_deleted")
         notice["tone"] = "ok";
     else if (key == "import_cancelled" || key == "picker_unavailable" || key == "exit_game_first")
         notice["tone"] = "info";
+    else if (key == "import_interrupted")
+    {
+        // Found and cleaned up at this start: said once, with what is left.
+        notice["tone"] = "warn";
+        if (has_game)
+            notice["text"] = notice["text"].get<std::string>() + " " + bindings.Text("launcher.kept");
+    }
     else
     {
         notice["tone"] = "danger";
@@ -333,7 +365,8 @@ std::string RootDetail(Bindings &bindings, const Json &root)
             list += (list.empty() ? "" : ", ") + language;
         parts.push_back(list);
     }
-    parts.push_back(Size(bindings, Num(root, "bytes")));
+    if (Num(root, "bytes") > 0)
+        parts.push_back(Size(bindings, Num(root, "bytes")));
     if (!List(root, "patches").empty())
         parts.push_back(bindings.Text("launcher.root_patched"));
     if (!Str(root, "place").empty())
@@ -390,7 +423,8 @@ class LauncherScreen final : public Screen
         if (phase == "busy")
         {
             view["view"] = "busy";
-            view["title"] = bindings.Text("launcher.title_busy");
+            view["cancel"] = nullptr;
+            view["title"] = bindings.Text(Str(import, "stage") == "deleting" ? "launcher.title_setup" : "launcher.title_busy");
             std::string title, status;
             double percent = -1;
             if (!import.is_object())
@@ -425,9 +459,12 @@ class LauncherScreen final : public Screen
                 if (stage == "installing" && Num(import, "files") > 0)
                     status += (status.empty() ? "" : " · ") +
                               Fill(bindings.Text("launcher.files_count"), {std::to_string(static_cast<long long>(Num(import, "files")))});
-                view["cancel"] = Json{{"label", bindings.Text("common.cancel")}, {"disabled", !Flag(import, "canCancel")},
-                                      {"busy", bindings.Pending("cancel")}};
-                bindings.On("cancel", "", [send](const Event &) { send("cancel"); });
+                if (stage != "deleting") // a deletion is short and not undone half-way
+                {
+                    view["cancel"] = Json{{"label", bindings.Text("common.cancel")}, {"disabled", !Flag(import, "canCancel")},
+                                          {"busy", bindings.Pending("cancel")}};
+                    bindings.On("cancel", "", [send](const Event &) { send("cancel"); });
+                }
                 const Json &password = Obj(import, "password");
                 if (password.is_object())
                     view["password"] = Password(password, bindings);
@@ -477,12 +514,20 @@ class LauncherScreen final : public Screen
             view["notices"].push_back(bindings.Notice(ResultNotice(bindings, Json{{"key", problem}}, false)));
         else if (!problem.empty() && problem != "no_game")
             bindings.Error("launcher: unknown storage problem " + problem);
+        view["installed"] = nullptr;
         if (Flag(state, "files"))
         {
             view["back"] = true;
             bindings.On("header-back", "", [send](const Event &) { send("files-close"); });
+            // The game that is there; another copy replaces it, «Удалить» (held) removes it.
+            const Json &installed = Obj(state, "installed");
+            view["installed"] = Json{{"title", installed.is_object() ? RootName(bindings, installed) : bindings.Text("launcher.installed")},
+                                     {"meta", installed.is_object() ? RootDetail(bindings, installed) : std::string()},
+                                     {"delete", bindings.Text("launcher.delete_game")}};
+            bindings.On("delete-game", "", [send](const Event &) { send("delete-game"); });
+            bindings.Ignore("installed", "click");
         }
-        view["setup"] = Json{{"prompt", bindings.Text("launcher.need")},
+        view["setup"] = Json{{"prompt", bindings.Text(Flag(state, "files") ? "launcher.replace" : "launcher.need")},
                              {"folder", bindings.Text("launcher.folder")},
                              {"archive", bindings.Text("launcher.archive")},
                              {"archiveMeta", bindings.Text("launcher.archive_meta")},
@@ -584,6 +629,7 @@ const char *const kSetStates[] = {
     StringKey("downloads.state.downloading"), StringKey("downloads.state.pausing"),
     StringKey("downloads.state.paused"),      StringKey("downloads.state.complete"),
     StringKey("downloads.state.interrupted"), StringKey("downloads.state.error"),
+    StringKey("downloads.state.checking"),
 };
 // Kinds of the metadata's candidates (file names only, never a verified game).
 const char *const kCandidateKinds[] = {StringKey("downloads.kind.loose-game-candidate"), StringKey("downloads.kind.installer-candidate"),
@@ -651,13 +697,17 @@ class DownloadsScreen final : public Screen
         magnet_.value = Str(state, "magnetDraft");
         Json view = Json::object();
         view["title"] = bindings.Text("downloads.title");
-        view["empty"] = sets.empty();
+        // Until the host has read the library once there is nothing to say, not even that it is empty.
+        const bool loaded = Flag(state, "loaded");
+        view["empty"] = loaded && sets.empty();
         view["emptyText"] = bindings.Text("downloads.empty");
         // A failure with no set to show it on (adding one, the library itself).
         const std::string error = Str(state, "error");
         view["error"] = error.empty() ? std::string() : Problem(bindings, Str(state, "errorKind"));
         bindings.Shown("danger", error);
         view["actions"] = sets.empty() ? Json::array() : Json::array({Json{{"id", "add"}, {"icon", "plus"}, {"label", bindings.Text("downloads.add")}}});
+        if (!loaded && !sets.empty())
+            bindings.Error("downloads: sets before the library was read");
         view["sources"] = Sources(bindings);
         view["sheet"] = nullptr;
         view["dialog"] = nullptr;
@@ -750,17 +800,32 @@ class DownloadsScreen final : public Screen
             else
                 bindings.Error("downloads: unknown discovery result " + discovered);
         }
-        if (state == "downloading")
+        // The phone has no network: that is the reason nothing moves, not the peers.
+        const bool offline = Flag(set, "offline") && (state == "metadata" || state == "downloading");
+        const bool stalled = Flag(set, "stalled") && !offline;
+        const double checked = std::clamp(Num(set, "checked"), 0.0, 1.0);
+        if (state == "checking")
+            meta += " · " + std::to_string(static_cast<int>(std::floor(checked * 100))) + "%";
+        else if (offline)
+            meta += " · " + bindings.Text("downloads.offline");
+        else if (state == "downloading")
         {
-            const std::string left = TimeLeft(bindings, rate > 0 && wanted > done ? (wanted - done) / rate : 0.0);
-            if (!left.empty())
-                meta += " · " + left;
+            if (wanted > 0)
+                meta += " · " + SizeOf(bindings, done, wanted);
+            if (rate >= kMinRate && !stalled)
+            {
+                meta += " · " + Speed(bindings, rate);
+                const std::string left = TimeLeft(bindings, wanted > done ? (wanted - done) / rate : 0.0);
+                if (!left.empty())
+                    meta += " · " + left;
+            }
         }
+        else if (state == "paused" && wanted > 0 && done < wanted)
+            meta += " · " + SizeOf(bindings, done, wanted);
         else if (wanted > 0 || done > 0)
             meta += " · " + Size(bindings, wanted > 0 ? wanted : done);
         // Nothing moves: say why (no peers, or peers without data). An error is said in our words by its kind. The raw
         // texts (the latest network problem, the error's message) go to the log below, not on the row.
-        const bool stalled = Flag(set, "stalled");
         if (stalled)
             meta += " · " + bindings.Text(Num(set, "peers") > 0 ? "downloads.stalled_no_data" : "downloads.stalled_no_peers");
         // An error replaces the state («Ошибка») and leads; the set's size follows as a fact of its own.
@@ -778,8 +843,10 @@ class DownloadsScreen final : public Screen
                         {"icon", state == "complete" ? "check" : kind == "magnet" ? "magnet" : kind == "archive" ? "archive" : "download"},
                         {"title", Str(set, "name")},
                         {"meta", meta},
-                        {"metaTone", error.empty() && !stalled && state != "error" && state != "interrupted" ? "" : "danger"},
-                        {"progress", state == "downloading" && wanted > 0 ? std::max(1.0, std::floor(done * 100 / wanted)) : 0.0},
+                        {"metaTone", error.empty() && !stalled && !offline && state != "error" && state != "interrupted" ? "" : "danger"},
+                        {"progress", state == "checking"                  ? std::max(1.0, std::floor(checked * 100))
+                                     : state == "downloading" && wanted > 0 ? std::max(1.0, std::floor(done * 100 / wanted))
+                                                                            : 0.0},
                         {"menu", !List(set, "menu").empty()},
                         {"busy", Flag(set, "busy") || bindings.Pending("set-" + id)},
                         {"action", ""},

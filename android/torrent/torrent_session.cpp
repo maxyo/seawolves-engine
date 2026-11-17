@@ -519,6 +519,8 @@ std::string Session::poll() {
         }
         if(complete) { state="complete"; if(!(status.flags&lt::torrent_flags::paused)) pause(); }
         else if(impl->approved && !impl->selection_pending && (status.flags&lt::torrent_flags::paused)) state="paused";
+        else if(impl->approved && (status.state==lt::torrent_status::checking_files || status.state==lt::torrent_status::checking_resume_data))
+            state="checking";
         if(impl->error.empty() && std::chrono::steady_clock::now()-impl->last_checkpoint>std::chrono::seconds(30)) impl->save();
     }
     if(!impl->error.empty()) { state="error"; impl->handle.pause(); }
@@ -536,6 +538,7 @@ std::string Session::poll() {
         << ",\"checkpointPending\":" << (impl->checkpoint?"true":"false")
         << ",\"error\":" << quote(impl->error) << ",\"errorKind\":" << quote(impl->error_kind)
         << ",\"payloadDirectory\":" << quote((impl->staging/"payload").string())
+        << ",\"checkProgress\":" << (state=="checking"?status.progress:0.0f)
         << ",\"metadataReady\":" << (impl->manifest_cache.empty()?"false":"true") << '}'; return out.str();
 }
 std::string Session::metadata() {

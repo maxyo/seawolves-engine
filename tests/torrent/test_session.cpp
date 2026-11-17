@@ -103,6 +103,7 @@ int main(int argc,char** argv) {
         restored.start({0});
         for(int i=0;i<400;++i){status=restored.poll();if(status.find("\"state\":\"complete\"")!=std::string::npos)break;std::this_thread::sleep_for(std::chrono::milliseconds(50));}
         require(status.find("\"state\":\"complete\"")!=std::string::npos,"Resume must complete after corruption");
+        require(status.find("\"checkProgress\":0,")!=std::string::npos,"Only the hash check of a resume reports its progress");
         for(int i=0;i<100;++i){status=restored.poll();if(status.find("\"checkpointPending\":false")!=std::string::npos)break;std::this_thread::sleep_for(std::chrono::milliseconds(50));}
         std::ifstream in(root/"download/payload/fixture/setup.exe",std::ios::binary);
         std::string actual{std::istreambuf_iterator<char>(in),std::istreambuf_iterator<char>()};
