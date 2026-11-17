@@ -136,6 +136,9 @@ int main(int argc, char **argv)
     ExpectText("{{{label}}}", scope, "Купить <1>");
     ExpectText("{{ num(n) }} / {{ num(small) }}", scope, "1\xE2\x80\xAF" "250\xE2\x80\xAF" "000 / 1250");
     ExpectText("{{ on && !off ? 'y' : 'n' }}", scope, "y");
+    // Amounts as the game and num() group them compare as numbers (the header's preview tone).
+    ExpectText("{{ '3000192' * 1 < '3 000 495' * 1 ? 'y' : 'n' }} {{ '999\xC2\xA0" "800' * 1 < '1\xE2\x80\xAF" "000\xE2\x80\xAF" "500' * 1 ? 'y' : 'n' }} {{ '1 25' * 1 }}",
+               scope, "y y 1");
     ExpectText("{{ spec.h[size] + 4 }}", scope, "48");
     ExpectText("{{ missing }}|{{ or(missing, 'x') }}|{{ len(items) }}", scope, "|x|2");
     // Strict mode (host checks): a path that names nothing is an error unless marked optional;

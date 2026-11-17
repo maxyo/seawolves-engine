@@ -191,7 +191,7 @@ class CrewScreen final : public Screen
                 purse_text.pop_back();
             Json purse{{"icon", "money"}, {"value", purse_text}, {"tone", "gold"}};
             if (cost > 0)
-                purse["preview"] = std::to_string(money - cost);
+                purse["preview"] = hero::Thousands(money - cost);
             stats.push_back(std::move(purse));
         }
         view["stats"] = stats;
@@ -219,7 +219,7 @@ class CrewScreen final : public Screen
         if (ok && amount != 0)
         {
             view["primary"] = Json{{"label", bindings.Text(amount > 0 ? StringKey("crew.hire") : StringKey("crew.fire")) + " " + std::to_string(std::abs(amount))},
-                                   {"sub", amount > 0 ? std::to_string(cost) : std::string()},
+                                   {"sub", amount > 0 ? hero::Thousands(cost) : std::string()},
                                    {"disabled", !ok->Offers("press") || !edit->Offers("edit")},
                                    {"reason", ok->unavailable_reason},
                                    {"busy", bindings.Pending("primary")}};

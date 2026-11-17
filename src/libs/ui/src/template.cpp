@@ -146,6 +146,34 @@ std::string BindShortWords(std::string_view text)
 namespace
 {
 
+// "3 000 495" (space, no-break, thin or narrow no-break space between groups of three digits,
+// as the game and GroupDigits write amounts) → "3000495"; any other text stays as it is.
+std::string Ungrouped(const std::string &text)
+{
+    static constexpr std::string_view separators[] = {" ", "\xC2\xA0", "\xE2\x80\x89", "\xE2\x80\xAF"};
+    const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    std::string out;
+    for (size_t i = 0; i < text.size();)
+    {
+        size_t skip = 0;
+        if (!out.empty() && digit(out.back()))
+            for (const std::string_view separator : separators)
+                if (text.compare(i, separator.size(), separator) == 0)
+                {
+                    const size_t group = i + separator.size();
+                    if (group + 3 <= text.size() && digit(text[group]) && digit(text[group + 1]) && digit(text[group + 2]) &&
+                        (group + 3 == text.size() || !digit(text[group + 3])))
+                        skip = separator.size();
+                    break;
+                }
+        if (skip)
+            i += skip;
+        else
+            out += text[i++];
+    }
+    return out;
+}
+
 double ToNumber(const Json &value)
 {
     if (value.is_number())
@@ -153,7 +181,7 @@ double ToNumber(const Json &value)
     if (value.is_boolean())
         return value.get<bool>() ? 1.0 : 0.0;
     if (value.is_string())
-        return std::strtod(value.get_ref<const std::string &>().c_str(), nullptr);
+        return std::strtod(Ungrouped(value.get_ref<const std::string &>()).c_str(), nullptr);
     return 0.0;
 }
 
