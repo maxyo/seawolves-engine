@@ -120,6 +120,10 @@ void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &texture)
     if (load.sealed || !texture || texture->render_target || texture->system_memory || !SceneTextureName(texture->name)) return;
     if (load.textures.emplace(texture->serial, texture).second) { load.gate.invalidate(); load.scene_work.demand(); }
 }
+bool ScenePreparing()
+{
+    return !location_load().sealed;
+}
 void ScenePipelinesPending(bool pending)
 {
     auto &load = location_load();

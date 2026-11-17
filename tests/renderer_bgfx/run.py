@@ -51,7 +51,7 @@ subprocess.run([str(warmth), 'begin', str(build)], check=True)
 subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'storm_eac_encoder_tests', 'perf_check', 'program_family_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
                 'preset_switch_check', 'sea_edge_check', 'program_cache_check', 'render_thread_check', 'surface_lifecycle_check',
                 'storm_fx_core_check', 'storm_fx_aggregate_check', 'storm_fx_wave_storage_check', 'storm_fx_wave_idle_check', 'storm_fx_wave_source_check', 'ao_volume_check',
-                'storm_relief_check', 'storm_relief_device_retry_check', 'storm_relief_finalizer_check', 'storm_relief_tx_check', 'grass_vertex_check', 'coast_foam_vertex_check', 'cutout_caster_check', 'lamp_shadow_check', 'shadow_casters_check', 'sun_layers_check', 'sun_relight_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'scene_texture_failure_check', 'texture_format_check', 'upscale_swap_check', 'texture_fade_check', 'backend_select_check',
+                'storm_relief_check', 'storm_relief_device_retry_check', 'storm_relief_finalizer_check', 'storm_relief_tx_check', 'grass_vertex_check', 'coast_foam_vertex_check', 'cutout_caster_check', 'lamp_shadow_check', 'shadow_casters_check', 'sun_layers_check', 'sun_relight_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'scene_texture_failure_check', 'texture_format_check', 'upscale_swap_check', 'texture_fade_check', 'realize_budget_check', 'backend_select_check',
                 'buffer_pool_check', 'thumbnail_check', 'pipeline_prewarm_check', 'pipeline_stress_check', 'wet_surfaces_check'], check=True)
 subprocess.run([str(warmth), 'end', str(build)], check=True)
 # The texture-lifetime checks again with the renderer's code under AddressSanitizer (CMakeLists.txt STORM_CHECK_ASAN):
@@ -66,7 +66,7 @@ asan_env = dict(os.environ, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1')
 # and on Vulkan at once, longest first. A failing check's output is printed.
 import concurrent.futures
 jobs = int(os.environ.get('STORM_CHECK_JOBS', '6'))
-plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 'storm_texture_tests')], [str(build / 'perf_check')], [str(build / 'program_family_check')], [str(build / 'backend_select_check')], [str(build / 'texture_fade_check')],
+plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 'storm_texture_tests')], [str(build / 'perf_check')], [str(build / 'program_family_check')], [str(build / 'backend_select_check')], [str(build / 'texture_fade_check')], [str(build / 'realize_budget_check')],
          [str(build / 'renderer_bgfx' / 'storm_eac_encoder_tests')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_core_check')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_aggregate_check')],

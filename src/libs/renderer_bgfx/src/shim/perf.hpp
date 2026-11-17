@@ -1,5 +1,6 @@
 #pragma once
 
+#include "realize_budget.hpp"
 #include "storm/render/perf_stats.hpp"
 
 #include <bgfx/bgfx.h>
@@ -15,6 +16,12 @@ render::PerfCounters &perf();
 // Called after bgfx::frame() of a presented frame: frame count, bgfx statistics (backend time among them).
 // `wait_ms`: how long the game thread waited for the render thread for this frame (0 without one).
 void perf_frame_presented(double wait_ms);
+
+// The in-play texture realize budget of the frame being built (realize_budget.hpp; game thread only). The frame's
+// totals go into the counters at perf_frame_presented.
+RealizeBudget &realize_budget();
+// Presented frames that left a draw out for it (storm::render::LastIncompleteFrame).
+uint64_t realize_incomplete_frames();
 
 // Counts a texture upload and passes the memory through.
 inline const bgfx::Memory *counted_texture_upload(const bgfx::Memory *memory)

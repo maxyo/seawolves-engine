@@ -1223,7 +1223,9 @@ namespace storm::render
 {
 uint32_t LastIncompleteFrame()
 {
-    return bgfx::getVkLastWaitingFrame(); // 0 unless the Vulkan backend left a draw out
+    // 0 unless the Vulkan backend left a draw out waiting for its pipeline, or a frame of play left one out waiting for
+    // its texture (shim/realize_budget.hpp); either changes the sum.
+    return bgfx::getVkLastWaitingFrame() + static_cast<uint32_t>(shim::realize_incomplete_frames());
 }
 } // namespace storm::render
 

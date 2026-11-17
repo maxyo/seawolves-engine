@@ -191,6 +191,8 @@ private:
 // Main/game-thread glue; no bgfx or worker calls are made by the state machine above.
 void BeginSceneResources(const char *scene);
 void ObserveSceneTexture(const std::shared_ptr<shim::TexStore> &texture);
+// A location or sea scene is being prepared behind its loading screen (from BeginSceneResources to the reveal).
+bool ScenePreparing();
 bool HoldSceneResources();
 void ScenePipelinesPending(bool pending);
 } // namespace storm::effects

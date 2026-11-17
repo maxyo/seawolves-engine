@@ -162,6 +162,9 @@ struct TexStore
     void unlock(uint32_t face, uint32_t level);
     // Creates the bgfx texture if needed and uploads dirty levels.
     void sync();
+    // Whether sync() would make a GPU copy of this sampled texture: its first, or the swap of a finished transcode
+    // (the in-play realize budget, realize_budget.hpp).
+    bool realize_pending() const;
     void create_gpu();
     void release_shadow();
     void settle();

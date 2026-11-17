@@ -454,6 +454,10 @@ struct Device final : Object
     bool draw_bounds(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, float center[3],
                      float &radius);
     void skip_draw(const char *reason);
+    // sync() of a texture a draw samples; a 3D scene draw's (`scene`) under the in-play realize budget
+    // (realize_budget.hpp). False: it has no GPU copy and its making waits for a later frame; the caller leaves the
+    // draw out.
+    bool sync_sampled(TexStore &store, bool scene);
     const LayoutInfo *current_layout();
     const LayoutInfo *fvf_layout(DWORD fvf, uint32_t stride);
     const LayoutInfo *build_decl_layout(VertexDeclaration &decl);

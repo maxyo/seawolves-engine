@@ -351,27 +351,20 @@ void write_level(const TexStore &store, const TexStore::Sub &sub, bgfx::TextureF
 }
 
 // bgfx can only restrict the mip range of a texture created from an image container;
-// D3D textures with a partial mip chain (very common in .tx files) need that. bimg writes the DDS.
+// D3D textures with a partial mip chain (very common in .tx files) need that. bimg writes the DDS header; the levels
+// are written once, straight into the memory bgfx takes (face-major, level-minor, as DDS lays them out): a texture's
+// first draw on the game thread pays one pass over its texels (realize_budget.hpp).
 // `first_level` drops the largest levels (temporary textures while transcoding).
 const bgfx::Memory *make_dds(const TexStore &store, bgfx::TextureFormat::Enum gpu_format, uint32_t first_level = 0)
 {
-    std::vector<uint8_t> payload; // face-major, level-minor, as DDS
     size_t total = 0;
     for (uint32_t level = first_level; level < store.levels; ++level)
         total += level_upload_size(store, gpu_format, level);
-    payload.resize(total * store.faces());
-    uint8_t *out = payload.data();
-    for (uint32_t face = 0; face < store.faces(); ++face)
-        for (uint32_t level = first_level; level < store.levels; ++level)
-        {
-            write_level(store, store.subs[face * store.levels + level], gpu_format, level, out);
-            out += level_upload_size(store, gpu_format, level);
-        }
+    total *= store.faces();
     bimg::ImageContainer image{};
     image.m_format = static_cast<bimg::TextureFormat::Enum>(gpu_format);
     image.m_offset = UINT32_MAX;
-    image.m_data = payload.data();
-    image.m_size = static_cast<uint32_t>(payload.size());
+    image.m_data = nullptr; // the header only (bimg::imageGetRawData finds no levels)
     image.m_width = store.level_width(first_level);
     image.m_height = store.level_height(first_level);
     image.m_depth = store.kind == TexKind::Volume ? store.level_depth(first_level) : 0; // DDS: 0 unless a volume
@@ -380,12 +373,19 @@ const bgfx::Memory *make_dds(const TexStore &store, bgfx::TextureFormat::Enum gp
     image.m_cubeMap = store.kind == TexKind::Cube;
     bx::Error error;
     bx::SizerWriter sizer;
-    const int32_t size = bimg::imageWriteDds(&sizer, image, nullptr, 0, &error);
-    const bgfx::Memory *memory = bgfx::alloc(static_cast<uint32_t>(size));
-    bx::StaticMemoryBlockWriter writer(memory->data, memory->size);
+    const int32_t header = bimg::imageWriteDds(&sizer, image, nullptr, 0, &error);
+    const bgfx::Memory *memory = bgfx::alloc(static_cast<uint32_t>(header + total));
+    bx::StaticMemoryBlockWriter writer(memory->data, static_cast<uint32_t>(header));
     bimg::imageWriteDds(&writer, image, nullptr, 0, &error);
     if (!error.isOk())
         trap("DDS container of a texture could not be written (bimg::imageWriteDds)");
+    uint8_t *out = memory->data + header;
+    for (uint32_t face = 0; face < store.faces(); ++face)
+        for (uint32_t level = first_level; level < store.levels; ++level)
+        {
+            write_level(store, store.subs[face * store.levels + level], gpu_format, level, out);
+            out += level_upload_size(store, gpu_format, level);
+        }
     return memory;
 }
 
@@ -602,6 +602,16 @@ void TexStore::destroy_sampled()
     if (bgfx::isValid(handle))
         bgfx::destroy(handle);
     handle = BGFX_INVALID_HANDLE;
+}
+
+bool TexStore::realize_pending() const
+{
+    if (system_memory || render_target || depth_stencil || format == D3DFMT_A32B32G32R32F)
+        return false;
+    if (transcoded) // re-locked contents are made again at once: a postponed one would draw stale
+        return !any_dirty && fallback_bytes && transcode_job &&
+               transcode_job->state.load(std::memory_order_acquire) == texture::Job::Done;
+    return !bgfx::isValid(handle) && !gpu_failed;
 }
 
 void TexStore::sync()

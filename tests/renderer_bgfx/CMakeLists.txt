@@ -210,6 +210,14 @@ add_executable(texture_fade_check texture_fade_check.cpp)
 target_include_directories(texture_fade_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
 target_compile_options(texture_fade_check PRIVATE -UNDEBUG)
 
+# The in-play texture realize budget (src/shim/realize_budget.hpp): the budget, and new textures in view through the
+# shim on bgfx's Noop backend.
+add_executable(realize_budget_check realize_budget_check.cpp)
+target_include_directories(realize_budget_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_compile_definitions(realize_budget_check PRIVATE NOMINMAX)
+target_compile_options(realize_budget_check PRIVATE -fsigned-char -UNDEBUG)
+target_link_libraries(realize_budget_check PRIVATE storm_bgfx storm_check_sdl)
+
 # Upscale swaps through the real draw binding: offscreen pixels on GLES/Vulkan, --noop for submission/state only.
 # Location reveal state, actual producer state chains and worker/cache retry. Noop only, no display/GPU.
 foreach(pair IN ITEMS "scene_readiness_check;check" "scene_resources_check;resources" "scene_retry_check;retry"

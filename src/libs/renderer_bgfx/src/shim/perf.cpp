@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 
 namespace bgfx::gl
@@ -18,6 +19,34 @@ namespace
 {
 render::PerfCounters totals;
 uint64_t frame_start_vb = 0, frame_start_ib = 0; // transient totals at the start of the frame
+RealizeBudget budget;
+RealizeBudget::Window budget_window; // frames of play since the last "texture realize" line
+uint64_t incomplete_frames = 0;      // frames that left a draw out for the budget
+std::chrono::steady_clock::time_point budget_reported = std::chrono::steady_clock::now();
+constexpr auto kRealizeReportInterval = std::chrono::seconds(10);
+
+// The frame's textures made and waits into the counters; frames of play into the window, logged every 10 s.
+void realize_frame_end()
+{
+    const RealizeBudget::Frame frame = budget.end_frame();
+    totals.texture_realizes += frame.made;
+    totals.texture_realize_ms += frame.ms;
+    totals.texture_realize_waits += frame.left_out + frame.postponed;
+    incomplete_frames += frame.left_out != 0;
+    budget_window.add(frame);
+    const auto now = std::chrono::steady_clock::now();
+    if (now - budget_reported < kRealizeReportInterval)
+        return;
+    budget_reported = now;
+    if (budget_window.empty())
+        return;
+    logf("texture realize (play): %llu textures in %u frames, %.1f ms (worst frame %.1f ms); budget %.0f ms a frame: "
+         "%llu draws left out over %u frames, %llu transcode swaps postponed",
+         static_cast<unsigned long long>(budget_window.made), budget_window.frames_made, budget_window.ms,
+         budget_window.worst_ms, RealizeBudget::kFrameMs, static_cast<unsigned long long>(budget_window.left_out),
+         budget_window.frames_left_out, static_cast<unsigned long long>(budget_window.postponed));
+    budget_window = {};
+}
 } // namespace
 
 render::PerfCounters &perf()
@@ -25,10 +54,21 @@ render::PerfCounters &perf()
     return totals;
 }
 
+RealizeBudget &realize_budget()
+{
+    return budget;
+}
+
+uint64_t realize_incomplete_frames()
+{
+    return incomplete_frames;
+}
+
 void perf_frame_presented(double wait_ms)
 {
     ++totals.frames;
     totals.wait_ms += wait_ms;
+    realize_frame_end();
     totals.gl_uniform_calls = bgfx::gl::g_stormUniformUploadCalls.load(std::memory_order_relaxed);
     totals.gl_uniform_bytes = bgfx::gl::g_stormUniformUploadBytes.load(std::memory_order_relaxed);
     totals.transient_vb_frame_max = std::max(totals.transient_vb_frame_max, totals.transient_vb_bytes - frame_start_vb);
@@ -97,6 +137,9 @@ PerfCounters PerfCounters::Since(const PerfCounters &start) const
     d.buffer_creates -= start.buffer_creates;
     d.texture_uploads -= start.texture_uploads;
     d.texture_upload_bytes -= start.texture_upload_bytes;
+    d.texture_realizes -= start.texture_realizes;
+    d.texture_realize_ms -= start.texture_realize_ms;
+    d.texture_realize_waits -= start.texture_realize_waits;
     d.lamp_face_draws -= start.lamp_face_draws;
     d.lamp_atlas_clears -= start.lamp_atlas_clears;
     d.shim_ms -= start.shim_ms;
@@ -114,16 +157,17 @@ std::string PerfCounters::Summary() const
     const double n = static_cast<double>(frames);
     const auto mean = [n](uint64_t value) { return static_cast<double>(value) / n; };
     const auto kb = [n](uint64_t bytes) { return static_cast<double>(bytes) / 1024.0 / n; };
-    char text[1024];
+    char text[1536];
     snprintf(text, sizeof(text),
              "draws=%.1f skipped=%.1f views=%.1f programs=%.1f states=%.1f uniforms=%.1f uniform_kb=%.1f "
              "uniform_draws=%.1f gl_uniforms=%.1f gl_uniform_kb=%.1f tex_binds=%.1f tex_changes=%.1f tvb_kb=%.1f tib_kb=%.1f fans=%.1f buf_uploads=%.2f "
-             "buf_kb=%.1f buf_creates=%.2f tex_uploads=%.2f tex_kb=%.1f shim_ms=%.3f submit_ms=%.3f wait_ms=%.3f gpu_ms=%.3f tex_mb=%.1f rt_mb=%.1f "
+             "buf_kb=%.1f buf_creates=%.2f tex_uploads=%.2f tex_kb=%.1f tex_realizes=%.2f tex_realize_ms=%.3f tex_realize_waits=%.2f shim_ms=%.3f submit_ms=%.3f wait_ms=%.3f gpu_ms=%.3f tex_mb=%.1f rt_mb=%.1f "
              "tex_shadow_mb=%.1f buf_shadow_mb=%.1f buf_gpu_mb=%.1f tvb_max_kb=%.0f tib_max_kb=%.0f lamp_face_draws=%.2f lamp_atlas_clears=%.2f",
              mean(draws), mean(skipped_draws), mean(views), mean(program_changes), mean(state_changes),
              mean(uniform_updates), kb(uniform_bytes), mean(uniform_draws), mean(gl_uniform_calls), kb(gl_uniform_bytes), mean(texture_binds), mean(texture_changes),
              kb(transient_vb_bytes), kb(transient_ib_bytes), mean(fan_draws), mean(buffer_uploads),
-             kb(buffer_upload_bytes), mean(buffer_creates), mean(texture_uploads), kb(texture_upload_bytes), shim_ms / n, submit_ms / n, wait_ms / n,
+             kb(buffer_upload_bytes), mean(buffer_creates), mean(texture_uploads), kb(texture_upload_bytes), mean(texture_realizes), texture_realize_ms / n,
+             mean(texture_realize_waits), shim_ms / n, submit_ms / n, wait_ms / n,
              gpu_frames ? gpu_ms / static_cast<double>(gpu_frames) : 0.0, texture_memory / 1048576.0,
              render_target_memory / 1048576.0, texture_shadow_bytes / 1048576.0, buffer_shadow_bytes / 1048576.0,
              buffer_gpu_bytes / 1048576.0, transient_vb_frame_max / 1024.0, transient_ib_frame_max / 1024.0,

@@ -8,6 +8,7 @@
 #include "ports.hpp"
 #include "texture_fades.hpp"
 #include "util.hpp"
+#include "loading_transaction.hpp"
 #include <cfloat>
 
 
@@ -1161,6 +1162,30 @@ void Device::skip_draw(const char *reason)
     trap(reason);
 }
 
+bool Device::sync_sampled(TexStore &store, bool scene)
+{
+    if (!scene || !store.realize_pending())
+    {
+        store.sync();
+        return true;
+    }
+    RealizeBudget &budget = realize_budget();
+    if (!budget.admit(storm::loading::active || effects::ScenePreparing()))
+    {
+        if (bgfx::isValid(store.handle))
+        {
+            budget.postponed(); // a finished transcode: its interim copy draws until a later frame swaps it in
+            return true;
+        }
+        budget.left_out();
+        return false;
+    }
+    const auto start = std::chrono::steady_clock::now();
+    store.sync();
+    budget.made(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    return true;
+}
+
 // Every D3D draw call: the colour draw, and the caster entry for what may cast into the frame's shadow volumes. Inside
 // a render::ShadowCasterOnly (geometry the camera rejected) only the caster entry.
 HRESULT Device::issue(const DrawCall &call)
@@ -1394,9 +1419,15 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             continue;
         if (!ps_port && s.tss[stage][D3DTSS_COLOROP] == D3DTOP_DISABLE)
             break;
-        if (rt == back_color && !layout->rhw && s.proj.m[2][3] != 0.0f)
+        const bool scene_draw = rt == back_color && !layout->rhw && s.proj.m[2][3] != 0.0f;
+        if (scene_draw)
             effects::ObserveSceneTexture(shared_store_of(s.textures[stage]));
-        store->sync();
+        if (!sync_sampled(*store, scene_draw))
+        {
+            // Made in a later frame within the budget (realize_budget.hpp): this frame leaves the draw out, counted.
+            bgfx::discard();
+            return false;
+        }
         if (!bgfx::isValid(store->handle))
         {
             // No GPU copy will come (bgfx refused it, logged): the stand-in, not the unbound-texture fallback's black
@@ -1945,7 +1976,11 @@ void Device::draw_caster(const DrawCall &call, const LayoutInfo &layout, uint32_
         if (caster.material.stage[stage] <= 0.5f)
             continue;
         TexStore *store = store_of(s.textures[stage]); // a 2D texture with holes: caster_material()
-        store->sync();
+        if (!sync_sampled(*store, true))
+        {
+            bgfx::discard(); // its texture is made in a later frame (realize_budget.hpp), counted
+            return;
+        }
         if (!bgfx::isValid(store->handle))
         {
             skip_draw("a caster's cut-out texture has no GPU texture");
