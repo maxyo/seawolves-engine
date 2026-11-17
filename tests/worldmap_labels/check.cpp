@@ -3,6 +3,7 @@
 #include <cassert>
 #include <array>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 using storm::worldmap::LabelBox;
@@ -10,16 +11,24 @@ using storm::worldmap::LabelLayout;
 
 namespace
 {
-LabelBox Box(float x, float y, uint32_t weight, bool shown = false)
+using storm::worldmap::LabelSide;
+// A 100 x 20 label at the point (x, y)
+LabelBox Box(float x, float y, uint32_t weight, LabelSide side = LabelSide::None)
 {
-    return {x, y, x + 100.0f, y + 20.0f, weight, shown};
+    LabelBox box;
+    box.x = x, box.y = y, box.width = 100.0f, box.height = 20.0f, box.weight = weight, box.side = side;
+    return box;
 }
-std::vector<bool> Shown(const std::vector<LabelBox> &boxes)
+std::vector<LabelSide> Sides(const std::vector<LabelBox> &boxes)
 {
-    std::vector<bool> out;
+    std::vector<LabelSide> out;
     for (const LabelBox &box : boxes)
-        out.push_back(box.shown);
+        out.push_back(box.side);
     return out;
+}
+bool Overlap(const LabelBox &a, const LabelBox &b)
+{
+    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 }
 } // namespace
 
@@ -39,7 +48,8 @@ struct ProjectionHarness
     struct Label
     {
         glm::vec3 pos{};
-        float width = 150, height = 30, heightView = 100000;
+        float width = 150, height = 30, heightView = 100000, scale = 1;
+        storm::worldmap::LabelSide side = storm::worldmap::LabelSide::None;
         float l = 0, t = 0, r = 0, b = 0;
         bool onScreen = false, placed = true;
         std::string text = "Dominica";
@@ -57,7 +67,7 @@ struct ProjectionHarness
     void Render(const glm::mat4 &mtx, float w, float h, float scale = 1)
     {
         const float pxPerDp = 1, outline = 1.5f;
-        constexpr float kLabelGapDp = 4, kLabelHoldDp = 3;
+        constexpr float kLabelGapDp = 4, kLabelHoldDp = 3, kLabelFarScale = 0.85f;
 #include "label_projection.inc"
     }
 };
@@ -138,6 +148,19 @@ int ProjectionChecks()
                         anchored(x, y, scale);
                         visible(true);
                     }
+    // Above its kind's height a label still shows, shrunk with the map down to the floor (no height hides it).
+    label.pos = {0, 0, 500};
+    for (const auto &[height, expected] : std::vector<std::pair<float, float>>{{100, 1}, {250, 1}, {280, 250.f / 280}, {400, .625f}, {1000, .25f}})
+    {
+        const auto projection = storm::math::projectionMatrix(1.2f, 960, 540, 1, 10000);
+        label.heightView = 250;
+        harness.camera.realHeight = height;
+        harness.Render(projection, 960, 540, 2);
+        anchored(480, 270, 2 * std::max(expected, .85f));
+        visible(true);
+    }
+    label.heightView = 100000;
+    harness.camera.realHeight = 1;
     // The D3D LH projection has clip.w=view.z. Behind-camera and camera-plane
     // points must not produce mirrored captions, including visible -> behind ->
     // visible: both state bits must clear even though the old rectangle survives.
@@ -166,61 +189,71 @@ int main()
 {
     LabelLayout layout;
     constexpr float gap = 8.0f, hold = 6.0f;
-    // Apart: all show.
+    // The size above a kind's height: 1 up to it, then heightView / height, never below the floor.
     {
-        std::vector<LabelBox> boxes{Box(0, 0, 1), Box(200, 0, 1), Box(0, 100, 50)};
-        layout.Place(boxes, gap, hold);
-        assert((Shown(boxes) == std::vector<bool>{true, true, true}));
+        using storm::worldmap::HeightScale;
+        assert(HeightScale(250, 100, .75f) == 1 && HeightScale(250, 250, .75f) == 1);
+        assert(HeightScale(250, 300, .75f) > .83f && HeightScale(250, 300, .75f) < .84f);
+        assert(HeightScale(200, 500, .75f) == .75f && HeightScale(1000, 500, .75f) == 1);
+        assert(HeightScale(0, 500, .75f) == 1 && HeightScale(250, std::numeric_limits<float>::quiet_NaN(), .75f) == 1);
     }
-    // Colliding: the heavier shows whatever the order; equal weights: the first in the game's list.
+    using enum LabelSide;
+    // Apart: every name under its point (the game's place), clear of the others.
     {
-        std::vector<LabelBox> boxes{Box(0, 0, 1), Box(50, 5, 100), Box(60, 10, 50), Box(300, 0, 50), Box(330, 5, 50)};
+        std::vector<LabelBox> boxes{Box(0, 0, 1), Box(300, 0, 1), Box(0, 100, 50)};
         layout.Place(boxes, gap, hold);
-        assert((Shown(boxes) == std::vector<bool>{false, true, false, true, false}));
+        assert((Sides(boxes) == std::vector<LabelSide>{Below, Below, Below}));
+        assert(boxes[0].clear && boxes[1].clear && boxes[2].clear);
+        assert(boxes[0].left == -50 && boxes[0].top == 0 && boxes[0].right == 50 && boxes[0].bottom == 20);
     }
-    // A chain: the heaviest hides its neighbour, which then hides nothing (a hidden label takes no room).
+    // Colliding: the heavier keeps its place whatever the order, the lighter moves to the first free side
+    // (above, then right, then left) and still shows; nothing overlaps.
     {
-        std::vector<LabelBox> boxes{Box(0, 0, 100), Box(90, 0, 50), Box(180, 0, 1)};
+        std::vector<LabelBox> boxes{Box(10, -12, 1), Box(0, 0, 100)};
         layout.Place(boxes, gap, hold);
-        assert((Shown(boxes) == std::vector<bool>{true, false, true}));
+        assert((Sides(boxes) == std::vector<LabelSide>{Above, Below}));
+        assert(boxes[0].clear && !Overlap(boxes[0], boxes[1]));
+        // Above taken too: right of the point.
+        boxes = {Box(0, 0, 100), Box(0, -30, 100), Box(60, 2, 1)};
+        layout.Place(boxes, gap, hold);
+        assert(boxes[2].side == Right && boxes[2].clear && boxes[2].left == 60 + gap * 0.5f);
+        for (size_t i = 0; i < 2; ++i)
+            assert(!Overlap(boxes[i], boxes[2]));
     }
-    // The gap: closer than it collides.
+    // No free side: the name still shows under its point, marked as not clear (drawn under the heavier).
     {
-        std::vector<LabelBox> boxes{Box(0, 0, 100), Box(105, 0, 1)};
+        std::vector<LabelBox> boxes{Box(0, 0, 100), Box(0, -25, 100), Box(-110, -10, 100), Box(110, -10, 100), Box(0, 1, 1)};
         layout.Place(boxes, gap, hold);
-        assert(!boxes[1].shown);
-        boxes = {Box(0, 0, 100), Box(110, 0, 1)};
-        layout.Place(boxes, gap, hold);
-        assert(boxes[1].shown);
+        assert(boxes[4].side == Below && !boxes[4].clear);
     }
     // No flicker: a camera that jitters by a pixel across the gap's edge (a pan, a zoom) does not
-    // swap the labels every frame. A label shown keeps its place down to gap - hold; a hidden one
-    // needs the whole gap.
+    // swap sides every frame. A name keeps its side down to gap - hold; another side needs the whole gap.
     {
         std::vector<LabelBox> boxes;
         int changes = 0;
-        bool last = true;
+        LabelSide last = Below;
         for (int frame = 0; frame < 200; ++frame)
         {
             // From 30 px apart to 0 and back, with a +-1 px jitter every frame.
             const float distance = (frame < 100 ? 30.0f - 0.3f * frame : 0.3f * (frame - 100)) + (frame % 2 ? 1.0f : -1.0f);
-            const bool shown = boxes.empty() ? true : boxes[1].shown;
-            boxes = {Box(0, 0, 100, true), Box(100.0f + distance, 0, 1, shown)};
+            const LabelSide side = boxes.empty() ? Below : boxes[1].side;
+            boxes = {Box(0, 0, 100, Below), Box(100.0f + distance, 0, 1, side)};
             layout.Place(boxes, gap, hold);
-            changes += boxes[1].shown != last;
-            last = boxes[1].shown;
+            changes += boxes[1].side != last;
+            last = boxes[1].side;
         }
-        std::printf("the lighter label changed %d times over the approach and the retreat\n", changes);
-        assert(changes == 2); // hidden once on the way in, shown once on the way out
+        std::printf("the lighter name changed sides %d times over the approach and the retreat\n", changes);
+        assert(changes == 1); // moved once on the way in, keeps the free side on the way out
     }
-    // Deterministic: the same boxes and last choice give the same result.
+    // Deterministic: the same boxes and last sides give the same result.
     {
         std::vector<LabelBox> a{Box(0, 0, 50), Box(40, 0, 50), Box(80, 0, 50), Box(120, 0, 50)}, b = a;
         layout.Place(a, gap, hold);
         LabelLayout other;
         other.Place(b, gap, hold);
-        assert(Shown(a) == Shown(b));
-        assert((Shown(a) == std::vector<bool>{true, false, false, true}));
+        assert(Sides(a) == Sides(b));
+        for (const LabelBox &box : a)
+            assert(box.side != None);
     }
 #ifdef STORM_LABEL_PROJECTION_CHECK
     return ProjectionChecks();

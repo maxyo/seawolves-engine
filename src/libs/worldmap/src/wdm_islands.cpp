@@ -28,11 +28,13 @@ namespace
 // The labels on the display (LRender), in dp (1/160 inch)
 constexpr float kLabelMinDp = 16.0f;    // the line of the smallest label font at least
 constexpr float kLabelOutlineDp = 1.5f; // the dark outline around the text
-constexpr float kLabelGapDp = 4.0f;     // the space colliding labels keep between them
-constexpr float kLabelHoldDp = 3.0f;    // how much of it a label already shown may lose before it yields
-// How fast labels fade (of their full opacity, per second)
-constexpr float kLabelHeightFade = 1.5f; // the camera rose above the label's height (the game's pace)
-constexpr float kLabelYieldFade = 6.0f;  // a heavier label covers it, or it comes free
+constexpr float kLabelGapDp = 4.0f;     // the space labels keep between them
+constexpr float kLabelHoldDp = 3.0f;    // how much of it a label may lose before it moves to another side
+// How fast a label fades in when it comes on the screen, and out when it leaves (of its full opacity, per second)
+constexpr float kLabelFade = 6.0f;
+// The smallest size a kind of label shrinks to above its own height (storm::worldmap::HeightScale): smaller is no
+// longer readable on a phone (the town font's line 16 dp -> 13.6 dp)
+constexpr float kLabelFarScale = 0.85f;
 
 // Pixels of the render target (`viewportWidth` wide) per dp of the display. The display's density
 // is the frame owner's (Android: the display's DPI / 160). Without a surface there is no frame to
@@ -441,6 +443,7 @@ void WdmIslands::SetIslandsData(ATTRIBUTES *apnt, bool isChange)
             labels[index].locatorName = locator;
             labels[index].alpha = 255.0f;
             labels[index].placed = true;
+            labels[index].side = storm::worldmap::LabelSide::None;
         }
         else
         {
@@ -711,7 +714,7 @@ void WdmIslands::LRender(VRenderer *rs)
             smallest = height;
     const float scale = smallest > 0.0f ? std::max(1.0f, kLabelMinDp * pxPerDp / smallest) : 1.0f;
     const float outline = std::max(1.0f, kLabelOutlineDp * pxPerDp);
-    // The height of the camera: each kind of label shows below its own (heightView)
+    // The height of the camera: above a kind's own height (heightView) its labels shrink, never hide
     const float cameraHeight = wdmObjects->camera->realHeight;
     const float seconds = core.GetDeltaTime() * 0.001f;
     // Projecting to the screen; the labels that may show take part in the layout
@@ -729,39 +732,52 @@ void WdmIslands::LRender(VRenderer *rs)
         {
             label.onScreen = false;
             label.placed = false;
+            label.side = storm::worldmap::LabelSide::None;
             continue;
         }
-        // Centred over its world point, below it; screen HUD never displaces the name.
-        label.l = prjVertex.x - 0.5f * label.width * scale;
-        label.t = prjVertex.y;
-        label.r = label.l + label.width * scale;
-        label.b = label.t + label.height * scale;
-        label.onScreen = label.l < w && label.t < h && label.r >= 0.0f && label.b >= 0.0f;
-        const bool mayShow = label.onScreen && label.heightView > cameraHeight && (!label.text.empty() || label.icon >= 0);
+        // At a side of its world point (wdm_label_layout.hpp); screen HUD never displaces the name.
+        label.scale = scale * storm::worldmap::HeightScale(label.heightView, cameraHeight, kLabelFarScale);
+        const float width = label.width * label.scale, height = label.height * label.scale;
+        // Under the point until the layout picks its side
+        label.l = prjVertex.x - 0.5f * width, label.t = prjVertex.y, label.r = label.l + width, label.b = label.t + height;
+        // On the screen on any side of the point (the layout picks one below)
+        label.onScreen = prjVertex.x - width - kLabelGapDp * pxPerDp < w && prjVertex.y - height < h &&
+                         prjVertex.x + width + kLabelGapDp * pxPerDp >= 0.0f && prjVertex.y + height >= 0.0f;
+        const bool mayShow = label.onScreen && (!label.text.empty() || label.icon >= 0);
         if (!mayShow)
         {
             label.placed = false;
+            label.side = storm::worldmap::LabelSide::None;
             continue;
         }
         labelSort.push_back(i);
-        labelBoxes.push_back({label.l, label.t, label.r, label.b, label.weight, label.placed});
+        labelBoxes.push_back({prjVertex.x, prjVertex.y, width, height, label.weight, label.side});
     }
-    // Colliding labels: the heavier shows (wdm_label_layout.hpp)
+    // Names never cover one another where a side of their point is free (wdm_label_layout.hpp)
     labelLayout.Place(labelBoxes, kLabelGapDp * pxPerDp, kLabelHoldDp * pxPerDp);
     for (size_t i = 0; i < labelSort.size(); i++)
-        labels[labelSort[i]].placed = labelBoxes[i].shown;
-    // Draw icons and write text
-    for (Label &label : labels)
     {
-        // A label the camera's height hides fades at the game's pace, one a heavier label covers quickly
-        const float rate = (label.heightView > cameraHeight ? kLabelYieldFade : kLabelHeightFade) * 255.0f * seconds;
+        Label &label = labels[labelSort[i]];
+        const storm::worldmap::LabelBox &box = labelBoxes[i];
+        label.l = box.left, label.t = box.top, label.r = box.right, label.b = box.bottom;
+        label.side = box.side;
+        label.placed = true;
+    }
+    // Lighter names first: one without a free side lies under the heavier
+    std::stable_sort(labelSort.begin(), labelSort.end(), [&](int32_t a, int32_t b) { return labels[a].weight < labels[b].weight; });
+    // Draw icons and write text
+    const float rate = kLabelFade * 255.0f * seconds;
+    for (Label &label : labels)
         label.alpha = label.placed ? std::min(255.0f, label.alpha + rate) : std::max(0.0f, label.alpha - rate);
-        if (label.alpha < 1.0f || !label.onScreen)
+    for (const int32_t index : labelSort)
+    {
+        Label &label = labels[index];
+        if (label.alpha < 1.0f)
             continue;
         // writing a text
         const uint32_t color = (static_cast<int32_t>(label.alpha) << 24) | 0xffffff;
-        rs->PrintOutlined(label.font, color, scale, outline, static_cast<int32_t>(label.l + label.textX * scale),
-                          static_cast<int32_t>(label.t + label.textY * scale), label.text);
+        rs->PrintOutlined(label.font, color, label.scale, outline, static_cast<int32_t>(label.l + label.textX * label.scale),
+                          static_cast<int32_t>(label.t + label.textY * label.scale), label.text);
         // Draw a picture
         if (label.icon < 0)
             continue;
@@ -777,8 +793,8 @@ void WdmIslands::LRender(VRenderer *rs)
             float tu2, tv2;
         } drawbuf[4];
         // 0
-        drawbuf[0].x = label.l + label.iconX * scale;
-        drawbuf[0].y = label.t + label.iconY * scale;
+        drawbuf[0].x = label.l + label.iconX * label.scale;
+        drawbuf[0].y = label.t + label.iconY * label.scale;
         drawbuf[0].z = 0.0f;
         drawbuf[0].rhw = 0.5f;
         drawbuf[0].c = color;
@@ -788,7 +804,7 @@ void WdmIslands::LRender(VRenderer *rs)
         drawbuf[0].tv2 = drawbuf[0].tv1;
         // 1
         drawbuf[1].x = drawbuf[0].x;
-        drawbuf[1].y = drawbuf[0].y + icons.h * scale;
+        drawbuf[1].y = drawbuf[0].y + icons.h * label.scale;
         drawbuf[1].z = 0.0f;
         drawbuf[1].rhw = 0.5f;
         drawbuf[1].c = color;
@@ -797,7 +813,7 @@ void WdmIslands::LRender(VRenderer *rs)
         drawbuf[1].tu2 = drawbuf[0].tu2;
         drawbuf[1].tv2 = drawbuf[1].tv1;
         // 2
-        drawbuf[2].x = drawbuf[0].x + icons.w * scale;
+        drawbuf[2].x = drawbuf[0].x + icons.w * label.scale;
         drawbuf[2].y = drawbuf[0].y;
         drawbuf[2].z = 0.0f;
         drawbuf[2].rhw = 0.5f;
@@ -807,8 +823,8 @@ void WdmIslands::LRender(VRenderer *rs)
         drawbuf[2].tu2 = drawbuf[0].tu2 + icons.u;
         drawbuf[2].tv2 = drawbuf[2].tv1;
         // 3
-        drawbuf[3].x = drawbuf[0].x + icons.w * scale;
-        drawbuf[3].y = drawbuf[0].y + icons.h * scale;
+        drawbuf[3].x = drawbuf[0].x + icons.w * label.scale;
+        drawbuf[3].y = drawbuf[0].y + icons.h * label.scale;
         drawbuf[3].z = 0.0f;
         drawbuf[3].rhw = 0.5f;
         drawbuf[3].c = color;

@@ -51,11 +51,13 @@ class WdmIslands : public WdmRenderObject
         float textX, textY;      // Relative text position
         float iconX, iconY;      // The relative position of the picture
         float alpha;             // The current state of the rectangle
-        float heightView;        // Height from which the label goes out
+        float heightView;        // The camera height above which the label shrinks (the game hid it there)
+        float scale;             // Its size on the screen in this frame (of the font's own size)
         int32_t font;               // The renderer's font id
         int32_t icon;               // Image index
         uint32_t weight;         // Which of two colliding labels shows (the heavier)
-        bool placed;             // Shows in this frame: no heavier label covers it (wdm_label_layout.hpp)
+        bool placed;             // Shows in this frame (on the screen, a name to show)
+        storm::worldmap::LabelSide side; // Where it lies by its point (wdm_label_layout.hpp)
         std::string id;          // Label ID
         uint32_t idHash;         // Hash value of identifier
         int32_t next;               // Next label on the list
