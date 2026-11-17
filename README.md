@@ -39,7 +39,7 @@ capabilities, and anything turned off is logged.
 This repository builds the native engine library only, not an APK:
 `bash tools/android/ci_dependencies.sh`, then `bash tools/android/ci_engine.sh`
 (details in [tools/android/README.md](tools/android/README.md)). For the Linux host development build, see
-`cmake/host.cmake`. The Android app, Seawolves, lives in a separate repository that is not public yet.
+`cmake/host.cmake`. The Android app, Seawolves, lives in a separate repository, which is currently private.
 
 ## Reporting bugs
 
