@@ -19,7 +19,8 @@ Inputs (each missing one fails the stage loudly, nothing is skipped):
 - STORM_CI_WORK: the shared dependency sources (as tools/ci/gate.py).
 
 The build directory (default <worktree>/build/boot-asan, RelWithDebInfo, -fsanitize=address,undefined,
--DSTORM_SCENE_SWEEP=ON) is kept and rebuilt incrementally through ccache. Times are logged per step and per scene.
+-DSTORM_SCENE_SWEEP=ON) is kept and rebuilt incrementally through ccache; it builds the engine and the relief networks the
+sweep gives it (<build>/relief_models). Times are logged per step and per scene.
 """
 import argparse
 import json
@@ -81,7 +82,7 @@ def build(directory):
                    '-DSTORM_OPEN_AUDIO=ON']
         if run(command).returncode:
             fail(f'configuring {directory} failed')
-    for command in ([root / 'tools/ccache/warmth', 'begin', directory], ['ninja', '-C', directory, 'engine'],
+    for command in ([root / 'tools/ccache/warmth', 'begin', directory], ['ninja', '-C', directory, 'engine', 'storm_relief_model_files'],
                     [root / 'tools/ccache/warmth', 'end', directory]):
         if run(command).returncode:
             fail(f'{" ".join(map(str, command))} failed')
