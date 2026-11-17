@@ -867,7 +867,7 @@ bool Renderer::Init()
         // Android builds and on the host, neutral in release builds.
         ini->ReadString(nullptr, "missing_texture_look", str, sizeof(str), "");
 #ifdef __ANDROID__
-        bool loudMissing = storm::android::debuggable();
+        bool loudMissing = storm::android::debugBuild();
 #else
         bool loudMissing = true;
 #endif
@@ -3347,12 +3347,12 @@ void Renderer::RunStart()
     storm::render::HoldGamePicture(!storm::loading::active && storm::android::mobileScreen == "game_menu");
     storm::core::HoldSceneRealize(storm::render::GamePictureHeld());
 #endif
-    // The GPU self-test switched an effect stage off on this device: tell the player once (also logged).
+    // The GPU self-test switched an effect stage off on this device: logged, and a toast in debug builds.
     if (const std::string notice = storm::render::TakeEffectsNotice(); !notice.empty())
     {
         spdlog::warn("graphics effects: {}", notice);
 #ifdef __ANDROID__
-        storm::android::publishGameMessage(notice);
+        storm::android::publishDiagnostic(notice);
 #endif
     }
     auto *pScriptRender = static_cast<VDATA *>(core.GetScriptVariable("Render"));

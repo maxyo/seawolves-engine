@@ -516,7 +516,6 @@ void Router::CloseOnDefect(const std::string &line, bool logged)
 {
     if (!logged)
         surface_.Error(line);
-    surface_.Alert(surface_.Text("ui.error.screen"));
     // Nothing of the failed build stays: its bindings may point into state the throw left half made.
     bindings_.handlers_.clear();
     modals_.clear();

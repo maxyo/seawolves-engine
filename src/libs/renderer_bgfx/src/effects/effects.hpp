@@ -197,7 +197,7 @@ class Host
     fx::SelfTest self_test_;
     fx::Settings tested_{};               // the settings of the running self-test
     std::vector<fx::Settings> verified_; // settings whose self-test passed on this device
-    std::string notice_; // for the player: a stage the self-test switched off (take_notice)
+    std::string notice_; // a stage the self-test switched off: a toast in debug builds (take_notice)
     float device_max_anisotropy_ = 0.0f; // shim::DeviceInfo::max_anisotropy
     render::EffectsReport report_{};
     render::EffectsWeather weather_{};

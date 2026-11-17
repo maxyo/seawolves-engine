@@ -626,13 +626,13 @@ static void Store(const std::string &models)
                surface.errors[0] == "screen store (interface #9 revision 1): required nodes missing or mistyped: TABLE_LIST(choice|table); "
                                     "the interface is closed (the engine's back)",
            "a ported screen that cannot be used is a defect");
-    Expect(surface.Last() == "back" && surface.toasts.size() == toasts + 1 && surface.toasts.back() == "<ui.error.screen>",
-           "the defect closes the interface the game's way, with the danger toast");
+    Expect(surface.Last() == "back" && surface.toasts.size() == toasts,
+           "the defect closes the interface the game's way; its error line is the only report");
     broken.revision = 99;
     router.SetInterface(broken);
     surface.now += 1.0;
     router.Tick();
-    Expect(surface.errors.size() == 1 && surface.toasts.size() == toasts + 2, "the same node set again: closed and toasted, reported once");
+    Expect(surface.errors.size() == 1 && surface.toasts.size() == toasts, "the same node set again: closed again, reported once");
     broken.widgets.pop_back();
     router.SetInterface(broken);
     surface.now += 1.0;

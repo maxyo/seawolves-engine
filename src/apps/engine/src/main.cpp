@@ -239,8 +239,8 @@ void RethrowCallbackError()
 
 #ifdef __ANDROID__
 // Logs what the script patch layer did during the resource scan (which runs
-// before logging is ready) and, once per distinct set of unapplied fixes, tells
-// the player which fixes their game files did not allow.
+// before logging is ready) and, in debug builds, once per distinct set of
+// unapplied fixes, shows which fixes the game files did not allow.
 void AnnounceScriptPatches()
 {
     const auto &report = storm::script_patches::lastReport();
@@ -249,7 +249,7 @@ void AnnounceScriptPatches()
     for (const auto &line : report.errors)
         spdlog::error("{}", line);
     const auto key = report.noticeKey();
-    if (key.empty())
+    if (key.empty() || !storm::android::debugBuild()) // release: the unapplied fixes are in the log above
         return;
     const auto stamp = std::filesystem::path(SDL_AndroidGetInternalStoragePath()) / "script-patches/notice-shown";
     std::string shown;

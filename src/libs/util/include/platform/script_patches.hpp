@@ -36,7 +36,7 @@
 // - A fix is all-or-nothing: if any of its targets is missing or differs from
 //   the expected base, none of its targets is patched, and neither are the other
 //   fixes sharing those targets. The player's files are then used unchanged and
-//   the report lists the unapplied fixes (the engine shows a one-time notice).
+//   the report lists the unapplied fixes (error lines; debug builds also show a one-time notice).
 // - A damaged layer (bad index or patch, a patch that does not apply to its own
 //   verified base, a result with the wrong sha256, two sets matching one game)
 //   is an application bug: LayerError, the game does not start.

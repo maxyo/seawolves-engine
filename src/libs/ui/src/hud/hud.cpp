@@ -272,8 +272,6 @@ void Hud::Disable(const std::string &component, const char *where, const std::st
     std::snprintf(retry, sizeof retry, "%.0f", delay);
     mount_.Error("HUD " + component + " threw in " + where + ": " + what + "; it is off, retried in " + retry + " s (failure " +
                  std::to_string(failure.count) + ")" + (scene ? "; its modes show the game-menu button until then" : ""));
-    if (failure.count == 1)
-        mount_.Alert(mount_.Text("ui.error.hud"));
     if (scene)
     {
         // The throw has unwound out of the scene. Held controls end first (their cancel events
@@ -755,7 +753,6 @@ double Hud::WatchDialogue(double now)
     const std::string report = std::string("no dialogue panel for ") + seconds + " s (panel state " + (shown.dialogue ? "active" : "none") +
                                ", gameplay blocked '" + states_.gameplay.blocked + "')";
     mount_.Error("dialogue watchdog: the game is in a dialogue nobody sees: " + report + "; the engine ends it");
-    mount_.Alert(mount_.Text("dialogue.lost"));
     Send("dialogue-lost", report);
     return kIdle;
 }

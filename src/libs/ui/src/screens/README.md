@@ -67,7 +67,7 @@ Verbs and what the engine receives (`EngineCommand`, queue line
 
 - **Admission.** All REQUIRED nodes present → the ported screen. A model missing one is held
   hidden for the first second of the opening; after that it is an error (missing nodes logged,
-  toast `ui.error.screen`) and the interface closes through the engine's back. Mark nodes
+  a toast in debug builds) and the interface closes through the engine's back. Mark nodes
   REQUIRED only when every way the game opens the interface has them.
 - **Extras.** Widgets a ported screen does not know become rows of the «Прочее» sheet (header «⋯»);
   texts become one note.

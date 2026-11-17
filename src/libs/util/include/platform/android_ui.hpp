@@ -224,9 +224,12 @@ inline void publishGameMessage(const std::string &text, const std::string &targe
 // the settings screen stored new renderer preferences); the renderer re-applies the graphics
 // effects from the preferences at its next frame (renderer.cpp).
 inline std::atomic<bool> graphicsSettingsChanged{false};
-// A debuggable build of the app (ApplicationInfo.FLAG_DEBUGGABLE: the debug APK): developer looks and notices.
+// A debug build of the app: ApplicationInfo.FLAG_DEBUGGABLE, which tools/android/build_apk.py sets for
+// --build-type debug (local and owner test builds) and never for release (the GitHub and Play release APKs).
+// The engine's one source for debug-only looks and notices: non-fatal errors are shown on screen only here
+// (Config::show_errors of the UI, publishDiagnostic, the script patch notice); release builds log them.
 // False when there is no activity to ask.
-inline bool debuggable() {
+inline bool debugBuild() {
     auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());
     auto activity=static_cast<jobject>(SDL_AndroidGetActivity());
     if (!env || !activity) return false;
@@ -244,6 +247,11 @@ inline bool debuggable() {
     if (type) env->DeleteLocalRef(type);
     env->DeleteLocalRef(activity);
     return result;
+}
+// A non-fatal problem the engine has already logged (error.log / logcat): a toast in debug builds, nothing on
+// the screen in release builds. The one gate for the engine's diagnostic toasts outside the UI library.
+inline void publishDiagnostic(const std::string &text) {
+    if (debugBuild()) ui::toast(text);
 }
 inline int graphicsSetting(const char *key, int fallback) {
     auto *env=static_cast<JNIEnv *>(SDL_AndroidGetJNIEnv());

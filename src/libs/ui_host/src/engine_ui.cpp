@@ -465,20 +465,12 @@ class EngineUi
         auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
         if (!env || !activity)
             return;
-        bool debuggable = false;
         {
             const jclass type = env->GetObjectClass(activity);
             const jmethodID get_assets = env->GetMethodID(type, "getAssets", "()Landroid/content/res/AssetManager;");
             const jobject assets = env->CallObjectMethod(activity, get_assets);
             assets_ = env->NewGlobalRef(assets);
             env->DeleteLocalRef(assets);
-            const jmethodID get_info = env->GetMethodID(type, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
-            const jobject info = env->CallObjectMethod(activity, get_info);
-            const jclass info_type = env->GetObjectClass(info);
-            constexpr jint kFlagDebuggable = 2; // ApplicationInfo.FLAG_DEBUGGABLE
-            debuggable = (env->GetIntField(info, env->GetFieldID(info_type, "flags", "I")) & kFlagDebuggable) != 0;
-            env->DeleteLocalRef(info_type);
-            env->DeleteLocalRef(info);
             env->DeleteLocalRef(type);
             env->DeleteLocalRef(activity);
         }
@@ -495,7 +487,7 @@ class EngineUi
         config.height = int(surface.height_px);
         config.density = surface.density;
         config.game_root = std::filesystem::current_path().string(); // prepareGameDirectory
-        config.show_errors = debuggable;
+        config.show_errors = storm::android::debugBuild();
         // The UI's lines (what it showed, its errors) in Logs/ui.log, its errors in error.log too; logcat has them
         // from the UI already (tag StormUi).
         config.on_log = [logger = storm::logging::getOrCreateLogger("ui", spdlog::level::trace, false)](

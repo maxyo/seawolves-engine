@@ -368,13 +368,13 @@ class Router
     // else thrown) is reported by Failed and false returned.
     template <class Call> bool Guarded(const std::string &where, Call &&call);
     // A screen threw: an error line naming the screen, the interface, the call and the exception,
-    // the player's danger toast (ui.error.screen), and the interface is closed through the
-    // engine's back. No replacement layout is built for a screen that threw.
+    // (shown as a toast in debug builds only: Config::show_errors), and the interface is closed
+    // through the engine's back. No replacement layout is built for a screen that threw.
     void Failed(const std::string &where, const std::string &what);
     // A ported screen cannot draw its interface (a thrown screen, REQUIRED nodes missing or
     // mistyped once the first model settled): the defect `line` (an error line, unless
-    // `logged` says it was already reported for this node set), the danger toast
-    // ui.error.screen, and the interface closes through the engine's back. Nothing else draws it.
+    // `logged` says it was already reported for this node set) and the interface closes through
+    // the engine's back. Nothing else draws it.
     void CloseOnDefect(const std::string &line, bool logged);
     // The boundary of state consumer code: a throw is an error line and the state is dropped
     // (the screen in use stays: a channel's data is not the screen's). False when it threw.

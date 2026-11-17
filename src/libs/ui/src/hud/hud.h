@@ -593,8 +593,8 @@ class Hud
     // The exception boundary of HUD component code: a scene's calls and handlers, the
     // spyglass overlay. Runs `call`; a throw is reported by Disable and false returned.
     template <class Call> bool Guarded(const std::string &component, const char *where, Call &&call);
-    // A HUD component threw: an error line naming it, the call and the exception, the player's
-    // danger toast (ui.error.hud, at its first failure), and the component is off until its retry
+    // A HUD component threw: an error line naming it, the call and the exception (shown as a toast in
+    // debug builds only: Config::show_errors), and the component is off until its retry
     // (a scene: its modes show the game-menu button meanwhile). The retry comes kRetryFirst after
     // the first failure, twice as late after each further one, at most kRetryMost: the touch HUD
     // is the only HUD, so it recovers by itself, and a component that keeps throwing is logged

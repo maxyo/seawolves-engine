@@ -1150,6 +1150,27 @@ int main(int argc, char **argv)
         }
     }
 
+    // Release and debug builds (Config::show_errors, from the debuggable APK flag): a UI error is an error line in
+    // both; only a debug build also puts it on the screen as a toast (its entrance keeps frames coming).
+    for (const bool debug : {false, true})
+    {
+        host.reset();
+        logged.clear();
+        config.show_errors = debug;
+        host = Host::Create(config, &error);
+        Expect(host != nullptr, "a runtime starts for the build mode: " + error);
+        if (!host)
+            return 1;
+        frames(0.5);
+        const std::string mode = debug ? "debug: " : "release: ";
+        Expect(!host->Prepare(delay), mode + "an idle host asks for no frame");
+        Expect(!host->SetState("gameplay", "{not json"), mode + "malformed state is refused");
+        Expect(std::count(logged.begin(), logged.end(), std::make_pair(LogLevel::Error, std::string("state channel gameplay: malformed JSON"))) == 1,
+               mode + "the error is logged");
+        Expect(drawing(0.0, 0.15) == debug, mode + (debug ? "the error is shown as a toast" : "nothing is shown"));
+        frames(8.0);
+    }
+
     host.reset();
     fs::remove_all(pack);
     if (failures)

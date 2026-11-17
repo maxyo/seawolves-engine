@@ -168,7 +168,7 @@ static void ExpectClosed(const Router &router, const FakeSurface &surface, uint6
     Expect(surface.commands.size() == 1 && surface.commands[0] == "back" && surface.actions[0].screen == "throwing" &&
                surface.actions[0].opening == opening,
            "exactly one normal engine back targets the failed opening");
-    Expect(surface.alerts.size() == 1 && surface.alerts[0] == "<ui.error.screen>", "one localized danger toast");
+    Expect(surface.alerts.empty(), "the defect is an error line, no alert of its own (Config::show_errors shows errors)");
     Expect(generic_created == 0, "the boundary never constructs a generic replacement");
 }
 
@@ -231,7 +231,7 @@ static void CheckTextAnswer()
     ExpectClosed(router, surface, 6);
     Expect(Has(surface.errors, "threw in the text editor's answer: bad text answer"), "the error line names the text answer");
     router.SubmitText(surface.text_token, "late answer", true);
-    Expect(surface.commands.size() == 1 && surface.errors.size() == 1 && surface.alerts.size() == 1,
+    Expect(surface.commands.size() == 1 && surface.errors.size() == 1 && surface.alerts.empty(),
            "a late editor answer cannot revive the failed screen or send another command");
 }
 
@@ -267,7 +267,7 @@ static void CheckGenericFails()
            "the generic failure sends exactly one back for its opening");
     Expect(Has(surface.errors, "screen generic (interface unported #4 revision 1) threw in Build: generic failed; the interface is closed"),
            "the generic error names the failure and closure");
-    Expect(surface.alerts.size() == 1 && surface.alerts[0] == "<ui.error.screen>", "the generic failure gets one localized toast");
+    Expect(surface.alerts.empty(), "the generic failure is an error line, no alert of its own");
 }
 
 // Bad states of real channels: whatever a consumer does with them, the screen in use stays.
@@ -411,7 +411,7 @@ static void CheckHudComponent(const char *where, bool &flag, bool event)
     ThrowOnce(bench, flag, event);
     Expect(Has(bench.mount.errors, std::string("HUD probe threw in ")) && Has(bench.mount.errors, "it is off, retried in 2 s (failure 1)"),
            std::string(where) + ": the error line names the component, the call, the exception and the retry");
-    Expect(bench.mount.alerts.size() == 1 && bench.mount.alerts[0] == "<ui.error.hud>", std::string(where) + ": the player gets the localized danger toast");
+    Expect(bench.mount.alerts.empty(), std::string(where) + ": an error line, no alert of its own (Config::show_errors shows errors)");
     Expect(bench.hud.MenuOnly() && bench.mount.shown.layout == "menu", std::string(where) + ": the game-menu button stays");
     // Off until the retry: later states before it do not make the scene again.
     const int created = scenes_created;
@@ -425,10 +425,10 @@ static void CheckHudComponent(const char *where, bool &flag, bool event)
     Expect(scenes_created == created + 1 && bench.hud.Visible() && !bench.hud.MenuOnly() && bench.mount.shown.layout == "probe",
            std::string(where) + ": the scene comes back at its retry");
     Expect(Has(bench.mount.logs, "HUD probe: retried after failure 1"), std::string(where) + ": the retry is logged");
-    // Throwing again: an error line with a doubled delay, no second toast, and back again.
+    // Throwing again: an error line with a doubled delay, and back again.
     ThrowOnce(bench, flag, event);
-    Expect(Has(bench.mount.errors, "it is off, retried in 4 s (failure 2)") && bench.mount.alerts.size() == 1 && bench.hud.MenuOnly(),
-           std::string(where) + ": a repeated failure is logged with a longer delay and no new toast");
+    Expect(Has(bench.mount.errors, "it is off, retried in 4 s (failure 2)") && bench.mount.alerts.empty() && bench.hud.MenuOnly(),
+           std::string(where) + ": a repeated failure is logged with a longer delay");
     bench.mount.now += 3.0;
     bench.hud.Tick();
     Expect(bench.hud.MenuOnly(), std::string(where) + ": the doubled delay holds");

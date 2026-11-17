@@ -579,10 +579,11 @@ static void CheckScenes()
                    "unseen for 3 s: the engine is told to end it, with what was seen: " + mount.commands.back());
             Expect(!mount.errors.empty() && mount.errors.back().starts_with("dialogue watchdog: the game is in a dialogue nobody sees"),
                    "as an error");
-            Expect(mount.alerts.size() == 1 && mount.alerts.back() == "<dialogue.lost>", "and a notice for the player");
+            Expect(mount.alerts.empty(), "no alert of its own: the error line is shown in debug builds only (Config::show_errors)");
+            const size_t errors = mount.errors.size();
             mount.now += 10.0;
             hud.Tick();
-            Expect(lost() == 1 && mount.alerts.size() == 1, "once per dialogue");
+            Expect(lost() == 1 && mount.errors.size() == errors, "once per dialogue");
             bench.Game();
             hud.Tick();
 
@@ -624,7 +625,7 @@ static void CheckScenes()
             bench.Game();
             mount.now += 5.0;
             hud.Tick();
-            Expect(lost() == 2 && mount.alerts.size() == 2, "a normal dialogue never trips it");
+            Expect(lost() == 2 && mount.alerts.empty(), "a normal dialogue never trips it");
         }
         for (const char *cover : {"loading", "cinematic"})
         {

@@ -63,8 +63,9 @@ Debuggable Android builds log frame costs every 5 s (logcat tag `StormUiFrames`)
   element and drawn as the striped `ui-error` marker or a crossed red icon. With
   `Config::strict_templates` (host checks, captures) a template path that names nothing is an error too;
   mark optional data in the template with `opt(r.reason)` or `or(r.id, r_i)` (`src/template.h`).
-- A screen that throws closes its interface with an error line and the toast `ui.error.screen`; a HUD scene
-  that throws is off until a backed-off retry (toast `ui.error.hud`).
+- A screen that throws closes its interface with an error line; a HUD scene that throws is off until a
+  backed-off retry. Error lines are toasts only with `Config::show_errors` (debug builds); release builds
+  only log them.
 - `icon-shadow: <colour> <x> <y> <sigma>` bakes a drop shadow into an icon; use it instead of
   `filter: drop-shadow` on icons.
 - The host draws only when `Host::Prepare` reports the frame out of date; a frame is shown only when its
