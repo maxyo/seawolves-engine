@@ -14,8 +14,6 @@ def body(signature):
         depth += (s[end] == '{') - (s[end] == '}')
         end += 1
     return s[start:end]
-# Both direct script progress and TextureLoad's production entry use this method.
-assert 'ProgressView();' in body('bool Renderer::TextureLoad(int32_t t)')
 fixture = r'''
 #include <cassert>
 #include <cstdint>

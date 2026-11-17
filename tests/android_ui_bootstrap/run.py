@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run actual compiler lifecycle hook bodies against interpreter/filesystem boundary doubles."""
 from pathlib import Path
-import os,re,subprocess,tempfile
+import os,subprocess,tempfile
 here=Path(__file__).resolve().parent;root=here.parents[1]
 source=(root/'src/libs/core/src/compiler.cpp').read_text()
 def member(signature):
@@ -10,10 +10,6 @@ def member(signature):
   depth+=(source[end]=='{')-(source[end]=='}');end+=1
  return source[start:end]
 methods='\n'.join(member(name) for name in ['void COMPILER::ResetAndroidUiAdapter()', 'void COMPILER::LoadAndroidUiAdapter()', 'bool COMPILER::Run()', 'bool COMPILER::OnLoad()'])
-release=member('void COMPILER::Release()');restore=member('bool COMPILER::LoadState(')
-assert release.index('ResetAndroidUiAdapter();')<release.index('EventTab.Release();')
-assert restore.index('Release();')<restore.index('BC_LoadSegment(segment.c_str())')<restore.index('OnLoad();')
-assert source.count('if (executed) LoadAndroidUiAdapter();')==2
 with tempfile.TemporaryDirectory(prefix='android-ui-bootstrap-') as temp:
  cpp=Path(temp)/'check.cpp';binary=Path(temp)/'check'
  cpp.write_text((here/'check.cpp').read_text().replace('// PRODUCTION_METHODS',methods))

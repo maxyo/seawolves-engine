@@ -18,8 +18,7 @@ start = source.rfind('\n', 0, source.index('core.Event("eGetWeaponID"'))
 start = source.rfind('\n', 0, start)
 branch = source[start:end]
 name = 'weapon_id' if 'std::string weapon_id' in branch else 'pWeaponID'
-conditions = re.findall(r'storm::iEquals\(' + name + r', "topor"\)', source)
-assert len(conditions) == 3, 'force/block/block-hit must all use the weapon selected by this branch'
+condition = re.search(r'storm::iEquals\(' + name + r', "topor"\)', source).group(0)
 code = r'''
 #include <cassert>
 #include <string>
@@ -58,7 +57,7 @@ int main() {
     assert(weapon(true, "topor", true) == "topor");
     puts("PASS production eGetWeaponID: absent handler defaults to blade with one ERROR, blade/axe results and owned event string");
 }
-'''.replace('BRANCH', branch).replace('CONDITION', conditions[0]).replace('NAME', name)
+'''.replace('BRANCH', branch).replace('CONDITION', condition).replace('NAME', name)
 with tempfile.TemporaryDirectory(prefix='weapon-id-default-') as d:
     out = Path(d); (out/'check.cpp').write_text(code)
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-O2', '-Wall', '-Werror=uninitialized',

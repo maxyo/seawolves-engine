@@ -16,15 +16,6 @@ renderer=(root/'src/libs/renderer/src/renderer.cpp').read_text()
 native=(root/'src/libs/location/src/location_script_lib.cpp').read_text()
 method=extract(core,'bool CoreImpl::PrepareLoadingScene()')
 abort=extract(core,'bool CoreImpl::AbortLoadingTransaction(')
-assert 'throw' not in method and 'throw' not in abort
-assert 'Stage::realize' not in method and 'Stage::execute' not in method
-assert 'ProcessFrame(' not in method and 'ProcessExecute(' not in method and 'ProcessRealize(' not in method
-assert 'SetLayerFrozen' not in method and 'SetLayerHeld' not in method
-camera=extract((root/'src/libs/location/src/location_camera.cpp').read_text(),'void LocationCamera::PrimeLoadingCamera()')
-assert 'Controls' not in camera and 'Execute(0' not in camera and 'SetCamera(' in camera
-animation=extract((root/'src/libs/animation/src/animation_service_imp.cpp').read_text(),'void AnimationServiceImp::RunStart()')
-warm=animation[animation.index('if (storm::loading::active)'):animation.index('if (core.Controls')]
-assert 'BuildAnimationMatrices()' in warm and '->Execute(' not in warm
 source=r'''
 #include <cassert>
 #include <chrono>

@@ -13,8 +13,8 @@ was a neutral ship, so enemy ships never fired at the player.
 
 The check runs `storm::sea_ai::ScriptRelations` (`src/libs/sea_ai/src/script_relations.hpp`)
 on both numberings and on broken headers (a missing or repeated define, an unnamed value must
-throw), runs `COMPILER::FindIntegerDefine` verbatim from `compiler.cpp` against the real
-`S_DEFTAB`, and checks that the three crossing points in the sea AI translate.
+throw) and runs `COMPILER::FindIntegerDefine` verbatim from `compiler.cpp` against the real
+`S_DEFTAB`.
 
 The game-data check is the `battle:<island>` scene of `tools/scene_sweep`: it fails when the
 enemy ship has not fired its cannons within 90 s of game time at sea.

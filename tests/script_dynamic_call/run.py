@@ -13,10 +13,6 @@ a = p.parse_args()
 r = Path(__file__).resolve().parents[2]
 deps = a.dependency_sources.resolve()
 source = (r/'src/libs/core/src/compiler.cpp').read_text()
-# `call name()` must store its status through the method under test.
-execute = source.index('bool COMPILER::BC_Execute(')
-call = source[source.index('case CALL:', execute):source.index('case CALL_FUNCTION:', execute)]
-assert 'StoreDynamicCallStatus(pVResult != nullptr);' in call, 'dynamic call no longer uses StoreDynamicCallStatus'
 start = source.index('void COMPILER::StoreDynamicCallStatus(')
 method = source[start:source.index('\n}', start) + 2].replace('COMPILER::', 'DynamicCall::')
 

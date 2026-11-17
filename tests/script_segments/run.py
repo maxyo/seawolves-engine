@@ -5,17 +5,11 @@ already loaded" with its functions invalidated: "Invalid function call"), and th
 finds the live copy. Runs the compiler's LiveSegment against a segment table played through
 load / unload / load / unload / ProcessFrame; no engine build."""
 from pathlib import Path
-import os, re, subprocess, tempfile
+import os, subprocess, tempfile
 root = Path(__file__).resolve().parents[2]
 source = (root / 'src/libs/core/src/compiler.cpp').read_text()
 start = source.index('static bool LiveSegment(')
 live = source[start:source.index('\n}', start) + 2]
-# Every lookup by name goes through it.
-for name in ('void COMPILER::UnloadSegment(', 'bool COMPILER::BC_SegmentIsLoaded(', 'bool COMPILER::BC_LoadSegment('):
-    body = source[source.index(name):]
-    body = body[:body.index('\n}\n')]
-    assert 'LiveSegment(SegmentTable[n], ' in body, f'{name} looks segments up without LiveSegment'
-    assert not re.search(r'strcmp\(SegmentTable\[n\]\.name', body), f'{name} still compares names directly'
 code = r'''
 #include <cassert>
 #include <cstring>

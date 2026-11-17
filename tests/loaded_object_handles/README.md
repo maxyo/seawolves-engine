@@ -44,8 +44,8 @@ those saved attributes on the next location entry. Consequently a sea save can
 legitimately contain group attributes without a live group entity. Loading such
 an object must preserve its saved data without manufacturing a runtime entity.
 
-Script `DeleteEntity(&object)` runs `COMPILER::DeleteScriptEntity`, which the runner also
-extracts unchanged from `internal_functions.cpp`. It erases the entity and clears the handle
+The runner also extracts `COMPILER::DeleteScriptEntity` (script `DeleteEntity(&object)`)
+unchanged from `internal_functions.cpp`. It erases the entity and clears the handle
 the variable holds (storm-devs/storm-engine#508), so the variable names neither the erased
 entity nor a later entity reusing its slot under a new stamp. Together with the load path
 above, which never binds a saved handle, `IsEntity` stays false for a deleted entity across
