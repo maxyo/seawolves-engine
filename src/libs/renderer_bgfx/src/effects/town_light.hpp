@@ -93,7 +93,7 @@ class TownLight
     };
     // For any draw that binds a game town lightmap (the shim asks for every one it binds); counted for the profile.
     Ratio ratio(const shim::TexStore *store);
-    // The shim could not apply the ratio of `store` to a draw (no fixed-function unit left free, a game shader port):
+    // The shim could not apply the ratio of `store` to a draw (stages 2 to 4 all sample textures, a game shader port):
     // drawn with the game's lightmap as it is, counted, and said once per place.
     void ratio_missed(const shim::TexStore *store, const char *why);
     // What a shadow leaves of an open texel of a relit lightmap for `store`: its light without the hour's sun over its

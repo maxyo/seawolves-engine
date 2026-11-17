@@ -4,6 +4,7 @@
 // A 40 x 40 m square with three houses and a thin pole; its lightmap (DXT1, 256 x 256) is painted as the game's are: dark where the
 // houses shade it from a sun 200° round and 60° up. The place is reported as a town; the hour's sun stands opposite
 // (20° round, 60° up). The square is drawn with the game's lightmap at stage 0 and nothing else:
+//   * with every other stage enabled but none textured the ratio still binds (unit 2, ahead of the swap fades);
 //   * where only the bake's sun was shaded the ground is bright now, where only the hour's sun is shaded it is dark
 //     (the shadows moved to the other side of the houses), open ground keeps its light;
 //   * the result agrees with the same formula over fx::SunVisibility's rays (the CPU path this replaced);
@@ -135,6 +136,7 @@ struct Scene
     shim::Texture2D *lightmap = nullptr;
     bool plates = false;
     bool close = false; // the camera over the joints' patch, kCloseHalf metres to each side of the picture's centre
+    bool idle_stages = false; // stages 1 to 4 enabled without a texture, passing the lightmap through
     D3DLIGHT9 sun{};
 };
 
@@ -202,6 +204,13 @@ class Harness
         d_.SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
         d_.SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
         d_.SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+        for (DWORD stage = 1; stage < 5; ++stage)
+        {
+            d_.SetTextureStageState(stage, D3DTSS_COLOROP, scene.idle_stages ? D3DTOP_SELECTARG1 : D3DTOP_DISABLE);
+            d_.SetTextureStageState(stage, D3DTSS_COLORARG1, D3DTA_CURRENT);
+            d_.SetTextureStageState(stage, D3DTSS_ALPHAOP, scene.idle_stages ? D3DTOP_SELECTARG1 : D3DTOP_DISABLE);
+            d_.SetTextureStageState(stage, D3DTSS_ALPHAARG1, D3DTA_CURRENT);
+        }
         const auto vertex = [](float x, float z) {
             return Vertex{{x, 0.0f, z}, {0.0f, 1.0f, 0.0f}, 0xFFFFFFFFu, {(x + kHalf) / (2.0f * kHalf), (z + kHalf) / (2.0f * kHalf)}};
         };
@@ -507,6 +516,21 @@ int main()
                 const double share = compared ? static_cast<double>(agree) / static_cast<double>(compared) : 0.0;
                 std::printf("the place's sun map against the rays: %zu texels off the shadows' edges, %.2f %% agree\n", compared, 100.0 * share);
                 expect(compared > 3000 && share >= 0.98, "the GPU's sun on the texels agrees with the rays off the shadows' edges (98 %)");
+            }
+
+            // Every fixed-function stage enabled, none past the lightmap's with a texture (the game's lightmapped
+            // geometry leaves stage 2 without one): the ratio takes unit 2, no fade's or later stage's unit.
+            {
+                scene.idle_stages = true;
+                const std::vector<uint8_t> idle = frame();
+                scene.idle_stages = false;
+                const std::array<uint32_t, 3> counts = town.last_counts();
+                std::printf("five stages, the lightmap's alone textured: %u draw(s) relit, %u missed; in the hour's shadow %.0f / %.0f\n",
+                            counts[1], counts[2], ground_at(idle, in_hour[0], in_hour[1]), ground_at(picture, in_hour[0], in_hour[1]));
+                expect(counts[1] == 1 && counts[2] == 0, "a draw with every stage enabled takes the light ratio");
+                expect(std::fabs(ground_at(idle, in_hour[0], in_hour[1]) - ground_at(picture, in_hour[0], in_hour[1])) < 3.0f &&
+                           std::fabs(ground_at(idle, in_bake[0], in_bake[1]) - ground_at(picture, in_bake[0], in_bake[1])) < 3.0f,
+                       "the textureless stages keep the relit lightmap");
             }
 
             // Once per sun: the place's map and the compose. Nothing more while the sun stands.

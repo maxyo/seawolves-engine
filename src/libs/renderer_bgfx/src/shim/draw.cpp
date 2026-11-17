@@ -1420,11 +1420,21 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     std::fill(std::begin(stage_fade_), std::end(stage_fade_), 0.0f);
     TextureFades &fades = texture_fades();
     // A town's lightmap keeps the game's texture; the hour's sun on it is a light ratio the stage multiplies it by
-    // (effects/town_light.hpp), bound after the stages at a unit they and the fades leave free.
+    // (effects/town_light.hpp), bound at the first unit from 2 on whose stage samples no texture (past the last enabled
+    // stage, or one without a texture: the game's lightmapped geometry leaves stage 2 so). It is chosen before the fades,
+    // which leave it to the ratio: a fade is a moment's blend, the ratio is the hour's light.
     effects::TownLight::Ratio town_ratio;
     const TexStore *town_store = nullptr;
     uint32_t town_stage = 0, town_flags = 0;
-    bool fade_unit[kFfStages] = {};
+    uint32_t ratio_unit = kFfStages;
+    for (uint32_t stage = 0; stage < ff_stages; ++stage)
+        if (const TexStore *store = store_of(s.textures[stage]); store && store->lightmap && store->kind == TexKind::Tex2D)
+        {
+            ratio_unit = 2;
+            while (ratio_unit < ff_stages && s.textures[ratio_unit])
+                ++ratio_unit;
+            break;
+        }
     for (uint32_t stage = 0; stage < stage_limit; ++stage)
     {
         TexStore *store = store_of(s.textures[stage]);
@@ -1532,7 +1542,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             fade.from != kNoTexture)
         {
             const uint32_t from_unit = stage == 0 ? 4 : stage == 1 ? 3 : 0;
-            const bool fades_here = !ps_port && store->kind == TexKind::Tex2D && from_unit && ff_stages <= from_unit;
+            const bool fades_here = !ps_port && store->kind == TexKind::Tex2D && from_unit && ff_stages <= from_unit &&
+                                    from_unit != ratio_unit;
             if (fades_here)
             {
                 bgfx::setTexture(static_cast<uint8_t>(from_unit), Context::instance().sampler(from_unit),
@@ -1540,7 +1551,6 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
                 ++perf().texture_binds;
                 last_draw.texture[from_unit] = fade.from;
                 stage_fade_[stage] = fade.share;
-                fade_unit[from_unit] = true;
             }
             if (fade.started)
             {
@@ -1563,13 +1573,11 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     town_ratio_[0] = -1.0f;
     if (town_store)
     {
-        uint32_t unit = 2;
-        while (unit < kFfStages && (unit < ff_stages || fade_unit[unit]))
-            ++unit;
+        const uint32_t unit = ratio_unit;
         if (ps_port)
             fx_lighting.town_light().ratio_missed(town_store, "a game shader port");
         else if (unit >= kFfStages)
-            fx_lighting.town_light().ratio_missed(town_store, "no fixed-function unit left free");
+            fx_lighting.town_light().ratio_missed(town_store, "stages 2 to 4 all sample textures");
         else
         {
             bgfx::setTexture(static_cast<uint8_t>(unit), Context::instance().sampler(unit), town_ratio.texture, town_flags);

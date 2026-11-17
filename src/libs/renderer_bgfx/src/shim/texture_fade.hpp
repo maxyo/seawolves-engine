@@ -7,8 +7,9 @@
 // (TextureFade). When that changes while the store was on screen a moment before, the previous handle is bound
 // beside the new one for kTextureFadeMs and the fixed-function fragment shader mixes the two by the stage's share
 // (u_ffStage[3 i + 2].z above 1, ff_fragment.sh FF_STAGE): no extra pass, one more texture fetch only while it fades.
-// The previous one goes to the first FF unit the draw leaves free (stage 0's to unit 4, stage 1's to unit 3); a draw
-// that has none free, a game shader port and a cube or volume stage swap at once, counted in the fade line.
+// The previous one goes to the FF unit the draw leaves free (stage 0's to unit 4, stage 1's to unit 3) unless a town's
+// light ratio takes it (the ratio goes first, Device::draw); a draw that has none free, a game shader port and a cube or
+// volume stage swap at once, counted in the fade line.
 //
 // A handle that is replaced and destroyed (the interim copy, an evicted ×2, a town's ratio map let go) is retired, not
 // destroyed: TextureRetirement keeps it until no fade can read it (kTextureRetireMs). A fade starts only for a store
