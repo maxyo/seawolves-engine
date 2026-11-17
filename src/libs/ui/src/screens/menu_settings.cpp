@@ -216,10 +216,11 @@ class SettingsScreen final : public Screen
             game(sound, "MUSIC_SLIDE", "settings.music");
             game(sound, "SOUND_SLIDE", "settings.sound_effects");
             game(sound, "DIALOG_SLIDE", "settings.voices");
-            // The preset's three names stand right under the column's title «Графика».
+            // The preset's three names stand right under the column's title «Графика»: an empty label (every row
+            // carries every field the template reads; strict host renders refuse a missing one).
             Segment(bindings, graphics, "fx_preset", "settings.graphics", {0, 1, 2},
                     {bindings.Text("settings.fx_low"), bindings.Text("settings.fx_medium"), bindings.Text("settings.fx_high")}, false);
-            graphics.rows.back().erase("label");
+            graphics.rows.back()["label"] = "";
             // The automatic preset's rung below «Низкая»: «Низкая» with the scene at a lower height, which only the
             // measurement chooses (fx_auto_render_height, while that choice stands); its height under the row.
             if (Known("fx_auto_render_height") && draft_["fx_auto_render_height"].get<int>() > 0 && Known("fx_preset") &&
@@ -247,7 +248,8 @@ class SettingsScreen final : public Screen
             if (upscale == "supported")
                 levels.push_back(bindings.Text("settings.texture_ultra"));
             else
-                levels.push_back(Json{{"label", bindings.Text("settings.texture_ultra")},
+                levels.push_back(Json{{"key", ""}, // an option object names its text by key or, empty, by label
+                                      {"label", bindings.Text("settings.texture_ultra")},
                                       {"disabled", true},
                                       {"reason", bindings.Text(upscale == "unsupported" ? "settings.texture_ultra_unsupported"
                                                                                         : "settings.texture_ultra_unknown")}});
@@ -555,7 +557,8 @@ class SettingsScreen final : public Screen
                 selected = static_cast<int>(i);
         const std::string id = std::string("app-") + key;
         column.rows.push_back(Json{{"kind", "segment"}, {"id", id},       {"label", label},     {"options", options},
-                                   {"selected", selected}, {"stack", true}, {"restart", false}, {"disabled", false}});
+                                   {"selected", selected}, {"stack", true}, {"restart", false}, {"disabled", false},
+                                   {"reason", ""}});
         bindings.On(id, "change", [this, &bindings, key, values](const Event &event) {
             const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
             if (index < values.size())

@@ -410,7 +410,7 @@ static void Settings(const std::string &models)
     ExpectEqual(surface.Last(), prefix + "MUSIC_SLIDE\t-1\tset@12:40", "slider release sets the position");
     Json preset = page[0]["columns"][1]["rows"][0];
     Expect(page[0]["columns"][1]["rows"].size() == 4 && preset["id"] == "app-fx_preset" && preset["selected"] == 0 && preset["restart"] == false &&
-               !preset.contains("label") && preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
+               preset["label"] == "" && preset["options"] == Json::array({"<settings.fx_low>", "<settings.fx_medium>", "<settings.fx_high>"}),
            "the quality preset, applied at once; no graphics API row (it is in «О программе»): " + preset.dump());
     Expect(preset["hint"] == "<settings.fx_scene_height>",
            "«Низкая» measured at a lower scene height (fx_auto_render_height) shows the height under the row: " + preset.dump());
