@@ -869,6 +869,20 @@ void XINTERFACE::Realize(uint32_t)
         {
             // The items trade runs in coins or, for some merchants, in doubloons (script
             // TradeMode 1). The balance text alone does not say which in every language.
+            // A merchant's trade (itemstrade.c: refStoreChar.Merchant.type set) leaves OUR_GOLD empty and
+            // prints our money as its script string Money_1 instead: the balance is that line then.
+            auto gold = std::find_if(widgets.begin(), widgets.end(), [](const auto &w) { return storm::iEquals(w.node, "OUR_GOLD"); });
+            if (gold == widgets.end() || gold->label.empty())
+            {
+                auto *strings = core.Entity_GetAttributeClass(g_idInterface, "strings");
+                const char *money = strings ? strings->GetAttribute("Money_1") : nullptr;
+                if (money && *money)
+                {
+                    if (gold == widgets.end())
+                        gold = widgets.insert(widgets.end(), MobileWidget{"OUR_GOLD", "text", "", "", -1, -1, true});
+                    gold->label = money;
+                }
+            }
             if (MobileVariableInteger("TradeMode") == 1)
                 for (auto &widget : widgets)
                     if (storm::iEquals(widget.node, "OUR_GOLD"))
