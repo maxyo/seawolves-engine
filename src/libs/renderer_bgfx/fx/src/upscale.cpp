@@ -1,6 +1,7 @@
 #include "storm/fx/upscale.hpp"
 
 #include "storm/fx/relief_store.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -25,26 +26,18 @@ struct Header
 };
 static_assert(sizeof(Header) == 40);
 
-uint64_t Mix(uint64_t hash, const void *data, size_t size)
-{
-    const auto *bytes = static_cast<const uint8_t *>(data);
-    for (size_t i = 0; i < size; ++i)
-        hash = (hash ^ bytes[i]) * 0x100000001b3ull;
-    return hash;
-}
-
-// FNV-1a over 8-byte words (the containers are megabytes: the byte loop above costs ~1 ms per MB).
+// FNV-1a over 8-byte words (the containers are megabytes: the byte loop costs ~1 ms per MB).
 uint64_t Checksum(std::span<const uint8_t> data, uint64_t key)
 {
-    uint64_t hash = 0xcbf29ce484222325ull ^ key;
+    uint64_t hash = storm::hash::kFnvOffset ^ key;
     size_t i = 0;
     for (; i + 8 <= data.size(); i += 8)
     {
         uint64_t word;
         std::memcpy(&word, data.data() + i, 8);
-        hash = (hash ^ word) * 0x100000001b3ull;
+        hash = storm::hash::fnvRound(hash, word);
     }
-    return Mix(hash, data.data() + i, data.size() - i);
+    return storm::hash::fnv1a(data.data() + i, data.size() - i, hash);
 }
 } // namespace
 
@@ -89,7 +82,7 @@ bool ReliefMapsFromUpscale(int width, int height)
 uint64_t UpscaleMethod(bool bc)
 {
     const uint64_t parts[3] = {kUpscaleVersion, kUpscaleModelDigest, bc ? 1u : 0u};
-    return Mix(0xcbf29ce484222325ull, parts, sizeof(parts));
+    return storm::hash::fnv1a(parts, sizeof(parts));
 }
 
 std::filesystem::path UpscaleFile(const std::filesystem::path &directory, uint64_t key)

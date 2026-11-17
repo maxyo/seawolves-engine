@@ -1,4 +1,5 @@
 #include "far_lod.hpp"
+#include "fnv_hash.hpp"
 
 #include <meshoptimizer.h>
 
@@ -125,9 +126,9 @@ struct PositionHash
 {
     size_t operator()(const PositionKey &key) const
     {
-        uint64_t h = 1469598103934665603ull;
+        uint64_t h = storm::hash::kFnvOffset;
         for (const uint32_t b : key.bits)
-            h = (h ^ b) * 1099511628211ull;
+            h = storm::hash::fnvRound(h, b);
         return h;
     }
 };
@@ -153,7 +154,7 @@ struct EdgeHash
 {
     size_t operator()(const EdgeKey &e) const
     {
-        return PositionHash()(e.a) * 1099511628211ull ^ PositionHash()(e.b);
+        return storm::hash::fnvRound(PositionHash()(e.a), PositionHash()(e.b));
     }
 };
 EdgeKey edgeKey(PositionKey a, PositionKey b)

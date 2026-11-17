@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="storm-relief-scheduler-") as directory:
         '-ffunction-sections','-fdata-sections','-Wl,--gc-sections',
         '-fsanitize=address,undefined','-fno-sanitize-recover=all',
         '-I'+str(check/'stubs'),'-I'+str(root/'src/libs/renderer_bgfx/src'),
-        '-I'+str(root/'src/libs/renderer_bgfx/include'),'-I'+str(root/'src/libs/renderer_bgfx/fx/include'),
+        '-I'+str(root/'src/libs/renderer_bgfx/include'),'-I'+str(root/'src/libs/renderer_bgfx/fx/include'),'-I'+str(root/'src/libs/util/include'),
         '-I'+str(root/'src/libs/relief'),str(check/'check.cpp'),
         str(worker),
         str(root/'src/libs/renderer_bgfx/fx/src/upscale.cpp'),'-o',str(output)],check=True)

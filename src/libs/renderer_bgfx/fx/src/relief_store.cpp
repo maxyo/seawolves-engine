@@ -4,6 +4,7 @@
 #include "storm/fx/relief_model.hpp"
 #include "storm/fx/upscale.hpp"
 #include "storm/fx/height_map.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,14 +33,6 @@ struct Header
     float trust_coverage;    // NormalMap::trust_coverage
     uint32_t reserved;
 };
-
-uint64_t Mix(uint64_t key, const void *data, size_t size)
-{
-    const auto *bytes = static_cast<const uint8_t *>(data);
-    for (size_t i = 0; i < size; ++i)
-        key = (key ^ bytes[i]) * 0x100000001b3ull;
-    return key;
-}
 } // namespace
 
 int ReliefProbeLevel(int width, int height, int levels)
@@ -62,31 +55,31 @@ uint64_t ReliefMethod(ReliefClass relief)
 {
     if (relief == ReliefClass::None)
         return 0;
-    uint64_t method = 0xcbf29ce484222325ull;
+    uint64_t method = storm::hash::kFnvOffset;
     if (relief == ReliefClass::HeightMap)
     {
         NormalMapOptions options = HeightMapOptions();
         options.max_size = kReliefMapSize; // as the game derives them (effects/normal_maps.cpp)
         const uint64_t parts[3] = {kReliefHeightMethod, NormalMapCacheKey(options), kHeightMapVersion}; // with their heights
-        return Mix(method, parts, sizeof(parts));
+        return storm::hash::fnv1a(parts, sizeof(parts), method);
     }
     // PBRify's normals, height and roughness (their models' digests), the material's height and gloss derivations, and
     // the upscaler whose ×2 they run on for textures up to the map's size (ReliefMapsFromUpscale).
     const uint64_t parts[8] = {kReliefMethodVersion, kReliefNormalModelDigest, kReliefHeightModelDigest,
                                kReliefRoughnessModelDigest, static_cast<uint64_t>(kReliefMapSize),
                                ReliefHasHeight(relief) ? kHeightMapVersion : 0u, kGlossMethod, kUpscaleModelDigest};
-    return Mix(method, parts, sizeof(parts));
+    return storm::hash::fnv1a(parts, sizeof(parts), method);
 }
 
 uint64_t ReliefKey(std::string_view normalized_path, std::span<const uint8_t> probe_level, int probe_width,
                    int probe_height, uint64_t method, int map_size)
 {
-    uint64_t key = 0xcbf29ce484222325ull;
+    uint64_t key = storm::hash::kFnvOffset;
     const uint64_t parts[4] = {method, static_cast<uint64_t>(probe_width), static_cast<uint64_t>(probe_height),
                                static_cast<uint64_t>(map_size)};
-    key = Mix(key, parts, sizeof(parts));
-    key = Mix(key, normalized_path.data(), normalized_path.size());
-    return Mix(key, probe_level.data(), probe_level.size());
+    key = storm::hash::fnv1a(parts, sizeof(parts), key);
+    key = storm::hash::fnv1a(normalized_path.data(), normalized_path.size(), key);
+    return storm::hash::fnv1a(probe_level.data(), probe_level.size(), key);
 }
 
 std::filesystem::path ReliefFile(const std::filesystem::path &directory, uint64_t key)

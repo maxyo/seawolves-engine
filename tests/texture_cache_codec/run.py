@@ -14,6 +14,6 @@ with tempfile.TemporaryDirectory(prefix='storm-cache-codec-') as directory:
     work = Path(directory)
     binary = work / 'check'
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-O0', '-ffunction-sections', '-fdata-sections',
-                    '-Wl,--gc-sections', '-I' + str(fx / 'include'), str(here / 'codec.cpp'), str(fx / 'src/upscale.cpp'),
+                    '-Wl,--gc-sections', '-I' + str(fx / 'include'), '-I' + str(fx / '../../util/include'), str(here / 'codec.cpp'), str(fx / 'src/upscale.cpp'),
                     str(fx / 'src/relief_store.cpp'), str(fx / 'src/normal_map.cpp'), '-o', str(binary)], check=True)
     sys.exit(subprocess.run([str(binary), str(work)]).returncode)

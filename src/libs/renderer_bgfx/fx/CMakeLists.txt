@@ -46,7 +46,7 @@ add_library(storm_bgfx_fx_core STATIC
     src/height_map.cpp src/parallax_trust.cpp src/parallax_exclusions.cpp src/parallax_probe.cpp src/cutout.cpp src/wetness.cpp src/gpu_crash_guard.cpp
     src/skin_tone.cpp)
 target_compile_features(storm_bgfx_fx_core PUBLIC cxx_std_20)
-target_include_directories(storm_bgfx_fx_core PUBLIC include)
+target_include_directories(storm_bgfx_fx_core PUBLIC include PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../util/include") # fnv_hash.hpp
 target_include_directories(storm_bgfx_fx_core SYSTEM PRIVATE "${storm_bvh_SOURCE_DIR}/src")
 find_package(Threads REQUIRED)
 target_link_libraries(storm_bgfx_fx_core PUBLIC Threads::Threads) # the bake pool

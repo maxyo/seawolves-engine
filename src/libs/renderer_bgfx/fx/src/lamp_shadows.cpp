@@ -1,4 +1,5 @@
 #include "storm/fx/lamp_shadows.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -156,9 +157,9 @@ std::vector<Fixture> FindFixtures(std::span<const Vec3> positions, std::span<con
         at.reserve(positions.size());
         for (uint32_t v = 0; v < positions.size(); ++v)
         {
-            uint64_t key = 1469598103934665603ull;
+            uint64_t key = storm::hash::kFnvOffset;
             for (int k = 0; k < 3; ++k)
-                key = (key ^ static_cast<uint64_t>(static_cast<int64_t>(std::lround(positions[v][k] * 2000.0f)))) * 1099511628211ull;
+                key = storm::hash::fnvRound(key, static_cast<uint64_t>(static_cast<int64_t>(std::lround(positions[v][k] * 2000.0f))));
             const auto [it, inserted] = at.try_emplace(key, v);
             if (inserted)
                 continue;

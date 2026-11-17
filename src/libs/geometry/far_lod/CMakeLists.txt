@@ -22,6 +22,6 @@ set_target_properties(storm_meshoptimizer PROPERTIES POSITION_INDEPENDENT_CODE O
 
 add_library(storm_far_lod STATIC far_lod.cpp far_lod.hpp layout.cpp)
 target_compile_features(storm_far_lod PUBLIC cxx_std_20)
-target_include_directories(storm_far_lod PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(storm_far_lod PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../util/include") # fnv_hash.hpp
 target_link_libraries(storm_far_lod PRIVATE storm_meshoptimizer)
 set_target_properties(storm_far_lod PROPERTIES POSITION_INDEPENDENT_CODE ON)

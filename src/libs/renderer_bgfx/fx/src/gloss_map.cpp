@@ -4,6 +4,7 @@
 #include "image_field.hpp"
 #include "name_rules.hpp"
 #include "storm/fx/relief_model.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -334,7 +335,7 @@ uint64_t GlossMethod(GlossClass gloss)
 {
     // The roughness network runs on the texture's ×2 when it is small enough (ReliefMapsFromUpscale): the upscaler's
     // digest too.
-    return (((uint64_t{kGlossMethod} << 8) | static_cast<uint64_t>(gloss)) ^ kReliefRoughnessModelDigest) * 0x100000001b3ull ^
+    return storm::hash::fnvRound(((uint64_t{kGlossMethod} << 8) | static_cast<uint64_t>(gloss)), kReliefRoughnessModelDigest) ^
            kUpscaleModelDigest;
 }
 

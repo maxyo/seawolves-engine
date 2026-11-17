@@ -131,7 +131,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/ncnn.cmake")
 
 add_library(storm_relief_core STATIC prepare.cpp relief.hpp tx_file.cpp tx_file.hpp backend.cpp backend.hpp upscale.cpp upscale.hpp)
 target_compile_features(storm_relief_core PUBLIC cxx_std_20)
-target_include_directories(storm_relief_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_include_directories(storm_relief_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../util/include") # fnv_hash.hpp
 target_link_libraries(storm_relief_core PUBLIC storm_bgfx_fx_core storm_texture_core PRIVATE ncnn)
 if(ANDROID)
     target_link_libraries(storm_relief_core PUBLIC log)

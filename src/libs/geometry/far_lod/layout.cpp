@@ -1,5 +1,6 @@
 // The layout check and the depth ties of far_lod.hpp (from the mesh order work of feat/meshopt).
 #include "far_lod.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <array>
@@ -111,9 +112,9 @@ struct KeyHash
 {
     size_t operator()(const std::array<int64_t, 4> &key) const
     {
-        uint64_t h = 1469598103934665603ull;
+        uint64_t h = storm::hash::kFnvOffset;
         for (const int64_t k : key)
-            h = (h ^ static_cast<uint64_t>(k)) * 1099511628211ull;
+            h = storm::hash::fnvRound(h, static_cast<uint64_t>(k));
         return h;
     }
 };

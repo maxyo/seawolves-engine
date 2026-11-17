@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data.h"
+#include "fnv_hash.hpp"
 #include "string_compare.hpp"
 #include <memory>
 #include <string_view>
@@ -20,9 +21,9 @@ struct ScriptNameHash
     using is_transparent = void;
     size_t operator()(std::string_view name) const noexcept
     {
-        uint64_t hash = 0xcbf29ce484222325ull; // FNV-1a
+        uint64_t hash = storm::hash::kFnvOffset;
         for (const char c : name)
-            hash = (hash ^ storm::FoldCase(c)) * 0x100000001b3ull;
+            hash = storm::hash::fnvRound(hash, storm::FoldCase(c));
         return static_cast<size_t>(hash ^ (hash >> 32));
     }
 };

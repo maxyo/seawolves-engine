@@ -3,6 +3,7 @@
 #include "image_field.hpp"
 #include "name_rules.hpp"
 #include "storm/fx/log.hpp"
+#include "fnv_hash.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -322,10 +323,10 @@ uint64_t NormalMapCacheKey(const NormalMapOptions &options)
 {
     uint32_t strength;
     std::memcpy(&strength, &options.strength, sizeof(strength));
-    uint64_t key = 0xcbf29ce484222325ull;
+    uint64_t key = storm::hash::kFnvOffset;
     for (uint64_t part : {uint64_t{kNormalMapVersion}, uint64_t{strength}, uint64_t{options.wrap},
                           static_cast<uint64_t>(options.pre_blur), static_cast<uint64_t>(options.max_size)})
-        key = (key ^ part) * 0x100000001b3ull;
+        key = storm::hash::fnvRound(key, part);
     return key;
 }
 

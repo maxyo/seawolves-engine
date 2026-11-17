@@ -1,4 +1,5 @@
 #include "frame_renderer.h"
+#include "fnv_hash.hpp"
 
 #include <RmlUi/Core/Log.h>
 #include <RmlUi/Core/Mesh.h>
@@ -198,11 +199,7 @@ Rml::CompiledGeometryHandle FrameRenderer::CompileGeometry(Rml::Span<const Rml::
     // texture grew), which draws the same.
     uint64_t content = Mix(vertices.size(), indices.size());
     const auto bytes = [&content](const void *data, size_t size) {
-        const auto *words = static_cast<const unsigned char *>(data);
-        uint64_t hash = 1469598103934665603ull; // FNV-1a
-        for (size_t i = 0; i < size; ++i)
-            hash = (hash ^ words[i]) * 1099511628211ull;
-        content = Mix(content, hash);
+        content = Mix(content, storm::hash::fnv1a(data, size));
     };
     bytes(vertices.data(), vertices.size() * sizeof(Rml::Vertex));
     bytes(indices.data(), indices.size() * sizeof(int));

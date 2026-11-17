@@ -3,6 +3,7 @@
 #include "effects/generation_priority.hpp"
 #include "shim/device.hpp"
 #include "storm/render/frame_owner.hpp"
+#include "fnv_hash.hpp"
 
 #include <bx/math.h>
 
@@ -220,11 +221,11 @@ std::array<uint32_t, 2> SunShadows::draw_tiles(shim::Device &device, Casters &ca
 
 uint64_t SunShadows::cut_signature() const
 {
-    uint64_t h = 1469598103934665603ull;
+    uint64_t h = storm::hash::kFnvOffset;
     for (const Tile &tile : tiles_)
         for (const auto &[store, triangles] : tile.cut)
         {
-            h = (h ^ (store ? store->handle.idx : 0xffffu)) * 1099511628211ull;
+            h = storm::hash::fnvRound(h, store ? store->handle.idx : 0xffffu);
         }
     return h;
 }

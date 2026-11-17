@@ -67,10 +67,10 @@ uint64_t CalculateCacheKey(const char *program_directory)
     const std::string resolved = fio->ConvertPathResource(program_directory ? program_directory : "");
     std::error_code ec;
     const auto absolute = std::filesystem::absolute(std::filesystem::u8path(resolved), ec);
-    uint64_t key = storm::fingerprint::fnv1a(STORM_BUILD_WATERMARK_STRING " " __DATE__ " " __TIME__);
+    uint64_t key = storm::hash::fnv1a(STORM_BUILD_WATERMARK_STRING " " __DATE__ " " __TIME__);
     key = storm::fingerprint::fnv1a(kCacheFormatVersion, key);
     key = storm::fingerprint::fnv1a(static_cast<uint64_t>(sizeof(size_t)), key);
-    key = storm::fingerprint::fnv1a(ec ? resolved : absolute.lexically_normal().generic_string(), key);
+    key = storm::hash::fnv1a(ec ? resolved : absolute.lexically_normal().generic_string(), key);
     return storm::fingerprint::mix(key) + fio->GetPathFingerprint(std::filesystem::u8path(resolved));
 }
 

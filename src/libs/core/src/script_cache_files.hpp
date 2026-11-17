@@ -91,7 +91,7 @@ inline std::string writeEntry(const std::filesystem::path &path, std::string_vie
     EntryHeader header{};
     std::copy(std::begin(kEntryMagic), std::end(kEntryMagic), header.magic);
     header.payload_size = payload.size();
-    header.payload_hash = fingerprint::fnv1a(payload);
+    header.payload_hash = storm::hash::fnv1a(payload);
 
     auto pending = path;
     pending += ".tmp";
@@ -144,7 +144,7 @@ inline Entry readEntry(const std::filesystem::path &path, std::vector<char> &pay
     }
     if (!std::equal(std::begin(kEntryMagic), std::end(kEntryMagic), header.magic) ||
         header.payload_size != data.size() ||
-        header.payload_hash != fingerprint::fnv1a(std::string_view(data.data(), data.size())))
+        header.payload_hash != storm::hash::fnv1a(std::string_view(data.data(), data.size())))
     {
         return Entry::Damaged;
     }

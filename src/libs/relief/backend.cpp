@@ -1,6 +1,7 @@
 #include "backend.hpp"
 #include "tile_recovery.hpp"
 #include "cpu_tiles.hpp"
+#include "fnv_hash.hpp"
 
 #include "relief.hpp"
 #include "storm/fx/gpu_crash_guard.hpp"
@@ -316,8 +317,7 @@ class GpuNetwork final : public Network
     {
         // Stable model attribution, including weights: the three relief graphs can share a calibration.
         for (const auto bytes : {param, bin})
-            for (const uint8_t byte : bytes)
-                model_id_ = (model_id_ ^ byte) * 0x100000001b3ull;
+            model_id_ = storm::hash::fnv1a(bytes.data(), bytes.size(), model_id_);
         if (!LoadGraph(net_, param_, param, bin) || net_.input_indexes().size() != 1 || net_.output_indexes().size() != 1)
         {
             error = "ncnn could not load the network for the GPU (a damaged graph?)";
@@ -622,7 +622,7 @@ class GpuNetwork final : public Network
     int halo_, scale_;
     std::string gpu_;
     int tile_ = kMinTile;
-    uint64_t model_id_ = 0xcbf29ce484222325ull;
+    uint64_t model_id_ = storm::hash::kFnvOffset;
     bool floor_guard_logged_ = false;
     std::shared_ptr<LoadingRetry> loading_retry_;
     TileRecovery recovery_;
@@ -636,10 +636,9 @@ class GpuNetwork final : public Network
 
 std::string CacheLine(const GpuDevice &gpu, std::span<const uint8_t> param, std::span<const uint8_t> bin, int threads)
 {
-    uint64_t digest = 0xcbf29ce484222325ull;
+    uint64_t digest = storm::hash::kFnvOffset;
     for (const auto bytes : {param, bin})
-        for (const uint8_t b : bytes)
-            digest = (digest ^ b) * 0x100000001b3ull;
+        digest = storm::hash::fnv1a(bytes.data(), bytes.size(), digest);
     char hex[24];
     std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(digest));
     return gpu.name + " | " + gpu.driver + " | " + hex + " | " + std::to_string(threads) + " threads | v4 staged GPU submissions";

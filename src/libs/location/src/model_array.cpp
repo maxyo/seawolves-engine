@@ -14,6 +14,7 @@
 #include "model_array.h"
 #include "core.h"
 #include "entity.h"
+#include "fnv_hash.hpp"
 #include "string_compare.hpp"
 #include "shared/messages.h"
 
@@ -478,11 +479,8 @@ bool ModelArray::Moving(int32_t i)
 
 uint64_t ModelArray::StillSignature()
 {
-    uint64_t hash = 1469598103934665603ull; // FNV-1a
-    const auto mix = [&hash](const void *data, size_t bytes) {
-        for (size_t i = 0; i < bytes; ++i)
-            hash = (hash ^ static_cast<const uint8_t *>(data)[i]) * 1099511628211ull;
-    };
+    uint64_t hash = storm::hash::kFnvOffset;
+    const auto mix = [&hash](const void *data, size_t bytes) { hash = storm::hash::fnv1a(data, bytes, hash); };
     for (int32_t i = 0; i < numModels; i++)
     {
         if (!model[i].isVisible || Moving(i))

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../fnv_hash.hpp"
+
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
@@ -177,8 +179,7 @@ public:
         const auto records = user_ / ".save-migrations";
         requireDirectory(records, true);
         const std::string identity = "storm-private-saves-v1\n" + game_.string() + "\n";
-        uint64_t hash = 14695981039346656037ULL;
-        for (const unsigned char c : identity) { hash ^= c; hash *= 1099511628211ULL; }
+        const uint64_t hash = storm::hash::fnv1a(identity);
         std::ostringstream name;
         name << std::hex << hash;
         const auto record = records / name.str();

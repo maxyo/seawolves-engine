@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "math_inlines.h"
+#include "fnv_hash.hpp"
 #include "shared/messages.h"
 #include "ship.h"
 #include "storm/cosmetic_time.hpp"
@@ -632,7 +633,7 @@ void ShipLights::ReportToEffects()
             storm::render::EffectsShip ship;
             ship.id = id;
             std::memcpy(ship.world.data(), &root->glob_mtx[0][0], sizeof(ship.world));
-            ship.signature = 1469598103934665603ull;
+            ship.signature = storm::hash::kFnvOffset;
             for (int32_t n = 0;; ++n)
             {
                 const NODE *node = model->GetNode(n);
@@ -640,7 +641,7 @@ void ShipLights::ReportToEffects()
                     break;
                 if (node->geo && Drawn(node))
                     for (const uintptr_t part : {reinterpret_cast<uintptr_t>(node), reinterpret_cast<uintptr_t>(node->geo)})
-                        ship.signature = (ship.signature ^ part) * 1099511628211ull;
+                        ship.signature = storm::hash::fnvRound(ship.signature, part);
             }
             ships.push_back(ship);
             models.push_back(model);

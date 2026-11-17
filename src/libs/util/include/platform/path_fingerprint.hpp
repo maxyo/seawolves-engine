@@ -13,6 +13,8 @@
 // This is change detection for a cache, not a security boundary: file contents
 // are not read, so an edit that keeps both size and mtime is not seen.
 
+#include "../fnv_hash.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -21,26 +23,11 @@
 
 namespace storm::fingerprint
 {
-inline constexpr uint64_t kOffset = 14695981039346656037ull;
-inline constexpr uint64_t kPrime = 1099511628211ull;
-
-inline uint64_t fnv1a(std::string_view text, uint64_t hash = kOffset)
-{
-    for (const unsigned char c : text)
-    {
-        hash ^= c;
-        hash *= kPrime;
-    }
-    return hash;
-}
-
+// The value's 8 bytes, least significant first.
 inline uint64_t fnv1a(uint64_t value, uint64_t hash)
 {
     for (int i = 0; i < 8; ++i)
-    {
-        hash ^= (value >> (i * 8)) & 0xff;
-        hash *= kPrime;
-    }
+        hash = storm::hash::fnvRound(hash, (value >> (i * 8)) & 0xff);
     return hash;
 }
 
@@ -68,7 +55,7 @@ inline uint64_t tree(const std::filesystem::path &root)
         const auto time = fs::last_write_time(file, ec);
         if (ec)
             return;
-        uint64_t hash = fnv1a(name);
+        uint64_t hash = storm::hash::fnv1a(name);
         hash = fnv1a(static_cast<uint64_t>(size), hash);
         hash = fnv1a(static_cast<uint64_t>(time.time_since_epoch().count()), hash);
         result += mix(hash);
