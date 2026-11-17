@@ -209,11 +209,21 @@ Character::Detector::Detector(LocatorArray *_la)
     lastEventTime = 0.0f;
 }
 
+// A door's zone (group "reload") is left only kReloadExitMargin m past its radius: the script keeps the door
+// (characters_events.c chrWaitReloadLocator) and its «войти» action until the exit event, and a touch player
+// who stops on seeing the button overshoots a small zone (a town gate: radius 1 m, crossed in 0.4 s at a run).
+// Entering, and so an automatic reload, still takes the game's radius.
+constexpr float kReloadExitMargin = 1.5f;
+
 void Character::Detector::Check(float dltTime, Character *ch)
 {
     auto *const location = ch->GetLocation();
     auto dist = 0.0f;
-    const auto lIndex = la->FindNearesLocatorCl(ch->curPos.x, ch->curPos.y, ch->curPos.z, 1.0f, dist);
+    static const int32_t reloadHash = LocatorArray::CalcHashString("reload");
+    auto lIndex = la->FindNearesLocatorCl(ch->curPos.x, ch->curPos.y, ch->curPos.z, 1.0f, dist);
+    if (lIndex < 0 && lastLocator >= 0 && la->CompareGroup("reload", reloadHash) &&
+        la->InCylinder(lastLocator, ch->curPos.x, ch->curPos.y, ch->curPos.z, kReloadExitMargin, dist))
+        lIndex = lastLocator;
     if (lIndex >= 0)
     {
         if (lastLocator >= 0)

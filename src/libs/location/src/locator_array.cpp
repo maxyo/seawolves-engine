@@ -100,6 +100,21 @@ int32_t LocatorArray::FindNearesLocatorCl(float x, float y, float z, float heigh
     return locIndex;
 }
 
+bool LocatorArray::InCylinder(int32_t locIndex, float x, float y, float z, float extra, float &dist)
+{
+    if (locIndex < 0 || locIndex >= numLocators)
+        return false;
+    const auto r = GetLocatorRadius(locIndex);
+    if (r <= 0.0f)
+        return false;
+    const auto &pos = storm::math::pos(locator[locIndex].mtx);
+    if (fabsf(y - pos.y) > r + extra)
+        return false;
+    const auto vx = pos.x - x, vz = pos.z - z;
+    dist = vx * vx + vz * vz;
+    return dist < (r + extra) * (r + extra);
+}
+
 // Find locator by name
 int32_t LocatorArray::FindByName(const char *locName)
 {

@@ -31,6 +31,9 @@ class LocatorArray
     void SetNewMatrix(int32_t locIndex, glm::mat4 &mtx);
     // Find the nearest locator by cylinder
     int32_t FindNearesLocatorCl(float x, float y, float z, float height2, float &dist);
+    // Whether a point lies in the cylinder of locator locIndex widened by `extra` (radius and half height);
+    // `dist` gets the squared horizontal distance
+    bool InCylinder(int32_t locIndex, float x, float y, float z, float extra, float &dist);
     // Find locator by name
     int32_t FindByName(const char *locName);
     // Get locator name
