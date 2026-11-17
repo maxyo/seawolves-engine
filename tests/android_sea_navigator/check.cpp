@@ -182,6 +182,18 @@ int main(){
     Bort absent{};assert(!valid(absent));
     Bort b{true,.5f,.25f,pi/2,1,400};assert(valid(b)&&near(readyFraction(b),.375f));
     b.damage=1;assert(valid(b)&&near(readyFraction(b),0));b.charge=0;assert(valid(b));b.damage=-1;assert(!valid(b));
+    {   // Owner 1659 (save «Мэйн - море 4»): a ship without bow guns keeps the ship type's cannonf side and an empty
+        // damages class, but the cannon controller writes no numbers for it. That side is absent, not unknown: the
+        // minimap draws with the other three (it was handed back to the placeholder disc).
+        constexpr float nan=std::numeric_limits<float>::quiet_NaN();
+        const BortSource gunless{true,true,0,nan,nan,0,pi/6,nan},armed{true,true,5,0,1,pi/2,1.4f,445};
+        assert(!bort(gunless).present&&bort(armed).present&&valid(bort(armed)));
+        assert(!bort({false,true,5,0,0,0,1,400}).present&&!bort({true,false,5,0,0,0,1,400}).present);
+        assert(usable({bort(gunless),bort(armed),bort(armed),bort(armed)}));
+        // A side with guns whose numbers are missing still stops the minimap (and is logged by the navigator).
+        assert(!usable({bort({true,true,2,nan,nan,0,pi/6,nan}),bort(armed),bort(armed),bort(armed)}));
+        assert(usable({}));
+    }
     ShipTelemetryFrame frame;frame.valid=true;frame.navigatorPowderWarning=false;frame.navigatorAmmoWarning=false;frame.navigatorWindState=61;frame.navigatorGeneration=42;frame.navigatorLayoutId=9;
     ShipTelemetryState telemetry;telemetry.update(1,frame);auto json=telemetry.json();
     assert(json.find("\"navigatorPowderWarning\":false")!=json.npos);assert(json.find("\"navigatorWindState\":61")!=json.npos);assert(json.find("\"navigatorLayoutId\":9")!=json.npos);
@@ -206,5 +218,5 @@ int main(){
         assert(spitSegments==0);
         assert(landField(land,n+1).empty());
     }
-    std::cout<<"PASS minimap land field and closed coast, production vector ink minima at 96dp across viewport/density/heading transforms, presentation and geometry kept per owner without a lease, native-draw proof and structural invalidation, navigator owner/source/viewport, malformed/oversize requests, zoom cancel/guards, native projection and bort damage composition, absent versus false warning\n";
+    std::cout<<"PASS minimap land field and closed coast, production vector ink minima at 96dp across viewport/density/heading transforms, presentation and geometry kept per owner without a lease, native-draw proof and structural invalidation, navigator owner/source/viewport, malformed/oversize requests, zoom cancel/guards, native projection and bort damage composition, gunless sides absent, absent versus false warning\n";
 }

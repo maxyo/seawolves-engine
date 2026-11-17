@@ -58,16 +58,21 @@ void BATTLE_NAVIGATOR::UpdateAndroidBorts() {
     auto *ship=g_ShipList.GetMainCharacterShipAttr();
     if(!main||!ship)return;
     constexpr const char *names[]={"cannonf","cannonr","cannonb","cannonl"};
+    static std::array<bool,4> told{}; // a side with guns but unreadable numbers, said once until it reads again
     for(size_t i=0;i<4;++i){
         auto *state=BIUtils::GetAttributesFromPath(main->pAttr,"Cannons","Borts",names[i],0);
         auto *spec=BIUtils::GetAttributesFromPath(ship,"Cannons","Borts",names[i],0);
-        if(!state||!spec)continue; // absent side: an unknown track, never zero/ready
-        auto &b=m_androidBorts[i];b.present=true;
-        auto read=[](ATTRIBUTES *a,const char *key){const char *s=a->GetAttribute(key);
+        auto read=[](ATTRIBUTES *a,const char *key){const char *s=a?a->GetAttribute(key):nullptr;
             auto value=s?storm::android::shipNumberValue(s):std::nullopt;
             return value?float(*value):std::numeric_limits<float>::quiet_NaN();};
-        b.charge=read(state,"ChargeRatio");b.damage=read(state,"DamageRatio");
-        b.range=read(state,"MaxFireDistance");b.direction=read(spec,"FireDir");b.zone=read(spec,"FireZone");
+        auto *damages=state?state->GetAttributeClass("damages"):nullptr;
+        const storm::android::sea_nav::BortSource source{spec!=nullptr,state!=nullptr,damages?damages->GetAttributesNum():0,
+            read(state,"ChargeRatio"),read(state,"DamageRatio"),read(spec,"FireDir"),read(spec,"FireZone"),read(state,"MaxFireDistance")};
+        auto &b=m_androidBorts[i];b=storm::android::sea_nav::bort(source);
+        const bool bad=b.present&&!storm::android::sea_nav::valid(b);
+        if(bad&&!told[i])spdlog::error("navigator: the {} side has {} guns but unreadable numbers (charge {}, damage {}, range {}, direction {}, "
+            "zone {}); the minimap is not drawn",names[i],source.guns,b.charge,b.damage,b.range,b.direction,b.zone);
+        told[i]=bad;
     }
 }
 
@@ -75,8 +80,7 @@ bool BATTLE_NAVIGATOR::AndroidAvailable() const {
     if(!rs||m_renderLost||!m_shipSpeedAvailable||!m_windSpeedAvailable||!m_chargeSignalAvailable||m_curWindPic!=61||
        !std::isfinite(m_fXPos)||!std::isfinite(m_fYPos)||!std::isfinite(m_fAngle)||!std::isfinite(m_fWindAngle)||!std::isfinite(m_fShipWindAgainst)||
        m_fWorldRad<=0||m_fCurScale<=0||m_fMinScale<=0||m_fMaxScale<m_fMinScale||m_fScaleStep<=0)return false;
-    for(const auto &b:m_androidBorts)if(b.present&&!storm::android::sea_nav::valid(b))return false;
-    return true;
+    return storm::android::sea_nav::usable(m_androidBorts);
 }
 
 // The island's land for the minimap: its depth map's land cells (20 m or finer), smoothed by a

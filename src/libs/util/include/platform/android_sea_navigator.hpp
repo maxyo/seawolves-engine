@@ -232,6 +232,20 @@ inline void coastSegments(const std::vector<uint8_t> &field,int n,int x0,int x1,
 }
 struct Bort { bool present{};float charge{},damage{},direction{},zone{},range{}; };
 inline bool valid(const Bort &b) {return b.present&&std::isfinite(b.charge)&&std::isfinite(b.damage)&&b.charge>=0&&b.charge<=1&&b.damage>=0&&b.damage<=1&&std::isfinite(b.direction)&&std::isfinite(b.zone)&&b.zone>=0&&b.zone<=2*pi&&std::isfinite(b.range)&&b.range>=0;}
+// One gun side as the game's attributes give it: the ship type's side (FireDir, FireZone) and the
+// character's state that the cannon controller keeps (sea_ai ai_ship_cannon_controller.cpp): one
+// damages.c<i> per gun the ship's model mounts on that side, and ChargeRatio / DamageRatio /
+// MaxFireDistance only for a side that has guns. A side without guns (many small ships have no bow
+// or stern chasers) is no side of the minimap, not a side whose numbers are missing.
+struct BortSource { bool spec{},state{};size_t guns{};float charge{},damage{},direction{},zone{},range{}; };
+inline Bort bort(const BortSource &s) {
+    if(!s.spec||!s.state||!s.guns)return {};
+    return {true,s.charge,s.damage,s.direction,s.zone,s.range};
+}
+// The minimap draws only when every side the ship has is known.
+inline bool usable(const std::array<Bort,4> &borts) {
+    return std::all_of(borts.begin(),borts.end(),[](const Bort &b){return !b.present||valid(b);});
+}
 inline float readyFraction(const Bort &b) {return b.charge*(1-b.damage);}
 inline float zoom(float scale,float step,float low,float high,bool in) {return std::fmax(low,std::fmin(high,scale+(in?-step:step)));}
 }
