@@ -292,6 +292,14 @@ target_include_directories(pipeline_prewarm_check PRIVATE "${CMAKE_CURRENT_LIST_
 target_compile_definitions(pipeline_prewarm_check PRIVATE NOMINMAX)
 target_compile_options(pipeline_prewarm_check PRIVATE -fsigned-char)
 target_link_libraries(pipeline_prewarm_check PRIVATE storm_bgfx storm_check_sdl)
+# pipeline_stress_check: the asynchronous pipelines under load: new pipelines every frame with read-backs, scene
+# changes, prewarmed programs destroyed while their pipelines are pending, a shutdown with pipelines pending.
+add_executable(pipeline_stress_check pipeline_stress_check.cpp)
+target_include_directories(pipeline_stress_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+target_compile_definitions(pipeline_stress_check PRIVATE NOMINMAX)
+target_compile_options(pipeline_stress_check PRIVATE -fsigned-char)
+target_link_libraries(pipeline_stress_check PRIVATE storm_bgfx storm_check_sdl)
 
 # wet_surfaces_check: the rain's wetness on a baked floor (src/effects/lighting.cpp, ff_wet.sh): «Низкая» and interiors
 # dry, «Высокая» in the rain darker, the same on an absolute and a camera-relative device, dry under a roof the
