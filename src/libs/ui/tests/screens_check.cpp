@@ -1738,7 +1738,7 @@ static void Dialogue(const std::string &models)
     router.SetState("dialogue", LoadJson(models, "dialogue.json"));
     ExpectEqual(surface.tag, "s-dialogue", "dialogue channel mounts the dialogue");
     ExpectEqual(surface.language, "russian", "the dialogue speaks the language the engine sends with it");
-    Expect(surface.props["replies"].size() == 3 && surface.props["replies"][0]["hold"] == true, "replies listed, each with its long-press text");
+    Expect(surface.props["replies"].size() == 3 && !surface.props["replies"][0].contains("hold"), "replies listed, shown in full (no long-press text)");
     Expect(surface.props["page"] == 0 && surface.props["edit"].is_null(), "the speech starts on its first page, no editor");
     router.OnEvent({"reply-1", "click", ""});
     ExpectEqual(surface.Last(), "dialogue:4:1", "reply goes back with its generation");

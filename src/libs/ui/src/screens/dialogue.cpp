@@ -118,7 +118,7 @@ class DialogueScreen final : public Screen
                 else
                     bindings.Send(*reply, "reply", reply->row_id);
             });
-            rows.push_back(Json{{"id", id}, {"title", title}, {"hold", true}, {"pressed", bindings.Pending(id) || (sent_ && reply == editing)}});
+            rows.push_back(Json{{"id", id}, {"title", title}, {"pressed", bindings.Pending(id) || (sent_ && reply == editing)}});
         }
         bindings.On("dialogue-next", "click", [this, &bindings](const Event &) {
             ++page_;
