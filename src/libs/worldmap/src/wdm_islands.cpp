@@ -12,6 +12,7 @@
 #include "wdm_ship.h"
 #include "world_map.h"
 #include "string_compare.hpp"
+#include "v_file_service.h"
 
 #include "storm/render/frame_owner.hpp"
 
@@ -20,6 +21,11 @@
 
 namespace
 {
+bool OptionalModelExists(const std::string &name)
+{
+    return fio->_FileOrDirectoryExists(("resource\\models\\WorldMap\\" + name + ".gm").c_str());
+}
+
 // The labels on the display (LRender), in dp (1/160 inch)
 constexpr float kLabelMinDp = 16.0f;    // the line of the smallest label font at least
 constexpr float kLabelOutlineDp = 1.5f; // the dark outline around the text
@@ -164,23 +170,22 @@ WdmIslands::WdmIslands()
             {
                 core.Trace("World map: can't load model of island's area: %s", name.c_str());
             }
-            // Palm trees
+            // Palm trees and foam: the game ships them for some islands only (none for Nevis, KhaelRoa, ...).
             name = "islands\\";
             name += label.name;
-            name += "_palms";
-            isl.palms = static_cast<WdmRenderModel *>(
-                wdmObjects->wm->CreateModel(new WdmRenderModel(), name.c_str(), false, false, true, 4, 800));
-            if (isl.palms)
+            if (OptionalModelExists(name + "_palms"))
             {
-                static const auto *techName = "WdmModelDrawStdAlphaTest";
-                isl.palms->SetTech(techName, techName);
+                isl.palms = static_cast<WdmRenderModel *>(wdmObjects->wm->CreateModel(
+                    new WdmRenderModel(), (name + "_palms").c_str(), false, false, true, 4, 800));
+                if (isl.palms)
+                {
+                    static const auto *techName = "WdmModelDrawStdAlphaTest";
+                    isl.palms->SetTech(techName, techName);
+                }
             }
-            // Foam
-            name = "islands\\";
-            name += label.name;
-            name += "_waves";
-            isl.waves = static_cast<WdmIslandWaves *>(
-                wdmObjects->wm->CreateModel(new WdmIslandWaves(), name.c_str(), false, false, true, 4));
+            if (OptionalModelExists(name + "_waves"))
+                isl.waves = static_cast<WdmIslandWaves *>(wdmObjects->wm->CreateModel(
+                    new WdmIslandWaves(), (name + "_waves").c_str(), false, false, true, 4));
         }
         else
         {
