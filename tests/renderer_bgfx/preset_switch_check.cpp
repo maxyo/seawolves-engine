@@ -18,6 +18,8 @@
 //     or restored surface while it lasts drop the kept picture; the frame in which the surface or the back buffer
 //     changed is not kept (its picture can be lost with the old surface), the next 3D frame is; releasing the hold
 //     presents the game's own picture at once.
+//   * a real render scale (fx_render_height under the back buffer's height) on «Низкая» and «Высокая», with and
+//     without RCAS (fx_sharpen): the upscaled scene is shown (EASU alone once read a never made target and crashed).
 #include "device.hpp"
 #include "effects/effects.hpp"
 #include "storm/fx/capabilities.hpp"
@@ -73,14 +75,15 @@ struct UiVertex
     uint32_t color;
 };
 
-using Picture = std::vector<uint8_t>; // RGBA rows, kWidth x kHeight
+using Picture = std::vector<uint8_t>; // RGBA rows, the Frames' size (kWidth x kHeight unless given)
 
 class Frames
 {
   public:
-    explicit Frames(Device &device) : d_(device)
+    explicit Frames(Device &device, uint32_t width = kWidth, uint32_t height = kHeight)
+        : d_(device), width_(width), height_(height)
     {
-        check(d_.CreateOffscreenPlainSurface(kWidth, kHeight, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &readback_, nullptr),
+        check(d_.CreateOffscreenPlainSurface(width_, height_, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &readback_, nullptr),
               "CreateOffscreenPlainSurface");
         check(d_.GetRenderTarget(0, &back_), "GetRenderTarget");
     }
@@ -106,7 +109,7 @@ class Frames
         world.m[3][2] = 5.0f;
         // D3D left-handed perspective, 90 degrees vertically, near 1, far 100.
         D3DMATRIX projection{};
-        projection.m[0][0] = static_cast<float>(kHeight) / kWidth;
+        projection.m[0][0] = static_cast<float>(height_) / width_;
         projection.m[1][1] = 1.0f;
         projection.m[2][2] = 100.0f / 99.0f;
         projection.m[2][3] = 1.0f;
@@ -169,9 +172,9 @@ class Frames
         check(d_.GetRenderTargetData(back_, readback_), "GetRenderTargetData");
         D3DLOCKED_RECT locked;
         check(readback_->LockRect(&locked, nullptr, D3DLOCK_READONLY), "LockRect(readback)");
-        Picture pixels(kWidth * kHeight * 4);
-        for (uint32_t y = 0; y < kHeight; ++y)
-            std::memcpy(&pixels[y * kWidth * 4], static_cast<uint8_t *>(locked.pBits) + y * locked.Pitch, kWidth * 4);
+        Picture pixels(width_ * height_ * 4);
+        for (uint32_t y = 0; y < height_; ++y)
+            std::memcpy(&pixels[y * width_ * 4], static_cast<uint8_t *>(locked.pBits) + y * locked.Pitch, width_ * 4);
         readback_->UnlockRect();
         check(d_.Present(), "Present");
         return pixels;
@@ -196,19 +199,20 @@ class Frames
 
   private:
     Device &d_;
+    uint32_t width_, height_;
     storm::shim::Surface *readback_ = nullptr, *back_ = nullptr;
 };
 
 // Mean of the colour channels over the picture outside the interface rectangle (the scene), 0..255.
-double scene_mean(const Picture &picture)
+double scene_mean(const Picture &picture, uint32_t width = kWidth, uint32_t height = kHeight)
 {
     double sum = 0.0;
     uint32_t count = 0;
-    for (uint32_t y = 0; y < kHeight; ++y)
-        for (uint32_t x = 0; x < kWidth; ++x)
+    for (uint32_t y = 0; y < height; ++y)
+        for (uint32_t x = 0; x < width; ++x)
             if (x >= kUiWidth + 4 || y >= kUiHeight + 4)
             {
-                const uint8_t *p = &picture[(y * kWidth + x) * 4];
+                const uint8_t *p = &picture[(y * width + x) * 4];
                 sum += (p[0] + p[1] + p[2]) / 3.0;
                 ++count;
             }
@@ -476,6 +480,36 @@ int main()
             ok &= expect(place.state() == effects::PlaceBake::State::None && place.visibility() == nullptr,
                          "«Высокая» → «Низкая»: the probes are dropped and nothing waits for them");
             render::SetEffectsLocationGeometry({});
+            render::ConfigureEffects(0, {});
+            settle([&] { frames.render(); });
+        }
+        {
+            // A real render scale (fx_render_height under the back buffer's height): EASU upscales the scene. Without
+            // RCAS (fx_sharpen=0) EASU writes the picture itself and RCAS's intermediate target is never made; the
+            // chain once read the texture of that target's invalid frame buffer and crashed, on every preset. «Низкая»
+            // without RCAS first: no earlier frame made that target.
+            constexpr uint32_t kScaledWidth = 640, kScaledHeight = 480;
+            check(device->ResizeBackBuffer(kScaledWidth, kScaledHeight), "ResizeBackBuffer (render scale)");
+            Frames frames(*device, kScaledWidth, kScaledHeight);
+            const effects::Host &host = effects::Host::instance();
+            render::ConfigureEffects(0, {});
+            settle([&] { frames.render(); });
+            const double native = scene_mean(frames.render(), kScaledWidth, kScaledHeight);
+            for (const int preset : {0, 2})
+                for (const int sharpen : {0, 1})
+                {
+                    render::ConfigureEffects(preset, {{"fx_render_height", 360}, {"fx_sharpen", sharpen}});
+                    settle([&] { frames.render(); });
+                    frames.render(); // the scene stores of the new render scale
+                    const double mean = scene_mean(frames.render(), kScaledWidth, kScaledHeight);
+                    const float scale = fx::RenderScale(host.renderer_state().render_height, kScaledHeight);
+                    std::printf("     preset %d, fx_render_height=360, fx_sharpen=%d: render scale %.2f, scene mean %.1f "
+                                "(native «Низкая» %.1f)\n",
+                                preset, sharpen, static_cast<double>(scale), mean, native);
+                    ok &= expect(scale < 1.0f && host.settings().sharpen == (sharpen != 0),
+                                 "render scale: the scene drawn smaller, RCAS as asked");
+                    ok &= expect(std::fabs(mean - native) < native * 0.35, "render scale: the upscaled scene is shown");
+                }
             render::ConfigureEffects(0, {});
             settle([&] { frames.render(); });
         }

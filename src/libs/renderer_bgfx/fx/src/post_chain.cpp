@@ -531,7 +531,10 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
             BindSceneDepth(view, frame.scene_depth);
         SubmitScreenTriangle(view++, Program(with_depth ? kEasuDepth : kEasu), kWriteColor | (with_depth ? kWriteDepth : 0),
                              !then_sharpen && frame.flip_v);
-        current = bgfx::getTexture(upscaled_.fb);
+        // Without RCAS EASU wrote the target itself: upscaled_ is neither made nor read (fx_sharpen=0 at a render scale
+        // once read the texture of its invalid frame buffer and crashed).
+        if (then_sharpen)
+            current = bgfx::getTexture(upscaled_.fb);
     }
     if (then_sharpen)
     {
