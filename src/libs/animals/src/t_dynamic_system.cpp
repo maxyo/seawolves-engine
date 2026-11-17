@@ -69,22 +69,6 @@ void TDynamicSystem::Draw(HDC _dc)
     }
 }
 */
-//--------------------------------------------------------------------
-void TDynamicSystem::Recalculate()
-{
-    for (auto i = 1; i < MAX_DYNAMIC_OBJECTS; i++)
-    {
-        if (attractors[i])
-        {
-            attractors[i]->Calculate(attractors, MAX_DYNAMIC_OBJECTS, deflectors, MAX_DYNAMIC_OBJECTS);
-        }
-
-        if (deflectors[i])
-        {
-            deflectors[i]->Calculate(attractors, MAX_DYNAMIC_OBJECTS, deflectors, MAX_DYNAMIC_OBJECTS);
-        }
-    }
-}
 
 //--------------------------------------------------------------------
 //--------------------------------------------------------------------

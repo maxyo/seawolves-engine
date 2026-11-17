@@ -92,8 +92,6 @@ class XINTERFACE : public XINTERFACE_BASE
     bool Init() override;
     void Execute(uint32_t Delta_Time);
     void Realize(uint32_t Delta_Time);
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
     uint32_t AttributeChanged(ATTRIBUTES *patr) override;
 
@@ -249,7 +247,6 @@ class XINTERFACE : public XINTERFACE_BASE
 
     // draw function
     void DrawNode(CINODE *nod, uint32_t Delta_Time, int32_t startPrior = 0, int32_t endPrior = 32000) const;
-    void ShowPrevTexture();
     // initialisation function
     void LoadIni();
     void LoadDialog(const char *sFileName);
@@ -286,9 +283,6 @@ class XINTERFACE : public XINTERFACE_BASE
     void LoadOptionsFile(std::string_view filename, ATTRIBUTES *pAttr);
     //
     int LoadIsExist();
-    //
-    void PrecreateDirForFile(const char *pcFullFileName);
-
     uint32_t m_dwCurDeltaTime;
     int m_dwGameTimeSec;
     int m_dwGameTimeMin;

@@ -92,25 +92,6 @@ void WdmRenderModel::SetTech(const char *t, const char *ta)
         techa = WDM_MODEL_TECHA;
 }
 
-int32_t WdmRenderModel::GetTexture(int32_t stage) const
-{
-    if (stage >= 4 || stage < 0 || !geo)
-        return -1;
-    GEOS::MATERIAL mtl;
-    geo->GetMaterial(0, mtl);
-    return mtl.texture[stage];
-}
-
-void WdmRenderModel::SetTexture(int32_t stage, int32_t id) const
-{
-    if (stage >= 4 || stage < 0 || !geo)
-        return;
-    GEOS::MATERIAL mtl;
-    geo->GetMaterial(0, mtl);
-    mtl.texture[stage] = id;
-    geo->SetMaterial(0, mtl);
-}
-
 void WdmRenderModel::Render(VRenderer *rs) const
 {
     if (!geo)

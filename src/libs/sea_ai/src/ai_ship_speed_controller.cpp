@@ -48,11 +48,6 @@ void AIShipSpeedController::Realize(float fDeltaTime)
 {
 }
 
-void AIShipSpeedController::TopSpeed(float _fSpeed)
-{
-    fTopSpeed = _fSpeed;
-}
-
 void AIShipSpeedController::MulSpeed(float _fSpeed)
 {
     fSpeed *= _fSpeed;

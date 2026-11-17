@@ -3157,35 +3157,6 @@ void Character::PlayStep()
     }
 }
 
-void Character::SetSoundPosition(int32_t id)
-{
-    if (!soundService || id == SOUND_INVALID_ID)
-        return;
-    glm::vec3 pos = curPos + glm::vec3(0.0f, 1.0f, 0.0f);
-    auto *const location = GetLocation();
-    if (location->supervisor.player)
-    {
-        VRenderer *rs = location->GetRS();
-        if (rs)
-        {
-            static glm::mat4 view, cur;
-            rs->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(view));
-            cur = storm::math::eulerMatrix(glm::vec3(0.0f, ay, 0.0f), location->supervisor.player->curPos);
-            pos = storm::math::inverseTransformPoint(cur, glm::vec3(pos));
-            pos = storm::math::inverseTransformPoint(view, glm::vec3(pos));
-        }
-    }
-    soundService->SoundSet3DParam(id, SM_POSITION, &pos);
-}
-
-void Character::ReleaseSound(int32_t id)
-{
-    if (!soundService)
-        return;
-    if (id != SOUND_INVALID_ID)
-        soundService->SoundRelease(id);
-}
-
 // ============================================================================================
 // Encapsulation
 // ============================================================================================
@@ -4923,36 +4894,6 @@ const char *Character::FindFightIdleAnimation(float &tblend)
     }
     return null;
     */
-}
-
-float Character::GetCurrentPlayerPos()
-{
-    MODEL *m = Model();
-    if (!m)
-        return 1.0f;
-    Animation *a = m->GetAnimation();
-    if (!a)
-        return 1.0f;
-    float p = a->Player(0).GetPosition();
-    if (!a->Player(0).IsPlaying())
-        p = 1.0f;
-    return p;
-}
-
-float Character::GetAniPlayTime()
-{
-    MODEL *m = Model();
-    if (!m)
-        return 1.0f;
-    Animation *a = m->GetAnimation();
-    if (!a)
-        return 1.0f;
-    float p = a->Player(0).GetPosition();
-    if (!a->Player(0).IsPlaying())
-        p = 1.0f;
-    p = 1.0f - p;
-    p *= a->Player(0).GetFrames() * (1.0f / 15.0f);
-    return p;
 }
 
 Character *Character::FindDialogCharacter()

@@ -80,24 +80,6 @@ void DataColor::SetValues(const ColorVertex *Values, uint32_t Count)
     }
 }
 
-// Get count of values
-uint32_t DataColor::GetValuesCount() const
-{
-    return ColorGraph.size();
-}
-
-// Get min. value (by index)
-const glm::vec4 &DataColor::GetMinValue(uint32_t Index)
-{
-    return ColorGraph[Index].MinValue;
-}
-
-// Get max. value (by index)
-const glm::vec4 &DataColor::GetMaxValue(uint32_t Index)
-{
-    return ColorGraph[Index].MaxValue;
-}
-
 void DataColor::Load(MemFile *File)
 {
     uint32_t dwColorCount = 0;
@@ -139,11 +121,6 @@ void DataColor::SetName(const char *szName)
 const char *DataColor::GetName() const
 {
     return Name.c_str();
-}
-
-const ColorVertex &DataColor::GetByIndex(uint32_t Index)
-{
-    return ColorGraph[Index];
 }
 
 void DataColor::Write(MemFile *File)

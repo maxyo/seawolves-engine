@@ -82,20 +82,6 @@ bool PathTracks::Load(const char *fileName)
     return true;
 }
 
-// Draw track
-void PathTracks::Draw(VRenderer *render)
-{
-    /*render.FlushBufferedLines();
-    for(int32_t i = 0; i < numPoints - 1; i++)
-    {
-      render.DrawBufferedLine(point[i].p1, 0xff00ff00, point[i + 1].p1, 0xff00ffff, false);
-      render.DrawBufferedLine(point[i].p2, 0xff00ff00, point[i + 1].p2, 0xff00ffff, false);
-      render.DrawBufferedLine(point[i].p, 0xffff0000, point[i + 1].p, 0xffffff00, false);
-      render.DrawBufferedLine(point[i].p1, 0xffffff00, point[i].p2, 0xffffff00, false);
-    }
-    render.FlushBufferedLines();*/
-}
-
 // Get track point
 bool PathTracks::GetPoint(float index, glm::vec3 &cp, glm::quat &cq) const
 {

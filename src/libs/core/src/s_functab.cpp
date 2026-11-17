@@ -12,11 +12,6 @@ FuncTable::~FuncTable()
     Release();
 }
 
-size_t FuncTable::GetFuncNum() const
-{
-    return funcs_.size();
-}
-
 size_t FuncTable::FindFunc(std::string_view func_name) const
 {
     auto result = hash_table_.find(func_name);

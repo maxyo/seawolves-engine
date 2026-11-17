@@ -61,8 +61,6 @@ class AIHelper
     int32_t GetScriptRelationSafe(ATTRIBUTES *pA1, ATTRIBUTES *pA2);
 
     static void Print(float x, float y, float fScale, const char *pFormat, ...);
-    static void Print3D(glm::vec3 vPos, float dy, float fScale, const char *pFormat, ...);
-
     void Save(CSaveLoad *pSL);
     void Load(CSaveLoad *pSL);
 

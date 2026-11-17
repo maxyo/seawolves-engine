@@ -141,11 +141,6 @@ void *SDLWindow::OSHandle()
     return window_.get();
 }
 
-SDL_Window *SDLWindow::SDLHandle() const
-{
-    return window_.get();
-}
-
 void SDLWindow::ProcessEvent(const SDL_WindowEvent &evt) const
 {
     Event winEvent;

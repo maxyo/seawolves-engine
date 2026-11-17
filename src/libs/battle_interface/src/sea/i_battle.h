@@ -98,5 +98,4 @@ class BATTLE_INTERFACE : public Entity
   protected:
     void LoadIniFile();
     void CheckSeaState();
-    void EnableMessageIcons(VDATA *pvdat);
 };

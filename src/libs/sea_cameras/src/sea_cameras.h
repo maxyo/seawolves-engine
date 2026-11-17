@@ -13,7 +13,6 @@ class SEA_CAMERAS : public Entity
     SEA_CAMERAS();
     ~SEA_CAMERAS() override;
 
-    void ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     bool Init() override

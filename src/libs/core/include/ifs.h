@@ -30,12 +30,10 @@ class KEY_NODE
     void SetValue(const char *value);
     char *GetName();
     char *GetValue();
-    KEY_NODE *GetLeftNode();
     KEY_NODE *GetRightNode();
     void SetLeftNode(KEY_NODE *node);
     void SetRightNode(KEY_NODE *node);
     void Add(KEY_NODE **Root, KEY_NODE **Top);
-    void AttachTo(KEY_NODE *node, KEY_NODE **Top); // left - root, order - from left to right
     void Deattach(KEY_NODE **Root, KEY_NODE **Top);
     uint32_t SetFlags(uint32_t flags);
 };
@@ -70,7 +68,6 @@ class SECTION
     void SetName(const char *name);
     char *GetName();
 
-    SECTION *GetLeftNode();
     SECTION *GetRightNode();
     void SetLeftNode(SECTION *node);
     void SetRightNode(SECTION *node);
@@ -107,7 +104,6 @@ class IFS : public INIFILE
     char *FileName;
     bool bDataChanged;
     uint32_t Reference;
-    uint32_t CompareStrings(const char *s1, const char *s2);
     bool FlushFile();
 
   public:
@@ -181,8 +177,6 @@ class IFS : public INIFILE
     void WriteString(const char *section_name, const char *key_name, const char *string) override;
     void WriteLong(const char *section_name, const char *key_name, int32_t value) override;
     void WriteDouble(const char *section_name, const char *key_name, double value) override;
-    void WriteFloat(const char *section_name, const char *key_name, float value);
-
     bool GetSectionName(char *section_name_buffer, int32_t buffer_size) override;
     bool GetSectionNameNext(char *section_name_buffer, int32_t buffer_size) override;
     void Flush() override;

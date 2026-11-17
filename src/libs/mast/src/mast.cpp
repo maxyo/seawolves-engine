@@ -81,24 +81,6 @@ void MAST::SetDevice()
     // UNGUARD
 }
 
-bool MAST::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    // GUARD(bool MAST::CreateState(ENTITY_STATE_GEN * state_gen))
-
-    return true;
-    // UNGUARD
-}
-
-bool MAST::LoadState(ENTITY_STATE *state)
-{
-    // GUARD(bool MAST::LoadState(ENTITY_STATE * state))
-
-    SetDevice();
-
-    // UNGUARD
-    return true;
-}
-
 void MAST::Execute(uint32_t Delta_Time)
 {
     // GUARD(void MAST::Execute(uint32_t Delta_Time))
@@ -754,17 +736,6 @@ void HULL::SetDevice()
     pCollide = static_cast<COLLIDE *>(core.GetService("COLL"));
     if (!pCollide)
         throw std::runtime_error("No service: collide");
-}
-
-bool HULL::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool HULL::LoadState(ENTITY_STATE *state)
-{
-    SetDevice();
-    return true;
 }
 
 void HULL::Execute(uint32_t Delta_Time)

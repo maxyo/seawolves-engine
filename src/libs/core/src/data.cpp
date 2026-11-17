@@ -938,44 +938,6 @@ bool DATA::Set(entid_t eid, uint32_t index)
       return true;*/
 }
 
-bool DATA::Get(entid_t &eid, uint32_t index)
-{
-    // if(bRef)
-    if (Data_type == VAR_REFERENCE)
-    {
-        if (pReference)
-        {
-            return pReference->Get(eid, index);
-        }
-        Error(UNINIT_REF);
-        return false;
-    }
-    if (!bArray)
-    {
-        Error(INDEX_ON_SINGLE);
-        return false;
-    }
-    if (!(Data_type == VAR_OBJECT || Data_type == VAR_AREFERENCE))
-    {
-        Error("Access to attributes of non object array");
-        return false;
-    }
-    if (index >= Number_of_elements)
-    {
-        BadIndex(index, Number_of_elements);
-        // Error(INCORRECT_INDEX);
-        return false;
-    }
-    ArrayPTR[index].Get(eid);
-    return true;
-    /*
-      OBJECT_DESC * pOD;
-      pOD = (OBJECT_DESC *)ArrayPointer;
-      eid = pOD[index].object_id;
-      //memcpy(&eid,&pOD[index].object_id,sizeof(entid_t));
-      return true;*/
-}
-
 void DATA::MakeArray(uint32_t array_size)
 {
     bArray = true;

@@ -12,8 +12,6 @@ struct ControlKeyBuffer
 
     void Reset();
     void AddKey(char *u8_str, int u8_size, bool bSystem);
-    void AddKey(const KeyDescr &key);
-
     int32_t GetBufferLength()
     {
         return pcBuffer_.size();

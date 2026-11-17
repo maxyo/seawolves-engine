@@ -18,14 +18,6 @@ STRINGS_LIST::~STRINGS_LIST()
     Release();
 }
 
-void STRINGS_LIST::CacheString(uint32_t code)
-{
-    if (Cache_Pos >= CACHE_SIZE)
-        Cache_Pos = 0;
-    Cache[Cache_Pos] = code;
-    Cache_Pos++;
-}
-
 uint32_t STRINGS_LIST::GetStringsCount()
 {
     return static_cast<uint32_t>(strings_.size());
@@ -106,16 +98,6 @@ void STRINGS_LIST::SetStringDataSize(uint32_t _size)
         return;
     Release();
     used_data_size = _size;
-}
-
-void STRINGS_LIST::DeleteString(uint32_t code)
-{
-    if (code >= strings_.size())
-        return;
-    // Stable erase preserves the compiler's ordinal file/jump-table ordering.
-    strings_.erase(strings_.begin() + code);
-    Cache.fill(INVALID_ORDINAL_NUMBER);
-    Cache_Pos = 0;
 }
 
 uint32_t STRINGS_LIST::MakeHashValue(const char *string)

@@ -26,7 +26,6 @@ class SeaLocatorShow : public Entity
     glm::vec3 GetLocatorPos(ATTRIBUTES *pA);
     float GetLocatorAng(ATTRIBUTES *pA);
     float GetLocatorRadius(ATTRIBUTES *pA);
-    const char *GetRealLocatorName(ATTRIBUTES *pA);
     const char *GetLocatorName(ATTRIBUTES *pA);
     const char *GetLocatorGroupName(ATTRIBUTES *pA);
 
@@ -38,15 +37,9 @@ class SeaLocatorShow : public Entity
     ~SeaLocatorShow() override;
 
     bool Init() override;
-    void SetDevice();
-
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time) const;
 
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
-
-    void ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override

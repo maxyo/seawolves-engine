@@ -51,13 +51,6 @@ class CameraFollow
     static void ApplyPolyFindNearest(EdgeInfo *e, int32_t ne, const glm::vec3 &pos);
     // Change radius
     void ChangeRadius(float dltTime, float radius);
-    // Find the acceleration of camera stop when corner collision with patch
-    void FindRotAccelCam();
-
-    // Trace the ray taking into account cull and camera size
-    float Trace(const glm::vec3 &src, const glm::vec3 &dst);
-    // Trace a ray with cull
-    float SubTrace(const glm::vec3 &src, const glm::vec3 &dst) const;
 
     void DrawDebug();
 

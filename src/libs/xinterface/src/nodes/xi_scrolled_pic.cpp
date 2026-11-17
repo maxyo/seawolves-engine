@@ -156,16 +156,6 @@ void CXI_SCROLLEDPICTURE::SaveParametersToIni()
     CXI_PICTURE::SaveParametersToIni();
 }
 
-void CXI_SCROLLEDPICTURE::SetNewPicture(bool video, char *sNewTexName)
-{
-    CXI_PICTURE::SetNewPicture(video, sNewTexName);
-}
-
-void CXI_SCROLLEDPICTURE::SetNewPictureFromDir(char *dirName)
-{
-    CXI_PICTURE::SetNewPictureFromDir(dirName);
-}
-
 uint32_t CXI_SCROLLEDPICTURE::MessageProc(int32_t msgcode, MESSAGE &message)
 {
     switch (msgcode)

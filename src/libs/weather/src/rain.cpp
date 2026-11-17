@@ -200,16 +200,6 @@ bool RAIN::Init()
     return true;
 }
 
-bool RAIN::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool RAIN::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void RAIN::Execute(uint32_t Delta_Time)
 {
 }

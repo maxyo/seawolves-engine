@@ -62,8 +62,6 @@ class Links
     int selected;
     int count;
 
-    void Add();
-    void Delete(int Index);
 
     Links()
     {
@@ -99,7 +97,6 @@ struct Point
 
     bool IsMast() const;
     bool IsCannon() const;
-    bool IsNormal() const;
 };
 
 //-----------------------------------------------------------------------------------------------
@@ -111,8 +108,6 @@ struct Points
     int count;
     int selected;
 
-    void Add();
-    void Delete(int Index);
 
     Points()
     {
@@ -134,10 +129,6 @@ class SailorsPoints
   public:
     Points points;
     Links links;
-
-    void Draw(VRenderer *rs, bool pointmode);
-    void Draw_(VRenderer *rs, bool pointmode);
-    void DrawLinks(VRenderer *rs);
 
     Path findPath(Path &path, int from, int to); // Calculate the path
 

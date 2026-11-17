@@ -36,10 +36,6 @@ void GIFont::Print(float x, float y, const char *pcFormat, ...) const
                                static_cast<int32_t>(x), static_cast<int32_t>(y), "%s", param);
 }
 
-void GIFont::PrintIntoWindow(const char *pcFormat, ...)
-{
-}
-
 void GIFont::SetHeight(float fHeight)
 {
     m_fHeight = fHeight;
@@ -48,12 +44,3 @@ void GIFont::SetHeight(float fHeight)
         m_fScale = m_fHeight / fRealH;
 }
 
-void GIFont::SetColor(uint32_t dwColor)
-{
-    m_dwColor = dwColor;
-}
-
-void GIFont::SetBackColor(uint32_t dwColor)
-{
-    m_dwBackColor = dwColor;
-}

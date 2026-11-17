@@ -114,36 +114,9 @@ ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::GetFirstFort()
     return FindLocator(m_pLocators, m_nLocators);
 }
 
-ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::GetFirstFriendFort()
-{
-    m_nFindType = ISLAND_FIND_FRIENDFORT;
-    m_lastFindIdx = 0;
-    if (m_nLocators == 0 && m_pLocators == nullptr)
-        return nullptr;
-    return FindLocator(m_pLocators, m_nLocators);
-}
-
-ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::GetFirstNeutralFort()
-{
-    m_nFindType = ISLAND_FIND_NEUTRALFORT;
-    m_lastFindIdx = 0;
-    if (m_nLocators == 0 && m_pLocators == nullptr)
-        return nullptr;
-    return FindLocator(m_pLocators, m_nLocators);
-}
-
 ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::GetFirstEnemyFort()
 {
     m_nFindType = ISLAND_FIND_ENEMYFORT;
-    m_lastFindIdx = 0;
-    if (m_nLocators == 0 && m_pLocators == nullptr)
-        return nullptr;
-    return FindLocator(m_pLocators, m_nLocators);
-}
-
-ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::GetFirstBrokenFort()
-{
-    m_nFindType = ISLAND_FIND_BROKENFORT;
     m_lastFindIdx = 0;
     if (m_nLocators == 0 && m_pLocators == nullptr)
         return nullptr;
@@ -215,21 +188,6 @@ ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::FindLocator(LOCATOR_DESCR *p,
     }
     // found nothing
     m_lastFindIdx += nMax;
-    return nullptr;
-}
-
-ISLAND_DESCRIBER::LOCATOR_DESCR *ISLAND_DESCRIBER::FindLocatorByName(char *name) const
-{
-    if (name == nullptr)
-        return nullptr;
-    for (auto i = 0; i < m_nLocators; i++)
-    {
-        if (m_pLocators[i].pA == nullptr)
-            continue;
-        const char* curName = m_pLocators[i].pA->GetAttribute("name");
-        if (curName != nullptr && storm::iEquals(name, curName))
-            return &m_pLocators[i];
-    }
     return nullptr;
 }
 

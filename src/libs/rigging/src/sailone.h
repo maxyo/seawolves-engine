@@ -181,12 +181,10 @@ class SAILONE : public SAILONE_BASE
     SAILONE();
     ~SAILONE();
     bool SetSail();
-    void releaseAll();
     SAILSTATE ss{};
     SAILTIME tm{};
 
     void FillIndex(uint16_t *pt); // filling an array of triangles
-    void ClearVertex(SAILVERTEX *pv, uint32_t maxIdx);
     void goWave(SAILVERTEX *pv, uint32_t Delta_Time);
     void FillVertex(SAILVERTEX *pv);         // filling an array of vertices
     void SetTexGrid(SAILVERTEX *pv) const;   // setting coordinates in texture

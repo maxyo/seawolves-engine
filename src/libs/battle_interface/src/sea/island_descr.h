@@ -46,13 +46,8 @@ class ISLAND_DESCRIBER
     LOCATOR_DESCR *GetFirstLocator();
     LOCATOR_DESCR *GetFirstLand();
     LOCATOR_DESCR *GetFirstFort();
-    LOCATOR_DESCR *GetFirstFriendFort();
-    LOCATOR_DESCR *GetFirstNeutralFort();
     LOCATOR_DESCR *GetFirstEnemyFort();
-    LOCATOR_DESCR *GetFirstBrokenFort();
     LOCATOR_DESCR *GetNext();
-    LOCATOR_DESCR *FindLocatorByName(char *name) const;
-
     void Refresh() const;
 
   protected:

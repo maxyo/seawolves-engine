@@ -299,17 +299,12 @@ class Renderer : public VRenderer
     HRESULT DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) override;
     HRESULT Release(storm::shim::Object *pSurface);
 
-    // Vertex/Index Buffers Section
-    HRESULT CreateVertexBuffer(UINT Length, uint32_t Usage, uint32_t fvf, D3DPOOL Pool,
-                               storm::shim::VertexBuffer **ppVertexBuffer);
-
     HRESULT CreateTexture(UINT Width, UINT Height, UINT Levels, uint32_t Usage, D3DFORMAT Format, D3DPOOL Pool,
                           storm::shim::Texture2D **ppTexture);
     HRESULT CreateCubeTexture(UINT EdgeLength, UINT Levels, uint32_t Usage, D3DFORMAT Format, D3DPOOL Pool,
                               storm::shim::CubeTexture **ppCubeTexture);
     HRESULT CreateDepthStencilSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample,
                                       storm::shim::Surface **ppSurface);
-    HRESULT SetTexture(uint32_t Stage, storm::shim::BaseTexture *pTexture);
     HRESULT GetRenderTargetData(storm::shim::Surface *pRenderTarget, storm::shim::Surface *pDestSurface);
 
     // D3D Pixel/Vertex Shaders Section
@@ -431,8 +426,6 @@ class Renderer : public VRenderer
 
     bool PushRenderTarget() override;
     bool PopRenderTarget() override;
-    bool SetRenderTarget(storm::shim::CubeTexture *pCubeTex, uint32_t dwFaceType, uint32_t dwLevel,
-                         storm::shim::Surface *pNewZStencil);
     void SetView(const glm::mat4 &mView) override;
     void SetWorld(const glm::mat4 &mView) override;
     void SetProjection(const glm::mat4 &mView) override;

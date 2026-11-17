@@ -78,8 +78,6 @@ class ModelArray
                      void *pLights = nullptr);
     // Delete model
     void DeleteModel(int32_t modelIndex);
-    // Set animation to the model
-    bool SetAnimation(int32_t modelIndex, const char *modelAni);
     // Find model index by name
     int32_t FindModel(const char *modelName);
 
@@ -123,7 +121,6 @@ class ModelArray
     bool VisibleTest(const glm::vec3 &p1, const glm::vec3 &p2);
     // Trace the ray through the location
     float Trace(const glm::vec3 &src, const glm::vec3 &dst);
-    bool GetCollideTriangle(TRIANGLE &trg) const;
     // The visible models Clip() visits: those that stand still, or those that move (a rotator turns them every frame,
     // an animation may change them).
     enum class ClipModels

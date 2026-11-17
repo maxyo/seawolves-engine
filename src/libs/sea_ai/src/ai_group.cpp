@@ -183,14 +183,6 @@ bool AIGroup::isDead()
     return true;
 }
 
-float AIGroup::GetPower()
-{
-    auto fPower = 0.0f;
-    for (auto &aGroupShip : aGroupShips)
-        fPower += aGroupShip->GetPower();
-    return fPower;
-}
-
 AIGroup *AIGroup::CreateNewGroup(const char *pGroupName)
 {
     Assert(pGroupName);
@@ -284,17 +276,6 @@ void AIGroup::GroupSetRunAway(const char *pGroupName)
     FindOrCreateGroup(pGroupName)->sCommand = "runaway";
 }
 
-void AIGroup::GroupSetAttack(AIShip *pS1, AIShip *pS2)
-{
-    AIGroup *pG1 = FindGroup(pS1->GetGroupName().c_str());
-    Assert(pG1);
-    AIGroup *pG2 = FindGroup(pS2->GetGroupName().c_str());
-    Assert(pG2);
-
-    pG2->sCommand = "attack";
-    pG2->sCommandGroup = pG1->GetName();
-}
-
 float AIGroup::GetAttackHP(const char *pGroupName, float fDistance)
 {
     AIGroup *pG = FindGroup(pGroupName);
@@ -352,12 +333,6 @@ void AIGroup::GroupSetType(const char *pGroupName, const char *cGroupType)
     AIGroup *pG = FindOrCreateGroup(pGroupName);
     Assert(pG);
     pG->sGroupType = cGroupType;
-}
-
-void AIGroup::GroupHelpMe(const char *pGroupName, AIShip *pMe, AIShip *pEnemy)
-{
-    AIGroup *pG = FindGroup(pMe->GetACharacter());
-    Assert(pG);
 }
 
 void AIGroup::ShipChangeGroup(ATTRIBUTES *pACharacter, const char *pGroupName)

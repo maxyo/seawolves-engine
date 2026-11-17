@@ -24,15 +24,8 @@ class SERVICES_LIST
 
     void Release();
     SERVICE_NODE *FindNode(uint32_t module_code);
-    SERVICE_NODE *FindNode(SERVICE *sp);
-    SERVICE *Find(uint32_t module_code);
-    SERVICE *Find(uint32_t module_code, uint32_t class_code);
     SERVICE *AddRef(uint32_t module_code);
     SERVICE *Add(uint32_t module_code, uint32_t class_code, SERVICE *pointer);
-    uint32_t Release(uint32_t module_code, uint32_t class_code);
-    SERVICE *GetService();
-    SERVICE *GetServiceNext();
-
     SERVICE *GetService(uint32_t &class_code);
     SERVICE *GetServiceNext(uint32_t &class_code);
 
@@ -40,6 +33,4 @@ class SERVICES_LIST
     {
         return Objects;
     };
-    uint32_t GetRef(SERVICE *sp);
-    void SetRef(SERVICE *sp, uint32_t ref);
 };

@@ -14,8 +14,6 @@ class GIEditorList : public GIEditorObject
     ~GIEditorList() override;
 
     void Release();
-    void Create();
-
     void Render();
 
     void SetPosition(float fLeft, float fTop, float fRight, float fBottom);

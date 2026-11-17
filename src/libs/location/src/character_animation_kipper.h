@@ -27,8 +27,6 @@ class CharacterAnimationKipper : public Entity
 
     // Initialization
     bool Init() override;
-    void LockTexture(const char *texture);
-
     void ProcessStage(Stage, uint32_t) override
     {
     }

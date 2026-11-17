@@ -94,16 +94,6 @@ DataSource *DataCache::GetParticleSystemDataSource(const char *FileName)
     return nullptr;
 }
 
-// Check pointer for validity
-bool DataCache::ValidatePointer(DataSource *pData)
-{
-    for (auto n = 0; n < Cache.size(); n++)
-        if (Cache[n].pData == pData) // fix
-            return true;
-
-    return false;
-}
-
 void DataCache::CreateDataSource(void *pBuffer, uint32_t BufferSize, const char *SourceFileName)
 {
     LoadedDataSource NewDataSource;

@@ -59,9 +59,6 @@ class Bone
     void BlendFrame(int32_t frame, float kBlend, glm::quat &res);
     // Root position between frame and frame + 1; the last frame holds (pos[numFrames] does not exist).
     glm::vec3 BlendPosition(int32_t frame, float kBlend) const;
-    // void BlendFrame(float frame);
-    // Create a matrix for the resulting position
-    void BuildMatrix();
     // Create matrix for frame 0
     // void BuildMatrixZero();
     // Get position matrix

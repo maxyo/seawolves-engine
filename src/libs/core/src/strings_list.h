@@ -37,12 +37,9 @@ class STRINGS_LIST
     bool AddString(const char *_char_PTR);
     bool AddUnicalString(const char *_char_PTR);
     void Release();
-    void DeleteString(uint32_t code);
-
     bool GetStringData(uint32_t code, void *data_PTR);
     bool SetStringData(uint32_t code, void *data_PTR);
     void SetStringDataSize(uint32_t size);
 
-    void CacheString(uint32_t code);
     uint32_t MakeHashValue(const char *string);
 };

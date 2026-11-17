@@ -121,8 +121,6 @@ class FILE_SERVICE : public VFILE_SERVICE
     std::unique_ptr<INIFILE> CreateIniFile(const char *file_name, bool fail_if_exist) override;
     std::unique_ptr<INIFILE> OpenIniFile(const char *file_name) override;
     void RefDec(INIFILE *ini_obj);
-    void FlushIniFiles();
-
     // Resource paths
     void ScanResourcePaths() override;
     std::string ConvertPathResource(const char *path) override;

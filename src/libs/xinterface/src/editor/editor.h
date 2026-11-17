@@ -22,8 +22,6 @@ class GIEditor : public GIEditorObject
     bool ProcessControl();
 
     bool IsShowMode() const;
-    void MakeShowMode(bool bShow);
-
     void SetEditNode(CINODE *pNode);
 
     void ReCreate() const;

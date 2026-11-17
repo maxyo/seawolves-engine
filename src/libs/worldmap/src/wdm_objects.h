@@ -101,11 +101,8 @@ class WdmObjects
     bool isDebug;
     bool showWindUI;
 
-    void DrawCircle(const glm::vec3 &pos, float radius, uint32_t color) const;
     void DrawCircle(glm::mat4 &mtx, float radius, uint32_t color) const;
     void DrawVector(const glm::vec3 &start, const glm::vec3 &end, uint32_t color) const;
-    void DrawLine(const glm::vec3 &start, const glm::vec3 &end, uint32_t color) const;
-    void DrawBox2D(glm::mat4 &mtx, float l, float w, uint32_t color) const;
     void GetVPSize(float &w, float &h) const;
 
     float shipSpeedOppositeWind; // Relative speed of the ship against the wind

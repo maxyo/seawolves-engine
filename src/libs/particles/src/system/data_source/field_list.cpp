@@ -490,30 +490,12 @@ const glm::vec3 &FieldList::GetPosition(const char *AttrName, const glm::vec3 &d
     return pFind->GetValue();
 }
 
-float FieldList::GetGraphVal(const char *AttrName, float Time, float LifeTime, float K_Rand, float def_value)
-{
-    auto *pFind = FindGraph(AttrName);
-    if (!pFind)
-        return def_value;
-    return pFind->GetValue(Time, LifeTime, K_Rand);
-}
-
 float FieldList::GetRandomGraphVal(const char *AttrName, float Time, float LifeTime, float def_value)
 {
     auto *pFind = FindGraph(AttrName);
     if (!pFind)
         return def_value;
     return pFind->GetRandomValue(Time, LifeTime);
-}
-
-uint32_t FieldList::GetFieldCount() const
-{
-    return Fields.size();
-}
-
-const FieldList::FieldDesc &FieldList::GetFieldByIndex(uint32_t Index)
-{
-    return Fields[Index];
 }
 
 void FieldList::Convert(DataDescripion *pDataDescriptor)

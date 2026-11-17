@@ -34,9 +34,6 @@ class WdmRenderModel : public WdmRenderObject
     void LRender(VRenderer *rs) override;
 
     void SetTech(const char *t, const char *ta);
-    int32_t GetTexture(int32_t stage) const;
-    void SetTexture(int32_t stage, int32_t id) const;
-
     glm::mat4 mtx;
     float alpha;
 

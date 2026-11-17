@@ -30,17 +30,6 @@ int FindCommand(const char *comName)
     return i;
 }
 
-int FindCommand(int comID)
-{
-    int i;
-    for (i = 0; i < COMMAND_QUANTITY; i++)
-        if (pCommandsList[i].code == comID)
-            break;
-    if (i == COMMAND_QUANTITY)
-        return -1;
-    return i;
-}
-
 uint32_t ColorInterpolate(uint32_t sCol, uint32_t dCol, float m)
 {
     int a, r, g, b;

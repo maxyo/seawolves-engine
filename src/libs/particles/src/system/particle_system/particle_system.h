@@ -69,8 +69,6 @@ class ParticleSystem : public IParticleSystem
     ParticleManager *GetMaster() const;
 
     IEmitter *FindEmitter(const char *name);
-    IEmitter *FindEmitterByData(FieldList *Data);
-
     void Teleport(const glm::mat4 &transform) override;
 
     bool IsAlive() override;
@@ -79,9 +77,5 @@ class ParticleSystem : public IParticleSystem
     void SetName(const char *Name);
 
   public:
-    uint32_t GetEmittersCount() const;
-    IEmitter *GetEmitterByIndex(uint32_t Index);
-    EmitterType GetEmitterTypeByIndex(uint32_t Index);
-
     void Editor_UpdateCachedData();
 };

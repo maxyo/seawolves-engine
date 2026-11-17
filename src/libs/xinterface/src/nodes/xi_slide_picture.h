@@ -22,8 +22,6 @@ class CXI_SLIDEPICTURE : public CINODE
     void ChangePosition(XYRECT &rNewPos) override;
     void SaveParametersToIni() override;
 
-    void SetNewPicture(char *sNewTexName);
-
   protected:
     void LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *name2) override;
     void Update(uint32_t Delta_Time);

@@ -373,20 +373,6 @@ bool COMPILER::IsIntFuncVarArgsNum(uint32_t code)
     return false;
 }
 
-uint32_t COMPILER::GetIntFunctionCode(const char *func_name)
-{
-    // functions_num = sizeof(FuncNameTable)/sizeof(char *);
-    const uint32_t functions_num = sizeof(IntFuncTable) / sizeof(INTFUNCDESC);
-
-    for (uint32_t n = 0; n < functions_num; n++)
-    {
-        // if(strcmp(func_name,FuncNameTable[n])==0) return n;
-        if (strcmp(func_name, IntFuncTable[n].pName) == 0)
-            return n;
-    }
-    return INVALID_ORDINAL_NUMBER;
-}
-
 // DeleteEntity(&object): erase the object's entity and clear the handle the script variable
 // holds, so the variable stops naming the erased entity (IsEntity, saves, messages).
 void COMPILER::DeleteScriptEntity(DATA &object)

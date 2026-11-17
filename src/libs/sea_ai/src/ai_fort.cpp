@@ -23,10 +23,6 @@ bool AIFort::Init()
     return true;
 }
 
-void AIFort::SetDevice()
-{
-}
-
 float AIFort::GetSpeedV0(uint32_t dwFortIndex)
 {
     ATTRIBUTES *pACannon, *pACharacter;
@@ -158,16 +154,6 @@ void AIFort::Realize(uint32_t Delta_Time)
     }
   #endif
   */
-}
-
-bool AIFort::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool AIFort::LoadState(ENTITY_STATE *state)
-{
-    return true;
 }
 
 bool AIFort::AddFort(ATTRIBUTES *pIslandAP, ATTRIBUTES *pFortLabelAP, ATTRIBUTES *pFortCharacter, entid_t eidModel,
@@ -382,21 +368,6 @@ bool AIFort::ScanFortForCannons(AI_FORT *pFort, const char *pModelsDir, const ch
 
     core.EraseEntity(model_id);
     return true;
-}
-
-bool AIFort::isAttack(AIGroup *pGroup)
-{
-    return false;
-}
-
-bool AIFort::isDead()
-{
-    return false;
-}
-
-float AIFort::GetPower()
-{
-    return 10000.0f;
 }
 
 ATTRIBUTES *AIFort::GetACharacter()

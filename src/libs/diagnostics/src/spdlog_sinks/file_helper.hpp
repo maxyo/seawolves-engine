@@ -22,12 +22,9 @@ class SPDLOG_API file_helper
     ~file_helper();
 
     void open(const spdlog::filename_t &fname, bool truncate = false);
-    void reopen(bool truncate);
     void flush();
     void close();
     void write(const spdlog::memory_buf_t &buf);
-    size_t size() const;
-    const spdlog::filename_t &filename() const;
 
     std::FILE *getfd() const;
 

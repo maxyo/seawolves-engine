@@ -89,8 +89,6 @@ class SAIL : public SAIL_BASE
     bool Init() override;
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
     void SetDevice();
     // Collision func

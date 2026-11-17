@@ -82,8 +82,6 @@ class ROPE : public ROPE_BASE
         }
     }
 
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Service Function
     void GetEndPoint(glm::vec3 *cv, int ropenum, entid_t mdl_id) override;

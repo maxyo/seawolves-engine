@@ -30,8 +30,6 @@ class AIShipTouchController
     virtual void Execute(float);
     virtual void Realize(float);
 
-    //
-    float GetBestRotateDirection();
     glm::vec3 *GetPentagonBox();
     bool isCollision2D(const glm::vec3 &vSrc, const glm::vec3 &vDst);
 

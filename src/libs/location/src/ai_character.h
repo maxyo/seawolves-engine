@@ -122,12 +122,6 @@ class AICharacter : public Character
     bool FindDirectional();
     // Find the pushing forces
     void CalcRepulsionForces();
-    // Calculate the point defined by the intersection and lying on the edge
-    static bool FindIntersection(const glm::vec3 &s, const glm::vec3 &e, const glm::vec3 &cur, const glm::vec3 &to,
-                                 glm::vec3 &res);
-    // Calculate angle from direction vector
-    static float Angle(double vx, double vz, float defAy);
-
   protected:
     // Current command
     Command command;

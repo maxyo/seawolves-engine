@@ -55,8 +55,6 @@ class MAST : public Entity
         }
     }
 
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
   protected:
@@ -103,8 +101,6 @@ class HULL : public Entity
     ~HULL() override;
     void SetDevice();
     bool Init() override;
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void Execute(uint32_t Delta_Time);

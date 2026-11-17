@@ -124,9 +124,6 @@ class WorldMap : public Entity
     // Create an attribute to save the encounter parameters
     ATTRIBUTES *GetEncSaveData(const char *type, const char *retName);
 
-    // Find coordinates and radius by destination
-    bool FindIslandPosition(const char *name, float &x, float &z, float &r);
-
     void ResetScriptInterfaces() const;
 
   private:

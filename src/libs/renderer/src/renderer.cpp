@@ -4271,13 +4271,6 @@ void Renderer::DrawLines2D(RS_LINE2D *pRSL2D, size_t dwLinesNum, const char *cBl
         } while (cBlockName && TechniqueExecuteNext());
 }
 
-//-----------------------
-HRESULT Renderer::CreateVertexBuffer(UINT Length, uint32_t Usage, uint32_t FVF, D3DPOOL Pool,
-                                      storm::shim::VertexBuffer **ppVertexBuffer)
-{
-    return CHECKD3DERR(d3d9->CreateVertexBuffer(Length, Usage, FVF, Pool, ppVertexBuffer, NULL));
-}
-
 HRESULT Renderer::SetFVF(uint32_t handle)
 {
     return CHECKD3DERR(d3d9->SetVertexShader(NULL)) || CHECKD3DERR(d3d9->SetFVF(handle));
@@ -4434,11 +4427,6 @@ HRESULT Renderer::GetPixelShader(storm::shim::PixelShader **ppShader)
     return CHECKD3DERR(d3d9->GetPixelShader(ppShader));
 }
 
-
-HRESULT Renderer::SetTexture(uint32_t Stage, storm::shim::BaseTexture *pTexture)
-{
-    return CHECKD3DERR(d3d9->SetTexture(Stage, pTexture));
-}
 
 // The shim's render targets are never multisampled surfaces (MSAA is a bgfx texture flag of the scene target).
 HRESULT Renderer::GetRenderTargetData(storm::shim::Surface *pRenderTarget, storm::shim::Surface *pDestSurface)
@@ -5152,14 +5140,6 @@ bool Renderer::PopRenderTarget()
     stRenderTarget.pop();
 
     return true;
-}
-
-bool Renderer::SetRenderTarget(storm::shim::CubeTexture *pRenderTarget, uint32_t FaceType, uint32_t dwLevel,
-                                storm::shim::Surface *pZStencil)
-{
-    storm::shim::Surface *pSurface;
-    return !CHECKD3DERR(pRenderTarget->GetCubeMapSurface(static_cast<D3DCUBEMAP_FACES>(FaceType), dwLevel, &pSurface)) &&
-           !CHECKD3DERR(SetRenderTarget(pSurface, pZStencil)) && Release(pSurface) == D3D_OK;
 }
 
 void Renderer::SetView(const glm::mat4 &mView)

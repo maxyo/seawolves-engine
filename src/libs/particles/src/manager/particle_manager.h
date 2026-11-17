@@ -125,9 +125,6 @@ class ParticleManager : public IParticleManager
 
     GEOS *GetModel(const char *FileName) const;
 
-    uint32_t GetCreatedSystemCount() const;
-    ParticleSystem *GetCreatedSystemByIndex(uint32_t Index);
-
     bool ReadyForUse() override;
 
     void DefferedDelete(ParticleSystem *pSys);

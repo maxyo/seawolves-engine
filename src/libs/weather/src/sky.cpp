@@ -105,17 +105,6 @@ void SKY::LoadTextures()
     fAngleY = 0.0f;
 }
 
-bool SKY::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool SKY::LoadState(ENTITY_STATE *state)
-{
-    SetDevice();
-    return true;
-}
-
 bool SKY::DrawSkyObjects(uint32_t Delta_Time, bool sun_sprite)
 {
     entid_t eid;

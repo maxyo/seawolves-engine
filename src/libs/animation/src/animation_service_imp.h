@@ -42,9 +42,6 @@ class AnimationServiceImp final : public AnimationService
     // --------------------------------------------------------------------------------------------
     // Remove animation (called from destructor)
     void DeleteAnimation(AnimationImp *ani);
-    // Event
-    void Event(const char *eventName);
-
     // --------------------------------------------------------------------------------------------
     // Encapsulation
     // --------------------------------------------------------------------------------------------

@@ -21,7 +21,6 @@ struct COMMANDDESCR
 
 extern COMMANDDESCR pCommandsList[COMMAND_QUANTITY];
 extern int FindCommand(const char *comName);
-extern int FindCommand(int comID);
 
 struct SAVE_DATA_HANDLE
 {

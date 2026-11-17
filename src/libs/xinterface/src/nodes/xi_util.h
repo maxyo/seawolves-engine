@@ -62,8 +62,6 @@ class CXI_UTILS
     ~CXI_UTILS();
 
     void Init();
-    void Release();
-
     void FrameUpdate();
 
     // string processing
@@ -97,8 +95,6 @@ class CXI_UTILS
     // attribute functions
     static float GetByStrNumFromAttribute_Float(ATTRIBUTES *pA, const char *pStr, int32_t num, float fDefValue);
 
-    // vertex processing
-    static void WriteSquareToVertexBuffer(XI_ONETEX_VERTEX *pv, uint32_t color, FXYRECT &uv, XYRECT &rect);
     static void WriteSquareToVertexBuffer(XI_ONETEX_VERTEX *pv, uint32_t color, FXYRECT &uv, int32_t left, int32_t top,
                                           int32_t right, int32_t bottom);
 

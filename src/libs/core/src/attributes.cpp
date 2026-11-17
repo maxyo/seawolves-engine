@@ -215,11 +215,6 @@ ATTRIBUTES::~ATTRIBUTES()
     Release();
 }
 
-void ATTRIBUTES::SetBreak(bool set_break)
-{
-    break_ = set_break;
-}
-
 ATTRIBUTES *ATTRIBUTES::GetParent() const
 {
     return parent_;
@@ -366,23 +361,6 @@ uint32_t ATTRIBUTES::GetAttributeAsDword(const char *name, uint32_t def) const
         vDword = atol( value_->c_str());
     }
     return vDword;
-}
-
-uintptr_t ATTRIBUTES::GetAttributeAsPointer(const char *name, uintptr_t def) const
-{
-    storm::TreeRead(this);
-    uintptr_t ptr = def;
-    if (name)
-    {
-        const char *pAttribute = GetAttribute(name);
-        if (pAttribute)
-            ptr = atoll(pAttribute);
-    }
-    else
-    {
-        ptr = atoll(value_->c_str());
-    }
-    return ptr;
 }
 
 float ATTRIBUTES::GetAttributeAsFloat(const char *name, float def) const
@@ -625,11 +603,6 @@ void ATTRIBUTES::SetNameCode(uint32_t n) noexcept
         storm::TreeChanged(this);
     nameCode_ = n;
     RenamedInParent();
-}
-
-VSTRING_CODEC & ATTRIBUTES::GetStringCodec() const noexcept
-{
-    return stringCodec_;
 }
 
 ATTRIBUTES * ATTRIBUTES::Append(uint32_t name_code)

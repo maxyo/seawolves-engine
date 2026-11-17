@@ -77,26 +77,6 @@ void LocatorArray::SetNewMatrix(int32_t locIndex, glm::mat4 &mtx)
     locator[locIndex].mtx = mtx;
 }
 
-// Find nearest locator
-float LocatorArray::FindNearesLocator(float x, float y, float z, int32_t *locIndex)
-{
-    if (locIndex)
-        *locIndex = -1;
-    auto dist = 1000000000.0f;
-    const glm::vec3 v(x, y, z);
-    for (int32_t i = 0; i < numLocators; i++)
-    {
-        const auto d = storm::math::lengthSquared(storm::math::pos(locator[i].mtx) - v);
-        if (dist > d)
-        {
-            if (locIndex)
-                *locIndex = i;
-            dist = d;
-        }
-    }
-    return dist;
-}
-
 // Find the nearest locator by cylinder
 int32_t LocatorArray::FindNearesLocatorCl(float x, float y, float z, float height2, float &dist)
 {

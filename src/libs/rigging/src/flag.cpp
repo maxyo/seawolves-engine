@@ -68,16 +68,6 @@ void FLAG::SetDevice()
     texl = RenderService->TextureCreate(textureName_.c_str());
 }
 
-bool FLAG::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool FLAG::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void FLAG::Execute(uint32_t Delta_Time)
 {
     if (bFirstRun)

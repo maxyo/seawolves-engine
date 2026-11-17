@@ -34,16 +34,6 @@ void LIGHTNING::SetDevice()
     Assert(pCollide);
 }
 
-bool LIGHTNING::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool LIGHTNING::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void LIGHTNING::Execute(uint32_t Delta_Time)
 {
     const auto fDeltaTime = static_cast<float>(Delta_Time) * 0.001f;

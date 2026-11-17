@@ -17,7 +17,6 @@ class SEA_AI : public Entity
     ~SEA_AI() override;
 
     bool Init() override;
-    void SetDevice();
     void Save(const char *pName);
     void Load(const char *pName);
 
@@ -41,10 +40,6 @@ class SEA_AI : public Entity
         }
     }
 
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
-
-    void ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     uint32_t AttributeChanged(ATTRIBUTES *pAttribute) override;

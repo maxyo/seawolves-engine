@@ -156,8 +156,6 @@ class Grass : public Entity
     void CharacterContacts(const glm::vec3 &camPos, const PLANE *plane, int32_t numPlanes);
     // The per-frame constants c42.. and the draw of the visible set
     void DrawVisible(const glm::vec3 &camPos);
-    // Get the color
-    static int32_t GetColor(glm::vec3 color);
     // Vertex declaration
     void CreateVertexDeclaration();
 

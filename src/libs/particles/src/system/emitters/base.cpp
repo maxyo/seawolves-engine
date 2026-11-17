@@ -208,11 +208,6 @@ void BaseEmitter::CreateModelParticle(FieldList &Fields)
     NewModel->Visible = true;
 }
 
-ParticleSystem *BaseEmitter::GetMaster() const
-{
-    return pMaster;
-}
-
 ParticleManager *BaseEmitter::GetManager() const
 {
     return pMaster->GetMaster();

@@ -36,28 +36,16 @@ int main()
     assert(strings.GetString(0) == first);
     assert(std::strcmp(first, "First.C") == 0);
     assert(strings.GetStringsCount() == 4097);
-    char *survivor = strings.GetString(3000);
-    strings.DeleteString(1);
-    assert(strings.GetString(2999) == survivor);
-    assert(std::strcmp(strings.GetString(1), "script-1") == 0);
-    assert(strings.GetStringCode("SCRIPT-2999") == 2999);
     std::array<unsigned char, 3> roundtrip{};
     assert(strings.GetStringData(0, roundtrip.data()) && roundtrip == data);
-    strings.DeleteString(0);
-    assert(strings.GetString(2998) == survivor);
-    assert(strings.GetStringCode("First.C") == INVALID_ORDINAL_NUMBER);
-    auto count = strings.GetStringsCount();
-    strings.DeleteString(count);
-    assert(strings.GetStringsCount() == count);
-    strings.DeleteString(count-1);
-    assert(strings.GetStringsCount() == count-1);
+    const auto count = strings.GetStringsCount();
     assert(!strings.GetStringData(count, roundtrip.data()));
     assert(!strings.SetStringData(0, nullptr));
 
     // Compiler offsets are opaque binary payloads; same-size changes preserve
     // entries, changing payload size invalidates them, as before.
     strings.SetStringDataSize(3);
-    assert(strings.GetStringsCount() == count-1);
+    assert(strings.GetStringsCount() == count);
     strings.SetStringDataSize(sizeof(uint32_t));
     assert(strings.GetStringsCount() == 0);
     strings.AddString("jump");
@@ -71,7 +59,6 @@ int main()
     strings.AddString("new-segment");
     strings.GetStringData(0, &restored);
     assert(restored == 0);
-    strings.DeleteString(0);
     strings.Release(); // The old empty-list release leaked its pointer table.
     strings.AddString("");
     assert(strings.GetStringCode("") == 0);

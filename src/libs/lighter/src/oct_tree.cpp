@@ -71,23 +71,6 @@ void OctTree::Init(LGeometry *g)
     */
 }
 
-int32_t OctTree::Check(OTNode *node, Vertex *v, int32_t num)
-{
-    if (node->vrt)
-    {
-        for (int32_t i = 0; i < node->num; i++)
-            if (node->vrt[i] == v)
-                num++;
-    }
-    else
-    {
-        for (int32_t i = 0; i < 8; i++)
-            if (node->node[i])
-                num += Check(node->node[i], v, 0);
-    }
-    return num;
-}
-
 bool OctTree::AddVertex(OTNode *node, Vertex *v)
 {
     auto &min = node->min;

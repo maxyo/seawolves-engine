@@ -154,52 +154,6 @@ void TButterfly::Calculate(int32_t _dTime, COLLIDE *_collide, entity_container_c
 }
 
 //--------------------------------------------------------------------
-void TButterfly::Draw(HDC _dc)
-{
-    /*
-    float activity;
-    if (!active)
-      activity = 0.f;
-    else
-    {
-      activity = 1.0f - activeTime / fullActiveTime;
-      if (activity < MIN_ACTIVITY)
-        activity = MIN_ACTIVITY;
-    }
-
-    static int MAIN_LINE_LENGTH = 16.0;
-    static int xOffset = 320;
-    static int yOffset = 240;
-    unsigned char cDelta = centerPosition.y+200;
-    HPEN pen = CreatePen(PS_SOLID, (int) 5.0f*centerPosition.y/MAX_Y, RGB(255.0*activity,0,0));
-    SelectObject(_dc, pen);
-
-    float ang = atan2(centerVelocity.z, centerVelocity.x);
-
-    int frontX = xOffset + centerPosition.x + 0.5*cos(ang)*MAIN_LINE_LENGTH;
-    int frontY = yOffset + centerPosition.z + 0.5*sin(ang)*MAIN_LINE_LENGTH;
-
-    int rearX = xOffset + centerPosition.x + 0.5*cos(ang + PI)*MAIN_LINE_LENGTH;
-    int rearY = yOffset + centerPosition.z + 0.5*sin(ang + PI)*MAIN_LINE_LENGTH;
-
-    int leftX = xOffset + centerPosition.x + 0.1*cos(ang + PId2)*MAIN_LINE_LENGTH;
-    int leftY = yOffset + centerPosition.z + 0.1*sin(ang + PId2)*MAIN_LINE_LENGTH;
-
-    int rightX = xOffset + centerPosition.x + 0.1*cos(ang - PId2)*MAIN_LINE_LENGTH;
-    int rightY = yOffset + centerPosition.z + 0.1*sin(ang - PId2)*MAIN_LINE_LENGTH;
-
-    MoveToEx(_dc, frontX, frontY, 0);
-    LineTo(_dc, rearX, rearY);
-    MoveToEx(_dc, frontX, frontY, 0);
-    LineTo(_dc, leftX, leftY);
-    MoveToEx(_dc, frontX, frontY, 0);
-    LineTo(_dc, rightX, rightY);
-
-    DeleteObject(pen);
-    */
-}
-
-//--------------------------------------------------------------------
 void TButterfly::Effect(const glm::vec3 &_position)
 {
     if (active)
@@ -300,19 +254,6 @@ void TButterfly::Draw(IVBufferManager *_ivManager)
     vPointer[3].pos = storm::math::transformPoint(moveToPos * rotateYm, v3);
     vPointer[4].pos = storm::math::transformPoint(moveToPos * (rotateYm * rightWingRotate), v4);
     vPointer[5].pos = storm::math::transformPoint(moveToPos * (rotateYm * rightWingRotate), v5);
-}
-
-//--------------------------------------------------------------------
-void TButterfly::Draw(VRenderer *_renderer, MODEL *_model)
-{
-    glm::mat4 moveToPos, rightWingRotate, leftWingRotate;
-    moveToPos = storm::math::translation(centerPosition.x, centerPosition.y, centerPosition.z);
-    // rightWingRotate.BuildRotateZ(time);
-    // leftWingRotate.BuildRotateZ(-time);
-    storm::math::vx(_model->mtx) = glm::cross(centerVelocity, glm::vec3(0.0f, 1.0f, 0.0f));
-    storm::math::vy(_model->mtx) = glm::vec3(0.0f, 1.0f, 0.0f);
-    storm::math::vz(_model->mtx) = centerVelocity;
-    storm::math::pos(_model->mtx) = centerPosition;
 }
 
 //--------------------------------------------------------------------

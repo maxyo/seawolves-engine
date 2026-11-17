@@ -26,7 +26,3 @@ void ControlKeyBuffer::AddKey(char *u8_str, int u8_size, bool bSystem)
     pcBuffer_.push_back(key);
 }
 
-void ControlKeyBuffer::AddKey(const KeyDescr &key)
-{
-    pcBuffer_.push_back(key);
-}

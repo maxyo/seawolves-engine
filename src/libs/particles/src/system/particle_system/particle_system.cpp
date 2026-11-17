@@ -176,17 +176,6 @@ void ParticleSystem::GetTransform(glm::mat4 &_matWorld)
     _matWorld = matWorld;
 }
 
-IEmitter *ParticleSystem::FindEmitterByData(FieldList *Data)
-{
-    for (uint32_t n = 0; n < Emitters.size(); n++)
-    {
-        if (Emitters[n].pEmitter->GetData() == Data)
-            return Emitters[n].pEmitter;
-    }
-
-    return nullptr;
-}
-
 IEmitter *ParticleSystem::FindEmitter(const char *name)
 {
     for (uint32_t n = 0; n < Emitters.size(); n++)
@@ -196,21 +185,6 @@ IEmitter *ParticleSystem::FindEmitter(const char *name)
     }
 
     return nullptr;
-}
-
-uint32_t ParticleSystem::GetEmittersCount() const
-{
-    return Emitters.size();
-}
-
-IEmitter *ParticleSystem::GetEmitterByIndex(uint32_t Index)
-{
-    return Emitters[Index].pEmitter;
-}
-
-EmitterType ParticleSystem::GetEmitterTypeByIndex(uint32_t Index)
-{
-    return Emitters[Index].Type;
 }
 
 bool ParticleSystem::IsAlive()

@@ -11,40 +11,16 @@ void MESSAGE::Move2Start()
     index = 0;
 }
 
-uint8_t MESSAGE::Byte()
-{
-    ValidateFormat('b');
-    return get<uint8_t>(params_[index - 1]);
-}
-
-uint16_t MESSAGE::Word()
-{
-    ValidateFormat('w');
-    return get<uint16_t>(params_[index - 1]);
-}
-
 int32_t MESSAGE::Long()
 {
     ValidateFormat('l');
     return get<int32_t>(params_[index - 1]);
 }
 
-int32_t MESSAGE::Dword()
-{
-    ValidateFormat('u');
-    return static_cast<int32_t>(get<uint32_t>(params_[index - 1]));
-}
-
 float MESSAGE::Float()
 {
     ValidateFormat('f');
     return get<float>(params_[index - 1]);
-}
-
-double MESSAGE::Double()
-{
-    ValidateFormat('d');
-    return get<double>(params_[index - 1]);
 }
 
 uintptr_t MESSAGE::Pointer()
@@ -69,12 +45,6 @@ VDATA * MESSAGE::ScriptVariablePointer()
 {
     ValidateFormat('e');
     return get<VDATA *>(params_[index - 1]);
-}
-
-glm::vec3 MESSAGE::CVector()
-{
-    ValidateFormat('c');
-    return get<glm::vec3>(params_[index - 1]);
 }
 
 const std::string & MESSAGE::String()

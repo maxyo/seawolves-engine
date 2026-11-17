@@ -19,7 +19,6 @@ class AIShipSpeedController
     float fGlobalMultiply;
 
   public:
-    void TopSpeed(float _fSpeed);
     void MulSpeed(float _fSpeed);
     void AddSpeed(float _fSpeed);
     void SetGlobalMultiply(float _fGlobalMul);

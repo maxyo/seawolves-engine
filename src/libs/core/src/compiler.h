@@ -113,7 +113,6 @@ class COMPILER : public VIRTUAL_COMPILER
     // append_program_size, int32_t& new_program_size);
     bool AppendProgram(char *&pBase_program, uint32_t &Base_program_size, const char *pAppend_program,
                        uint32_t &Append_program_size, bool bAddLinefeed);
-    void Trace(const char *data_PTR, ...);
     void DTrace(const char *data_PTR, ...);
     void SetError(const char *data_PTR, ...);
     void SetWarning(const char *data_PTR, ...);
@@ -154,16 +153,12 @@ class COMPILER : public VIRTUAL_COMPILER
             abort_execution_ = true;
     }
 
-    uint32_t GetIntFunctionCode(const char *func_name);
     void DeleteScriptEntity(DATA &object);
     DATA *BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t arguments);
 
     uint32_t GetIntFunctionsNum();
     bool InitInternalFunctions();
 
-    bool ProcessDebugExpression(const char *pExpression, DATA &Result);
-    bool SetOnDebugExpression(const char *pLValue, const char *pRValue, DATA &Result);
-    bool ProcessDebugExpression0(const char *pExpression, DATA &Result);
     bool Compile(SEGMENT_DESC &Segment, char *pInternalCode = nullptr, uint32_t pInternalCodeSize = 0);
     void CompileToken(SEGMENT_DESC &Segment, S_TOKEN_TYPE Token_type, uint32_t data_blocks_num = 0, ...);
     void ResizeBCodeBuffer(SEGMENT_DESC &Segment, uint32_t add_size);
@@ -206,25 +201,12 @@ class COMPILER : public VIRTUAL_COMPILER
     bool abort_execution_ = false; // AbortExecution: unwinding the current script call stack
     uint32_t TLR_DataOffset;
     const char *pRunCodeBase;
-    bool TokenIs(S_TOKEN_TYPE test);
-
     S_TOKEN_TYPE TokenType()
     {
         return TokenLastReadResult;
     }
 
-    S_TOKEN_TYPE NextTokenType();
     S_TOKEN_TYPE SkipAuxiliaryTokens();
-
-    bool BC_ProcessExpression(DATA *value);
-    void BC_ProcessExpression_L0(DATA *value);
-    void BC_ProcessExpression_L1(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L2(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L3(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L4(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L5(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L6(DATA *value, bool bSkip = false);
-    void BC_ProcessExpression_L7(DATA *value, bool bSkip = false);
 
     /*    void SkipExpression_L1();
         void SkipExpression_L2();
@@ -261,7 +243,6 @@ class COMPILER : public VIRTUAL_COMPILER
     void SerializeState();
     bool LoadState(const std::vector<char> &raw, const storm::save::ParsedState &state);
     bool OnLoad();
-    void SaveDataDebug(char *data_PTR, ...);
     void SaveData(const void *data_PTR, uint32_t data_size);
     void SaveString(const char *pS);
 

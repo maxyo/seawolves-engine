@@ -86,11 +86,7 @@ class FieldList
     const char *GetString(const char *AttrName, const char *def_value = "");
     const glm::vec3 &GetPosition(const char *AttrName, const glm::vec3 &def_value = glm::vec3(0.0f));
 
-    float GetGraphVal(const char *AttrName, float Time, float LifeTime, float K_Rand, float def_value = 0.0f);
     float GetRandomGraphVal(const char *AttrName, float Time, float LifeTime, float def_value = 0.0f);
-
-    uint32_t GetFieldCount() const;
-    const FieldDesc &GetFieldByIndex(uint32_t Index);
 
     // The conversion GUARANTEES that this DataSource will have the required fields
     // and there will be no unnecessary garbage ...

@@ -54,10 +54,6 @@ void GIEditorList::Release()
     STORM_DELETE(m_pFont);
 }
 
-void GIEditorList::Create()
-{
-}
-
 void GIEditorList::Render()
 {
     if (m_pBackImage)

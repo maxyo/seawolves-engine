@@ -38,9 +38,6 @@ class DataCache
     // Get a pointer to data for a particle system
     DataSource *GetParticleSystemDataSource(const char *FileName);
 
-    // Check pointer for validity
-    bool ValidatePointer(DataSource *pData);
-
     uint32_t GetCachedCount() const;
     const char *GetCachedNameByIndex(uint32_t Index);
 };

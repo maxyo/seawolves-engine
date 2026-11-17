@@ -52,8 +52,6 @@ class OctTree
     // Search
     void FindVerts(OTNode *node);
 
-    int32_t Check(OTNode *node, Vertex *v, int32_t num);
-
   private:
     Vertex *vrt;
     int32_t numVrt;

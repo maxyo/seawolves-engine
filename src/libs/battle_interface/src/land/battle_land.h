@@ -44,15 +44,9 @@ class BATTLE_LAND_INTERFACE : public Entity
 
   protected:
     void SetShowParameters();
-    void SetParameters();
-    void UpdateCommandos() const;
-    void UpdateAlarm();
     void EndShow();
     void Release();
     void EnableMessageIcons(VDATA *pvdat);
-    void DisableMessageIcons();
-    void SetTextData();
-
     // data
   protected:
     VRenderer *m_pRS;

@@ -31,26 +31,6 @@ bool isLifecycle(AppEventType type)
 }
 } // namespace
 
-const char *toString(AppEventType type)
-{
-    switch (type)
-    {
-    case AppEventType::WindowResized: return "WindowResized";
-    case AppEventType::WindowFocusGained: return "WindowFocusGained";
-    case AppEventType::WindowFocusLost: return "WindowFocusLost";
-    case AppEventType::WindowMinimized: return "WindowMinimized";
-    case AppEventType::WindowRestored: return "WindowRestored";
-    case AppEventType::DisplayOrientationChanged: return "DisplayOrientationChanged";
-    case AppEventType::WillEnterBackground: return "WillEnterBackground";
-    case AppEventType::DidEnterBackground: return "DidEnterBackground";
-    case AppEventType::WillEnterForeground: return "WillEnterForeground";
-    case AppEventType::DidEnterForeground: return "DidEnterForeground";
-    case AppEventType::LowMemory: return "LowMemory";
-    case AppEventType::Terminating: return "Terminating";
-    }
-    return "Unknown";
-}
-
 struct AppEvents::State
 {
     struct Subscriber

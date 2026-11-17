@@ -384,9 +384,6 @@ class Character : public Entity
 
     int32_t PlaySound(const char *soundName, bool isLoop = false, bool isCached = false);
     void PlayStep();
-    void SetSoundPosition(int32_t id);
-    void ReleaseSound(int32_t id);
-
     virtual bool IsPlayer()
     {
         return false;
@@ -436,8 +433,6 @@ class Character : public Entity
     void UpdateAnimation();
     const char *FindIdleAnimation(float &tstart);
     const char *FindFightIdleAnimation(float &tstart);
-    float GetCurrentPlayerPos();
-    float GetAniPlayTime();
     bool SetPriorityAction(const char *action);
     // Check another character for hit by us
     void CheckAttackHit(bool isGunBlade);

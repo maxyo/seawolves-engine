@@ -58,11 +58,8 @@ class WEATHER : public WEATHER_BASE
 
     void SetDevice();
     bool Init() override;
-    void Move();
     void Execute(uint32_t Delta_Time);
     void Realize(uint32_t Delta_Time);
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint32_t AttributeChanged(ATTRIBUTES *pAttribute) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override

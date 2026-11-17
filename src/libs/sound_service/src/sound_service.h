@@ -137,7 +137,4 @@ class SoundService : public VSoundService
     void SetActiveWithFade(bool active) override;
 
     void DebugDraw();
-    void DebugPrint3D(const glm::vec3 &pos3D, float rad, int32_t line, float alpha, uint32_t color, float scale,
-                      const char *format, ...) const;
-    void Draw2DCircle(const glm::vec3 &center, uint32_t dwColor, float fRadius, uint32_t dwColor2, float fRadius2) const;
 };

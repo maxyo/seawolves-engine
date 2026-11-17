@@ -84,10 +84,6 @@ void Astronomy::PLANETS::Init(ATTRIBUTES *pAP)
     pGS->SetTexturePath("");
 }
 
-void Astronomy::PLANETS::Execute(double dDeltaTime, double dHour)
-{
-}
-
 void Astronomy::PLANETS::Realize(double dDeltaTime, double dHour)
 {
     // update fade

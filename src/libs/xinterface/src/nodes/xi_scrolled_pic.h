@@ -32,8 +32,6 @@ class CXI_SCROLLEDPICTURE : public CXI_PICTURE
 
   protected:
     void LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *name2) override;
-    void SetNewPicture(bool video, char *sNewTexName);
-    void SetNewPictureFromDir(char *dirName);
     void RecalculateTexPerPixel();
     void UpdateBuildenImages();
     void SetPosToCenter(float fX, float fY);

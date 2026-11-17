@@ -557,16 +557,6 @@ bool LocationCamera::Set()
     return location != nullptr;
 }
 
-// Change camera mode
-void LocationCamera::SetMode(CameraWorkMode wm)
-{
-    if (wmode == wm)
-        return;
-    oldPos = camPos;
-    oldLookTo = lookTo;
-    wmode = wm;
-}
-
 //============================================================================================
 
 //============================================================================================
@@ -659,13 +649,6 @@ float LocationCamera::Trace(const glm::vec3 &src, const glm::vec3 &dst) const
     if (!location)
         return 2.0f;
     return location->Trace(src, dst);
-}
-
-bool LocationCamera::GetCollideTriangle(TRIANGLE &trg) const
-{
-    if (!location)
-        return false;
-    return location->GetCollideTriangle(trg);
 }
 
 void LocationCamera::TurnOnDynamicFov(float fSpeed, float fTime, float fRelationMin, float fRelationMax,

@@ -90,7 +90,6 @@ class BIUtils
   public: // functions
     static int32_t GetIntFromAttr(ATTRIBUTES *pA, const char *name, int32_t defVal);
     static float GetFloatFromAttr(ATTRIBUTES *pA, const char *name, float defVal);
-    static bool ReadStringFromAttr(ATTRIBUTES *pA, const char *name, char *buf, int32_t bufSize, const char *defVal);
     static const char *GetStringFromAttr(ATTRIBUTES *pA, const char *name, const char *defVal);
     static int32_t GetTextureFromAttr(VRenderer *rs, ATTRIBUTES *pA, const char *sAttrName);
     static bool ReadRectFromAttr(ATTRIBUTES *pA, const char *name, FRECT &rOut, FRECT &rDefault);
@@ -100,8 +99,6 @@ class BIUtils
     static int32_t GetAlignmentFromAttr(ATTRIBUTES *pA, const char *name, int32_t nDefAlign);
     static int32_t GetFontIDFromAttr(ATTRIBUTES *pA, const char *name, VRenderer *rs, const char *pcDefFontName);
     static bool ReadVectorFormAttr(ATTRIBUTES *pA, const char *name, glm::vec3 &vOut, const glm::vec3 &vDef);
-
-    static bool ComparePoint(POINT &p1, POINT &p2);
 
     static ATTRIBUTES *GetAttributesFromPath(ATTRIBUTES *pA, ...);
 

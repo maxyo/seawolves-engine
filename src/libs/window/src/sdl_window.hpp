@@ -38,7 +38,6 @@ class SDLWindow : public OSWindow
 
     void *OSHandle() override;
 
-    SDL_Window *SDLHandle() const;
     void ProcessEvent(const SDL_WindowEvent &evt) const;
 
   private:

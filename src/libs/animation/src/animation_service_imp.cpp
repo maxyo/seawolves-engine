@@ -191,13 +191,6 @@ void AnimationServiceImp::DeleteAnimation(AnimationImp *ani)
     animations[ani->GetThisID()] = nullptr;
 }
 
-// Event
-void AnimationServiceImp::Event(const char *eventName)
-{
-    // Sending a message to the system
-    core.Trace("Called function <void AnimationServiceImp::Event(%s)>, please make it.", eventName);
-}
-
 // load animation
 int32_t AnimationServiceImp::LoadAnimation(const char *animationName)
 {

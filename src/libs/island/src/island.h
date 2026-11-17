@@ -91,10 +91,6 @@ class ISLAND : public ISLAND_BASE
     float fImmersionDepth, fImmersionDistance;
     float fCurrentImmersion;
 
-    void Blur8(uint8_t **pBuffer, uint32_t dwSize);
-
-    // shadow map section
-    bool CreateShadowMap(char *pDir, char *pName);
     float GetShadowTemp(int32_t iX, int32_t iZ);
 
     // depth map section

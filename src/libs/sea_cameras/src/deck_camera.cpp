@@ -46,17 +46,6 @@ void DECK_CAMERA::SetDevice()
     Assert(RenderService);
 }
 
-bool DECK_CAMERA::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool DECK_CAMERA::LoadState(ENTITY_STATE *state)
-{
-    SetDevice();
-    return true;
-}
-
 void DECK_CAMERA::Execute(uint32_t Delta_Time)
 {
 #ifdef __ANDROID__

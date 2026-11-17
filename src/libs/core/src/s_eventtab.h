@@ -43,7 +43,6 @@ class S_EVENTTAB
     void SetStatus(const char *event_name, uint32_t func_code, uint32_t status);
     uint32_t AddEventHandler(const char *event_name, uint32_t func_code, uint32_t func_segment_id, int32_t flag,
                              bool bStatic = false);
-    bool DelEventHandler(const char *event_name, uint32_t func_code);
     bool DelEventHandler(uint8_t ti, uint32_t event_code, uint32_t func_code, bool bDelStatic = false);
     // The event of a code FindEvent returned, or nullptr. The pointer is good until a handler is added to the table
     // (a running handler may do that): ask again after every script call.

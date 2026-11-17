@@ -68,7 +68,6 @@ class Astronomy : public Entity
         void ReleasePlanets();
 
         void Init(ATTRIBUTES *pAP);
-        void Execute(double dDeltaTime, double dHour);
         void Realize(double dDeltaTime, double dHour);
         void TimeUpdate(ATTRIBUTES *pAP);
     };
@@ -83,7 +82,6 @@ class Astronomy : public Entity
         void Execute(double dDeltaTime, double dHour);
         void Realize(double dDeltaTime, double dHour);
 
-        uint32_t AttributeChanged(ATTRIBUTES *pAttribute);
         void TimeUpdate(ATTRIBUTES *pAP);
 
         bool IsEnable() const

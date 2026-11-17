@@ -98,8 +98,6 @@ class LocationCamera : public Entity
 #endif
     // Prepare data
     bool Set();
-    // Change camera mode
-    void SetMode(CameraWorkMode wm);
     // Execute the camera following the character
     void ExecuteFollow(float dltTime);
     // First-person View Camera
@@ -114,8 +112,6 @@ class LocationCamera : public Entity
 
     // Trace the ray through the location
     float Trace(const glm::vec3 &src, const glm::vec3 &dst) const;
-    bool GetCollideTriangle(TRIANGLE &trg) const;
-
   private:
     VRenderer *rs;
     // The sea

@@ -31,10 +31,6 @@ bool SEA_AI::Init()
     return true;
 }
 
-void SEA_AI::SetDevice()
-{
-}
-
 uint64_t dwRDTSC;
 
 void SEA_AI::Execute(uint32_t Delta_Time)
@@ -70,20 +66,6 @@ void SEA_AI::Realize(uint32_t Delta_Time)
     }
     // core.Trace("%d",dwTotal);
     // AIHelper::pRS->Print(0,90,"%d",dwRDTSC);//dwTotal);
-}
-
-bool SEA_AI::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool SEA_AI::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
-void SEA_AI::ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam)
-{
 }
 
 uint64_t SEA_AI::ProcessMessage(MESSAGE &message)

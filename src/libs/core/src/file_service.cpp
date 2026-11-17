@@ -70,16 +70,6 @@ bool underSaveRoot(const std::filesystem::path &path)
 
 extern VFILE_SERVICE *fio = &file_service;
 
-void FILE_SERVICE::FlushIniFiles()
-{
-    for (uint32_t n = 0; n <= Max_File_Index; n++)
-    {
-        if (OpenFiles[n] == nullptr)
-            continue;
-        OpenFiles[n]->FlushFile();
-    }
-}
-
 FILE_SERVICE::FILE_SERVICE()
 {
     Files_Num = 0;

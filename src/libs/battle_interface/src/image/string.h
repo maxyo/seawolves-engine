@@ -41,13 +41,7 @@ class BIString : public IBIString
         m_fScale = fScale;
     }
 
-    void SetFont(const char *pcFontName) override;
-    void SetAlign(int32_t nHorzAlign, int32_t nVertAlign) override;
-    void SetPosition(int32_t nLeft, int32_t nTop, int32_t nRight, int32_t nBottom) override;
-    void SetString(const char *pcStr) override;
-
   protected:
-    void Release();
     void UpdateString();
 
     BIImageRender *m_pImgRender;

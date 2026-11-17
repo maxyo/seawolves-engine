@@ -42,7 +42,6 @@ class BISignIcon
 
     void SetActive(bool bActive);
 
-    void MakeControl();
     virtual void ExecuteCommand(CommandType command) = 0;
 
     int32_t GetLineY(int32_t n) const

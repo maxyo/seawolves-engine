@@ -44,7 +44,6 @@ class AIGroup
     static void SetXYZ_AY(const char *pGroupName, glm::vec3 vPos, float _fAY);
     static void GroupSetMove(const char *pGroupName, glm::vec3 &vMovePoint);
     static void GroupSetAttack(const char *cGroupName, const char *cGroupAttackingName);
-    static void GroupSetAttack(AIShip *pS1, AIShip *pS2);
     static void GroupSetRunAway(const char *pGroupName);
     static void GroupSetType(const char *pGroupName, const char *cGroupType);
     static void GroupSetCommander(const char *pGroupName, ATTRIBUTES *_pACommander);
@@ -54,14 +53,10 @@ class AIGroup
     static void SetOfficerCharacter2Ship(ATTRIBUTES *pOfficerCharacter, ATTRIBUTES *pReplacedACharacter);
     static void SailMainGroup(glm::vec3 vPos, float fAngleY, ATTRIBUTES *pACharacter);
 
-    static void GroupHelpMe(const char *pGroupName, AIShip *pMe, AIShip *pEnemy);
-
     // AI section
     bool isAttack(AIGroup *pGroup);
     bool isDead(); // is group dead?
     bool isMainGroup();
-    float GetPower();
-
     // return group name
     std::string &GetName()
     {

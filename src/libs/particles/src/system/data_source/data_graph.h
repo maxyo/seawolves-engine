@@ -45,24 +45,8 @@ class DataGraph
     float GetValue(float Time, float LifeTime, float K_rand);
     float GetRandomValue(float Time, float LifeTime);
 
-    // Set values
-    void SetValues(const GraphVertex *MinValues, uint32_t MinValuesSize, const GraphVertex *MaxValues,
-                   uint32_t MaxValuesSize);
-
     // Set the "default"
     void SetDefaultValue(float MaxValue, float MinValue);
-
-    // Get the count in the minimum graph
-    uint32_t GetMinCount() const;
-
-    // Get the count in the maximum graph
-    uint32_t GetMaxCount() const;
-
-    // Get the value by index from the minimum graph
-    const GraphVertex &GetMinVertex(uint32_t Index);
-
-    // Get the value by index from the maximum graph
-    const GraphVertex &GetMaxVertex(uint32_t Index);
 
     void Load(MemFile *File);
     void Write(MemFile *File);
@@ -70,15 +54,4 @@ class DataGraph
     void SetName(const char *szName);
     const char *GetName() const;
 
-    float GetMaxTime();
-
-    void ConvertRadToDeg();
-    void ConvertDegToRad();
-    void MultiplyBy(float Val);
-    void Clamp(float MinValue, float MaxValue);
-    void Reverse(); // Graphs = 1.0f - Graph
-    void NormalToPercent();
-    void PercentToNormal();
-    void NormalToAlpha();
-    void AlphaToNormal();
 };

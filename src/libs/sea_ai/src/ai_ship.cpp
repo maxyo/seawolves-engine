@@ -549,21 +549,11 @@ float AIShip::GetShipHP() const
     return pAHP->GetAttributeAsFloat();
 }
 
-float AIShip::GetShipBaseHP() const
-{
-    return GetAShip()->GetAttributeAsFloat("HP");
-}
-
 bool AIShip::isAttack(ATTRIBUTES *pAOtherCharacter) const
 {
     if (isDead())
         return false;
     return GetTaskController()->isAttack(pAOtherCharacter);
-}
-
-float AIShip::GetDefendHP()
-{
-    return 0.0f;
 }
 
 float AIShip::GetAttackHP(float fAttackDistance)

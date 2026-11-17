@@ -50,14 +50,6 @@ bool S_DEFTAB::GetDef(DEFINFO &di, uint32_t def_code)
     return true;
 }
 
-bool S_DEFTAB::GetDefX(DEFINFO &di, uint32_t def_code)
-{
-    if (def_code >= Def_num)
-        return false;
-    di = pTable[def_code];
-    return true;
-}
-
 uint32_t S_DEFTAB::AddDef(DEFINFO &di)
 {
     uint32_t n;

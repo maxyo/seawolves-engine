@@ -68,8 +68,6 @@ class FLAG : public Entity
     bool Init() override;
     void Execute(uint32_t Delta_Time);
     void Realize(uint32_t Delta_Time);
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void LoadingPrepare();

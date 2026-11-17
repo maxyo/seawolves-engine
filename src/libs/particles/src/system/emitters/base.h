@@ -83,7 +83,6 @@ class BaseEmitter : public IEmitter
     virtual void CreateBillBoardParticle(FieldList &Fields);
     virtual void CreateModelParticle(FieldList &Fields);
 
-    ParticleSystem *GetMaster() const;
     ParticleManager *GetManager() const;
     void GetEmissionDirection(glm::mat4 &matWorld) const;
 

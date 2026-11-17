@@ -75,16 +75,6 @@ void VANT_BASE::SetDevice()
         texl = RenderService->TextureCreate(TextureName);
 }
 
-bool VANT_BASE::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool VANT_BASE::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void VANT_BASE::Execute(uint32_t Delta_Time)
 {
     if (bRunFirstTime)
@@ -555,62 +545,6 @@ void VANT_BASE::AddLabel(GEOS::LABEL &lbl, NODE *nod)
         else if (vd->pDownMatWorld != &nod->glob_mtx)
             vd->pLeft = storm::math::inverseTransformPoint(*vd->pDownMatWorld, storm::math::transformPoint(nod->glob_mtx, vd->pLeft));
         break;
-    }
-}
-
-void VANT_BASE::SetAll()
-{
-    // set vertex and index buffers
-    for (int vn = 0; vn < vantQuantity; vn++)
-    {
-        while (true)
-        {
-            if (!gdata[vlist[vn]->HostGroup].bDeleted)
-                if (vlist[vn]->pUpMatWorld && vlist[vn]->pDownMatWorld)
-                    break;
-
-            delete vlist[vn];
-            vantQuantity--;
-            if (vantQuantity > 0)
-            {
-                VANTDATA **oldvlist = vlist;
-                vlist = new VANTDATA *[vantQuantity];
-                if (vlist)
-                {
-                    if (vn > 0)
-                        memcpy(vlist, oldvlist, sizeof(VANTDATA *) * vn);
-                    if (vn < vantQuantity)
-                        memcpy(&vlist[vn], &oldvlist[vn + 1], sizeof(VANTDATA *) * (vantQuantity - vn));
-                    delete[] oldvlist;
-                }
-                else
-                    vlist = oldvlist;
-            }
-            else
-            {
-                delete[] vlist;
-                vlist = nullptr;
-            }
-            if (vn == vantQuantity)
-                break;
-        }
-        if (vn == vantQuantity)
-            break;
-
-        // Set normals with length equal the rope width
-        glm::mat4 tmat;
-        storm::math::viewMatrix(tmat, .5f * (vlist[vn]->pLeft + vlist[vn]->pRight), vlist[vn]->pUp, glm::vec3(0.f, 0.f, 1.f));
-        float ca, sa;
-        for (int i = 0; i < VANT_EDGE; i++)
-        {
-            ca = cosf(static_cast<float>(i) / static_cast<float>(VANT_EDGE) * 2.f * PI);
-            sa = sinf(static_cast<float>(i) / static_cast<float>(VANT_EDGE) * 2.f * PI);
-            // tmat.MulToInvNorm(glm::vec3(ROPE_WIDTH/2.f*ca,ROPE_WIDTH/2.f*sa,0.f),vlist[vn]->pos[i]);
-            vlist[vn]->pos[i] = glm::vec3(ROPE_WIDTH / 2.f * ca, 0.f, ROPE_WIDTH / 2.f * sa);
-        }
-
-        vlist[vn]->nv = (VANT_EDGE + 1) * ROPE_QUANT * 2 + 7 + 6;
-        vlist[vn]->nt = VANT_EDGE * ROPE_QUANT * 2 + 3 + 8;
     }
 }
 

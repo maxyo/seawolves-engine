@@ -66,10 +66,7 @@ class TButterfly
         maxY = minY + MAX_HEIGHT;
     }
 
-    void Draw(HDC _dc);
     void Draw(IVBufferManager *_ivManager);
-    void Draw(VRenderer *_renderer, MODEL *_model);
-
   private:
     glm::vec3 centerPosition, centerVelocity, oldPos;
     glm::vec3 displaceVector;

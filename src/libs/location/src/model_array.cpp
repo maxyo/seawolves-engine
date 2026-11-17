@@ -150,13 +150,6 @@ void ModelArray::DeleteModel(int32_t modelIndex)
         model[modelIndex] = model[numModels];
 }
 
-// Set animation to the model
-bool ModelArray::SetAnimation(int32_t modelIndex, const char *modelAni)
-{
-    Assert(modelIndex >= 0 && modelIndex < numModels);
-    return core.Send_Message(model[modelIndex].id, "ls", MSG_MODEL_LOAD_ANI, modelAni) != 0;
-}
-
 // Find model index by name
 int32_t ModelArray::FindModel(const char *modelName)
 {
@@ -464,12 +457,6 @@ float ModelArray::Trace(const glm::vec3 &src, const glm::vec3 &dst)
         }
     }
     return k;
-}
-
-bool ModelArray::GetCollideTriangle(TRIANGLE &trg) const
-{
-    trg = ctrg;
-    return isHavecTrg;
 }
 
 bool ModelArray::Moving(int32_t i)

@@ -109,7 +109,6 @@ class Location : public Entity
 
     // Trace the ray through the location
     float Trace(const glm::vec3 &src, const glm::vec3 &dst);
-    bool GetCollideTriangle(TRIANGLE &trg) const;
     void Clip(PLANE *p, int32_t numPlanes, glm::vec3 &cnt, float rad, bool (*fnc)(const glm::vec3 *vtx, int32_t num),
               ModelArray::ClipModels which);
     uint64_t StillSignature()
@@ -261,11 +260,6 @@ inline Lights *Location::GetLights() const
 inline float Location::Trace(const glm::vec3 &src, const glm::vec3 &dst)
 {
     return model.Trace(src, dst);
-}
-
-inline bool Location::GetCollideTriangle(TRIANGLE &trg) const
-{
-    return model.GetCollideTriangle(trg);
 }
 
 inline void Location::Clip(PLANE *p, int32_t numPlanes, glm::vec3 &cnt, float rad, bool (*fnc)(const glm::vec3 *vtx, int32_t num),

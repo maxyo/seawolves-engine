@@ -66,9 +66,3 @@ bool CharacterAnimationKipper::Init()
     return true;
 }
 
-void CharacterAnimationKipper::LockTexture(const char *texture)
-{
-    if (numLTextures >= sizeof(lockTextures) / sizeof(int32_t))
-        return;
-    lockTextures[numLTextures++] = rs->TextureCreate(texture);
-}

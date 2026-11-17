@@ -160,12 +160,6 @@ uint64_t BATTLE_LAND_INTERFACE::ProcessMessage(MESSAGE &message)
     return 0;
 }
 
-void BATTLE_LAND_INTERFACE::SetParameters()
-{
-    UpdateCommandos();
-    UpdateAlarm();
-}
-
 void BATTLE_LAND_INTERFACE::Release()
 {
 #ifdef __ANDROID__
@@ -198,28 +192,7 @@ void BATTLE_LAND_INTERFACE::SetShowParameters()
     m_Images.Init(m_pRS, AttributesPointer ? AttributesPointer->GetAttributeClass("imageslist") : nullptr);
 }
 
-void BATTLE_LAND_INTERFACE::UpdateCommandos() const
-{
-    auto *pA = AttributesPointer ? AttributesPointer->GetAttributeClass("data") : nullptr;
-    if (pA)
-        pA = pA->GetAttributeClass("icons");
-    if (!pA)
-        return;
-}
-
-void BATTLE_LAND_INTERFACE::UpdateAlarm()
-{
-}
-
 void BATTLE_LAND_INTERFACE::EnableMessageIcons(VDATA *pvdat)
-{
-}
-
-void BATTLE_LAND_INTERFACE::DisableMessageIcons()
-{
-}
-
-void BATTLE_LAND_INTERFACE::SetTextData()
 {
 }
 

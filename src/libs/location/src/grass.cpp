@@ -997,26 +997,6 @@ inline bool Grass::VisibleTest(const PLANE *plane, int32_t numPlanes, const glm:
     return true;
 }
 
-int32_t Grass::GetColor(glm::vec3 color)
-{
-    if (color.x > 1.0f)
-        color.x = 1.0f;
-    if (color.x < 0.0f)
-        color.x = 0.0f;
-    if (color.y > 1.0f)
-        color.y = 1.0f;
-    if (color.y < 0.0f)
-        color.y = 0.0f;
-    if (color.z > 1.0f)
-        color.z = 1.0f;
-    if (color.z < 0.0f)
-        color.z = 0.0f;
-    const int32_t r = static_cast<int32_t>(color.z * 255.0f);
-    const int32_t g = static_cast<int32_t>(color.y * 255.0f);
-    const int32_t b = static_cast<int32_t>(color.x * 255.0f);
-    return (r << 16) | (g << 8) | b;
-}
-
 void Grass::CreateVertexDeclaration()
 {
     if (!vertexDecl_)

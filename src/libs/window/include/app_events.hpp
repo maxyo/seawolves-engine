@@ -89,7 +89,6 @@ struct AppEvent
     bool immediate = false;
 };
 
-const char *toString(AppEventType type);
 
 class AppEvents
 {

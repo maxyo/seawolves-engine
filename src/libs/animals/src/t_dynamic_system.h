@@ -13,8 +13,6 @@ class TDynamicSystem
 
     bool AddAttractor(TDynamicObject *_obj);
     bool AddDeflector(TDynamicObject *_obj);
-    void Recalculate();
-
     // void Draw(HDC _dc);
 
   protected:

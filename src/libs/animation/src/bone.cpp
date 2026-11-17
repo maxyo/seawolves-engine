@@ -199,14 +199,3 @@ void Bone::BlendFrame(int32_t frame, float kBlend, glm::quat &res)
     res = storm::math::slerp(q0, q1, kBlend);
 }
 
-// Create a matrix for the resulting position
-void Bone::BuildMatrix()
-{
-    // Turns
-    // matrix = a.BuildMatrix();
-    matrix = glm::mat4_cast(a);
-    storm::math::pos(matrix) = p;
-    // Multiply by the parent matrix
-    if (parent)
-        matrix = parent->matrix * glm::mat4(matrix);
-}

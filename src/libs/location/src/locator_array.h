@@ -40,8 +40,6 @@ class LocatorArray
     void AddLocator(glm::mat4 &mtx, const char *name = nullptr);
     // Change locator matrix
     void SetNewMatrix(int32_t locIndex, glm::mat4 &mtx);
-    // Find the nearest locator by ball
-    float FindNearesLocator(float x, float y, float z, int32_t *locIndex = nullptr);
     // Find the nearest locator by cylinder
     int32_t FindNearesLocatorCl(float x, float y, float z, float height2, float &dist);
     // Find locator by name

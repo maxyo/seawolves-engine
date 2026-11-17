@@ -397,16 +397,6 @@ GEOS *ParticleManager::GetModel(const char *FileName) const
     return pGeomCache->GetModel(FileName);
 }
 
-uint32_t ParticleManager::GetCreatedSystemCount() const
-{
-    return Systems.size();
-}
-
-ParticleSystem *ParticleManager::GetCreatedSystemByIndex(uint32_t Index)
-{
-    return Systems[Index].pSystem;
-}
-
 bool ParticleManager::ReadyForUse()
 {
     return true;

@@ -33,6 +33,4 @@ class GeomCache
     // Get model from cache
     GEOS *GetModel(const char *FileName);
 
-    // Check if such a model exists in the cache
-    bool ValidatePointer(GEOS *pModel);
 };

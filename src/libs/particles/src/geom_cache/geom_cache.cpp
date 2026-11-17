@@ -55,14 +55,3 @@ GEOS *GeomCache::GetModel(const char *FileName)
     return nullptr;
 }
 
-// Check if such a model exists in the cache
-bool GeomCache::ValidatePointer(GEOS *pModel)
-{
-    for (auto n = 0; n < Cache.size(); n++)
-    {
-        if (Cache[n].pGeom == pModel)
-            return true;
-    }
-
-    return false;
-}

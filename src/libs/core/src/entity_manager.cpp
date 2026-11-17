@@ -328,13 +328,6 @@ entid_t EntityManager::CalculateEntityId(const size_t idx)
     return id;
 }
 
-layer_type_t EntityManager::GetLayerType(const layer_index_t index) const
-{
-    assert(index < kMaxLayerNum);
-
-    return layers_[index].type;
-}
-
 void EntityManager::SetLayerType(const layer_index_t index, const layer_type_t type)
 {
     assert(index < kMaxLayerNum);

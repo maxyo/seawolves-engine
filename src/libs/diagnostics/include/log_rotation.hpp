@@ -132,11 +132,7 @@ inline std::vector<std::string> rotatePreviousSessionLogs(const std::filesystem:
 inline std::string logTime(std::time_t time)
 {
     std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &time);
-#else
     localtime_r(&time, &local);
-#endif
     char text[32];
     return std::strftime(text, sizeof(text), "%Y-%m-%d %H:%M:%S", &local) ? text : "?";
 }

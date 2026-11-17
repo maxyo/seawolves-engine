@@ -57,17 +57,12 @@ class MESSAGE final
   public:
     void Move2Start();
 
-    uint8_t Byte();
-    uint16_t Word();
     int32_t Long();
-    int32_t Dword();
     float Float();
-    double Double();
     uintptr_t Pointer();
     ATTRIBUTES *AttributePointer();
     entid_t EntityID();
     VDATA *ScriptVariablePointer();
-    glm::vec3 CVector();
     const std::string &String();
 
     bool Set(int32_t value);

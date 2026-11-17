@@ -27,10 +27,6 @@ bool SeaLocatorShow::Init()
     return true;
 }
 
-void SeaLocatorShow::SetDevice()
-{
-}
-
 bool SeaLocatorShow::isLocator(ATTRIBUTES *pA)
 {
     return pA->FindAClass(pA, "z") != nullptr;
@@ -43,11 +39,6 @@ glm::vec3 SeaLocatorShow::GetLocatorPos(ATTRIBUTES *pA)
     v.y = pA->GetAttributeAsFloat("y");
     v.z = pA->GetAttributeAsFloat("z");
     return v;
-}
-
-const char *SeaLocatorShow::GetRealLocatorName(ATTRIBUTES *pA)
-{
-    return pA->GetThisName();
 }
 
 const char *SeaLocatorShow::GetLocatorName(ATTRIBUTES *pA)
@@ -188,20 +179,6 @@ void SeaLocatorShow::Execute(uint32_t Delta_Time) const
 {
     if (!pALocators)
         return;
-}
-
-bool SeaLocatorShow::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool SeaLocatorShow::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
-void SeaLocatorShow::ProcessMessage(uint32_t iMsg, uint32_t wParam, uint32_t lParam)
-{
 }
 
 uint64_t SeaLocatorShow::ProcessMessage(MESSAGE &message)

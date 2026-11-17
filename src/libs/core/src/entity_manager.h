@@ -20,7 +20,6 @@ class EntityManager final
     entity_container_cref GetEntityIds(layer_index_t index) const;
     entid_t GetEntityId(const char *name) const;
     bool IsEntityValid(entid_t id) const;
-    layer_type_t GetLayerType(layer_index_t index) const;
     bool IsLayerFrozen(layer_index_t index) const;
 
     void AddToLayer(layer_index_t layer_idx, entid_t entity_id, priority_t priority); // no bounds check

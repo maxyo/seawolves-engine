@@ -52,20 +52,6 @@ void FREE_CAMERA::SetDevice()
     core.AddToLayer(realize,sphere,10000);*/
 }
 
-bool FREE_CAMERA::CreateState(ENTITY_STATE_GEN *state_gen) const
-{
-    state_gen->SetState("vv", sizeof(vPos), vPos, sizeof(vAng), vAng);
-    return true;
-}
-
-bool FREE_CAMERA::LoadState(ENTITY_STATE *state)
-{
-    SetDevice();
-    state->Struct(sizeof(vPos), (char *)&vPos);
-    state->Struct(sizeof(vAng), (char *)&vAng);
-    return true;
-}
-
 void FREE_CAMERA::Execute(uint32_t Delta_Time)
 {
     if (!isOn())

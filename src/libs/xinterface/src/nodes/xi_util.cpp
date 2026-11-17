@@ -30,10 +30,6 @@ void CXI_UTILS::Init()
     m_bFrameKeyPressedFlag = false;
 }
 
-void CXI_UTILS::Release()
-{
-}
-
 void CXI_UTILS::FrameUpdate()
 {
     if (m_bIsKeyPressed && m_bFrameKeyPressedFlag)
@@ -345,37 +341,6 @@ float CXI_UTILS::GetByStrNumFromAttribute_Float(ATTRIBUTES *pA, const char *pStr
     char stmp[64];
     sprintf_s(stmp, sizeof(stmp), "%s%d", pStr, num);
     return pA->GetAttributeAsFloat(stmp, fDefValue);
-}
-
-void CXI_UTILS::WriteSquareToVertexBuffer(XI_ONETEX_VERTEX *pv, uint32_t color, FXYRECT &uv, XYRECT &rect)
-{
-    pv[0].color = color;
-    pv[0].pos.x = static_cast<float>(rect.left);
-    pv[0].pos.y = static_cast<float>(rect.top);
-    pv[0].pos.z = 1.f;
-    pv[0].tu = uv.left;
-    pv[0].tv = uv.top;
-
-    pv[1].color = color;
-    pv[1].pos.x = static_cast<float>(rect.left);
-    pv[1].pos.y = static_cast<float>(rect.bottom);
-    pv[1].pos.z = 1.f;
-    pv[1].tu = uv.left;
-    pv[1].tv = uv.bottom;
-
-    pv[2].color = color;
-    pv[2].pos.x = static_cast<float>(rect.right);
-    pv[2].pos.y = static_cast<float>(rect.top);
-    pv[2].pos.z = 1.f;
-    pv[2].tu = uv.right;
-    pv[2].tv = uv.top;
-
-    pv[3].color = color;
-    pv[3].pos.x = static_cast<float>(rect.right);
-    pv[3].pos.y = static_cast<float>(rect.bottom);
-    pv[3].pos.z = 1.f;
-    pv[3].tu = uv.right;
-    pv[3].tv = uv.bottom;
 }
 
 void CXI_UTILS::WriteSquareToVertexBuffer(XI_ONETEX_VERTEX *pv, uint32_t color, FXYRECT &uv, int32_t left, int32_t top,

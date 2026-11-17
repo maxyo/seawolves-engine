@@ -76,80 +76,6 @@ SEAFOAM_PS::~SEAFOAM_PS()
     TechniqueName = nullptr;
 }
 
-// node ----------------------------------------------------------------------------
-SEAFOAM_PS *SEAFOAM_PS::GetLeftNode()
-{
-    return l_PTR;
-}
-
-SEAFOAM_PS *SEAFOAM_PS::GetRightNode()
-{
-    return r_PTR;
-}
-
-void SEAFOAM_PS::SetLeftNode(SEAFOAM_PS *node)
-{
-    l_PTR = node;
-}
-
-void SEAFOAM_PS::SetRightNode(SEAFOAM_PS *node)
-{
-    r_PTR = node;
-}
-
-void SEAFOAM_PS::Attach(SEAFOAM_PS **Root, SEAFOAM_PS **Top)
-{
-    if (*Root == nullptr)
-    {
-        *Root = this;
-        *Top = this;
-        return;
-    }
-    (*Top)->SetRightNode(this);
-    SetLeftNode(*Top);
-    *Top = this;
-}
-
-void SEAFOAM_PS::AttachTo(SEAFOAM_PS *la_PTR, SEAFOAM_PS **Root, SEAFOAM_PS **Top)
-{
-    SEAFOAM_PS *t_PTR;
-    t_PTR = la_PTR->GetRightNode();
-    la_PTR->SetRightNode(this);
-    SetRightNode(t_PTR);
-    SetLeftNode(la_PTR);
-    if (t_PTR)
-    {
-        t_PTR->SetLeftNode(this);
-    }
-    else
-        *Top = this;
-}
-
-void SEAFOAM_PS::Deattach(SEAFOAM_PS **Root, SEAFOAM_PS **Top)
-{
-    if (l_PTR)
-        l_PTR->SetRightNode(r_PTR);
-    if (r_PTR)
-        r_PTR->SetLeftNode(l_PTR);
-    if (*Root == this)
-        *Root = r_PTR;
-    if (*Top == this)
-        *Top = l_PTR;
-}
-
-void SEAFOAM_PS::ProcessOrder(SEAFOAM_PS **Root, SEAFOAM_PS **Top)
-{
-    if (r_PTR)
-    {
-        // if(Camera_EmitterPos.z > r_PTR->Camera_EmitterPos.z)
-        if (Camera_EmitterPosA.z < r_PTR->Camera_EmitterPosA.z)
-        {
-            Deattach(Root, Top);
-            AttachTo(r_PTR, Root, Top);
-        }
-    }
-}
-
 //----------------------------------------------------------------------------------
 
 bool SEAFOAM_PS::Init(INIFILE *ini, const char *psname)
@@ -435,27 +361,6 @@ void SEAFOAM_PS::UpdateVertexBuffer()
         Camera_EmitterPosA.y = Camera_EmitterPosA.y / ParticlesNum;
         Camera_EmitterPosA.z = Camera_EmitterPosA.z / ParticlesNum;
     }
-}
-
-void SEAFOAM_PS::Execute(uint32_t DeltaTime)
-{
-    /*if(Delay > 0) {    Delay = Delay - DeltaTime;    return;    }
-
-    if(bLinkEmitter)
-    {
-      COLLISION_OBJECT * pLink;
-      pLink = (COLLISION_OBJECT *)core.GetEntityPointer(LinkObject);
-      if(pLink)
-      {
-        Emitter = pLink->mtx * LinkPos;
-        EmitterDirection = pLink->mtx * LinkDirPos;
-        EmitterDirection = EmitterDirection - Emitter;
-        EmitterDirection = !EmitterDirection;
-      }
-    }
-    ProcessParticles(DeltaTime);
-    SetParticlesTracks(DeltaTime);
-    UpdateVertexBuffer();*/
 }
 
 void SEAFOAM_PS::LayOnSurface(uint32_t index)
@@ -865,11 +770,6 @@ void SEAFOAM_PS::LinkToObject(entid_t id, glm::vec3 _LinkPos)
     UpdateVertexBuffer();
 }
 
-bool SEAFOAM_PS::Complete()
-{
-    return bComplete;
-}
-
 /*
 void SEAFOAM_PS::AddTrackPoint(glm::vec3 pos)
 {
@@ -895,8 +795,3 @@ void SEAFOAM_PS::SetFlowTrack(uint32_t index)
     // if(index==0)core.Trace("track: %d",Particle[index].flow_track_index);
 }
 
-void SEAFOAM_PS::UseSurface(entid_t surface_id)
-{
-    bLayOnSurface = true;
-    SurfaceID = surface_id;
-}

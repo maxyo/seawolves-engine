@@ -28,8 +28,6 @@ class VANT_BASE : public Entity
     bool Init() override;
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
     uint64_t ProcessMessage(MESSAGE &message) override;
     virtual void LoadIni() = 0;
 
@@ -129,7 +127,6 @@ class VANT_BASE : public Entity
     void SetVertexes() const;
     void SetIndex() const;
     void AddLabel(GEOS::LABEL &lbl, NODE *nod);
-    void SetAll();
     void SetAdd(int firstNum);
     void doMove();
     bool VectCmp(glm::vec3 v1, glm::vec3 v2, float minCmpVal);

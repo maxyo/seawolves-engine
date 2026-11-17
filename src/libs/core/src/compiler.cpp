@@ -260,22 +260,6 @@ char *COMPILER::LoadFile(const char *file_name, uint32_t &file_size, bool bFullP
 }
 
 // write to compilation log file
-void COMPILER::Trace(const char *data_PTR, ...)
-{
-#ifdef TRACE_OFF
-    return;
-#endif
-    if (data_PTR == nullptr)
-        return;
-    char LogBuffer[4096];
-    va_list args;
-    va_start(args, data_PTR);
-    vsnprintf(LogBuffer, sizeof(LogBuffer) - 4, data_PTR, args);
-    va_end(args);
-    logTrace_->trace(LogBuffer);
-}
-
-// write to compilation log file
 void COMPILER::DTrace(const char *data_PTR, ...)
 {
 #ifdef DTRACEOFF
@@ -989,136 +973,6 @@ bool COMPILER::BC_LoadSegment(const char *file_name)
         DefTab.InvalidateBySegmentID(id);
     }
     return result;
-}
-
-bool COMPILER::ProcessDebugExpression(const char *pExpression, DATA &Result)
-{
-    if (pExpression == nullptr)
-        return false;
-
-    const uint32_t nDataSize = strlen(pExpression) + strlen("return ") + 2;
-    if (nDataSize > nDebExpBufferSize)
-    {
-        //    pDebExpBuffer = (char *)RESIZE(pDebExpBuffer,nDataSize);
-        auto *const newPtr = new char[nDataSize];
-        memcpy(newPtr, pDebExpBuffer, nDebExpBufferSize);
-        delete[] pDebExpBuffer;
-        pDebExpBuffer = newPtr;
-        nDebExpBufferSize = nDataSize;
-    }
-    sprintf_s(pDebExpBuffer, nDebExpBufferSize, "return %s;", pExpression);
-    return ProcessDebugExpression0(pDebExpBuffer, Result);
-}
-
-bool COMPILER::SetOnDebugExpression(const char *pLValue, const char *pRValue, DATA &Result)
-{
-    if (pLValue == nullptr || pRValue == nullptr)
-        return false;
-
-    const uint32_t nDataSize = strlen(pLValue) + strlen(pRValue) + 5;
-    if (nDataSize > nDebExpBufferSize)
-    {
-        // pDebExpBuffer = (char *)RESIZE(pDebExpBuffer,nDataSize);
-        auto *const newPtr = new char[nDataSize];
-        memcpy(newPtr, pDebExpBuffer, nDebExpBufferSize);
-        delete[] pDebExpBuffer;
-        pDebExpBuffer = newPtr;
-        nDebExpBufferSize = nDataSize;
-    }
-    sprintf_s(pDebExpBuffer, nDataSize, "%s = %s;", pLValue, pRValue);
-    return ProcessDebugExpression0(pDebExpBuffer, Result);
-}
-
-bool COMPILER::ProcessDebugExpression0(const char *pExpression, DATA &Result)
-{
-    SEGMENT_DESC Segment;
-    STRINGS_LIST DbgLocalSL;
-    bool bRes;
-
-    DATA *pResult = nullptr;
-
-    if (pExpression == nullptr)
-        return false;
-
-    bDebugExpressionRun = true;
-
-    Segment = {};
-    Segment.name = "Debug Expression";
-    Segment.id = RunningSegmentID;
-    Segment.bUnload = false;
-    Segment.pData = nullptr;
-    Segment.pCode = nullptr;
-    Segment.BCode_Program_size = 0;
-    Segment.BCode_Buffer_size = 0;
-    Segment.Files_list = &DbgLocalSL;
-    Segment.Files_list->SetStringDataSize(sizeof(OFFSET_INFO));
-
-    if (pRun_fi)
-    {
-        CurrentFuncCode = FuncTab.FindFunc(pRun_fi->info->name);
-    }
-
-    try
-    {
-        bRes = Compile(Segment, pDebExpBuffer, strlen(pDebExpBuffer) + 1);
-    }
-    catch (...)
-    {
-        return false;
-    }
-
-    if (!bRes)
-    {
-        delete[] Segment.pCode;
-        bDebugExpressionRun = false;
-        return false;
-    }
-
-    // DWORD mem_CurrentFuncCode;
-
-    // save current pointers values
-    const uint32_t mem_InstructionPointer = InstructionPointer;
-    // mem_ip = ip;
-    FuncFrame *mem_pfi = pRun_fi;
-    const char *mem_codebase = pRunCodeBase;
-    // mem_CurrentFuncCode = CurrentFuncCode;
-
-    // trace("Segment.pCode : %s",pDebExpBuffer);
-
-    // DWORD old_data_num;
-    // old_data_num = SStack.GetDataNum(); trace("old_data_num: %d",old_data_num);
-
-    const uint32_t stackN = SStack.GetDataNum();
-
-    try
-    {
-        bRes = BC_Execute(INVALID_FUNC_CODE, pResult, Segment.pCode);
-    }
-    // old_data_num = SStack.GetDataNum(); trace("new_data_num: %d",old_data_num);
-
-    catch (...)
-    {
-        bRes = false;
-    }
-
-    // restore
-    pRun_fi = mem_pfi;
-    InstructionPointer = mem_InstructionPointer;
-    // ip = mem_ip;
-    // RunningSegmentID = pRun_fi->segment_id;
-    pRunCodeBase = mem_codebase;
-
-    delete[] Segment.pCode;
-
-    if (pResult)
-    {
-        Result.Copy(pResult);
-        // SStack.Pop();
-    }
-    SStack.InvalidateFrom(stackN);
-
-    bDebugExpressionRun = false;
-    return bRes;
 }
 
 void COMPILER::ProcessFrame(uint32_t DeltaTime)
@@ -3642,13 +3496,6 @@ bool COMPILER::CompileBlock(SEGMENT_DESC &Segment, bool &bFunctionBlock, uint32_
     return true;
 }
 
-bool COMPILER::TokenIs(S_TOKEN_TYPE test)
-{
-    if (TokenLastReadResult == test)
-        return true;
-    return false;
-}
-
 bool COMPILER::BC_Jump(SEGMENT_DESC &Segment, uint32_t offset)
 {
     if (offset >= Segment.BCode_Program_size)
@@ -3701,11 +3548,6 @@ S_TOKEN_TYPE COMPILER::BC_TokenGet()
     uint32_t ip;
     uint32_t token_data_size;
     return BC_TokenGet(ip, token_data_size);
-}
-
-S_TOKEN_TYPE COMPILER::NextTokenType()
-{
-    return static_cast<S_TOKEN_TYPE>(pRunCodeBase[InstructionPointer]);
 }
 
 bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult)
@@ -5578,20 +5420,6 @@ void COMPILER::ClearEvents()
 {
     // EventTab.Release();
     EventTab.Clear();
-}
-
-void COMPILER::SaveDataDebug(char *data_PTR, ...)
-{
-    char LogBuffer[MAX_PATH + MAX_PATH];
-    if (data_PTR == nullptr)
-    {
-        return;
-    }
-    va_list args;
-    va_start(args, data_PTR);
-    vsnprintf(LogBuffer, sizeof(LogBuffer) - 4, data_PTR, args);
-    strcat_s(LogBuffer, "\x0d\x0a");
-    va_end(args);
 }
 
 void COMPILER::SaveData(const void *data_PTR, uint32_t data_size)

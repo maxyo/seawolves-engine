@@ -24,35 +24,6 @@ float BIUtils::GetFloatFromAttr(ATTRIBUTES *pA, const char *name, float defVal)
     return pA->GetAttributeAsFloat(name, defVal);
 }
 
-bool BIUtils::ReadStringFromAttr(ATTRIBUTES *pA, const char *name, char *buf, int32_t bufSize, const char *defVal)
-{
-    if (buf == nullptr || bufSize < 1)
-        return false;
-    buf[0] = 0;
-    const char *strGet;
-    auto bRet = true;
-    if (pA == nullptr || (strGet = pA->GetAttribute(name)) == nullptr)
-    {
-        strGet = defVal;
-        bRet = false;
-    }
-
-    if (strGet != nullptr)
-    {
-        if (static_cast<int>(strlen(strGet)) > bufSize - 1)
-        {
-            strncpy_s(buf, bufSize, strGet, bufSize - 1);
-            buf[bufSize - 1] = 0;
-        }
-        else
-            strcpy_s(buf, bufSize, strGet);
-    }
-    else
-        bRet = false;
-
-    return bRet;
-}
-
 const char *BIUtils::GetStringFromAttr(ATTRIBUTES *pA, const char *name, const char *defVal)
 {
     if (pA == nullptr || name == nullptr)
@@ -181,11 +152,6 @@ bool BIUtils::ReadVectorFormAttr(ATTRIBUTES *pA, const char *name, glm::vec3 &vO
         }
     }
     return false;
-}
-
-bool BIUtils::ComparePoint(POINT &p1, POINT &p2)
-{
-    return ((p1.x == p2.x) && (p1.y == p2.y));
 }
 
 ATTRIBUTES *BIUtils::GetAttributesFromPath(ATTRIBUTES *pA, ...)

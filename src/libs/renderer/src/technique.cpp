@@ -714,10 +714,6 @@ bool isPixelShader(char *pStr)
 {
     return (SkipToken(pStr, PIXEL_SHADER)) ? true : false;
 }
-bool isBlock(char *pStr)
-{
-    return (SkipToken(pStr, BLOCK)) ? true : false;
-}
 bool isTechnique(char *pStr)
 {
     return (SkipToken(pStr, TECHNIQUE)) ? true : false;

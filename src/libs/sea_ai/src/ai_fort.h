@@ -289,15 +289,8 @@ class AIFort : public VAI_OBJBASE
     AIFort();
     ~AIFort() override;
 
-    // AI section
-    bool isAttack(AIGroup *pGroup);
-    bool isDead(); // is group dead?
-    float GetPower();
-
     // inherit functions Entity
     bool Init() override;
-    void SetDevice();
-
     void Realize(uint32_t Delta_Time);
     void Execute(uint32_t Delta_Time);
 
@@ -317,9 +310,6 @@ class AIFort : public VAI_OBJBASE
               RestoreRender(delta); break;*/
         }
     }
-
-    bool CreateState(ENTITY_STATE_GEN *state_gen);
-    bool LoadState(ENTITY_STATE *state);
 
     uint64_t ProcessMessage(MESSAGE &message) override;
 

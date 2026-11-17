@@ -23,8 +23,6 @@ class PathTracks
   public:
     // Upload track to PathTracks
     bool Load(const char *fileName);
-    // Draw track
-    void Draw(VRenderer *render);
     // Get track point
     bool GetPoint(float index, glm::vec3 &cp, glm::quat &cq) const;
 

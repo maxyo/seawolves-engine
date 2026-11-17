@@ -10,9 +10,9 @@ int main()
     assert(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) == 0);
     {
         storm::SDLWindow window(32, 32, 0, false, false);
-        assert(window.SDLHandle());
+        assert(window.OSHandle());
         const auto mainThread = std::this_thread::get_id();
-        const auto id = SDL_GetWindowID(window.SDLHandle());
+        const auto id = SDL_GetWindowID(static_cast<SDL_Window *>(window.OSHandle()));
         std::vector<storm::OSWindow::Event> received;
         auto push = [id](Uint8 kind, Uint32 windowId = 0) {
             SDL_Event event{};

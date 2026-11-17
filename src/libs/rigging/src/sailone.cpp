@@ -604,27 +604,6 @@ void SAILONE::SetTexGrid(SAILVERTEX *pv) const
     }
 }
 
-void SAILONE::ClearVertex(SAILVERTEX *pv, uint32_t maxIdx)
-{
-    uint32_t idx;
-
-    // Fill triangle buffer
-    if (pv)
-    {
-        for (idx = 0; idx < maxIdx; idx++)
-        {
-            pv[idx].norm = glm::vec3(0.f, 0.f, 1.f);
-            pv[idx].tu1 = 0;
-            pv[idx].tv1 = 0;
-            pv[idx].tu2 = 0;
-            pv[idx].tv2 = 0;
-            pv[idx].tu3 = 0;
-            pv[idx].tv3 = 0;
-            pv[idx].pos = glm::vec3(0.f, 0.f, 0.f);
-        }
-    }
-}
-
 bool SAILONE::SetSail()
 {
     int hpq;
@@ -753,10 +732,6 @@ bool SAILONE::SetSail()
     m_fMinAngle = pp->MAXTURNANGL;
 
     return true;
-}
-
-void SAILONE::releaseAll()
-{
 }
 
 // sway a triangular sail

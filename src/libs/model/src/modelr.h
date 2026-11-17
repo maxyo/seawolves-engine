@@ -104,7 +104,6 @@ class MODELR : public MODEL
     static storm::render::VertexBufferId VBTransform(void*, const void*, const std::shared_ptr<storm::render::VertexSourceLifetime>&, int32_t, int32_t, int32_t, bool);
 
     ANIBUFFER aniVerts[MODEL_ANI_MAXBUFFERS];
-    void AniRender();
     NODE *colideNode;
     void FindPlanes(const glm::mat4 &view, const glm::mat4 &proj);
 

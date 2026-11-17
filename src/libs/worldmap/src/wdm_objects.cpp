@@ -193,13 +193,6 @@ GEOS *WdmObjects::CreateGeometry(const char *path)
 
 WdmObjects::Vertex WdmObjects::vertex[1024];
 
-void WdmObjects::DrawCircle(const glm::vec3 &pos, float radius, uint32_t color) const
-{
-    static glm::mat4 mtx;
-    storm::math::pos(mtx) = glm::vec3(pos.x, pos.y, pos.z);
-    DrawCircle(mtx, radius, color);
-}
-
 void WdmObjects::DrawCircle(glm::mat4 &mtx, float radius, uint32_t color) const
 {
     for (int32_t i = 0; i < 64; i++)
@@ -316,39 +309,6 @@ void WdmObjects::DrawVector(const glm::vec3 &start, const glm::vec3 &end, uint32
     storm::math::pos(mtx) = glm::vec3(start.x, start.y, start.z);
     rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(mtx));
     rs->DrawPrimitiveUP(D3DPT_TRIANGLELIST, D3DFVF_XYZ | D3DFVF_DIFFUSE, t, vertex, sizeof(vertex[0]), "WdmDebugDraw");
-}
-
-void WdmObjects::DrawLine(const glm::vec3 &start, const glm::vec3 &end, uint32_t color) const
-{
-    vertex[0].v = start;
-    vertex[0].c = color;
-    vertex[1].v = end;
-    vertex[1].c = color;
-    const glm::mat4 mtx;
-    rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(mtx));
-    rs->DrawPrimitiveUP(D3DPT_LINELIST, D3DFVF_XYZ | D3DFVF_DIFFUSE, 1, vertex, sizeof(vertex[0]), "WdmDebugDraw");
-}
-
-void WdmObjects::DrawBox2D(glm::mat4 &mtx, float l, float w, uint32_t color) const
-{
-    vertex[0].v = glm::vec3(-w, 0.2f, l);
-    vertex[0].c = color;
-    vertex[1].v = glm::vec3(w, 0.2f, l);
-    vertex[1].c = color;
-    vertex[2].v = glm::vec3(w, 0.2f, l);
-    vertex[2].c = color;
-    vertex[3].v = glm::vec3(w, 0.2f, -l);
-    vertex[3].c = color;
-    vertex[4].v = glm::vec3(w, 0.2f, -l);
-    vertex[4].c = color;
-    vertex[5].v = glm::vec3(-w, 0.2f, -l);
-    vertex[5].c = color;
-    vertex[6].v = glm::vec3(-w, 0.2f, -l);
-    vertex[6].c = color;
-    vertex[7].v = glm::vec3(-w, 0.2f, l);
-    vertex[7].c = color;
-    rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(mtx));
-    rs->DrawPrimitiveUP(D3DPT_LINELIST, D3DFVF_XYZ | D3DFVF_DIFFUSE, 4, vertex, sizeof(vertex[0]), "WdmDebugDraw");
 }
 
 // Get vp dimensions

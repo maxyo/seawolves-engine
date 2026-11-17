@@ -396,16 +396,6 @@ void XINTERFACE::SetDevice()
     // UNGUARD
 }
 
-bool XINTERFACE::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool XINTERFACE::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void XINTERFACE::Execute(uint32_t)
 {
     m_UtilContainer.FrameUpdate();
@@ -3515,52 +3505,6 @@ CINODE *XINTERFACE::GetClickNode(CINODE *searchNod, int32_t xPos, int32_t yPos) 
     return findNod;
 }
 
-void XINTERFACE::ShowPrevTexture()
-{
-    XI_ONETEX_VERTEX pV[32];
-    int idx = 0;
-    float fAngle = m_fAngle;
-
-    uint32_t dwBlendColor = m_nBlendColor;
-    if (dwBlendColor > 0xFFL)
-        dwBlendColor = 0xFFL;
-    const uint32_t dwColor = 0xFFFFFF | (dwBlendColor << 24L);
-
-    const float fWaveAmplitude = m_fWaveAmplitude * sinf(3.14f * m_nBlendColor / m_nBlendStepMax);
-    for (int ix = 0; ix < m_nColumnQuantity + 1; ix++)
-    {
-        pV[idx].color = pV[idx + 1].color = dwColor;
-        pV[idx].pos.z = pV[idx + 1].pos.z = 1.f + fWaveAmplitude * sinf(fAngle);
-        fAngle += m_fWavePhase;
-        pV[idx].pos.x = pV[idx + 1].pos.x = (static_cast<float>(dwScreenWidth) / m_nColumnQuantity) * ix;
-        pV[idx].pos.y = 0;
-        pV[idx + 1].pos.y = static_cast<float>(dwScreenHeight);
-        pV[idx].tv = 0.f;
-        pV[idx + 1].tv = 1.f;
-        pV[idx].tu = pV[idx + 1].tu = static_cast<float>(ix) / m_nColumnQuantity;
-        idx += 2;
-    }
-
-    m_fAngle += m_fWaveSpeed;
-    m_nBlendColor -= m_nBlendSpeed;
-    if (m_nBlendColor <= 0)
-    {
-        m_nBlendColor = 0;
-        m_fAngle = 0.f;
-        m_bShowPrevTexture = false;
-    }
-
-    // Nothing captures the previous screen: the wave blends an untextured quad.
-    pRenderService->TextureSet(0, -1);
-    pRenderService->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
-    pRenderService->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_CURRENT);
-    pRenderService->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_TEXTURE);
-    pRenderService->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
-    pRenderService->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-    pRenderService->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_CURRENT);
-    pRenderService->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_ONETEX_FVF, 30, pV, sizeof(XI_ONETEX_VERTEX));
-}
-
 void XINTERFACE::ReleaseOld()
 {
     if (m_pEditor)
@@ -4467,23 +4411,6 @@ int XINTERFACE::LoadIsExist()
         }
     }
     return bFindFile ? 1 : 0;
-}
-
-void XINTERFACE::PrecreateDirForFile(const char *pcFullFileName)
-{
-    if (!pcFullFileName)
-        return;
-    char path[MAX_PATH];
-    sprintf_s(path, sizeof(path), "%s", pcFullFileName);
-    int32_t n;
-    for (n = strlen(pcFullFileName) - 1; n > 0; n--)
-        if (path[n] == '\\')
-        {
-            path[n] = 0;
-            break;
-        }
-    if (n > 0)
-        fio->_CreateDirectory(path);
 }
 
 // controls Container

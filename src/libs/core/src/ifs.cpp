@@ -73,11 +73,6 @@ char *KEY_NODE::GetValue()
     return key_val;
 }
 
-KEY_NODE *KEY_NODE::GetLeftNode()
-{
-    return l_PTR;
-}
-
 KEY_NODE *KEY_NODE::GetRightNode()
 {
     return r_PTR;
@@ -108,26 +103,6 @@ void KEY_NODE::Add(KEY_NODE **Root, KEY_NODE **Top)
     SetLeftNode(*Top);
     // set new top node
     *Top = this;
-}
-
-void KEY_NODE::AttachTo(KEY_NODE *node, KEY_NODE **Top)
-{
-    if (node == nullptr)
-        throw std::runtime_error("invalid node");
-    // save right node for object
-    auto *RNode = node->GetRightNode();
-    // attach this node
-    node->SetRightNode(this);
-    // set left link for this node
-    SetLeftNode(node);
-    // set right link from previous node
-    SetRightNode(RNode);
-    // if there is node from the right - set left link for it
-    if (RNode != nullptr)
-        RNode->SetLeftNode(this);
-    // else this is new top node
-    else
-        *Top = this;
 }
 
 void KEY_NODE::Deattach(KEY_NODE **Root, KEY_NODE **Top)
@@ -295,11 +270,6 @@ KEY_NODE *SECTION::FindKey(const char *key_name, const char *key_value)
 KEY_NODE *SECTION::FindKey(const char *key_name)
 {
     return FindKey(Root, key_name, nullptr);
-}
-
-SECTION *SECTION::GetLeftNode()
-{
-    return l_PTR;
 }
 
 SECTION *SECTION::GetRightNode()
@@ -1154,27 +1124,6 @@ void IFS::WriteDouble(const char *section_name, const char *key_name, double val
     char buffer[256];
     sprintf_s(buffer, "%g", value);
     WriteString(section_name, key_name, buffer);
-}
-
-void IFS::WriteFloat(const char *section_name, const char *key_name, float value)
-{
-    char buffer[256];
-    sprintf_s(buffer, "%g", value);
-    WriteString(section_name, key_name, buffer);
-}
-
-uint32_t IFS::CompareStrings(const char *s1, const char *s2)
-{
-    if (s1 == nullptr || s2 == nullptr)
-        return 1;
-    uint32_t n = 0;
-    while (s1[n] == s2[n])
-    {
-        if (s1[n] == 0)
-            return 0;
-        n++;
-    }
-    return 1;
 }
 
 bool IFS::GetSectionName(char *section_name_buffer, int32_t buffer_size)

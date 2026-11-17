@@ -233,11 +233,6 @@ bool GIEditor::IsShowMode() const
     return m_bShowMode;
 }
 
-void GIEditor::MakeShowMode(bool bShow)
-{
-    m_bShowMode = bShow;
-}
-
 void GIEditor::SetEditNode(CINODE *pNode)
 {
     m_pEditableNode = pNode;

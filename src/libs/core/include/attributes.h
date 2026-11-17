@@ -42,7 +42,6 @@ class ATTRIBUTES final
     ATTRIBUTES &operator=(ATTRIBUTES &&other) noexcept;
     ~ATTRIBUTES();
 
-    void SetBreak(bool set_break);
     [[nodiscard]] ATTRIBUTES* GetParent() const;
     bool operator==(const char *str) const;
     [[nodiscard]] const char* GetThisName() const;
@@ -61,7 +60,6 @@ class ATTRIBUTES final
     [[nodiscard]] LegacyProxy GetAttribute(const std::string_view &name) const;
     [[nodiscard]] const char *GetAttributeName(size_t n) const;
     [[nodiscard]] uint32_t GetAttributeAsDword(const char *name = nullptr, uint32_t def = 0) const;
-    [[nodiscard]] uintptr_t GetAttributeAsPointer(const char *name = nullptr, uintptr_t def = 0) const;
     [[nodiscard]] float GetAttributeAsFloat(const char *name = nullptr, float def = 0) const;
     bool SetAttributeUseDword(const char *name, uint32_t val);
     bool SetAttributeUseFloat(const char *name, float val);
@@ -84,7 +82,6 @@ class ATTRIBUTES final
     size_t SetAttribute(uint32_t name_code, const std::string_view &attribute);
     [[nodiscard]] uint32_t GetThisNameCode() const noexcept;
     void SetNameCode(uint32_t n) noexcept;
-    [[nodiscard]] VSTRING_CODEC &GetStringCodec() const noexcept;
 
 private:
     ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const std::string_view &name);

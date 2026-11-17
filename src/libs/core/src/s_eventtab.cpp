@@ -175,26 +175,6 @@ uint32_t S_EVENTTAB::MakeHashValue(const char *string)
     return hval;
 }
 
-bool S_EVENTTAB::DelEventHandler(const char *event_name, uint32_t func_code)
-{
-    if (event_name == nullptr)
-        return false;
-    const auto hash = MakeHashValue(event_name);
-
-    const auto ti = HASH2INDEX(hash);
-
-    for (uint32_t n = 0; n < Event_num[ti]; n++)
-    {
-        if (pTable[ti][n].hash == hash)
-            if (storm::iEquals(pTable[ti][n].name, event_name))
-            {
-                return DelEventHandler(ti, n, func_code);
-                // return;
-            }
-    }
-    return false;
-}
-
 void S_EVENTTAB::SetStatus(const char *event_name, uint32_t func_code, uint32_t status)
 {
     if (event_name == nullptr)

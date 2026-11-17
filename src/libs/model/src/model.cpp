@@ -207,10 +207,6 @@ Animation *MODELR::GetAnimation()
     return ani;
 }
 
-void MODELR::AniRender()
-{
-}
-
 uint64_t MODELR::ProcessMessage(MESSAGE &message)
 {
     std::string str;

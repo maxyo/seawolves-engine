@@ -245,16 +245,6 @@ void SAIL::SetDevice()
     }
 }
 
-bool SAIL::CreateState(ENTITY_STATE_GEN *state_gen)
-{
-    return true;
-}
-
-bool SAIL::LoadState(ENTITY_STATE *state)
-{
-    return true;
-}
-
 void SAIL::Execute(uint32_t Delta_Time)
 {
     // debug mast destruction
@@ -2008,46 +1998,6 @@ void SAIL::DoNoRopeSailToNewHost(entid_t newModel, entid_t newHost, entid_t oldH
                     }
         }
     }
-}
-
-void sailPrint(VRenderer *rs, const glm::vec3 &pos3D, float rad, int32_t line, const char *format, ...)
-{
-    static char buf[256];
-    // print to the buffer
-    va_list args;
-    va_start(args, format);
-    int32_t len = vsnprintf(buf, sizeof(buf) - 1, format, args);
-    va_end(args);
-    buf[sizeof(buf) - 1] = 0;
-    // Looking for a point position on the screen
-    static glm::mat4 mtx, view, prj;
-    static D3DVIEWPORT9 vp;
-    storm::math::ProjectedPoint vrt;
-    rs->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(view));
-    rs->GetTransform(D3DTS_PROJECTION, storm::math::d3dMatrix(prj));
-    mtx = prj * view;
-    storm::math::invertRigid(view);
-    float dist = storm::math::lengthSquared(pos3D - storm::math::pos(view));
-    if (dist >= rad * rad)
-        return;
-    const float d = glm::dot(storm::math::vz(view), storm::math::pos(view));
-    if (glm::dot(pos3D, storm::math::vz(view)) < d)
-        return;
-    rs->GetViewport(&vp);
-    storm::math::projectPoints(mtx, (glm::vec3 *)&pos3D, &vrt, 1, vp.Width * 0.5f, vp.Height * 0.5f, sizeof(glm::vec3), sizeof(storm::math::ProjectedPoint));
-    // Looking for a position
-    const int32_t fh = rs->CharHeight(FONT_DEFAULT) / 2;
-    vrt.y -= (line + 0.5f) * fh;
-    // Transparency
-    int32_t color = 0xffffffff;
-    const float kDist = 0.75f;
-    if (dist > kDist * kDist * rad * rad)
-    {
-        dist = 1.0f - (sqrtf(dist) - kDist * rad) / (rad - kDist * rad);
-        color = (static_cast<uint32_t>(dist * 255.0f) << 24) | 0xffffff;
-    }
-    rs->ExtPrint(FONT_DEFAULT, color, 0x00000000, PR_ALIGN_CENTER, false, 1.0f, 0, 0, static_cast<int32_t>(vrt.x),
-                 static_cast<int32_t>(vrt.y), buf);
 }
 
 SAILONE *SAIL::FindSailFromData(int gn, const char *nodeName, const char *grName) const

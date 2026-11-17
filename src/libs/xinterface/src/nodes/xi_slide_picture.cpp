@@ -243,13 +243,6 @@ void CXI_SLIDEPICTURE::SaveParametersToIni()
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
 
-void CXI_SLIDEPICTURE::SetNewPicture(char *sNewTexName)
-{
-    if (m_idTex != -1L)
-        m_rs->TextureRelease(m_idTex);
-    m_idTex = m_rs->TextureCreate(sNewTexName);
-}
-
 void CXI_SLIDEPICTURE::Update(uint32_t Delta_Time)
 {
     if (nCurSlide >= nSlideListSize)

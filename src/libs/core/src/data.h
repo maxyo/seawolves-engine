@@ -115,7 +115,6 @@ class DATA final : public VDATA
     void Get(entid_t &eid);
 
     bool Set(entid_t eid, uint32_t index) override;
-    bool Get(entid_t &eid, uint32_t index);
 
     ATTRIBUTES *GetAClass() override;
     ATTRIBUTES *GetAClass(uint32_t index) override;

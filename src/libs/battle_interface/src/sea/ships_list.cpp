@@ -35,7 +35,6 @@ class TMP_LONG_STACK
     }
 
     void Push(int32_t data);
-    int32_t Pop();
     int32_t GetFore();
 
     void SetSizeIncrement(int32_t sizeinc)
@@ -92,23 +91,6 @@ int32_t TMP_LONG_STACK::GetFore()
     else
         for (auto i = 0; i < curidx; i++)
             ldat[i] = ldat[i + 1];
-    return retVal;
-}
-
-int32_t TMP_LONG_STACK::Pop()
-{
-    if (ldat == nullptr || curidx <= 0)
-    {
-        core.Trace("WARNING! pop from TMP_LONG_STACK is empty");
-        return defReturn;
-    }
-    const auto retVal = ldat[--curidx];
-    if (curidx == 0)
-    {
-        delete[] ldat;
-        ldat = nullptr;
-        datsize = 0;
-    }
     return retVal;
 }
 

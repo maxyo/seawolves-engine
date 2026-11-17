@@ -28,20 +28,10 @@ class DataColor
     // Set values
     void SetValues(const ColorVertex *Values, uint32_t Count);
 
-    // Get count of values
-    uint32_t GetValuesCount() const;
-
-    // Get min. value (by index)
-    const glm::vec4 &GetMinValue(uint32_t Index);
-
-    // Get max. value (by index)
-    const glm::vec4 &GetMaxValue(uint32_t Index);
-
     void Load(MemFile *File);
     void Write(MemFile *File);
 
     void SetName(const char *szName);
     const char *GetName() const;
 
-    const ColorVertex &GetByIndex(uint32_t Index);
 };

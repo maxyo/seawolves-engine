@@ -408,11 +408,6 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
     // Astronomy::pRS->SetTransform(D3DTS_VIEW, mView);
 }
 
-uint32_t Astronomy::STARS::AttributeChanged(ATTRIBUTES *pA)
-{
-    return 0;
-}
-
 void Astronomy::STARS::TimeUpdate(ATTRIBUTES *pAP)
 {
     bEnable = false;

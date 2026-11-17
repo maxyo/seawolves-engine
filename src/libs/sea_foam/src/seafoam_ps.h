@@ -158,7 +158,6 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
     bool bLayOnSurface;
     void LayOnSurface(uint32_t index);
     entid_t SurfaceID;
-    void UseSurface(entid_t surface_id);
     float fSurfaceOffset;
     char *TechniqueName;
     uint32_t ParticleColor;
@@ -196,10 +195,7 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
     bool Init(INIFILE *ini, const char *psname);
     void UpdateVertexBuffer();
     void Realize(uint32_t DeltaTime);
-    void Execute(uint32_t DeltaTime);
     void ProcessParticles(uint32_t DeltaTime);
-    bool Complete();
-
     void Stop() override
     {
         bComplete = true;
@@ -218,15 +214,6 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
         enableEmit = _enableEmit;
     }
 
-    // nodes --------------------------------------------------------
-    SEAFOAM_PS *GetLeftNode();
-    SEAFOAM_PS *GetRightNode();
-    void SetLeftNode(SEAFOAM_PS *node);
-    void SetRightNode(SEAFOAM_PS *node);
-    void AttachTo(SEAFOAM_PS *link_after_PTR, SEAFOAM_PS **Root, SEAFOAM_PS **Top);
-    void Attach(SEAFOAM_PS **Root, SEAFOAM_PS **Top);
-    void Deattach(SEAFOAM_PS **Root, SEAFOAM_PS **Top);
-    void ProcessOrder(SEAFOAM_PS **Root, SEAFOAM_PS **Top);
     //---------------------------------------------------------------
 
     void SetLifeTime(uint32_t time) override

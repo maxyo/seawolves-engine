@@ -224,26 +224,6 @@ void AIShipTouchController::Execute(float fDeltaTime)
     }
 }
 
-float AIShipTouchController::GetBestRotateDirection()
-{
-    auto fLeft = 0.0f, fRight = 0.0f;
-    const uint32_t iBortNum = (aTouchRays.size() - 1) / 2;
-
-    for (uint32_t i = 0; i < aTouchRays.size(); i++)
-        if (i != 0)
-        {
-            if (i <= iBortNum)
-                fRight += aTouchRays[i].fDist;
-            else
-                fLeft += aTouchRays[i].fDist;
-        }
-
-    if (fabsf(fLeft - fRight) < 0.5f)
-        return 0.0f;
-
-    return (fLeft > fRight) ? -1.0f : 1.0f;
-}
-
 void AIShipTouchController::Realize(float fDeltaTime)
 {
 }

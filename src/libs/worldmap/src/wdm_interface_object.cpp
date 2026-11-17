@@ -213,38 +213,3 @@ void WdmInterfaceObject::DrawRects(Vertex *vrt, int32_t numRects, const char *te
                                     sizeof(Vertex), techName);
 }
 
-// Fill 18 vertices of the scaling rectangle
-void WdmInterfaceObject::FillSRectCoord(Vertex *vrt, float x, float y, float w, float h, float ws)
-{
-    FillRectCoord(vrt, x, y, ws, h);
-    FillRectCoord(vrt + 6, x + ws, y, w - 2.0f * ws, h);
-    FillRectCoord(vrt + 12, x + w - ws, y, ws, h);
-}
-
-// Fill 18 vertices with the texture coordinates of the scaling rectangle
-void WdmInterfaceObject::FillSRectUV(Vertex *vrt, float tu, float tv, float tw, float th, float ts)
-{
-    FillRectUV(vrt, tu, tv, ts, th);
-    FillRectUV(vrt + 6, tu + ts, tv, tw - 2.0f * ts, th);
-    FillRectUV(vrt + 12, tu + tw - ts, tv, ts, th);
-}
-
-// Fill 18 vertices with a scaled rectangle color
-void WdmInterfaceObject::FillSRectColor(Vertex *vrt, uint32_t color)
-{
-    FillRectColor(vrt, color);
-    FillRectColor(vrt + 6, color);
-    FillRectColor(vrt + 12, color);
-}
-
-// Display text in a given strip horizontally and at a given height
-void WdmInterfaceObject::Print(int32_t font, int32_t color, float xleft, float xright, float y, const char *format, ...)
-{
-    va_list args;
-    va_start(args, format);
-    vsnprintf(stringBuffer, sizeof(stringBuffer), format, args);
-    va_end(args);
-    const auto strw = wdmObjects->rs->StringWidth(stringBuffer, font);
-    const auto x = (xright + xleft - strw) * 0.5f;
-    wdmObjects->rs->Print(font, color, static_cast<int32_t>(x), static_cast<int32_t>(y), stringBuffer);
-}

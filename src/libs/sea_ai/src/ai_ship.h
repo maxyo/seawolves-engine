@@ -256,10 +256,7 @@ class AIShip : public VAI_INNEROBJ
     void CheckSituation();
     float GetPower() const;
     float GetShipHP() const;
-    float GetShipBaseHP() const;
     float GetAttackHP(float fDistance);
-    float GetDefendHP();
-
     virtual void GetPrediction(float fTime, glm::vec3 *vPos, glm::vec3 *vAng);
     //
 
