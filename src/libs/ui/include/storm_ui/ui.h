@@ -93,8 +93,9 @@ struct Config
     std::function<void(const TextRequest &)> on_text_request;
     // Debug builds (the debuggable APK, host tools): every UI error (malformed model, missing screen,
     // unmapped event, a screen or HUD part that threw and was closed, a dialogue nobody saw) is also
-    // shown as a toast. Release builds only log them (on_log: logcat, ui.log, error.log). The one gate
-    // for UI errors on screen (Host::Error).
+    // shown as a toast, and the inline marks of a broken component are drawn (the documents' root class
+    // ui-debug). Release builds only log them (on_log: logcat, ui.log, error.log). The one gate for UI
+    // errors on screen (Host::Error).
     bool show_errors = false;
     // Only the engine host presents gameplay HUDs and sends their ownership declarations.
     // Standalone application screens (launcher, downloads, gallery) disable this.

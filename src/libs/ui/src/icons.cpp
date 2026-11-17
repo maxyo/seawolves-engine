@@ -248,10 +248,13 @@ std::vector<Rml::byte> MissingIconMarker(int pixels)
     return data;
 }
 
-Rml::CallbackTextureSource &Source(const std::string &id, bool plain, Rml::Colourb colour, int pixels, const Shadow &shadow)
+// `mark`: a symbol that is missing or does not rasterise is drawn as the crossed red box (debug
+// builds); without it nothing is drawn. It is logged either way.
+Rml::CallbackTextureSource &Source(const std::string &id, bool plain, Rml::Colourb colour, int pixels, const Shadow &shadow, bool mark)
 {
     char suffix[128];
-    std::snprintf(suffix, sizeof(suffix), "|%d|%02x%02x%02x%02x|%d", plain ? 1 : 0, colour.red, colour.green, colour.blue, colour.alpha, pixels);
+    std::snprintf(suffix, sizeof(suffix), "|%d|%02x%02x%02x%02x|%d|%d", plain ? 1 : 0, colour.red, colour.green, colour.blue, colour.alpha, pixels,
+                  mark ? 1 : 0);
     std::string key = id + suffix;
     const std::string raster_key = key;
     if (shadow.On())
@@ -263,17 +266,17 @@ Rml::CallbackTextureSource &Source(const std::string &id, bool plain, Rml::Colou
     auto &entry = Cache()[key];
     if (!entry)
     {
-        entry = std::make_unique<Rml::CallbackTextureSource>([id, plain, colour, pixels, shadow, raster_key](const Rml::CallbackTextureInterface &texture) {
+        entry = std::make_unique<Rml::CallbackTextureSource>([id, plain, colour, pixels, shadow, mark, raster_key](const Rml::CallbackTextureInterface &texture) {
             Raster &raster = Rasters()[raster_key];
             if (raster.glyph.empty())
             {
                 raster.ok = Rasterise(id, plain, colour, pixels, raster.glyph);
                 if (!raster.ok)
                 {
-                    // No silent blank: a missing or broken symbol is logged and drawn as a
-                    // crossed red box so it is seen on the screen.
+                    // No silent blank: a missing or broken symbol is logged, and in debug builds
+                    // drawn as a crossed red box so it is seen on the screen.
                     Rml::Log::Message(Rml::Log::LT_ERROR, "Icon '%s' is not in the icon pack (or does not rasterise)", id.c_str());
-                    raster.glyph = MissingIconMarker(pixels);
+                    raster.glyph = mark ? MissingIconMarker(pixels) : std::vector<Rml::byte>(static_cast<size_t>(pixels) * pixels * 4, 0);
                 }
             }
             const int margin = shadow.Margin(), side = pixels + 2 * margin;
@@ -362,8 +365,10 @@ class IconElement final : public Rml::Element
             built_opacity_ = opacity;
             built_margin_ = margin;
         }
+        const Rml::ElementDocument *document = GetOwnerDocument();
+        const bool mark = document && document->IsClassSet(kDebugMarksClass);
         const Rml::Vector2f offset = GetAbsoluteOffset(Rml::BoxArea::Content);
-        geometry_.Render({std::round(offset.x), std::round(offset.y)}, Source(id, plain, colour, pixels, shadow).GetTexture(*manager));
+        geometry_.Render({std::round(offset.x), std::round(offset.y)}, Source(id, plain, colour, pixels, shadow, mark).GetTexture(*manager));
     }
 
   private:

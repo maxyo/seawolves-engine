@@ -364,7 +364,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         overlay_path_ = pack.value("overlay", std::string());
         if (!overlay_path_.empty())
         {
-            overlay_ = context_->LoadDocument(overlay_path_);
+            overlay_ = LoadPackDocument(overlay_path_);
             if (overlay_)
                 overlay_->Show();
         }
@@ -383,6 +383,18 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         return opened;
     }
 
+    // Every pack document: debug builds (Config::show_errors) mark its root `ui-debug`, the one switch
+    // for the inline marks of a broken component (the `.ui-debug .ui-error` stripes of the pack's
+    // stylesheet, the crossed icon of icons.cpp). Release builds draw nothing in their place; the
+    // error itself is logged in both.
+    Rml::ElementDocument *LoadPackDocument(const std::string &path)
+    {
+        Rml::ElementDocument *document = context_->LoadDocument(path);
+        if (document && config_.show_errors)
+            document->SetClass(kDebugMarksClass, true);
+        return document;
+    }
+
     bool OpenDocument(const std::string &path)
     {
         changed_ = true;
@@ -393,7 +405,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             document_->Close();
             document_ = nullptr;
         }
-        document_ = context_->LoadDocument(path);
+        document_ = LoadPackDocument(path);
         if (!document_)
             return false;
         ReportUnknownComponents(document_);
@@ -1295,7 +1307,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         hud_problem_.clear();
         if (!hud_document_)
         {
-            hud_document_ = hud_path_.empty() ? nullptr : context_->LoadDocument(hud_path_);
+            hud_document_ = hud_path_.empty() ? nullptr : LoadPackDocument(hud_path_);
             if (!hud_document_)
             {
                 Error("UI pack has no HUD document");

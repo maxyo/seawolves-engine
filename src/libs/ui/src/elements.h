@@ -13,6 +13,10 @@
 namespace storm::ui
 {
 
+// Class of a pack document's root in debug builds (Config::show_errors): only under it are the inline
+// marks of a broken component drawn (the pack's `.ui-debug .ui-error` stripes, the crossed icon).
+inline constexpr const char *kDebugMarksClass = "ui-debug";
+
 void RegisterDrawElements();
 // True once after a <ui-clamp> changed its text during layout: lay out again before drawing.
 bool TextClampsChanged();

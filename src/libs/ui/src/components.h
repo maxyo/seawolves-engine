@@ -56,7 +56,7 @@ std::unique_ptr<ComponentSpec> ParseComponentSpec(const Json &entry);
 bool IsGenericAttribute(const std::string &attribute);
 // Empty when `value` is acceptable for the prop, else what is wrong (enum value not listed).
 std::string CheckPropValue(const PropSpec &prop, const Json &value);
-// Logs and marks (class "ui-error") every <c-…> element under `root` that has no spec;
+// Logs and marks (class "ui-error", drawn only under a ui-debug root) every <c-…> element under `root` that has no spec;
 // returns how many it found. Nested components check their own content.
 int ReportUnknownComponents(Rml::Element *root);
 

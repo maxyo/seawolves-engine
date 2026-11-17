@@ -113,6 +113,11 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
         "tag": "c-cols", "behaviors": ["press", "columns", "reveal", "tick-probe"], "constants": {"colMin": 56},
         "template": "<div data-columns-head=\"\" style=\"display: flex;\"><div style=\"flex: 1 1 0;\"></div><div id=\"h0\" data-col=\"0\" style=\"min-width: 56dp; min-height: 44dp; display: flex; align-items: flex-start;\"><span>x</span></div><div id=\"h1\" data-col=\"1\" style=\"min-width: 56dp; min-height: 44dp; display: flex; align-items: flex-start;\"><span>x</span></div></div><div data-columns-body=\"\" style=\"height: 30dp; overflow-y: auto;\"><div style=\"display: flex;\"><div style=\"flex: 1 1 0;\"></div><div id=\"v0\" data-col=\"0\" style=\"min-width: 56dp; display: flex; align-items: flex-start;\"><span>1</span></div><div id=\"v1\" data-col=\"1\" style=\"min-width: 56dp; display: flex; align-items: flex-start;\"><span>2</span></div></div><div style=\"height: 100dp;\"></div></div>"})"));
     Write(pack / "components.json", components.dump());
+    // A broken component (an unknown tag) and an icon not in the pack, under the pack's rule for the
+    // inline marks (base.rcss: `.ui-debug .ui-error`, the stripes).
+    Write(pack / "marks.rml", "<rml><head><style>body { width: 100%; height: 100%; } .ui-unknown { display: block; }"
+                              " .ui-debug .ui-error { min-width: 24dp; min-height: 24dp; }</style></head>"
+                              "<body><c-nope id=\"broken\"/><ui-icon id=\"lost\" name=\"nothing-here\" size=\"24\"/></body></rml>");
     Write(pack / "overlay.rml", "<rml><head><style>body { font-family: LatoLatin; width: 100%; height: 100%; pointer-events: none; z-index: 1000; } #tooltip { display: none; } #tooltip.open { display: block; position: absolute; }"
                                 " #toasts { position: absolute; left: 0; right: 0; top: 0; display: flex; flex-direction: column; }"
                                 " @keyframes in { from { opacity: 0; } to { opacity: 1; } } @keyframes out { from { opacity: 1; max-height: 30dp; } to { opacity: 0; max-height: 0dp; } }"
@@ -1169,6 +1174,32 @@ int main(int argc, char **argv)
                mode + "the error is logged");
         Expect(drawing(0.0, 0.15) == debug, mode + (debug ? "the error is shown as a toast" : "nothing is shown"));
         frames(8.0);
+
+        // The inline marks of a broken component: logged in both, drawn in debug builds only (the
+        // document root's ui-debug class; release draws nothing in their place).
+        logged.clear();
+        const int markers = backend.Renderer().marker_textures;
+        Expect(host->LoadDocument("marks.rml"), mode + "the document with a broken component loads");
+        frames(0.1);
+        Rml::Context *context = Rml::GetContext("storm-ui");
+        Rml::ElementDocument *marks = nullptr;
+        for (int d = 0; context && d < context->GetNumDocuments(); ++d)
+            if (context->GetDocument(d)->GetElementById("broken"))
+                marks = context->GetDocument(d);
+        Expect(marks != nullptr, mode + "the marks document is open");
+        if (!marks)
+            continue;
+        Rml::Element *broken = marks->GetElementById("broken");
+        Expect(marks->IsClassSet("ui-debug") == debug, mode + (debug ? "the root is marked ui-debug" : "the root has no ui-debug class"));
+        Expect(broken->IsClassSet("ui-error"), mode + "the broken component is marked ui-error");
+        Expect(std::any_of(logged.begin(), logged.end(),
+                           [](const auto &line) { return line.first == LogLevel::Error && line.second.find("Unknown component <c-nope>") != std::string::npos; }),
+               mode + "the broken component is logged");
+        Expect((broken->GetBox().GetSize().y >= 24.0f) == debug, mode + (debug ? "the stripes are drawn" : "nothing is drawn in its place"));
+        Expect(std::any_of(logged.begin(), logged.end(),
+                           [](const auto &line) { return line.first == LogLevel::Error && line.second.find("Icon 'i-nothing-here' is not in the icon pack") != std::string::npos; }),
+               mode + "the missing icon is logged");
+        Expect((backend.Renderer().marker_textures > markers) == debug, mode + (debug ? "the crossed icon is drawn" : "no crossed icon is drawn"));
     }
 
     host.reset();

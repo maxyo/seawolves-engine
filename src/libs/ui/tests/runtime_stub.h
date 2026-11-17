@@ -30,8 +30,15 @@ class NoRenderer final : public Rml::RenderInterface
         dimensions = {1, 1};
         return 1;
     }
-    Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte>, Rml::Vector2i) override
+    // Counts the textures holding the runtime's danger red (the crossed "missing icon" marker).
+    Rml::TextureHandle GenerateTexture(Rml::Span<const Rml::byte> data, Rml::Vector2i) override
     {
+        for (size_t i = 0; i + 3 < data.size(); i += 4)
+            if (data[i] == 0xc4 && data[i + 1] == 0x47 && data[i + 2] == 0x3a && data[i + 3] == 0xff)
+            {
+                ++marker_textures;
+                break;
+            }
         return 1;
     }
     void ReleaseTexture(Rml::TextureHandle) override
@@ -70,6 +77,8 @@ class NoRenderer final : public Rml::RenderInterface
         return 1;
     }
 
+    int marker_textures = 0;
+
   private:
     Rml::LayerHandle layers_ = 0;
 };
@@ -93,6 +102,10 @@ class NoBackend final : public storm::ui::RenderBackend
     PictureState AcquireGamePicture(const std::string &) override
     {
         return PictureState::Unavailable; // no game files in the checks
+    }
+    NoRenderer &Renderer()
+    {
+        return renderer_;
     }
 
   private:
