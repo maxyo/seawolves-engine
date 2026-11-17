@@ -32,7 +32,7 @@ $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, 
 void main()
 {
     // ---- the vertex (Grass::CreateGpuBuffer) ----
-    // Convert the integer attribute numerically before unpacking (grass.varying.def). The bytes stay SHORT4 on the CPU.
+    // Convert the integer attribute numerically before unpacking (the grass varying, CMakeLists.txt). The bytes stay SHORT4 on the CPU.
     vec4 packedPosition = vec4(a_position);
     float cornerX = packedPosition.x < 0.0 ? 1.0 : 0.0;
     float cornerZ = packedPosition.y < 0.0 ? 1.0 : 0.0;

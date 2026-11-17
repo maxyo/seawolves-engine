@@ -14,8 +14,8 @@ actual = source[start:end]
 # Mutation control: reproduce the former square-only normal-origin error; other paths must stay identical.
 old = actual.replace('SAILONE::FillVertex(', 'SAILONE::OldFillVertex(')
 square = old.index('dnorm = ss.boundSphere.c', old.index('    else\n'))
-old = old[:square] + old[square:].replace('sgeo.cv.normL * ss.boundSphere.r',
-                                       'sgeo.cv.dnormL * ss.boundSphere.r', 1)
+old = old[:square] + old[square:].replace('dnorm = ss.boundSphere.c - sgeo.cv.normL * ss.boundSphere.r;',
+                                       'dnorm = ss.boundSphere.c - (ss.eSailType == SAIL_SQUARE ? sgeo.cv.dnormL : sgeo.cv.normL) * ss.boundSphere.r;', 1)
 with tempfile.TemporaryDirectory(prefix='storm-sail-normals-') as directory:
     directory = Path(directory)
     unit = directory / 'check.cpp'

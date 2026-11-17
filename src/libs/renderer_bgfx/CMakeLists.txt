@@ -147,8 +147,18 @@ foreach(base fs_port_coastfoam fs_port_particles fs_port_postprocess fs_port_sea
     list(APPEND ff_opaque_variants "${base}_opaque|${CMAKE_CURRENT_SOURCE_DIR}/shaders/ports/${base}.sc|FF_OPAQUE")
 endforeach()
 list(APPEND ff_fx_variants ${ff_opaque_variants})
+# Grass alone packs POSITION as non-normalised SHORT4, which bgfx binds as integer input (GL glVertexAttribIPointer,
+# Vulkan SINT): its vertex shader reads varying.def.sc with an ivec4 a_position, the varyings stay those of every
+# other shader.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc" grass_varying)
+string(REGEX REPLACE "\nvec4 a_position +: POSITION;" "\nivec4 a_position : POSITION;" grass_varying_int "${grass_varying}")
+if(grass_varying_int STREQUAL grass_varying)
+    message(FATAL_ERROR "shaders/varying.def.sc has no 'vec4 a_position : POSITION;' line for the grass varying")
+endif()
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/grass.varying.def.sc" CONTENT "${grass_varying_int}" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc")
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/shaders/ports/vs_port_grass.sc" PROPERTIES
-    STORM_SHADER_VARYING "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ports/grass.varying.def")
+    STORM_SHADER_VARYING "${CMAKE_CURRENT_BINARY_DIR}/grass.varying.def.sc")
 storm_bgfx_embed_shaders(TARGET storm_bgfx_shaders NAMESPACE storm_shaders
     VARYING "${CMAKE_CURRENT_SOURCE_DIR}/shaders/varying.def.sc" SOURCES ${shader_sources}
     INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/fx/shaders/include" VARIANTS ${ff_fx_variants})
