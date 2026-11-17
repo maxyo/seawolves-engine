@@ -141,7 +141,9 @@ records and submits the command buffers (Vulkan), executes the backend and prese
 - bgfx's callbacks (program cache, traces, profiler scopes) and the present function run on the render thread.
 - The surface is given back to Android (`request_surface_release`, `surface_lost`) only when the render
   thread has finished every frame handed over. `BGFX_FRAME_FLUSH` frames (read-backs) present nothing and
-  are never refused.
+  are never refused. Once Android asked for the surface no `bgfx::reset` reaches it (a resize, new reset flags
+  or a restore waits for the next surfaceChanged), and a resume (`surface_restored`) restores only the surface of
+  the last surfaceChanged. Every order of these events is run by `tests/renderer_bgfx/surface_lifecycle_check`.
 - Pacing (`src/shim/frame_overlap.hpp`): after handing a frame over the game thread waits for that frame's
   present, so input reaches the picture as fast as without a render thread; only while game work + render
   work do not fit the frame it waits for the previous frame's present instead and simulates one frame ahead

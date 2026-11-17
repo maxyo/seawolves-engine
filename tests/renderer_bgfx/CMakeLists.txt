@@ -103,6 +103,15 @@ target_compile_definitions(render_thread_check PRIVATE NOMINMAX)
 target_compile_options(render_thread_check PRIVATE -fsigned-char)
 target_link_libraries(render_thread_check PRIVATE storm_bgfx storm_check_sdl)
 
+# surface_lifecycle_check: Android's surface events (surfaceDestroyed / Created / Changed, pause, resume, rotation) in
+# every order against the game thread's frames, resets and read-backs, through the shim's Context (an X display).
+add_executable(surface_lifecycle_check surface_lifecycle_check.cpp)
+target_include_directories(surface_lifecycle_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
+target_compile_definitions(surface_lifecycle_check PRIVATE NOMINMAX)
+target_compile_options(surface_lifecycle_check PRIVATE -fsigned-char)
+target_link_libraries(surface_lifecycle_check PRIVATE storm_bgfx storm_check_sdl)
+
 # program_cache_check: program binaries between renderer starts (src/shim/program_cache.hpp) on OpenGL ES (an X
 # display, like skinning_check): stored, loaded, corrupt / rejected entries relinked, the size limit.
 add_executable(program_cache_check program_cache_check.cpp)

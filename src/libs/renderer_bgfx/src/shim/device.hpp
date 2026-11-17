@@ -122,7 +122,8 @@ class Context final : public render::FrameOwner
     bgfx::TextureHandle presented_game_color() const { return presented_game_color_; }
     // Surface lifecycle (Android): pause stops presenting, resume re-attaches the native window.
     void surface_lost();
-    // Marks the surface for re-attachment; the actual bgfx reset happens once SDL holds a native window.
+    // Marks the surface for re-attachment; the actual bgfx reset happens once SDL holds a native window. Only the
+    // surface of the last surfaceChanged is restored: after a surfaceDestroyed the next surfaceChanged restores.
     void surface_restored();
     // Any thread (Android UI thread, before it destroys the surface): stops further presenting frames and
     // blocks until the render thread has finished those handed over and a restore in progress has given the window
@@ -130,6 +131,16 @@ class Context final : public render::FrameOwner
     void request_surface_release();
     // Game thread, at safe points: honours a pending release request and retries a pending restore.
     void poll_surface();
+#ifndef __ANDROID__
+    // Host checks (tests/renderer_bgfx/surface_lifecycle_check.cpp) play Android's window in place of SDL's answers:
+    // whether SDL holds a native window (not between surfaceDestroyed and surfaceCreated) and its size. Null: SDL's.
+    struct HostWindow
+    {
+        std::atomic<bool> present{true};
+        std::atomic<int> width{0}, height{0};
+    };
+    void set_host_window(const HostWindow *window) { host_window_ = window; }
+#endif
 
     void begin_frame_if_needed();
     // Composites `game_color` to the surface, runs client UI hooks and presents.
@@ -209,6 +220,9 @@ class Context final : public render::FrameOwner
     void stop_backend();
     void create_resources();
     void try_restore();
+    // The surface's native window and size as SDL (or a host check's HostWindow) reports them; false without a window.
+    bool surface_window(void **nwh, void **ndt) const;
+    void surface_window_size(int *width, int *height) const;
     bool read_density(); // true when it changed
     uint32_t reset_flags() const;
     // Render thread (bgfx::setRenderFrameDone): frame `frame` is rendered and presented.
@@ -220,8 +234,11 @@ class Context final : public render::FrameOwner
         return !in_frame_ && !restoring_ && !reset_unapplied_ && (!frames_handed_ || done_frame_ == handed_frame_);
     }
     // Every bgfx::reset of the surface goes through here: the next frame the render thread runs applies it to the
-    // window, a read-back's flush frame too, so until one did a surfaceDestroyed waits (render_idle).
-    void reset_surface(bgfx::SwapChain &chain);
+    // window, a read-back's flush frame too, so until one did a surfaceDestroyed waits (render_idle). Refused (false,
+    // nothing reset) once Android asked for the surface or while none is in use: Android destroys that window, and
+    // the restore after the next surfaceChanged makes the reset. `new_window`: a restore (bgfx re-creates the EGL
+    // surface); `window` receives the native window reset to.
+    bool reset_surface(uint32_t width, uint32_t height, bool new_window, void **window = nullptr);
     // Waits for render_idle(); `lock` holds release_mutex_. False after `what` was logged as an error (3 s).
     bool wait_render_idle(std::unique_lock<std::mutex> &lock, const char *what);
     // Game thread, after presenting frame `number` was handed to the render thread: waits for the frame that
@@ -231,6 +248,9 @@ class Context final : public render::FrameOwner
     std::chrono::nanoseconds frame_gate(uint32_t number, std::chrono::nanoseconds game, std::chrono::nanoseconds blocked);
 
     SDL_Window *window_ = nullptr;
+#ifndef __ANDROID__
+    const HostWindow *host_window_ = nullptr;
+#endif
     bool initialised_ = false;
     bool frame_open_ = false;
     bool restore_pending_ = false;

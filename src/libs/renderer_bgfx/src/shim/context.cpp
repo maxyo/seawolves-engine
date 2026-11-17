@@ -546,7 +546,11 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
     surface_.width_px = width;
     surface_.height_px = height;
     surface_.valid = true;
-    surface_in_use_ = true;
+    {
+        std::lock_guard lock(release_mutex_);
+        surface_in_use_ = true;
+        restore_destroys_ = surface_destroys_; // the window the device starts on is there
+    }
     if (window_)
         read_density();
     ++surface_.generation;
@@ -870,15 +874,11 @@ void Context::resize(uint32_t width, uint32_t height)
     // While the surface is gone the new size is picked up by surface_restored().
     if (!initialised_ || !surface_.valid || (width == surface_.width_px && height == surface_.height_px))
         return;
+    if (!reset_surface(width, height, false))
+        return; // Android is taking the surface away: the restore after it reads the size
     surface_.width_px = width;
     surface_.height_px = height;
     ++surface_.generation;
-    bgfx::SwapChain chain;
-    native_handles(window_, &chain.nwh, &chain.ndt);
-    chain.width = width;
-    chain.height = height;
-    chain.formatDepthStencil = bgfx::TextureFormat::Count; // as in start()
-    reset_surface(chain);
     picture_held_ = false; // see surface_lost
     // A display change (fold, split screen, wm size/density) usually changes the density as well.
     read_density();
@@ -891,13 +891,8 @@ void Context::refresh_reset_flags()
 {
     if (!initialised_ || !surface_.valid)
         return;
-    bgfx::SwapChain chain;
-    native_handles(window_, &chain.nwh, &chain.ndt);
-    chain.width = surface_.width_px;
-    chain.height = surface_.height_px;
-    chain.formatDepthStencil = bgfx::TextureFormat::Count; // as in start()
-    reset_surface(chain);
-    picture_held_ = false; // see surface_lost
+    if (reset_surface(surface_.width_px, surface_.height_px, false)) // else the restore after the release makes it
+        picture_held_ = false;                                     // see surface_lost
 }
 
 bool Context::read_density()
@@ -943,13 +938,37 @@ uint32_t Context::reset_flags() const
            (surface_epoch_flag_ ? BGFX_RESET_FLUSH_AFTER_RENDER : BGFX_RESET_NONE);
 }
 
-void Context::reset_surface(bgfx::SwapChain &chain)
+bool Context::reset_surface(uint32_t width, uint32_t height, bool new_window, void **window)
 {
+    bgfx::SwapChain chain;
+    // SDL holds the window until Android's surfaceDestroyed has returned (it lets it go after us), so a window read
+    // before the check below is the surface's own while that check passes.
+    const bool has_window = surface_window(&chain.nwh, &chain.ndt);
     {
         std::lock_guard lock(release_mutex_);
-        reset_unapplied_ = true;
+        // From here on a surfaceDestroyed waits until a frame applied this reset (render_idle).
+        if (release_requested_ || !surface_in_use_)
+            return false;
+        if (has_window)
+            reset_unapplied_ = true;
     }
+    if (!has_window)
+    {
+        logf("ERROR: the surface is in use but SDL holds no native window: no reset; presentation goes on with the "
+             "last one");
+        return false;
+    }
+    chain.width = width;
+    chain.height = height;
+    chain.formatDepthStencil = bgfx::TextureFormat::Count; // as in start()
+    // A new ANativeWindow can reuse the old address; alternating this otherwise harmless flag at each reset that
+    // attaches a new window makes bgfx re-create the EGL surface on every restore.
+    if (new_window)
+        surface_epoch_flag_ = !surface_epoch_flag_;
     bgfx::reset(reset_flags(), &chain);
+    if (window)
+        *window = chain.nwh;
+    return true;
 }
 
 void Context::surface_lost()
@@ -962,22 +981,18 @@ void Context::surface_lost()
         picture_held_ = false; // the kept pause picture may not survive the surface: drawn again and kept anew
         logf("surface lost: presentation suspended");
     }
-    bool unapplied = false, in_use = false;
+    bool unapplied = false;
     {
         std::lock_guard lock(release_mutex_);
-        unapplied = reset_unapplied_;
-        in_use = surface_in_use_;
+        unapplied = reset_unapplied_; // only made while the surface is in use (reset_surface)
     }
-    if (unapplied && initialised_ && in_use)
+    if (unapplied && initialised_)
     {
         // The last reset (a restore, a resize, new flags) is applied now, by a frame that presents nothing and drops
         // the draws of the frame the surface went away in, while the window is still there (a surfaceDestroyed waits
         // for it in render_idle): otherwise the next read-back's flush frame would apply it to a destroyed window.
         run_frame(BGFX_FRAME_FLUSH | BGFX_FRAME_DISCARD);
     }
-    else if (unapplied && initialised_)
-        logf("ERROR: a bgfx reset is pending for a surface no longer in use: the next frame applies it to a window "
-             "that may be destroyed");
     {
         std::unique_lock lock(release_mutex_);
         // The render thread may still be presenting the last frame to the window.
@@ -1064,17 +1079,39 @@ void Context::surface_restored()
 {
     if (!initialised_ || surface_.valid)
         return;
-    {
-        std::lock_guard lock(release_mutex_);
-        restore_destroys_ = surface_destroys_;
-    }
+    // The surface of the last surfaceChanged (or the start's): a surfaceDestroyed since then, with no surfaceChanged
+    // after it, drops this restore in try_restore (the window SDL may still hand out is the destroyed one).
     restore_pending_ = true;
     try_restore();
 }
 
+bool Context::surface_window(void **nwh, void **ndt) const
+{
+#ifndef __ANDROID__
+    if (host_window_ && !host_window_->present)
+    {
+        *nwh = *ndt = nullptr;
+        return false;
+    }
+#endif
+    return native_handles(window_, nwh, ndt);
+}
+
+void Context::surface_window_size(int *width, int *height) const
+{
+#ifndef __ANDROID__
+    if (host_window_)
+    {
+        *width = host_window_->width;
+        *height = host_window_->height;
+        return;
+    }
+#endif
+    SDL_GetWindowSize(window_, width, height);
+}
+
 void Context::try_restore()
 {
-    bgfx::SwapChain chain;
     // From the read of the native window until bgfx and Swappy hold it, a surfaceDestroyed waits for this restore
     // (render_idle); one that came after the restore was asked for drops it below, before the window is used.
     auto window_released = [this] {
@@ -1090,7 +1127,8 @@ void Context::try_restore()
     }
     // SDL drops its native window when Android destroys the surface and holds a new one only after
     // surfaceCreated; until then there is nothing to attach to and the restore stays pending.
-    if (!native_handles(window_, &chain.nwh, &chain.ndt))
+    void *nwh = nullptr, *ndt = nullptr;
+    if (!surface_window(&nwh, &ndt))
     {
         window_released();
         if (!restore_wait_logged_)
@@ -1101,7 +1139,7 @@ void Context::try_restore()
     restore_pending_ = false;
     restore_wait_logged_ = false;
     int w = 0, h = 0;
-    SDL_GetWindowSize(window_, &w, &h);
+    surface_window_size(&w, &h);
     if (w > 0 && h > 0)
     {
         surface_.width_px = static_cast<uint32_t>(w);
@@ -1110,12 +1148,6 @@ void Context::try_restore()
     // The display may have changed while the surface was gone (density included).
     density_refresh_requested_ = false;
     read_density();
-    chain.width = surface_.width_px;
-    chain.height = surface_.height_px;
-    chain.formatDepthStencil = bgfx::TextureFormat::Count; // as in start()
-    // A new ANativeWindow can reuse the old address; alternating this otherwise harmless flag makes
-    // bgfx re-create the EGL surface on every restore.
-    surface_epoch_flag_ = !surface_epoch_flag_;
     {
         std::unique_lock lock(release_mutex_);
         if (surface_destroys_ != restore_destroys_)
@@ -1129,8 +1161,15 @@ void Context::try_restore()
         // From here on a new surfaceDestroyed waits for our frames.
         surface_in_use_ = true;
     }
-    reset_surface(chain);
-    FramePacing::instance().set_window(chain.nwh);
+    if (!reset_surface(surface_.width_px, surface_.height_px, true, &nwh))
+    {
+        // A surfaceDestroyed came since the check above and waits for this restore: the surface is given up at the
+        // next poll, the next surfaceChanged restores.
+        window_released();
+        logf("surface restore dropped: the surface is being destroyed again; the next surface restores");
+        return;
+    }
+    FramePacing::instance().set_window(nwh);
     window_released();
     if (frame_aborted_)
     {
