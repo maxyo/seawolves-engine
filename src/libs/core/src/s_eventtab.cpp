@@ -35,12 +35,7 @@ void S_EVENTTAB::Clear()
                 }
             }
 
-            // if(pTable[n].pFuncInfo) delete pTable[n].pFuncInfo;
-            // if(pTable[n].name) delete pTable[n].name;
         }
-        // delete pTable; pTable = 0;
-        // Buffer_size = 0;
-        // Event_num = 0;
     }
     ProcessFrame();
 }
@@ -89,17 +84,11 @@ uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code,
                 // event handler function already set
                 if (pTable[ti][n].pFuncInfo[i].func_code == func_code)
                 {
-                    /*if(pTable[ti][n].pFuncInfo[i].status == FSTATUS_DELETED)
-                    {
-                      trace("pTable[ti][n].pFuncInfo[i].status == FSTATUS_DELETED : %s",pTable[ti][n].name);
-                    }*/
-                    // return n;
                     pTable[ti][n].pFuncInfo[i].status = FSTATUS_NORMAL;
 
                     return (((ti << 24) & 0xff000000) | (n & 0xffffff));
                 }
             }
-            // add function
             i = pTable[ti][n].elements;
             pTable[ti][n].elements++;
             pTable[ti][n].pFuncInfo.resize(pTable[ti][n].elements);
@@ -114,12 +103,10 @@ uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code,
             else
                 pTable[ti][n].pFuncInfo[i].status = FSTATUS_NORMAL;
             pTable[ti][n].pFuncInfo[i].bStatic = bStatic;
-            // return n;
             return (((ti << 24) & 0xff000000) | (n & 0xffffff));
         }
     }
 
-    // add new event
     if (Event_num[ti] >= Buffer_size[ti])
     {
         Buffer_size[ti] += BUFFER_BLOCK_SIZE;
@@ -152,7 +139,6 @@ uint32_t S_EVENTTAB::AddEventHandler(const char *event_name, uint32_t func_code,
         }
     }
     Event_num[ti]++;
-    // return (Event_num[ti] - 1);
     return (((ti << 24) & 0xff000000) | ((Event_num[ti] - 1) & 0xffffff));
 }
 

@@ -35,11 +35,9 @@ class S_EVENTTAB
     std::vector<EVENTINFO> pTable[HASHTABLE_SIZE];
     // A handler was added as new or marked deleted since the last ProcessFrame: only then has a frame anything to do.
     bool pendingStatuses_ = false;
-    // bool bKeepName;
   public:
     S_EVENTTAB();
     ~S_EVENTTAB();
-    // uint32_t GetEventNum(){return Event_num;};
     void SetStatus(const char *event_name, uint32_t func_code, uint32_t status);
     uint32_t AddEventHandler(const char *event_name, uint32_t func_code, uint32_t func_segment_id, int32_t flag,
                              bool bStatic = false);
@@ -48,7 +46,6 @@ class S_EVENTTAB
     // (a running handler may do that): ask again after every script call.
     const EVENTINFO *GetEvent(uint32_t event_code) const;
     uint32_t MakeHashValue(const char *string);
-    //    void  KeepNameMode(bool on){bKeepName = on;};
     void Release();
     void Clear();
     void InvalidateBySegmentID(uint32_t segment_id);

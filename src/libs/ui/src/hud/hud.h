@@ -36,7 +36,7 @@ inline std::string RepeatedText(const std::string &text, int count)
     return count > 1 ? text + " \u00D7" + std::to_string(count) : text;
 }
 
-// How long a toast stays (owner rule, every toast and event line): 2.5 s and 60 ms a
+// How long a toast stays (every toast and event line): 2.5 s and 60 ms a
 // character, at least 3 s, at most 7 s. A repeat («×N») starts it again; a finger on it stops it.
 inline double ToastSeconds(const std::string &text)
 {
@@ -590,7 +590,7 @@ class Hud
     };
     void Refresh();
     void Conceal();
-    // The exception boundary of HUD component code (UI-1): a scene's calls and handlers, the
+    // The exception boundary of HUD component code: a scene's calls and handlers, the
     // spyglass overlay. Runs `call`; a throw is reported by Disable and false returned.
     template <class Call> bool Guarded(const std::string &component, const char *where, Call &&call);
     // A HUD component threw: an error line naming it, the call and the exception, the player's
@@ -664,7 +664,7 @@ Json SpyglassProps(const Spyglass &spyglass, Hud &hud);
 // ASCII lower case: engine identifiers are matched without regard to case.
 std::string Lower(std::string text);
 
-// The game's time acceleration in four steps (owner decision), the same at sea and on the world
+// The game's time acceleration in four steps, the same at sea and on the world
 // map: the "time" button shows the scale the engine runs at (`scale`, x1 = 1; negative: unknown,
 // no button) and a tap asks for the next of x1, x2, x4, x8. The engine applies it through the
 // scripts, which clamp it to their limits (android_time_scale.hpp). Offered only when the

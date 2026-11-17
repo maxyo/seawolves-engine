@@ -99,7 +99,6 @@ void CXI_ToolTip::SetByFormatString(XYRECT &rectOwner, INIFILE *pDefIni, const c
         }
     }
 
-    //
     m_nFontID = -1;
     m_fFontScale = 1.f;
     m_dwFontColor = 0xFFFFFFFF;
@@ -113,7 +112,6 @@ void CXI_ToolTip::SetByFormatString(XYRECT &rectOwner, INIFILE *pDefIni, const c
     m_pntTextOffset.y = 4;
     m_sGroupName = "";
     m_nPicIndex_Left = m_nPicIndex_Right = m_nPicIndex_Middle = -1;
-    //
     if (pDefIni)
     {
         if (pDefIni->ReadString(pcToolTipType, "font_id", param, sizeof(param), ""))
@@ -125,7 +123,6 @@ void CXI_ToolTip::SetByFormatString(XYRECT &rectOwner, INIFILE *pDefIni, const c
         m_pntTextOffset =
             CINODE::GetIniLongPoint(pDefIni, pcToolTipType, nullptr, nullptr, "str_offset", m_pntTextOffset);
 
-        // read back info
         m_dwBackColor = CINODE::GetIniARGB(pDefIni, pcToolTipType, nullptr, nullptr, "back_color", m_dwBackColor);
         m_nLeftSideWidth = pDefIni->GetInt(pcToolTipType, "back_leftwidth", m_nLeftSideWidth);
         m_nRightSideWidth = pDefIni->GetInt(pcToolTipType, "back_rightwidth", m_nRightSideWidth);
@@ -157,13 +154,10 @@ void CXI_ToolTip::SetByFormatString(XYRECT &rectOwner, INIFILE *pDefIni, const c
     if (m_nMaxStrWidth <= 0)
         m_nMaxStrWidth = m_pntScreenSize.x;
 
-    //
     CXI_UTILS::SplitStringByWidth(m_sText.c_str(), m_nFontID, m_fFontScale, m_nMaxStrWidth, m_aSubText);
     m_nUseWidth = 0;
     for (n = 0; n < m_aSubText.size(); n++)
     {
-        // m_aSubText[n].TrimLeft();
-        // m_aSubText[n].TrimRight();
         TOREMOVE::trim(m_aSubText[n]);
         TOREMOVE::rtrim(m_aSubText[n]);
 
@@ -288,7 +282,6 @@ void CXI_ToolTip::ReplaceRectangle(int32_t x, int32_t y)
         }
         else
         {
-            // put below anyway
             m_rPos.top = bottom;
             m_rPos.bottom = m_rPos.top + m_nUseHeight;
         }

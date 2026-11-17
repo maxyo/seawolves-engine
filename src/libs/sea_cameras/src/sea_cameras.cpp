@@ -15,12 +15,10 @@ CREATE_CLASS(DECK_CAMERA)
 SEA_CAMERAS::SEA_CAMERAS()
 {
     bActive = true;
-    //    ShowCursor(false);
 }
 
 SEA_CAMERAS::~SEA_CAMERAS()
 {
-    //    ShowCursor(true);
 }
 
 uint64_t SEA_CAMERAS::ProcessMessage(MESSAGE &message)
@@ -31,7 +29,6 @@ uint64_t SEA_CAMERAS::ProcessMessage(MESSAGE &message)
     case AI_CAMERAS_ADD_CAMERA: {
         const auto eidCamera = message.EntityID();
         auto *pCamera = static_cast<COMMON_CAMERA *>(core.GetEntityPointer(eidCamera));
-        // if (CamerasArray.Find(pCamera) == INVALID_ARRAY_INDEX) CamerasArray.Add(pCamera);
         const auto it = std::find(CamerasArray.begin(), CamerasArray.end(), pCamera);
         if (it == CamerasArray.end())
             CamerasArray.push_back(pCamera);
@@ -43,7 +40,6 @@ uint64_t SEA_CAMERAS::ProcessMessage(MESSAGE &message)
         const auto eidCamera = message.EntityID();
         auto *const pACharacter = message.AttributePointer();
         auto *pCamera = static_cast<COMMON_CAMERA *>(core.GetEntityPointer(eidCamera));
-        // if (CamerasArray.Find(pCamera) == INVALID_ARRAY_INDEX) CamerasArray.Add(pCamera);
         const auto it = std::find(CamerasArray.begin(), CamerasArray.end(), pCamera);
         if (it == CamerasArray.end())
             CamerasArray.push_back(pCamera);

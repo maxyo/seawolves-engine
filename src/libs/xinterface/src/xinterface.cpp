@@ -129,7 +129,7 @@ bool storm::mobile::ChooseSaveProfile(const std::string &profile)
 #endif
 
 #ifdef __ANDROID__
-// No profiles in this port (owner decision). The game's profile chooser (save_load.c opens it
+// No profiles in this port. The game's profile chooser (save_load.c opens it
 // on a load from the main menu when there is more than one profile folder) never reaches the
 // player: it is answered at once (mobile_save_list.hpp ProfileToChoose). Whenever the list is
 // idle the opening's profile is the game's current one again: another profile becomes current
@@ -320,20 +320,16 @@ XINTERFACE::~XINTERFACE()
 
 bool XINTERFACE::Init()
 {
-    // GUARD(XINTERFACE::Init())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
 void XINTERFACE::SetDevice()
 {
-    // GUARD(XINTERFACE::SetDevice())
 
     g_idInterface = GetId();
     m_UtilContainer.Init();
 
-    // get render service
     pRenderService = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!pRenderService)
     {
@@ -346,7 +342,6 @@ void XINTERFACE::SetDevice()
         throw std::runtime_error("No service: strservice");
     }
 
-    // Load common parameters
     LoadIni();
 
     // Create pictures and string lists service
@@ -376,7 +371,6 @@ void XINTERFACE::SetDevice()
 
     core.SetLayerType(INTERFACE_EXECUTE, layer_type_t::execute);
     core.SetLayerType(INTERFACE_REALIZE, layer_type_t::realize);
-    // core.SystemMessages(GetId(),true);
 
     if (AttributesPointer)
     {
@@ -393,7 +387,6 @@ void XINTERFACE::SetDevice()
 
     m_pEditor = new GIEditor(this);
 
-    // UNGUARD
 }
 
 void XINTERFACE::Execute(uint32_t)
@@ -407,7 +400,6 @@ void XINTERFACE::Execute(uint32_t)
     if (!m_bUse)
         return;
 
-    // do blind factor
     if (m_bBlindUp)
         m_fBlindFactor += m_fBlindSpeed * Delta_Time;
     else
@@ -783,10 +775,8 @@ void XINTERFACE::Realize(uint32_t)
         while (pRenderService->TechniqueExecuteNext())
             ;
 
-    // Get old transformation
     pRenderService->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(moldv));
     pRenderService->GetTransform(D3DTS_PROJECTION, storm::math::d3dMatrix(moldp));
-    // Set new transformation
     pRenderService->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(matw));
     pRenderService->SetTransform(D3DTS_VIEW, storm::math::d3dMatrix(matv));
     pRenderService->SetTransform(D3DTS_PROJECTION, storm::math::d3dMatrix(matp));
@@ -955,7 +945,6 @@ void XINTERFACE::Realize(uint32_t)
     }
 #endif
 
-    // Do mouse move
     auto *pOldNode = m_pCurNode;
     MouseMove();
     if (pOldNode != m_pCurNode)
@@ -963,7 +952,6 @@ void XINTERFACE::Realize(uint32_t)
         core.Event(ISOUND_EVENT, "l", 2); // choosing a new node
     }
 
-    // show dinamic pictures
     XI_ONLYONETEX_VERTEX pV[4];
     for (auto i = 0; i < 4; i++)
         pV[i].pos.z = 1.f;
@@ -1008,7 +996,6 @@ void XINTERFACE::Realize(uint32_t)
 
     DrawNode(m_pNodes, Delta_Time, 81, 90);
 
-    // Show dinamic stringes
     if (m_nStringQuantity > 0)
     {
         auto *tmpAttr = core.Entity_GetAttributeClass(g_idInterface, "strings");
@@ -1048,7 +1035,6 @@ void XINTERFACE::Realize(uint32_t)
                                         "iMouseCurShow");
     }
 
-    // Show context help data
     ShowContextHelp();
 
     if (pRenderService->TechniqueExecuteStart("iExitTechnique"))
@@ -1056,7 +1042,6 @@ void XINTERFACE::Realize(uint32_t)
             ;
     pRenderService->SetRenderState(D3DRS_FOGENABLE, dwFogFlag);
 
-    // Restore old transformation
     pRenderService->SetTransform(D3DTS_VIEW, storm::math::d3dMatrix(moldv));
     pRenderService->SetTransform(D3DTS_PROJECTION, storm::math::d3dMatrix(moldp));
 }
@@ -1224,25 +1209,21 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
         const std::string &param = message.String();
         const std::string &nodeName = message.String();
         int32_t nCommand = message.Long();
-        //
         auto *pEvent = new EVENT_Entity;
         if (pEvent == nullptr)
             throw std::runtime_error("allocate memory error");
         pEvent->next = m_pEvents;
         m_pEvents = pEvent;
-        //
         auto len = param.size() + 1;
         pEvent->sEventName = new char[len];
         if (pEvent->sEventName == nullptr)
             throw std::runtime_error("allocate memory error");
         memcpy(pEvent->sEventName, param.c_str(), len);
-        //
         len = nodeName.size() + 1;
         pEvent->sNodeName = new char[len];
         if (pEvent->sNodeName == nullptr)
             throw std::runtime_error("allocate memory error");
         memcpy(pEvent->sNodeName, nodeName.c_str(), len);
-        //
         if (nCommand >= 0 && nCommand < COMMAND_QUANTITY)
             pEvent->nCommandIndex = pCommandsList[nCommand].code;
         else
@@ -1328,7 +1309,6 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
     break;
     case MSG_INTERFACE_PLACE_IMAGE: {
         const std::string &param = message.String();
-        // find image
         IMAGE_Entity *pImg = m_imgLists;
         while (pImg != nullptr)
         {
@@ -1337,7 +1317,6 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
             pImg = pImg->next;
         }
         bool bGlobRect = message.Long() != 0;
-        // get image position
         if (pImg != nullptr)
         {
             pImg->position.left = message.Long();
@@ -1564,7 +1543,6 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
     break;
     case MSG_INTERFACE_SET_BLIND: {
         const std::string &param = message.String();
-        // find image
         IMAGE_Entity *pImg = m_imgLists;
         while (pImg != nullptr)
         {
@@ -1572,7 +1550,6 @@ uint64_t XINTERFACE::ProcessMessage(MESSAGE &message)
                 break;
             pImg = pImg->next;
         }
-        // get image position
         if (pImg != nullptr)
         {
             pImg->doBlind = message.Long() != 0;
@@ -1739,7 +1716,6 @@ static const char *RESOURCE_FILENAME = "resource\\ini\\interfaces\\interfaces.in
 
 void XINTERFACE::LoadIni()
 {
-    // GUARD(XINTERFACE::LoadIni());
     char section[256];
 
     auto ini = fio->OpenIniFile(RESOURCE_FILENAME);
@@ -1787,7 +1763,6 @@ void XINTERFACE::LoadIni()
     core.Trace("Using %s parameters", platform);
     sprintf_s(section, "COMMON");
 
-    // set screen parameters
     if (ini->GetInt(platform, "bDynamicScaling", 0) == 0)
     {
         const auto &canvas_size = core.GetScreenSize();
@@ -1824,10 +1799,8 @@ void XINTERFACE::LoadIni()
     matv[3][0] = -(GlobalScreenRect.left + GlobalScreenRect.right) / 2.f;
     matv[3][1] = -(GlobalScreenRect.top + GlobalScreenRect.bottom) / 2.f;
 
-    // set key press data
     m_nMaxPressDelay = ini->GetInt(section, "RepeatDelay", 500);
 
-    // set mouse cursor
     char param[256];
     ini->ReadString(section, "MousePointer", param, sizeof(param) - 1, "");
     char param2[256];
@@ -1844,13 +1817,11 @@ void XINTERFACE::LoadIni()
     vMouse[0].tv = vMouse[2].tv = 0.f;
     vMouse[1].tv = vMouse[3].tv = 1.f;
 
-    // set blind parameters
     m_fBlindSpeed = ini->GetFloat(section, "BlindTime", 1.f);
     if (m_fBlindSpeed <= 0.0001f)
         m_fBlindSpeed = 1.f;
     m_fBlindSpeed = 0.002f / m_fBlindSpeed;
 
-    // set wave parameters
     m_nColumnQuantity = ini->GetInt(section, "columnQuantity", m_nColumnQuantity);
     m_fWaveAmplitude = ini->GetFloat(section, "waveAmplitude", m_fWaveAmplitude);
     m_fWavePhase = ini->GetFloat(section, "wavePhase", m_fWavePhase);
@@ -1860,7 +1831,6 @@ void XINTERFACE::LoadIni()
 
     oldKeyState.dwKeyCode = -1;
     DoControl();
-    // UNGUARD
 }
 
 void XINTERFACE::LoadDialog(const char *sFileName)
@@ -1873,7 +1843,6 @@ void XINTERFACE::LoadDialog(const char *sFileName)
     if (m_pEditor)
         m_pEditor->ReCreate();
 
-    // initialize ini file
     m_sDialogFileName = sFileName;
     auto ini = fio->OpenIniFile(sFileName);
     if (!ini)
@@ -1886,7 +1855,6 @@ void XINTERFACE::LoadDialog(const char *sFileName)
 
     sprintf_s(section, "MAIN");
 
-    // load items
     CINODE *curnod = m_pNodes;
     int keyNum = 1;
     char nodeName[sizeof(param)];
@@ -1963,7 +1931,6 @@ void XINTERFACE::LoadDialog(const char *sFileName)
             keyNum++;
         }
 
-    // set help data
     if (m_pContHelp != nullptr)
     {
         HELPEntity *pHlist = static_cast<CXI_CONTEXTHELP *>(m_pContHelp)->m_pHelpList;
@@ -1972,7 +1939,6 @@ void XINTERFACE::LoadDialog(const char *sFileName)
             pHlist[n].pNode = m_pNodes->FindNode(pHlist[n].nodeName);
     }
 
-    // set active item
     if (m_pNodes == nullptr)
         m_pCurNode = nullptr;
     else
@@ -2036,12 +2002,6 @@ void XINTERFACE::SFLB_CreateNode(INIFILE *pOwnerIni, INIFILE *pUserIni, const ch
         core.Trace("Warning! Interface: Can`t create node with null type.");
         return;
     }
-    /*if( !pOwnerIni->TestSection( sNodeType ) &&
-      !pUserIni->TestSection( sNodeType ) )
-    {
-      core.Trace("Warning! Interface: Node type %s not present into describe.",sNodeType);
-      return;
-    }*/
 
     if (!sNodeName)
         sNodeName = "?";
@@ -2080,15 +2040,11 @@ void XINTERFACE::SFLB_CreateNode(INIFILE *pOwnerIni, INIFILE *pUserIni, const ch
         pNewNod->m_bBreakPress = pNewNod->GetIniBool(pUserIni, sNodeName, pOwnerIni, sNodeType, "bBreakCommand", false);
         if (pNewNod->GetIniBool(pUserIni, sNodeName, pOwnerIni, sNodeType, "moveMouseDoSelect", false))
             pNewNod->m_bMouseSelect = true;
-        // if( pNewNod->ReadIniString(pUserIni,sNodeName, pOwnerIni,sNodeType, "command", param,sizeof(param)-1, "") )
-        // do
         if (usedini && usedini->ReadString(pNewNod->m_nodeName, "command", param, sizeof(param) - 1, ""))
             do
             {
-                // get command name
                 char stmp[sizeof(param)];
                 sscanf(param, "%[^,]", stmp);
-                // search command
                 const int nComNum = FindCommand(stmp);
                 if (nComNum == -1)
                     continue;
@@ -2272,7 +2228,6 @@ void XINTERFACE::DeleteNode(const char *pcNodeName)
             m_pNodes = pNod->m_next;
         if (m_pEditor)
             m_pEditor->DelNode(pNod);
-        // delete the node
         delete pNod;
     }
 }
@@ -2324,7 +2279,6 @@ void XINTERFACE::SetTooltip(const char *pcHeader, const char *pcText1, uint32_t 
         core.Trace("Warning! Interface::SetTooltip - no precreated node");
         return;
     }
-    // set
     pNodTitle->ChangeString(0, pcHeader);
     if (pcPicTextureName && pcPicTextureName[0])
         pNodPic->SetNewPicture(false, (char *)pcPicTextureName);
@@ -2553,7 +2507,6 @@ void XINTERFACE::RegistryExitKey(const char *pcKeyName)
 int32_t XINTERFACE::StoreNodeLocksWithOff()
 {
     m_aLocksArray.push_back(LocksInfo{});
-    // int32_t nStoreSlot = m_aLocksArray.Add();
     int32_t nStoreCode;
     for (nStoreCode = 0; nStoreCode < 1000; nStoreCode++)
     {
@@ -2566,11 +2519,9 @@ int32_t XINTERFACE::StoreNodeLocksWithOff()
     }
     m_aLocksArray.back().nSaveCode = nStoreCode;
     for (CINODE *pNod = m_pNodes; pNod; pNod = pNod->m_next)
-        // if( !pNod->m_bLockStatus ) {
         if (!pNod->m_bLockedNode)
         {
             m_aLocksArray.back().aNode.push_back(pNod);
-            // pNod->m_bLockStatus = true;
             pNod->m_bLockedNode = true;
         }
     return nStoreCode;
@@ -2586,7 +2537,6 @@ void XINTERFACE::RestoreNodeLocks(int32_t nStoreCode)
         return;
     for (int32_t i = 0; i < m_aLocksArray[n].aNode.size(); i++)
     {
-        // m_aLocksArray[n].aNode[i]->m_bLockStatus = false;
         m_aLocksArray[n].aNode[i]->m_bLockedNode = false;
     }
     m_aLocksArray.erase(m_aLocksArray.begin() + n);
@@ -3082,7 +3032,6 @@ void XINTERFACE::DoControl()
     else
     {
         bool bFirstPress = false;
-        // Get action code CST_ACTIVATED, CST_ACTIVE
 
         // right press
         core.Controls->GetControlState(INTERFACE_CONTROL_RIGHT, cs);
@@ -3174,7 +3123,6 @@ void XINTERFACE::DoControl()
                 curKS.downButton = true;
         }
 
-        //
         if (AttributesPointer)
         {
             ATTRIBUTES *pA = AttributesPointer->GetAttributeClass("KeyStates");
@@ -3583,7 +3531,6 @@ uint32_t XINTERFACE::AttributeChanged(ATTRIBUTES *patr)
         const char *sImageName = patr->GetParent()->GetThisName();
         if (sImageName == nullptr)
             return 0;
-        // find this picture
         IMAGE_Entity *pImList = m_imgLists;
         while (pImList != nullptr)
         {
@@ -3606,13 +3553,11 @@ uint32_t XINTERFACE::AttributeChanged(ATTRIBUTES *patr)
                 throw std::runtime_error("Allocate memory error");
             }
             memcpy(pImList->sImageName, sImageName, len);
-            // insert that into images list
             pImList->next = m_imgLists;
             m_imgLists = pImList;
         }
         if (patr->GetThisName() == nullptr)
             return 0;
-        // set picture
         if (storm::iEquals(patr->GetThisName(), "pic"))
         {
             delete[] pImList->sPicture;
@@ -3630,7 +3575,6 @@ uint32_t XINTERFACE::AttributeChanged(ATTRIBUTES *patr)
                 return 0;
             pImList->imageID = pPictureService->GetImageNum(pImList->sImageListName, pImList->sPicture);
         }
-        // set texture
         if (storm::iEquals(patr->GetThisName(), "tex"))
         {
             if (pImList->sImageListName != nullptr)
@@ -3689,7 +3633,6 @@ bool XINTERFACE::SFLB_DoSaveFileData(const char *saveName, const char *gameSaveD
 
     ((SAVE_DATA_HANDLE *)pdat)->StringDataSize = slen;
     ((SAVE_DATA_HANDLE *)pdat)->SurfaceDataSize = 0;
-    // if(slen>0)
     memcpy(&pdat[sizeof(SAVE_DATA_HANDLE)], saveData, slen);
 
     int32_t ssize = 0;
@@ -3836,7 +3779,6 @@ char *XINTERFACE::SaveFileFind(int32_t saveNum, char *buffer, size_t bufSize, in
             fio->_CreateDirectory(sSavePath);
         }
 
-        // start save file finding
         const auto vFilePaths = fio->_GetFsPathsByMask(sSavePath, nullptr, true);
         for (std::filesystem::path filePath : vFilePaths)
         {
@@ -4051,7 +3993,6 @@ int32_t XINTERFACE::PrintIntoWindow(int32_t wl, int32_t wr, int32_t idFont, uint
         return 0;
     int32_t strWidth = pRenderService->StringWidth(str, idFont, scale);
 
-    // check fontScale
     if (nWidthForScaleCorrecting > 0 && strWidth > nWidthForScaleCorrecting)
     {
         if (nSplit == 0)
@@ -4098,14 +4039,12 @@ int32_t XINTERFACE::PrintIntoWindow(int32_t wl, int32_t wr, int32_t idFont, uint
     }
 
     char *newStr = const_cast<char *>(str); // TODO: Rewrite this code so the string is not (temporarily) modified
-    // cut on the left
     while (strLeft < wl && newStr != nullptr && newStr[0] != 0)
     {
         newStr += utf8::u8_inc(newStr);
         strWidth = pRenderService->StringWidth(newStr, idFont, scale);
         strLeft = strRight - strWidth;
     }
-    // cut on the right
     if (newStr != nullptr)
     {
         strRight = strLeft + strWidth;
@@ -4339,7 +4278,6 @@ void XINTERFACE::ShowContextHelp()
     if (m_idHelpTexture == -1)
         return;
 
-    // show picture
     XI_ONLYONETEX_VERTEX pV[4];
     for (int i = 0; i < 4; i++)
         pV[i].pos.z = 1.f;
@@ -4506,10 +4444,6 @@ void CONTROLS_CONTAINER::Execute(uint32_t delta_time)
             pDescr = pDescr->next;
         }
         //debug code
-        /*  if (storm::iEquals(pCont->resultName, "ChrTurnH1"))
-            if (cs.state != CST_INACTIVE)
-                cs.state = cs.state;
-        */
         core.Controls->SetControlState(pCont->resultName, cs);
         core.Controls->GetControlState(pCont->resultName, csPrev);
         pCont = pCont->next;

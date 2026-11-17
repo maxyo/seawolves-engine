@@ -343,19 +343,7 @@ uint32_t dwSoundBuffersCount = 0;
 uint32_t dwSoundBytes = 0;
 uint32_t dwSoundBytesCached = 0;
 
-//################################################################################
 //~!~
-/*#define STRIPPATH(s)\
-    (sizeof(s) > 11 && (s)[sizeof(s)-12] == '/' ? (s) + sizeof(s) - 11 : \
-    sizeof(s) > 10 && (s)[sizeof(s)-11] == '/' ? (s) + sizeof(s) - 10 : \
-    sizeof(s) > 9 && (s)[sizeof(s)-10] == '/' ? (s) + sizeof(s) - 9 : \
-    sizeof(s) > 8 && (s)[sizeof(s)-9] == '/' ? (s) + sizeof(s) - 8 : \
-    sizeof(s) > 7 && (s)[sizeof(s)-8] == '/' ? (s) + sizeof(s) - 7 : \
-    sizeof(s) > 6 && (s)[sizeof(s)-7] == '/' ? (s) + sizeof(s) - 6 : \
-    sizeof(s) > 5 && (s)[sizeof(s)-6] == '/' ? (s) + sizeof(s) - 5 : \
-    sizeof(s) > 4 && (s)[sizeof(s)-5] == '/' ? (s) + sizeof(s) - 4 : \
-    sizeof(s) > 3 && (s)[sizeof(s)-4] == '/' ? (s) + sizeof(s) - 3 : \
-    sizeof(s) > 2 && (s)[sizeof(s)-3] == '/' ? (s) + sizeof(s) - 2 : (s))*/
 
 #define CHECKD3DERR(expr) ErrorHandler(expr, __FILE__, __LINE__, __func__, #expr)
 
@@ -372,7 +360,6 @@ inline bool ErrorHandler(HRESULT hr, const char *file, unsigned line, const char
 
 const uint32_t Renderer::rectsVBuffer_SizeInRects = 512;
 
-//################################################################################
 Renderer::Renderer()
 {
     rectsVBuffer = nullptr;
@@ -933,7 +920,7 @@ bool Renderer::Init()
         // shipped; derived data, so in the engine's cache root (fs::GetCachePath: on Android the app's cache) + "relief":
         // «Очистить кэш» or the system's eviction removes them and the game makes them again.
         // engine.ini relief_dir overrides (host checks with prepared maps). The models: APK assets on Android, the files
-        // in engine.ini relief_models (the folder the build makes them in: src/libs/relief/model/README.md) on the host (none: no maps are made, logged).
+        // in engine.ini relief_models (the folder the build makes them in) on the host (none: no maps are made, logged).
         storm::render::ReliefConfig relief;
         ini->ReadString(nullptr, "relief_dir", str, sizeof(str), "");
         relief.directory = std::filesystem::u8path(str);
@@ -968,7 +955,7 @@ bool Renderer::Init()
             };
 #endif
         storm::render::ConfigureRelief(relief);
-        // The owner's parallax tuning (the debug view's toggles): the app's files directory, not the cache.
+        // The parallax tuning (the debug view's toggles): the app's files directory, not the cache.
         storm::render::ConfigureParallaxExclusions(fs::GetStashPath() / "pom_user_exclusions.txt");
 #ifdef __ANDROID__
         {
@@ -1029,7 +1016,6 @@ bool Renderer::Init()
         }
 
 
-        // stencil_format = D3DFMT_D24S8;
 #ifdef __ANDROID__
         // SDL's view already exists and has been shown by main. Query it here,
         // immediately before device creation; imported PC dimensions are only
@@ -1147,11 +1133,9 @@ bool Renderer::Init()
         throw std::runtime_error("Cannot initialize renderer: could not allocate vertex buffers");
     }
 
-    // UNGUARD
     return true;
 }
 
-//################################################################################
 Renderer::~Renderer()
 {
     storm::loading::screen = nullptr;
@@ -1190,7 +1174,6 @@ Renderer::~Renderer()
 
 bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t height)
 {
-    // GUARD(Renderer::InitDevice)
 
     aniVBuffer = nullptr;
     numAniVerteces = 0;
@@ -1204,7 +1187,6 @@ bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t heig
     d3d = storm::shim::CreateDirect3D();
     if (d3d == nullptr)
     {
-        // MessageBox(hwnd, "Direct3DCreate9 error", "InitDevice::Direct3DCreate9", MB_OK);
         core.Trace("Direct3DCreate9 error : InitDevice::Direct3DCreate9");
         return false;
     }
@@ -1259,11 +1241,7 @@ bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t heig
         d3dpp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
     else
         d3dpp.Flags = 0;
-    // d3dpp.FullScreen_RefreshRateInHz = D3DPRESENT_RATE_DEFAULT;
     d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;
-    // d3dpp.SwapEffect = D3DSWAPEFFECT_COPY;
-    // if(windowed) d3dpp.SwapEffect = D3DSWAPEFFECT_DISCARD;//FLIP;
-    // else d3dpp.SwapEffect = D3DSWAPEFFECT_FLIP;
 
     if (vSyncEnabled)
     {
@@ -1324,7 +1302,6 @@ bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t heig
     SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_ADDSIGNED);
 
     // texture op for lightmaps
-    // SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_ADDSIGNED);
 
     SetCamera(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), 1.0f);
 
@@ -1346,11 +1323,9 @@ bool Renderer::InitDevice(bool windowed, HWND _hwnd, int32_t width, int32_t heig
 
     m_fHeightDeformator = (float)(height * 4.0f) / (float)(width * 3.0f);
 
-    // UNGUARD
     return true;
 }
 
-//################################################################################
 bool Renderer::ReleaseDevice()
 {
     if (appEventsSubscription_ >= 0)
@@ -1397,12 +1372,10 @@ bool Renderer::ReleaseDevice()
     return true;
 }
 
-//################################################################################
 bool Renderer::ClearFrame(int32_t type)
 {
     if (CHECKD3DERR(d3d9->Clear(0L, NULL, type, dwBackColor, 1.0f, 0L)) == true)
         return false;
-    // if(CHECKD3DERR(d3d9->Clear(0L, NULL, type, 0x0, 1.0f, 0L))==true)    return false;
     return true;
 }
 
@@ -1583,7 +1556,6 @@ void Renderer::DrawParallaxProbe()
     }
 }
 
-//################################################################################
 bool Renderer::DrawFrameStats()
 {
     if (bShowFps)
@@ -1708,7 +1680,6 @@ bool Renderer::DrawFrameStats()
     return true;
 }
 
-//################################################################################
 static int totSize = 0;
 
 int32_t Renderer::TextureCreate(const char *fname)
@@ -2485,9 +2456,7 @@ bool Renderer::TextureLoad(int32_t t)
         Textures[t].isCubeMap = true;
     }
 
-    //---------------------------------------------------------------
     // print statistics
-    //---------------------------------------------------------------
     if (texLog)
     {
         char s[256];
@@ -2506,7 +2475,6 @@ bool Renderer::TextureLoad(int32_t t)
             spdlog::error("Cannot write the texture log {}", log.string());
     }
     dwTotalSize += Textures[t].dwSize;
-    //---------------------------------------------------------------
     Textures[t].loaded = true;
     storm::render::MarkTextureImmutable(Textures[t].d3dtex); // the shim keeps no CPU copy after the upload
     // Close the file
@@ -2585,7 +2553,6 @@ bool Renderer::LoadTextureSurface(TextureFileReader &fileS, storm::shim::Surface
     return ok;
 }
 
-//################################################################################
 bool Renderer::TextureSet(int32_t stage, int32_t texid)
 {
     if (texid == -1)
@@ -2597,14 +2564,6 @@ bool Renderer::TextureSet(int32_t stage, int32_t texid)
         return true;
     }
 
-    /*
-    if(Textures[texid].loaded==false)
-    {
-    int tex2load[MAX_STEXTURES];
-    int t2l=0;
-    for(int32_t t=0; t<MAX_STEXTURES; t++)
-    if(Textures[t].ref>0 && Textures[t].loaded==false)    tex2load[t2l++] = t;
-    */
     /*/sort textures
     for(t=0; t<t2l; t++)
     for(int32_t tt=t; tt<t2l; tt++)
@@ -2614,15 +2573,6 @@ bool Renderer::TextureSet(int32_t stage, int32_t texid)
     tex2load[t] = tex2load[tt];
     tex2load[tt] = ttemp;
     }*/
-    /*
-    for(t=0; t<t2l; t++)
-    {
-    Textures[tex2load[t]].loaded = true;
-    TextureLoad(tex2load[t]);
-    }
-    //Textures[texid].loaded = true;    TextureLoad(texid);
-    }
-    */
 
     if (CHECKD3DERR(d3d9->SetTexture(stage, Textures[texid].d3dtex)) == true)
     {
@@ -2631,7 +2581,6 @@ bool Renderer::TextureSet(int32_t stage, int32_t texid)
     return true;
 }
 
-//################################################################################
 bool Renderer::TextureRelease(int32_t texid)
 {
     if (texid == -1)
@@ -2679,7 +2628,6 @@ bool Renderer::TextureRelease(int32_t texid)
     return true;
 }
 
-//################################################################################
 bool Renderer::SetCamera(const glm::vec3 &pos, const glm::vec3 &ang, float fov)
 {
     if (!SetCamera(pos, ang))
@@ -2695,38 +2643,14 @@ bool Renderer::SetCamera(const glm::vec3 &pos, const glm::vec3 &ang)
 {
     glm::mat4 mtx;
     const glm::vec3 vOldWordRelationPos = vWordRelationPos;
-    /*if (!pos || !ang)
-    {
-      if (!pos && !ang) return true;
-      //if(CHECKD3DERR(GetTransform(D3DTS_VIEW, mtx))==true) return false;
-      d3d9->GetTransform(D3DTS_VIEW, mtx);
-      if (pos)
-      {
-        //mtx.SetInversePosition(pos->x, pos->y, pos->z);
-        Pos = *pos;
-        vWordRelationPos = -Pos;
-      }
-      else
-      {
-        //glm::vec3 p;
-        //mtx.MulToInvNorm(mtx.Pos(), p);
-        mtx.BuildMatrix(*ang);
-        mtx.Transposition3X3();
-        //mtx.SetInversePosition(p.x, p.y, p.z);
-        Ang = *ang;
-      }
-    }
-    else*/
     {
         mtx = storm::math::eulerMatrix(ang);
         storm::math::transpose3x3(mtx);
-        // mtx.SetInversePosition(pos->x, pos->y, pos->z);
         Pos = pos;
         Ang = ang;
         vWordRelationPos = -Pos;
     }
     storm::render::SetEffectsWorldOrigin({-vWordRelationPos.x, -vWordRelationPos.y, -vWordRelationPos.z});
-    // if(CHECKD3DERR(SetTransform(D3DTS_VIEW, mtx))==true)    return false;
 
     d3d9->SetTransform(D3DTS_VIEW, storm::math::d3dMatrix(mtx));
     vViewRelationPos = -(storm::math::transformPoint(mtx, vWordRelationPos));
@@ -2744,12 +2668,10 @@ bool Renderer::SetCamera(glm::vec3 lookFrom, glm::vec3 lookTo, glm::vec3 up)
     glm::mat4 mtx;
     if (!storm::math::viewMatrix(mtx, lookFrom, lookTo, up))
         return false;
-    // if(CHECKD3DERR(SetTransform(D3DTS_VIEW, mtx))==true)    return false;
     SetTransform(D3DTS_VIEW, storm::math::d3dMatrix(mtx));
     Pos = lookFrom;
 
     // calculate the angle of the camera
-    // Ang = 0.0f;
     const glm::vec3 vNorm = storm::math::normalizeOrZero(lookTo - lookFrom);
     Ang.y = atan2f(vNorm.x, vNorm.z);
     Ang.x = atan2f(-vNorm.y, sqrtf(vNorm.x * vNorm.x + vNorm.z * vNorm.z));
@@ -2812,10 +2734,8 @@ bool Renderer::SetPerspective(float perspective, float fAspectRatio)
     return true;
 }
 
-//################################################################################
 bool Renderer::SetCurrentMatrix(D3DMATRIX *mtx)
 {
-    // return CHECKD3DERR(SetTransform(D3DTS_WORLD, mtx)) == D3D_OK;
     SetTransform(D3DTS_WORLD, mtx);
     return true;
 }
@@ -2864,7 +2784,6 @@ bool Renderer::GetLight(uint32_t dwIndex, D3DLIGHT9 *pLight)
     return true;
 }
 
-//################################################################################
 
 int32_t Renderer::CreateVertexBuffer(int32_t type, size_t size, uint32_t dwUsage, uint32_t dwPool)
 {
@@ -2897,7 +2816,6 @@ int32_t Renderer::GetVertexBufferFVF(int32_t id)
     return VertexBuffers[id].type;
 }
 
-//################################################################################
 int32_t Renderer::CreateIndexBuffer(size_t size, uint32_t dwUsage, D3DFORMAT format)
 {
     int32_t b;
@@ -2917,7 +2835,6 @@ int32_t Renderer::CreateIndexBuffer(size_t size, uint32_t dwUsage, D3DFORMAT for
     return b;
 }
 
-//################################################################################
 void Renderer::DrawBuffer(int32_t vbuff, int32_t stride, int32_t ibuff, int32_t minv, size_t numv, size_t startidx, size_t numtrg,
                            const char *cBlockName)
 {
@@ -3042,7 +2959,6 @@ void Renderer::DrawPrimitive(D3DPRIMITIVETYPE dwPrimitiveType, int32_t iVBuff, i
         } while (cBlockName && TechniqueExecuteNext());
 }
 
-//################################################################################
 void Renderer::RenderAnimation(int32_t ib, void *src, int32_t numVrts, int32_t minv, int32_t numv, int32_t startidx, int32_t numtrg,
                                 bool isUpdateVB)
 {
@@ -3091,7 +3007,6 @@ void Renderer::RenderAnimation(int32_t ib, void *src, int32_t numVrts, int32_t m
     }
 }
 
-//################################################################################
 // Buffer handles (the contract is in renderer.h): indices into VertexBuffers / IndexBuffers, -1 is "no
 // buffer". Owners pass -1 to Release unchecked (BIImageMaterial::RemakeBuffers, ShipTracks); indexing the
 // table with it read the member in front of the table as a buffer pointer (keptPixels_'s
@@ -3118,7 +3033,6 @@ void *Renderer::LockVertexBuffer(int32_t id, uint32_t dwFlags)
     return ptr;
 }
 
-//################################################################################
 void Renderer::UnLockVertexBuffer(int32_t id)
 {
     if (!LiveBuffer(id, false, "UnLockVertexBuffer"))
@@ -3155,7 +3069,6 @@ void Renderer::UnLockIndexBuffer(int32_t id)
     CHECKD3DERR(IndexBuffers[id].buff->Unlock());
 }
 
-//################################################################################
 void Renderer::ReleaseVertexBuffer(int32_t id)
 {
     if (id == -1)
@@ -3167,7 +3080,6 @@ void Renderer::ReleaseVertexBuffer(int32_t id)
     VertexBuffers[id].dwNumLocks = 0;
 }
 
-//################################################################################
 void Renderer::ReleaseIndexBuffer(int32_t id)
 {
     if (id == -1)
@@ -3227,20 +3139,11 @@ void Renderer::GetTransform(int32_t type, D3DMATRIX *mtx)
 
 bool Renderer::CreateState(ENTITY_STATE_GEN *state_gen)
 {
-    // state_gen->SetState("vm",sizeof(screen_size),screen_size,sizeof(bool),&window);
     return true;
 }
 
 bool Renderer::LoadState(ENTITY_STATE *state)
 {
-    // GUARD(Renderer::Init)
-    // for(int32_t t=0; t<MAX_STEXTURES; t++)    Textures[t].d3dtex = NULL;
-    // d3d = NULL;
-    // d3d9 = NULL;
-    // state->Struct(sizeof(screen_size),(char *)&screen_size);
-    // state->MemoryBlock(sizeof(bool),(char *)&window);
-    // InitDevice(window,core.GetAppHWND(),screen_size.x,screen_size.y);
-    // UNGUARD
     return true;
 }
 
@@ -3477,11 +3380,9 @@ void Renderer::RunStart()
     dwNumLI = 0;
     BeginScene();
 
-    //------------------------------------------
     bInsideScene = true;
 
     // execute default technique for set default render/texture states
-    // if (TechniqueExecuteStart("default")) do{} while (TechniqueExecuteNext());
 
     // boal del_cheat
     if (!storm::loading::active && core.Controls->GetDebugAsyncKeyState(VK_SHIFT) < 0 && core.Controls->GetDebugAsyncKeyState(VK_F11) < 0)
@@ -3530,7 +3431,6 @@ char Buff_4k[4096];
 
 int32_t Renderer::Print(int32_t x, int32_t y, const char *format, ...)
 {
-    // GUARD(Renderer::Print)
     if (idFontCurrent < 0 || idFontCurrent >= nFontQuantity)
         return 0;
     if (FontList[idFontCurrent].font == nullptr || FontList[idFontCurrent].ref == 0)
@@ -3542,12 +3442,10 @@ int32_t Renderer::Print(int32_t x, int32_t y, const char *format, ...)
     va_end(args);
 
     return FontList[idFontCurrent].font->Print(x, y, Buff_4k);
-    // UNGUARD
 }
 
 int32_t Renderer::Print(int32_t nFontNum, uint32_t color, int32_t x, int32_t y, const char *format, ...)
 {
-    // GUARD(Renderer::Print)
     if (nFontNum < 0 || nFontNum >= nFontQuantity)
         return 0;
     if (FontList[nFontNum].font == nullptr || FontList[nFontNum].ref == 0)
@@ -3560,7 +3458,6 @@ int32_t Renderer::Print(int32_t nFontNum, uint32_t color, int32_t x, int32_t y, 
 
     const int32_t retVal = FontList[nFontNum].font->Print(x, y, Buff_4k, {.color = color});
     return retVal;
-    // UNGUARD
 }
 
 int32_t Renderer::StringWidth(const char *string, int32_t nFontNum, float fScale, int32_t scrWidth)
@@ -3609,7 +3506,6 @@ int32_t Renderer::CharHeight(int32_t fontID)
 int32_t Renderer::ExtPrint(int32_t nFontNum, uint32_t foreColor, uint32_t backColor, int wAlign, bool bShadow, float fScale,
                          int32_t scrWidth, int32_t scrHeight, int32_t x, int32_t y, const char *format, ...)
 {
-    // GUARD(Renderer::ExtPrint)
 
     if (nFontNum < 0 || nFontNum >= nFontQuantity)
         return 0;
@@ -3659,7 +3555,6 @@ int32_t Renderer::ExtPrint(int32_t nFontNum, uint32_t foreColor, uint32_t backCo
                                             .shadow = bShadow,
                                         });
     return retVal;
-    // UNGUARD
 }
 
 int32_t Renderer::PrintOutlined(int32_t nFontNum, uint32_t color, float scale, float outline, int32_t x, int32_t y,
@@ -3764,7 +3659,6 @@ bool Renderer::UnloadFont(int32_t fontID)
         if (FontList[fontID].ref == 0)
         {
             FontList[fontID].font->TempUnload();
-            // if (idFontCurrent == fontID)
             idFontCurrent = FONT_DEFAULT;
         }
         else
@@ -3996,7 +3890,6 @@ using TGA_H = struct tagTGA_H
     uint8_t storage : 2;
 };
 
-// WORD Temp[1600*4];
 
 PLANE *Renderer::GetPlanes()
 {
@@ -4351,7 +4244,6 @@ HRESULT Renderer::EndScene()
 
 HRESULT Renderer::SetClipPlane(uint32_t Index, const float *pPlane)
 {
-    // return d3d9->SetClipPlane( Index, pPlane );
     return D3D_OK;
 }
 
@@ -4923,7 +4815,6 @@ void Renderer::DrawProgressView(bool present)
             v[i].color = 0xffffffff;
     // Animated object
     m_fHeightDeformator = ((float)vp.Height * 4.0f) / ((float)vp.Width * 3.0f);
-    // core.Trace(" size_x %f", (vp.Width - dx * 2.0f)*progressFramesWidth);
     glm::vec3 pos((vp.Width - dx * 2.0f) * progressFramesPosX + dx, (vp.Height - dy * 2.0f) * progressFramesPosY + dy,
                 0.0f);
     glm::vec3 size((vp.Width - dx * 2.0f) * progressFramesWidth,
@@ -5026,7 +4917,6 @@ void Renderer::MakeDrawVector(RS_LINE *pLines, uint32_t dwNumSubLines, const glm
     uint32_t i;
     uint32_t k;
 
-    // for (i=0; i<dwNumSubLines * 2 + 2; i++) pLines[i].dwColor = dwColor;
     k = dwNumSubLines * 2 + 2; // boal optimization if the for loop runs the calculations every iteration
     for (i = 0; i < k; i++)
     {

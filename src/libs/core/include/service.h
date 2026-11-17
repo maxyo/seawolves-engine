@@ -1,9 +1,8 @@
 #pragma once
 
-//-------------------------------------------------------------------------------------------------
 // Base class for SERVICE is a nothing more than base entity class with three new functions:
 // Run_Start() and Run_End() These functions mark beginning and ending of the main programm loop
-// Run_Section() this function used to determine, from which objects function this service may be
+// Run_Section() this function determines from which objects function this service may be
 // called.
 // For example: if function returned SECTION_REALIZE value, function Run_Start() would be called
 // before core start transfer program control to objects Realize() functions and call Run_End()

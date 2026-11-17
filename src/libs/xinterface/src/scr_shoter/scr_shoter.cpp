@@ -48,15 +48,12 @@ SCRSHOTER::~SCRSHOTER()
 
 bool SCRSHOTER::Init()
 {
-    // GUARD(SCRSHOTER::Init())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
 void SCRSHOTER::SetDevice()
 {
-    // get render service
     rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!rs)
         throw std::runtime_error("No service: renderer");
@@ -82,7 +79,6 @@ void SCRSHOTER::Realize(uint32_t Delta_Time)
 //
 // With a surface it is made on the GPU and stays there: the picture scaled into the shot's texture, the border over
 // it, in the frame's own order. Nothing is read back, so opening the game menu does not wait for the GPU (two
-// read-backs of the frame here were an 82-115 ms frame on a phone, once 842 ms). The save list draws it as it is;
 // only a save reads it (MakeReadable). Without a surface (an autosave while the app goes to the background) it
 // comes from the renderer's copy of the last presented frame, read and scaled on the CPU, without the border.
 bool SCRSHOTER::MakeScreenShot()
@@ -103,7 +99,6 @@ bool SCRSHOTER::MakeScreenShot()
         return false;
     }
 
-    // delete the old screen shot
     if (textureIndex_ != -1 && rs != nullptr)
     {
         rs->TextureRelease(textureIndex_);
@@ -404,16 +399,6 @@ int32_t SCRSHOTER::GetTexFromSave(char *fileName, char **pDatStr) const
         strncpy_s(*pDatStr, strLen + 1, stringData, strLen);
         (*pDatStr)[strLen] = 0;
     }
-    /*    else
-      {
-        int idx=0;
-        for(int i=0; i<SS_TEXTURE_HEIGHT; i++)
-          for(int j=0; j<SS_TEXTURE_WIDTH; j++)
-          {
-            ((DWORD*)outRect.pBits)[idx] = 0xFF000000;
-            idx++;
-          }
-      }*/
     delete[] pdat;
 
     if (ok)

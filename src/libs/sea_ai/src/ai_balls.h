@@ -28,9 +28,7 @@ struct BALL_PARAMS
     uint32_t dwCannonType; // Additional parameter
 };
 
-// ============================================================================
 // One ball type, contain common parameters
-// ============================================================================
 struct BALL_TYPE
 {
     std::string sName;              // ball name
@@ -42,13 +40,10 @@ struct BALL_TYPE
     std::vector<BALL_PARAMS> Balls; // container with current balls
 
     // constructor for initialization
-    // BALL_TYPE() : Balls(_FL_, 64) {};
 };
 
-// ============================================================================
 // Master class AIBalls
 // Contains functions of balls : drawing, physics and collision
-// ============================================================================
 class AIBalls : public Entity
 {
   private:
@@ -91,10 +86,6 @@ class AIBalls : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

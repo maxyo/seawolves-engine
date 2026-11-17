@@ -48,7 +48,6 @@ void AIShipRotateController::Execute(float fDeltaTime)
 
 void AIShipRotateController::Realize(float fDeltaTime)
 {
-    // AIHelper::pRS->Print(0,0,"%f",__fRotate);
 }
 
 void AIShipRotateController::AddRotate(float _fRotate)

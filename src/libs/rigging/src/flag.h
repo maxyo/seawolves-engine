@@ -18,7 +18,6 @@ struct FLAGLXVERTEX
 class FLAG : public Entity
 {
     // parameters obtained from INI file //
-    // -------------------------------------
     // texture numbers
     int ENGLISH_FLAG_TEX;
     int SPANISH_FLAG_TEX;
@@ -41,7 +40,6 @@ class FLAG : public Entity
     int FlagTextureQuantityRow;
     float fWindMaxValue;
     int MinSegmentQuantity;
-    //-------------------------------------
 
     bool bUse;
     bool bFirstRun;
@@ -88,10 +86,6 @@ class FLAG : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

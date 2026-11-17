@@ -173,7 +173,6 @@ void SEA_OPERATOR::ProcessActions(uint32_t _dTime)
 {
     if (active)
     {
-        // auto* currentAction = actionBuffer.TopElement(); //~!~
         auto *currentAction = &actionBuffer.front();
         if ((currentAction->actionTime != -1) && (currentAction->timePassed >= currentAction->actionTime))
         {
@@ -189,7 +188,6 @@ void SEA_OPERATOR::ProcessActions(uint32_t _dTime)
 
 void SEA_OPERATOR::StartNewAction()
 {
-    // auto* currentAction = actionBuffer.TopElement(); //~!~
     auto *currentAction = &actionBuffer.front();
     if (active && !currentAction)
     {
@@ -200,10 +198,8 @@ void SEA_OPERATOR::StartNewAction()
     }
 
     if (active)
-        // actionBuffer.Pop(); //~!~
         actionBuffer.pop();
 
-    // currentAction = actionBuffer.TopElement(); //~!~
     currentAction = &actionBuffer.front();
     if (!currentAction)
     {
@@ -237,7 +233,6 @@ void SEA_OPERATOR::HandleShipHit()
     action.timeK = 0.3f;
     action.actionTime = 5000;
     action.actionMethod = &SEA_OPERATOR::ShowBallAtMyShip;
-    // actionBuffer.Push(action); //~!~
     actionBuffer.push(action);
 }
 
@@ -255,7 +250,6 @@ void SEA_OPERATOR::HandleShipIdle()
     action.direction.x += startDistance * cosf(startAngle + myShip->GetAng().y);
 
     action.actionMethod = &SEA_OPERATOR::ShowMyShipFromPoint;
-    // actionBuffer.Push(action); // ~!~
     actionBuffer.push(action);
 }
 
@@ -299,19 +293,16 @@ void SEA_OPERATOR::HandleShipFire(entid_t _shipID, const char *_bortName, const 
     action.direction = _direction;
     action.destination = _destination;
     action.actionMethod = &SEA_OPERATOR::ShowAttackerBort;
-    // actionBuffer.Push(action); // ~!~
     actionBuffer.push(action);
 
     action.timeK = 0.7f;
     action.actionTime = -1;
     action.actionMethod = &SEA_OPERATOR::ShowFromBall;
-    // actionBuffer.Push(action); //~!~
     actionBuffer.push(action);
 
     action.timeK = 0.15f;
     action.actionTime = 5000;
     action.actionMethod = &SEA_OPERATOR::ShowAroundPoint;
-    // actionBuffer.Push(action); //~!~
     actionBuffer.push(action);
 }
 

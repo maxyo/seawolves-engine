@@ -24,7 +24,6 @@ void PARTICLE_SYSTEM::Stop()
 void PARTICLE_SYSTEM::SetEmitter(glm::vec3 p, glm::vec3 a)
 {
     // core.Trace("K2 Particles Wrapper: SetEmitter (%3.2f, %3.2f, %3.2f, %3.2f, %3.2f, %3.2f)", p.x, p.y, p.z, a.x,
-    // a.y, a.z);
     pSystem->SetTransform(storm::math::eulerMatrix(a, p));
 }
 

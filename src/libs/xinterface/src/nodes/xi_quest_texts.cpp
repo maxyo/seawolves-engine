@@ -173,7 +173,6 @@ bool CXI_QUESTTEXTS::GetLineNext(int fontNum, char *&pInStr, char *buf, int bufS
     SubRightWord(buf, fontNum, m_rect.right - m_rect.left, m_rs);
     pInStr = pStart + strlen(buf);
 
-    // remove leading spaces
     while (*pInStr != 0 && static_cast<unsigned>(*pInStr) <= ' ')
         pInStr++;
 
@@ -209,7 +208,6 @@ void CXI_QUESTTEXTS::Draw(bool bSelected, uint32_t Delta_Time)
     auto i = 0;
     for (auto *sd = m_listCur; sd != nullptr && i < m_allStrings; sd = sd->next, i++)
     {
-        // display lines
         const auto curColor = sd->complete ? m_dwCompleteColor : m_dwNonCompleteColor;
         if (sd->lineStr != nullptr && sd->lineStr[0] != 0)
             m_rs->ExtPrint(m_idFont, curColor, 0, PR_ALIGN_LEFT, true, 1.f, m_screenSize.x, m_screenSize.y, m_rect.left,
@@ -295,7 +293,6 @@ void CXI_QUESTTEXTS::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -304,7 +301,6 @@ void CXI_QUESTTEXTS::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
 {
     char param[255];
 
-    // get line space
     m_vertOffset = GetIniLong(ini1, name1, ini2, name2, "lineSpace", 30);
     if (m_vertOffset == 0)
         m_vertOffset = 10;
@@ -312,11 +308,9 @@ void CXI_QUESTTEXTS::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     // counting the number of lines displayed on the screen
     m_allStrings = (m_rect.bottom - m_rect.top) / m_vertOffset;
 
-    // get colors
     m_dwCompleteColor = GetIniARGB(ini1, name1, ini2, name2, "completeColor", ARGB(255, 128, 128, 128));
     m_dwNonCompleteColor = GetIniARGB(ini1, name1, ini2, name2, "noncompleteColor", ARGB(255, 255, 255, 255));
 
-    // get font
     m_idFont = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
         m_idFont = m_rs->LoadFont(param);
@@ -335,7 +329,6 @@ void CXI_QUESTTEXTS::StartQuestShow(ATTRIBUTES *pA, int qn)
     if (qn >= aq)
         qn = aq - 1;
 
-    // delete old lines
     while (m_listRoot != nullptr)
     {
         m_listCur = m_listRoot;

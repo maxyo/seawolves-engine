@@ -1,12 +1,5 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
-//    Character
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -189,16 +182,11 @@ class Character : public Entity
         fgt_max,
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Character();
     virtual ~Character();
 
-    // Initialization
     bool Init() override;
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
     uint32_t AttributeChanged(ATTRIBUTES *apnt) override;
@@ -223,9 +211,7 @@ class Character : public Entity
 
     void AlreadyDeleted();
 
-    //--------------------------------------------------------------------------------------------
     // Character model
-    //--------------------------------------------------------------------------------------------
   public:
     // Get a character model
     MODEL *Model() const;
@@ -252,11 +238,8 @@ class Character : public Entity
 
     virtual void HitChild(bool isInBlock){};
 
-    //--------------------------------------------------------------------------------------------
     // Character animation
-    //--------------------------------------------------------------------------------------------
   protected:
-    // Procedural head look
     enum class HeadLookState
     {
         dflt,
@@ -265,9 +248,7 @@ class Character : public Entity
         point,
     };
 
-    //--------------------------------------------------------------------------------------------
     // Character commands
-    //--------------------------------------------------------------------------------------------
   public:
     // To go
     void StartMove(bool isBack = false);
@@ -361,9 +342,6 @@ class Character : public Entity
     // Viewing from the eyes
     void LookFromEyes(bool isLook);
 
-    //--------------------------------------------------------------------------------------------
-    // Character
-    //--------------------------------------------------------------------------------------------
   public:
     // Reset state
     virtual void Reset();
@@ -380,7 +358,6 @@ class Character : public Entity
     virtual void ActionEvent(Animation *animation, int32_t playerIndex, const char *eventName);
 
     // The character attacks, analyze to whom to apply damage
-    // virtual void CharacterNowIsAttacked(){};
 
     int32_t PlaySound(const char *soundName, bool isLoop = false, bool isCached = false);
     void PlayStep();
@@ -401,9 +378,6 @@ class Character : public Entity
     bool isSlide;
     glm::vec3 slideDir;
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     bool zLoadModel(MESSAGE &message);
     bool zTeleport(MESSAGE &message, bool isAy);
@@ -458,7 +432,6 @@ class Character : public Entity
     static const char *GetValueByPrefix(const char *str, const char *pref);
 
   protected:
-    //
     VSoundService *soundService;
     // Character sizes
     float radius, radiusNrm, radiusFgt;
@@ -691,7 +664,6 @@ class Character : public Entity
 
     char *characterID; // Character ID
 
-    //
     int32_t m_nHandLightID;
     const char *m_pcHandLightLocator;
     glm::vec3 GetHandLightPos();
@@ -703,7 +675,6 @@ class Character : public Entity
 
     int32_t eventId = {};
 
-    // Procedural head look
     HeadLookState curHeadLookState;
     entid_t headLookChrTarget;
     glm::vec3 headLookPointTarget;

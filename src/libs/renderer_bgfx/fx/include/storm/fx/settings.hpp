@@ -101,8 +101,8 @@ enum class ShadowQuality : uint8_t
 
 // The occlusion of the interior AO volume against its level's own (Settings::ao_gain).
 inline constexpr float kAoGain = 1.25f;
-// Strengths of the interior ambient-occlusion volume (Settings::ao_volume, option fx_ao_volume), for the owner's
-// choice of the interior contrast. The shader darkens by mix(1, pow(ao, contrast), strength), where ao is the baked
+// Strengths of the interior ambient-occlusion volume (Settings::ao_volume, option fx_ao_volume), for choosing
+// the interior contrast. The shader darkens by mix(1, pow(ao, contrast), strength), where ao is the baked
 // visibility relative to an open floor or wall (1 there, lower under tables, behind barrels, in corners).
 inline constexpr uint8_t kAoVolumeLevels = 3;
 struct AoVolumeLevel
@@ -267,16 +267,16 @@ struct Settings
     // camera cast shadows, their still faces redrawn whenever they move. 0, 1 or 2.
     uint8_t lamp_moving = 0;
     // The lamps' strength on baked surfaces (0..3): half of the full strength, so lamp-lit walls stay near the game's
-    // own look («Низкая») instead of a bright orange (the owner chose step D of the lamp tone sheet, 2026-11-17).
+    // own look («Низкая») instead of a bright orange.
     float lamp_gain = 0.5f;
     // The share of a lamp's own colour in the light it adds to baked surfaces (0..1); the rest takes the tone of the
-    // baked colours, which hold the game's own, much less saturated lamp light. None of it (step D, 2026-11-17):
+    // baked colours, which hold the game's own, much less saturated lamp light. None of it:
     // the walls keep the bake's tone.
     float lamp_tint = 0.0f;
     float lamp_baked = 0.25f; // the part of that light the baked colours are taken to hold already (0..1): 1 = lamps
                              // only take light away where they are hidden, less = they also brighten what they reach
-    // Indoors the lit models stand this much above the room light around them (0 = at its level): the owner wants
-    // the characters to stand out from the room a little.
+    // Indoors the lit models stand this much above the room light around them (0 = at its level): the
+    // characters stand out from the room a little.
     float lamp_model_lift = 0.2f;
     uint8_t lamp_debug = 0;  // 1: every lamp slot in its own colour, 2: the shadow mask, 3: the shadow taps per pixel,
                              // 4: the lamps that reach each pixel
@@ -287,7 +287,7 @@ struct Settings
     float wet_force = -1.0f; // development: 0..1 = this wetness outdoors whatever the weather, < 0 = the rain's
     // The one falloff of every light of the per-pixel lighting (light_falloff.hpp): how much further than the game's
     // lights they reach, their soft core, their level against the game's (options fx_light_reach, fx_light_core,
-    // fx_light_level). The same in every preset: the owner's look.
+    // fx_light_level). The same in every preset.
     LightFalloff light_falloff{};
 
     static Settings FromPreset(QualityPreset preset);
@@ -322,7 +322,7 @@ struct BackgroundProducts
 };
 BackgroundProducts BackgroundProductsFor(const Settings &settings);
 
-// «Качество текстур» (owner decision 2026-11-16), one choice for the textures' resolution and the neural ×2:
+// «Качество текстур», one choice for the textures' resolution and the neural ×2:
 // 0 Низкое, 1 Среднее, 2 Высокое (the game's textures from their second mip, their first, their full size), 3 Ультра
 // (Высокое and the neural ×2 near the camera). The resolution applies at the next start (the textures are loaded at it);
 // the ×2 at once. Высокое is the default.

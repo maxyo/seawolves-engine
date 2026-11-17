@@ -58,11 +58,6 @@ bool BLAST::Init()
 
 void BLAST::AddGeometry(char *name, int32_t num)
 {
-    // n = ItemsNum;
-    // ItemsNum++;
-    // Item = (GEOPARTICLE*)RESIZE(Item,sizeof(GEOPARTICLE)*ItemsNum);
-    // Item[n].geo = 0;
-    // Item[n].geo = gs->CreateGeometry(name,0,0);
 
     Item.resize(ItemsNum + num); //~!~
     auto *const gp = gs->CreateGeometry(name, nullptr, 0);
@@ -120,16 +115,12 @@ void BLAST::ProcessTime(uint32_t DT)
     auto bStop = true;
     for (n = 0; n < ItemsNum; n++)
     {
-        // if(Item[n].speed > 0) Item[n].speed -= 0.001f*Delta_Time;
-        // else Item[n].speed = 0.0;
-        // Item[n].pos += Item[n].speed*Item[n].dir*Delta_Time;
         glm::vec3 a;
         a = Item[n].pos;
         Item[n].pos.x += (Item[n].dir.x * Item[n].speed * Delta_Time);
         Item[n].pos.y += (Item[n].dir.y * Item[n].speed * Delta_Time);
         Item[n].pos.z += (Item[n].dir.z * Item[n].speed * Delta_Time);
 
-        // Item[n].pos.y -= Delta_Time*0.0005;
         Item[n].dir.y -= Delta_Time * 0.0008f;
         Item[n].pos.y += Item[n].dir.y * 0.01f * Delta_Time;
 
@@ -153,18 +144,10 @@ void BLAST::ProcessTime(uint32_t DT)
                 if (Item[n].pos.y < 0)
                 {
                     Item[n].bEffect = true;
-                    // core.Send_Message(Splash,"lfff",MSG_BALLSPLASH_ADD,Item[n].pos.x,Item[n].pos.y,Item[n].pos.z);
                 }
             }
         }
 
-        /*
-        if(Item[n].pos.y < 0 && !Item[n].bEffect)
-        {
-          Item[n].bEffect = true;
-          //core.Send_Message(Splash,"lfff",MSG_BALLSPLASH_ADD,Item[n].pos.x,Item[n].pos.y,Item[n].pos.z);
-
-        }*/
     }
 
     if (bStop)

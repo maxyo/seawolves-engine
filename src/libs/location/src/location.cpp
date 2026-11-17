@@ -1,13 +1,7 @@
 #include "loading_transaction.hpp"
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Location
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "location.h"
 
@@ -36,10 +30,6 @@ bool bCausticEnable = false;
 float fCausticFrame = 0.0f;
 int32_t iCausticTex[32];
 float fCausticSpeed = 0.0f;
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 Location::Location()
 {
@@ -79,7 +69,6 @@ Location::~Location()
     auto *const atr = AttributesPointer->FindAClass(AttributesPointer, "locators");
     if (atr)
         AttributesPointer->DeleteAttributeClassX(atr);
-    // core.EraseEntity(cubeShotMaker);
     core.EraseEntity(lighter);
     core.EraseEntity(lizards);
     core.EraseEntity(rats);
@@ -346,7 +335,6 @@ void Location::ReportLightmaps()
     storm::render::SetEffectsLightmaps(id ? id : "", positions, uvs, indices, triangle_lightmap, lightmaps);
 }
 
-// Initialization
 bool Location::Init()
 {
     // renderer
@@ -355,11 +343,9 @@ bool Location::Init()
         throw std::runtime_error("No service: renderer");
     rs->SetRenderState(D3DRS_LIGHTING, FALSE);
 
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 10);
 
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), 100000);
 
@@ -369,7 +355,6 @@ bool Location::Init()
     enemyBarsTexture = rs->TextureCreate("LocEfx\\state_bars.tga");
 
     lighter = core.CreateEntity("Lighter");
-    // cubeShotMaker = core.CreateEntity("CubeShotMakerCam");
     // The location's recorded Vulkan pipelines are created while it loads (storm/render/pipelines.hpp).
     const char *id = AttributesPointer ? AttributesPointer->GetAttribute("id") : nullptr;
     if (!id)
@@ -378,7 +363,6 @@ bool Location::Init()
     return true;
 }
 
-// Execution
 void Location::Execute(uint32_t delta_time)
 {
     bSwimming = AttributesPointer->GetAttributeAsDword("swimming", 1) != 0;
@@ -476,7 +460,6 @@ void Location::Realize(uint32_t delta_time)
         if (message[i].alpha <= 0.0f)
             continue;
         // Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f/%.0f", message[i].hit,
-        // message[i].hp);
         Print(message[i].p, 10.0f, 0, message[i].alpha, message[i].c, 0.8f, "%.0f", message[i].hit);
     }
     // Drawing bars over characters
@@ -512,7 +495,6 @@ void Location::Update(uint32_t delta_time)
         supervisor.Update(0.0f);
 }
 
-// Messages
 uint64_t Location::ProcessMessage(MESSAGE &message)
 {
     int32_t i;
@@ -1009,7 +991,6 @@ bool Location::MessageEx(const char *name, MESSAGE &message)
         const std::string &modelname = message.String();
         const int32_t n = model.FindModel(modelname.c_str());
         if (n >= 0)
-            // core.LayerDel("realize", model.RealizerID(n));
             core.Send_Message(model.RealizerID(n), "ll", 2, 0);
     }
     else if (storm::iEquals(name, "ShowLocationModel"))
@@ -1018,7 +999,6 @@ bool Location::MessageEx(const char *name, MESSAGE &message)
         int32_t layer = message.Long();
         const int32_t n = model.FindModel(modelname.c_str());
         if (n >= 0)
-            // core.AddToLayer(realize, model.RealizerID(n), layer);
             core.Send_Message(model.RealizerID(n), "ll", 2, 1);
     }
     else if (storm::iEquals(name, "SetGrassParams"))
@@ -1154,7 +1134,6 @@ void Location::DrawLocators(LocatorArray *la)
         // start the technique
         const bool isSet = rs->TechniqueExecuteStart("DbgDrawLocators");
         rs->SetRenderState(D3DRS_TEXTUREFACTOR, la->color);
-        // Draw
         for (int32_t i = 0; i < la->Num(); i++)
         {
             // Draw a ball
@@ -1197,7 +1176,6 @@ void Location::DrawLocators(LocatorArray *la)
     storm::math::invertRigid(view);
     const float d = glm::dot(storm::math::vz(view), storm::math::pos(view));
     const float viewDst = la->viewDist * la->viewDist;
-    // Draw
     for (int32_t i = 0; i < la->Num(); i++)
     {
         float lbh = la->GetLocatorRadius(i) * la->kViewRadius;
@@ -1235,7 +1213,6 @@ void Location::DrawLine(const glm::vec3 &s, uint32_t cs, const glm::vec3 &d, uin
     uint32_t oldZState = 1;
     rs->GetRenderState(D3DRS_ZENABLE, &oldZState);
     rs->SetRenderState(D3DRS_ZENABLE, useZ);
-    // Draw
     rs->DrawPrimitiveUP(D3DPT_LINELIST, D3DFVF_XYZ | D3DFVF_DIFFUSE, 1, lineVertex, sizeof(SphVertex),
                         "DbgLocationDrawLine");
     // restore
@@ -1300,9 +1277,7 @@ void Location::CreateSphere()
             sphereVertex[t * 3 + 2].v.z = r1 * z2;
             CalcKColor(2);
             sphereVertex[t * 3 + 2].c = Color;
-            // 3 = 2
             sphereVertex[t * 3 + 3] = sphereVertex[t * 3 + 2];
-            // 4 = 1
             sphereVertex[t * 3 + 4] = sphereVertex[t * 3 + 1];
             // 5
             sphereVertex[t * 3 + 5].v.x = r2 * x2;
@@ -1540,7 +1515,6 @@ void Location::DrawEnemyBars()
             }
         }
     }
-    // Rendering
     for (int32_t i = 0; i < sortCount; i++)
     {
         storm::math::ProjectedPoint &vrt = selements[i]->vrt;
@@ -1621,7 +1595,6 @@ void Location::DrawEnemyBars()
         // Adjusting the bars
         CorrectBar(selements[i]->hp, 0.03f, 0.97f, bar + 6);
         CorrectBar(selements[i]->energy, 0.03f, 0.97f, bar + 12);
-        // Draw
         rs->TextureSet(0, enemyBarsTexture);
         rs->DrawPrimitiveUP(D3DPT_TRIANGLELIST, D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1, 6, bar, sizeof(bar[0]),
                             "LocationModelBlend");

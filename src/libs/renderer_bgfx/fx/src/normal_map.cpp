@@ -44,7 +44,7 @@ bool ResidenceInterior(std::string_view path)
 
 // TEHO's RESOURCE/Textures, first match wins. Location textures lie in the root folder under descriptive names
 // (English, Russian transliterations, a few French); ships in Ships/<type>/Hull<n>/. Written from the texture list of
-// the game. Every surface gets relief (the owner: the parallax wherever it can work); the rules with no relief name what
+// the game. Every surface gets relief (the parallax wherever it can work); the rules with no relief name what
 // it cannot work on or would be wrong for (their text is the reason in the logs and the census). A texture no rule
 // names is a prop (the last rule).
 constexpr ReliefClass N = ReliefClass::None, S = ReliefClass::Stone, W = ReliefClass::Wood, B = ReliefClass::Building,

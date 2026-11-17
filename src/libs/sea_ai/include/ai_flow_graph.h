@@ -179,7 +179,6 @@ class AIFlowGraph
 
     std::vector<edge_t> aEdges;
     std::vector<point_t> aPoints;
-    // std::vector<npoint_t>        aNearestPoints;
     std::string sSectionName;
 
     struct table_t
@@ -263,7 +262,6 @@ inline bool AIFlowGraph::Load(INIFILE &pIni)
         if (!cTemp[0])
             break;
 
-        // point_t *pP = &aPoints[aPoints.Add()];
         point_t p;
         p.vPos.y = 0.0f;
         sscanf(cTemp, "%f,%f", &p.vPos.x, &p.vPos.z);
@@ -466,13 +464,9 @@ inline std::vector<AIFlowGraph::npoint_t> *AIFlowGraph::GetNearestPoints(glm::ve
     auto aNearestPoints = new std::vector<npoint_t>(aPoints.size());
     for (uint32_t i = 0; i < aPoints.size(); i++)
     {
-        // npoint_t * pN = &(*aNearestPoints)[(*aNearestPoints).Add()];
-        // pN->fDistance = sqrtf(~(vP - aPoints[i].vPos));
-        // pN->dwPnt = i;
         (*aNearestPoints)[i].fDistance = sqrtf(storm::math::lengthSquared(vP - aPoints[i].vPos));
         (*aNearestPoints)[i].dwPnt = i;
     }
-    //(*aNearestPoints).Sort();
     std::sort(aNearestPoints->begin(), aNearestPoints->end());
 
     return aNearestPoints;

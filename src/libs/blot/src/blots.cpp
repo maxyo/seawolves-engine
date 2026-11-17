@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Blots
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "blots.h"
 
@@ -19,15 +13,11 @@ CREATE_CLASS(Blots)
 
 #define BLOTS_RADIUS 0.6f
 
-//============================================================================================
-
 glm::vec3 Blots::clipTriangles[3 * 32];
 int32_t Blots::numClipTriangles;
 glm::vec3 Blots::dir, Blots::normal;
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 Blots::Blots()
     : model(0), vrt{}
@@ -51,15 +41,12 @@ Blots::~Blots()
 // Initialization
 bool Blots::Init()
 {
-    // GUARD(Blots::Init())
     // renderer
     rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!rs)
         throw std::runtime_error("No service: renderer");
     // Layers
     ////core.LayerCreate("realize", true, false);
-    // core.SetLayerType(realize, layer_type_t::realize);
-    // core.AddToLayer(realize, GetId(), 1000);
     textureID = rs->TextureCreate("blot.tga");
     return true;
     // UNGUARD
@@ -390,7 +377,6 @@ void Blots::Realize(uint32_t delta_time)
         // Lifetime
 
         // !!!
-        // blot[i].liveTime += delta_time*0.001f;
 
         if (blot[i].liveTime >= BLOTS_TIME)
         {
@@ -398,7 +384,6 @@ void Blots::Realize(uint32_t delta_time)
             const auto startIndex = blot[i].startIndex;
             const int32_t numDelVerts = blot[i].numTrgs * 3;
 
-            // -----------------------------------------------
             // !!! begin Checks
             blot[i].startIndex = -10000;
             blot[i].numTrgs = 0;
@@ -413,7 +398,6 @@ void Blots::Realize(uint32_t delta_time)
                     v1[v] = v2[v];
             }
             // !!! end Checks
-            // -----------------------------------------------
 
             // Remove triangles from the array
             int32_t j;
@@ -430,7 +414,6 @@ void Blots::Realize(uint32_t delta_time)
             useVrt -= numDelVerts;
             Assert(useVrt >= 0);
 
-            // -----------------------------------------------
             // !!! begin Checks
             Assert(j % 3 == 0);
             int32_t nnn = 0;
@@ -459,7 +442,6 @@ void Blots::Realize(uint32_t delta_time)
                 }
             }
             // !!! end Checks
-            // -----------------------------------------------
 
             continue;
         }

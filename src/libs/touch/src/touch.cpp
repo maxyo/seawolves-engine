@@ -52,17 +52,6 @@ uint64_t TOUCH::ProcessMessage(MESSAGE &message)
         pShips[iNumShips]->eID = message.EntityID();
         iNumShips++;
         break;
-        /*                case EVENT_Entity_DELETED:
-                  GET_DATA(temp_long,pTemp);    GET_DATA(id,pTemp);
-                  for(i=0; i<iNumShips; i++) if(pShips[i]->eID == id)
-                  {
-                    delete pShips[i];
-                    iNumShips--;
-                    pShips[i] = pShips[iNumShips];
-                    break;
-                  }
-                break;
-              }*/
         break;
     }
     return 1;
@@ -79,13 +68,11 @@ void TOUCH::Realize(uint32_t DeltaTime)
 
 void TOUCH::Execute(uint32_t dwCoreDeltaTime)
 {
-    // GUARD(void TOUCH::Execute(uint32_t dwCoreDeltaTime))
     int32_t i;
     entid_t ent;
     if (!pIslandBase)
         pIslandBase = static_cast<ISLAND_BASE *>(core.GetEntityPointer(core.GetEntityId("island")));
 
-    // std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
     RDTSC_B(dwRdtsc);
 
@@ -101,12 +88,7 @@ void TOUCH::Execute(uint32_t dwCoreDeltaTime)
     }
 
     CurDepth = 0;
-    // if (!bUseTouch)
-    // int32_t iTempDeltaTime = dwCoreDeltaTime;
-    // while (iTempDeltaTime>0)
     {
-        // iTempDeltaTime -= DELTA_TIME;
-        // iDeltaTime = (iTempDeltaTime>DELTA_TIME) ? DELTA_TIME : iTempDeltaTime;
         iDeltaTime = dwCoreDeltaTime;
         for (i = 0; i < iNumShips; i++)
             storm::touch::AdvanceIslandContact(pShips[i]->islandContact, static_cast<float>(iDeltaTime) * 0.001f);
@@ -116,8 +98,6 @@ void TOUCH::Execute(uint32_t dwCoreDeltaTime)
 
     FakeTouch(); // just push out the ships that are still in each other
 
-    // if (core.Controls->GetAsyncKeyState('5')) fScale -= 0.1f;
-    // if (core.Controls->GetAsyncKeyState('6')) fScale += 0.1f;
 
     RDTSC_E(dwRdtsc);
 }
@@ -132,7 +112,6 @@ BOOL TOUCH::IsIntersectShipsRects(int32_t idx1, int32_t idx2)
 
     Assert(pS1 && pS2);
 
-    // boal fix float both_dist = SQR(pS1->State.vBoxSize.z) + SQR(pS2->State.vBoxSize.z) + 2.5f;
     const auto both_dist = SQR(pS1->State.vBoxSize.z / 2.0f) + SQR(pS2->State.vBoxSize.z / 2.0f) + 2.5f;
     const auto dist = SQR(pS1->State.vPos.x - pS2->State.vPos.x) + SQR(pS1->State.vPos.z - pS2->State.vPos.z);
 
@@ -207,11 +186,7 @@ void TOUCH::DrawShips()
                 p1 = GetPoint(x, y, pShips[i]->vKickPoint.x, pShips[i]->vKickPoint.z, fScale, fScale, fCos, fSin, ss);
                 p2 = GetPoint(x, y, 0.0f, 0.0f, fScale, fScale, fCos, fSin, ss);
                 DrawLine(aLines, p1.x, p1.z, p2.x, p2.z, 0xFFFFFF);
-                // p1 = pShips[i]->vKickAngle;
-                // p1 = GetPoint(x,y,pShips[i]->vKick.x,pShips[i]->vKick.z,fScale,fScale,fCos,fSin,ss);
-                // DrawLine(aLines, p1.x, p1.z, p2.x, p2.z, 0xFF0000);
             }
-            // DrawLine(aLines, p1.x-0.5f, p1.z, p1.x+0.5f, p1.z, 0xFFFFFF);
 
             for (j = 0; j < pShips[i]->iNumVContour; j++)
             {
@@ -223,7 +198,6 @@ void TOUCH::DrawShips()
                 uint32_t dwColor = 0x00FF1F;
                 DrawLine(aLines, p1.x, p1.z, p2.x, p2.z, dwColor);
                 float fRes;
-                // dwColor = 0xFFFFFF;
                 if (pIslandBase &&
                     pIslandBase->GetDepth(pShips[i]->vContourTemp[0][j].x, pShips[i]->vContourTemp[0][j].z, &fRes))
                 {
@@ -344,8 +318,6 @@ BOOL TOUCH::IsIntersectShipsReal(int32_t idx, int32_t cidx, glm::vec3 *vPos, glm
                 auto vTemp = storm::math::normalizeOrZero(*v2 - *v1);
                 *vRecoil = storm::math::normalizeOrZero(*v1 - pS1->TP[1].vPos);
                 *fSlide = 0.0f;
-                //*vRecoil = !(*vRecoil + vTemp);
-                //*vRecoil = vTemp;//!(*v1-pS1->TP[1].vPos);
                 *fPower = METERS2KNOTS(sqrtf(storm::math::lengthSquared(*v2 - *v1))) * (1000.0f / static_cast<float>(iDeltaTime));
                 fIslandIntoSpeed = METERS2KNOTS(std::max(0.0f, glm::dot(*v2 - *v1, *vRecoil))) *
                                    (1000.0f / static_cast<float>(iDeltaTime));
@@ -447,14 +419,12 @@ int32_t TOUCH::ProcessImpulse(int32_t iOurIdx, glm::vec3 vPos, glm::vec3 vDir, f
     // calculate Z impulse
     auto fkZ = (0.1f + 1.0f - fabsf(vPos.x / (0.5f * pS1->pShip->State.vBoxSize.x)));
     fkZ = CLAMP(fkZ);
-    // Assert(fkZ>=0.0f && fkZ<=1.0f)
     const auto fZMove = glm::dot(vDir, vSDirZ) * fPowerApplied * fkZ;
     strength.vSpeed.z = fZMove;
 
     // calculate X impulse
     auto fkX = (0.1f + 1.0f - fabsf(vPos.z / (0.5f * pS1->pShip->State.vBoxSize.z)));
     fkX = CLAMP(fkX);
-    // Assert(fkX>=0.0f && fkX<=1.0f)
     const auto fXMove = glm::dot(vDir, vSDirX) * fPowerApplied * fkX;
     strength.vSpeed.x = fXMove;
 

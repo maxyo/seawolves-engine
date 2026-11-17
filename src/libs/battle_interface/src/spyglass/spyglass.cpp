@@ -153,7 +153,7 @@ bool ISPYGLASS::Init()
 #endif
     // captain text data
     m_TextCaptainName.LoadFromAttr(rs, GetAttr("captext.capname"), "?", 210, 640);
-    m_TextCaptainFencing.LoadFromAttr(rs, GetAttr("captext.fencing"), "", 210, 640); // replaced "?" with empty
+    m_TextCaptainFencing.LoadFromAttr(rs, GetAttr("captext.fencing"), "", 210, 640);
     m_TextCaptainCannon.LoadFromAttr(rs, GetAttr("captext.cannon"), "", 210, 640);
     m_TextCaptainAccuracy.LoadFromAttr(rs, GetAttr("captext.accuracy"), "", 210, 640);
     m_TextCaptainNavigation.LoadFromAttr(rs, GetAttr("captext.navigation"), "", 210, 640);
@@ -420,7 +420,6 @@ void ISPYGLASS::TurnOnTelescope(bool bTurnOn)
 
 void ISPYGLASS::SetShipInfo(int32_t nCharIndex)
 {
-    // if( m_nInfoCharacterIndex == nCharIndex ) return;
     m_nInfoCharacterIndex = nCharIndex;
     if (m_nInfoCharacterIndex < 0)
         m_bIsPresentShipInfo = false;
@@ -499,7 +498,6 @@ void ISPYGLASS::FindNewTargetShip()
         }
     }
 
-    // nFindedCharIndex = 0;
     if (nFindedCharIndex == -1)
     {
         if (m_nInfoCharacterIndex != -1 && m_fInfoKeepDelay > 0.f)

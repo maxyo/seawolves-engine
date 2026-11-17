@@ -1,20 +1,10 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocatorArray
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "locator_array.h"
 
 #include "string_compare.hpp"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 LocatorArray::LocatorArray(const char *groupName)
 {
@@ -44,9 +34,7 @@ LocatorArray::~LocatorArray()
     free(locatorNames);
 }
 
-// ============================================================================================
 // Working with an array
-// ============================================================================================
 
 // Add locator
 void LocatorArray::AddLocator(glm::mat4 &mtx, const char *name)
@@ -83,7 +71,6 @@ int32_t LocatorArray::FindNearesLocatorCl(float x, float y, float z, float heigh
     int32_t locIndex = -1;
     for (int32_t i = 0; i < numLocators; i++)
     {
-        // if(fabsf(y - locator[i].mtx.Pos().y) > height2) continue;
         const auto r = GetLocatorRadius(i);
 
         if (fabsf(y - storm::math::pos(locator[i].mtx).y) > r)

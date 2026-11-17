@@ -62,12 +62,10 @@ void CXI_PCEDITBOX::Draw(bool bSelected, uint32_t Delta_Time)
         x = m_rect.right - m_pntFontOffset.x;
     }
 
-    // show out string
     std::string sString;
     UpdateString(sString);
     if (!sString.empty())
     // m_rs->ExtPrint(
-    // m_nFontID,m_dwFontColor,0,m_nStringAlign,true,m_fFontScale,m_screenSize.x,m_screenSize.y,m_rect.left+m_pntFontOffset.x,m_rect.top+m_pntFontOffset.y,"%s",sString.c_str()+m_nFirstShowCharacterIndex);
     {
         int offset = utf8::u8_offset(sString.c_str(), m_nFirstShowCharacterIndex);
         CXI_UTILS::PrintTextIntoWindow(m_rs, m_nFontID, m_dwFontColor, m_nStringAlign, true, m_fFontScale,
@@ -76,7 +74,6 @@ void CXI_PCEDITBOX::Draw(bool bSelected, uint32_t Delta_Time)
                                        m_rect.bottom - m_rect.top);
     }
 
-    // show cursor position
     if (IsEditMode())
         ShowCursorPosition(sString);
 
@@ -117,10 +114,7 @@ void CXI_PCEDITBOX::ChangePosition(XYRECT &rNewPos)
 {
     m_rect = rNewPos;
 
-    // m_pntFontOffset.x += m_rect.left;
-    // m_pntFontOffset.y += m_rect.top;
 
-    // update position
     auto nMiddleLeft = m_rect.left;
     auto nMiddleRight = m_rect.right;
     const auto nHeight = m_rect.bottom - m_rect.top;
@@ -163,7 +157,6 @@ void CXI_PCEDITBOX::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -172,17 +165,14 @@ void CXI_PCEDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
 {
     char param[2048];
 
-    // get font number
     if (ReadIniString(ini1, name1, ini2, name2, "strFont", param, sizeof(param), ""))
         if ((m_nFontID = m_rs->LoadFont(param)) == -1)
             core.Trace("can`t load font:'%s'", param);
 
-    // Get font scale
     m_fFontScale = GetIniFloat(ini1, name1, ini2, name2, "fontScale", 1.f);
 
     m_bDisguiseString = GetIniBool(ini1, name1, ini2, name2, "disguisestring", false);
 
-    // Get font color
     m_dwFontColor = GetIniARGB(ini1, name1, ini2, name2, "argbFontColor", 0);
 
     // Get max string size for edit string
@@ -198,10 +188,7 @@ void CXI_PCEDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         else if (storm::iEquals(param, "right"))
             m_nStringAlign = PR_ALIGN_RIGHT;
     }
-    // m_pntFontOffset.x += m_rect.left;
-    // m_pntFontOffset.y += m_rect.top;
 
-    // read images
     if (ReadIniString(ini1, name1, ini2, name2, "leftImage", param, sizeof(param), ""))
     {
         m_pLeftImage = new CXI_IMAGE;
@@ -226,7 +213,6 @@ void CXI_PCEDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     else
         m_sExcludeChars = "";
 
-    // update position
     auto nMiddleLeft = m_rect.left;
     auto nMiddleRight = m_rect.right;
     const auto nHeight = m_rect.bottom - m_rect.top;
@@ -350,41 +336,6 @@ void CXI_PCEDITBOX::UpdateString(std::string &str)
             }
             if (pA)
                 pA->SetAttribute("str", (char *)str.c_str());
-            /*char chr = GetInputSymbol();
-            if( chr )
-            {
-              switch( chr )
-              {
-              // control characters
-              case SpecSymbol_back:
-                if( m_nEditPos>0 ) {
-                  m_nEditPos--;
-                  str.STORM_DELETE(m_nEditPos,1);
-                }
-                break;
-              case SpecSymbol_end:    m_nEditPos = str.size(); break;
-              case SpecSymbol_home:    m_nEditPos = 0; break;
-              case SpecSymbol_delete:
-                if( m_nEditPos < (int32_t)str.size() )
-                  str.STORM_DELETE( m_nEditPos, 1 );
-                break;
-              case SpecSymbol_left: if( m_nEditPos > 0 ) m_nEditPos--; break;
-              case SpecSymbol_right: if( m_nEditPos < (int32_t)str.size() ) m_nEditPos++; break;
-
-              // skip unnecessary characters
-              case SpecSymbol_up:
-              case SpecSymbol_down:
-              case SpecSymbol_tab:
-              case SpecSymbol_return:
-              case SpecSymbol_escape:
-                break;
-
-              // and this is what we enter
-              default:
-                InsertSymbol( str, chr );
-              }
-              if( pA ) pA->SetAttribute( "str", (char*)str.c_str() );
-            }*/
 
             if (m_bDisguiseString)
                 DisguiseString(str);
@@ -492,7 +443,6 @@ bool CXI_PCEDITBOX::IsExcludeChar(utf8::u8_char chr) const
 {
     std::string fndStr(chr.b, chr.l);
 
-    // if( m_sExcludeChars.FindSubStr(fndStr)>=0 ) return true;
     return m_sExcludeChars.find(fndStr) != std::string::npos;
 }
 

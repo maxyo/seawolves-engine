@@ -285,9 +285,7 @@ class Renderer : public VRenderer
         return screen_size;
     }
 
-    // ===============================================================================================
     // --------------------===================== D3D SECTION =====================--------------------
-    // ===============================================================================================
 
     // D3D Device/Viewport Section
     HRESULT GetViewport(D3DVIEWPORT9 *pViewport) override;
@@ -314,7 +312,6 @@ class Renderer : public VRenderer
     HRESULT CreateVertexShader(const uint32_t *pFunction, storm::shim::VertexShader **ppShader);
     HRESULT SetVertexShader(storm::shim::VertexShader *pShader);
     HRESULT SetPixelShader(storm::shim::PixelShader *pShader);
-    /*virtual HRESULT SetFVFConstant(DWORD Register, const void* pConstantData, DWORD  ConstantCount );*/
     HRESULT SetVertexShaderConstantF(UINT StartRegister, const float *pConstantData, UINT Vector4iCount) override;
     HRESULT SetPixelShaderConstantF(UINT StartRegister, const float *pConstantData, UINT Vector4iCount) override;
     HRESULT SetFVF(uint32_t handle) override;

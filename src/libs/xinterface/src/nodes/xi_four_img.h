@@ -54,7 +54,6 @@ class CXI_FOURIMAGE : public CINODE
     int32_t m_oneBadTexture;     // texture for the picture replacing the first "bad" one
     int32_t m_twoBadTexture;     // texture for the picture replacing the second "bad" one
 
-    // select parameters
     bool m_bShowBorder;            // do show border
     int m_nSelectItem;             // select image
     uint32_t m_dwBaseColor;        // vertex color

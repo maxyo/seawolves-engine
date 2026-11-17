@@ -3,8 +3,6 @@
 
 class NODE;
 
-//=================================================
-//=================================================
 class SAILONE_BASE
 {
   public:
@@ -20,8 +18,6 @@ class SAIL_BASE : public CANNON_TRACE_BASE
     virtual SAILONE_BASE *FindSailForCharacter(int chrIdx, const char *nodeName, int grNum) = 0;
 };
 
-//==================================================
-//==================================================
 class ROPE_BASE : public Entity
 {
   public:

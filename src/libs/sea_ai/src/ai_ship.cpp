@@ -54,10 +54,6 @@ void AIShip::SetSeaAIAttributes(ATTRIBUTES *pAAttr, VAI_INNEROBJ *pObj) const
     // set common attributes
     pAAttr->SetAttributeUseDword("relation", Helper.GetScriptRelationSafe(GetACharacter(), pObj->GetACharacter()));
     pAAttr->SetAttributeUseDword("idx", GetIndex(pObj->GetACharacter()));
-    // pAAttr->SetAttributeUseFloat("x", pObj->GetPos().x);
-    // pAAttr->SetAttributeUseFloat("y", pObj->GetPos().y);
-    // pAAttr->SetAttributeUseFloat("z", pObj->GetPos().z);
-    // pAAttr->SetAttributeUseFloat("ay", pObj->GetAng().y);
     pAAttr->SetAttributeUseFloat("distance", GetDistance(*pObj));
 
     // calc angle between our ship and other object
@@ -172,7 +168,6 @@ void AIShip::Execute(float fDeltaTime)
         //
         CheckSituation();
         RDTSC_E(dw7);
-        // core.Trace("dw7 = %d", dw7);
     }
     else
     {
@@ -185,7 +180,6 @@ void AIShip::CheckSituation()
 {
     if (isDead())
         return;
-    // if (isMainCharacter()) return;
 
     auto fMinEnemyDist = 1e9f;
     for (auto &AIShip : AIShips)
@@ -247,7 +241,6 @@ void AIShip::CreateShip(entid_t _eidShip, ATTRIBUTES *_pACharacter, ATTRIBUTES *
     if (vInitPos)
     {
         pObj->SetPos(glm::vec3(vInitPos->x, 0.0f, vInitPos->z));
-        // if (!isMainCharacter()) pObj->SetPos(pObj->GetPos() + glm::vec3(FRAND(100.0f), 0.0f, 40.0f + FRAND(100.0f)));
         pShip->State.vAng.y = vInitPos->y;
     }
 
@@ -344,9 +337,8 @@ bool AIShip::Fire(bool bCameraOutside)
     {
         return GetCameraController()->Fire();
     }
-    // The player's ship seen from outside (owner rule): the gun side the camera faces fires -
+    // The player's ship seen from outside: the gun side the camera faces fires -
     // at the nearest enemy in that direction, otherwise as far as it reaches along the view.
-    // (Stock fired only at enemies already in range of any side, so a tap usually did nothing.)
     glm::vec3 vLook{};
     const bool bFacing = isMainCharacter() && bCameraOutside && AIHelper::pRS;
     if (bFacing)
@@ -376,10 +368,6 @@ bool AIShip::Fire(bool bCameraOutside)
                 if (bCanFire)
                 {
                     // check for friendly fire
-                    // uint32_t dwIdx = aShipFire.Add();
-                    // aShipFire[dwIdx].pShip = AIShips[i];
-                    // aShipFire[dwIdx].pFortCannon = null;
-                    // aShipFire[dwIdx].fDistance = GetDistance(*AIShips[i]);
                     aShipFire.push_back(can_fire_t{AIShips[i], nullptr, GetDistance(*AIShips[i])});
                 }
             }
@@ -402,10 +390,6 @@ bool AIShip::Fire(bool bCameraOutside)
                         isCanFire(pC->GetPos()) && inView(pC->GetPos()))
                     {
                         // check for friendly fire
-                        // uint32_t dwIdx = aShipFire.Add();
-                        // aShipFire[dwIdx].pShip = null;
-                        // aShipFire[dwIdx].pFortCannon = pC;
-                        // aShipFire[dwIdx].fDistance = GetDistance(pC->GetPos());
                         aShipFire.push_back(can_fire_t{nullptr, pC, GetDistance(pC->GetPos())});
                     }
                 }
@@ -414,7 +398,6 @@ bool AIShip::Fire(bool bCameraOutside)
         if (aShipFire.size())
         {
             // sorting
-            // aShipFire.Sort();
             std::sort(aShipFire.begin(), aShipFire.end());
 
             for (i = 0; i < aShipFire.size(); i++)
@@ -444,8 +427,6 @@ void AIShip::ReleasePoint(VAI_INNEROBJ *pOtherObj)
     if (it != aAttackPoints.end())
         aAttackPoints.erase(it);
 
-    // aFollowPoints.Del(AI_POINT(pOtherObj));
-    // aAttackPoints.Del(AI_POINT(pOtherObj));
 }
 
 glm::vec3 AIShip::GetAbordagePoint(VAI_INNEROBJ *pOtherObj)
@@ -459,24 +440,9 @@ glm::vec3 AIShip::GetAbordagePoint(VAI_INNEROBJ *pOtherObj)
 glm::vec3 AIShip::GetFollowPoint(VAI_INNEROBJ *pOtherObj)
 {
     const auto vDir = storm::math::normalizeOrZero(pOtherObj->GetPos() - GetPos());
-    // float fAng = GetAng().y;
     const auto vAdd = fFollowDistance * vDir; // glm::vec3(0.0f, 0.0f, 200.0f);
-    // RotateAroundY(vAdd.x,vAdd.z,cosf(fAng),sinf(fAng));
 
     return vAdd;
-    /*uint32_t dwIdx = aFollowPoints.Find(AI_POINT(pOtherObj));
-    if (dwIdx == INVALID_ARRAY_INDEX)
-    {
-      dwIdx = aFollowPoints.Add(); Assert(dwIdx != INVALID_ARRAY_INDEX);
-      aFollowPoints[dwIdx].pObj = pOtherObj;
-    }
-    float fAng = GetAng().y;
-    glm::vec3 vAdd = glm::vec3(0.0f, 0.0f, 100.0f);
-    RotateAroundY(vAdd.x,vAdd.z,cosf(fAng),sinf(fAng));
-
-    aFollowPoints[dwIdx].fAngle = 0.0f;
-
-    return vAdd;*/
 }
 
 glm::vec3 AIShip::GetAttackPoint(VAI_INNEROBJ *pOtherObj)
@@ -492,8 +458,6 @@ glm::vec3 AIShip::GetAttackPoint(VAI_INNEROBJ *pOtherObj)
         auto vRay = glm::vec3(0.0f, 0.0f, fAttackDistance);
         RotateAroundY(vRay.x, vRay.z, cosf(fAngle), sinf(fAngle));
 
-        // float fAng = GetAng().y;
-        // RotateAroundY(vDst.x, vDst.z, cosf(fAng), sinf(fAng));
 
         auto vDst = GetPos() + vRay;
         vDst.y = 0.0f;
@@ -510,23 +474,6 @@ glm::vec3 AIShip::GetAttackPoint(VAI_INNEROBJ *pOtherObj)
         }
     }
 
-    /*float fTempAng = PId2 / 2.0f;
-    if (aAttackPoints.size()) fTempAng = aAttackPoints[aAttackPoints.Last()].fAngle + PId2 / 2.0f;
-
-    uint32_t dwIdx = aAttackPoints.Find(AI_POINT(pOtherObj));
-    if (dwIdx == INVALID_ARRAY_INDEX)
-    {
-      dwIdx = aAttackPoints.Add(); Assert(dwIdx != INVALID_ARRAY_INDEX);
-      aAttackPoints[dwIdx].pObj = pOtherObj;
-      aAttackPoints[dwIdx].fAngle = fTempAng;
-    }
-
-    glm::vec3 vAdd = glm::vec3(0.0f , 0.0f, 150.0f);
-    RotateAroundY(vAdd.x,vAdd.z,cosf(aAttackPoints[dwIdx].fAngle),sinf(aAttackPoints[dwIdx].fAngle));
-
-    float fAng = GetAng().y;
-    RotateAroundY(vAdd.x,vAdd.z,cosf(fAng),sinf(fAng));
-    */
 
     return vBestPos;
 }
@@ -615,8 +562,6 @@ void AIShip::SwapShips(AIShip *pOtherShip)
     pOtherShip->pTaskController->SetAIShip(pOtherShip);
     pOtherShip->pTouchController->SetAIShip(pOtherShip);
 
-    // GetAIObjShipPointer()->SetACharacter(GetACharacter());
-    // pOtherShip->GetAIObjShipPointer()->SetACharacter(pOtherShip->GetACharacter());
 }
 
 // static members

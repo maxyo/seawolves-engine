@@ -19,7 +19,6 @@ void S_STACK::Release()
     for (uint32_t n = 0; n < Buffer_size; n++)
     {
         delete pStackData[n];
-        // pStackData[n].~DATA();
     }
     pStackData.clear();
     Buffer_size = 0;

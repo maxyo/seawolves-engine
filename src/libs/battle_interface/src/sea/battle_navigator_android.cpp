@@ -179,7 +179,7 @@ bool BATTLE_NAVIGATOR::DrawAndroid() const {
     Shapes mesh{{},cx,cy,radius/120.f};
     const auto ink=sea_nav::primitiveMetrics(*layout,*aperture);
     const glm::mat4 world;rs->SetTransform(D3DTS_WORLD,storm::math::d3dMatrix(world));
-    // The minimap (V2-Sea-Sailing, owner's round-5 additions): a dark disc, heading up, with the
+    // The minimap: a dark disc, heading up, with the
     // island map; per gun side its firing envelope (range and arc) and, along the rim, how far
     // it is loaded; the side the camera faces (it is the side that fires) lit; the wind as an
     // arrow across the disc, longer the stronger it blows; contacts as dots, the own ship as a

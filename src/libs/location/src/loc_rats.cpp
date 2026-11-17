@@ -1,18 +1,10 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocRats
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "loc_rats.h"
 #include "entity.h"
 #include "core.h"
-
-//============================================================================================
 
 LocRats::LocRats()
 {
@@ -23,24 +15,17 @@ LocRats::~LocRats()
 {
 }
 
-//============================================================================================
-
-// Initialization
 bool LocRats::Init()
 {
-    // Location Pointer
     const auto loc = core.GetEntityId("location");
     auto *location = (Location *)core.GetEntityPointer(loc);
     if (!location)
         return false;
-    // Execution
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), 100000);
     return true;
 }
 
-// Messages
 uint64_t LocRats::ProcessMessage(MESSAGE &message)
 {
     auto num = message.Long();
@@ -48,7 +33,6 @@ uint64_t LocRats::ProcessMessage(MESSAGE &message)
         num = 1;
     if (num > sizeof(rat) / sizeof(LocRat))
         num = sizeof(rat) / sizeof(LocRat);
-    // Location Pointer
     const auto loc = core.GetEntityId("location");
     auto *location = (Location *)core.GetEntityPointer(loc);
     if (!location)
@@ -59,7 +43,6 @@ uint64_t LocRats::ProcessMessage(MESSAGE &message)
     return 1;
 }
 
-// Execution
 void LocRats::Execute(uint32_t delta_time)
 {
 }

@@ -222,22 +222,16 @@ class BATTLE_NAVIGATOR
     int32_t m_idEmptyVBuf{-1};
     int32_t m_idCourseVBuf{-1};
     int32_t m_idMapVBuf{-1};
-    // --------------------
     int32_t m_idFireZoneVBuf{-1}; // cannons fire zone
-    // --------------------
     int32_t m_idCannonVBuf{-1};
     int32_t m_nvCannonCharge{};
     int32_t m_nvCannonReady{};
     int32_t m_nvCannonDamage{};
-    //--------------------
     int32_t m_idSpeedVBuf{-1};
     int32_t m_nvSpeed{};
-    //--------------------
     int32_t m_idShipsVBuf{-1};
     int32_t m_nvShips{};
-    //--------------------
     int32_t m_idGradBackVBuf{-1};
-    //--------------------
     int32_t m_idCurChargeVBuf{-1};
 
     // fonts and labels

@@ -139,7 +139,6 @@ struct FRECT
 };
 
 
-//TODO: remove
 #define COLOR2VECTOR(a) glm::vec3(float((a & 0xFF0000) >> 0x10), float((a & 0xFF00) >> 0x8), float(a & 0xFF));
 #define ARGB(a, r, g, b) (uint32_t(b) | (uint32_t(g) << 8L) | (uint32_t(r) << 16L) | (uint32_t(a) << 24L))
 constexpr auto makeRGB(uint32_t r, uint32_t g, uint32_t b)
@@ -357,9 +356,7 @@ class VRenderer : public SERVICE, public storm::render::TextureColorReader
     // aspect ratio section
     virtual float GetHeightDeformator() = 0;
     virtual POINT GetScreenSize() = 0;
-    // ===============================================================================================
     // --------------------===================== D3D SECTION =====================--------------------
-    // ===============================================================================================
 
     // D3D Device/Viewport Section
     virtual HRESULT GetViewport(D3DVIEWPORT9 *pViewport) = 0;

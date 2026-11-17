@@ -60,7 +60,7 @@ struct ReliefSetup;
 // (logged once).
 void ConfigureRelief(ReliefSetup setup);
 
-// The parallax's exclusion lists (fx/parallax_exclusions.hpp): the shipped one, and the owner's file `user_file` (empty: none).
+// The parallax's exclusion lists (fx/parallax_exclusions.hpp): the shipped one, and the user's file `user_file` (empty: none).
 // Both are loaded and logged here; the debug view's toggles write the user file. Before the first texture is loaded.
 void ConfigureParallaxExclusions(const std::filesystem::path &user_file);
 // What the debug view shows for a texture by its normalized name: whether it draws with the parallax, and why not.
@@ -158,7 +158,7 @@ class NormalMaps
     void configure_gloss(bool enabled, int max_size);
     Relief gloss(shim::TexStore &store, fx::Lighting &lighting);
 
-    // The debug view (render::ParallaxProbe): a loaded relief texture by its normalized name; and the owner's toggle of its
+    // The debug view (render::ParallaxProbe): a loaded relief texture by its normalized name; and the user's toggle of its
     // parallax, which appends the choice to the user file and logs it (false: the file cannot be written).
     ParallaxInfo parallax_info(const std::string &name);
     bool toggle_parallax(const std::string &name, bool &parallax_now);

@@ -214,19 +214,6 @@ void PCS_CONTROLS::MapControl(int32_t control_code, int32_t system_control_code)
 
 bool PCS_CONTROLS::GetControlState(const char *control_name, CONTROL_STATE &_state_struct)
 {
-    /*
-      int32_t n;
-      _state_struct.state = CST_INACTIVE;
-      _state_struct.lValue = 0;
-      _state_struct.fValue = 0.0f;
-
-      if(control_name == 0) return false;
-      for(n=0;n<nControlsNum;n++)
-      {
-        if(storm::iEquals(control_name,pUserControls[n].name)) return GetControlState(n,_state_struct);
-      }
-      return false;
-      //*/
 
     int32_t n;
     const auto bControlFound = false;
@@ -251,25 +238,6 @@ bool PCS_CONTROLS::GetControlState(const char *control_name, CONTROL_STATE &_sta
                 return true;
             }
 
-            /*if(GetControlState(n,local_state_struct))
-            {
-              bControlFound = true;
-
-              if(_state_struct.state == CST_INACTIVE)    // if control inactive just copy what we have on new control
-              {
-                _state_struct = local_state_struct;
-              }
-              else
-              {
-                if(_state_struct.state == CST_ACTIVE)    // if control already active, check for activated state
-                {
-                  if(local_state_struct.state == CST_ACTIVATED) _state_struct = local_state_struct;
-                }
-                else return true;
-              }
-
-
-            }  */
             return GetControlState(n, _state_struct);
         }
     }
@@ -621,7 +589,6 @@ int32_t PCS_CONTROLS::LastControlTime()
 
 void PCS_CONTROLS::SetControlTreshold(int32_t control_code, float thval)
 {
-    // ~!~
 }
 
 void PCS_CONTROLS::LockControl(const char *control_name, bool mode)

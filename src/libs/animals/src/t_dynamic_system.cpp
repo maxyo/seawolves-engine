@@ -2,19 +2,16 @@
 #include <algorithm>
 #include <memory.h>
 
-//--------------------------------------------------------------------
 TDynamicSystem::TDynamicSystem()
 {
     std::fill(attractors, attractors + MAX_DYNAMIC_OBJECTS, nullptr);
     std::fill(deflectors, deflectors + MAX_DYNAMIC_OBJECTS, nullptr);
 }
 
-//--------------------------------------------------------------------
 TDynamicSystem::~TDynamicSystem()
 {
 }
 
-//--------------------------------------------------------------------
 bool TDynamicSystem::AddAttractor(TDynamicObject *_obj)
 {
     for (auto i = 0; i < MAX_DYNAMIC_OBJECTS; i++)
@@ -29,7 +26,6 @@ bool TDynamicSystem::AddAttractor(TDynamicObject *_obj)
     return false;
 }
 
-//--------------------------------------------------------------------
 bool TDynamicSystem::AddDeflector(TDynamicObject *_obj)
 {
     for (auto i = 0; i < MAX_DYNAMIC_OBJECTS; i++)
@@ -44,32 +40,3 @@ bool TDynamicSystem::AddDeflector(TDynamicObject *_obj)
     return false;
 }
 
-//--------------------------------------------------------------------
-/*
-void TDynamicSystem::Draw(HDC _dc)
-{
-    static const DWORD ATTRACTOR_COLOR  = (DWORD) RGB(0xFF, 0, 0);
-    static const DWORD DEFLECTOR_COLOR  = (DWORD) RGB(0, 0, 0xFF);
-    static const DWORD ATTRACTOR_COLOR2 = (DWORD) RGB(0x7F, 0, 0);
-    static const DWORD DEFLECTOR_COLOR2 = (DWORD) RGB(0, 0, 0x7F);
-
-    for (int i = 0; i<1; i++)
-    {
-        if (attractors[i])
-            attractors[i]->Draw(_dc, ATTRACTOR_COLOR2);
-        if (deflectors[i])
-            deflectors[i]->Draw(_dc, DEFLECTOR_COLOR2);
-    }
-    for (i = 1; i<MAX_DYNAMIC_OBJECTS; i++)
-    {
-        if (attractors[i])
-            attractors[i]->Draw(_dc, ATTRACTOR_COLOR);
-        if (deflectors[i])
-            deflectors[i]->Draw(_dc, DEFLECTOR_COLOR);
-    }
-}
-*/
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

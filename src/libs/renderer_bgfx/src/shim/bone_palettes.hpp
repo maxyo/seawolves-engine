@@ -1,4 +1,4 @@
-// The bone palettes of all GPU-skinned draws of a frame in one texture (perf audit finding 8): the model gives each
+// The bone palettes of all GPU-skinned draws of a frame in one texture: the model gives each
 // animated character its own RGBA32F palette texture (model gpu_skinning.hpp) and re-locks it for every pose; uploaded
 // one by one that was one glTexSubImage2D per character per frame (30 in a town), each into a texture the GPU may
 // still read from the previous frame. Here the rows of every palette a draw binds are appended to the frame's

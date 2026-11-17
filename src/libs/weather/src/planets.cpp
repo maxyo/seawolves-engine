@@ -21,7 +21,6 @@ void Astronomy::PLANETS::ReleasePlanets()
 {
     for (int32_t i = 0; i < aPlanets.size(); i++)
     {
-        // Astronomy::pGS->DeleteGeometry(aPlanets[i].pGeo);
         if (aPlanets[i].iTexture >= 0)
             pRS->TextureRelease(aPlanets[i].iTexture);
     }
@@ -36,8 +35,6 @@ void Astronomy::PLANETS::Init(ATTRIBUTES *pAP)
 
     pGS->SetTexturePath("Weather\\Astronomy\\Planets\\");
 
-    // ATTRIBUTES * pAScale = pAP->FindAClass(pAP, "Planets.Scale");
-    // fPlanetScale = ((pAScale) ? pAScale->GetAttributeAsFloat() : 1.0f);
     TimeUpdate(pAP);
 
     auto *pAPlanets = pAP->FindAClass(pAP, "Planets.Planet");
@@ -50,7 +47,6 @@ void Astronomy::PLANETS::Init(ATTRIBUTES *pAP)
             std::string sName = pAPlanet->GetThisName();
 
             aPlanets.push_back(Planet{});
-            // Planet & p = aPlanets[aPlanets.Add()];
             auto &p = aPlanets.back();
             p.fDiameter = pAPlanet->GetAttributeAsFloat("Diameter");
             p.fSpeed = pAPlanet->GetAttributeAsFloat("Speed");
@@ -61,8 +57,6 @@ void Astronomy::PLANETS::Init(ATTRIBUTES *pAP)
             p.fMagMin = (pAMag) ? pAMag->GetAttributeAsFloat("Min") : 14.0f;
             p.fAngle = PId2 + FRAND(PI);
 
-            // string sFilename = string("Weather\\Planets\\") + pAPlanets->GetAttributeName(i);
-            // p.pGeo = Astronomy::pGS->CreateGeometry(sFilename, 0, 0);
 
             p.iTexture = pRS->TextureCreate(("Weather\\Astronomy\\Planets\\" + sName + ".tga").c_str());
         }
@@ -75,7 +69,6 @@ void Astronomy::PLANETS::Init(ATTRIBUTES *pAP)
 
     for (uint32_t i = 0; i < aPlanets.size(); i++)
     {
-        // aPlanets[i].fDistance /= fMaxDistance;
         aPlanets[i].fRealDistance = 1200.0f + 500.0f * aPlanets[i].fDistance / fMaxDistance;
         aPlanets[i].fScale = static_cast<float>((aPlanets[i].fRealDistance * aPlanets[i].fDiameter) /
                                                 (fabs(static_cast<double>(aPlanets[i].fDistance) - 1.0) * 150000000.0));
@@ -133,8 +126,6 @@ void Astronomy::PLANETS::Realize(double dDeltaTime, double dHour)
         mP[1][1] = aPlanets[i].fScale * fPlanetScale;
         mP[2][2] = aPlanets[i].fScale * fPlanetScale;
 
-        // Astronomy::pRS->SetTransform(D3DTS_WORLD, glm::mat4());
-        // Astronomy::pRS->DrawSphere(vCamPos + vPos, 200.0f * aPlanets[i].fScale, 0xFFFFFFFF);
 
         RS_RECT p;
         p.vPos = vPos + vCamPos;
@@ -145,12 +136,6 @@ void Astronomy::PLANETS::Realize(double dDeltaTime, double dHour)
         pRS->TextureSet(0, aPlanets[i].iTexture);
         pRS->DrawRects(&p, 1, "planet");
 
-        /*if (aPlanets[i].pGeo)
-        {
-          mP.SetPosition(vPos + vCamPos);
-          Astronomy::pRS->SetTransform(D3DTS_WORLD, mP);
-          aPlanets[i].pGeo->Draw((GEOS::PLANE*)Astronomy::pRS->GetPlanes(), 0, null);
-        }*/
     }
     pRS->SetRenderState(D3DRS_LIGHTING, bLighting);
     pRS->SetRenderState(D3DRS_AMBIENT, dwAmbient);

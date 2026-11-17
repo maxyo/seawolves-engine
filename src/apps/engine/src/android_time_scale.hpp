@@ -1,5 +1,5 @@
 #pragma once
-// Four steps of the game's time acceleration for a touch HUD (owner decision): x1, x2, x4, x8.
+// Four steps of the game's time acceleration for a touch HUD: x1, x2, x4, x8.
 // The scripts keep the logic: TimeScaleCounter (scale = 1 + counter * 0.25) is set one step of
 // their own ladder below the target and one TimeScaleFaster / TimeScaleSlower activation runs
 // their handler, which applies their guards (underwater, quest locks), clamps (x6 in a fight,
@@ -35,9 +35,6 @@ inline int timeScaleStep(std::string_view control)
 
 // One HUD request for a step. `Game` is the scripts' side:
 //   bool counter(int32_t &value)      TimeScaleCounter (false: no such variable)
-//   void setCounter(int32_t value)
-//   float scale()                     the time scale the engine runs at
-//   void activate(const char *control) one "Control Activation" of the control
 template <class Game> void requestTimeScaleStep(Game &game, int step)
 {
     int32_t current = 0;
@@ -49,7 +46,6 @@ template <class Game> void requestTimeScaleStep(Game &game, int step)
     game.activate(step == 0 ? "TimeScaleSlower" : "TimeScaleFaster");
     if (std::fabs(game.scale() - before) >= 0.01f) return;
     // Nothing changed: the scripts refused (underwater, a quest lock) or their limit (x2.5 on the
-    // world map, x6 in a fight) already holds the scale. Their counter goes back to what it was;
     // a step up asked again from there goes round to x1 instead of standing still on a button
     // that no longer changes anything.
     game.setCounter(current);
@@ -75,7 +71,7 @@ inline void applyTimeScaleStep(int step)
         float scale() const { return core.GetTimeScale(); }
         void activate(const char *control) const
         {
-            // No toast for the new scale (owner decision): the HUD's time button shows it.
+            // No toast for the new scale: the HUD's time button shows it.
             ++gameMessagesMuted;
             core.Event("Control Activation", "s", control);
             --gameMessagesMuted;

@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    AICharacter
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "ai_character.h"
 
@@ -15,10 +9,6 @@
 #include "location.h"
 
 #define FALURE_GOTO 2.0f
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 AICharacter::AICharacter()
     : command(), path{}, force(), goForce(), separation(), alignment(), around()
@@ -34,10 +24,6 @@ AICharacter::AICharacter()
 AICharacter::~AICharacter()
 {
 }
-
-//============================================================================================
-// Character
-//============================================================================================
 
 // Move the character to the desired position
 void AICharacter::Move(float dltTime)
@@ -93,7 +79,6 @@ void AICharacter::Calculate(float dltTime)
     force += around;
     force += goForce;
     force += slideForce;
-    // if(isSlide) force += slideDir*0.3f;
     // Bringing in noise to aid decision making
     force.x += rand() * 0.0000001f / RAND_MAX;
     force.z += rand() * 0.0000001f / RAND_MAX;
@@ -160,9 +145,7 @@ void AICharacter::CharacterTeleport()
         core.Trace("Warning: NPCharacter <%s>-> trace node not found", characterID);
 }
 
-//============================================================================================
 // AICharacter
-//============================================================================================
 
 // Nothing to do
 bool AICharacter::CmdNone()
@@ -228,10 +211,6 @@ void AICharacter::SetExCharacter(AICharacter *chr)
 {
     command.exch = chr;
 }
-
-// ============================================================================================
-// Encapsulation
-// ============================================================================================
 
 // Go to the point
 void AICharacter::CmdProcessGotoPoint(float dltTime)
@@ -354,7 +333,6 @@ void AICharacter::CmdUpdateGotoPoint(float dltTime)
     if (!command.isWait)
     {
         StartMove();
-        // if(location->IsDebugView()) location->DrawLine(curPos, 0xffff0000, curPos + force*2.0f, 0xffff0000, false);
         Turn(force.x, force.z);
         const auto l = force.x * force.x + force.z * force.z;
         if (l < 0.7f)
@@ -456,8 +434,6 @@ void AICharacter::CmdUpdateEscape(float dltTime)
     else
         kSpd = likeKSpd;
 }
-
-//--------------------------------------------------------------------------------------------
 
 // Find the node index for a given coordinate
 int32_t AICharacter::FindNodeIndex(const glm::vec3 &pos, float *hy)

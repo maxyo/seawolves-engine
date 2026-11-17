@@ -139,15 +139,12 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
     float ESpace;
     int32_t Delay;
 
-    //---------------------------------
-
     bool enableEmit;
     uint32_t nEmitted;
     float EmissionTime; // time for emitting one particle
     int32_t DeltaTimeSLE;  // SinceLastEmission
     bool EmitParticle();
     int32_t nSystemLifeTime;
-    // void  AddTrackPoint(glm::vec3 pos);
     glm::vec3 *pFlowTrack;
     uint32_t nFlowTrackSize;
     bool bUseFlowTrack;
@@ -161,8 +158,6 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
     float fSurfaceOffset;
     char *TechniqueName;
     uint32_t ParticleColor;
-
-    //---------------------------------
 
     glm::vec3 CameraPos;
     glm::vec3 CameraAng;
@@ -213,8 +208,6 @@ class SEAFOAM_PS : VPARTICLE_SYSTEM
     {
         enableEmit = _enableEmit;
     }
-
-    //---------------------------------------------------------------
 
     void SetLifeTime(uint32_t time) override
     {

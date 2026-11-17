@@ -1,20 +1,13 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Lights
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "lighter_lights.h"
 
 #include "string_compare.hpp"
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 LighterLights::LighterLights()
 {
@@ -78,7 +71,6 @@ void LighterLights::AddPointLight(const glm::vec3 &color, const glm::vec3 &pos, 
     {
         const auto len = strlen(group) + 1;
         light[numLights].group = new char[len];
-        // strcpy_s(light[numLights].group, group);
         std::copy(group, group + len, light[numLights].group);
     }
     else
@@ -127,7 +119,6 @@ void LighterLights::PostInit()
         memset(&light[numLights], 0, sizeof(light[numLights]));
         const auto len = strlen(grp[i]) + 1;
         light[numLights].group = new char[len];
-        // strcpy_s(light[numLights].group, grp[i]);
         std::copy(grp[i], grp[i] + len, light[numLights].group);
         light[numLights].type = Light::t_group;
         light[numLights].isOn = true;

@@ -9,8 +9,6 @@
 #include "s_import_func.h"
 #include "v_s_stack.h"
 
-//============================================================================================
-
 struct LocationFindCacheElement
 {
     LocationFindCacheElement()
@@ -178,7 +176,6 @@ uint32_t slNativeFastFind(VS_STACK *pS, LocationFindCacheElement *cache, int32_t
             }
         }
     }
-    //
     pReturn->Set(-1);
     return IFUNCRESULT_OK;
 }
@@ -312,8 +309,6 @@ uint32_t slNativeSetReloadNextTipsImage(VS_STACK *pS)
     }
     return IFUNCRESULT_OK;
 }
-
-//============================================================================================
 
 bool ScriptLocationLibrary::Init()
 {

@@ -21,7 +21,6 @@ class INIFILE;
 class VFILE_SERVICE
 {
   public:
-    // VFILE_SERVICE()= 0;
     virtual ~VFILE_SERVICE()
     {
     }
@@ -61,17 +60,11 @@ class VFILE_SERVICE
     virtual uint64_t GetPathFingerprint(const std::filesystem::path& path) = 0;
 };
 
-//------------------------------------------------------------------------------------------------
 // handle with text files in format:
 //
 // ; commentary
 // [section name 1]
-// key_name1 = string1
-// ...
-// key_nameN = stringN
-// ...
 // [section name N]
-// ...
 // spacebar and tab symbols ignored:
 // for key_name: from line start to first significant symbol and from end of key_name to '=' symbol
 // for string: from symbol '=' to first significant symbol and at the end of line
@@ -83,7 +76,6 @@ class INIFILE
   public:
     virtual ~INIFILE() = default;
 
-    // add string to file
     virtual void AddString(const char *section_name, const char *key_name, const char *string) = 0;
     // write string to file, overwrite data if exist, throw EXS exception object if failed
     virtual void WriteString(const char *section_name, const char *key_name, const char *string) = 0;
@@ -123,7 +115,6 @@ class INIFILE
     virtual float GetFloat(const char *section_name, const char *key_name, float def_val) = 0;
     virtual bool GetFloatNext(const char *section_name, const char *key_name, float *val) = 0;
 
-    // virtual void    SetSearch(void *)= 0;
 
     virtual void DeleteKey(const char *section_name, const char *key_name) = 0;
 
@@ -142,5 +133,4 @@ class INIFILE
     virtual bool TestSection(const char *section_name) = 0;
 };
 
-//
 extern VFILE_SERVICE *fio;

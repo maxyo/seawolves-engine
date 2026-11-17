@@ -18,14 +18,9 @@ class IBoardingStatus : public Entity
         switch (stage)
         {
             // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -35,7 +30,6 @@ class IBoardingStatus : public Entity
 
   protected:
     // show parameters
-    //-----------------------
     int32_t m_Width;
     int32_t m_Height;
     FPOINT m_myPos;

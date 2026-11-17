@@ -98,7 +98,6 @@ void CXI_SCROLLBAR::Draw(bool bSelected, uint32_t Delta_Time)
         }
 
         m_rs->TextureSet(0, m_idTex);
-        // show shadow
         if (m_nPressedDelay > 0)
             if (m_bRightPress)
                 m_rs->DrawBuffer(m_idVBuf, sizeof(XI_ONETEX_VERTEX), m_idIBuf, 60, 12, 0, m_nIndx, "iShadow");
@@ -107,7 +106,6 @@ void CXI_SCROLLBAR::Draw(bool bSelected, uint32_t Delta_Time)
         else
             m_rs->DrawBuffer(m_idVBuf, sizeof(XI_ONETEX_VERTEX), m_idIBuf, 12, 12, 0, m_nIndx, "iShadow");
 
-        // show button
         if (m_nPressedDelay > 0)
             if (m_bRightPress)
                 m_rs->DrawBuffer(m_idVBuf, sizeof(XI_ONETEX_VERTEX), m_idIBuf, 48, 12, 0, m_nIndx, "iButton");
@@ -150,22 +148,16 @@ void CXI_SCROLLBAR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     char param[255];
     FXYPOINT fPnt;
 
-    // get font number
     m_nFontID = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "fontID", param, sizeof(param), ""))
         if ((m_nFontID = m_rs->LoadFont(param)) == -1)
             core.Trace("can not load font:'%s'", param);
-    // get font color
     m_dwFontColor = GetIniARGB(ini1, name1, ini2, name2, "fontColor", 0xFFFFFFFF);
-    // get font scale
     m_fFontScale = GetIniFloat(ini1, name1, ini2, name2, "fontScale", 1.f);
-    // get font offset
     m_pntFontOffset = GetIniLongPoint(ini1, name1, ini2, name2, "fontOffset", XYPOINT(0, 0));
 
-    // get face color
     m_dwFaceColor = GetIniARGB(ini1, name1, ini2, name2, "faceColor", 0xFFFFFFFF);
 
-    // get shadow color
     m_dwShadowColor = GetIniARGB(ini1, name1, ini2, name2, "shadowColor", ARGB(255, 0, 0, 0));
 
     // get group name and get texture for this
@@ -196,7 +188,6 @@ void CXI_SCROLLBAR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     m_fXShadowPress = fPnt.x;
     m_fYShadowPress = fPnt.y;
 
-    // get press delay
     m_nMaxDelay = GetIniLong(ini1, name1, ini2, name2, "pressDelay", 20);
 
     m_nVert = 12 * 6;    //
@@ -210,7 +201,6 @@ void CXI_SCROLLBAR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     if (pVert == nullptr || pIndx == nullptr)
         throw std::runtime_error("can not create the index&vertex buffers");
 
-    // fill triangles buffer
     auto i = 0;
     for (auto tidx = 0; tidx < 3; tidx++)
     {
@@ -223,7 +213,6 @@ void CXI_SCROLLBAR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         i += 6;
     }
 
-    // fill vertex buffer
     for (i = 0; i < m_nVert; i++)
         pVert[i].pos.z = 1.f;
     for (i = 0; i < 12; i++)
@@ -375,7 +364,6 @@ void CXI_SCROLLBAR::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -416,7 +404,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     if (sideWidth < 0)
         sideWidth = (m_rect.right - m_rect.left - m_nBarWidth) / 2;
     // fill normal picture
-    //============================================================================
     // fill face (left,center,right)
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
@@ -443,7 +430,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     pVert[idx + 8].pos.y = pVert[idx + 9].pos.y = static_cast<float>(m_rect.top);
     pVert[idx + 10].pos.y = pVert[idx + 11].pos.y = static_cast<float>(m_rect.bottom);
     idx += 12;
-    // fill shadow
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
     pVert[idx].tv = pVert[idx + 1].tv = m_frLeftTex.top;
@@ -471,7 +457,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     idx += 12;
 
     // fill left press picture
-    //============================================================================
     // fill face (left,center,right)
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
@@ -498,7 +483,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     pVert[idx + 8].pos.y = pVert[idx + 9].pos.y = static_cast<float>(m_rect.top);
     pVert[idx + 10].pos.y = pVert[idx + 11].pos.y = static_cast<float>(m_rect.bottom);
     idx += 12;
-    // fill shadow
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
     pVert[idx].tv = pVert[idx + 1].tv = m_frLeftTex.top;
@@ -527,7 +511,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     idx += 12;
 
     // fill right press picture
-    //============================================================================
     // fill face (left,center,right)
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
@@ -554,7 +537,6 @@ void CXI_SCROLLBAR::UpdatePosition() const
     pVert[idx + 8].pos.y = pVert[idx + 9].pos.y = static_cast<float>(m_rect.top) + m_fYDeltaPress;
     pVert[idx + 10].pos.y = pVert[idx + 11].pos.y = static_cast<float>(m_rect.bottom) + m_fYDeltaPress;
     idx += 12;
-    // fill shadow
     pVert[idx].tu = pVert[idx + 2].tu = m_frLeftTex.left;
     pVert[idx + 1].tu = pVert[idx + 3].tu = m_frLeftTex.right;
     pVert[idx].tv = pVert[idx + 1].tv = m_frLeftTex.top;

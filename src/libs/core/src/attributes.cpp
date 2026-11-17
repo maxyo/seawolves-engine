@@ -189,14 +189,12 @@ ATTRIBUTES & ATTRIBUTES::operator=(ATTRIBUTES &&other) noexcept
 {
     stringCodec_ = other.stringCodec_;
     // Do not update name code
-    // nameCode_ = other.nameCode_;
     value_ = std::move(other.value_);
     attributes_ = std::move(other.attributes_);
     codes_ = std::move(other.codes_);
     ChildrenReordered();
     AdoptChildren();
     // Do not update parent
-    // parent_ = other.parent_;
     break_ = other.break_;
     storm::TreeChanged(this);
     return *this;

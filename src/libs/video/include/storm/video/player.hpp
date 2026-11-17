@@ -2,8 +2,7 @@
 
 // In-game video playback on FFmpeg: a demux/audio thread and a video decode thread fill a
 // small queue of RGBA frames; the game thread presents them against the audio clock.
-// Decoder policy (hardware/software per codec) and the threading model: README.md next to
-// this library. Nothing here touches the engine core, the renderer or the sound service:
+// Nothing here touches the engine core, the renderer or the sound service:
 // callers adapt those through Source and AudioSink (see xinterface/aviplayer).
 
 #include <cstdint>

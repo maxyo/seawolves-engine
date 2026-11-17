@@ -16,7 +16,6 @@
 // The codes are part of the save format: a save stores the names in the order of Get()/GetNext() and every attribute
 // by its code, and the load registers the names in that order to give each its code back. So the numbering never
 // changes: the code is (bucket << 16) | (position in the bucket), where the bucket is the low 9 bits of the name's
-// case-insensitive PJW hash (BucketOf) and the position counts the names that came to the bucket before. A name is
 // registered by its first lookup, found or not (Convert), so the set of names and their order follow the session.
 //
 // Looking a name up does not walk its bucket (30-60 names each in a running game): an open-addressing index from

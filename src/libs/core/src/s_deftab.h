@@ -37,7 +37,6 @@ class S_DEFTAB
     uint32_t Buffer_size;
     uint32_t Def_num;
     std::vector<DEFINFO> pTable;
-    // bool bKeepName;
     DTHASHLINE HashLine[DTHASHT_SIZE];
 
   public:
@@ -51,7 +50,6 @@ class S_DEFTAB
     uint32_t AddDef(DEFINFO &di);
     bool GetDef(DEFINFO &di, uint32_t def_code);
     uint32_t MakeHashValue(const char *string);
-    //    void  KeepNameMode(bool on){bKeepName = on;};
     void Release();
     void InvalidateBySegmentID(uint32_t segment_id);
     uint32_t FindDef(const char *def_name);

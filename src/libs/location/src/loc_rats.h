@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocRats
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -21,11 +15,8 @@ class LocRats : public Entity
     LocRats();
     ~LocRats() override;
 
-    //--------------------------------------------------------------------------------------------
   public:
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     // Drawing
     void Realize(uint32_t delta_time);
@@ -40,17 +31,11 @@ class LocRats : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
-    //--------------------------------------------------------------------------------------------
   private:
     LocRat rat[32];
     int32_t num;

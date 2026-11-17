@@ -10,21 +10,17 @@ CREATE_CLASS(SOUND)
 
 #define MSG_SOUND_ALIAS_ADD 77017 //"s"          alias_name
 
-//--------------------------------------------------------------------
 SOUND::SOUND()
     : soundService(nullptr), renderer(nullptr)
 {
 }
 
-//--------------------------------------------------------------------
 SOUND::~SOUND()
 {
 }
 
-//--------------------------------------------------------------------
 bool SOUND::Init()
 {
-    // GUARD(SOUND::Init)
 
     soundService = static_cast<VSoundService *>(core.GetService("SoundService"));
     if (!soundService)
@@ -37,7 +33,6 @@ bool SOUND::Init()
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 uint64_t SOUND::ProcessMessage(MESSAGE &message)
 {
     ////GUARD(SOUND::ProcessMessage)
@@ -127,7 +122,7 @@ uint64_t SOUND::ProcessMessage(MESSAGE &message)
             temp4 = message.Long(); // cached
         if (message.GetCurrentFormatType())
             tempLong = message.Long(); // fade_in_time
-        // boal fix 28.10.06
+
         if (temp == SOUND_MP3_STEREO)
         {
             if (temp3) // stereo OGG, looped
@@ -178,21 +173,16 @@ uint64_t SOUND::ProcessMessage(MESSAGE &message)
         {
         case SOUND_PARAM_MAX_DISTANCE:
             vector.x = message.Float();
-            // memcpy(&(vector.x) ,message.Pointer(), sizeof(float));
             soundService->SoundSet3DParam(id, SM_MAX_DISTANCE, &(vector.x));
             break;
         case SOUND_PARAM_MIN_DISTANCE:
             vector.x = message.Float();
-            // memcpy(&(vector.x) ,message.Pointer(), sizeof(float));
             soundService->SoundSet3DParam(id, SM_MIN_DISTANCE, &(vector.x));
             break;
         case SOUND_PARAM_POSITION:
             vector.x = message.Float();
             vector.y = message.Float();
             vector.z = message.Float();
-            // memcpy(&(vector.x) ,message.Pointer(), sizeof(float));
-            // memcpy(&(vector.y) ,message.Pointer()+sizeof(float), sizeof(float));
-            // memcpy(&(vector.z) ,message.Pointer()+(sizeof(float) << 1), sizeof(float));
             soundService->SoundSet3DParam(id, SM_POSITION, &vector);
             break;
         }
@@ -248,12 +238,8 @@ uint64_t SOUND::ProcessMessage(MESSAGE &message)
     ////UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SOUND::Realize(uint32_t dTime)
 {
     if (!soundService)
         return;
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

@@ -105,7 +105,6 @@ void CXI_SLIDEPICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
 
     const auto color = GetIniARGB(ini1, name1, ini2, name2, "color", 0xFFFFFFFF);
 
-    // Create rectangle
     m_v[0].pos.x = static_cast<float>(m_rect.left);
     m_v[0].pos.y = static_cast<float>(m_rect.top);
     m_v[0].tu = m_texRect.left;
@@ -168,7 +167,6 @@ void CXI_SLIDEPICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
         }
     }
 
-    // fill in the speed table
     if (bUse1Ini)
     {
         ini1->ReadString(name1, "speed", param, sizeof(param) - 1, "");
@@ -238,7 +236,6 @@ void CXI_SLIDEPICTURE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

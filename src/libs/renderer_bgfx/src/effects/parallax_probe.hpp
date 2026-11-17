@@ -1,4 +1,4 @@
-// The parallax probe (fx_pom_probe; fx/parallax_probe.hpp): the relief texture under the screen centre, for the owner's
+// The parallax probe (fx_pom_probe; fx/parallax_probe.hpp): the relief texture under the screen centre, for the
 // tuning of the parallax per texture (fx_pom_toggle, NormalMaps::toggle_parallax). The renderer draws what it finds
 // over the picture (render::EffectsParallaxProbe).
 //

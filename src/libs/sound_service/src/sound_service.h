@@ -14,10 +14,6 @@ class INIFILE;
 // debug....
 class SoundVisualisationEntity;
 
-///////////////////////////////////////////////////////////////////
-// CLASS DEFINITION
-///////////////////////////////////////////////////////////////////
-
 class SoundService : public VSoundService
 {
     VRenderer *rs = nullptr;
@@ -80,8 +76,6 @@ class SoundService : public VSoundService
 
     bool AddSoundSchemeChannel(char *in_string, bool _looped = false);
     void ProcessSoundSchemes();
-
-    //----------------------------------------------------------------------------
 
     float fFXVolume;
     float fMusicVolume;

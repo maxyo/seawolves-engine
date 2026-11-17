@@ -27,7 +27,6 @@ Blood::~Blood()
     texID = -1;
 }
 
-// Initialization
 bool Blood::Init()
 {
     pRS = static_cast<VRenderer *>(core.GetService("renderer"));
@@ -41,7 +40,6 @@ bool Blood::Init()
     return true;
 }
 
-// Work
 void Blood::Execute(uint32_t delta_time)
 {
     if (nUsedTQ < ON_LIVETIME_BLOOD_TRIANGLES)

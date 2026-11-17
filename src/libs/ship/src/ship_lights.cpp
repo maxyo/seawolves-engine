@@ -447,7 +447,6 @@ void ShipLights::SetLights(VAI_OBJBASE *pObject)
         aSelectedLights.push_back(SelectedLight{aLights[i].fCurDistance, i});
     }
 
-    // aSelectedLights.Sort();
     std::sort(aSelectedLights.begin(), aSelectedLights.end());
 
     for (i = 0; i < aLights.size(); i++)

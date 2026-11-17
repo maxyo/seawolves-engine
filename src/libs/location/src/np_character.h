@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    NPCaracter
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -65,9 +59,6 @@ class NPCharacter : public AICharacter
         float state;      // Enemy Condition Coefficient
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     NPCharacter();
     ~NPCharacter() override;
@@ -78,16 +69,11 @@ class NPCharacter : public AICharacter
     void Move(float dltTime) override;
     void Update(float dltTime) override;
 
-    //--------------------------------------------------------------------------------------------
-    //
-    //--------------------------------------------------------------------------------------------
   public:
     // Get attacking character
     Character *GetAttackedCharacter() const;
 
-    // --------------------------------------------------------------------------------------------
     // Tasks
-    // --------------------------------------------------------------------------------------------
 
     // Set a new task
     bool SetNewTask(NPCTask tsk, MESSAGE &message);
@@ -95,9 +81,7 @@ class NPCharacter : public AICharacter
     bool InitFollowChartacter(entid_t eid);
     bool InitFightChartacter(entid_t eid);
 
-    // --------------------------------------------------------------------------------------------
     // Executing tasks
-    // --------------------------------------------------------------------------------------------
   protected:
     // Completing the task of following a character
     void UpdateFollowCharacter(float dltTime);
@@ -121,8 +105,6 @@ class NPCharacter : public AICharacter
     // Get energy for action
     float GetActEnergy(const char *act) const;
 
-    // Events
-
     // Cannot further execute the command
     void FailureCommand() override;
     // The character arrived at the point
@@ -139,9 +121,6 @@ class NPCharacter : public AICharacter
     // Retrieve a task from the stack
     bool PopTask();
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Cannot further execute the command
     void FailureCommand(NPCTask task) const;

@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocLife
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -22,12 +16,10 @@ class LocLife : public AnimationEventListener
     LocLife();
     ~LocLife() override;
 
-    //--------------------------------------------------------------------------------------------
   public:
     bool Init(Location *loc);
     void Update(float dltTime);
 
-    //--------------------------------------------------------------------------------------------
   protected:
     virtual const char *GetModelName() = 0;
     virtual const char *GetAniName() = 0;
@@ -38,7 +30,6 @@ class LocLife : public AnimationEventListener
     virtual void IsStartMove(Animation *ani) = 0;
     virtual void IsStopMove(Animation *ani) = 0;
 
-    //--------------------------------------------------------------------------------------------
   protected:
     void StartMove();
     void StopMove();
@@ -48,7 +39,6 @@ class LocLife : public AnimationEventListener
     int32_t FindPos();
     int32_t FindRandomPos(glm::vec3 &pos) const;
 
-    //--------------------------------------------------------------------------------------------
   protected:
     float kSpeed;
     float speed;

@@ -16,7 +16,7 @@ namespace storm::effects
 namespace
 {
 // The ripples' slope in the normal: the field's few-centimetre waves read at a phone's distance only stronger
-// (with the physical per-pixel Fresnel of fs_port_sea2 they need more tilt than the old facing term gave them).
+// (with the physical per-pixel Fresnel of fs_port_sea2 they need more tilt than a facing term gives).
 // The reflection uses the derivative of the same metre-height field that lifts the vertices.
 constexpr float kRippleSlopeGain = 1.0f;
 // Metres one repeat of the game's foam texture (pena.tga, a photograph of churned water) covers.

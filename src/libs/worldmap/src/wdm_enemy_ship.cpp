@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    WdmEnemyShip
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_enemy_ship.h"
 
@@ -14,16 +9,13 @@
 
 #include "wdm_islands.h"
 
-//============================================================================================
 
 #define WDM_ENEMYSHIP_BRNSPD (1.0f / 3.0f) // Spawn time 1 / sec
 #define WDM_ENEMYSHIP_DELSPD (1.0f / 2.0f) // Removal time 1 / sec
 #define WDM_ENEMYSHIP_MINTIME 60.0f        // Minimum lifetime in sec
 #define WDM_ENEMYSHIP_MAXTIME 180.0f       // Maximum lifetime in sec
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmEnemyShip::WdmEnemyShip()
 {
@@ -50,13 +42,6 @@ WdmEnemyShip::WdmEnemyShip()
 
 WdmEnemyShip::~WdmEnemyShip()
 {
-    /*
-    if(saveAttribute)
-    {
-      ATTRIBUTES * atr = saveAttribute->GetParent();
-      atr->DeleteAttributeClassX(saveAttribute);
-      core.Event("WorldMap_DeleteShipEncounter", "l", type);
-    }*/
 }
 
 // Calculations

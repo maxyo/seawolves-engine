@@ -1,4 +1,4 @@
-// The game's relief maps made while it runs (the owner's choice): PBRify's models (src/libs/relief) on one worker thread in the
+// The game's relief maps made while it runs: PBRify's models (src/libs/relief) on one worker thread in the
 // game process, into the relief directory (fx/relief_store.hpp) the game reads.
 //
 //   * A loaded colour texture of a relief class without its map, or of a gloss class without its gloss map, is requested

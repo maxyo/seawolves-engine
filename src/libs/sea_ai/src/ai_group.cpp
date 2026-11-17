@@ -85,17 +85,11 @@ bool AIGroup::isMainGroup()
 AIShip *AIGroup::GetMainShip()
 {
     auto *pShip = AIShip::FindShip(GetCommanderACharacter());
-    // return AIShip::FindShip(GetCommanderACharacter());
-    /*if (aGroupShips.size() == 0) return null;
-    if (isMainGroup())
-      for (uint32_t i=0;i<aGroupShips.size();i++) if (aGroupShips[i]->isMainCharacter()) return aGroupShips[i];
-  */
     return (pShip) ? pShip : aGroupShips[0];
 }
 
 void AIGroup::Execute(float fDeltaTime)
 {
-    // if (isDead()) return;
 
     if (bFirstExecute)
     {
@@ -126,22 +120,6 @@ void AIGroup::Execute(float fDeltaTime)
 
         bFirstExecute = false;
     }
-    /*if (!isMainGroup())
-    {
-      if (sCommand == "runaway")
-        for (uint32_t i=0; i<aGroupShips.size(); i++) if (!aGroupShips[i]->isMainCharacter())
-          aGroupShips[i]->GetTaskController()->SetNewTask(PRIMARY_TASK, AITASK_RUNAWAY, null);
-
-      if (sCommand == "move")
-        for (uint32_t i=0; i<aGroupShips.size(); i++) if (!aGroupShips[i]->isMainCharacter())
-        {
-          glm::vec3 vDir = glm::vec3(vInitGroupPos.x, 0.0f, vInitGroupPos.z) + 20000.0f *
-    glm::vec3(sinf(vInitGroupPos.y),0.0f,cosf(vInitGroupPos.y));
-          aGroupShips[i]->GetTaskController()->SetNewTask(PRIMARY_TASK, AITASK_MOVE, vDir);
-        }
-
-      sCommand = "";
-    }*/
 
     if (!isDead() && dtCheckTask.Update(fDeltaTime))
         core.Event(GROUP_CHECKTASKEVENT, "s", (char *)GetName().c_str());
@@ -359,8 +337,6 @@ void AIGroup::SwapCharactersShips(ATTRIBUTES *pACharacter1, ATTRIBUTES *pACharac
     AIShip *pAIShip1 = pG1->ExtractShip(pACharacter1);
     AIShip *pAIShip2 = pG2->ExtractShip(pACharacter2);
 
-    // pAIShip1->SetACharacter(pACharacter2);
-    // pAIShip2->SetACharacter(pACharacter1);
 
     pAIShip1->SwapShips(pAIShip2);
 

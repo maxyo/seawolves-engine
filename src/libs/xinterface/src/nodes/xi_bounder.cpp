@@ -65,7 +65,6 @@ void CXI_BOUNDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
     char param2[256];
     const char *tmpstr;
 
-    // get show color
     m_dwColor = GetIniARGB(ini1, name1, ini2, name2, "color", 0xFFFFFFFF);
 
     // Get texture name and load that texture
@@ -78,7 +77,6 @@ void CXI_BOUNDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         m_idTex = pPictureService->GetTextureID(m_sGroupName);
     }
 
-    // get pictures name
     m_idAngle = -1;
     m_idHorzLine = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "pictures", param, sizeof(param), ""))
@@ -110,13 +108,11 @@ void CXI_BOUNDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         m_nVertLineQuantity++;
     auto fVertLineWidth = fBoxHeight / m_nVertLineQuantity;
 
-    // create index and vertex buffers
     m_nVert = 4 * 4 + m_nHorzLineQuantity * 4 * 2 + m_nVertLineQuantity * 4 * 2;
     m_nIndx = 2 * 4 + 2 * m_nHorzLineQuantity * 2 + 2 * m_nVertLineQuantity * 2;
     m_idVBuf = m_rs->CreateVertexBuffer(XI_ONETEX_FVF, m_nVert * sizeof(XI_ONETEX_VERTEX), D3DUSAGE_WRITEONLY);
     m_idIBuf = m_rs->CreateIndexBuffer(m_nIndx * 3 * 2);
 
-    // Fill buffers
     auto *pVert = static_cast<XI_ONETEX_VERTEX *>(m_rs->LockVertexBuffer(m_idVBuf));
     auto *pIndx = static_cast<uint16_t *>(m_rs->LockIndexBuffer(m_idIBuf));
     if (pVert == nullptr || pIndx == nullptr)
@@ -130,7 +126,6 @@ void CXI_BOUNDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
 
     auto inum = 0;
     auto vnum = 0;
-    // fill angle rectangles
     FXYRECT texRectTmp;
     FXYRECT fRectTmp;
     for (i = 0; i < 4; i++)
@@ -227,7 +222,6 @@ void CXI_BOUNDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         pIndx[inum++] = vnum + 1;
         pIndx[inum++] = vnum + 3;
 
-        //
         if (lineType == 0 || lineType == 2)
         {
             pVert[vnum].tu = tmpRect1.left;
@@ -325,7 +319,6 @@ bool CXI_BOUNDER::IsClick(int buttonID, int32_t xPos, int32_t yPos)
 
 void CXI_BOUNDER::ChangePosition(XYRECT &rNewPos)
 {
-    // Fill buffers
     auto *pVert = static_cast<XI_ONETEX_VERTEX *>(m_rs->LockVertexBuffer(m_idVBuf));
 
     if (pVert == nullptr)
@@ -348,7 +341,6 @@ void CXI_BOUNDER::ChangePosition(XYRECT &rNewPos)
     }
 
     auto vnum = 0;
-    // fill angle rectangles
     FXYRECT texRectTmp;
     FXYRECT fRectTmp;
     for (i = 0; i < 4; i++)
@@ -431,7 +423,6 @@ void CXI_BOUNDER::ChangePosition(XYRECT &rNewPos)
             fYTop = m_rect.bottom - m_fAngleHeight;
         }
 
-        //
         if (lineType == 0 || lineType == 2)
         {
             pVert[vnum].tu = tmpRect1.left;
@@ -532,7 +523,6 @@ void CXI_BOUNDER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

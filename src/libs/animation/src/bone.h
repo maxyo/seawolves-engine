@@ -1,26 +1,16 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // Bone
-// --------------------------------------------------------------------------------------------
 // Model bone containing its animation
-// ============================================================================================
 
 #pragma once
 
 #include <vector>
 
-//============================================================================================
-
 #include "math_inlines.h"
 #include "storm_glm.h"
-//============================================================================================
 
 #define ANI_COMPRESS_ENABLE
-
-//============================================================================================
 
 class Bone
 {
@@ -34,9 +24,6 @@ class Bone
 
 #pragma pack(pop)
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Bone();
     virtual ~Bone();
@@ -51,24 +38,18 @@ class Bone
     // Initialize start matrix
     void BuildStartMatrix();
 
-    // --------------------------------------------------------------------------------------------
     // Working with a bone
-    // --------------------------------------------------------------------------------------------
   public:
     // Add animation frames
     void BlendFrame(int32_t frame, float kBlend, glm::quat &res);
     // Root position between frame and frame + 1; the last frame holds (pos[numFrames] does not exist).
     glm::vec3 BlendPosition(int32_t frame, float kBlend) const;
     // Create matrix for frame 0
-    // void BuildMatrixZero();
     // Get position matrix
     glm::mat4 &GetMatrix();
     // Get the starting position matrix
     glm::mat4 &StartMatrix();
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     void GetFrame(int32_t f, glm::quat &qt);
     float Clamp(float v, const char *str);
@@ -96,9 +77,7 @@ class Bone
     glm::mat4 start;    // Frame 0 matrix
 };
 
-//============================================================================================
 // inline
-//============================================================================================
 
 // Set parent
 inline void Bone::SetParent(Bone *parentBone)

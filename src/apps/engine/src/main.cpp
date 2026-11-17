@@ -87,8 +87,8 @@ bool bSoundInBackground = false;
 storm::diag::LifecycleDiagnosticsService lifecycleDiagnostics;
 
 // Single owner of "may sound play right now". Window focus, the Android
-// activity lifecycle and Android audio focus all used to call
-// SetActiveWithFade independently and could re-enable each other's pause.
+// activity lifecycle and Android audio focus all feed it instead of calling
+// SetActiveWithFade independently, where they could re-enable each other's pause.
 struct AudioGate
 {
     bool windowFocused = true; // OSWindow focus

@@ -32,15 +32,9 @@ float AIFort::GetSpeedV0(uint32_t dwFortIndex)
     return pACannon->GetAttributeAsFloat("SpeedV0");
 }
 
-// float fAngF = 0.0f;
-// float yyy = 0.0f;
 
 void AIFort::Execute(uint32_t Delta_Time)
 {
-    /*glm::vec3 vSrc = glm::vec3(-10000.0f * sinf(fAngF), yyy, -10000.0f * cosf(fAngF));
-    glm::vec3 vDst = -glm::vec3(vSrc.x, yyy, vSrc.z);
-    vDst.y = yyy;
-    Trace(vSrc, vDst);*/
     fMinCannonDamageDistance = AttributesPointer->GetAttributeAsFloat("MinCannonDamageDistance");
 
     const auto fDeltaTime = static_cast<float>(Delta_Time) * 0.001f;
@@ -109,51 +103,8 @@ void AIFort::Execute(uint32_t Delta_Time)
 
 void AIFort::Realize(uint32_t Delta_Time)
 {
-    /*entid_t eidIsland;
-    float fCurrentImmersion = 0.0f;
-    if (core.FindClass(&eidIsland, "Island", 0))
-    {
-      ISLAND_BASE * pIsland = (ISLAND_BASE *)core.GetEntityPointer(eidIsland);
-      fCurrentImmersion = pIsland->GetCurrentImmersion();
-    }*/
 
-    /*for (uint32_t k=0; k<aForts.size(); k++)
-    {
-      glm::mat4 mTemp;
-      mTemp.BuildPosition(0.0f, -fCurrentImmersion, 0.0f);
-      aForts[k]->GetModel()->mtx = aForts[k]->mOldMatrix * mTemp;
 
-      pShipsLights->SetLights(&aForts[k]->tmpObject);
-      aForts[k]->GetModel()->Realize(Delta_Time);
-      pShipsLights->UnSetLights(&aForts[k]->tmpObject);
-
-      aForts[k]->GetModel()->mtx = aForts[k]->mOldMatrix;
-    }*/
-
-    /*   // boal del_cheat
-  #ifndef XBOX
-    if (core.Controls->GetDebugAsyncKeyState('X') < 0)
-    {
-      glm::mat4 mI; mI.SetIdentity();
-      AIHelper::pRS->SetTransform(D3DTS_WORLD, mI);
-
-      int32_t iNumCannons = 0;
-      for (uint32_t k=0; k<aForts.size(); k++)
-      {
-        AI_FORT    * pF = aForts[k];
-        for (uint32_t i=0; i<pF->GetAllCannonsNum(); i++)
-        {
-          AICannon * pC = pF->GetCannon(i);
-          glm::vec3 vPos = pC->GetPos();
-          glm::mat4 mRot(0.0f, pC->GetDirY(), 0.0f);
-          AIHelper::pRS->DrawVector(vPos, vPos + mRot * glm::vec3(0.0f, 0.0f, 3.0f), 0xFFFFFFFF);
-          AIHelper::pRS->DrawSphere(vPos, 0.3f, 0xFF00FF00);
-          iNumCannons++;
-        }
-      }
-    }
-  #endif
-  */
 }
 
 bool AIFort::AddFort(ATTRIBUTES *pIslandAP, ATTRIBUTES *pFortLabelAP, ATTRIBUTES *pFortCharacter, entid_t eidModel,
@@ -181,7 +132,6 @@ bool AIFort::AddFort(ATTRIBUTES *pIslandAP, ATTRIBUTES *pFortLabelAP, ATTRIBUTES
     pFort->SetACharacter(pFortCharacter);
     pFort->SetModelEID(eidModel);
     pFort->SetBlotEID(eidBlot);
-    // pFort->pFortLabelAP = pFortLabelAP;
     aForts.push_back(pFort);
 
     auto *pACannonsType1 = pFortCharacter->FindAClass(pFortCharacter, "Fort.Cannons.Type.1");
@@ -238,7 +188,6 @@ void AIFort::AddFortHit(int32_t iCharacterIndex, glm::vec3 &vHitPos)
 
             // VDATA * pVData = core.Event(FORT_CANNON_DAMAGE, "llallfffff", iCharacterIndex,
             // GetIndex(pF->GetACharacter()), pF->pFortLabelAP, pF->GetAllCannonsNum(), pF->GetDamagedCannonsNum(),
-            // vPos.x, vPos.y, vPos.z, fDistance, pC->GetDamage()); Assert(pVData);
             auto *pVData = core.Event(FORT_CANNON_DAMAGE, "llallfffff", iCharacterIndex, GetIndex(pF->GetACharacter()),
                                       pF->pFortLabelAP, iMax, pF->GetDamagedCannonsNum(), vPos.x, vPos.y, vPos.z,
                                       fDistance, pC->GetDamage());
@@ -315,12 +264,10 @@ bool AIFort::ScanFortForCannons(AI_FORT *pFort, const char *pModelsDir, const ch
     GEOS::LABEL label;
     GEOS::INFO info;
     NODE *pNode;
-    // std::string        sLocatorsName;
 
     const auto path = std::filesystem::path() / pModelsDir / pLocatorsName;
     const auto pathStr = path.string();
     // MessageBoxA(NULL, (LPCSTR)path.c_str(), "", MB_OK); //~!~
-    // sLocatorsName.Format("%s\\%s", pModelsDir, pLocatorsName);
     model_id = core.CreateEntity("MODELR");
     core.Send_Message(model_id, "ls", MSG_MODEL_LOAD_GEO, (char *)pathStr.c_str());
 
@@ -341,19 +288,16 @@ bool AIFort::ScanFortForCannons(AI_FORT *pFort, const char *pModelsDir, const ch
             {
                 pFort->aCannons.push_back(AICannon{});
                 pCannon = &pFort->aCannons.back();
-                // pCannon = &pFort->aCannons[pFort->aCannons.Add()];
             }
             if (storm::iEquals(label.name, "culverin", 8) && pFort->dwCulverinType != -1)
             {
                 pFort->aCulverins.push_back(AICannon{});
                 pCannon = &pFort->aCulverins.back();
-                // pCannon = &pFort->aCulverins[pFort->aCulverins.Add()];
             }
             if (storm::iEquals(label.name, "mortar", 6) && pFort->dwMortarType != -1)
             {
                 pFort->aMortars.push_back(AICannon{});
                 pCannon = &pFort->aMortars.back();
-                // pCannon = &pFort->aMortars[pFort->aMortars.Add()];
                 pCannon->SetType(AICannon::CANNONTYPE::CANNONTYPE_MORTAR);
             }
 

@@ -127,11 +127,8 @@ CINODE *CINODE::DoAction(int wActCode, bool &bBreakPress, bool bFirstPress)
     auto n = i;
     if (m_pCommands[i].bUse)
     {
-        // if(m_pCommands[i].nSound!=0)
         if (bFirstPress && !storm::mobile::uiAction.Active()) // the touch UI clicks for the gesture itself (mobile_action_frame.hpp)
             core.Event(ISOUND_EVENT, "l", 1);
-        // core.Event(ISOUND_EVENT,"l",m_pCommands[i].nSound);
-        // execute command
         while (n != COMMAND_QUANTITY)
         {
             const auto ac = CommandExecute(pCommandsList[n].code);
@@ -157,7 +154,6 @@ CINODE *CINODE::DoAction(int wActCode, bool &bBreakPress, bool bFirstPress)
 
     FrameProcess(0);
 
-    // return other or self node
     if (m_nCurrentCommandNumber == -1)
     {
         if (n < COMMAND_QUANTITY)
@@ -221,41 +217,6 @@ CINODE *CINODE::FindNode(CINODE *pNod, float x, float y)
     return pNod;
 }
 
-/*CINODE*    CINODE::FindNode(const char* sNodName)
-{
-    if( sNodName!=null && storm::iEquals(sNodName,m_nodeName))
-        return this;
-    CINODE* retVal;
-    if( m_list!=null )
-        if( (retVal=m_list->FindNode(sNodName))!=null ) return retVal;
-    if( m_next!=null ) return m_next->FindNode(sNodName);
-    return null;
-}
-
-CINODE* CINODE::FindNode(int nNodType)
-{
-    if(m_nNodeType==nNodType)
-        return this;
-    CINODE* retVal;
-    if( m_list!=null )
-        if( (retVal=m_list->FindNode(nNodType))!=null ) return retVal;
-    if( m_next!=null ) return m_next->FindNode(nNodType);
-    return null;
-}
-
-CINODE* CINODE::FindNode(float x,float y)
-{
-    if( !m_bLockedNode )
-    {
-        if( (x>=m_rect.left) && (x<=m_rect.right) && (y>=m_rect.top) && (y<=m_rect.bottom) )
-            return this;
-        CINODE* retVal;
-        if( m_list!=null )
-            if( (retVal=m_list->FindNode(x,y))!=null ) return retVal;
-    }
-    if( m_next!=null ) return m_next->FindNode(x,y);
-    return null;
-}*/
 
 void CINODE::GetRelativeRect(XYRECT &rect) const
 {
@@ -493,7 +454,6 @@ bool CINODE::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *n
     memcpy(&m_screenSize, &ScreenSize, sizeof(ScreenSize));
     memcpy(&m_hostRect, &hostRect, sizeof(hostRect));
 
-    // get position
     m_rect = GetIniLongRect(ini1, name1, ini2, name2, "position", m_hostRect);
     m_nAbsoluteRectVal = GetIniLong(ini1, name1, ini2, name2, "bAbsoluteRectangle", 0);
     GetAbsoluteRect(m_rect, m_nAbsoluteRectVal);
@@ -502,7 +462,6 @@ bool CINODE::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *n
     SetGlowCursor(GetIniBool(ini1, name1, ini2, name2, "bShowGlowCursor", true));
     SetGlowCursorToBack(GetIniBool(ini1, name1, ini2, name2, "bGlowCursorToBack", false));
 
-    // start using
     m_bUse = !GetIniBool(ini1, name1, ini2, name2, "bNotUse", false);
 
     // mouse weel reaction

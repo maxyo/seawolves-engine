@@ -25,12 +25,7 @@ DataCache::~DataCache()
 // Put data for the system in the cache
 void DataCache::CacheSystem(const char *FileName)
 {
-    // NameWithExt.AddExtention(".xps");
-    // NameWithExt.Lower();
 
-    // std::string LongFileName = "resource\\particles\\";
-    // LongFileName+=FileName;
-    // LongFileName.AddExtention(".xps");
     auto path = std::filesystem::path() / "resource" / "particles" / FileName;
     auto pathStr = path.extension().string();
     if (!storm::iEquals(pathStr, ".xps"))
@@ -75,9 +70,6 @@ void DataCache::ResetCache()
 // Get a pointer to data for a particle system
 DataSource *DataCache::GetParticleSystemDataSource(const char *FileName)
 {
-    // std::string NameWithExt = FileName;
-    // NameWithExt.AddExtention(".xps");
-    // NameWithExt.Lower();
     std::filesystem::path path = FileName;
     auto pathStr = path.extension().string();
     if (!storm::iEquals(pathStr, ".xps"))
@@ -101,7 +93,6 @@ void DataCache::CreateDataSource(void *pBuffer, uint32_t BufferSize, const char 
     NewDataSource.pData = new DataSource(Master);
     Cache.push_back(NewDataSource);
 
-    // core.Trace("\nCreate data source for file %s", SourceFileName);
 
     auto *ReadFile = new MemFile;
     ReadFile->OpenRead(pBuffer, BufferSize);

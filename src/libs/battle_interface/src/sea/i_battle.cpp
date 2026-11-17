@@ -58,7 +58,6 @@ BATTLE_INTERFACE::BATTLE_INTERFACE()
 {
     g_IslandDescr.ReleaseAll();
     g_ShipList.ReleaseAll();
-    // m_pMessageIcons = null;
     m_pShipIcon = nullptr;
     rs = nullptr;
     m_bShowCommandMenu = true;
@@ -75,7 +74,6 @@ BATTLE_INTERFACE::BATTLE_INTERFACE()
 
 BATTLE_INTERFACE::~BATTLE_INTERFACE()
 {
-    // STORM_DELETE(m_pMessageIcons);
     STORM_DELETE(m_pShipIcon);
     STORM_DELETE(m_pShipInfoImages);
 }
@@ -133,21 +131,7 @@ void BATTLE_INTERFACE::Execute(uint32_t delta_time)
         if (m_bShowBattleNavigator)
             BattleNavigator.Update();
 
-        /*if(m_pMessageIcons)
-        {
-          if( !m_pShipIcon || !m_pShipIcon->IsActive() )
-          {
-            if(!m_bMyShipView) core.Event("blieGetMsgIconRoot");
-            m_bMyShipView = true;
-          }
-          else
-          {
-            if(m_bMyShipView) m_pMessageIcons->SetShowMsg(false);
-            m_bMyShipView = false;
-          }
-        }*/
     }
-    // if(m_pMessageIcons) m_pMessageIcons->Update(delta_time);
 }
 
 void BATTLE_INTERFACE::Realize(uint32_t delta_time)
@@ -200,7 +184,6 @@ void BATTLE_INTERFACE::Realize(uint32_t delta_time)
 #endif
                 BattleNavigator.Draw();
             }
-            // if( m_pMessageIcons ) m_pMessageIcons->Draw();
 
 #ifndef __ANDROID__
             if (navigatorShown)
@@ -243,12 +226,6 @@ void BATTLE_INTERFACE::LoadIniFile()
         m_ImagesInfo.Init(rs, AttributesPointer->GetAttributeClass("imageslist"));
     }
 
-    /*STORM_DELETE( m_pMessageIcons );
-    m_pMessageIcons = new MESSAGE_ICONS;
-    if(m_pMessageIcons==NULL) {
-      throw std::runtime_error("allocate memory error");
-    }
-    if(m_pMessageIcons)    m_pMessageIcons->InitData(GetId(),rs,pA);*/
 
     STORM_DELETE(m_pShipIcon);
     m_pShipIcon = new BIShipIcon(GetId(), rs);
@@ -330,10 +307,6 @@ uint64_t BATTLE_INTERFACE::ProcessMessage(MESSAGE &message)
         break;
 
     case BI_MSG_SET_MSG_ICONS:
-        /*if(m_pMessageIcons)
-        {
-          EnableMessageIcons(message.ScriptVariablePointer());
-        }*/
         break;
 
     case BI_MSG_ADD_NEWTEXTURE: {

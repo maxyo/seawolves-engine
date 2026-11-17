@@ -316,50 +316,6 @@ uint64_t LOCATOR::ProcessMessage(MESSAGE &message)
         geo = gs->CreateGeometry(name.c_str(), "", 0);
         rs->SetLoadTextureEnable(true);
         break;
-        /*case LM_LOCATE:
-          groupID = geo->FindName("smoke");
-          if(groupID >= 0)
-          {
-            VerifyParticles();
-            for(stringIndex = 0; (stringIndex = geo->FindLabelG(stringIndex, groupID)) >= 0; stringIndex++)
-            {
-              geo->GetLabel(stringIndex, label);
-              core.Send_Message(ParticlesID,"lsffffffl",
-                PS_CREATE,"smoke",label.m[3][0],label.m[3][1],label.m[3][2],-1.57,0,0,0);
-            }
-          }
-
-          groupID = geo->FindName("fire");
-          if(groupID >= 0)
-          {
-            if(!core.FindClass(&ParticlesID,"particles",0))
-            {
-              if(!core.CreateEntity(&ParticlesID,"particles")) return 0;
-            }
-            for(stringIndex = 0; (stringIndex = geo->FindLabelG(stringIndex, groupID)) >= 0; stringIndex++)
-            {
-              geo->GetLabel(stringIndex, label);
-              core.Send_Message(ParticlesID,"lsffffffl",
-                PS_CREATE,"fire",label.m[3][0],label.m[3][1],label.m[3][2],-1.57,0,0,0);
-            }
-          }
-
-          groupID = geo->FindName("water");
-          if(groupID >= 0)
-          {
-            if(!core.FindClass(&ParticlesID,"particles",0))
-            {
-              if(!core.CreateEntity(&ParticlesID,"particles")) return 0;
-            }
-            for(stringIndex = 0; (stringIndex = geo->FindLabelG(stringIndex, groupID)) >= 0; stringIndex++)
-            {
-
-              geo->GetLabel(stringIndex, label);
-              core.Send_Message(ParticlesID,"lsffffffl",
-                PS_CREATEX,"waterfall",label.m[3][0],label.m[3][1],label.m[3][2],label.m[2][0],label.m[2][1],-label.m[2][2],0);
-            }
-          }
-        break;*/
     }
     }
     return 0;

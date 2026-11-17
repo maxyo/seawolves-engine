@@ -59,7 +59,6 @@ int32_t TextureSequence::Initialize(VRenderer *pRS, const char *cTSfileName, boo
         return -1;
     m_pRS = pRS;
 
-    // open ini file
     auto ini = fio->OpenIniFile(INI_FILENAME);
     if (!ini)
     {
@@ -81,7 +80,6 @@ int32_t TextureSequence::Initialize(VRenderer *pRS, const char *cTSfileName, boo
         return -1;
     }
 
-    // load sequence texture
     char fullName[256];
     if (!ini->ReadString((char *)cTSfileName, "TextureFile", fullName, sizeof(fullName) - 1, ""))
         sprintf_s(fullName, FILE_PATH, cTSfileName);
@@ -94,7 +92,6 @@ int32_t TextureSequence::Initialize(VRenderer *pRS, const char *cTSfileName, boo
     m_bHorzFlip = ini->GetInt((char *)cTSfileName, "flipH", 0) != 0;
     m_bVertFlip = ini->GetInt((char *)cTSfileName, "flipV", 0) != 0;
 
-    // create output texture
     m_texture = m_pRS->TextureCreate(m_texWidth, m_texHeight, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
                                      D3DPOOL_DEFAULT);
     if (m_texture < 0)
@@ -103,15 +100,12 @@ int32_t TextureSequence::Initialize(VRenderer *pRS, const char *cTSfileName, boo
     // first render
     m_curNum = 0;
     m_dwCurDeltaTime = 0;
-    // ToTextureRender(0.f);
 
     return m_texture;
 }
 
-//-----------------------------------------------------------------------------
 // Name: FrameUpdate
 // Desc: Performs per-frame updates
-//-----------------------------------------------------------------------------
 bool TextureSequence::FrameUpdate()
 {
     m_dwCurDeltaTime += core.GetRDeltaTime();
@@ -132,7 +126,6 @@ void TextureSequence::ToTextureRender(float blendValue) const
     const auto newTFactor = ARGB(static_cast<int32_t>(255.f * blendValue), static_cast<int32_t>(255.f * blendValue),
                                  static_cast<int32_t>(255.f * blendValue), static_cast<int32_t>(255.f * blendValue));
 
-    // set texture as render target
     m_pRS->PushRenderTarget();
     if (m_pRS->SetRenderTarget(m_texture, 0, 0, {}))
     {
@@ -177,7 +170,6 @@ void TextureSequence::ToTextureRender(float blendValue) const
         v[3].tu2 = m_rectTex.right;
         v[3].tv2 = m_rectTex.top;
 
-        // draw rectangle
         m_pRS->SetRenderState(D3DRS_TEXTUREFACTOR, newTFactor);
         m_pRS->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, TS_VERTEX_FRMT, 2, v, sizeof(TS_VERTEX), "TextureSequence");
     }

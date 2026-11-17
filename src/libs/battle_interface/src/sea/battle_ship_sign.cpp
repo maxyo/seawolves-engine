@@ -164,7 +164,6 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
 
     m_nShipTextureID = -1;
     m_dwShipColor = ARGB(255, 128, 128, 128);
-    // FULLRECT( m_rShipUV );
     ZERROPOINT(m_pntShipOffset);
     FILLPOINT(m_pntShipIconSize, 128, 128);
 
@@ -280,9 +279,6 @@ void BIShipIcon::Init(ATTRIBUTES *pRoot, ATTRIBUTES *pA)
         m_sShipTextureName = pcTmp ? pcTmp : "";
 #endif
         m_dwShipColor = pA->GetAttributeAsDword("shipcolor", m_dwShipColor);
-        /*pcTmp = pA->GetAttribute( "shipuv" );
-        if( pcTmp ) sscanf( pcTmp, "%f,%f,%f,%f", &m_rShipClassUV.left,&m_rShipClassUV.top,
-        &m_rShipClassUV.right,&m_rShipClassUV.bottom );*/
         pcTmp = pA->GetAttribute("shipoffset");
         if (pcTmp)
             sscanf(pcTmp, "%f,%f", &m_pntShipOffset.x, &m_pntShipOffset.y);
@@ -567,7 +563,6 @@ void BIShipIcon::FillVertexBuffer()
     {
         int32_t vn = 0;
 
-        // m_nShipQuantity = 0;
         for (n = 0; n < m_nShipQuantity; n++)
         {
             vn += WriteSquareToVBuff(&pV[vn], m_Ship[n].rUV, m_dwShipColor, m_Ship[n].pntPos + m_pntShipOffset,
@@ -593,7 +588,6 @@ void BIShipIcon::FillVertexBuffer()
                                                  m_Ship[n].pntPos + m_pntShipClassOffset, m_pntShipClassIconSize, 0.f,
                                                  0.f, 0.f, 1.f - GetProgressShipClass(n));
         // vn += WriteSquareToVBuff( &pV[vn], m_rShipClassUV, m_dwShipClassColor, m_Ship[n].pntPos+m_pntShipClassOffset,
-        // m_pntShipClassIconSize );
 
         m_pRS->UnLockVertexBuffer(m_nVBufID);
     }

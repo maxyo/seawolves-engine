@@ -12,7 +12,6 @@ struct Frame;
 }
 
 // Script-facing video player entity ("CAviPlayer"). Scripts send MSG_SET_VIDEO_PLAY with a file
-// name under resource\videos and receive "ievntEndVideo" when it has played out (or failed);
 // MSG_SET_VIDEO_FLAGS bit 0 loops. xi_video_rect embeds one with SetShowVideo(false) and draws
 // GetCurrentVideoTexture() itself. Decoding: src/libs/video.
 class CAviPlayer : public xiBaseVideo

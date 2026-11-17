@@ -1,6 +1,6 @@
 // Host tool: prepares the relief maps of a game copy (what the game makes lazily while it runs, at once:
 // host renders with every map in place), or the game's ×2 textures (fx/upscale.hpp) of a list of texture files.
-//   storm_relief_cli <game RESOURCE/Textures> <relief dir> <model dir (the build's, src/libs/relief/model/README.md)> [map size, default fx::kReliefMapSize] [threads] [upscale dir] [bc 0|1]
+//   storm_relief_cli <game RESOURCE/Textures> <relief dir> <model dir (the build's)> [map size, default fx::kReliefMapSize] [threads] [upscale dir] [bc 0|1]
 //   storm_relief_cli --x2-list <game RESOURCE/Textures>   (the textures that get a ×2: path, target, width, height)
 //   storm_relief_cli --x2 <game RESOURCE/Textures> <upscale dir> <model dir> <bc 0|1> <threads> <list of texture paths, one per line, relative to the textures>
 #include "relief.hpp"

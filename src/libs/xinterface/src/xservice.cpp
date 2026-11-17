@@ -29,22 +29,6 @@ void XSERVICE::Init(VRenderer *pRS, int32_t lWidth, int32_t lHeight)
     m_pRS = pRS;
 
     // get the size of the output window
-    /*    D3DVIEWPORT9 vp;
-      m_pRS->GetViewport(&vp);
-      m_fWAdd = m_fWScale = (float)vp.Width/lWidth;
-      m_fHAdd = m_fHScale = (float)vp.Height/lHeight;
-
-      while(m_fWAdd>1.f) m_fWAdd-=1.f;
-      while(m_fWAdd<0.f) m_fWAdd+=1.f;
-      while(m_fHAdd>1.f) m_fHAdd-=1.f;
-      while(m_fHAdd<0.f) m_fHAdd+=1.f;
-      if(m_fWAdd>0.5f) m_fWAdd = 2.f-m_fWAdd*2.f;
-      else    m_fWAdd *= 2.f;
-      if(m_fHAdd>0.5f) m_fHAdd = 2.f-m_fHAdd*2.f;
-      else    m_fHAdd *= 2.f;
-      m_fWAdd *= ERROR_MUL;
-      m_fHAdd *= ERROR_MUL;
-    */
     m_fWAdd = 0.5f;
     m_fHAdd = 0.5f;
 
@@ -104,7 +88,6 @@ bool XSERVICE::GetTexturePos(int32_t pictureNum, FXYRECT &texRect)
 {
     if (pictureNum >= 0 && pictureNum < m_dwImageQuantity)
     {
-        // find picture group
         int gn;
         for (gn = 0; gn < m_dwListQuantity; gn++)
             if (pictureNum >= m_pList[gn].pictureStart &&
@@ -156,7 +139,6 @@ bool XSERVICE::GetTexturePos(int nTextureModify, int32_t pictureNum, FXYRECT &te
 
     if (pictureNum >= 0 && pictureNum < m_dwImageQuantity)
     {
-        // find picture group
         int gn;
         for (gn = 0; gn < m_dwListQuantity; gn++)
             if ((pictureNum >= m_pList[gn].pictureStart) &&
@@ -229,7 +211,6 @@ void XSERVICE::LoadAllPicturesInfo()
     char section[255];
     char param[255];
 
-    // initialize ini file
     auto ini = fio->OpenIniFile(LISTS_INIFILE);
     if (!ini)
     {
@@ -239,7 +220,6 @@ void XSERVICE::LoadAllPicturesInfo()
     m_dwListQuantity = 0;
     m_dwImageQuantity = 0;
 
-    // calculate lists quantity
     if (ini->GetSectionName(section, sizeof(section) - 1))
     {
         do
@@ -247,7 +227,6 @@ void XSERVICE::LoadAllPicturesInfo()
             m_dwListQuantity++;
         } while (ini->GetSectionNameNext(section, sizeof(section) - 1));
     }
-    // create list pointers array
     if (m_dwListQuantity > 0)
     {
         m_pList = new IMAGELISTDESCR[m_dwListQuantity];
@@ -257,7 +236,6 @@ void XSERVICE::LoadAllPicturesInfo()
         }
     }
 
-    // fill lists
     if (ini->GetSectionName(section, sizeof(section) - 1))
     {
         for (auto i = 0; true; i++)
@@ -265,10 +243,8 @@ void XSERVICE::LoadAllPicturesInfo()
             m_pList[i].textureQuantity = 0;
             m_pList[i].textureID = -1L;
 
-            // get list name
             m_pList[i].sImageListName = new char[sizeof section];
             strcpy_s(m_pList[i].sImageListName, sizeof section, section);
-            // get texture name
             ini->ReadString(section, "sTextureName", param, sizeof(param) - 1, "");
             m_pList[i].sTextureName = new char[sizeof param];
             strcpy_s(m_pList[i].sTextureName, sizeof param, param);
@@ -278,7 +254,6 @@ void XSERVICE::LoadAllPicturesInfo()
             m_pList[i].textureHeight = ini->GetInt(section, "wTextureHeight", 1024);
 
             m_pList[i].pictureStart = m_dwImageQuantity;
-            // get pictures quantity
             m_pList[i].pictureQuantity = 0;
             if (ini->ReadString(section, "picture", param, sizeof(param) - 1, ""))
                 do
@@ -286,7 +261,6 @@ void XSERVICE::LoadAllPicturesInfo()
                     m_pList[i].pictureQuantity++;
                 } while (ini->ReadStringNext(section, "picture", param, sizeof(param) - 1));
 
-            // resize image list
             auto *const oldpImage = m_pImage;
             m_pImage = new PICTUREDESCR[m_dwImageQuantity + m_pList[i].pictureQuantity];
             if (m_pImage == nullptr)
@@ -298,12 +272,10 @@ void XSERVICE::LoadAllPicturesInfo()
             }
             m_dwImageQuantity += m_pList[i].pictureQuantity;
 
-            // set pictures
             char picName[sizeof(param)];
             ini->ReadString(section, "picture", param, sizeof(param) - 1, "");
             for (int j = m_pList[i].pictureStart; j < m_dwImageQuantity; j++)
             {
-                // get texture coordinates
                 int nLeft, nTop, nRight, nBottom;
 
                 sscanf(param, "%[^,],%d,%d,%d,%d", picName, &nLeft, &nTop, &nRight, &nBottom);
@@ -388,9 +360,7 @@ int32_t XSERVICE::GetImageNum(const char *sImageListName, const char *sImageName
     return retVal;
 }
 
-//============================================================================
 //    COMBINE STRINGS CLASS
-//============================================================================
 
 // Resolve atlas metadata without creating or retaining a renderer texture.
 bool XSERVICE::ResolveImageSource(const char *group, const char *image, std::string &path, FXYRECT &uv, int32_t &width,

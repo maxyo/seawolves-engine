@@ -14,7 +14,6 @@ inline uint32_t deckWalkTime(uint32_t scaledDelta, uint32_t realDelta)
 
 // The way, in the ship's horizontal plane (x, z), for a walk `side` to the right and `ahead`
 // along the view (-1…1, at most 1 long; a key is 1): ahead goes as the original walk did, slower
-// while looking down or up (`pitch`), sideways at full pace. Its length times the frame's
 // distance is the step.
 struct DeckShift
 {

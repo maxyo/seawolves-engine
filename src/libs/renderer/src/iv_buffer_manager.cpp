@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-//--------------------------------------------------------------------
 IVBufferManager::IVBufferManager(VRenderer *renderer_, int32_t vertex_type, int vertex_size, size_t index_count,
                                  size_t vertex_count, size_t max_size)
     : renderer_(renderer_), max_size_(max_size),
@@ -15,7 +14,6 @@ IVBufferManager::IVBufferManager(VRenderer *renderer_, int32_t vertex_type, int 
     used_.resize(max_size, false);
 }
 
-//--------------------------------------------------------------------
 IVBufferManager::~IVBufferManager()
 {
     if (vertex_buffer_)
@@ -28,7 +26,6 @@ IVBufferManager::~IVBufferManager()
     }
 }
 
-//--------------------------------------------------------------------
 int32_t IVBufferManager::ReserveElement()
 {
     for (size_t i = 0; i < max_size_; i++)
@@ -47,19 +44,16 @@ int32_t IVBufferManager::ReserveElement()
     return -1;
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::FreeElement(size_t i)
 {
     used_[i] = false;
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::FreeAll()
 {
     std::fill(std::begin(used_), std::end(used_), false);
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::LockBuffers()
 {
     indexes_ = static_cast<uint16_t *>(renderer_->LockIndexBuffer(index_buffer_));
@@ -67,7 +61,6 @@ void IVBufferManager::LockBuffers()
     locked_ = true;
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::UnlockBuffers()
 {
     renderer_->UnLockIndexBuffer(index_buffer_);
@@ -75,7 +68,6 @@ void IVBufferManager::UnlockBuffers()
     locked_ = false;
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::GetPointers(int32_t _i, uint16_t **iPointer, void **vPointer, int32_t *vOffset /* = 0*/) const
 {
     if ((_i < 0) || !locked_)
@@ -93,7 +85,6 @@ void IVBufferManager::GetPointers(int32_t _i, uint16_t **iPointer, void **vPoint
     }
 }
 
-//--------------------------------------------------------------------
 void IVBufferManager::DrawBuffers(const char *_technique) const
 {
     if (locked_ || !actual_size_)
@@ -103,4 +94,3 @@ void IVBufferManager::DrawBuffers(const char *_technique) const
                           actual_size_ * index_count_ / 3, _technique);
 }
 
-//--------------------------------------------------------------------

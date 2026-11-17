@@ -5,7 +5,6 @@
 #include "model.h"
 #include "sea_base.h"
 #include "vma.hpp"
-//#include "..\geom_lib\geos.h"
 #include "iv_buffer_manager.h"
 
 namespace waterrings
@@ -59,15 +58,9 @@ class WaterRings : public Entity
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 

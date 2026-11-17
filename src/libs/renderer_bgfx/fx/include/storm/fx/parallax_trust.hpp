@@ -2,7 +2,7 @@
 //
 // PBRify's height is right for plain wood and stone, wrong where the picture is a window, a door's glass or a sign:
 // a pane of glass has no relief, but its dark picture gets a deep one, and the parallax shifts the pane's texels and
-// the frame's against each other (the owner: some houses look excellent with it, but the windows look awful). The mask
+// the frame's against each other (some houses look excellent with it, but the windows look awful). The mask
 // takes the parallax away only there: normals stay everywhere, and so does the cavity wherever the height is trusted.
 //
 // Classical image processing on the colour texture and the height at the map's size (no model: nothing to ship, no
@@ -34,7 +34,7 @@ namespace storm::fx
 inline constexpr float kTrustClosingTexels = 14.0f;
 inline constexpr float kTrustFeatherSigma = 2.5f;
 
-// The detectors' thresholds. Strict (house atlases, everything else: the owner's «when in doubt, mask it out»): a recess
+// The detectors' thresholds. Strict (house atlases, everything else: when in doubt, mask it out): a recess
 // deeper than 0.15 of the height's range and darker than 0.9 of its surroundings; glass below 0.22 luminance and 0.04
 // local deviation; grown by 8 texels. Masonry (class Stone: cobbles, stone and brick walls, where the hollows between
 // stones look like recesses to the strict one: measured, it masked 40 % of a plain stone wall): 0.22 / 0.8, glass 0.16 /

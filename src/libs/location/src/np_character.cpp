@@ -1,19 +1,11 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    NPCaracter
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "np_character.h"
 #include "characters_groups.h"
 #include "math_inlines.h"
 #include "shared/messages.h"
-
-//============================================================================================
 
 // Goto
 #define NPC_STOP_GOTODIST 0.3f // Distance in meters at which it is considered that the character has reached the point
@@ -33,10 +25,6 @@
 #define NPC_FIGHT_RUN_DIST 4.0f   // Distance to the character, at which to switch to running mode
 #define NPC_FIGHT_WALK_DIST 2.5f  // Distance to the character, at which to switch to walking mode
 #define NPC_FIGHT_FIRE_DIST 25.0f // Distance to the character, at which you can shoot
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 NPCharacter::NPCharacter() : taskstack{}
 {
@@ -72,7 +60,6 @@ NPCharacter::NPCharacter() : taskstack{}
     wantToAttack = false;
     wantToDefence = false;
 
-    // fMusketerTime = 2.0f;
     bMusketer = false;
     fMusketerDistance = 20.0f;
     bMusketerNoMove = false;
@@ -271,7 +258,6 @@ void NPCharacter::Update(float dltTime)
     if (location->IsDebugView())
     {
         const auto isDebugEx = location->IsExDebugView();
-        // if(AttributesPointer && AttributesPointer->GetAttributeAsDword("hideInfo", 0)) return;
         const auto rad = 25.0f;
         const char *id = nullptr;
         if (AttributesPointer)
@@ -358,9 +344,7 @@ void NPCharacter::Update(float dltTime)
     }
 }
 
-// ============================================================================================
 // Tasks
-// ============================================================================================
 
 void NPCharacter::SetEscapeTask(Character *c)
 {
@@ -372,10 +356,6 @@ void NPCharacter::SetEscapeTask(Character *c)
     task.task = npct_runtopoint;
     lastSetTask = npct_runtopoint;
     memset(&task.target, 0, sizeof(task.target));
-    // task.target = c->GetId();
-    /*SetFightMode(false);
-    SetRunMode(true);
-    task.target = c->GetId();*/
 
     glm::vec3 vOurPos, vPos;
     c->GetPosition(vPos);
@@ -396,9 +376,6 @@ void NPCharacter::SetEscapeTask(Character *c)
         if (CmdGotoPoint(task.to.x, task.to.y, task.to.z, NPC_STOP_GOTODIST * 2.0f))
             break;
     }
-    /*task.to.x = vPos.x;
-    task.to.y = vPos.y;
-    task.to.z = vPos.z - fMusketerDistance * 0.8f;*/
 }
 
 // Set a new task
@@ -420,8 +397,6 @@ bool NPCharacter::SetNewTask(NPCTask tsk, MESSAGE &message)
     switch (tsk)
     {
     case npct_none:
-        // SetRunMode(false);
-        // SetFightMode(false);
         CmdStay();
         return CmdNone();
     case npct_stay:
@@ -484,9 +459,7 @@ bool NPCharacter::InitFightChartacter(entid_t eid)
     return true;
 }
 
-// ============================================================================================
 // Executing tasks
-// ============================================================================================
 
 // Completing the task of following a character
 void NPCharacter::UpdateFollowCharacter(float dltTime)
@@ -558,7 +531,6 @@ void NPCharacter::UpdateEscapeCharacter(float dltTime)
 // Combat mission execution
 void NPCharacter::UpdateFightCharacter(float dltTime)
 {
-    // fMusketerTime -= dltTime;
 
     SetFightMode(true);
     // goal
@@ -618,11 +590,9 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
         if (sqrt(dst) < fMusketerDistance * 0.6f)
         {
             bTryFire = false;
-            // fMusketerTime = 3.0f;
             SetEscapeTask(c);
         }
         // else
-        // CmdStay();
     }
 
     // Once every 6 seconds, check if we can shoot, if not, then move in a circle from the target
@@ -641,7 +611,6 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
             task.task = npct_runtopoint;
             lastSetTask = npct_runtopoint;
             memset(&task.target, 0, sizeof(task.target));
-            // task.target = c->GetId();
 
             glm::vec3 vOurPos, vPos;
             c->GetPosition(vPos);
@@ -665,7 +634,6 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
         }
     }
 
-    // if (bTryFire)
     {
         if (command.cmd != aicmd_gotopoint && !bCurrentActionIsFire)
         {
@@ -678,11 +646,8 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
                 core.Event("Location_CharacterFightGo", "si", GetTaskName(npct_followcharacter), GetId());
             } // else{
             // at war
-            // }
         } // else
-        // {
         // specify the location of the target
-        // CmdGotoPoint(c->curPos.x, c->curPos.y, c->curPos.z, NPC_FIGHT_STOP_DIST, c->currentNode, false);
         // check the possibility of a shot
 
         double dx = c->curPos.x - curPos.x;
@@ -690,12 +655,6 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
         double l = dx * dx + dz * dz;
 
         // trying to run away
-        /*if (bMusketer && fMusketerTime <= 0.0f && fMusketerDistance >= 0.0f && sqrt(l) < fMusketerDistance * 0.6f)
-        {
-          bTryFire = false;
-          fMusketerTime = 3.0f;
-          SetEscapeTask(c);
-        }*/
         bool bFired = false;
         if (bTryFire && wantToFire && isFireEnable)
         {
@@ -719,7 +678,6 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
                             ay = ang;
                             float kdst;
                             Character *target = FindGunTarget(kdst, CheckShotOnlyEnemyTest(), true);
-                            // Character * target = FindGunTarget(kdst, true);
                             ay = _ay;
                             if (target)
                             {
@@ -746,7 +704,6 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
         {
             Turn(c->curPos.x - curPos.x, c->curPos.z - curPos.z);
         }
-        //}
     }
     SetExCharacter(c);
     if (fgtCurType == fgt_none && priorityAction.name && shot.name)
@@ -785,9 +742,7 @@ void NPCharacter::UpdateFightCharacter(float dltTime)
     }
 }
 
-//============================================================================================
 // Fight AI
-//============================================================================================
 
 // Combat behavior
 void NPCharacter::DoFightAction(float dltTime, NPCharacter *enemy)
@@ -919,7 +874,6 @@ void NPCharacter::DoFightActionAnalysisNone(float dltTime, NPCharacter *enemy)
     static const float backAng = -cosf(45.0f * (3.1415926535f / 180.0f));
     for (size_t i = 0; i < fndCharacter.size(); i++)
     {
-        // Character
         Supervisor::FindCharacter &fc = fndCharacter[i];
         auto chr = static_cast<NPCharacter *>(fc.c);
         if (chr->liveValue < 0 || chr->deadName || fc.d2 <= 0.0f || chr == this)
@@ -936,7 +890,6 @@ void NPCharacter::DoFightActionAnalysisNone(float dltTime, NPCharacter *enemy)
                 }
             }
         }
-        // if(!chr->isFight) continue;
         // Belligerent group
         const int32_t grp = chrGroup->FindGroupIndex(chr->group);
         if (grp < 0 || grpIndex < 0)
@@ -1232,8 +1185,6 @@ void NPCharacter::HitChild(bool isInBlock)
     }
 }
 
-//============================================================================================
-
 // Cannot further execute the command
 void NPCharacter::FailureCommand()
 {
@@ -1327,10 +1278,6 @@ bool NPCharacter::PopTask()
     SetFightMode(task.isFight != 0);
     return true;
 }
-
-// ============================================================================================
-// Encapsulation
-// ============================================================================================
 
 // Cannot further execute the command
 void NPCharacter::FailureCommand(NPCTask task) const

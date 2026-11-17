@@ -4,11 +4,10 @@
 //
 // The game's scripts overwrite a slot by deleting the old save and then
 // writing a new one, possibly under another name. A process death between the
-// two steps used to lose the slot. The scripts belong to the player's game
+// two steps would lose the slot. The scripts belong to the player's game
 // files, so the engine makes the delete itself recoverable.
 //
 // Rule
-// ----
 // 1. Deleting a save renames it to "<name>.storm-deleted". It disappears from
 //    listings at once (FILE_SERVICE hides auxiliary names in save folders).
 // 2. The delete becomes final, i.e. the file is really removed, when either

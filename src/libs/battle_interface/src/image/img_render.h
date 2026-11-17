@@ -31,7 +31,6 @@ class BIImageRender
 
     VRenderer *m_pRS;
     std::vector<BIImageMaterial *> m_apMaterial;
-    // bool m_bDeleteEverything;
 
     float m_fHScale, m_fVScale;
     float m_fHOffset, m_fVOffset;

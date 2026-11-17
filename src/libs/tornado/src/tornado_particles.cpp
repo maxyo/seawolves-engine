@@ -1,20 +1,12 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    TornadoParticles
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "tornado_particles.h"
 #include "entity.h"
 #include "core.h"
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 TornadoParticles::TornadoParticles(Pillar &_pillar) : pillar(_pillar)
 {
@@ -65,7 +57,6 @@ void TornadoParticles::Update(float dltTime)
             seaLevel = sea->WaveXZ(pillar.GetX(0.0f), pillar.GetZ(0.0f));
         }
     }
-    // seaLevel -= 0.5f;
     // Particles near the ground
     for (int32_t i = 0; i < sizeof(groundPrt) / sizeof(GroundParticle); i++)
     {
@@ -81,7 +72,6 @@ void TornadoParticles::Update(float dltTime)
         const auto t = groundPrt[i].t;
         if (t == 0)
             continue; // eddy. don't need an assert crash
-        // Assert(t);
         // Rotation around the axis of the pillar
         groundPrt[i].a += k * dltTime * (0.5f + 5.0f * t);
         if (groundPrt[i].a > TRND_PI * 2.0f)
@@ -105,7 +95,6 @@ void TornadoParticles::Update(float dltTime)
         if (k > 1.0f)
             k = 1.0f;
         groundPrt[i].alpha *= k;
-        // if(groundPrt[i].pos.y > 3.0f) groundPrt[i].alpha *= 1.0f - (groundPrt[i].pos.y - 3.0f)/(30.0f - 3.0f);
     }
     // Pillar Particles
     for (int32_t i = 0; i < sizeof(pillarPrt) / sizeof(PillarParticle); i++)

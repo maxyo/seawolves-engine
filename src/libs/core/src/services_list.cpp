@@ -32,7 +32,6 @@ SERVICE *SERVICES_LIST::Add(uint32_t module_code, uint32_t class_code, SERVICE *
 
     if (List == nullptr)
     {
-        // add first node ------------------------------------------
         List = node_PTR;
         return node_PTR->pointer;
     }

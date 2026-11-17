@@ -1,7 +1,6 @@
 #pragma once
 
 //
-// ================================================================
 // Poisition - The position in which the particle is located
 // Velocity - Current speed
 // Forces - forces acting on a particle
@@ -11,11 +10,6 @@
 inline void SolvePhysic(glm::vec3 &Position, glm::vec3 &Velocity, const glm::vec3 &Forces, float UMass, float Drag,
                         float TimeScale)
 {
-    /*
-      Drag = 1.0f - Drag;
-      if (Drag < 0.0f) Drag = 0.0f;
-      if (Drag > 1.0f) Drag = 1.0f;
-    */
     auto Acceleration = glm::vec3(0.0f);
     if (UMass)
         Acceleration = Forces / UMass;

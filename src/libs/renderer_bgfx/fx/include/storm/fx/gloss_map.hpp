@@ -1,7 +1,7 @@
 // Gloss maps of the player's own colour textures: how polished each texel is (0 matte .. 1 a mirror), for the
 // highlights of the sun and the lamps (fx_lighting.sh fxGlossSpec, ff_fragment.sh).
 //
-// The gloss is PBRify's roughness network's (1x-PBRify_RoughnessV2, relief_model.hpp; the owner's choice), run by
+// The gloss is PBRify's roughness network's (1x-PBRify_RoughnessV2, relief_model.hpp), run by
 // src/libs/relief at kGlossMapSize with the normal and height networks, and corrected for this game (GlossOfRoughness):
 //   * its roughness is GGX's perceptual one; the highlight is a Blinn-Phong of power 2^(3 + 4.5 g): g is the power
 //     that matches GGX, log2(2 / r^4 - 2), on that scale;
@@ -43,7 +43,7 @@ enum class GlossClass : uint8_t
     Leather,     // bags, belts, books
     Metal,       // cannons, guns, iron, chains, gold, lanterns
     Glass,       // windows, bottles
-    Character,   // the characters' atlases: capped low (matte like the original, the owner's choice); skin and hair
+    Character,   // the characters' atlases: capped low (matte like the original); skin and hair
                  // keep the material's highlight (ff_fragment.sh ffSkin)
 };
 inline constexpr GlossClass kLastGlossClass = GlossClass::Character; // keep it the last one

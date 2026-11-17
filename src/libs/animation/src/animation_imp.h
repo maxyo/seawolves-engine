@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // AnimationImp
-// --------------------------------------------------------------------------------------------
 // Implementing the Animation interface
-// ============================================================================================
 
 #pragma once
 
@@ -21,9 +16,6 @@ class AnimationServiceImp;
 
 class AnimationImp final : public Animation
 {
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     AnimationImp(int32_t id, AnimationInfo *animationInfo);
     ~AnimationImp() override;
@@ -31,15 +23,11 @@ class AnimationImp final : public Animation
     // Set pointer to animation service
     static void SetAnimationService(AnimationServiceImp *animationService);
 
-    //--------------------------------------------------------------------------------------------
-    // Animation
-    //--------------------------------------------------------------------------------------------
   public:
     // Access the action player
     ActionPlayer &Player(int32_t index) override;
     // Access the animation timer
     AnimationTimer &Timer(int32_t index) override;
-    // Events
     // Set internal event
     int32_t SetEvent(AnimationEvent event, int32_t index, AnimationEventListener *ael) override;
     // Delete internal event
@@ -73,14 +61,11 @@ class AnimationImp final : public Animation
     // Allow custom blending coefficients in ActionPlayer
     bool UserBlend(bool isBlend = true) override;
     bool IsUserBlend() override;
-	// Procedural head look
     bool HeadControl(bool isControllable) override;
     bool IsControllableHead() override;
     void RotateHead(float x, float y) override;
 
-    //--------------------------------------------------------------------------------------------
     // AnimationImp
-    //--------------------------------------------------------------------------------------------
   public:
     // Get thisID
     int32_t GetThisID();
@@ -123,9 +108,6 @@ class AnimationImp final : public Animation
     // Send events
     void SendEvent(AnimationEvent event, int32_t index);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // identifier
     int32_t thisID;
@@ -152,16 +134,13 @@ class AnimationImp final : public Animation
     AnimationEventListener *ae_listenersExt;
     // Animation Service Pointer
     static AnimationServiceImp *aniService;
-	// Procedural head look
     bool isControllableHead;
     int32_t headBoneIndex;
     float customHeadAX;
     float customHeadAY;
 };
 
-//============================================================================================
 // inline
-//============================================================================================
 
 // Set pointer to animation service
 inline void AnimationImp::SetAnimationService(AnimationServiceImp *animationService)
@@ -170,9 +149,7 @@ inline void AnimationImp::SetAnimationService(AnimationServiceImp *animationServ
     aniService = animationService;
 }
 
-//--------------------------------------------------------------------------------------------
 // AnimationImp
-//--------------------------------------------------------------------------------------------
 
 // Get thisID
 inline int32_t AnimationImp::GetThisID()

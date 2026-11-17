@@ -53,7 +53,7 @@ template <class Lookup> ThermalResolution resolve_thermal_api(int api_level, Loo
 
 // ATHERMAL_STATUS_MODERATE: the first level where the platform asks to cut load.
 constexpr int kThermalModerate = 2;
-// ATHERMAL_STATUS_SEVERE: the platform throttles hard (the owner's Xiaomi 15 Ultra: the GPU about 1.7 times slower)
+// ATHERMAL_STATUS_SEVERE: the platform throttles hard (Xiaomi 15 Ultra: the GPU about 1.7 times slower)
 // and vendors stop the app soon after (MIUI's AutoThermalKillAll came 12 minutes into it).
 constexpr int kThermalSevere = 3;
 // Headroom (1.0 = severe throttling) forecast kHeadroomForecastSeconds ahead: flag elevated load from kHeadroomPause,

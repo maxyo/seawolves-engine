@@ -18,9 +18,8 @@ namespace storm::android
 // phases do not restart. A hold is taken with "1" in the current
 // gameplay revision and lasts until its "0" (pointer up or cancel in the UI), a cancelled
 // input (cancelAndroidCombatInput: lifecycle, screen, UI loss) or the guard failing (the
-// gameplay no longer binds the control or the player cannot act): events, never a clock. It
-// used to need a repeat every 350 ms and to end with each gameplay revision, so a slow UI
-// frame or an unrelated state change let go of a held helm or spyglass.
+// gameplay no longer binds the control or the player cannot act): events, never a clock, so a slow UI
+// frame or an unrelated state change does not let go of a held helm or spyglass.
 inline constexpr std::array<std::string_view, 8> HeldControlNames{"Ship_TurnLeft", "Ship_TurnRight", "TelescopeIn", "WMapShipSailUp",
                                                                  "WMapShipSailDown", "WMapShipTurnLeft", "WMapShipTurnRight", "WMapCameraSwitch"};
 class HeldControls

@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    CharactersGroups
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -76,18 +70,12 @@ class CharactersGroups : public Entity
         std::vector<entid_t> c;    // List of characters in the group
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     CharactersGroups();
     ~CharactersGroups() override;
 
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
     uint32_t AttributeChanged(ATTRIBUTES *apnt) override;
@@ -99,18 +87,9 @@ class CharactersGroups : public Entity
         case Stage::execute:
             Execute(delta);
             break;
-            // case Stage::realize:
-            //    Realize(delta); break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Checking the character detects others
     void CharacterVisibleCheck(Character *chr);

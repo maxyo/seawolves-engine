@@ -51,11 +51,9 @@ void CXI_LRCHANGER::Draw(bool bSelected, uint32_t Delta_Time)
         if (nPressedDelay > 0)
             nPressedDelay--;
 
-        // Create rectangle
         XI_ONETEX_VERTEX vFace[4];
         XI_ONETEX_VERTEX vShadow[4];
 
-        // calculate face color
         uint32_t curCol;
         if (m_bBlindIncrement)
             m_dwCurBlindState += Delta_Time;
@@ -87,7 +85,6 @@ void CXI_LRCHANGER::Draw(bool bSelected, uint32_t Delta_Time)
 
         m_rs->TextureSet(0, m_idTex);
 
-        // show left button
         SetOneTextureCoordinate(vFace, m_tLRect);
         SetOneTextureCoordinate(vShadow, m_tLRect);
         if (nPressedDelay > 0 && m_bLeftPress)
@@ -102,7 +99,6 @@ void CXI_LRCHANGER::Draw(bool bSelected, uint32_t Delta_Time)
         }
         m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_ONETEX_FVF, 2, vShadow, sizeof(XI_ONETEX_VERTEX), "iShadow");
         m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_ONETEX_FVF, 2, vFace, sizeof(XI_ONETEX_VERTEX), "iIcon");
-        // show right button
         SetOneTextureCoordinate(vFace, m_tRRect);
         SetOneTextureCoordinate(vShadow, m_tRRect);
         if (nPressedDelay > 0 && !m_bLeftPress)
@@ -132,7 +128,6 @@ void CXI_LRCHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
 {
     char param[255];
 
-    // set buttons position
     const auto nSpaceWidth = GetIniLong(ini1, name1, ini2, name2, "spaceWidth", 0);
     m_posLRect.left = static_cast<float>(m_rect.left);
     m_posLRect.top = static_cast<float>(m_rect.top);
@@ -143,19 +138,14 @@ void CXI_LRCHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     m_posRRect.right = static_cast<float>(m_rect.right);
     m_posRRect.bottom = static_cast<float>(m_rect.bottom);
 
-    // get face color
     m_dwFaceColor = GetIniARGB(ini1, name1, ini2, name2, "faceColor", 0xFFFFFFFF);
 
-    // get shadow color
     m_dwShadowColor = GetIniARGB(ini1, name1, ini2, name2, "shadowColor", ARGB(255, 0, 0, 0));
 
-    // get light select color
     m_dwLightSelCol = GetIniARGB(ini1, name1, ini2, name2, "lightSelectColor", ARGB(255, 138, 138, 138));
 
-    // get dark select color
     m_dwDarkSelCol = GetIniARGB(ini1, name1, ini2, name2, "darkSelectColor", ARGB(255, 108, 108, 108));
 
-    // get blind delay
     m_dwBlindDelay = GetIniLong(ini1, name1, ini2, name2, "blindDelay", 0);
 
     // get group name and get texture for this
@@ -171,7 +161,6 @@ void CXI_LRCHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         m_idTex = pPictureService->GetTextureID(param);
     }
 
-    // get buttons picture name
     if (ReadIniString(ini1, name1, ini2, name2, "lpicture", param, sizeof(param), ""))
         pPictureService->GetTexturePos(m_sGroupName, param, m_tLRect);
     if (ReadIniString(ini1, name1, ini2, name2, "rpicture", param, sizeof(param), ""))
@@ -186,7 +175,6 @@ void CXI_LRCHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     // get offset button shadow in case pressed button
     m_PressShadowShift = GetIniFloatPoint(ini1, name1, ini2, name2, "pressShadowOffset", FXYPOINT(0.f, 0.f));
 
-    // get press delay
     nMaxDelay = GetIniLong(ini1, name1, ini2, name2, "pressDelay", 20);
 }
 
@@ -228,7 +216,6 @@ bool CXI_LRCHANGER::IsClick(int buttonID, int32_t xPos, int32_t yPos)
     if (xPos >= m_rect.left && xPos <= m_rect.right && yPos >= m_rect.top && yPos <= m_rect.bottom && m_bClickable &&
         m_bUse)
     {
-        // check left button
         if (xPos <= m_posLRect.right)
         {
             m_bLeftPress = true;
@@ -250,7 +237,6 @@ void CXI_LRCHANGER::ChangePosition(XYRECT &rNewPos)
 
     m_rect = rNewPos;
 
-    // set buttons position
     m_posLRect.left = static_cast<float>(m_rect.left);
     m_posLRect.top = static_cast<float>(m_rect.top);
     m_posLRect.right = static_cast<float>(m_rect.left) + (m_rect.right - m_rect.left - nSpaceWidth) / 2.f;
@@ -272,7 +258,6 @@ void CXI_LRCHANGER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

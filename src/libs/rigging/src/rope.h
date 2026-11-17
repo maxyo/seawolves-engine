@@ -20,7 +20,6 @@ struct ROPEVERTEX
 class ROPE : public ROPE_BASE
 {
     // parameters obtained from INI file //
-    // -------------------------------------
     float ROPE_SEG_LENGTH; // length of one rope segment
     float ROPE_WIDTH;      // rope thickness
     float STAY_WIDTH;      // rope (head) thickness
@@ -35,7 +34,6 @@ class ROPE : public ROPE_BASE
     float MIN_DEEP_MUL;      // the minimum value of the coefficient of use of the deflection of the rope
     float VAR_DEEP_MUL;      // limit of variation of the coefficient of use of rope deflection
     float VAR_ROTATE_ANGL;   // rope swing angle
-    // -------------------------------------
 
     D3DMATERIAL9 mat{};
 
@@ -75,10 +73,6 @@ class ROPE : public ROPE_BASE
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

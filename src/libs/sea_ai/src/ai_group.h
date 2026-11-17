@@ -3,10 +3,8 @@
 #include "ai_ship.h"
 #include "vma.hpp"
 
-// ============================================================================
 // Master class AIGroup
 // Contain base virtual functions
-// ============================================================================
 class AIGroup
 {
   private:

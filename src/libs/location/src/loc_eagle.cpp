@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocEagle
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "loc_eagle.h"
 
@@ -36,7 +30,6 @@ LocEagle::~LocEagle()
     core.EraseEntity(mdl);
 }
 
-// Initialization
 bool LocEagle::Init()
 {
     // The point we fly around
@@ -63,7 +56,6 @@ bool LocEagle::Init()
         return false;
     }
     gs->SetTexturePath("");
-    // Animation
     if (!core.Send_Message(mdl, "ls", MSG_MODEL_LOAD_ANI, "eagle"))
         return false;
     // Start playing the animation
@@ -78,13 +70,11 @@ bool LocEagle::Init()
     if (!ani->Player(0).Play())
         return false;
     // include in the execution list
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 10);
     return true;
 }
 
-// Execution
 void LocEagle::Execute(uint32_t delta_time)
 {
     // Model

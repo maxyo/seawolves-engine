@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // ActionInfo
-// --------------------------------------------------------------------------------------------
 // Information about one action
-// ============================================================================================
 
 #pragma once
 
@@ -37,9 +32,6 @@ class ActionInfo final
         ExtAnimationEventType event; // Event type
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     ActionInfo(const char *aname, int32_t startframe, int32_t endframe);
     // Set playback speed ratio
@@ -51,9 +43,7 @@ class ActionInfo final
     // Add event
     bool AddEvent(const char *ename, float frame, ExtAnimationEventType event);
 
-    // --------------------------------------------------------------------------------------------
     // Working with action
-    // --------------------------------------------------------------------------------------------
   public:
     // Compare with current name
     bool operator==(const char *actionName) const;
@@ -71,9 +61,6 @@ class ActionInfo final
     // Access to user data
     std::unordered_map<std::string, std::string> &GetUserData();
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     char name[64]; // Action name
 
@@ -92,9 +79,7 @@ class ActionInfo final
     std::unordered_map<std::string, std::string> userData; // User data
 };
 
-//============================================================================================
 // inline
-//============================================================================================
 
 // Set playback speed ratio
 inline void ActionInfo::SetRate(float rate)
@@ -118,9 +103,7 @@ inline void ActionInfo::SetLoop(bool isloop)
     isLoop = isloop;
 }
 
-// --------------------------------------------------------------------------------------------
 // Working with action
-// --------------------------------------------------------------------------------------------
 
 // Get action name
 inline const char *ActionInfo::GetName()

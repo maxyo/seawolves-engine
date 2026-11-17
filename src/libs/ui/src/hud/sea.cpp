@@ -92,7 +92,7 @@ int Percent(double share)
 }
 
 // Knots as the minimap reads them: tenths, with the decimal mark of the game language's table
-// (owner 2026-11-16: «7,4 уз»).
+// («7,4 уз»).
 std::string Knots(double value, const std::string &decimal_mark)
 {
     char text[32];
@@ -189,7 +189,7 @@ class SeaScene final : public Scene
                 view.elements["log"]["offset"] = band_.top;
         }
 
-        // At sea the person button is the ship's: it opens the ship screen (owner 2026-11-14).
+        // At sea the person button is the ship's: it opens the ship screen.
         view.elements["ship"] = Json::object();
         input.On("ship", "click", [this](const Event &) { hud_.Send("shortcut", "shipscreen"); });
         view.elements["pause"] = Json::object();

@@ -27,7 +27,7 @@ MissingTextureLook CurrentMissingTextureLook();
 
 constexpr uint32_t kMissingTextureSize = 8;
 // The stand-in's texels, row by row, as D3DCOLOR (0xAARRGGBB, D3DFMT_A8R8G8B8). Opaque: an alpha-tested surface
-// whose texture failed is drawn whole, as it was with the black fallback.
+// whose texture failed is drawn whole.
 std::array<uint32_t, kMissingTextureSize * kMissingTextureSize> MissingTextureTexels(MissingTextureLook look);
 
 } // namespace storm::render

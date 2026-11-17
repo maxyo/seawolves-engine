@@ -2,16 +2,13 @@
 // Alchemy (PROGRAM/interface/alchemy.c) keeps its recipes in a scroll of pictures and makes the
 // player fill a pot row by row before «Результат» crafts as many batches as the pot allows.
 // This exports what the portable UI needs and one guarded action per intent:
-//   choice ANDROID_ALCHEMY_RECIPE  one row per real recipe of ITEMS_SCROLL (picN with an itemId;
 //          ListSize/NotUsed padding is never a row): label = the item's name, rowId = item id,
 //          value "1" = the recipe shown, index = its scroll position, images[0] = the item's atlas
-//          cell, context: group (the item's groupID, "" when none), yield (items per batch);
 //          actions ["choose"] while the screen is ready and the row is not the shown recipe.
 //   TABLE_LIST rows (the components of the shown recipe) get context itemId and use
 //          (component | catalyst).
 //   ANDROID_ALCHEMY (type alchemy)  context: recipe, yield, description (the recipe's text),
 //          batches (what the hero's items and the pot allow together), ready; actions ["craft"]
-//          while ready and batches > 0. unavailableReason names facts the script lacks
 //          (alchemy:missing=…); context busy names why the screen is not ready right now.
 // `choose@<screen revision>:<item>` selects that recipe in the scroll the way a tap does.
 // `craft@<screen revision>:<item>=<N>` crafts N batches of the shown recipe: the pot is set to

@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Lights
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -80,16 +74,11 @@ class Lights : public Entity
         float dst;
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Lights();
     ~Lights() override;
 
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     // Drawing crowns
     void Realize(uint32_t delta_time);
@@ -107,10 +96,6 @@ class Lights : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -120,7 +105,6 @@ class Lights : public Entity
     void AddLight(int32_t index, const glm::vec3 &pos);
     // Add lantern model
     bool AddLampModel(entid_t lampModel);
-    //
     void DelAllLights();
 
     // Add portable source
@@ -137,9 +121,6 @@ class Lights : public Entity
     // Update source types
     void UpdateLightTypes(int32_t i);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
 
     void PrintDebugInfo();

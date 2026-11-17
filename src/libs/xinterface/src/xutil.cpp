@@ -3,9 +3,7 @@
 #include "storm_assert.h"
 #include "string_compare.hpp"
 
-//////////////////////////////////////////////
 ///    DEFINE GLOBAL DATA                 ////
-////////////////////////////////////////////////////////////////////////////////////////////////////
 entid_t g_idInterface;
 
 COMMANDDESCR pCommandsList[COMMAND_QUANTITY] = {
@@ -15,9 +13,7 @@ COMMANDDESCR pCommandsList[COMMAND_QUANTITY] = {
     {"speedup", ACTION_SPEEDUP},        {"speeddown", ACTION_SPEEDDOWN},   {"click", ACTION_MOUSECLICK},
     {"dblclick", ACTION_MOUSEDBLCLICK}, {"rclick", ACTION_MOUSERCLICK},    {"dblrclick", ACTION_MOUSERDBLCLICK}};
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
 //////  END GLOBAL DATA                   ////
-//////////////////////////////////////////////
 
 int FindCommand(const char *comName)
 {
@@ -47,10 +43,6 @@ uint32_t ColorInterpolate(uint32_t sCol, uint32_t dCol, float m)
     r += static_cast<int>((rd - r) * m);
     g += static_cast<int>((gd - g) * m);
     b += static_cast<int>((bd - b) * m);
-    /*    a = a>ad ? int(a-(a-ad)*m) : int(ad-(ad-a)*m);
-      r = r>rd ? int(r-(r-rd)*m) : int(rd-(rd-r)*m);
-      g = g>gd ? int(g-(g-gd)*m) : int(gd-(gd-g)*m);
-      b = b>bd ? int(b-(b-bd)*m) : int(bd-(bd-b)*m);*/
     return ARGB(a, r, g, b);
 }
 
@@ -68,13 +60,4 @@ void DublicateString(char *&pDstStr, const char *pSrcStr)
         Assert(pDstStr);
         memcpy(pDstStr, pSrcStr, len);
     }
-    /*
-    if( pSrcStr )
-    {
-      pDstStr = new char[strlen(pSrcStr)+1];
-      Assert(pDstStr);
-      strcpy_s(pDstStr,pSrcStr);
-    } else {
-        pDstStr = 0;
-    } */
 }

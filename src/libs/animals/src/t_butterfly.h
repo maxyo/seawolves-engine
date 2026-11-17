@@ -5,9 +5,6 @@
 #include "collide.h"
 #include "model.h"
 
-///////////////////////////////////////////////////////////////////
-// DEFINES & TYPES
-///////////////////////////////////////////////////////////////////
 #define MAX_ACTIVITY_TIME 20000
 #define MAX_WAIT_TIME 20000
 #define MAX_EFFECT_RADIUS 1.5f
@@ -34,7 +31,6 @@ struct tButterflyVertex
     float tu, tv;
 };
 #pragma pack(pop)
-//--------------------------------------------------------------------
 class TButterfly
 {
   public:
@@ -82,5 +78,3 @@ class TButterfly
 
     float tI, tJ;
 };
-
-//--------------------------------------------------------------------

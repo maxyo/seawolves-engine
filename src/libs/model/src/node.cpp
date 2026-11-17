@@ -30,9 +30,6 @@ GEOS *clipGeo;
 GEOS *sphere = 0;
 #endif
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 glm::mat4 *backtrans;
 glm::vec3 clip_v[256];
 
@@ -44,9 +41,6 @@ bool AddPolygon(const GEOS::VERTEX *vr, int32_t nv)
     return clip_ap(clip_v, nv);
 }
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 bool NODER::Clip()
 {
     if (isReleased)
@@ -99,9 +93,6 @@ bool NODER::Clip()
     return retval;
 }
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 float NODER::Update(glm::mat4 &mtx, glm::vec3 &cnt)
 {
     if (deferred_ && !geo->Pending())
@@ -124,9 +115,7 @@ float NODER::Update(glm::mat4 &mtx, glm::vec3 &cnt)
     return radius;
 }
 
-//----------------------------------------------------------
 // NODE trace
-//----------------------------------------------------------
 float NODER::Trace(const glm::vec3 &src, const glm::vec3 &dst)
 {
     if (isReleased)
@@ -167,9 +156,7 @@ float NODER::Trace(const glm::vec3 &src, const glm::vec3 &dst)
     return best_dist;
 }
 
-//----------------------------------------------------------
 // NODE constructor
-//----------------------------------------------------------
 NODER::NODER()
 {
 #ifdef SHOW_SPHERES
@@ -278,7 +265,6 @@ bool NODER::AttachGeometry(const char *lightPath, const char *pname, const char 
             GEOS::LABEL lb;
             geo->GetLabel(sti, lb);
             glm::mat4 mt;
-            // memcpy(mt.m, lb.m, sizeof(lb.m));
             storm::math::vx(mt) = glm::vec3(lb.m[0][0], lb.m[0][1], lb.m[0][2]);
             storm::math::vy(mt) = glm::vec3(lb.m[1][0], lb.m[1][1], lb.m[1][2]);
             storm::math::vz(mt) = glm::vec3(lb.m[2][0], lb.m[2][1], lb.m[2][2]);
@@ -302,9 +288,7 @@ bool NODER::AttachGeometry(const char *lightPath, const char *pname, const char 
     return true;
 }
 
-//----------------------------------------------------------
 // NODE destructor
-//----------------------------------------------------------
 
 NODER::~NODER()
 {
@@ -352,9 +336,7 @@ void NODER::RestoreGeometry()
         static_cast<NODER *>(child.get())->RestoreGeometry();
 }
 
-//----------------------------------------------------------
 // NODE draw
-//----------------------------------------------------------
 extern GEOS::PLANE ViewPlane[4];
 GEOS::PLANE TViewPlane[4];
 
@@ -527,9 +509,7 @@ void NODER::SetFarLodView() const
     view.valid = true;
 }
 
-//----------------------------------------------------------
 // NODE get node by number
-//----------------------------------------------------------
 NODER *NODER::FindNode(const char *cNodeName)
 {
     if (storm::iEquals(cNodeName, name))
@@ -540,9 +520,7 @@ NODER *NODER::FindNode(const char *cNodeName)
     return nullptr;
 }
 
-//----------------------------------------------------------
 // NODE get node by number
-//----------------------------------------------------------
 NODER *NODER::GetNode(int32_t n)
 {
     depth++;
@@ -567,17 +545,12 @@ NODER *NODER::GetNode(int32_t n)
     return nullptr;
 }
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 const char *NODER::GetName()
 {
     return &name[0];
 }
 
-//-------------------------------------------------------------------
 // unlink node to model
-//-------------------------------------------------------------------
 entid_t NODER::Unlink2Model()
 {
     const entid_t id = core.CreateEntity("modelr");
@@ -606,17 +579,11 @@ entid_t NODER::Unlink2Model()
     return id;
 }
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 void NODER::SetTechnique(const char *name)
 {
     strcpy_s(technique, name);
 }
 
-//-------------------------------------------------------------------
-//
-//-------------------------------------------------------------------
 const char *NODER::GetTechnique()
 {
     return &technique[0];

@@ -10,9 +10,7 @@ trace and clip functions
 #include "geom.h"
 #include <cstring>
 
-//---------------------------------------------------------------------------
 // Trace main procedure
-//---------------------------------------------------------------------------
 SAVAGE GEOM::_stack[256];
 
 float GEOM::Trace(VERTEX &start, VERTEX &finish)
@@ -41,12 +39,10 @@ rec_loop:;
     ssrc = glm::dot(src, glm::dvec3(node->norm)) - node->pd;
     sdst = glm::dot(dst, glm::dvec3(node->norm)) - node->pd;
 
-    // dist = ssrc/(ssrc - sdst);
     const auto d = ssrc - sdst;
     dist = ssrc / d;
 
     if ((diss > EPSILON && dist <= diss - EPSILON) || d == 0.0 || dist <= 0.0)
-    // if(dist<=diss)
     {
         if (sdst < 0.0)
         {
@@ -62,7 +58,6 @@ rec_loop:;
     }
 
     if ((dise < 1.0 - EPSILON && dist >= dise + EPSILON) || dist >= 1.0)
-    // if(dist>=dise)
     {
         if (ssrc < 0.0) // left
         {
@@ -190,9 +185,6 @@ rec_return:;
     goto rec_loop;
 }
 
-//--------------------------------------------------------------------------------------------
-//
-//--------------------------------------------------------------------------------------------
 static glm::vec3 poly[256];
 
 int32_t ClipByPlane(const GEOS::PLANE &plane, int32_t n)
@@ -276,9 +268,6 @@ int32_t ClipByPlane(const GEOS::PLANE &plane, int32_t n)
     return n;
 }
 
-//--------------------------------------------------------------------------------------------
-//
-//--------------------------------------------------------------------------------------------
 static int32_t VOL[256];
 static unsigned short attempt = 65535;
 static unsigned short trgclip[65536 * 4];

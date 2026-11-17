@@ -8,40 +8,31 @@
 
 CREATE_CLASS(BALLSPLASH)
 
-//--------------------------------------------------------------------
 BALLSPLASH::BALLSPLASH() : renderer(nullptr), sea(nullptr)
 {
 }
 
-//--------------------------------------------------------------------
 BALLSPLASH::~BALLSPLASH()
 {
-    // GUARD(BALLSPLASH::~BALLSPLASH)
 
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 bool BALLSPLASH::Init()
 {
-    // GUARD(BALLSPLASH::Init)
 
     sea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
 
     renderer = static_cast<VRenderer *>(core.GetService("renderer"));
 
-    // core.CreateEntity(&arrowModel,"MODELR");
-    // core.Send_Message(arrowModel,"ls",MSG_MODEL_LOAD_GEO, "fish01");
     InitializeSplashes();
 
     return true;
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 uint64_t BALLSPLASH::ProcessMessage(MESSAGE &message)
 {
-    // GUARD(BALLSPLASH::ProcessMessage)
 
     const auto code = message.Long();
     const uint32_t outValue = 0;
@@ -53,11 +44,6 @@ uint64_t BALLSPLASH::ProcessMessage(MESSAGE &message)
         pos.x = message.Float();
         pos.y = message.Float();
         pos.z = message.Float();
-        /*
-        dir.x = message.Float();
-        dir.y = message.Float();
-        dir.z = message.Float();
-        */
 
         dir.x = 0.0f;
         dir.y = -1.0f;
@@ -72,10 +58,8 @@ uint64_t BALLSPLASH::ProcessMessage(MESSAGE &message)
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void BALLSPLASH::Realize(uint32_t _dTime)
 {
-    // GUARD(BALLSPLASH::Realize)
 
     uint64_t ticks;
     RDTSC_B(ticks);
@@ -119,32 +103,15 @@ void BALLSPLASH::Realize(uint32_t _dTime)
             ;
 
     RDTSC_E(ticks);
-    /*
-    if ((core.Controls->GetKeyState('Z') & 0x8000) != 0)
-    {
-      renderer->Print(0, 150, "splash: all = %d, count = %d", ticks/1000, TSplash::processCount);
-      if (TSplash::processCount)
-      {
-        renderer->Print(0, 175, "splash: lock = %d()", TSplash::lockTicks / 1000);
-        renderer->Print(0, 200, "splash: fill = %d(%d)", TSplash::fillTicks / 1000, TSplash::fillTicks /
-    (TSplash::processCount*1000)); renderer->Print(0, 225, "splash: ulock = %d()", TSplash::unlockTicks / 1000);
-        renderer->Print(0, 250, "splash: realize = %d(%d)", TSplash::realizeTicks / 1000, TSplash::realizeTicks /
-    (2*1000));
-      }
-    }
-    */
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void BALLSPLASH::Execute(uint32_t dTime)
 {
-    // GUARD(BALLSPLASH::Execute)
 
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void BALLSPLASH::InitializeSplashes()
 {
     auto psIni = fio->OpenIniFile("resource\\ini\\particles.ini");
@@ -156,7 +123,6 @@ void BALLSPLASH::InitializeSplashes()
     }
 }
 
-//--------------------------------------------------------------------
 TSplash *BALLSPLASH::TryToAddSplash(const glm::vec3 &_pos, const glm::vec3 &_dir)
 {
     auto backDir = storm::math::normalizeOrZero(_dir);
@@ -173,5 +139,3 @@ TSplash *BALLSPLASH::TryToAddSplash(const glm::vec3 &_pos, const glm::vec3 &_dir
 
     return nullptr;
 }
-
-//--------------------------------------------------------------------

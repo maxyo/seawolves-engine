@@ -6,7 +6,6 @@
 #include "v_s_stack.h"
 
 extern float g_fSailHoleDepend;
-// extern float GetSailSpeed(int holeQ,int holeMax,float maxSpeed,float fSailHoleDepend);
 
 uint32_t _ShipSailState(VS_STACK *pS)
 {

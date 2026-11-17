@@ -36,12 +36,6 @@ class FREE_CAMERA : public COMMON_CAMERA
         case Stage::execute:
             Execute(delta);
             break;
-            // case Stage::realize:
-            //    Realize(delta); break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

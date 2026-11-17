@@ -41,7 +41,6 @@ void CXI_LINECOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2
     char param[256];
     char param1[256];
 
-    // fill lines structure array
     const auto bRelativeRect = !GetIniLong(ini1, name1, ini2, name2, "bAbsoluteRectangle", 0);
     auto nCurLine = 0;
     if (ini1->ReadString(name1, "line", param, sizeof(param) - 1, ""))
@@ -60,12 +59,6 @@ void CXI_LINECOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2
             if (bRelativeRect)
                 GetRelativeRect(scrRect);
 
-            // int32_t n = m_aLines.Add();
-            // m_aLines.Add();
-            // m_aLines[n].dwColor = m_aLines[n+1].dwColor = dwCol;
-            // m_aLines[n].vPos.z = m_aLines[n+1].vPos.z = 1.f;
-            // m_aLines[n].vPos.x = (float)scrRect.left; m_aLines[n+1].vPos.x = (float)scrRect.right;
-            // m_aLines[n].vPos.y = (float)scrRect.top;  m_aLines[n+1].vPos.y = (float)scrRect.bottom;
             m_aLines.push_back(
                 RS_LINE{glm::vec3{static_cast<float>(scrRect.left), static_cast<float>(scrRect.top), 1.f}, dwCol});
             m_aLines.push_back(
@@ -92,7 +85,6 @@ void CXI_LINECOLLECTION::ChangePosition(XYRECT &rNewPos)
 
 void CXI_LINECOLLECTION::SaveParametersToIni()
 {
-    //    char pcWriteParam[2048];
 
     auto pIni = fio->OpenIniFile(ptrOwner->m_sDialogFileName.c_str());
     if (!pIni)
@@ -103,7 +95,6 @@ void CXI_LINECOLLECTION::SaveParametersToIni()
 
     // save position
     //    sprintf_s( pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right,
-    // m_rect.bottom );     pIni->WriteString( m_nodeName, "position", pcWriteParam );
 }
 
 uint32_t CXI_LINECOLLECTION::MessageProc(int32_t msgcode, MESSAGE &message)
@@ -132,8 +123,6 @@ uint32_t CXI_LINECOLLECTION::MessageProc(int32_t msgcode, MESSAGE &message)
         const auto nTop = message.Long();
         const auto nRight = message.Long();
         const int32_t nBottom = message.Long();
-        // int32_t nLineNum = m_aLines.Add() / 2;
-        // m_aLines.Add();
         const int32_t nLineNum = m_aLines.size() / 2;
         m_aLines.resize(m_aLines.size() + 2);
         m_aLines[nLineNum * 2].dwColor = m_aLines[nLineNum * 2 + 1].dwColor = dwColor;

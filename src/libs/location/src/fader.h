@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Fader
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -15,16 +9,11 @@
 
 class Fader : public Entity
 {
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Fader();
     ~Fader() override;
 
-    // Initialization
     bool Init() override;
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override
@@ -37,20 +26,12 @@ class Fader : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
-    // Work
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     VRenderer *rs;
     int32_t tex; // renderer texture id of the captured start frame

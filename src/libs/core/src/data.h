@@ -16,11 +16,6 @@ class VIRTUAL_COMPILER
     }
 };
 
-/*struct OBJECT_DESC
-{
-    entid_t    object_id;
-    ATTRIBUTES * pAttributes;
-};*/
 
 class COMPILER;
 
@@ -31,9 +26,7 @@ class DATA final : public VDATA
     VIRTUAL_COMPILER *pVCompiler;
     S_TOKEN_TYPE Data_type;
     uint32_t Number_of_elements;
-    // bool   bRef;
     bool bArray;
-    // char * ArrayPointer;
     int32_t lValue;
     uintptr_t pValue;
     float fValue;
@@ -44,21 +37,18 @@ class DATA final : public VDATA
     uint32_t Segment_id;
 
     DATA *pReference;
-    // int32_t   ReferenceIndex;
 
     std::vector<DATA> ArrayPTR;
     uint32_t nGlobalVarTableIndex;
 
   public:
     ATTRIBUTES *AttributesClass;
-    // ATTRIBUTES Attributes;
     DATA *GetReference() override
     {
         return pReference;
     }
     void SetReference(DATA *pRef) override;
     void SetAReference(ATTRIBUTES *pARef) override;
-    // void  SetReferenceFlag() {bRef = true;};
     void SetSegmentID(uint32_t id)
     {
         Segment_id = id;

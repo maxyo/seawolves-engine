@@ -69,9 +69,7 @@ ROPE::~ROPE()
 
 bool ROPE::Init()
 {
-    // GUARD(ROPE::ROPE())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
@@ -109,7 +107,6 @@ void ROPE::Execute(uint32_t Delta_Time)
             {
                 if (rlist[i]->bUse && !gdata[rlist[i]->HostGroup].bDeleted)
                     SetVertexes(rlist[i], dtime);
-                // DoMove(rlist[i]);
                 else if (rlist[i]->len != 0.f) // set all vertex to point(0,0,0)
                 {
                     const auto nulVect = glm::vec3(0.f, 0.f, 0.f);
@@ -172,15 +169,6 @@ void ROPE::Realize(uint32_t Delta_Time)
 
             RDTSC_E(rtm);
             realize_tm = rtm;
-            // RenderService->Print(0,10,"exec=%d, real=%d",execute_tm,realize_tm);
-            /*if(core.Controls->GetDebugAsyncKeyState('M')<0)
-              for(int i=0; i<ropeQuantity; i++)
-              {
-                sailPrint(RenderService,*(rlist[i]->bMatWorld) *
-              rlist[i]->pBeg,25.f,0,"B%d_%s%d",rlist[i]->ropeNum,rlist[i]->btie?"tie":"",rlist[i]->bgnum);
-                sailPrint(RenderService,*(rlist[i]->eMatWorld) *
-              rlist[i]->pEnd,25.f,0,"E%d_%s%d",rlist[i]->ropeNum,rlist[i]->etie?"tie":"",rlist[i]->bgnum);
-              }*/
         }
     }
 }
@@ -313,11 +301,6 @@ uint64_t ROPE::ProcessMessage(MESSAGE &message)
             {
                 rlist[i]->bDeleted = true;
                 bYesDeleted = true;
-                // rlist[i]->bUse=false;
-                /*entid_t sailEI;
-                if(core.FindClass(&sailEI,"sail",0))
-                    if(rlist[i]->btie || rlist[i]->etie) // untie the sail from the rope
-                        core.Send_Message(sailEI,"ll",MSG_SAIL_ROPE_UNTIE,rope_number);*/
                 break;
             }
         }
@@ -470,69 +453,6 @@ void ROPE::SetVertexes(ROPEDATA *pr, float dtime) const
     }
 }
 
-/*
-void ROPE::DoMove(ROPEDATA *pr)
-{
-    if(pr->bUse)
-    {
-        int vertnum=pr->sv;
-        glm::vec3 cvb,cve,cv;
-        // Get begin point into Ship coordinate
-        gdata[pr->HostGroup].pMatWorld->MulToInv(*pr->bMatWorld*pr->pBeg,cvb);
-        // Get end point into Ship coordinate
-        gdata[pr->HostGroup].pMatWorld->MulToInv(*pr->eMatWorld*pr->pEnd,cve);
-
-        // Set the first and last points of the rope
-        vertBuf[vertnum].pos=cvb;
-        vertBuf[vertnum+pr->nv-1].pos=cve;
-
-        cvb += pr->cv;
-
-        glm::vec3 chV = pr->pOld - pr->pBeg;
-        if( chV.x>MaxCh || chV.x<-MaxCh ||
-            chV.y>MaxCh || chV.y<-MaxCh ||
-            chV.z>MaxCh || chV.z<-MaxCh )
-        {
-            vertnum++;
-            glm::vec3 dc = (cve - cvb - pr->cv)/(float)pr->segquant;
-            for(int j=0; j<=pr->segquant; j++)
-            {
-                // set new coordinates in the current section
-                for( int i=0; i<ROPE_EDGE; i++ )
-                    vertBuf[vertnum++].pos=cvb+pr->pos[i];
-                cvb+=dc;
-            }
-
-            pr->pOld=pr->pBeg;
-            pr->segnum=pr->segquant;
-        }
-        else
-        {
-            // base number of vertices of the current section
-            vertnum+=pr->segnum*ROPE_EDGE+1;
-
-            cvb += (cve - cvb - pr->cv)*((float)pr->segnum/(float)pr->segquant);
-            cvb += pr->vDeep*((float)(pr->segnum*(pr->segquant - pr->segnum))*4.f/(float)(pr->segquant*pr->segquant));
-
-            // set new coordinates in the current section
-            for( int i=0; i<ROPE_EDGE; i++ )
-                vertBuf[vertnum+i].pos=cvb+pr->pos[i];
-
-            if( ++(pr->segnum)>pr->segquant )
-            {
-                float deepVal;
-                pr->segnum=0;
-                deepVal=pr->ropeWave*(1.f+.7f*sinf(pr->angDeep));
-                pr->vDeep.x = deepVal*sinf(.2f*PI*sinf(pr->angRot));
-                pr->vDeep.y = deepVal;
-                pr->vDeep.z = 0.;
-                pr->angDeep += .1f*PI; if( pr->angDeep>2.f*PI ) pr->angDeep=0.f;
-                pr->angRot += .03f*PI; if( pr->angRot>2.f*PI ) pr->angRot=0.f;
-            }
-        }
-    }
-}
-*/
 void ROPE::AddLabel(GEOS::LABEL &lbl, NODE *nod, bool bDontSage)
 {
     ROPEDATA *rd;
@@ -786,7 +706,6 @@ void ROPE::GetEndPoint(glm::vec3 *cv, int ropenum, entid_t mdl_id)
 
 void ROPE::LoadIni()
 {
-    // GUARD(ROPE::LoadIni());
     char section[256];
     char param[256];
 
@@ -844,51 +763,10 @@ void ROPE::LoadIni()
     // rope swing angle
     VAR_ROTATE_ANGL = ini->GetFloat(section, "fRotateAng", .1f);
 
-    // UNGUARD
 }
 
 void ROPE::FirstRun()
 {
-    /*    SetAdd(wRopeLast);
-        if(wRopeLast>0)
-            nIndx*=3;
-        else
-        {
-            nVert=0; nIndx=0;
-        }
-
-        int gn;
-        if(wRopeLast<ropeQuantity)
-            gn=rlist[wRopeLast]->HostGroup;
-        else
-            gn=groupQuantity;
-
-        for(; gn<groupQuantity; gn++)
-        {
-            gdata[gn].nt=0;
-            gdata[gn].nv=0;
-            gdata[gn].st=nIndx;
-            gdata[gn].sv=nVert;
-            gdata[gn].ropeQuantity=0;
-            for(int rn=wRopeLast; rn<ropeQuantity; rn++)
-            {
-                if(rlist[rn]->HostGroup==gn)
-                {
-                    gdata[gn].ropeQuantity++;
-                    gdata[gn].nv+=rlist[rn]->nv;
-                    gdata[gn].nt+=rlist[rn]->nt;
-                    rlist[rn]->sv=nVert;
-                    rlist[rn]->st=nIndx;
-                    nVert+=rlist[rn]->nv;
-                    nIndx+=rlist[rn]->nt*3;
-                }
-            }
-            gdata[gn].ropeIdx = new int[gdata[gn].ropeQuantity];
-            int idx=0;
-            for(rn=wRopeLast; rn<ropeQuantity; rn++)
-                if(rlist[rn]->HostGroup==gn)
-                    gdata[gn].ropeIdx[idx++]=rn;
-        }*/
 
     if (nVert && nIndx)
     {
@@ -967,7 +845,6 @@ void ROPE::SetAdd(int firstNum)
             core.Trace("Bad rope data for rope: (model=%s) (rope num = %d) (begin group=%d, end group=%d)", pcModlName,
                        rlist[rn]->ropeNum, rlist[rn]->bgnum, rlist[rn]->egnum);
             core.Trace("Begin pointer = %d? end pointer = %d", rlist[rn]->bMatWorld, rlist[rn]->eMatWorld);
-            // throw std::runtime_error("Rope error: Not label");
             delete rlist[rn];
             ropeQuantity--;
             if (ropeQuantity)
@@ -1008,14 +885,6 @@ void ROPE::SetAdd(int firstNum)
     }
 
     // debug code
-    /*if (rlist != nullptr)
-    {
-        for (int rn = firstNum; rn < ropeQuantity; rn++)
-        {
-            if (rlist[rn]->segquant > 100 || rlist[rn]->segquant < 0)
-                rlist[rn]->segquant = rlist[rn]->segquant; //~!~
-        }
-    }*/
 }
 
 void ROPE::DoSTORM_DELETE()

@@ -201,12 +201,6 @@ bool GIEditor::ProcessControl()
                 rectNew.right += nHorz;
                 if (bMove)
                     rectNew.left += nHorz;
-                /*
-                        if( rectNew.right < 0 ) rectNew.right = 0;
-                        if(
-                 * rectNew.left > (int32_t)m_pGIOwner->GetScreenWidth() ) rectNew.left =
- m_pGIOwner->GetScreenWidth();
-                 * if( rectNew.right < rectNew.left ) rectNew.right = rectNew.left;*/
             }
             if (nVert != 0)
             {
@@ -214,11 +208,6 @@ bool GIEditor::ProcessControl()
                 if (bMove)
                     rectNew.top += nVert;
 
-                /*                if( rectNew.bottom < 0 ) rectNew.bottom = 0;
-                        if( rectNew.top >
-                 * (int32_t)m_pGIOwner->GetScreenHeight() ) rectNew.top =
-                   m_pGIOwner->GetScreenHeight();
-                 * if( rectNew.bottom < rectNew.top ) rectNew.bottom = rectNew.top;*/
             }
             m_pEditableNode->ChangePosition(rectNew);
         }

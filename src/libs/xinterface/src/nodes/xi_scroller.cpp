@@ -79,7 +79,6 @@ bool CXI_SCROLLER::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     if (!CINODE::Init(ini1, name1, ini2, name2, rs, hostRect, ScreenSize))
         return false;
     // screen position for that is host screen position
-    // memcpy(&m_rect,&m_hostRect,sizeof(m_hostRect));
     SetGlowCursor(false);
     return true;
 }
@@ -146,7 +145,6 @@ void CXI_SCROLLER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, cons
     if (ReadIniString(ini1, name1, ini2, name2, "rollerTexture", param, sizeof(param), ""))
         m_idRollerTex = m_rs->TextureCreate(param);
 
-    // Set buffers
     m_fOffTexHeight = GetIniFloat(ini1, name1, ini2, name2, "begEndTexSize", 0.f);
     m_fOffHeight = GetIniFloat(ini1, name1, ini2, name2, "begEndBaseSize", 0.f);
     m_rollerHeight = GetIniFloat(ini1, name1, ini2, name2, "rollerHeight", 0.f);
@@ -284,7 +282,6 @@ void CXI_SCROLLER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

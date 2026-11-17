@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2002
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    PtcData
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -33,9 +27,6 @@ class PtcData
         uint32_t c;
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     PtcData();
     virtual ~PtcData();
@@ -59,7 +50,6 @@ class PtcData
     const char *GetMaterial(int32_t curNode);
 
     // Get triangles intersecting a given square
-    // Triangle * GetTriangles(float x, float z, float sx, float sz, int32_t & num);
 
     // Last move results
     bool isSlide;     // Slided
@@ -74,9 +64,6 @@ class PtcData
     // Debug rendering
     void DebugDraw(VRenderer *rs, float dltTime);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Protection function
     void SFLB_PotectionLoad();
@@ -91,7 +78,6 @@ class PtcData
     // Check the intersection of a triangle with a line segment
     float Trace(PtcTriangle &trg, const glm::vec3 &s, const glm::vec3 &d) const;
     // Add triangle to buffer
-    // void AddClTriangle(int32_t i);
 
     // private:
   public:

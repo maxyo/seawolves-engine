@@ -454,7 +454,7 @@ void Hud::ExpectLandTransition(const std::string &what, const LandCommands &comm
 }
 
 // A scene change hides the HUD: nothing of it may show over the fader or between a closing
-// panel and the fader (owner, 2026-11-14: «мелькает интерфейс суши»). The engine reports the
+// panel and the fader. The engine reports the
 // fader in its own frame (gameplay blocked "transition"), before the loading screen is up (the
 // presentation's loading flag), which is not waited for.
 bool Hud::InTransition(double now)

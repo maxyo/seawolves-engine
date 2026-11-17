@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmStorm
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_storm.h"
 
@@ -16,7 +11,6 @@
 #include "world_map.h"
 #include "platform/platform.hpp"
 
-//============================================================================================
 
 #define WDM_STORM_LIVETIME_MIN 60.0f  // Minimum storm lifetime (sec)
 #define WDM_STORM_LIVETIME_MAX 120.0f // Maximum storm lifetime (sec)
@@ -34,9 +28,7 @@
 
 #define WDM_STORM_CLOUDRAD 20.0f // Cloud size to activate
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 char WdmStorm::cloudPosName[16];
 char WdmStorm::rotSpdName[16];
@@ -86,7 +78,6 @@ WdmStorm::WdmStorm()
     isKl = false;
     // create clouds
     // Number of clouds
-    // num = 3 + (rand () &amp; 3);
     num = 6;
     // Cloud location bitfield
     uint8_t w[8];
@@ -175,10 +166,6 @@ void WdmStorm::Update(float dltTime)
         x /= r;
         z /= r;
     }
-    /*x += 0.1f*((WdmRenderModel *)wdmObjects->playerShip)->mtx.Vz().x;
-    z += 0.1f*((WdmRenderModel *)wdmObjects->playerShip)->mtx.Vz().z;
-    float k = x*x + z*z;
-    if(k > 0.0f){ k = 1.0f/sqrtf(k); x *= k; z *= k; }*/
     // Vector blending coefficient
     float k = dltTime * WDM_STORM_DIR_CHTIME;
     if (k > 1.0f)

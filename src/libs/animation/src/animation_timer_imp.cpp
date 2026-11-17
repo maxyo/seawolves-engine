@@ -1,19 +1,10 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // AnimationTimerImp
-// --------------------------------------------------------------------------------------------
 // Animation timer implementation
-// ============================================================================================
 
 #include "animation_timer_imp.h"
 #include "animation_imp.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 AnimationTimerImp::AnimationTimerImp()
 {
@@ -39,9 +30,7 @@ void AnimationTimerImp::SetAnimation(AnimationImp *animation)
     ani = animation;
 }
 
-//--------------------------------------------------------------------------------------------
 // AnimationTimer
-//--------------------------------------------------------------------------------------------
 
 // Start timer (time in milliseconds)
 void AnimationTimerImp::Start(float time, float startTime)
@@ -56,8 +45,6 @@ void AnimationTimerImp::Start(float time, float startTime)
     curTime = startTime;
     kTime = 1.0f / time;
     value = 0.0f;
-    // if(value < 0.0f) value = 0.0f;
-    // if(value > 1.0f) value = 1.0f;
     Execute(0);
 }
 
@@ -180,9 +167,7 @@ float AnimationTimerImp::GetPlayerValue(int32_t playerIndex)
     return 1.0f;
 }
 
-//--------------------------------------------------------------------------------------------
 // AnimationTimerImp
-//--------------------------------------------------------------------------------------------
 
 // Execute
 void AnimationTimerImp::Execute(int32_t dltTime)

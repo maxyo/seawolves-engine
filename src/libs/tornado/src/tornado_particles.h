@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    TornadoParticles
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -48,9 +42,7 @@ class TornadoParticles
         float u, v;
     };
 
-    // --------------------------------------------------------------------------------------------
     // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     TornadoParticles(Pillar &_pillar);
     virtual ~TornadoParticles();
@@ -65,9 +57,7 @@ class TornadoParticles
 
     void SetGlobalAlpha(float a);
 
-    // --------------------------------------------------------------------------------------------
     // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     void DrawParticles(VRenderer *rs, void *prts, int32_t num, int32_t size, int32_t texture, const char *tech);
     static float GetRand(float r, float dev = 0.5f); // dev = 0..1, return 0..r
@@ -82,7 +72,6 @@ class TornadoParticles
     Vertex buffer[256 * 6];
 };
 
-// kUse = 0..1, return 0..r
 inline float TornadoParticles::GetRand(float r, float dev)
 {
     return r * (1.0f - dev + rand() * dev / RAND_MAX);

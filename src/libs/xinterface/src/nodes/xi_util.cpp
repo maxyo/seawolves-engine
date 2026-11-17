@@ -19,7 +19,6 @@ void CXI_UTILS::Init()
 {
     for (int32_t n = 0; n < UTILS_KEYS_QUANTITY; n++)
     {
-        // keys[n].nAsyncKeyCode = -1; // not used
         keys[n].nPressedState = -1;
         keys[n].nAsyncKeyCode = n;
     }
@@ -87,7 +86,6 @@ const char *CXI_UTILS::StringGetTokenID(char *&pcString, char *pcBuffer, int32_t
             continue; // skip unused characters
         pcBuffer[n++] = cCur;
     }
-    // remove the last spaces
     while (n > 0 && pcBuffer[n - 1] <= 0x20)
         n--;
     pcBuffer[n] = 0;
@@ -124,7 +122,6 @@ const char *CXI_UTILS::StringGetTokenString(char *&pcString, char *pcBuffer, int
             continue; // skip unused characters
         pcBuffer[n++] = cCur;
     }
-    // remove the last spaces
     while (n > 0 && pcBuffer[n - 1] <= 0x20)
         n--;
     pcBuffer[n] = 0;
@@ -256,10 +253,8 @@ void CXI_UTILS::StringFillStringArray(const char *pcString, std::vector<std::str
     char tmpstr[256];
     auto *pcSrcStr = (char *)pcString;
 
-    // delete old
     asStringsArray.clear();
 
-    // create new
     while (nullptr != StringGetTokenString(pcSrcStr, tmpstr, sizeof(tmpstr)))
     {
         if (!tmpstr[0])
@@ -323,7 +318,6 @@ int32_t CXI_UTILS::SplitStringByWidth(const char *pcText, int32_t nFontID, float
 
         nDstPrev = nDst = 0;
         asOutStr.emplace_back(param);
-        // asOutStr[n] = param;
         nW = rs->StringWidth(param, nFontID, fFontScale);
         if (nW > nMaxUsingWidth)
             nMaxUsingWidth = nW;
@@ -404,14 +398,12 @@ void CXI_UTILS::PrintTextIntoWindow(VRenderer *pRender, int32_t nFont, uint32_t 
     sprintf_s(tmpstr, sizeof(tmpstr), "%s", pcString);
     char *pc = tmpstr;
 
-    // cut the left edge
     while (pc[0] && nL < left)
     {
         pc += utf8::u8_inc(pc);
         nL = nR - pRender->StringWidth(pc, nFont, fScale, 0);
     }
 
-    // cut the right edge
     if (nR > right)
     {
         int32_t n = strlen(pc);

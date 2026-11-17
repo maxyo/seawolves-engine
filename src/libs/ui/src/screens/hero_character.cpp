@@ -1019,7 +1019,7 @@ class HeroScreen final : public Screen
         }
         else if (full)
         {
-            // «Изучить», learned by a hold (the owner's rule for what cannot be undone: an early release shakes,
+            // «Изучить», learned by a hold (for what cannot be undone: an early release shakes,
             // nothing is sent, no caption). A perk that cannot be learned has the button disabled; a tap shakes it
             // (what it needs stands in its description, the free points over the tree). The hold starts the stock learn at once (Intent::Learn: the row's
             // ChoosePerk, then its PERK_ACCEPT, never drawn), so points, flags and unlocks are the stock ones.

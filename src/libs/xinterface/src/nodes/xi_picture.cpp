@@ -119,7 +119,6 @@ void CXI_PICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
 
     const auto color = GetIniARGB(ini1, name1, ini2, name2, "color", ARGB(255, 128, 128, 128));
 
-    // Create rectangle
     ChangePosition(m_rect);
     ChangeUV(texRect);
     m_mobilePictureName = std::move(atlasPicture);
@@ -186,7 +185,6 @@ void CXI_PICTURE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -411,12 +409,10 @@ void CXI_PICTURE::SetPictureSize(int32_t &nWidth, int32_t &nHeight)
 
     if (nWidth <= 0)
     {
-        // find the real width
         nWidth = 128;
     }
     if (nHeight <= 0)
     {
-        // find the real height
         nHeight = 128;
     }
 

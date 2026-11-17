@@ -1,7 +1,6 @@
 #pragma once
 // The spyglass (ISPYGLASS) publishes its target through the `spyglass` channel.
 // The UI reports "<generation>\t1" once its overlay is drawn for this raise,
-// or "<generation>\t0" without it. Receipts diagnose a missing touch card;
 // Android never enables the legacy information icons or text.
 #include "android_gameplay.hpp"
 #include "android_hud_presenter.hpp"

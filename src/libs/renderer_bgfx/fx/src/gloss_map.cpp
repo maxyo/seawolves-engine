@@ -40,7 +40,7 @@ const Rule kRules[] = {
     // Grey "bump" textures are heights (the relief's), not colour.
     STORM_GLOSS("", Contains, "bump", N),
     // The characters' atlases: a low highlight on their buttons, buckles, leather and armour (capped: matte like the
-    // original, the owner's choice).
+    // original).
     STORM_GLOSS("characters/", Folder, "", C),
     // Folders without highlights of their own: UI, sky and weather, light maps, effects, foliage, flags, the islands
     // seen from the sea.

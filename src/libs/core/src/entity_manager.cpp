@@ -54,7 +54,6 @@ void EntityManager::AddToLayer(const layer_index_t index, EntityInternalData &da
 {
     assert(index < kMaxLayerNum);
 
-    // set info about layer
     data.mask |= 1 << index;
     data.priorities[index] = priority;
 
@@ -100,13 +99,11 @@ void EntityManager::RemoveFromLayer(const layer_index_t index, EntityInternalDat
         }
     }
 
-    // clear layer flag
     mask &= ~(1 << index);
 }
 
 entid_t EntityManager::CreateEntity(const char *name, ATTRIBUTES *attr)
 {
-    // Find VMA
     const auto hash = MakeHashValue(name);
     if (hash == 0)
     {
@@ -126,7 +123,6 @@ entid_t EntityManager::CreateEntity(const char *name, ATTRIBUTES *attr)
         throw std::runtime_error("invalid entity name");
     }
 
-    // Create entity
     auto *ptr = static_cast<Entity *>(pClass->CreateClass());
     if (ptr == nullptr)
     {
@@ -139,16 +135,13 @@ entid_t EntityManager::CreateEntity(const char *name, ATTRIBUTES *attr)
     ptr->data_.id = id;
     ptr->AttributesPointer = attr;
 
-    // add to cache
     cache_.UpdateAdd(hash, id);
 
     // then init
     if (!ptr->Init())
     {
-        // remove from cache
         cache_.UpdateErase(hash, id);
 
-        // delete if fail
         const auto index = static_cast<entid_index_t>(id);
         MarkDeleted(entities_[index]);
         return invalid_entity;
@@ -167,19 +160,16 @@ void EntityManager::EraseEntity(const entid_t id)
 
     auto &data = entities_[idx];
 
-    // check if already erased
     if (data.state != kValid)
     {
         return;
     }
 
-    // check id mismatch
     if (data.ptr->GetId() != id)
     {
         return;
     }
 
-    // remove from cache
     cache_.UpdateErase(data.hash, id);
     MarkDeleted(data);
 }
@@ -192,7 +182,6 @@ void EntityManager::EraseAll()
         delete it->ptr;
     }
 
-    // clear containers
     for (auto &layer : layers_)
     {
         layer.entity_ids.clear();
@@ -203,7 +192,6 @@ void EntityManager::EraseAll()
     deletedIndices_.clear();
     validByClass_.clear();
 
-    // clear cache
     cache_.Clear();
 
     // Script objects can retain handles across EraseAll. Preserve the generation
@@ -390,9 +378,7 @@ void EntityManager::NewLifecycle()
         deletedIndices_.pop_back();
 
         auto &data = entities_[entity_idx];
-        // release
         EraseAndFree(data);
-        // erase entity data
         data = {};
         // push free index to stack instead of shifting
         freeIndices_.push_back(entity_idx);
@@ -406,14 +392,12 @@ size_t EntityManager::GetEntityDataIdx(const entid_t id) const
         return invalid_entity_idx_t{};
     }
 
-    // check bounds
     const auto index = static_cast<entid_index_t>(id);
     if (index >= std::size(entities_))
     {
         return invalid_entity_idx_t{};
     }
 
-    // check validity
     auto &data = entities_[index];
     // This check was intentionally removed to workaround some rare corner cases that are not handled properly.
     //
@@ -436,10 +420,6 @@ size_t EntityManager::GetEntityDataIdx(const entid_t id) const
     // Although in this case it would be more consistent with introducing sanity checks over the code,
     // such issues are very difficult to catch. And since this workaround doesn't introduce any harm except for
     // encouraging inconsistency code, it makes sense to left it as a lifebuoy for the existing issues.
-    // if (data.valid == false)
-    // {
-    //     return invalid_entity_idx_t{};
-    // }
     if (data.state == kNotExists)
     {
         return invalid_entity_idx_t{};

@@ -2,7 +2,7 @@
 //
 // The scene draws at the preset's internal height and FSR 1 (EASU, RCAS) upscales it to the display
 // (fx::Settings::render_height). A heavy scene or a throttled GPU that misses the frame is not paced any more: its
-// frames alternate between two and three display refreshes, which is the stutter the owner's phone showed in lamp-lit
+// frames alternate between two and three display refreshes, which is the stutter seen in lamp-lit
 // interiors (GPU 22-42 ms for a 33.3 ms frame, thermal status SEVERE). This controller lowers the height in steps
 // until the frame fits and raises it again when there is room:
 //
@@ -24,7 +24,7 @@
 //     between two sizes;
 //   * the frames are judged against the interval they are paced at. When even the lowest height does not hold the
 //     frame rate setting, the pacing lowers the rate (60 to 30 fps), and the height that the slower rate has room for
-//     comes back (the owner's phone drew a night town at the lowest height and 30 fps for a minute). At the lowered rate
+//     comes back (a night town was drawn at the lowest height and 30 fps for a minute). At the lowered rate
 //     the GPU's clock is lowered too and its frame time says nothing of the room, so the frames are judged as without
 //     timers: down when frames come late, a step up tried after the wait and taken back if it does not hold. A GPU
 //     time that fits the setting's interval as it is raises nothing (the pacing returns to it). The pacing lowers
@@ -162,7 +162,7 @@ class DynamicResolution
         const bool measured = gpu_frames_ * 2 >= frames_;
         const double gpu = measured ? gpu_sum_ / gpu_frames_ : -1.0;
         // The pacing lowered the frame rate under the setting's: see below. A GPU whose frames have twice the time
-        // they need lowers its clock, and its frame time grows to fill the interval (the owner's phone: the same
+        // they need lowers its clock, and its frame time grows to fill the interval (measured on a phone: the same
         // prison 15-16 ms at 60 fps and 25-28 ms at 30 fps; a night town 26-28 ms at 880 and at 770 lines alike).
         // So at a lowered rate the GPU time says nothing of the room, and the frames are judged as without timers:
         // by the late ones, with a step up tried and taken back when it does not hold.

@@ -58,7 +58,6 @@ void ParticleService::RemoveManagerFromList(IParticleManager *pManager)
     {
         if (CreatedManagers[n].pManager == pManager)
         {
-            // CreatedManagers.ExtractNoShift(n);
             CreatedManagers[n] = CreatedManagers.back();
             CreatedManagers.pop_back();
             return;

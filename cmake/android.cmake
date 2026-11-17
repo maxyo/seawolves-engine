@@ -12,8 +12,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 add_compile_options(-fsigned-char)
 add_library(sdl SHARED IMPORTED GLOBAL)
-# Only SDL's headers from the prefix: a prefix prepared before fmt moved to the engine's own build
-# still holds fmt 8 headers in <prefix>/include/fmt, which must never shadow the pinned fmt.
+# Only SDL's headers from the prefix: a prefix may still hold fmt 8 headers
+# in <prefix>/include/fmt, which must never shadow the pinned fmt.
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/sdl-include")
 file(CREATE_LINK "${STORM_ANDROID_DEPS}/include/SDL2" "${CMAKE_BINARY_DIR}/sdl-include/SDL2" SYMBOLIC)
 set_target_properties(sdl PROPERTIES IMPORTED_LOCATION "${STORM_ANDROID_DEPS}/lib/libSDL2.so"

@@ -1,19 +1,12 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    WdmMerchantShip
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_merchant_ship.h"
 #include "wdm_islands.h"
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmMerchantShip::WdmMerchantShip()
     : isEnableSetDir(false)
@@ -84,8 +77,6 @@ void WdmMerchantShip::FindMoveForce()
     if (wdmObjects->islands)
     {
         wdmObjects->islands->FindDirection(storm::math::pos(mtx), gotoPos, dir);
-        // wdmObjects->rs->DrawVector(mtx.Pos(), gotoPos, 0xFFFFFFFF);
-        // wdmObjects->rs->DrawVector(mtx.Pos(), mtx.Pos()+dir*100.f, 0xFFFF0000);
     }
     else
     {

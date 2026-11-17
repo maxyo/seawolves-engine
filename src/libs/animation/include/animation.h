@@ -1,16 +1,8 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
-// Animation
-// --------------------------------------------------------------------------------------------
 // Interface classes for working with animation
-// ============================================================================================
 
 #pragma once
-
-//============================================================================================
 
 #include "storm_glm.h"
 #include "service.h"
@@ -18,17 +10,13 @@
 #include <cstdint>
 #include <vector>
 
-//============================================================================================
-
 class AnimationPlayer;        // Action player
 class AnimationTimer;         // Animation blending class
 class Animation;              // A class that controls animations for one model
 class AnimationEventListener; // A class that accepts internal animation events
 class AnimationService;       // Animation service
 
-// ============================================================================================
 // Constants
-// ============================================================================================
 
 // Possible ways to play action animation
 enum AnimationType
@@ -77,14 +65,11 @@ enum AnimationEvent
 #define ANI_MAX_ACTIONS 8 // Number of ActionPlayers and AnimationTimers for one model
 #define ANI_MAX_EVENTS 8 // Number of events per action
 
-// ============================================================================================
 // The class that plays the action
-// ============================================================================================
 // Action or action animation - a fragment of a complete animation (walking, running, jumping, ...)
 // containing all the animation of the character.
 //
 // Autostop is on by default and always on when a new action is set
-// ============================================================================================
 
 class ActionPlayer
 {
@@ -125,14 +110,11 @@ class ActionPlayer
     virtual const char *GetData(const char *dataName) const = 0;
 };
 
-// ============================================================================================
 // Animation blending class
-// ============================================================================================
 // This class allows to scale the coefficient
 // blending in ActionPlayer
 // The normal value ranges from 0 to 1,
 // inverse from 1 to 0
-// ============================================================================================
 
 class AnimationTimer
 {
@@ -162,12 +144,9 @@ class AnimationTimer
     virtual float GetPlayerValue(int32_t playerIndex) = 0;
 };
 
-// ============================================================================================
 // A class that controls animations for one model
-// ============================================================================================
 // This class contains ANI_MAX_ACTIONS ActionPlayer and AnimationTimer objects
 // ActionPlayer and AnimationTimer can be used arbitrarily, at will
-// ============================================================================================
 
 class Animation
 {
@@ -177,7 +156,6 @@ class Animation
     virtual ActionPlayer &Player(int32_t index) = 0;
     // Access the animation timer
     virtual AnimationTimer &Timer(int32_t index) = 0;
-    // Events
     // Set an internal event handler
     virtual int32_t SetEvent(AnimationEvent event, int32_t index, AnimationEventListener *ael) = 0;
     // Remove internal event handler
@@ -209,15 +187,12 @@ class Animation
     // Allow custom blending coefficients in ActionPlayer
     virtual bool UserBlend(bool isBlend = true) = 0;
     virtual bool IsUserBlend() = 0;
-    // Procedural head look
     virtual bool HeadControl(bool isControllable) = 0;
     virtual bool IsControllableHead() = 0;
     virtual void RotateHead(float x, float y) = 0;
 };
 
-// ============================================================================================
 // A class that accepts internal animation events
-// ============================================================================================
 
 class AnimationEventListener
 {
@@ -234,9 +209,7 @@ class AnimationEventListener
     }
 };
 
-// ============================================================================================
 // Animation service
-// ============================================================================================
 
 class AnimationService : public SERVICE
 {
@@ -250,5 +223,3 @@ class AnimationService : public SERVICE
     // Game thread: release unused animation data under memory pressure. Returns entries released.
     virtual uint32_t TrimCaches() = 0;
 };
-
-//============================================================================================

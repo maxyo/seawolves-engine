@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Sea Dogs II
-// --------------------------------------------------------------------------------------------
 // Supervisor
-// --------------------------------------------------------------------------------------------
 // Object controlling the movement of characters
-// ============================================================================================
 
 #pragma once
 #include <cstdint>
@@ -42,9 +37,6 @@ class Supervisor
         float lastTime;
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Supervisor();
     virtual ~Supervisor();
@@ -69,9 +61,6 @@ class Supervisor
     // Find the best locator to continue walking the character
     int32_t FindForvardLocator(LocatorArray *la, const glm::vec3 &pos, const glm::vec3 &norm, bool lookChr = false) const;
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Add character to location
     void AddCharacter(Character *ch);

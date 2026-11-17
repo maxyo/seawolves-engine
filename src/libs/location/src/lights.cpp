@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Lights
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "lights.h"
 
@@ -27,10 +21,6 @@ namespace
 constexpr uint32_t kRayPeriodStill = 16;
 constexpr uint32_t kRayPeriodMoving = 4;
 } // namespace
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 Lights::Lights()
     : lighter_code(0), lampModels{}, buf{}
@@ -62,7 +52,6 @@ Lights::~Lights()
             rs->LightEnable(i, false);
 }
 
-// Initialization
 bool Lights::Init()
 {
     // renderer
@@ -162,7 +151,6 @@ bool Lights::Init()
     return true;
 }
 
-// Execution
 void Lights::Execute(uint32_t delta_time)
 {
     componentsDirty = true; // current RGB changed; rebuild at most once before receiver/shadow consumers
@@ -202,7 +190,6 @@ void Lights::Realize(uint32_t delta_time)
     storm::render::SetEffectsDynamicLights(dynamic);
     storm::render::SetEffectsAggregateLamps(aggregateSnapshot);
 
-    ////////////////
     // Draw coronas
     glm::mat4 camMtx;
     rs->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(camMtx));
@@ -222,7 +209,6 @@ void Lights::Realize(uint32_t delta_time)
         auto dist = ls.pos.x * storm::math::vx(camMtx).z + ls.pos.y * storm::math::vy(camMtx).z + ls.pos.z * storm::math::vz(camMtx).z + camPDist;
         if (dist < -2.0f * l.coronaSize)
             continue;
-        // Distance
         const auto dx = ls.pos.x - pos.x;
         const auto dy = ls.pos.y - pos.y;
         const auto dz = ls.pos.z - pos.z;
@@ -256,7 +242,6 @@ void Lights::Realize(uint32_t delta_time)
         }
         if (ls.corona > 1.0f)
             ls.corona = 1.0f;
-        // Distance
         dist = sqrtf(d);
         d = dist * l.invCoronaRange;
         if (d > 1.0f)
@@ -285,7 +270,6 @@ void Lights::Realize(uint32_t delta_time)
             alpha = 0.0f;
         if (alpha > 255.0f)
             alpha = 255.0f;
-        // Position
         auto pos = storm::math::transformPoint(camMtx, glm::vec3(ls.pos.x, ls.pos.y, ls.pos.z));
         // Colour
         auto c = static_cast<uint32_t>(alpha);
@@ -666,7 +650,6 @@ void Lights::PrintDebugInfo()
         auto dist = ls.pos.x * storm::math::vx(view).z + ls.pos.y * storm::math::vy(view).z + ls.pos.z * storm::math::vz(view).z + camPDist;
         if (dist < -2.0f * l.coronaSize)
             continue;
-        // Distance
         const auto dx = ls.pos.x - pos.x;
         const auto dy = ls.pos.y - pos.y;
         const auto dz = ls.pos.z - pos.z;

@@ -105,16 +105,13 @@ void SetChildrenTechnique(NODE *_root, const char *_name)
         SetChildrenTechnique(_root->next[i].get(), _name);
 }
 
-//-----------------------------------------------------------------------------------
 // realize
-//-----------------------------------------------------------------------------------
 GEOS::PLANE ViewPlane[4];
 // Beyond this distance (metres) from the camera the pose of an animated model is rebuilt every second frame.
 static constexpr float kDistantPoseRange = 30.0f;
 
 void MODELR::Realize(uint32_t Delta_Time)
 {
-    // GUARD(MODELR::Realize)
     if (!root)
         return;
 
@@ -152,7 +149,6 @@ void MODELR::Realize(uint32_t Delta_Time)
                 timeK = 1.0f;
             float alpha = alpha1 + (alpha2 - alpha1) * timeK;
             ambient |= static_cast<unsigned char>(255.0 * alpha) << 24;
-            // ambient |= 0x05 << 24;
             rs->SetRenderState(D3DRS_TEXTUREFACTOR, ambient);
         }
     }
@@ -199,7 +195,6 @@ void MODELR::Realize(uint32_t Delta_Time)
         rs->SetRenderState(D3DRS_FOGDENSITY, F2DW(fOldFogDensity));
     }
 
-    // UNGUARD
 }
 
 Animation *MODELR::GetAnimation()
@@ -218,11 +213,6 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
         Realize(0);
         break;
     case MSG_MODEL_SET_PARENT: {
-        /*entid_t ParentID = message.EntityID();
-        if (core.ValidateEntity(&ParentID))
-        {
-          parent = (MODEL*)ParentID.pointer;
-        }*/
     }
     break;
     case MSG_MODEL_SET_POSITION: {
@@ -261,7 +251,6 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
     case MSG_MODEL_LOAD_GEO: // set geometry
     case MSG_MODEL_LOAD_GEO_DEFERRED:
     {
-        // GUARD(MSG_MODEL_LOAD_GEO)
         str = message.String();
         NODER::gs = GeometyService;
         NODER::rs = rs;
@@ -278,10 +267,8 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
             core.EraseEntity(GetId());
             return 0;
         }
-        // glm::vec3 tmp;
         root->Update(mtx, tmp);
         return 1;
-        // UNGUARD
     }
     case MSG_MODEL_LOAD_ANI: // set animation
     {
@@ -303,26 +290,18 @@ uint64_t MODELR::ProcessMessage(MESSAGE &message)
         fFogDensity = message.Float();
         break;
     case MSG_MODEL_SET_LIGHT_PATH:
-        // GUARD(MSG_MODEL_SET_LIGHT_PATH)
         LightPath = message.String();
-        // UNGUARD
         break;
     case MSG_MODEL_SET_LIGHT_LMPATH:
-        // GUARD(MSG_MODEL_SET_LIGHT_LMPATH)
         lmPath = message.String();
-        // UNGUARD
         break;
     case MSG_MODEL_RELEASE:
-        // GUARD(MSG_MODEL_RELEASE)
         if (root)
             root->ReleaseGeometry();
-        // UNGUARD
         break;
     case MSG_MODEL_RESTORE:
-        // GUARD(MSG_MODEL_RESTORE)
         if (root)
             root->RestoreGeometry();
-        // UNGUARD
         break;
     case MSG_MODEL_SET_DIRPATH: {
         str = message.String();
@@ -385,9 +364,7 @@ void MODELR::Update()
     static_cast<NODER *>(root)->Update(mtx, tmp);
 }
 
-//-------------------------------------------------------------------
 // clip functions
-//-------------------------------------------------------------------
 const PLANE *clip_p;
 const glm::vec3 *clip_c;
 float clip_r;
@@ -396,7 +373,6 @@ GEOS::ADD_POLYGON_FUNC clip_geosap;
 int32_t clip_nps;
 
 bool AddPolygon(const GEOS::VERTEX *vr, int32_t nv);
-//-------------------------------------------------------------------
 bool MODELR::Clip(const PLANE *planes, int32_t nplanes, const glm::vec3 &center, float radius, ADD_POLYGON_FUNC addpoly)
 {
     clip_p = planes;
@@ -412,7 +388,6 @@ bool MODELR::Clip(const PLANE *planes, int32_t nplanes, const glm::vec3 &center,
 }
 
 extern NODE *bestTraceNode;
-//-------------------------------------------------------------------
 const char *MODELR::GetCollideMaterialName()
 {
     GEOS::TRACE_INFO ti;
@@ -425,7 +400,6 @@ const char *MODELR::GetCollideMaterialName()
     return gm.name;
 }
 
-//-------------------------------------------------------------------
 bool MODELR::GetCollideTriangle(TRIANGLE &triangle)
 {
     GEOS::TRACE_INFO ti;
@@ -437,7 +411,6 @@ bool MODELR::GetCollideTriangle(TRIANGLE &triangle)
     return true;
 }
 
-//-------------------------------------------------------------------
 glm::vec3 cold[1024 * 1024];
 
 float MODELR::Trace(const glm::vec3 &src, const glm::vec3 &dst)
@@ -454,8 +427,6 @@ float MODELR::Trace(const glm::vec3 &src, const glm::vec3 &dst)
         // hierarchy test
         if (dist2ray2 > dlmn * root->radius * root->radius)
             return 2.0f;
-        // if(core.Controls->GetAsyncKeyState(0xC0)>=0)    return 2.0f;
-        // if(core.Controls->GetAsyncKeyState(VK_SHIFT)<0 && dist2ray2 > dlmn*root->radius*root->radius)    return 2.0f;
 
         // get bones
         auto* bones = &ani->GetAnimationMatrix(0);
@@ -541,7 +512,6 @@ float MODELR::Trace(const glm::vec3 &src, const glm::vec3 &dst)
     return d;
 }
 
-//-------------------------------------------------------------------
 NODE *MODELR::GetCollideNode()
 {
     return colideNode;

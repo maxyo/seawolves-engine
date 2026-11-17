@@ -1,22 +1,12 @@
 #include "loading_transaction.hpp"
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Fader
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "fader.h"
 #include "core.h"
 #include "entity.h"
 #include "shared/messages.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 int32_t Fader::numberOfTips = 0;
 int32_t Fader::currentTips = -1;
@@ -49,7 +39,6 @@ Fader::~Fader()
         rs->TextureRelease(tipsID);
 }
 
-// Initialization
 bool Fader::Init()
 {
     // check that it's the only one
@@ -64,8 +53,6 @@ bool Fader::Init()
         {
             core.Trace("Fader::Init() -> Fader already created, %s", fadeIn ? "fade in phase" : "fade out phase");
         }
-        //!!!
-        // return false;
     }
     // Layers
     core.SetLayerType(FADER_REALIZE, layer_type_t::realize);
@@ -165,7 +152,6 @@ bool Fader::Init()
     return true;
 }
 
-// Messages
 uint64_t Fader::ProcessMessage(MESSAGE &message)
 {
     switch (message.Long())
@@ -234,7 +220,6 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
         // Hint texture
         if (numberOfTips > 0)
         {
-            // sprintf_s(_name, "tips\\tips_%.4u.tga", rand() % numberOfTips);
             auto *const pTipsName = rs->GetTipsImage();
             if (pTipsName)
             {
@@ -243,7 +228,6 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
                     rs->TextureRelease(tipsID);
                 }
                 tipsID = rs->TextureCreate(pTipsName);
-                // rs->SetTipsImage(_name);
             }
         }
         break;
@@ -252,10 +236,8 @@ uint64_t Fader::ProcessMessage(MESSAGE &message)
     return 0;
 }
 
-// Work
 void Fader::Execute(uint32_t delta_time)
 {
-    // core.Trace("fader frame");
     if (deleteMe)
     {
         deleteMe++;
@@ -268,12 +250,10 @@ void Fader::Execute(uint32_t delta_time)
         if (!fadeIn)
         {
             core.PostEvent("FaderEvent_StartFade", 0, "li", fadeIn, GetId());
-            // core.Trace("FaderEvent_StartFade");
         }
         else
         {
             core.PostEvent("FaderEvent_StartFadeIn", 0, "li", fadeIn, GetId());
-            //    core.Trace("FaderEvent_StartFadeIn");
         }
     }
     if (eventEnd)
@@ -283,12 +263,10 @@ void Fader::Execute(uint32_t delta_time)
         if (!fadeIn)
         {
             core.PostEvent("FaderEvent_EndFade", 0, "li", fadeIn, GetId());
-            // core.Trace("FaderEvent_EndFade");
         }
         else
         {
             core.PostEvent("FaderEvent_EndFadeIn", 0, "li", fadeIn, GetId());
-            //    core.Trace("FaderEvent_EndFadeIn");
         }
     }
 }

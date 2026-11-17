@@ -321,7 +321,6 @@ void CoastFoam::Realize(uint32_t Delta_Time)
         DrawStrands(field, mWVP);
     RDTSC_E(dw1);
 
-    // rs->Print(0, 300, "dwNumPenasExecuted = %d, ticks = %d", dwNumPenasExecuted, dw1);
 
     if (storm::loading::active || !bCanEdit)
         return;
@@ -390,10 +389,6 @@ void CoastFoam::Realize(uint32_t Delta_Time)
                     r2.fSize = fR2;
                     aRects.push_back(r1);
                     aRects.push_back(r2);
-                    // RS_RECT & r1 = aRects[aRects.Add()];
-                    // r1.vPos = v1; r1.dwColor = 0xFFFFFF00; r1.fAngle = 0.0f; r1.fSize = fR1;
-                    // RS_RECT & r2 = aRects[aRects.Add()];
-                    // r2.vPos = v2; r2.dwColor = 0xFF00FF00; r2.fAngle = 0.0f; r2.fSize = fR2;
                 }
             }
 
@@ -529,7 +524,6 @@ void CoastFoam::Realize(uint32_t Delta_Time)
                 pF->aFoamParts[i].v[1] += glm::vec3(10.0f, 0.0f, 10.0f);
             }
 
-            // RecalculateFoam( aFoams.Add(pF) );
             aFoams.push_back(pF);
             RecalculateFoam(aFoams.size() - 1);
         }
@@ -563,7 +557,6 @@ void CoastFoam::Realize(uint32_t Delta_Time)
                 pF->aFoamParts.emplace_back(foam1);
                 pF->aFoamParts.emplace_back(foam2);
 
-                // RecalculateFoam( aFoams.Add(pF) );
                 aFoams.push_back(pF);
                 RecalculateFoam(aFoams.size() - 1);
             }
@@ -579,11 +572,6 @@ void CoastFoam::Realize(uint32_t Delta_Time)
                     foam.v[1] = 2.0f * foam2->v[1] - foam1->v[1];
                     pF->aFoamParts.push_back(foam);
 
-                    // FoamPart * pFP = &pF->aFoamParts[pF->aFoamParts.Add()];
-                    // FoamPart * pFP1 = &pF->aFoamParts[pF->aFoamParts.Last() - 2];
-                    // FoamPart * pFP2 = &pF->aFoamParts[pF->aFoamParts.Last() - 1];
-                    // pFP->v[0] = 2.0f * pFP2->v[0] - pFP1->v[0];
-                    // pFP->v[1] = 2.0f * pFP2->v[1] - pFP1->v[1];
                 }
                 else
                 {
@@ -700,7 +688,6 @@ void CoastFoam::ExecuteFoam(int32_t iFoam, float fDeltaTime)
                 pF->fAlpha[k] = Clampf(pF->fAlpha[k] - fDeltaTime * 0.2f);
                 if (pF->fAlpha[k] <= 0.0f)
                 {
-                    // pF->fMove[k] = -10000.0f;
                     pF->fSX[k] = Rnd(100.0f);
                     pF->fAlpha[k] = 0.0f;
                     pF->iMode[k] = 0;
@@ -794,7 +781,6 @@ void CoastFoam::RecalculateFoam(int32_t iFoam)
                 if (j == 0 && i != 0)
                     continue;
 
-                // WorkPart * pWP = &pF->aWorkParts[pF->aWorkParts.Add()];
                 pF->aWorkParts.push_back(WorkPart{});
                 auto *pWP = &pF->aWorkParts.back();
                 pWP->tu = sx * pF->fTexScaleX;
@@ -837,7 +823,6 @@ void CoastFoam::Load()
     iFoamDivides = pI->GetInt(nullptr, "FoamDivides", 4);
     for (int32_t i = 0; i < iNumFoams; i++)
     {
-        // Foam * pF = aFoams[aFoams.Add(new Foam)];
         aFoams.push_back(new Foam);
         auto *pF = aFoams.back();
 
@@ -889,9 +874,6 @@ void CoastFoam::Load()
             foam.v[0] = v1;
             foam.v[1] = v2;
             pF->aFoamParts.push_back(foam);
-            // pF->aFoamParts.Add();
-            // pF->aFoamParts.LastE().v[0] = v1;
-            // pF->aFoamParts.LastE().v[1] = v2;
         }
         pF->fMove[0] = -RRnd(pF->fAppearMin, pF->fAppearMax);
         pF->fMove[1] = -100000.0f; // RRnd(pF->fAppearMin, pF->fAppearMax);
@@ -899,8 +881,6 @@ void CoastFoam::Load()
         pF->fSpeed[1] = RRnd(pF->fSpeedMin, pF->fSpeedMax);
         pF->fSX[0] = Rnd(100.0f);
         pF->fSX[1] = Rnd(100.0f);
-        // pF->fBraking[0] = RRnd(pF->fBrakingMin, pF->fBrakingMax);
-        // pF->fBraking[1] = RRnd(pF->fBrakingMin, pF->fBrakingMax);
         pF->fAlphaColor[0] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
         pF->fAlphaColor[1] = RRnd(pF->fAlphaMin, pF->fAlphaMax) / 255.0f;
         pF->fAlpha[0] = 0.0f;

@@ -7,9 +7,7 @@
 #include <string>
 #include <vector>
 
-//-------------------------------------------------------------------
 // animated vertices
-//-------------------------------------------------------------------
 class DeferredGeometry;
 
 // The files GEOMETRY::CreateGeometry reads for a model: the .gm, and its vertex colours of a light set (empty: none).
@@ -95,7 +93,3 @@ class GEOM_SERVICE_R final : public GEOM_SERVICE
 
     void SetCausticMode(bool bSet = false);
 };
-
-// API_SERVICE_START("geometry service")
-//    DECLARE_MAIN_SERVICE(GEOMETRY)
-// API_SERVICE_END(GEOMETRY)

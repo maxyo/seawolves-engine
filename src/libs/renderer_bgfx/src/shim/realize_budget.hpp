@@ -1,4 +1,4 @@
-// The game-thread time a frame of play spends making textures' GPU copies on their first draw (perf audit H1).
+// The game-thread time a frame of play spends making textures' GPU copies on their first draw.
 //
 // A texture's first draw makes its GPU copy in TexStore::sync on the game thread: the transcode cache key over all its
 // levels, the cache file read, the DDS container and bgfx::createTexture; the swap of a finished transcode creates one

@@ -9,8 +9,8 @@
 // report says whether it holds the target).
 //
 // Headroom. The title (a ship at sea, 110-200 draws) is one of the cheapest scenes of the game; a port town draws
-// 400-490. On the owner's Xiaomi 15 Ultra (Adreno 830) scenes of 120-190 draws took 13-15.5 ms of GPU and towns
-// 17-21.5 ms (perf audit 2026-11-14): towns cost up to 1.5x the title's GPU time. So a rung passes when
+// 400-490. On a Xiaomi 15 Ultra (Adreno 830) scenes of 120-190 draws took 13-15.5 ms of GPU and towns
+// 17-21.5 ms: towns cost up to 1.5x the title's GPU time. So a rung passes when
 //   * where the GPU offers timer queries: its mean GPU frame time x kAutoPresetHeadroom fits 1000 /
 //     kAutoPresetTargetFps, and the 95th percentile of its present intervals is at most AutoPresetLimitMs() (the
 //     CPU side holds the target too);

@@ -11,7 +11,6 @@
 
 class SEA_OPERATOR;
 
-//--------------------------------------------------------------------
 struct tAction
 {
     int32_t timePassed;
@@ -35,7 +34,6 @@ enum BORT_TYPE
     BORT_REAR
 };
 
-//--------------------------------------------------------------------
 class SEA_OPERATOR : public Entity
 {
   public:
@@ -58,10 +56,6 @@ class SEA_OPERATOR : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 
@@ -94,5 +88,3 @@ class SEA_OPERATOR : public Entity
     TActionBuffer actionBuffer;
     glm::vec3 cameraPos, cameraTargetPos;
 };
-
-//--------------------------------------------------------------------

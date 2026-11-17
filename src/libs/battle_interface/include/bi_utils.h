@@ -86,7 +86,6 @@ class BIBorderInfo
 
 class BIUtils
 {
-    //---------------------------------------
   public: // functions
     static int32_t GetIntFromAttr(ATTRIBUTES *pA, const char *name, int32_t defVal);
     static float GetFloatFromAttr(ATTRIBUTES *pA, const char *name, float defVal);
@@ -111,10 +110,7 @@ class BIUtils
 
     static void FillTextInfoArray(VRenderer *pRS, ATTRIBUTES *pA, std::vector<BITextInfo> &tia);
     static void PrintTextInfoArray(std::vector<BITextInfo> &tia);
-    //---------------------------------------
-    //---------------------------------------
   public: // data
     static entid_t idBattleInterface;
     static uint32_t g_dwBlinkColor;
-    //---------------------------------------
 };

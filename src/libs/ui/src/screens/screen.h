@@ -363,7 +363,7 @@ class Router
         std::optional<Action> lead; // goes out right before `action`
     };
 
-    // The exception boundary of screen code (UI-1): one throw in a screen, a handler or a
+    // The exception boundary of screen code: one throw in a screen, a handler or a
     // state consumer must not end the game session. Runs `call`; a std::exception (or anything
     // else thrown) is reported by Failed and false returned.
     template <class Call> bool Guarded(const std::string &where, Call &&call);

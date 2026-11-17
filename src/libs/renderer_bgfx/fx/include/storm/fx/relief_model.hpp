@@ -1,6 +1,6 @@
 // The relief maps' models: PBRify's normal, height and roughness networks (Kim2091/PBRify_Remix, 1x-PBRify_NormalV3,
 // 1x-PBRify_Height and 1x-PBRify_RoughnessV2, CC0-1.0; their ncnn graphs, made by the build, and their provenance: src/libs/relief/model,
-// third_party/licenses/PBRify-*), the owner's choice for the normals, the height and the gloss (gloss_map.hpp). Each is a 1x SPAN network: a colour texture 1x3xHxW (0..1) in, three
+// third_party/licenses/PBRify-*), used for the normals, the height and the gloss (gloss_map.hpp). Each is a 1x SPAN network: a colour texture 1x3xHxW (0..1) in, three
 // planes of the same size out. This header is the part around the models: their input (the texture at the map's size,
 // wrap-padded: the textures tile), the crop, the axes and the normal map's mips. Running them (ncnn) is
 // src/libs/relief's; these functions only call `infer`, so they are tested without the models.
@@ -46,7 +46,7 @@ std::vector<float> ReliefModelNormals(std::span<const float> planes, int width, 
 // same way (their mean, 0..1, GGX's perceptual roughness: gloss_map.hpp GlossOfRoughness).
 std::vector<float> ReliefModelHeight(std::span<const float> planes, int width, int height);
 
-// The RG8 map of a normal field as the model gives it (the owner's choice: no rescale): every mip averaged from the one
+// The RG8 map of a normal field as the model gives it (no rescale): every mip averaged from the one
 // above and renormalised, tilts at most 0.99.
 NormalMap NormalMapOfNormals(std::span<const float> normals, int width, int height);
 

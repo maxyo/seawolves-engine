@@ -376,8 +376,6 @@ void BILinesInfo::Init(VRenderer *rs, ATTRIBUTES *pA)
         if (!pAttr)
             break;
 
-        // int32_t bi = lines.Add();
-        // int32_t ei = lines.Add();
         lines.push_back(RS_LINE2D{});
         const auto bi = lines.size() - 1;
         lines.push_back(RS_LINE2D{});
@@ -427,7 +425,6 @@ BIImagesInfo::~BIImagesInfo()
 
 void BIImagesInfo::Release()
 {
-    // images.DelAllWithPointers();
     for (const auto &image : images)
         delete image;
     STORM_DELETE(pImgRender);

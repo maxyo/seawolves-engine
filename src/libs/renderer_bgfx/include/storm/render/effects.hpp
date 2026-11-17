@@ -333,8 +333,8 @@ struct ReliefConfig
     std::filesystem::path upscale_directory;
 };
 void ConfigureRelief(const ReliefConfig &config);
-// The owner's parallax tuning file (fx/parallax_exclusions.hpp): `exclude <texture>` / `include <texture>` lines, written by
-// the debug view's toggle. Kept in the app's files directory: his choices, not a cache. Before the first texture is loaded.
+// The user's parallax tuning file (fx/parallax_exclusions.hpp): `exclude <texture>` / `include <texture>` lines, written by
+// the debug view's toggle. Kept in the app's files directory: the user's choices, not a cache. Before the first texture is loaded.
 void ConfigureParallaxExclusions(const std::filesystem::path &user_file);
 // The parallax probe (option fx_pom_probe=1; the renderer draws it over the picture): the relief texture under the
 // screen centre, found exactly on the GPU (effects/parallax_probe.hpp), and its parallax. fx_pom_toggle switches that
@@ -387,7 +387,7 @@ void HoldBackgroundWork(const char *why);
 // A relief map (or the list of the game's relief textures) is being made now.
 bool BackgroundWorkBusy();
 // Main thread, at start: removes the stores of normal maps earlier builds kept elsewhere (the files directory's
-// "relief" before the relief maps moved to the cache, the "NormalMaps" cache before the relief directory), each if it
+// "relief", the "NormalMaps" cache), each if it
 // is still there (logged with what it held). Never `live` (the relief directory in use), anything inside it or anything
 // that holds it: such a location is refused and logged as an error.
 void RemoveOldReliefStores(const std::vector<std::filesystem::path> &directories, const std::filesystem::path &live);

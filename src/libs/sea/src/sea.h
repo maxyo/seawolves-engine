@@ -1,6 +1,4 @@
-// ************************************************************************
 // *  Author : Vano, 1861; Description : Sea/Ocean/Water/Lake/River/pool  *
-// ************************************************************************
 #pragma once
 
 #include "sea_base.h"
@@ -16,7 +14,6 @@
 class SEA : public SEA_BASE
 {
   private:
-    // uint32_t dwSkyCode = MakeHashValue("sky");
     uint32_t dwIslandCode = MakeHashValue("island");
     uint32_t dwShipCode = MakeHashValue("ship");
     uint32_t dwSailCode = MakeHashValue("sail");
@@ -310,8 +307,6 @@ class SEA : public SEA_BASE
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::loading_realize:
             Realize(0);
             break;

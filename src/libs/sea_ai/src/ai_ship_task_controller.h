@@ -1,10 +1,8 @@
 #pragma once
 #include "shared/sea_ai/script_defines.h"
 
-// ============================================================================
 // master class AIShipTaskController
 // Contain base virtual functions
-// ============================================================================
 
 class AIShip;
 class VAI_INNEROBJ;

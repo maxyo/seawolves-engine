@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Sharks
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "sharks.h"
 #include "entity.h"
@@ -19,9 +13,7 @@
 
 CREATE_CLASS(Sharks)
 
-//============================================================================================
 // Fish
-//============================================================================================
 
 #define SHARK_PI 3.14159265f
 #define SHARK_REPULSION 80.0f // Coefficient of shark repulsion
@@ -39,9 +31,7 @@ CREATE_CLASS(Sharks)
 #define SHARK_MAX_SPEED 8.0f // Shark top speed
 #define SHARK_MIN_SPEED 5.0f // Minimum shark speed
 
-//============================================================================================
 // Shark
-//============================================================================================
 
 uint16_t Sharks::Shark::indeces[] = {
     0, 1, 2, 0, 2, 3, 1, 4, 2, 2, 4, 5, 2, 5, 6, 2, 6, 3, 4, 7, 8, 4, 8, 5, 5, 8, 6, 6, 8, 9,
@@ -354,15 +344,6 @@ inline void Sharks::Shark::Coordination(float cam_x, float cam_z, float dltTime,
         vBase -= 1.0f;
     // Matrix update
     mdl->mtx = storm::math::eulerMatrix(angs, rpos);
-    /*
-    if(core.Controls->GetAsyncKeyState('Z') >= 0)
-    {
-      if(core.Controls->GetAsyncKeyState('X') < 0) rpos.y += 30.0f;
-      mdl->mtx.BuildMatrix(angs, rpos);
-    }else{
-      mdl->mtx.BuildMatrix(angs, pos + glm::vec3(0.0f, 30.0f, 0.0f));
-    }
-    //*/
 }
 
 inline void Sharks::Shark::IslandCollision(ISLAND_BASE *ib, int32_t numPnt, float rad, float frc)
@@ -506,9 +487,7 @@ int32_t Sharks::Shark::GenerateTrack(uint16_t *inds, Vertex *vrt, uint16_t base,
     return 10;
 }
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 Sharks::Sharks() : sea(0), island(0), indeces{}, vrt{}
 {
@@ -737,23 +716,4 @@ void Sharks::Realize(uint32_t delta_time)
                                    "SharkTrack");
     }
 
-    /*
-    ISLAND_BASE * ib = (ISLAND_BASE *)core.GetEntityPointer(island);
-    if(!ib) return;
-    float maxRad = 0.0f;
-    int32_t s = 30;
-    for(int32_t i = 0; i < numShakes; i++)
-    {
-      float r = sqrtf(~(shark[i].spos - shark[i].pos));
-      if(r > maxRad) maxRad = r;
-      if(ib)
-      {
-        float h = -1000.0f;
-        ib->GetDepth(shark[i].spos.x, shark[i].spos.z, &h);
-        rs->Print(10, s, "Height = %f", h);
-        s += 20;
-      }
-    }
-    rs->Print(10, 10, "MaxRad = %f", maxRad);
-    */
 }

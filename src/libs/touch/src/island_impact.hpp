@@ -2,12 +2,11 @@
 // Hull damage power of a ship-island contact (SHIP_SHIP2ISLAND_COLLISION; the game script turns the power
 // into hull hit points per event: Ship_Ship2IslandCollision, fHP = power * 3).
 //
-// TOUCH finds the contact every frame while the hull is against the island and used to send the point's speed
-// as the power each time: the damage per second grew with the frame rate, and a ship pressed against a shore
-// by the wind (speed shown as 0, a little forward motion each frame, pushed out again) lost its hull within a
-// minute. Now:
-// - a new contact (none for kEpisodeGap) is an impact: the point's speed, exactly as before, so a ram costs
-//   what it always did;
+// TOUCH finds the contact every frame while the hull is against the island. Sending the point's speed as the
+// power each time would make the damage per second grow with the frame rate, and a ship pressed against a shore
+// by the wind (speed shown as 0, a little forward motion each frame, pushed out again) would lose its hull
+// within a minute. So:
+// - a new contact (none for kEpisodeGap) is an impact: the point's speed, so a ram costs what the game intends;
 // - while the contact goes on, only the speed into the island above kRestingSpeed counts, as that power per
 //   kSustainedPeriod of contact: frame-rate independent (a ship driving on into the rock at 5 knots loses
 //   12 HP per second), and nothing for a hull resting or scraping along it.

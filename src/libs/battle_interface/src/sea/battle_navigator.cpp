@@ -68,7 +68,6 @@ void BATTLE_NAVIGATOR::Draw() const
     rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(matw));
 
     // gradient background
-    // rs->DrawPrimitive(D3DPT_TRIANGLEFAN,m_idGradBackVBuf,sizeof(BI_COLORONLY_VERTEX),0,1,"battle_only_color");
 
     // Isle
     rs->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
@@ -140,9 +139,6 @@ void BATTLE_NAVIGATOR::Draw() const
     }
 
     // speed indicator
-    /*rs->TextureSet(0,m_idSpeedTex);
-    if(m_nvSpeed>0)
-      rs->DrawPrimitive(D3DPT_TRIANGLEFAN,m_idSpeedVBuf,sizeof(BI_ONETEXTURE_VERTEX),0,m_nvSpeed,"battle_rectangle");*/
 
     // show wind direction arrow
     if (m_idEmptyVBuf != -1L)
@@ -996,7 +992,6 @@ void BATTLE_NAVIGATOR::SetMainCharacterData()
     else
         m_fCurAnglShipSpeed = GetBetwinFloat(m_fBegAnglShipSpeed, m_fEndAnglShipSpeed, m_fShipSpeed / m_fMaxShipSpeed);
     m_fShipWindAgainst = ((SHIP_BASE *)psd->pShip)->GetWindAgainst() / 180.f * PI;
-    // m_fShipSpeed *= m_fShipSpeedScale;
 
     // get the wind value
     UpdateWindParam();
@@ -1562,10 +1557,6 @@ void BATTLE_NAVIGATOR::UpdateWindParam()
     if (!m_wb && !m_pAWeather)
     {
         m_wb = static_cast<WEATHER_BASE *>(core.GetEntityPointer(core.GetEntityId("weather")));
-        /*if( core.IsNetActive() && !m_wb && m_pOwnerEI ) {
-          VDATA * pSVWeather = (VDATA*)core.GetScriptVariable((m_pOwnerEI->IsServer()) ? "NSWeather" : "NCWeather");
-        Assert(pSVWeather); m_pAWeather = pSVWeather->GetAClass(); Assert(m_pAWeather);
-        }*/
     }
 
     if (m_wb)

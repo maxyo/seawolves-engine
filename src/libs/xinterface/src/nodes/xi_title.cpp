@@ -29,7 +29,6 @@ void CXI_TITLE::Draw(bool bSelected, uint32_t Delta_Time)
         m_rs->TextureSet(0, m_idTex);
         m_rs->DrawBuffer(m_idVBuf, sizeof(XI_ONETEX_VERTEX), m_idIBuf, 0, m_nVert, 0, m_nIndx, "iTitle");
 
-        // show title text
         if (m_idString != -1L)
             m_rs->ExtPrint(m_fontID, m_fontColor, m_backColor, PR_ALIGN_CENTER, true, m_fontScale, m_screenSize.x,
                            m_screenSize.y, m_StringCenter.x, m_StringCenter.y, "%s",
@@ -88,7 +87,6 @@ void CXI_TITLE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -98,28 +96,21 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     int i;
     char param[256];
 
-    // Get image color
     const auto imgColor = GetIniARGB(ini1, name1, ini2, name2, "imageColor", 0xFFFFFFFF);
 
-    // Get font color
     m_fontColor = GetIniARGB(ini1, name1, ini2, name2, "fontColor", 0xFFFFFFFF);
 
-    // get back font color
     m_backColor = GetIniARGB(ini1, name1, ini2, name2, "backFontColor", 0xFFFFFFFF);
 
-    // get font number
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
         if ((m_fontID = m_rs->LoadFont(param)) == -1)
             core.Trace("can not load font:'%s'", param);
 
-    // get font scale
     m_fontScale = GetIniFloat(ini1, name1, ini2, name2, "fontScale", 1.f);
 
-    // get string offset
     m_StringCenter.x = (m_rect.left + m_rect.right) / 2;
     m_StringCenter.y = m_rect.top + GetIniLong(ini1, name1, ini2, name2, "stringOffset", 0);
 
-    // get title string
     auto *const pChar = core.Entity_GetAttribute(g_idInterface, "title");
     if (pChar != nullptr && pChar[0] != '#')
         m_idString = pStringService->GetStringNum(pChar);
@@ -136,7 +127,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
                 m_rs->StringWidth(pStringService->GetString(m_idString), m_fontID, m_fontScale, m_screenSize.x);
     }
 
-    // get title image group name
     if (ReadIniString(ini1, name1, ini2, name2, "imgGroupName", param, sizeof(param), ""))
     {
         const auto len = strlen(param) + 1;
@@ -153,7 +143,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     }
 
     FXYRECT centerRect, tiledRect, mediumRect;
-    // get title images
     if (ReadIniString(ini1, name1, ini2, name2, "titleCenter", param, sizeof(param), ""))
         pPictureService->GetTexturePos(m_sGroupName, param, centerRect);
     else
@@ -194,7 +183,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     m_idIBuf = m_rs->CreateIndexBuffer(m_nIndx * 2);
     m_nIndx /= 3;
 
-    // fill index buffer
     auto *const pIndex = static_cast<uint16_t *>(m_rs->LockIndexBuffer(m_idIBuf));
     if (pIndex == nullptr)
         throw std::runtime_error("index buffer not create");
@@ -209,7 +197,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     }
     m_rs->UnLockIndexBuffer(m_idIBuf);
 
-    // fill vertex buffer
     auto *const pVert = static_cast<XI_ONETEX_VERTEX *>(m_rs->LockVertexBuffer(m_idVBuf));
     if (pVert == nullptr)
         throw std::runtime_error("vertex buffer not create");
@@ -231,7 +218,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     pVert[1].tu = pVert[3].tu = centerRect.right;
     pVert[0].tv = pVert[1].tv = centerRect.top;
     pVert[2].tv = pVert[3].tv = centerRect.bottom;
-    // fill two medium rectangles
     const int tmp1 = m_nStringWidth / 2;
     const int tmp2 = m_nStringWidth / 2 + (m_mRect.right - m_mRect.left);
     pVert[4].pos.y = pVert[5].pos.y = pVert[8].pos.y = pVert[9].pos.y = static_cast<float>(m_rect.top);
@@ -245,7 +231,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     pVert[4].tv = pVert[5].tv = pVert[8].tv = pVert[9].tv = mediumRect.top;
     pVert[6].tv = pVert[7].tv = pVert[10].tv = pVert[11].tv = mediumRect.bottom;
     int idx = 12;
-    // fill left tiled rectangles
     auto xpos = static_cast<float>(m_StringCenter.x - tmp2);
     float xposDelta = (xpos - static_cast<float>(m_rect.left)) / m_nTiledQuantity;
     for (i = 0; i < m_nTiledQuantity; i++)
@@ -261,7 +246,6 @@ void CXI_TITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
         idx += 4;
         xpos -= xposDelta;
     }
-    // fill right tiled rectangles
     xpos = static_cast<float>(m_StringCenter.x + tmp2);
     xposDelta = (static_cast<float>(m_rect.right) - xpos) / m_nTiledQuantity;
     for (i = 0; i < m_nTiledQuantity; i++)
@@ -296,7 +280,6 @@ void CXI_TITLE::FillVertexBuffer() const
         pVert[3].pos.x = static_cast<float>(m_StringCenter.x + m_nStringWidth / 2);
         pVert[3].pos.y = static_cast<float>(m_rect.bottom);
 
-        // fill two medium rectangles
         const int tmp1 = m_nStringWidth / 2;
         const int tmp2 = m_nStringWidth / 2 + (m_mRect.right - m_mRect.left);
         pVert[4].pos.y = pVert[5].pos.y = pVert[8].pos.y = pVert[9].pos.y = static_cast<float>(m_rect.top);
@@ -307,7 +290,6 @@ void CXI_TITLE::FillVertexBuffer() const
         pVert[9].pos.x = pVert[11].pos.x = static_cast<float>(m_StringCenter.x + tmp1);
 
         int idx = 12;
-        // fill left tiled rectangles
         auto xpos = static_cast<float>(m_StringCenter.x - tmp2);
         float xposDelta = (xpos - static_cast<float>(m_rect.left)) / m_nTiledQuantity;
         for (i = 0; i < m_nTiledQuantity; i++)
@@ -320,7 +302,6 @@ void CXI_TITLE::FillVertexBuffer() const
             xpos -= xposDelta;
         }
 
-        // fill right tiled rectangles
         xpos = static_cast<float>(m_StringCenter.x + tmp2);
         xposDelta = (static_cast<float>(m_rect.right) - xpos) / m_nTiledQuantity;
         for (i = 0; i < m_nTiledQuantity; i++)

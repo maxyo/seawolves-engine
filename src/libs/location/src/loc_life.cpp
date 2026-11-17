@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocLife
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "loc_life.h"
 #include "character.h"
@@ -16,8 +10,6 @@
 #include "geometry.h"
 #include "model.h"
 #include "shared/messages.h"
-
-//============================================================================================
 
 LocLife::LocLife()
     : model(0), ay(0), pos(), npos()
@@ -32,8 +24,6 @@ LocLife::~LocLife()
 {
     core.EraseEntity(model);
 }
-
-//============================================================================================
 
 bool LocLife::Init(Location *loc)
 {
@@ -55,7 +45,6 @@ bool LocLife::Init(Location *loc)
         return false;
     }
     gs->SetTexturePath("");
-    // Animation
     if (!core.Send_Message(model, "ls", MSG_MODEL_LOAD_ANI, GetAniName()))
         return false;
     // determine the position
@@ -67,7 +56,6 @@ bool LocLife::Init(Location *loc)
     }
     FindPos();
     ay = rand() * (6.28f / RAND_MAX);
-    // Animation
     auto *m = static_cast<MODEL *>(core.GetEntityPointer(model));
     if (!m)
     {

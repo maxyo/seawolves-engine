@@ -1,7 +1,7 @@
 // The relief's material texture (sampler unit 7, fx_lighting.sh): R the height for the parallax and the cavity
 // (FX_LIGHT_PARALLAX: fxParallax, fxParallaxShadow, fxReliefCavity), G the gloss (gloss_map.hpp, the highlights).
 //
-// The height is PBRify's (relief_model.hpp, the owner's choice), made once with the normal map. An atlas holds several
+// The height is PBRify's (relief_model.hpp), made once with the normal map. An atlas holds several
 // surfaces side by side (planks, plaster, a counter, an empty strip): each is normalised against its own neighbourhood
 // (the local mean and spread over kHeightRegionTexels), so a plank floor next to a deep recess keeps its own seams
 // instead of a few percent of the whole texture's range; then its 2 % / 98 % become 0 and 1. The depth is the class's
@@ -24,10 +24,10 @@ inline constexpr uint32_t kHeightMapVersion = 6; // 4: PBRify's height, normalis
                                                  // maps' own; 6: the parallax trust (parallax_trust.hpp), halved depths
 
 // Whether a class's textures get a material texture (and so the parallax and the cavity): every class with relief
-// (the owner: the parallax wherever it can work), the grey height maps too (their own heights).
+// (the parallax wherever it can work), the grey height maps too (their own heights).
 bool ReliefHasHeight(ReliefClass relief);
 
-// Whether a class's textures take the parallax by default: masonry only (the owner: stone walls, cobbles and pavement, brick;
+// Whether a class's textures take the parallax by default: masonry only (stone walls, cobbles and pavement, brick;
 // the house atlases with their roof tiles). Everything else - wood and furniture, props, plaster ground, metal, the game's
 // grey height maps - keeps its normals and its cavity and no parallax; the shipped list (parallax_exclusions.hpp) names the
 // exceptions: the plank floors, decks and piers that take it, signs that do not.
@@ -38,7 +38,7 @@ bool ReliefTakesParallax(ReliefClass relief);
 // cloth 1.25, wood 1, props 0.75, metal 0.375. Only masonry regained half the original depth (12, 8): the broad original
 // relief was too strong on furniture and other unsuitable surfaces. A depth in texels is proportional to the texel's size
 // in the world: a plank's texture, small on the object, gets a small depth, a wall's large one, between the limits of
-// ReliefParallaxMaxDepth. Characters stay at the owner's explicit 2-texel depth.
+// ReliefParallaxMaxDepth. Characters stay at an explicit 2-texel depth.
 float ReliefDepthTexels(ReliefClass relief);
 // Refresh class metadata when uploading an existing map: a reclassified building atlas may retain its former wood
 // depth in the cache. Its normal/height/trust bytes stay unchanged; no cache regeneration is needed for this depth.

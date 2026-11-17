@@ -64,8 +64,6 @@ void SEA_AI::Realize(uint32_t Delta_Time)
     {
         i->Realize(fDeltaTime);
     }
-    // core.Trace("%d",dwTotal);
-    // AIHelper::pRS->Print(0,90,"%d",dwRDTSC);//dwTotal);
 }
 
 uint64_t SEA_AI::ProcessMessage(MESSAGE &message)

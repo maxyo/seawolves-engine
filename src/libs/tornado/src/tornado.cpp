@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Tornado
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "tornado.h"
 #include "entity.h"
@@ -14,9 +8,7 @@
 
 CREATE_CLASS(Tornado)
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 Tornado::Tornado() : particles(pillar), noiseCloud(pillar), debris(pillar)
 {
@@ -49,14 +41,10 @@ Tornado::~Tornado()
         soundService->SoundRelease(sID);
 }
 
-//============================================================================================
-
 // Initialization
 bool Tornado::Init()
 {
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(EXECUTE, GetId(), 70000);
     core.AddToLayer(REALIZE, GetId(), 70000);

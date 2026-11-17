@@ -14,7 +14,6 @@
 #define VOLUME_MUSIC 2
 #define VOLUME_SPEECH 3
 
-// SoundSet3DParam(..., type, ...)
 #define SOUND_PARAM_MAX_DISTANCE 1
 #define SOUND_PARAM_MIN_DISTANCE 2
 #define SOUND_PARAM_POSITION 3

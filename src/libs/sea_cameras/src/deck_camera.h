@@ -1,6 +1,4 @@
-// ==================================================================== ||
-// Ship tie camera                                                      ||
-// ==================================================================== ||
+// Ship tie camera
 #pragma once
 
 #include "common_camera.h"
@@ -31,7 +29,6 @@ class DECK_CAMERA : public COMMON_CAMERA
 #endif
 
     // parameters loaded from INI file //
-    // --------------------------------------
     float fSensivityDistance, fSensivityHeightAngle, fSensivityAzimuthAngle;
     float fRockingX, fRockingZ;
 
@@ -42,7 +39,6 @@ class DECK_CAMERA : public COMMON_CAMERA
     float HEIGHT_STEP;
     float CAMERA_MAX_X, CAMERA_MIN_X;
     float DEFAULT_HEIGHT;
-    //--------------------------------------
 
     glm::vec3 g_gv0, g_gv1, g_gv2;
 
@@ -92,10 +88,6 @@ class DECK_CAMERA : public COMMON_CAMERA
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

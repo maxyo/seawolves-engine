@@ -91,7 +91,6 @@ void InterfaceBackScene::MenuDescr::Set(glm::mat4 *pMtx, const char *pcActiveNam
             pGeo->SetTexturePath((std::string("MainMenu\\") + pcPathName + "\\").c_str());
         else
             pGeo->SetTexturePath("MainMenu\\");
-    // create active model
     if (pcActiveName)
     {
         eiActive = core.CreateEntity("MODELR");
@@ -109,7 +108,6 @@ void InterfaceBackScene::MenuDescr::Set(glm::mat4 *pMtx, const char *pcActiveNam
             core.Trace("Warning! Interface Back Scene: invalid menu model %s or transform matrix", pcActiveName);
         }
     }
-    // create passive model
     if (pcPassiveName)
     {
         eiPassive = core.CreateEntity("MODELR");
@@ -165,7 +163,6 @@ InterfaceBackScene::~InterfaceBackScene()
         delete light;
     for (const auto &model : m_apAniModel)
         delete model;
-    // m_apAniModel.DelAllWithPointers();
 
     if (m_nFlareTexture >= 0)
         m_pRS->TextureRelease(m_nFlareTexture);
@@ -259,11 +256,6 @@ void InterfaceBackScene::Execute(uint32_t Delta_Time)
     if (nOldMenuIndex != m_nSelectMenuIndex)
         core.Event(ISOUND_EVENT, "l", 2); // choosing a new node
 
-    /*    for( int32_t n=0; n<m_apAniModel; n++ )
-      {
-        if( m_apAniModel[n]->pModel )
-          m_apAniModel[n]->pModel->Execute( Delta_Time );
-      }*/
 }
 
 void InterfaceBackScene::Realize(uint32_t Delta_Time)
@@ -319,21 +311,18 @@ uint64_t InterfaceBackScene::ProcessMessage(MESSAGE &message)
     switch (nMsgCode)
     {
     case 0: {
-        // load model
         const std::string &param = message.String();
         LoadModel(param.c_str());
         break;
     }
 
     case 1: {
-        // set camera
         const std::string &param = message.String();
         SetCameraPosition(param.c_str());
         break;
     }
 
     case 2: {
-        // set ship position by locator
         const std::string &param = message.String();
         SetShipPosition(param.c_str(), message.AttributePointer());
         break;
@@ -405,7 +394,6 @@ uint64_t InterfaceBackScene::ProcessMessage(MESSAGE &message)
 
 void InterfaceBackScene::LoadModel(const char *pcModelName)
 {
-    // delete all
     if (m_pModel)
     {
         core.EraseEntity(m_eiModel);
@@ -420,7 +408,6 @@ void InterfaceBackScene::LoadModel(const char *pcModelName)
     if (pGeo)
         pGeo->SetTexturePath(
             (std::string("MainMenu\\") + XINTERFACE::pThis->StringService()->GetLanguage() + "\\").c_str());
-    // create model
     m_eiModel = core.CreateEntity("MODELR");
     core.Send_Message(m_eiModel, "ls", MSG_MODEL_LOAD_GEO, pcModelName);
     m_pModel = static_cast<MODEL *>(core.GetEntityPointer(m_eiModel));
@@ -428,7 +415,6 @@ void InterfaceBackScene::LoadModel(const char *pcModelName)
         pGeo->SetTexturePath("");
     core.AddToLayer(SUN_TRACE, m_eiModel, 0);
     core.AddToLayer(RAIN_DROPS, m_eiModel, 100);
-    // create locators
     m_eiLocators = core.CreateEntity("MODELR");
     const auto sLocName = std::string(pcModelName) + "_locators";
     core.Send_Message(m_eiLocators, "ls", MSG_MODEL_LOAD_GEO, sLocName.c_str());
@@ -437,7 +423,6 @@ void InterfaceBackScene::LoadModel(const char *pcModelName)
 
 void InterfaceBackScene::SetCameraPosition(const char *pcLocatorName)
 {
-    // FindLocator( pcLocatorName, 0, &m_vCamPos, &m_vCamAng.y );
     glm::mat4 mtx;
     FindLocator(pcLocatorName, &mtx, &m_vCamPos, nullptr);
     m_vCamAng = storm::math::eulerAngles(mtx);
@@ -446,7 +431,6 @@ void InterfaceBackScene::SetCameraPosition(const char *pcLocatorName)
     m_vCamPos.x += vAddZ.x;
     m_vCamPos.y += vAddZ.y;
     m_vCamPos.z += vAddZ.z;
-    // m_vCamAng.x = -4.262f/180.f*PI;
 }
 
 void InterfaceBackScene::SetShipPosition(const char *pcLocName, ATTRIBUTES *pAChar) const
@@ -544,7 +528,6 @@ void InterfaceBackScene::SetLocatorPosition(MODEL *pModel, const char *pcLocName
 
 void InterfaceBackScene::ReleaseMenuList()
 {
-    // m_aMenuDescr.DelAllWithPointers();
     for (const auto &descr : m_aMenuDescr)
         delete descr;
     m_aMenuDescr.clear();
@@ -697,19 +680,16 @@ void InterfaceBackScene::InitLight(ATTRIBUTES *pAParam)
 
     pLight->bUse = pAParam->GetAttributeAsDword("turnon", 0) != 0;
 
-    // find transform from locator
     glm::mat4 locMtx;
     FindLocator(pAParam->GetAttribute("locator"), &locMtx, nullptr, nullptr);
     pLight->vLightPos = storm::math::pos(locMtx);
 
-    // load model
     const char *pcFonarModel = pAParam->GetAttribute("model");
     if (pcFonarModel)
     {
         auto pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
         if (pGeo)
             pGeo->SetTexturePath("MainMenu\\");
-        // create model
         pLight->eiModel = core.CreateEntity("MODELR");
         core.Send_Message(pLight->eiModel, "ls", MSG_MODEL_LOAD_GEO, pcFonarModel);
         pLight->pModel = static_cast<MODEL *>(core.GetEntityPointer(pLight->eiModel));
@@ -805,31 +785,6 @@ void InterfaceBackScene::FlareShow(int32_t idx)
     float dy = m_vFlarePos.y - pos.y;
     float dz = m_vFlarePos.z - pos.z;
 
-    /*    float d = dx*dx + dy*dy + dz*dz;
-
-    // Distance
-    float dist = sqrtf(d);
-    d = dist / m_fFlareRange;
-    if(d > 1.0f) d = 1.0f;
-    float alpha = 1.0f;
-    if(d < 0.3f) alpha *= 0.2f + 0.8f*d/0.3f;
-    if(d > 0.4f){ alpha *= 1.0f - (d - 0.4f)/0.6f; alpha *= alpha; }
-    alpha * = 255.f; // ls.corona * 255.0f;
-    // Deviation coefficient
-    d = 0.f;// ls.i*0.4f;
-    if(d < -0.1f) d = -0.1f;
-    if(d > 0.1f) d = 0.1f;
-    d += 1.0f;
-    // Current size
-    float size = d*m_fFlareSize;
-    // Transparency
-    alpha * = d;
-    if(alpha < 0.0f) alpha = 0.0f;
-    if(alpha > 255.0f) alpha = 255.0f;
-    // Position
-    pos = camMtx * m_vFlarePos;
-    // Colour
-    uint32_t c = uint32_t(alpha); c |= (c << 24) | (c << 16) | (c << 8);*/
     // Angle of rotation
     float cs, sn;
     float _cs = (dx * storm::math::vx(camMtx).z + dz * storm::math::vz(camMtx).z);
@@ -911,7 +866,6 @@ void InterfaceBackScene::InitAniModel(ATTRIBUTES *pAParam)
     auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
     if (pGeo)
         pGeo->SetTexturePath("MainMenu\\");
-    // create model
     pObj->ei = core.CreateEntity("MODELR");
     core.Send_Message(pObj->ei, "ls", MSG_MODEL_LOAD_GEO, pcMdlName);
     pObj->pModel = static_cast<MODEL *>(core.GetEntityPointer(pObj->ei));
@@ -921,7 +875,6 @@ void InterfaceBackScene::InitAniModel(ATTRIBUTES *pAParam)
     if (pObj->pModel)
     {
         pObj->pModel->mtx = mtx;
-        // pObj->pModel->Update();
         if (pcAniName)
         {
             core.Send_Message(pObj->ei, "ls", MSG_MODEL_LOAD_ANI, pcAniName);
@@ -961,7 +914,6 @@ void InterfaceBackScene::InitStaticModel(ATTRIBUTES *pAParam)
     auto *pGeo = static_cast<VGEOMETRY *>(core.GetService("Geometry"));
     if (pGeo)
         pGeo->SetTexturePath("MainMenu\\");
-    // create model
     pObj->ei = core.CreateEntity("MODELR");
     core.Send_Message(pObj->ei, "ls", MSG_MODEL_LOAD_GEO, pcMdlName);
     pObj->pModel = static_cast<MODEL *>(core.GetEntityPointer(pObj->ei));
@@ -990,12 +942,9 @@ void InterfaceBackScene::InitStaticModel(ATTRIBUTES *pAParam)
     m_apAniModel.push_back(pObj);
 }
 
-// ---------------------------------------------------
 // Flies at the lamps
-// ---------------------------------------------------
 void InterfaceBackScene::AddLampFlys(glm::vec3 &pos)
 {
-    // resize the array
     if (numFlys >= maxFlys)
     {
         maxFlys += 8;
@@ -1042,7 +991,6 @@ void InterfaceBackScene::ProcessedFlys(float dltTime)
     const float dax = dltTime * 1.3f;
     const float day = dltTime * 1.4f;
     const float da = dltTime * 5.6f;
-    // calculate
     for (int32_t i = 0; i < numFlys; i++)
     {
         // Coefficient of visibility
@@ -1102,7 +1050,6 @@ void InterfaceBackScene::ProcessedFlys(float dltTime)
             f.angle += dltTime * f.k * 3.0f;
         }
     }
-    // Draw
     DrawParticles(fly.data(), numFly, sizeof(ParticleFly), flyTex, "LocFly", true, 4);
 }
 

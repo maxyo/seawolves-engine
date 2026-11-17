@@ -1,6 +1,5 @@
 // sailone.cpp: implementation of the SAILONE class.
 //
-//////////////////////////////////////////////////////////////////////
 
 #include "sailone.h"
 #include "entity.h"
@@ -11,9 +10,7 @@
 
 extern int32_t g_iBallOwnerIdx;
 
-//////////////////////////////////////////////////////////////////////
 // Construction/Destruction
-//////////////////////////////////////////////////////////////////////
 SAILONE::SAILONE()
     : rollType(0), m_vMastTrace{}, m_fMaxAngle(0), m_fMinAngle(0)
 {
@@ -468,7 +465,6 @@ void SAILONE::FillVertex(SAILVERTEX *pv)
         // define the center of divergence of normals
         dnorm = ss.boundSphere.c - sgeo.cv.normL * ss.boundSphere.r;
         // enumeration of sections along the sail and looping through them
-        // ===============================================================
         for (idx = ix = 0; ix < SAIL_ROW_MAX; ix++)
         {
             // set the coordinates of the starting point and their increments at each step
@@ -501,7 +497,6 @@ void SAILONE::FillVertex(SAILVERTEX *pv)
         // Keep the same smooth sphere-based normals as triangular and trapezoidal sails.
         dnorm = ss.boundSphere.c - sgeo.cv.normL * ss.boundSphere.r;
         // enumeration of sections along the sail and looping through them
-        // ===============================================================
         for (idx = ix = 0; ix < SAIL_COL_MAX; ix++)
         {
             // set the coordinates of the starting point and their increments at each step
@@ -539,20 +534,6 @@ void SAILONE::SetTexGrid(SAILVERTEX *pv) const
     float kx1, ky1, kx2, ky2, tvbeg1, tvbeg2;
     float tu1, tu2;
 
-    /*ky=1.f/(float)(pp->texQuantity*(SAIL_ROW_MAX-1));
-    switch(ss.eSailType)
-    {
-    case SAIL_TREANGLE:
-        tvbeg=pp->texNumTreangle;
-        break;
-    case SAIL_SQUARE:
-    case SAIL_TRAPECIDAL:
-        tvbeg=pp->texNumCommon;
-        break;
-    case SAIL_GERBED:
-        tvbeg=pp->texNumEnglish;
-        break;
-    }*/
 
     // set texture coordinates for triangular sail
     if (ss.eSailType == SAIL_TREANGLE)
@@ -888,7 +869,6 @@ void SAILONE::GoVWave(SAILVERTEX *pv)
     SailDownVect.z = -windFlex * (ss.fDeepZ + ss.fDeepH);
 
     auto dVH = (ss.hardPoints[1] - ss.hardPoints[3]) / static_cast<float>((SAIL_ROW_MAX + 1)) * ss.fDeepVh;
-    //*(1.f-fWindBase);
     auto ddVH = sgeo.cv.ddVh + dVH * 2.f / static_cast<float>((SAIL_COL_MAX - 1));
     dVH = sgeo.cv.dVh - dVH;
     auto StartPoint = ss.hardPoints[0];
@@ -1073,7 +1053,6 @@ void SAILONE::SetRolling(bool bRoll)
             }
             else
                 hostNode->loc_mtx = storm::math::rotationY(-pp->TURNSTEPANGL) * hostNode->loc_mtx;
-            // hostNode->loc_mtx.RotateY(-pp->TURNSTEPANGL);
         }
         else
         {
@@ -1084,7 +1063,6 @@ void SAILONE::SetRolling(bool bRoll)
             }
             else
                 hostNode->loc_mtx = storm::math::rotationY(pp->TURNSTEPANGL) * hostNode->loc_mtx;
-            // hostNode->loc_mtx.RotateY(pp->TURNSTEPANGL);
         }
         storm::math::pos(hostNode->loc_mtx) = locPos;
     }
@@ -1155,7 +1133,6 @@ void SAILONE::TurnSail(float fTurnStep)
     auto tmtx = hostNode->loc_mtx;
     // Get new local matrix
     auto windAng = -sailWind.x;
-    // windAng*=pp->MAXTURNANGL;
     if (windAng < 0)
         windAng *= m_fMinAngle;
     else
@@ -1652,9 +1629,7 @@ float SAILONE::TSailTrace(glm::vec3 &src, glm::vec3 &dst, bool bCannonTrace)
     auto DoHole = false;
     int i, ix, iy;
 
-    // ================================================
     // go over the rectangles of the sail (10 pcs.)
-    // ================================================
     for (i = 0, ix = 0; ix < 4; ix++)
     {
         for (iy = 0; iy <= ix; iy++, i++)
@@ -1718,7 +1693,6 @@ void SAILONE::CalculateSailWind()
     else
     {
         // Consider the strength of the wind
-        // curSpeed*=pp->globalWind.base*1.2f;
 
         float xtmp, ztmp;
         // Consider wind direction
@@ -1783,7 +1757,6 @@ float SAILONE::CheckSailSquar(int i, glm::vec3 &va, glm::vec3 &vb, glm::vec3 &vc
         const glm::vec3 vca = va - vc;
         float kA, kB, kD; // coefficients in the line on the plane equation x * kA + y * kB = kD
         float d1, d2;
-        // ----------------------------------------------
         // along the XY plane
         // for ab
         kA = -vab.y;
@@ -1809,7 +1782,6 @@ float SAILONE::CheckSailSquar(int i, glm::vec3 &va, glm::vec3 &vb, glm::vec3 &vc
         d2 = kA * vb.x + kB * vb.y;
         if ((d1 != kD) && (d2 != kD) && ((d1 > kD) ^ (d2 > kD)))
             return 2.f;
-        // ----------------------------------------------
         // along the ZY plane
         // for ab
         kA = -vab.y;
@@ -1835,7 +1807,6 @@ float SAILONE::CheckSailSquar(int i, glm::vec3 &va, glm::vec3 &vb, glm::vec3 &vc
         d2 = kA * vb.z + kB * vb.y;
         if ((d1 != kD) && (d2 != kD) && ((d1 > kD) ^ (d2 > kD)))
             return 2.f;
-        // ----------------------------------------------
         // along the XZ plane
         // for ab
         kA = -vab.z;
@@ -1861,7 +1832,6 @@ float SAILONE::CheckSailSquar(int i, glm::vec3 &va, glm::vec3 &vb, glm::vec3 &vc
         d2 = kA * vb.x + kB * vb.z;
         if ((d1 != kD) && (d2 != kD) && ((d1 > kD) ^ (d2 > kD)))
             return 2.f;
-        //----------------------------------------------
     }
 
     // poke a hole in the sail
@@ -1966,7 +1936,6 @@ void SAILONE::SetTurnLimits()
 
     GEOS::INFO inf;
     hostNode->parent->geo->GetInfo(inf);
-    // cv0 = glm::vec3(inf.boxsize.x,0.f,0.f);
     cv0 = glm::vec3(0.f, 0.f, 0.f);
 
     prbase->GetEndPoint(&cv1, sailtrope.rrs[0]->ropenum, pp->gdata[HostNum].modelEI);

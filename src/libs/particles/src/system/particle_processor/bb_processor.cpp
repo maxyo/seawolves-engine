@@ -26,9 +26,7 @@ The coefficient of LOD-ing of particles, the higher the lower the load on Fillra
 Must be > 0
 0.001 no lods .. 10000000 super lods (all particles in 1 pixel)
 */
-//=============================================================
 #define PLOD 5.0f
-//=============================================================
 
 
 BillBoardProcessor::BillBoardProcessor()
@@ -201,8 +199,6 @@ void BillBoardProcessor::AddParticle(ParticleSystem *pSystem, const glm::vec3 &v
 // Calculate physics, tracks, etc.
 void BillBoardProcessor::Process(float DeltaTime)
 {
-    // DWORD t;
-    // RDTSC_B (t);
 
     for (uint32_t n = 0; n < Particles.size(); n++)
     {
@@ -211,14 +207,12 @@ void BillBoardProcessor::Process(float DeltaTime)
         const auto Time = Particles[n]->ElapsedTime;
         const auto LifeTime = Particles[n]->LifeTime;
 
-        //        _mm_prefetch ((const char *)Particles[n+1], _MM_HINT_T0);
 
         // immediately kill the dead
         if (Time > LifeTime)
         {
             *(Particles[n]->ActiveCount) = (*(Particles[n]->ActiveCount) - 1);
             FreeParticle(Particles[n]);
-            // Particles.ExtractNoShift(n);
             Particles[n] = Particles.back();
             Particles.pop_back();
             n--;
@@ -264,12 +258,10 @@ void BillBoardProcessor::Process(float DeltaTime)
 
         // Save old positions
         Particles[n]->OldRenderPos = Particles[n]->RenderPos;
-        // Particles[n]->OldRenderAngle = Particles[n]->RenderAngle;
 
         Particles[n]->RenderPos = storm::math::lerp(TrackPos, Particles[n]->PhysPos, BlendPhys);
         Particles[n]->PhysPos = Particles[n]->RenderPos;
 
-        // Particles[n]->RenderPos    = Particles[n]->PhysPos;
         Particles[n]->RenderAngle = Particles[n]->Angle;
     }
 
@@ -280,19 +272,15 @@ void BillBoardProcessor::Process(float DeltaTime)
         if (Particles[n]->AttachedEmitter)
         {
             //            core.Trace("%d, %3.2f, %3.2f, %3.2f", n, Particles[n]->RenderPos.x, Particles[n]->RenderPos.y,
-            // Particles[n]->RenderPos.z);             Particles[n]->AttachedEmitter->SaveTime();
             Particles[n]->AttachedEmitter->Teleport(
                 storm::math::eulerMatrix(glm::vec3(Particles[n]->OldRenderAngle), Particles[n]->OldRenderPos));
             Particles[n]->AttachedEmitter->SetTransform(
                 storm::math::eulerMatrix(glm::vec3(Particles[n]->RenderAngle), Particles[n]->RenderPos));
             Particles[n]->AttachedEmitter->BornParticles(DeltaTime);
 
-            // if (n < Particles.size()-1)    Particles[n]->AttachedEmitter->RestoreTime();
         }
     }
 
-    // RDTSC_E (t);
-    // core.Trace("Time - %d", t);
 }
 
 // Calculate distance to billboards
@@ -305,7 +293,6 @@ uint32_t BillBoardProcessor::CalcDistanceToCamera()
     {
         Particles[j]->CamDistance = storm::math::transformPoint(mView, Particles[j]->RenderPos).z;
 
-        //        _mm_prefetch ((const char *)Particles[j+1], _MM_HINT_T0);
 
         if (Particles[j]->CamDistance > 0)
         {
@@ -336,8 +323,6 @@ void BillBoardProcessor::Draw()
     ParticleSorter.QSort(CompareFunction, &Particles[0], Particles.size());
 
     auto *pVerts = static_cast<RECT_VERTEX *>(pRS->LockVertexBuffer(pVBuffer, D3DLOCK_DISCARD));
-    // RECT_VERTEX * pVerts = (RECT_VERTEX*)pVBuffer->Lock(0, 0, D3DLOCK_DISCARD);
-    // RECT_VERTEX * pVerts = (RECT_VERTEX*)pVBuffer->Lock();
 
     int32_t Index = 0;
     uint32_t ParticlesCount = 0;
@@ -353,7 +338,6 @@ void BillBoardProcessor::Draw()
         if (fSize <= 0.000001f)
             continue;
 
-        //        _mm_prefetch ((const char *)Particles[j+1], _MM_HINT_T0);
 
         auto fAngle = pR->RenderAngle;
         auto vPos = pR->RenderPos;
@@ -376,7 +360,6 @@ void BillBoardProcessor::Draw()
         if (AddPower > 1.0f)
             AddPower = 1.0f;
 
-        // AddPower = 0.0f;
 
         auto FrameIndex = pR->Graph_Frames->GetValue(pR->ElapsedTime, pR->LifeTime, pR->FrameK);
         auto FrameIndexLong = fftol(FrameIndex);
@@ -385,11 +368,9 @@ void BillBoardProcessor::Draw()
         const auto &UV_WH2 = pR->Graph_UV->GetValue(FrameIndexLong + 1);
 
         // Maximum particle size limiter
-        // =============================================================
         auto SizeK = pR->CamDistance / fSize;
         if (SizeK < PLOD)
             fSize = pR->CamDistance / PLOD;
-        //=============================================================
 
         auto *pV = &pVerts[Index * 4];
         Index++;
@@ -402,7 +383,6 @@ void BillBoardProcessor::Draw()
             glm::mat4 matView;
             pRS->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(matView));
             auto SpeedVector = pR->Velocity;
-            // pR->RenderPos - pR->OldRenderPos;
             SpeedVector = glm::mat3(matView) * SpeedVector;
             storm::math::normalizeInPlace(SpeedVector);
             ScaleF = 1.0f - fabsf(SpeedVector.z);
@@ -421,7 +401,6 @@ void BillBoardProcessor::Draw()
         dwColor = dwColor & 0x00FFFFFF;
         dwColor = dwColor | dwAlpha;
 
-        // if (j == 0)    core.Trace("fAngle[0]: %3.2f", fAngle);
 
         pV[0].vRelativePos = glm::vec3(-fSize, -fSize, 0.0f);
         pV[0].dwColor = dwColor;
@@ -434,7 +413,6 @@ void BillBoardProcessor::Draw()
         pV[0].vParticlePos = vPos;
         pV[0].AddPowerK = AddPower;
 
-        // if (SpeedOriented) pV[0].DirK = 0.0f; else pV[0].DirK = 1.0f;
 
         if (SpeedOriented)
         {
@@ -452,7 +430,6 @@ void BillBoardProcessor::Draw()
         pV[1].BlendK = FrameBlendK;
         pV[1].vParticlePos = vPos;
         pV[1].AddPowerK = AddPower;
-        // if (SpeedOriented) pV[1].DirK = 0.0f; else pV[1].DirK = 1.0f;
 
         if (SpeedOriented)
         {
@@ -470,7 +447,6 @@ void BillBoardProcessor::Draw()
         pV[2].BlendK = FrameBlendK;
         pV[2].vParticlePos = vPos;
         pV[2].AddPowerK = AddPower;
-        // if (SpeedOriented) pV[2].DirK = 0.0f; else pV[2].DirK = 1.0f;
 
         if (SpeedOriented)
         {
@@ -488,7 +464,6 @@ void BillBoardProcessor::Draw()
         pV[3].BlendK = FrameBlendK;
         pV[3].vParticlePos = vPos;
         pV[3].AddPowerK = AddPower;
-        // if (SpeedOriented) pV[3].DirK = 0.0f; else pV[3].DirK = 1.0f;
 
         if (SpeedOriented)
         {
@@ -532,7 +507,6 @@ void BillBoardProcessor::Draw()
 
     pRS->SetTransform(D3DTS_VIEW, storm::math::d3dMatrix(matOldView));
 
-    // pRS->Print(20, 20, "PSYS 2.0 : Draw %d billboard particles", ParticlesCount);
 }
 
 uint32_t BillBoardProcessor::GetCount() const
@@ -548,7 +522,6 @@ void BillBoardProcessor::DeleteWithGUID(uint32_t dwGUID, uint32_t GUIDRange)
         {
             *(Particles[j]->ActiveCount) = (*(Particles[j]->ActiveCount) - 1);
             FreeParticle(Particles[j]);
-            // Particles.ExtractNoShift(j);
             Particles[j] = Particles.back();
             Particles.pop_back();
             j--;

@@ -14,7 +14,6 @@ CREATE_CLASS(SEAFOAM)
 #define V_SPEED_K 10e-5f
 #define START_FADE_SPEED 5.f
 
-//--------------------------------------------------------------------
 SEAFOAM::SEAFOAM()
     : seaID(0), sea(nullptr), shipsCount(0), carcassTexture(0), isStorm(false), soundService(nullptr)
 {
@@ -22,10 +21,8 @@ SEAFOAM::SEAFOAM()
     renderer = nullptr;
 }
 
-//--------------------------------------------------------------------
 SEAFOAM::~SEAFOAM()
 {
-    // GUARD(SEAFOAM::~SEAFOAM)
 
     ReleaseShipFoam();
     if (renderer && (carcassTexture >= 0))
@@ -33,17 +30,9 @@ SEAFOAM::~SEAFOAM()
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 bool SEAFOAM::Init()
 {
-    // GUARD(SEAFOAM::Init)
 
-    /*if (core.IsNetActive())
-    {
-      NetFindClass(false, &seaID, "NetSea");
-      sea = (SEA_BASE*) core.GetEntityPointer(seaID);
-    }
-    else*/
     {
         seaID = core.GetEntityId("sea");
         sea = static_cast<SEA_BASE *>(core.GetEntityPointer(seaID));
@@ -56,15 +45,12 @@ bool SEAFOAM::Init()
 
     InitializeShipFoam();
 
-    // core.CreateEntity(&arrowModel,"MODELR");
-    // core.Send_Message(arrowModel,"ls",MSG_MODEL_LOAD_GEO, "fish01");
 
     carcassTexture = renderer->TextureCreate("seafoam_2.tga");
     return true;
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::InitializeShipFoam()
 {
     auto &&entities = core.GetEntityIds("ship");
@@ -105,7 +91,6 @@ void SEAFOAM::AddShip(entid_t pShipEID)
     foamInfo->sound = 0;
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::ReleaseShipFoam()
 {
     tShipFoamInfo *foamInfo = nullptr;
@@ -126,7 +111,6 @@ void SEAFOAM::ReleaseShipFoam()
     shipsCount = 0;
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::CreateTracePoints(tShipFoamInfo *_shipFoamInfo)
 {
     const auto yStep = 0.9f * _shipFoamInfo->hullInfo.boxsize.y / (TRACE_STEPS_Y - 1);
@@ -217,7 +201,6 @@ void SEAFOAM::CreateTracePoints(tShipFoamInfo *_shipFoamInfo)
     }
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::InterpolateLeftParticle(tShipFoamInfo &_shipFoamInfo, int z, uint32_t dTime)
 {
     glm::vec3 testPoint{};
@@ -279,7 +262,6 @@ void SEAFOAM::InterpolateLeftParticle(tShipFoamInfo &_shipFoamInfo, int z, uint3
         testPoint = _shipFoamInfo.hull[0][z].center[curY];
         lastTestPoint = _shipFoamInfo.hull[0][z].center[curY - 1];
         _shipFoamInfo.levelStarts[0][z] = lastTestPoint + interpK * (testPoint - lastTestPoint);
-        // interpK*(testPoint - lastTestPoint);
     }
     else
     {
@@ -287,7 +269,6 @@ void SEAFOAM::InterpolateLeftParticle(tShipFoamInfo &_shipFoamInfo, int z, uint3
     }
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::InterpolateRightParticle(tShipFoamInfo &_shipFoamInfo, int z, uint32_t dTime)
 {
     float interpK;
@@ -346,7 +327,6 @@ void SEAFOAM::InterpolateRightParticle(tShipFoamInfo &_shipFoamInfo, int z, uint
         testPoint = _shipFoamInfo.hull[1][z].center[curY];
         lastTestPoint = _shipFoamInfo.hull[1][z].center[curY - 1];
         _shipFoamInfo.levelStarts[1][z] = lastTestPoint + interpK * (testPoint - lastTestPoint);
-        // interpK*(testPoint - lastTestPoint);
     }
     else
     {
@@ -354,30 +334,11 @@ void SEAFOAM::InterpolateRightParticle(tShipFoamInfo &_shipFoamInfo, int z, uint
     }
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::RealizeShipFoam_Particles(tShipFoamInfo &_shipFoamInfo, uint32_t _dTime)
 {
-    // MODEL *arrow = (MODEL*)core.GetEntityPointer(arrowModel);
 
     for (auto z = 0; z < TRACE_STEPS_Z; ++z)
     {
-        /*
-        for (int y=0; y<TRACE_STEPS_Y; ++y)
-        {
-          glm::vec3 fPos = _shipFoamInfo.shipModel->mtx * (_shipFoamInfo.hull[0][z].center[y]);
-          arrow->mtx.BuildMatrix(glm::vec3(1.0f, 0.0f, 0.0f), fPos);
-          arrow->Realize(_dTime);
-
-          fPos = _shipFoamInfo.shipModel->mtx * (_shipFoamInfo.levelStarts[0][z]);
-          arrow->mtx.BuildMatrix(glm::vec3(0.0f, 0.0f, 0.0f), fPos);
-          arrow->Realize(_dTime);
-          arrow->mtx.BuildMatrix(glm::vec3(0.0f, PId2, 0.0f), fPos);
-          arrow->Realize(_dTime);
-          arrow->mtx.BuildMatrix(glm::vec3(PId2, 0.0f, 0.0f), fPos);
-          arrow->Realize(_dTime);
-
-        }
-        */
         InterpolateLeftParticle(_shipFoamInfo, z, _dTime);
         InterpolateRightParticle(_shipFoamInfo, z, _dTime);
     }
@@ -434,7 +395,6 @@ void SEAFOAM::RealizeShipFoam_Particles(tShipFoamInfo &_shipFoamInfo, uint32_t _
     }
 
     RDTSC_E(ticks)
-    // core.Trace("Seafoam realize(carcass->Execute) = %d", ticks);
 }
 
 void SEAFOAM::RealizeShipFoam_Mesh(tShipFoamInfo &_shipFoamInfo, uint32_t _dTime)
@@ -446,10 +406,8 @@ void SEAFOAM::RealizeShipFoam_Mesh(tShipFoamInfo &_shipFoamInfo, uint32_t _dTime
     _shipFoamInfo.carcass[1]->Realize(nullptr);
 }
 
-//--------------------------------------------------------------------
 uint64_t SEAFOAM::ProcessMessage(MESSAGE &message)
 {
-    // GUARD(SEAFOAM::ProcessMessage)
 
     const auto code = message.Long();
     const uint32_t outValue = 0;
@@ -466,10 +424,6 @@ uint64_t SEAFOAM::ProcessMessage(MESSAGE &message)
                 {
                     shipFoamInfo[ship].enabled = false;
 
-                    // shipFoamInfo[ship].carcass[0]->Uninitialize();
-                    // delete shipFoamInfo[ship].carcass[0];
-                    // shipFoamInfo[ship].carcass[1]->Uninitialize();
-                    // delete shipFoamInfo[ship].carcass[1];
 
                     return outValue;
                 }
@@ -482,10 +436,8 @@ uint64_t SEAFOAM::ProcessMessage(MESSAGE &message)
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::Realize(uint32_t _dTime)
 {
-    // GUARD(SEAFOAM::Realize)
 
     uint64_t ticks = 0;
     RDTSC_B(ticks)
@@ -518,14 +470,11 @@ void SEAFOAM::Realize(uint32_t _dTime)
             ;
 
     RDTSC_E(ticks)
-    // core.Trace("Seafoam realize = %d", ticks);
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SEAFOAM::Execute(uint32_t dTime)
 {
-    // GUARD(SEAFOAM::Execute);
     tShipFoamInfo *foamInfo = nullptr;
     float shipSpeed, speedA;
 
@@ -552,7 +501,6 @@ void SEAFOAM::Execute(uint32_t dTime)
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 uint32_t SEAFOAM::AttributeChanged(ATTRIBUTES *pA)
 {
     const auto *const nm = pA->GetThisName();
@@ -565,27 +513,6 @@ uint32_t SEAFOAM::AttributeChanged(ATTRIBUTES *pA)
             isStorm = false;
     }
 
-    /*if (storm::iEquals(nm, "AddNetShip"))
-    {
-      entid_t shipID;
-      uint32_t dwShipNetID = pA->GetAttributeAsDword();
-      if (core.IsNetActive())
-      {
-        if (NetFindClass(false, &shipID, "NetShip")) do
-        {
-          Entity * pE = core.GetEntityPointer(shipID);
-          if (pE->GetNetID() == dwShipNetID)
-          {
-            AddShip(&shipID);
-            break;
-          }
-        } while (NetFindClassNext(false, &shipID));
-      }
-    }*/
 
     return 0;
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

@@ -3,10 +3,8 @@
 #include "vai_objbase.h"
 #include "vma.hpp"
 
-// ============================================================================
 // master class AIShipRotateController
 // Contain base virtual functions
-// ============================================================================
 class AIShip;
 
 class AIShipRotateController

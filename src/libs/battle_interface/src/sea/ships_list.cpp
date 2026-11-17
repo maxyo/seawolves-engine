@@ -5,7 +5,6 @@
 
 #include "entity.h"
 #include "shared/battle_interface/msg_control.h"
-//#include "battle_command.h"
 
 #define LOADING_MODE_MY_SHIP 0
 #define LOADING_MODE_ENEMY_SHIP 1
@@ -211,17 +210,6 @@ void SHIP_DESCRIBE_LIST::Add(int32_t mainChrIndex, int32_t chIdx, ATTRIBUTES *pC
             break;
         }
     }
-    /*if( NetFindClass(false,&ei,"netship") ) do
-    {
-      VAI_OBJBASE * vob = (VAI_OBJBASE*)core.GetEntityPointer(ei);
-      if(vob== nullptr) continue;
-      ATTRIBUTES *pA = vob->GetACharacter();
-      if((int32_t)pA->GetAttributeAsDword("id")==chIdx)
-      {
-        pr->pShip = vob;
-        break;
-      }
-    } while( NetFindClassNext(false,&ei) );*/
 
     auto *ptmp = root;
     if (ptmp == nullptr)
@@ -233,7 +221,6 @@ void SHIP_DESCRIBE_LIST::Add(int32_t mainChrIndex, int32_t chIdx, ATTRIBUTES *pC
         ptmp->next = pr;
     }
 
-    // if(pChAttr->GetAttributeAsDword("MainCharacter",0)!=0)
     if (mainChrIndex == chIdx)
     {
         mainCharacter = pr;
@@ -280,14 +267,6 @@ void SHIP_DESCRIBE_LIST::Refresh()
         tls.Push(static_cast<int32_t>(pA->GetAttributeAsDword("index")));
     }
 
-    /*if( NetFindClass(false,&ei,"NetShip") ) do
-    {
-      VAI_OBJBASE * vob = (VAI_OBJBASE*)core.GetEntityPointer(ei);
-      if(vob== nullptr) continue;
-      ATTRIBUTES * pA= vob->GetACharacter();
-      if(pA== nullptr) continue;
-      tls.Push((int32_t)pA->GetAttributeAsDword("id"));
-    } while( NetFindClassNext(false,&ei) );*/
     tls.Push(-1);
 
     for (auto chrIdx = tls.GetFore(); chrIdx >= 0; chrIdx = tls.GetFore())
@@ -295,5 +274,4 @@ void SHIP_DESCRIBE_LIST::Refresh()
         core.Event("BI_CallUpdateShip", "l", chrIdx);
     }
 
-    // BATTLE_COMMAND::m_bMakeModeUpdate = true;
 }

@@ -89,7 +89,6 @@ class ShipMan
     glm::vec3 ptTo{}, angTo{}, dir{};
 
     glm::vec3 spos{}; // Bypassing each other
-    // float sang; // Bypass each other
 
     float dieTime{};
     bool inWater{};

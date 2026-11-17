@@ -45,7 +45,6 @@ BOOL SHIP::BuildContour(glm::vec3 *vContour, int32_t &iNumVContour)
         core.Trace("SHIP: Up trace error, ship %s", static_cast<const char*>(GetAShip()->GetAttribute("Name")));
         bDefaultContour = true;
     }
-    // Assert(fRes<=1.0f);
 
     // down point trace
     vSrc = glm::vec3(0.01f, fY, fDown);
@@ -58,9 +57,7 @@ BOOL SHIP::BuildContour(glm::vec3 *vContour, int32_t &iNumVContour)
         core.Trace("SHIP: Down trace error, ship %s", static_cast<const char*>(GetAShip()->GetAttribute("Name")));
         bDefaultContour = true;
     }
-    // Assert(fRes<=1.0f);
 
-    // bDefaultContour = true;
     if (!bDefaultContour)
     {
         // calculate integer number of steps for z-coord
@@ -78,7 +75,6 @@ BOOL SHIP::BuildContour(glm::vec3 *vContour, int32_t &iNumVContour)
 
             vSrc = glm::vec3(fLeft, fY, fZ);
             vDst = glm::vec3(0.0f, fY, fZ);
-            // core.SetEntityScanLayer("balls_trace");
             fRes = pCollide->Trace(model_id, vSrc, vDst);
             Assert(fRes <= 1.0f);
             vP = vSrc + fRes * (vDst - vSrc);
@@ -217,7 +213,6 @@ bool SHIP::BuildMasts()
                 ent = core.CreateEntity("mast");
                 core.Send_Message(ent, "lpii", MSG_MAST_SETGEOMETRY, pNode, GetId(), GetModelEID());
                 core.EraseEntity(ent);
-                // iIdx--;
             }
             else
                 pAMasts->SetAttributeUseFloat(str, 0.0f);
@@ -285,7 +280,6 @@ bool SHIP::BuildHulls()
                 ent = core.CreateEntity("hull");
                 core.Send_Message(ent, "lpii", MSG_HULL_SETGEOMETRY, pNode, GetId(), GetModelEID());
                 core.EraseEntity(ent);
-                // iIdx--;
             }
             else
                 pAHulls->SetAttributeUseFloat(str, 0.0f);

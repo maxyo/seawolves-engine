@@ -59,8 +59,6 @@ int CXI_IMGCOLLECTION::CommandExecute(int wActCode)
 
 void CXI_IMGCOLLECTION::AddImage(const char *pcPicName, uint32_t dwColor, XYRECT pos)
 {
-    // int32_t n = m_aEditInfo;
-    // m_aEditInfo.Add();
     PicEditInfo info;
     info.dwColor = dwColor;
     info.sName = pcPicName;
@@ -75,10 +73,8 @@ void CXI_IMGCOLLECTION::AddImage(const char *pcPicName, uint32_t dwColor, XYRECT
     VERTEX_BUFFER_RELEASE(m_rs, vBuf);
     INDEX_BUFFER_RELEASE(m_rs, iBuf);
 
-    // Calculate vertex and index quantity
     nVert = m_aEditInfo.size() * 4;
     nIndx = m_aEditInfo.size() * 6;
-    // Create vertex and index buffers
     vBuf = m_rs->CreateVertexBuffer(XI_ONETEX_FVF, nVert * sizeof(XI_ONETEX_VERTEX), D3DUSAGE_WRITEONLY);
     iBuf = m_rs->CreateIndexBuffer(nIndx * 2);
     nIndx /= 3;
@@ -106,7 +102,6 @@ void CXI_IMGCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
     m_xyCommonOffset.y = 0;
     m_xyCommonOffset = GetIniLongPoint(ini1, name1, ini2, name2, "offset", m_xyCommonOffset);
 
-    // Get images quantity
     auto imgQuantity = 0;
     if (ini1->ReadString(name1, "picture", param, sizeof(param) - 1, ""))
         do
@@ -117,10 +112,8 @@ void CXI_IMGCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
 
     m_bRelativeRect = !GetIniLong(ini1, name1, ini2, name2, "bAbsoluteRectangle", 0);
 
-    // Calculate vertex and index quantity
     nVert = imgQuantity * 4;
     nIndx = imgQuantity * 6;
-    // Create vertex and index buffers
     if (nVert && nIndx)
     {
         vBuf = m_rs->CreateVertexBuffer(XI_ONETEX_FVF, nVert * sizeof(XI_ONETEX_VERTEX), D3DUSAGE_WRITEONLY);
@@ -297,7 +290,6 @@ bool CXI_IMGCOLLECTION::IsClick(int buttonID, int32_t xPos, int32_t yPos)
 
 void CXI_IMGCOLLECTION::ChangePosition(XYRECT &rNewPos)
 {
-    // if (m_aSections.size () == 0) return; // empty collection - created from script
     int32_t n = 0;
     int32_t q = m_aEditInfo.size();
 
@@ -316,7 +308,6 @@ void CXI_IMGCOLLECTION::ChangePosition(XYRECT &rNewPos)
     m_xyCommonOffset.x += rOffset.left;
     m_xyCommonOffset.y += rOffset.top;
 
-    // for( int32_t n=m_aSections[m_nCurSection].nStartNum; n<q; n++ )
     for (; n < q; n++)
     {
         m_aEditInfo[n].nLeft += rOffset.left;
@@ -353,7 +344,6 @@ void CXI_IMGCOLLECTION::SaveParametersToIni()
     {
         pIni->AddString(m_nodeName, "groupName", sGroupName);
 
-        // save position
         for (n = 0; n < m_aEditInfo.size(); n++)
         {
             if (!m_aEditInfo[n].bNative)
@@ -365,11 +355,6 @@ void CXI_IMGCOLLECTION::SaveParametersToIni()
                     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "editsection:%s", m_aSections[nGrp].sName.c_str());
                     pIni->AddString(m_nodeName, "picture", pcWriteParam);
                 }
-                /*else
-                  if( n == m_aSections[nGrp].nStartNum + m_aSections[nGrp].nQuantity )
-                  {
-                    pIni->AddString( m_nodeName, "picture", "editsection:end" );
-                  }*/
             }
             sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%s,col:{%d,%d,%d,%d},pos:{%d,%d,%d,%d}",
                       m_aEditInfo[n].sName.c_str(), ALPHA(m_aEditInfo[n].dwColor), RED(m_aEditInfo[n].dwColor),
@@ -463,8 +448,6 @@ uint32_t CXI_IMGCOLLECTION::MessageProc(int32_t msgcode, MESSAGE &message)
 bool CXI_IMGCOLLECTION::GetInternalNameList(std::vector<std::string> &aStr)
 {
     aStr.clear();
-    // aStr.Add();
-    // aStr[0] = "All";
     aStr.push_back("All");
     for (int32_t n = 0; n < m_aSections.size(); n++)
         aStr.push_back(m_aSections[n].sName);

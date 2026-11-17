@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    PtcData
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "ptc_data.h"
 
@@ -16,10 +10,6 @@
 #include "renderer.h"
 #include "storm_assert.h"
 #include "v_file_service.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 PtcData::PtcData()
     : isSlide(false), slideDir(), isBearing(false), stepPos{}
@@ -328,7 +318,6 @@ int32_t PtcData::Move(int32_t curNode, const glm::vec3 &to, glm::vec3 &pos, int3
                 k = 1.0f;
             // Intersection point
             glm::vec3 p;
-            // k += 0.000000001;
             p.x = static_cast<float>(vs.x + (ve.x - vs.x) * k);
             p.y = static_cast<float>(vs.y + (ve.y - vs.y) * k);
             p.z = static_cast<float>(vs.z + (ve.z - vs.z) * k);
@@ -378,7 +367,6 @@ int32_t PtcData::Move(int32_t curNode, const glm::vec3 &to, glm::vec3 &pos, int3
                     k = 1.0f;
                 // Intersection point
                 glm::vec3 p;
-                // k += 0.000000001;
                 p.x = static_cast<float>(vs.x + (ve.x - vs.x) * k);
                 p.y = static_cast<float>(vs.y + (ve.y - vs.y) * k);
                 p.z = static_cast<float>(vs.z + (ve.z - vs.z) * k);
@@ -411,7 +399,6 @@ int32_t PtcData::Move(int32_t curNode, const glm::vec3 &to, glm::vec3 &pos, int3
         if (nb[curEdge] >= 0)
         {
             // Go to the next node and continue moving
-            // pos = pnt;
             fromNode = curNode;
             curNode = nb[curEdge];
         }

@@ -14,19 +14,16 @@ class PathTracks
     };
 #pragma pack(pop)
 
-    //--------------------------------------------------------------------------------------------
   public:
     PathTracks();
     virtual ~PathTracks();
 
-    //--------------------------------------------------------------------------------------------
   public:
     // Upload track to PathTracks
     bool Load(const char *fileName);
     // Get track point
     bool GetPoint(float index, glm::vec3 &cp, glm::quat &cq) const;
 
-    //--------------------------------------------------------------------------------------------
   private:
     Point *point;
     int32_t numPoints;

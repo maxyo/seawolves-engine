@@ -87,14 +87,11 @@ void CXI_CONTEXTHELP::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, c
     if (m_nHelpWidth < 0)
         m_nHelpWidth = 0;
 
-    // Get rectangle color
     m_dwColor = GetIniARGB(ini1, name1, ini2, name2, "color", ARGB(255, 255, 255, 255));
 
-    // Get bounder parameters
     m_dwBorderColor = GetIniARGB(ini1, name1, ini2, name2, "borderColor", m_dwColor);
     m_bBorder = m_dwBorderColor != m_dwColor;
 
-    // Get help string  parameters
     m_nMaxDelayCounter = GetIniLong(ini1, name1, ini2, name2, "delay", 0);
     m_dwFontColor = GetIniARGB(ini1, name1, ini2, name2, "fontColor", ARGB(255, 255, 255, 255));
 
@@ -103,7 +100,6 @@ void CXI_CONTEXTHELP::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, c
             core.Trace("can not load font:'%s'", param);
     m_offset = GetIniLong(ini1, name1, ini2, name2, "offset", 0);
 
-    // Get help strings quantity
     m_helpQuantity = 0;
     if (ini1->ReadString(name1, "helpstr", param, sizeof(param) - 1, ""))
         do
@@ -111,12 +107,10 @@ void CXI_CONTEXTHELP::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, c
             m_helpQuantity++;
         } while (ini1->ReadStringNext(name1, "helpstr", param, sizeof(param) - 1));
 
-    // Get default help string
     if (ini1->ReadString(name1, "defhelp", param, sizeof(param) - 1, ""))
         m_defaultString = pStringService->GetStringNum(param);
     else
         m_defaultString = -1;
-    // Create help stringes array
     if (m_helpQuantity > 0)
     {
         if ((m_pHelpList = new HELPEntity[m_helpQuantity]) == nullptr)
@@ -144,7 +138,6 @@ void CXI_CONTEXTHELP::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, c
         m_pHelpList = nullptr;
     }
 
-    // fill vertex parameters
     for (i = 0; i < 4; i++)
     {
         m_pVert[i].pos.z = 1.f;
@@ -159,7 +152,6 @@ void CXI_CONTEXTHELP::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, c
     m_pVert[3].pos.x = static_cast<float>(m_rect.right);
     m_pVert[3].pos.y = static_cast<float>(m_rect.bottom);
 
-    // fill lines parameters
     if (m_bBorder)
     {
         for (auto i = 0; i < 8; i++)
@@ -196,7 +188,6 @@ void CXI_CONTEXTHELP::ChangePosition(XYRECT &rNewPos)
     m_pVert[3].pos.x = static_cast<float>(m_rect.right);
     m_pVert[3].pos.y = static_cast<float>(m_rect.bottom);
 
-    // fill lines parameters
     if (m_bBorder)
     {
         m_pLines[0].vPos.x = m_pLines[1].vPos.x = m_pLines[2].vPos.x = m_pLines[7].vPos.x =
@@ -221,7 +212,6 @@ void CXI_CONTEXTHELP::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -250,7 +240,6 @@ void CXI_CONTEXTHELP::SetTempHelp(const char *pStr)
     if (pStr == nullptr)
         return;
 
-    // remove the old temporary line
 
     delete[] m_sTempString;
     m_sTempString = nullptr;
@@ -258,7 +247,6 @@ void CXI_CONTEXTHELP::SetTempHelp(const char *pStr)
     int32_t nCurStrWidth = 0;
     if (pStr[0] == '#')
     {
-        // get the help line directly
         const auto len = strlen(pStr);
         if ((m_sTempString = new char[len]) == nullptr)
             throw std::runtime_error("allocate memory error");
@@ -270,7 +258,6 @@ void CXI_CONTEXTHELP::SetTempHelp(const char *pStr)
         m_idTempString = pStringService->GetStringNum(pStr);
         if (m_idTempString != -1)
             nCurStrWidth = m_rs->StringWidth(pStringService->GetString(m_idTempString), m_idFont, m_fMaxScale, 0);
-        // m_screenSize.x);
     }
 
     if (nCurStrWidth > m_nHelpWidth)

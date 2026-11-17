@@ -33,10 +33,6 @@ class SUNGLOW : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -79,7 +75,6 @@ class SUNGLOW : public Entity
 
     struct sunflares_t
     {
-        // sunflares_t() : aFlares(_FL_) {}
 
         float fSize;
         float fDist;

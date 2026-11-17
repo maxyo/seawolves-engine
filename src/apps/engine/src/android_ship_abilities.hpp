@@ -3,7 +3,6 @@
 // The ship's battle abilities a touch HUD offers as buttons: instant repair (carpenter) and
 // immediate reload (cannoner). Everything is read from the scripts' own state:
 //   holder   the main character when it has the perk, otherwise the officer of the perk's
-//            OfficerType (pchar.Fellows.Passengers.<type>) who has it; none = no button;
 //   active   holder.perks.list.<X>.active counts down from ChrPerksList TimeDuration;
 //   recovery holder.perks.list.<X>.delay counts down from TimeDelay while not active;
 //   ready    BattleInterface.Commands.<X>.enable, which the scripts' procSetUsingAbility
@@ -106,7 +105,6 @@ inline std::vector<ShipAbility> readShipAbilities()
 }
 
 // What procSetUsingAbility (BattleInterface.c) decides Commands.<X>.enable from, read natively:
-// each ability's holder and whether its perk is there, running (.active) or recovering (.delay);
 // the officers (Fellows.Passengers); the main ship's hull and sails in whole percent of their
 // maximum (CheckInstantRepairCondition compares them with InstantRepairRATE) and its planks and
 // sailcloth (Ship.Cargo.Goods.Planks / .Sailcloth, the GOOD_PLANKS / GOOD_SAILCLOTH names).

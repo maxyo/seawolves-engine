@@ -1,20 +1,10 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    WideScreen
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "wide_screen.h"
 #include "entity.h"
 #include "core.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 WideScreen::WideScreen()
 {
@@ -26,11 +16,9 @@ WideScreen::~WideScreen()
 {
 }
 
-// Initialization
 bool WideScreen::Init()
 {
     // Layers
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), -257);
     rs = static_cast<VRenderer *>(core.GetService("renderer"));
@@ -45,14 +33,12 @@ bool WideScreen::Init()
     return true;
 }
 
-// Messages
 uint64_t WideScreen::ProcessMessage(MESSAGE &message)
 {
     dlt = -1.0f;
     return 0;
 }
 
-// Work
 void WideScreen::Realize(uint32_t delta_time)
 {
     // Current state
@@ -67,7 +53,6 @@ void WideScreen::Realize(uint32_t delta_time)
         state = 1.0f;
         dlt = 0.0f;
     }
-    // Draw
     static struct
     {
         float x, y, z, rhw;

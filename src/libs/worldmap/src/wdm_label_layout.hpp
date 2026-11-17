@@ -2,7 +2,7 @@
 // a weight (worldmap_init.c: "Weight is use when shake intersection labels": islands 100, towns 50,
 // shores 1) but the engine never used it: zoomed out, the names were drawn over one another.
 //
-// Every label shows (owner 2026-11-17: names must not vanish when the map is zoomed out). The labels
+// Every label shows (names must not vanish when the map is zoomed out). The labels
 // are taken by weight (heavier first; equal weights in their order in the game's list); each takes
 // the first side of its world point (below it, the game's place, then above, right, left) where its
 // box keeps `gap` clear of every box already placed. A label keeps last frame's side while it is no
@@ -23,7 +23,7 @@ namespace storm::worldmap
 
 // The size of a label of a kind the game hid above `heightView` (worldmap_init.c: islands 1000, towns 250, shores
 // 200) at the camera's `height`: 1 up to that height, then shrinking with the map (heightView / height), never below
-// `floor`. Every label shows at every height (owner 2026-11-17: names must not vanish when the map is zoomed out); the
+// `floor`. Every label shows at every height (names must not vanish when the map is zoomed out); the
 // shrink keeps the crowded small names of a zoomed-out map apart and readable.
 inline float HeightScale(float heightView, float height, float floor)
 {

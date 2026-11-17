@@ -75,11 +75,9 @@ class VarTable
     const VarInfo *GetVarX(size_t var_index) const;
     // invalidate all segment's vars
     void InvalidateBySegmentID(uint32_t segment_id);
-    // get var index by name
     size_t FindVar(std::string_view var_name) const;
     // set var's array size, returns true if successful
     bool SetElementsNum(size_t var_index, size_t elements_num);
-    // clear table
     void Release();
 
     void SetVCompiler(VIRTUAL_COMPILER *vc)

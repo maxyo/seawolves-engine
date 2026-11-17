@@ -80,7 +80,6 @@ void ModelProcessor::AddParticle(ParticleSystem *pSystem, const glm::vec3 &veloc
 
     if (!pData->pScene)
     {
-        // core.Trace("Cant create particle. Reason geometry '%s', '%s' not found !!!", GeomNames, pGeomName);
         *(pActiveCount) = (*(pActiveCount)-1);
         FreeParticle(pData);
         return;
@@ -117,7 +116,6 @@ void ModelProcessor::AddParticle(ParticleSystem *pSystem, const glm::vec3 &veloc
     pData->Spin.z = pFields->GetRandomGraphVal(PARTICLE_SPIN_Z, EmitterTime, EmitterLifeTime);
     pData->Spin = pData->Spin * MUL_DEGTORAD;
     // core.Trace("spin %3.2f, %3.2f, %3.2f [%3.2f, %3.2f]", pData->Spin.x, pData->Spin.y, pData->Spin.z, EmitterTime,
-    // EmitterLifeTime);
 
     const auto VelocityPower = pFields->GetRandomGraphVal(PARTICLE_VELOCITY_POWER, EmitterTime, EmitterLifeTime);
     pData->Velocity = pData->Velocity * VelocityPower;
@@ -159,8 +157,6 @@ void ModelProcessor::AddParticle(ParticleSystem *pSystem, const glm::vec3 &veloc
 // Calculates physics, tracks, etc.
 void ModelProcessor::Process(float DeltaTime)
 {
-    // DWORD t;
-    // RDTSC_B (t);
 
     for (uint32_t n = 0; n < Particles.size(); n++)
     {
@@ -169,14 +165,12 @@ void ModelProcessor::Process(float DeltaTime)
         const auto Time = Particles[n]->ElapsedTime;
         const auto LifeTime = Particles[n]->LifeTime;
 
-        //        _mm_prefetch ((const char *)Particles[n+1], _MM_HINT_T0);
 
         // kill the dead ones ...
         if (Time > LifeTime)
         {
             *(Particles[n]->ActiveCount) = (*(Particles[n]->ActiveCount) - 1);
             FreeParticle(Particles[n]);
-            // Particles.ExtractNoShift(n);
             Particles[n] = Particles.back();
             Particles.pop_back();
             n--;
@@ -243,7 +237,6 @@ void ModelProcessor::Process(float DeltaTime)
         Particles[n]->RenderPos = storm::math::lerp(TrackPos, Particles[n]->PhysPos, BlendPhys);
         Particles[n]->PhysPos = Particles[n]->RenderPos;
 
-        // Particles[n]->RenderPos    = Particles[n]->PhysPos;
         Particles[n]->RenderAngle = Particles[n]->Angle;
     }
 
@@ -254,19 +247,15 @@ void ModelProcessor::Process(float DeltaTime)
         if (Particles[n]->AttachedEmitter)
         {
             // core.Trace("%d, %3.2f, %3.2f, %3.2f", n, Particles[n]->RenderPos.x, Particles[n]->RenderPos.y,
-            // Particles[n]->RenderPos.z); Particles[n]->AttachedEmitter->SaveTime();
             Particles[n]->AttachedEmitter->Teleport(
                 storm::math::eulerMatrix(Particles[n]->OldRenderAngle, Particles[n]->OldRenderPos));
             Particles[n]->AttachedEmitter->SetTransform(
                 storm::math::eulerMatrix(Particles[n]->RenderAngle, Particles[n]->RenderPos));
             Particles[n]->AttachedEmitter->BornParticles(DeltaTime);
 
-            // if (n < Particles.size()-1)  Particles[n]->AttachedEmitter->RestoreTime();
         }
     }
 
-    // RDTSC_E (t);
-    // core.Trace("Time - %d", t);
 }
 
 uint32_t ModelProcessor::GetCount() const
@@ -282,7 +271,6 @@ void ModelProcessor::DeleteWithGUID(uint32_t dwGUID, uint32_t GUIDRange)
         {
             *(Particles[j]->ActiveCount) = (*(Particles[j]->ActiveCount) - 1);
             FreeParticle(Particles[j]);
-            // Particles.ExtractNoShift(j);
             Particles[j] = Particles.back();
             Particles.pop_back();
             j--;
@@ -302,7 +290,6 @@ void ModelProcessor::Draw()
         pR->pScene->Draw(nullptr, 0, nullptr);
     }
 
-    // core.Trace ("PSYS 2.0 : Draw %d model particles", Particles.size());
 }
 
 void ModelProcessor::Clear()

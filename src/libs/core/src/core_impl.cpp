@@ -451,9 +451,7 @@ void CoreImpl::ProcessControls()
     }
 }
 
-//-------------------------------------------------------------------------------------------------
 // internal functions
-//-------------------------------------------------------------------------------------------------
 bool CoreImpl::Initialize()
 {
     ResetCore();
@@ -554,9 +552,7 @@ void CoreImpl::SetTimeScale(float _scale)
     fTimeScale = _scale;
 }
 
-//------------------------------------------------------------------------------------------------
 // transfer message arguments and program control to entity, specified by Destination id
-//
 uint64_t CoreImpl::Send_Message(entid_t Destination, const char *Format, ...)
 {
     MESSAGE message;
@@ -600,7 +596,6 @@ uint32_t CoreImpl::PostEvent(const char *Event_name, uint32_t post_time, const c
         {
             switch (message.GetCurrentFormatType())
             {
-                //-------------------------------------
             case 'l':
                 int32_t v;
                 v = message.Long();
@@ -631,7 +626,6 @@ uint32_t CoreImpl::PostEvent(const char *Event_name, uint32_t post_time, const c
                 pMS->Set(a);
                 break;
 
-                //-------------------------------------
             default:
                 bAction = false;
                 break;
@@ -758,9 +752,7 @@ void CoreImpl::Trace(const char *format, ...)
     spdlog::info(buffer_4k);
 }
 
-//------------------------------------------------------------------------------------------------
 // Transfer programm control to objects via Execute() functions
-//
 void CoreImpl::ProcessExecute()
 {
     uint64_t ticks;
@@ -806,7 +798,6 @@ void CoreImpl::ProcessRealize()
     ProcessRunEnd(SECTION_REALIZE);
 }
 
-// save core state
 bool CoreImpl::SaveState(const char *file_name)
 {
     if (!file_name)
@@ -1168,72 +1159,8 @@ uint32_t CoreImpl::MakeHashValue(const char *string)
     return hval;
 }
 
-//==========================================================================================================================
-// end
-//==========================================================================================================================
-
 void CoreImpl::DumpEntitiesInfo()
 {
-    /*LARGE_INTEGER li;
-    if (!QueryPerformanceFrequency(&li))
-      throw std::runtime_error();
-
-    const auto freq = double(li.QuadPart)/1000.0;
-
-    uint32_t n;
-    char * ptr;
-    VMA * pClass;
-
-    Trace("Entity Dump -----------------------------------");
-
-    for(n=0;n<=CoreState.Atoms_max_orbit;n++)
-    {
-      if(Atoms_PTR[n] == nullptr) continue;
-
-      pClass = FindVMA(Atoms_PTR[n]->atom_id.class_code);
-      if(pClass)
-      {
-        ptr = pClass->GetName();
-        if(ptr)
-        {
-          Trace("Class: %s", ptr);
-          Trace("     : Realize:  Cur( %fms ) Max( %fms )", Atoms_PTR[n]->as.Realize_ticks_av/freq,
-    Atoms_PTR[n]->as.Realize_ticks_max/freq); Trace("     : Execute:  Cur( %fms ) Max( %fms )",
-    Atoms_PTR[n]->as.Execute_ticks_av/freq, Atoms_PTR[n]->as.Execute_ticks_max/freq);
-        }
-      }
-    }
-
-    Trace(" ------- Running objects ------- ");
-    for(n=0;n<=CommonLayers.lss.Layer_max_index;n++)
-    {
-      LAYER* l_PTR = CommonLayers.Layer_Table[n];
-      if(l_PTR == nullptr) continue;
-
-      uint32_t flags = l_PTR->ls.Flags & LRFLAG_FROZEN;
-      if(flags != 0)
-      {
-        Trace("LAYER: %s frozen -------------------------------------",l_PTR->Name);
-        continue;
-      }
-      Trace("LAYER: %s --------------------------------------",l_PTR->Name);
-      entid_t  eid_PTR = l_PTR->GetId();
-      while(eid_PTR)
-      {
-        Trace("Entity:");
-        if(ValidateEntity(eid_PTR))
-        {
-          pClass = FindVMA(Atoms_PTR[eid_PTR->atom_position]->atom_id.class_code);
-          if(pClass) ptr = pClass->GetName();
-          Trace("        %s",ptr);
-          if(Atoms_PTR[eid_PTR->atom_position]->as.Deleted) Trace("        deleted");
-
-        }
-        eid_PTR = l_PTR->GetNextID();
-      }
-    }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));*/
 }
 
 void *CoreImpl::GetSaveData(const char *file_name, int32_t &data_size)

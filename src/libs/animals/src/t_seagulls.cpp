@@ -6,20 +6,16 @@
 #include "rands.h"
 #include "shared/messages.h"
 #include "v_file_service.h"
-//#pragma warning (disable : 4244)
 
-//--------------------------------------------------------------------
 TSeagulls::TSeagulls() : enabled(true), count(0), frightened(false)
 {
 }
 
-//--------------------------------------------------------------------
 TSeagulls::~TSeagulls()
 {
     core.EraseEntity(seagullModel);
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::LoadSettings()
 {
     auto ini = fio->OpenIniFile(ANIMALS_INI_FILENAME);
@@ -51,7 +47,6 @@ void TSeagulls::LoadSettings()
     ini->ReadString(ANIMALS_SEAGULLS_SECTION, "scream file", screamFilename, 256, ANIMALS_SEAGULLS_SCREAM_FILENAME);
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::Init()
 {
     startY = 0.f;
@@ -62,14 +57,11 @@ void TSeagulls::Init()
 
     if (!renderService)
         throw std::runtime_error("!Seagulls: No service: renderer");
-    // if(!soundService)
-    //    throw std::runtime_error("!Seagulls: No service: sound");
 
     seagullModel = core.CreateEntity("MODELR");
     core.Send_Message(seagullModel, "ls", MSG_MODEL_LOAD_GEO, ANIMALS_SEAGULL_FILENAME);
 }
 
-//--------------------------------------------------------------------
 uint64_t TSeagulls::ProcessMessage(int32_t _code, MESSAGE &message)
 {
     const uint32_t outValue = 0;
@@ -97,7 +89,6 @@ uint64_t TSeagulls::ProcessMessage(int32_t _code, MESSAGE &message)
     return outValue;
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::Execute(uint32_t _dTime)
 {
     if (!enabled)
@@ -114,7 +105,6 @@ void TSeagulls::Execute(uint32_t _dTime)
             for (auto i = 0; i < count; i++)
             {
                 seagulls[i].va /= 2.0f;
-                // seagulls[i].circleTimePassed += _dTime;
             }
         }
     }
@@ -132,7 +122,6 @@ void TSeagulls::Execute(uint32_t _dTime)
                         static_cast<float>(seagulls[i].center.z + cos(seagulls[i].a) * seagulls[i].radius),
                         static_cast<float>(seagulls[i].height));
 
-            // if(soundService) soundService->SoundPlay(screamFilename, PCM_3D, VOLUME_FX, false, false, true, 0, &pos);
         }
 
         // <angle_inc>
@@ -175,7 +164,6 @@ void TSeagulls::Execute(uint32_t _dTime)
                     seagulls[i].va = -minRadius / 2.0f;
             }
 
-            // seagulls[i].height += randCentered(maxHeight / 50.0f);
             if ((distance1 < distance2) && ((rand() % farChoiceChance) == 1))
             {
                 seagulls[i].center.x = newX1;
@@ -192,7 +180,6 @@ void TSeagulls::Execute(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::Realize(uint32_t _dTime)
 {
     if (!enabled)
@@ -225,7 +212,6 @@ void TSeagulls::Realize(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::Frighten()
 {
     if (frightened)
@@ -242,7 +228,6 @@ void TSeagulls::Frighten()
     screamTime >>= 1;
 }
 
-//--------------------------------------------------------------------
 void TSeagulls::Add(float _x, float _y, float _z)
 {
     float op;
@@ -264,5 +249,3 @@ void TSeagulls::Add(float _x, float _y, float _z)
     }
     count += countAdd;
 }
-
-//--------------------------------------------------------------------

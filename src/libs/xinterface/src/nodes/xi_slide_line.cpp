@@ -154,7 +154,6 @@ int CXI_SLIDELINE::CommandExecute(int wActCode)
 
 bool CXI_SLIDELINE::IsClick(int buttonID, int32_t xPos, int32_t yPos)
 {
-    // if( buttonID == MOUSE_RBUTTON )
     {
         if (xPos >= m_rect.left && xPos <= m_rect.right && yPos >= m_rect.top && yPos <= m_rect.bottom)
             return true;
@@ -202,7 +201,6 @@ void CXI_SLIDELINE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

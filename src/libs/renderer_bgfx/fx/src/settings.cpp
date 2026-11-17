@@ -76,9 +76,9 @@ Settings Settings::FromPreset(QualityPreset preset)
         s.ao_volume = 2;
         s.lamp_shadows = 8;
         s.lamp_moving = 1;
-        s.lamp_per_pixel = 2; // frame.md budget: the mid class
+        s.lamp_per_pixel = 2; // the mid class
         s.lamp_filtered = 1;
-        s.lamp_reach_light = s.lamp_shadow_light = 2.0f / 255.0f; // the owner's sheet of 2026-11-16: no visible change
+        s.lamp_reach_light = s.lamp_shadow_light = 2.0f / 255.0f; // no visible change
         s.wet_surfaces = 1;
         return s;
     }
@@ -86,7 +86,7 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.far_lod_pixels = 1.f;
     // The bloom as «Средняя» draws it: from a quarter of the scene, three levels (eight passes of a quarter of the
     // pixels instead of ten; 0.9-1.3 ms of GPU on an Adreno 830 before). The faint bloom of these presets differs by
-    // 0.2-0.6 of 255 on average from the half-size one (owner sheet 2026-11-16).
+    // 0.2-0.6 of 255 on average from the half-size one.
     s.bloom_downscale = 4;
     s.bloom_levels = 3;
     s.anisotropy = 8;
@@ -110,11 +110,11 @@ Settings Settings::FromPreset(QualityPreset preset)
     s.shadows = ShadowQuality::Soft;
     s.town_light = true;
     s.town_walls = true;
-    s.ao_volume = 2; // the owner: the strong look left the rooms too dark
+    s.ao_volume = 2; // the strong look left the rooms too dark
     s.lamp_shadows = 16;
     s.lamp_moving = 2;
     s.lamp_soft = true;
-    s.lamp_per_pixel = 3; // frame.md budget: the flagship class (4 until the owner's sheet of 2026-11-16)
+    s.lamp_per_pixel = 3; // the flagship class
     s.lamp_filtered = 2;
     s.lamp_reach_light = s.lamp_shadow_light = 2.0f / 255.0f;
     s.wet_surfaces = 2;

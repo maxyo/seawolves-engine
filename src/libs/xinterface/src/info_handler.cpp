@@ -55,7 +55,6 @@ InfoHandler::~InfoHandler()
 
 bool InfoHandler::Init()
 {
-    // get render service
     m_rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!m_rs)
     {
@@ -239,7 +238,6 @@ bool InfoHandler::DoPreOut()
 
     if (isOK)
     {
-        // show picture
         if (picBackTexureFile != nullptr)
         {
             const int picBackID = m_rs->TextureCreate(picBackTexureFile);
@@ -322,7 +320,6 @@ bool InfoHandler::DoPreOut()
 
         if (inStrStart)
         {
-            // show back
             pV[0].col = pV[1].col = pV[2].col = pV[3].col = dwBCol;
             pV[0].pos.x = 0.f;
             pV[0].pos.y = 0.f;
@@ -334,7 +331,6 @@ bool InfoHandler::DoPreOut()
             pV[3].pos.y = static_cast<float>(desc.Height);
             m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, TMP_VERTEX_FORMAT, 2, &pV, sizeof(TMP_VERTEX), "iInfoShower");
 
-            // show fore
             pV[0].col = pV[1].col = pV[2].col = pV[3].col = dwFCol;
             pV[1].pos.x = pV[0].pos.x = static_cast<float>(desc.Width - nInsideRectWidth) / 2;
             pV[3].pos.x = pV[2].pos.x = pV[0].pos.x + nInsideRectWidth;
@@ -342,7 +338,6 @@ bool InfoHandler::DoPreOut()
             pV[3].pos.y = pV[1].pos.y = pV[0].pos.y + nInsideRectHeight;
             m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, TMP_VERTEX_FORMAT, 2, &pV, sizeof(TMP_VERTEX), "iInfoShower");
 
-            // show strings
             auto ntmp = 0;
             const int topY = (desc.Height - nRowQ * nOutOffset) / 2;
             for (auto * ps = inStrStart; ps != nullptr && *ps;)
@@ -372,7 +367,6 @@ const char *InfoHandler::GetCutString(const char *pstr, int nOutWidth, float fSc
     auto spaceWait = false;
     char param[1024];
 
-    // remove first line breaks
     while (pstr && (*pstr == '\n' || *pstr == '\r' || *pstr == 32))
         pstr++;
 

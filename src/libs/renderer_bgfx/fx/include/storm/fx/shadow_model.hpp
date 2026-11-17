@@ -18,7 +18,7 @@ namespace storm::fx
 {
 
 // The shadowed region: a sphere of this radius around the focus (metres); shadows fade out over its last tenth.
-// On land 30 m (the owner's choice from the before/after: finer texels than 40). At sea, where the focus is the
+// On land 30 m (finer texels than 40). At sea, where the focus is the
 // player's ship and there is no static layer to keep fine, 45 m: a ship of the line with its bowsprit and the
 // water beside it.
 inline constexpr float kSunShadowRadius = 30.0f;

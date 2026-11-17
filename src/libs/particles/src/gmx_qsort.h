@@ -1,10 +1,8 @@
-//****************************************************************
 //*
 //*  Author : Sergey Makeev aka Joker, 2003
 //*
 //*  description: Template Quick Sort class
 //*
-//****************************************************************
 #pragma once
 
 template <class TYPE> class GMXQSort

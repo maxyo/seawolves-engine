@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmCamera
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_camera.h"
 #include "wdm_player_ship.h"
@@ -20,15 +15,12 @@
 #include <time.h>
 #endif
 
-//============================================================================================
 
 #define WDM_CAMERA_HEIGHT_MIN 50.0f
 #define WDM_CAMERA_HEIGHT_MAX 300.0f
 #define WdmCamera_myPI 3.1415926535897932384626433832795f
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmCamera::WdmCamera()
 {
@@ -243,10 +235,6 @@ void WdmCamera::CheckRange()
     const auto cz = pos.z + cs * pos.y * csX / snX;
     const auto ccx = cx, ccz = cz;
     // Limit the coordinates
-    // if(cx < -0.5f*WDM_WORLD_SIZE_X) cx = -0.5f*WDM_WORLD_SIZE_X;
-    // if(cx > 0.5f*WDM_WORLD_SIZE_X) cx = 0.5f*WDM_WORLD_SIZE_X;
-    // if(cz < -0.5f*WDM_WORLD_SIZE_Z) cz = -0.5f*WDM_WORLD_SIZE_Z;
-    // if(cz > 0.5f*WDM_WORLD_SIZE_Z) cz = 0.5f*WDM_WORLD_SIZE_Z;
     // Calculating the offset
     pos.x += cx - ccx;
     pos.z += cz - ccz;

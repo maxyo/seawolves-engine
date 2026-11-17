@@ -119,7 +119,6 @@ void CXI_BUTTON::Draw(bool bSelected, uint32_t Delta_Time)
 
     if (m_bUse)
     {
-        // Create rectangle
         XI_ONETEX_VERTEX vFace[4];
         XI_ONETEX_VERTEX vShadow[4];
 
@@ -234,14 +233,12 @@ void CXI_BUTTON::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
     char param[255];
     XYPOINT tmpLPnt;
 
-    // get font number
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
     {
         if ((m_nFontNum = m_rs->LoadFont(param)) == -1)
             core.Trace("can not load font:'%s'", param);
     }
 
-    // get face color
     m_dwFaceColor = GetIniARGB(ini1, name1, ini2, name2, "faceColor", 0xFFFFFFFF);
 
     // selected color (light)
@@ -259,13 +256,10 @@ void CXI_BUTTON::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
     m_fCurBlind = 1.f;
     m_bUpBlind = false;
 
-    // get disable color
     m_argbDisableColor = GetIniARGB(ini1, name1, ini2, name2, "disableColor", ARGB(255, 128, 128, 128));
 
-    // get shadow color
     m_dwShadowColor = GetIniARGB(ini1, name1, ini2, name2, "shadowColor", ARGB(255, 0, 0, 0));
 
-    // get font color
     m_dwFontColor = GetIniARGB(ini1, name1, ini2, name2, "fontColor", 0xFFFFFFFF);
 
     // get group name and get texture for this
@@ -278,7 +272,6 @@ void CXI_BUTTON::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
             throw std::runtime_error("allocate memory error");
         memcpy(m_sGroupName, param, len);
 
-        // get button picture name
         if (ReadIniString(ini1, name1, ini2, name2, "picture", param, sizeof(param), ""))
             pPictureService->GetTexturePos(m_sGroupName, param, m_tRect);
     }
@@ -307,7 +300,6 @@ void CXI_BUTTON::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
     fXShadowPress = static_cast<float>(tmpLPnt.x);
     fYShadowPress = static_cast<float>(tmpLPnt.y);
 
-    // get press delay
     nMaxDelay = GetIniLong(ini1, name1, ini2, name2, "pressDelay", 20);
 
     m_dwStrOffset = GetIniLong(ini1, name1, ini2, name2, "strOffset", 0);
@@ -335,7 +327,6 @@ int CXI_BUTTON::CommandExecute(int wActCode)
         case ACTION_ACTIVATE:
             nPressedDelay = nMaxDelay;
             break;
-            // case ACTION_MOUSEDBLCLICK:
         case ACTION_MOUSECLICK:
             if (m_bClickable && m_bSelected)
                 nPressedDelay = nMaxDelay;
@@ -370,7 +361,6 @@ void CXI_BUTTON::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

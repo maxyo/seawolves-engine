@@ -103,7 +103,6 @@ void CXI_BORDER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -112,7 +111,6 @@ void CXI_BORDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
 {
     char param[256];
 
-    // get back image
     if (ReadIniString(ini1, name1, ini2, name2, "backimage", param, sizeof(param), ""))
     {
         m_pBackImage = new CXI_IMAGE;
@@ -123,7 +121,6 @@ void CXI_BORDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         }
     }
 
-    // get caption rectangle
     m_nCaptionHeight = GetIniLong(ini1, name1, ini2, name2, "captionheight", 0);
     m_mCaptionDividerHeight = GetIniLong(ini1, name1, ini2, name2, "captiondividerheight", 2);
     if (m_nCaptionHeight > 0 && ReadIniString(ini1, name1, ini2, name2, "captionimage", param, sizeof(param), ""))
@@ -135,7 +132,6 @@ void CXI_BORDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         }
     }
 
-    // get show color
     m_dwColor = GetIniARGB(ini1, name1, ini2, name2, "color", 0xFFFFFFFF);
     // Get texture name and load that texture
     m_sGroupName = "";
@@ -145,7 +141,6 @@ void CXI_BORDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         m_idTex = pPictureService->GetTextureID(m_sGroupName.c_str());
     }
 
-    // create index and vertex buffers
     m_nSquareQ = 4 + 4 + 1; // 4 edge & 4 angle & 1 caption
     m_idVBuf = m_rs->CreateVertexBuffer(XI_ONETEX_FVF, m_nSquareQ * 4 * sizeof(XI_ONETEX_VERTEX), D3DUSAGE_WRITEONLY);
     m_idIBuf = m_rs->CreateIndexBuffer(m_nSquareQ * 6 * 2);
@@ -269,7 +264,6 @@ void CXI_BORDER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         m_pCaptionImage->SetPosition(rCapRect);
     }
 
-    // Fill buffers
     FillIndexBuffers();
     FillVertexBuffers();
 }

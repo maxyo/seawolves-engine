@@ -4,10 +4,8 @@
 #include "vai_objbase.h"
 #include "vma.hpp"
 
-// ============================================================================
 // master class AIShipMoveController
 // Contain base virtual functions
-// ============================================================================
 class AIShip;
 
 class AIShipMoveController

@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Blots
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -43,9 +37,7 @@ class Blots : public Entity
 
 #pragma pack(pop)
 
-    // --------------------------------------------------------------------------------------------
     // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Blots();
     ~Blots() override;
@@ -59,30 +51,21 @@ class Blots : public Entity
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 
     // Work
     void Realize(uint32_t delta_time);
 
-    // --------------------------------------------------------------------------------------------
     // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Register a hit
     void Hit(MESSAGE &message);
     // Add a blot
     void AddBlot(int32_t i, int32_t rnd, const glm::vec3 &pos, const glm::vec3 &dir, float time);
-    //
     void SetNodesCollision(NODE *n, bool isSet);
     // Save blot parameters
     void SaveBlot(int32_t i);

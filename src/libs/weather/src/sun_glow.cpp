@@ -215,17 +215,6 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
         fMinAlphaValue = 0.2f;
     }
 
-    /*walker_t pVW = core.LayerGetWalker("sun_trace");
-    if (pVW)
-    {
-      vSrc = vCamPos;
-      pWeather->GetVector(whv_sun_pos,&vDst);
-      vDst = vCamPos + (!vDst) * 4000.0f;
-      float fRes = pCollide->Trace(*pVW,vSrc,vDst,0,0);
-      bVisible = (fRes>1.0f);
-      delete pVW;
-    }
-    else bVisible = true;*/
 
     RS_RECT rs_rect;
 
@@ -237,26 +226,19 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
     auto fSeaHeight = 0.f; // pWeather->GetFloat(whf_water_attenuation);//0.f;
     fBottomClip = fSeaHeight;
 
-    // float fGlowSize = bMoon ? Glow.fMoonSize : Glow.fSunSize;
     fFadeout = 1.f;
 
     // The fx post chain draws the one sun glare (renderer_bgfx/fx lens flare): the glow, overflow and flare sprites
     // of the sun are left out then, and the post chain gets the sun's traced visibility instead. The moon keeps them.
     const bool fx_glare = !bMoon && storm::render::CurrentEffectsWorld().lens_flare;
 
-    // if (bHaveGlow && vSun.y > fBottomClip-fGlowSize)
     if (bHaveGlow && vSun.y > fBottomClip - Glow.fGlowSize)
     {
         fFadeout = GetSunFadeoutFactor(vSun, Glow.fGlowSize);
 
-        // glm::vec3 vSunColor = ((bMoon) ? fFadeout : (1.0f - fAlpha) * 0.5f*fFadeout) * COLOR2VECTOR(Glow.dwColor);
-        // glm::vec3 vSunColor = fFadeout * COLOR2VECTOR(Glow.dwColor);
 
-        // if( bMoon ) pRS->TextureSet(0,iMoonTex);
-        // else pRS->TextureSet(0,iSunTex);
 
         // DrawRect( RGB(vSunColor.x, vSunColor.y, vSunColor.z), vSun, fGlowSize, fAngle * Glow.fRotateSpeed,
-        // Glow.sTechniqueZ, fBottomClip );
 
         auto fGlowFadeout = fFadeout - (1.f - fFadeout) * 1.5f;
         if (fGlowFadeout < 0.f)
@@ -300,7 +282,6 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
         auto mCam = OldMatrix;
         storm::math::invertRigid(mCam);
 
-        // glm::vec3 vCenPos = glm::vec3(0.0f, 0.0f, Flares.fDist / 2.0f);
         auto vCenPos = storm::math::vz(mCam) * Flares.fDist / 2.0f + storm::math::pos(mCam);
         auto vDelta = Flares.fDist * storm::math::normalizeOrZero(vCenPos - vSun);
         for (uint32_t i = 0; i < Flares.aFlares.size(); i++)
@@ -312,7 +293,6 @@ void SUNGLOW::Realize(uint32_t Delta_Time)
                                            static_cast<float>((pF->dwColor & 0xFF00) >> 8L));
             auto b =
                 static_cast<uint32_t>(fFadeout * fAlpha * fAlphaFlare * static_cast<float>((pF->dwColor & 0xFF) >> 0L));
-            // RS_RECT * pRSR = &aRSR[aRSR.Add()];
             RS_RECT rect;
             rect.dwColor = makeRGB(r, g, b);
             rect.fAngle = 0.0f;
@@ -380,7 +360,6 @@ uint32_t SUNGLOW::AttributeChanged(ATTRIBUTES *pAttribute)
     {
         bHaveFlare = true;
         const char *pTemp = pAttribute->GetThisAttr();
-        // flare_t * pFlare = &Flares.aFlares[Flares.aFlares.Add()];
         flare_t flare;
         sscanf(pTemp, "%f,%f,%d,%x", &flare.fDist, &flare.fSize, &flare.dwSubTexIndex, &flare.dwColor);
         Flares.aFlares.push_back(flare);
@@ -740,15 +719,6 @@ void SUNGLOW::DrawRect(uint32_t dwColor, const glm::vec3 &pos, float fSize, floa
         pRS->DrawPrimitive(D3DPT_TRIANGLEFAN, idRectBuf, sizeof(SUNGLOWVERTEX), 0, nv - 2, pcTechnique);
     }
 
-    /*
-    // debug info - a rectangle of lines showing the boundaries of the output rectangle
-    RS_LINE lines[8];
-    for(n=0; n<8; n++) lines[n].dwColor = 0xFFFFFFFF;
-    lines[0].vPos = vp1;    lines[1].vPos = vp2;
-    lines[2].vPos = vp2;    lines[3].vPos = vp3;
-    lines[4].vPos = vp3;    lines[5].vPos = vp4;
-    lines[6].vPos = vp4;    lines[7].vPos = vp1;
-    pRS->DrawLines( lines, 4, "Line" );*/
 }
 
 float SUNGLOW::GetSunFadeoutFactor(const glm::vec3 &vSunPos, float fSunSize)

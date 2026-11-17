@@ -60,7 +60,6 @@ void CXI_WINDOW::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 
@@ -137,8 +136,6 @@ void CXI_WINDOW::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
 {
     char param[1024];
 
-    // get nodes list
-    // if( ReadIniString(ini1,name1, ini2,name2, "nodelist", param, sizeof(param),"") )
     if (ini1 && ini1->ReadString(name1, "nodelist", param, sizeof(param), ""))
         do
         {
@@ -151,9 +148,7 @@ void CXI_WINDOW::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
             }
         } while (ini1->ReadStringNext(name1, "nodelist", param, sizeof(param)));
 
-    // get active value
     SetActive(GetIniBool(ini1, name1, ini2, name2, "active", true));
 
-    // get show value
     SetShow(GetIniBool(ini1, name1, ini2, name2, "show", true));
 }

@@ -11,9 +11,6 @@
 #include "seafoam_ps.h"
 #include "ship_base.h"
 
-///////////////////////////////////////////////////////////////////
-// CLASS DEFINITION
-///////////////////////////////////////////////////////////////////
 struct tFoamEmitter
 {
     glm::vec3 center[TRACE_STEPS_Y];
@@ -60,10 +57,6 @@ class SEAFOAM : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 

@@ -69,7 +69,6 @@ void CXI_STRCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
         name = name2;
     }
 
-    // get string quantity
     m_nStr = 0;
     if (ini && ini->ReadString(name, "string", param, sizeof(param) - 1, ""))
         do
@@ -81,7 +80,6 @@ void CXI_STRCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
     {
         m_pStrDescr = new STRINGDESCR[m_nStr];
 
-        // Set strings
         int a_fc, r_fc, g_fc, b_fc;
         int a_bc, r_bc, g_bc, b_bc;
         char strName[sizeof(param)];
@@ -90,11 +88,9 @@ void CXI_STRCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
         ini->ReadString(name, "string", param, sizeof(param) - 1, "");
         for (i = 0; i < m_nStr; i++)
         {
-            // set all parameters to zero
             m_pStrDescr[i] = {};
             m_pStrDescr[i].nFontNum = -1;
 
-            // read same parameters
             strState[0] = '\0';
             sscanf(param, "%[^,],font:%[^,],pos:{%d,%d},fc:{%d,%d,%d,%d},bc:{%d,%d,%d,%d},scale:%f,state:{%[^}]}",
                    strName, fontName, &m_pStrDescr[i].scrPos.x, &m_pStrDescr[i].scrPos.y, &a_fc, &r_fc, &g_fc, &b_fc,
@@ -111,7 +107,6 @@ void CXI_STRCOLLECTION::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2,
             m_pStrDescr[i].foreColor = ARGB(a_fc, r_fc, g_fc, b_fc);
             m_pStrDescr[i].backColor = ARGB(a_bc, r_bc, g_bc, b_bc);
 
-            // set states
             for (int k = strlen(strState); k >= 0; k--)
             {
                 if (strState[k] == 'C' || strState[k] == 'c')
@@ -158,14 +153,11 @@ bool CXI_STRCOLLECTION::IsClick(int buttonID, int32_t xPos, int32_t yPos)
 bool CXI_STRCOLLECTION::GetInternalNameList(std::vector<std::string> &aStr)
 {
     aStr.clear();
-    // aStr.Add();
-    // aStr[0] = "All";
     aStr.push_back("All");
     for (int32_t n = 0; n < m_nStr; n++)
     {
         if (m_pStrDescr[n].strID)
             continue;
-        // aStr.Add();
         aStr.push_back(std::string{});
         char param[512];
         sprintf_s(param, sizeof(param), "%d - %s", n + 1, pStringService->GetStringName(m_pStrDescr[n].strNum));
@@ -209,7 +201,6 @@ void CXI_STRCOLLECTION::ChangePosition(XYRECT &rNewPos)
 
 void CXI_STRCOLLECTION::SaveParametersToIni()
 {
-    //    char pcWriteParam[2048];
 
     auto pIni = fio->OpenIniFile(ptrOwner->m_sDialogFileName.c_str());
     if (!pIni)
@@ -219,7 +210,6 @@ void CXI_STRCOLLECTION::SaveParametersToIni()
     }
 
     pIni->DeleteSection(m_nodeName);
-    // save position
     char param[2048];
     for (int32_t n = 0; n < m_nStr; n++)
     {

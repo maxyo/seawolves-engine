@@ -315,7 +315,7 @@ bool WriteDisplay(const UpscaleOutput &display, uint64_t key, const std::vector<
 
 } // namespace
 
-// Which device a texture runs on, decided per texture (the owner: the GPU is the device, the CPU stands in while the
+// Which device a texture runs on, decided per texture (the GPU is the device, the CPU stands in while the
 // game's own rendering keeps the GPU busy, and the GPU is tried again):
 //   * on the GPU, a texture whose networks took 1.5 times the CPU's estimate for its texels (the probe's cost per
 //     texel), twice in a row while the game draws its scene, moves the work to the CPU;
@@ -607,7 +607,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
                              const std::filesystem::path &output, int map_size, std::string &failure,
                              const UpscaleOutput *display)
 {
-    // One decode, then PBRify's networks (the owner's choice): the normals and the height at the map size, the
+    // One decode, then PBRify's networks: the normals and the height at the map size, the
     // roughness at the gloss map's. Outputs: the relief map (EAC RG11 normals, with the material texture of a class with
     // a height: R the height normalised per region, G the gloss) and, for a texture of a gloss class without a height,
     // its own gloss map (R the metal mask, G the gloss). Each stage is timed: the log line of the texture says where the

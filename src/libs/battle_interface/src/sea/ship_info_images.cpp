@@ -268,7 +268,6 @@ void ShipInfoImages::UpdateShipData(int32_t nShipNum, SHIP_DESCRIBE_LIST::SHIP_D
                       m_uvProgressBack, 1.f);
 
     // write progress squares
-    //---------------------------------
     // write hull
     WriteSquareVertex(&m_pVBuffProgress[nShipNum * 3 * 4], shippos, m_vHullOffset, m_fpProgressSize, m_uvHull,
                       GetProgressHull(pSD));
@@ -375,7 +374,6 @@ void ShipInfoImages::WriteSquareVertex(SII_VERTEX *pV, const glm::vec3 &center, 
     const glm::vec3 vVert = size.y * m_vUpDir;
 
     // left side
-    //--------------
     glm::vec3 vc = center + m_fImgScale * offset - 0.5f * size.x * m_vRightDir + 0.5f * vVert;
     // top
     pV[0].pos = vc;
@@ -387,7 +385,6 @@ void ShipInfoImages::WriteSquareVertex(SII_VERTEX *pV, const glm::vec3 &center, 
     pV[1].tv = uv.bottom;
 
     // right side
-    //--------------
     // top
     vc += fProgress * size.x * m_vRightDir;
     pV[2].pos = vc;

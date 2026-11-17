@@ -8,7 +8,7 @@
 // below mirrors store.c / cannons.c / contraband.c / itemstrade.c ChangeQTY_EDIT), so the
 // control answers in the same frame. Only the confirmation goes out (AmountDraft, controls.h): the
 // amount and the game's OK in one flush, on «Купить / Продать N» of a money deal and «Взять / Отдать N»
-// of a free transfer alike. There is no «Отмена» (owner, 2026-11-14): another row, or the amount back where
+// of a free transfer alike. There is no «Отмена»: another row, or the amount back where
 // it was, drops the draft (the game's window of the old row is closed with nothing moved). The hand at a
 // row's end takes the whole stack in one tap.
 //

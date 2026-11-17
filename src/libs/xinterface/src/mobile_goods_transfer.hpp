@@ -93,7 +93,6 @@ inline std::optional<GoodsOrder> GoodsTransferOrder(const std::string &value, ui
 }
 
 // GoodsTransfer.c ShowItemsWindow maps the mouse position (mx, my) to the picture as
-//   x = offset.x + (mx - 6 + 5) * scale.x,  y = offset.y + (my - 50 + 5) * scale.y
 // and opens the good whose icon centre (gx, gy) satisfies
 //   gx - 32 + wx <= x <= gx + 32 + wx  and  gy - 80 <= y <= gy - 16
 // (wx: GetXYWindowOffset, the horizontal centring of the 800-wide layout). The point aims at the

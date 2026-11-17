@@ -3,7 +3,7 @@
 // wood, building, plaster and ground textures, made from the player's game files into the relief directory (fx/relief_store.hpp) the game reads.
 // The game makes the maps of the textures it loads, and of its current place's neighbours, while it runs (renderer_bgfx
 // effects/relief_generator.hpp: Session, Listed); the host tool makes a whole game at once (Prepare: List, every texture,
-// Prune). Contract: README.md here.
+// Prune).
 #pragma once
 
 #include "storm/fx/relief_store.hpp"
@@ -38,7 +38,7 @@ enum class Outcome
     Failed,   // logged with the reason
 };
 
-// The model files (model/README.md): ncnn graphs, the same on the GPU and the CPU. All are required.
+// The model files: ncnn graphs, the same on the GPU and the CPU. All are required.
 struct Models
 {
     std::span<const uint8_t> normal_param, normal_bin;       // pbrify-normal.ncnn.param, .bin

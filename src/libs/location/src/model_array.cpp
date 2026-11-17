@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim, 2001
-// --------------------------------------------------------------------------------------------
 // Sea dogs II
-// --------------------------------------------------------------------------------------------
 // ModelArray
-// --------------------------------------------------------------------------------------------
 // Storing model information
-// ============================================================================================
 
 #include "geometry.h"
 
@@ -17,10 +12,6 @@
 #include "fnv_hash.hpp"
 #include "string_compare.hpp"
 #include "shared/messages.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 ModelArray::ModelArray()
 {
@@ -69,7 +60,6 @@ int32_t ModelArray::CreateModel(const char *modelName, const char *technique, in
         return -1;
     }
     core.Send_Message(idModelRealizer, "lip", 1, id, pLights);
-    // if(isVisible) core.AddToLayer(realize, idModelRealizer, level);
     core.AddToLayer(REALIZE, idModelRealizer, level);
     core.Send_Message(idModelRealizer, "ll", 2, isVisible);
     auto *m = static_cast<MODEL *>(core.GetEntityPointer(id));
@@ -113,10 +103,6 @@ int32_t ModelArray::CreateModel(const char *modelName, const char *technique, in
     model[numModels].flags = 0;
     model[numModels].isVisible = isVisible;
     // Setting the model technique
-    /*if(!technique || !technique[0])
-    {
-      technique = "DLightModel";
-    }*/
     if (technique && technique[0])
     {
         for (int32_t i = 0; i < 1024; i++)

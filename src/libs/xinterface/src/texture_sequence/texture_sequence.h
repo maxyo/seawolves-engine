@@ -2,10 +2,8 @@
 
 #include "video_texture.h"
 
-//-----------------------------------------------------------------------------
 // Name: class VideoToTexture
 // Desc: play video into texture
-//-----------------------------------------------------------------------------
 class TextureSequence : public CVideoTexture
 {
     VRenderer *m_pRS;

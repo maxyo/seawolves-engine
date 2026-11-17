@@ -23,7 +23,6 @@ class INIFILE_T : public INIFILE
 
     IFS *ifs_PTR;
 
-    // add string to file
     void AddString(const char *section_name, const char *key_name, const char *string) override;
     // write string to file, overwrite data if exist, throw EXS exception object if failed
     void WriteString(const char *section_name, const char *key_name, const char *string) override;
@@ -82,7 +81,6 @@ class INIFILE_T : public INIFILE
 class FILE_SERVICE : public VFILE_SERVICE
 {
   protected:
-    // INIFILE_R * OpenFiles[_MAX_OPEN_INI_FILES];
     IFS *OpenFiles[_MAX_OPEN_INI_FILES];
     uint32_t Files_Num;
     uint32_t Max_File_Index;

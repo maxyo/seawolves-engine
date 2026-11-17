@@ -55,7 +55,6 @@ void LIGHTNING::Execute(uint32_t Delta_Time)
             pL->fAlpha -= static_cast<float>(Delta_Time) * 0.01f;
             if (pL->fAlpha < 0.0f)
             {
-                // aLightnings.ExtractNoShift(i);
                 aLightnings[i] = aLightnings.back();
                 aLightnings.pop_back();
                 i--;
@@ -115,7 +114,6 @@ uint64_t LIGHTNING::ProcessMessage(MESSAGE &message)
     case MSG_WHR_LIGHTNING_ADD: {
         // add new lightning
         aLightnings.push_back(lightning_t{});
-        // lightning_t * pL = &aLightnings[aLightnings.Add()];
         auto *pL = &aLightnings.back();
 
         pL->dwSubTexture = message.Long();
@@ -166,7 +164,6 @@ void LIGHTNING::CalcFlashPower(lightning_t *pL) const
 
 uint32_t LIGHTNING::AttributeChanged(ATTRIBUTES *pAttribute)
 {
-    // std::string sTextureName;
 
     auto *const pParent = pAttribute->GetParent();
 

@@ -1,4 +1,4 @@
-// Neural ×2 textures (the owner's choice): PBRify's 4x-PBRify_UpscalerSPANV4 (Kim2091/PBRify_Remix, CC0-1.0; its ncnn
+// Neural ×2 textures: PBRify's 4x-PBRify_UpscalerSPANV4 (Kim2091/PBRify_Remix, CC0-1.0; its ncnn
 // graph, made by the build, and its provenance: src/libs/relief/model, third_party/licenses/PBRify-*) upscales a colour texture ×4 on the
 // player's device, from the player's own game files; the result is box-filtered back to ×2 in linear light, its mip chain
 // rebuilt and encoded for the GPU's tier, and cached in the upscale directory (the engine's cache root,
@@ -59,7 +59,7 @@ bool UpscaleWraps(UpscaleTarget target, ReliefClass relief);
 
 // The relief maps of a texture whose larger side is at most this are made from its ×2 (the models run on the ×2 at up
 // to twice the map's size and are box-filtered to the map, src/libs/relief): half the height noise and DXT steps of
-// the maps made from the texture itself (local-testing/pom/pbrify-set x2.json, inter.json). Larger textures have the
+// the maps made from the texture itself. Larger textures have the
 // detail already.
 bool ReliefMapsFromUpscale(int width, int height);
 

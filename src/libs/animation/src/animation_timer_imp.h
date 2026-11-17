@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    AnimationTimerImp
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -18,9 +12,6 @@ class AnimationImp;
 
 class AnimationTimerImp : public AnimationTimer
 {
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     AnimationTimerImp();
     ~AnimationTimerImp() override;
@@ -28,9 +19,7 @@ class AnimationTimerImp : public AnimationTimer
     // Set animation
     void SetAnimation(AnimationImp *animation);
 
-    //--------------------------------------------------------------------------------------------
     // AnimationTimer
-    //--------------------------------------------------------------------------------------------
   public:
     // Start timer (time in milliseconds)
     void Start(float time, float startTime = 0.0f) override;
@@ -52,18 +41,12 @@ class AnimationTimerImp : public AnimationTimer
     // Get the blending value for the player (if not used then 1.0f)
     float GetPlayerValue(int32_t playerIndex) override;
 
-    //--------------------------------------------------------------------------------------------
     // AnimationTimerImp
-    //--------------------------------------------------------------------------------------------
   public:
     // Execute
     void Execute(int32_t dltTime);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
-    // Animation
     AnimationImp *ani;
     // Timer options
     float curTime;

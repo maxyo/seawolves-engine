@@ -5,17 +5,12 @@ CREATE_SERVICE(COLL)
 
 entid_t last_trace_eid;
 
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
 LOCAL_COLLIDE *COLL::CreateLocalCollide(layer_index_t idx)
 {
     return new LCOLL(idx);
 }
 
-//----------------------------------------------------------------------------------
 // Ray tracing
-//----------------------------------------------------------------------------------
 float COLL::Trace(entid_t entity, const glm::vec3 &src, const glm::vec3 &dst)
 {
     auto *cob = static_cast<COLLISION_OBJECT *>(core.GetEntityPointer(entity));
@@ -26,9 +21,7 @@ float COLL::Trace(entid_t entity, const glm::vec3 &src, const glm::vec3 &dst)
     return cob->Trace(src, dst);
 }
 
-//----------------------------------------------------------------------------------
 // with enclusion list
-//----------------------------------------------------------------------------------
 float COLL::Trace(entity_container_cref entities, const glm::vec3 &src, const glm::vec3 &dst,
                   const entid_t *exclude_list, int32_t exclude_num)
 {
@@ -58,9 +51,6 @@ float COLL::Trace(entity_container_cref entities, const glm::vec3 &src, const gl
     return best_res;
 }
 
-//----------------------------------------------------------------------------------
-//
-//----------------------------------------------------------------------------------
 bool COLL::Clip(entity_container_cref entities, const PLANE *planes, int32_t nplanes, const glm::vec3 &center,
                 float radius, ADD_POLYGON_FUNC addpoly, const entid_t *exclude_list, int32_t exclude_num)
 {
@@ -88,9 +78,7 @@ bool COLL::Clip(entity_container_cref entities, const PLANE *planes, int32_t npl
     return retval;
 }
 
-//----------------------------------------------------------------------------------
 // get last trace entity id
-//----------------------------------------------------------------------------------
 entid_t COLL::GetObjectID()
 {
     return last_trace_eid;

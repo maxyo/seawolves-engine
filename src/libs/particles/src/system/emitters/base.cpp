@@ -95,8 +95,6 @@ void BaseEmitter::BornParticles(float DeltaTime)
                         GetManager()->GetMDLProcessor()->AddParticle(pMaster, VelDir, ParticlePos, matWorldTransform,
                                                                      ElapsedTime, LifeTime, ParticleTypes[n].pFields,
                                                                      &ParticleTypes[n].ActiveCount, (Unique_GUID + n));
-                        // ParticleTypes[n].ActiveCount++;
-                        // GetMaster()->GetMaster()->GetMDLProcessor()->AddParticle(ParticleTypes[n].pFields);
                         break;
                     default:
                         throw std::runtime_error("Try to emmit unknown particle type");
@@ -119,18 +117,6 @@ void BaseEmitter::Execute(float DeltaTime)
 
     IncreaseTime(DeltaTime);
 
-    /*
-      for (DWORD n = 0; n < ParticleTypes.size(); n++)
-      {
-        switch (ParticleTypes[n].Type)
-        {
-          case BILLBOARD_PARTICLE:
-            break;
-          case MODEL_PARTICLE:
-            break;
-        }
-      }
-    */
 }
 
 // Attach to data source
@@ -176,10 +162,8 @@ void BaseEmitter::IncreaseTime(float DeltaTime)
 
 void BaseEmitter::CreateBillBoardParticle(FieldList &Fields)
 {
-    //    core.Trace("Create BB Particle\n");
 
     ParticleTypes.push_back(structParticleType{});
-    // structParticleType* NewBillBoard = &ParticleTypes[ParticleTypes.Add()];
     auto *NewBillBoard = &ParticleTypes.back();
     NewBillBoard->Type = BILLBOARD_PARTICLE;
     NewBillBoard->EmissionRate = Fields.FindGraph(EMISSION_RATE);
@@ -189,15 +173,12 @@ void BaseEmitter::CreateBillBoardParticle(FieldList &Fields)
     NewBillBoard->pFields = &Fields;
     NewBillBoard->Visible = true;
 
-    //    core.Trace("%d", NewBillBoard->MaxParticlesCount);
 }
 
 void BaseEmitter::CreateModelParticle(FieldList &Fields)
 {
-    //    core.Trace("Create MODEL Particle\n");
 
     ParticleTypes.push_back(structParticleType{});
-    // structParticleType* NewModel = &ParticleTypes[ParticleTypes.Add()];
     auto *NewModel = &ParticleTypes.back();
     NewModel->Type = MODEL_PARTICLE;
     NewModel->EmissionRate = Fields.FindGraph(PARTICLE_EMISSION_RATE);
@@ -259,7 +240,6 @@ void BaseEmitter::SetTransform(const glm::mat4 &matWorld)
     }
 
     matWorldTransformNew = matWorld;
-    // matWorldTransform = matWorld;
 }
 
 void BaseEmitter::Teleport(const glm::mat4 &matWorld)

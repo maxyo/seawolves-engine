@@ -1592,7 +1592,7 @@ const KnownMissing *FindKnownMissing(const std::string &normalized)
         {"phong256_bw.gif", "RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm, sloop1_mast201.gm and "
                             "RESOURCE/MODELS/Ships/Frigate_h1/Frigate_h1.gm"},
         // Third material of a blade: checker.tga is shipped in Textures/, Characters/ and MainMenu/, not in Ammo/
-        // (Caribbean Legend's blade_29.gm no longer names it).
+        // (Caribbean Legend's blade_29.gm does not name it).
         {"ammo/checker", "RESOURCE/MODELS/Ammo/blade_29.gm"},
         // A material of the store's locator model: Textures/ ships A_big22.tga only, in TEHO and in Caribbean Legend
         // (Steam) alike.

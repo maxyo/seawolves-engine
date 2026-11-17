@@ -15,7 +15,6 @@ ShipTracks::~ShipTracks()
 {
     for (const auto &ship : aShips)
         delete ship;
-    // aShips.DelAllWithPointers();
 }
 
 bool ShipTracks::Init()
@@ -155,7 +154,6 @@ bool ShipTracks::ShipTrack::Update(SHIP_BASE *pShip)
 
     this->pShip = pShip;
     // TODO: check this
-    //this->fTrackDistance = fTrackDistance; //~!~
 
     if (this->pShip)
     {
@@ -461,7 +459,6 @@ void ShipTracks::ShipTrack::Realize(float fDeltaTime)
     if (!pShip || !pSea)
         return;
 
-    // pRS->SetTransform(D3DTS_WORLD, glm::mat4());
     glm::mat4 m;
     storm::math::pos(m) = pShip->GetPos();
     pRS->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(m));

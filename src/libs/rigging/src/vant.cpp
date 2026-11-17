@@ -54,9 +54,7 @@ VANT_BASE::~VANT_BASE()
 
 bool VANT_BASE::Init()
 {
-    // GUARD(VANT::VANT())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
@@ -124,7 +122,6 @@ void VANT_BASE::Realize(uint32_t Delta_Time)
         while (RenderService->TechniqueExecuteNext())
         {
         }
-        // RenderService->Print(0,200,"Vants vert=%d, tr=%d, time=%d",nVert,nIndx,rtm);
     }
 }
 
@@ -220,7 +217,6 @@ uint64_t VANT_BASE::ProcessMessage(MESSAGE &message)
         SetAdd(oldvantQuantity);
 
         nIndx *= 3;
-        //            if(gdata[groupQuantity-1].vantIdx) delete gdata[groupQuantity-1].vantIdx;
         gdata[groupQuantity - 1].sIndx = nIndx;
         gdata[groupQuantity - 1].nIndx = 0;
         gdata[groupQuantity - 1].sVert = nVert;
@@ -344,16 +340,8 @@ void VANT_BASE::SetIndex() const
                 {
                     pt[ti] = pt[ti + 3] = vi + j;
                     pt[ti + 2] = dIdx + j;
-                    //                    if(j<(VANT_EDGE-1))
-                    //                    {
                     pt[ti + 4] = vi + j + 1;
                     pt[ti + 1] = pt[ti + 5] = dIdx + j + 1;
-                    //                    }
-                    /*                    else
-                                        {
-                                            pt[ti+4]=vi;
-                                            pt[ti+1]=pt[ti+5]=dIdx;
-                                        }*/
                     ti += 6;
                 }
                 dIdx += VANT_EDGE + 1;
@@ -526,12 +514,10 @@ void VANT_BASE::AddLabel(GEOS::LABEL &lbl, NODE *nod)
     {
     case 'u': // up edge of vant
         vd->pUp = glm::vec3(lbl.m[3][0], lbl.m[3][1], lbl.m[3][2]) - storm::math::pos(*gdata[groupQuantity - 1].pMatWorld);
-        // + nod->glob_mtx.Pos();
         vd->pUpMatWorld = &nod->glob_mtx; // get host matrix
         break;
     case 'l': // left edge of vant
         vd->pLeft = glm::vec3(lbl.m[3][0], lbl.m[3][1], lbl.m[3][2]) - storm::math::pos(*gdata[groupQuantity - 1].pMatWorld);
-        // + nod->glob_mtx.Pos();
         if (vd->pDownMatWorld == nullptr)
             vd->pDownMatWorld = &nod->glob_mtx; // get host matrix
         else if (vd->pDownMatWorld != &nod->glob_mtx)
@@ -539,7 +525,6 @@ void VANT_BASE::AddLabel(GEOS::LABEL &lbl, NODE *nod)
         break;
     case 'r': // right edge of vant
         vd->pRight = glm::vec3(lbl.m[3][0], lbl.m[3][1], lbl.m[3][2]) - storm::math::pos(*gdata[groupQuantity - 1].pMatWorld);
-        // + nod->glob_mtx.Pos();
         if (vd->pDownMatWorld == nullptr)
             vd->pDownMatWorld = &nod->glob_mtx; // get host matrix
         else if (vd->pDownMatWorld != &nod->glob_mtx)
@@ -550,7 +535,6 @@ void VANT_BASE::AddLabel(GEOS::LABEL &lbl, NODE *nod)
 
 void VANT::LoadIni()
 {
-    // GUARD(VANT::LoadIni());
     char section[256];
     char param[256];
 
@@ -622,12 +606,10 @@ void VANT::LoadIni()
     MAXFALL_CMP_VAL = ini->GetFloat(section, "fDisapearValue", 5.f);
 
     VantId = 0;
-    // UNGUARD
 }
 
 void VANTL::LoadIni()
 {
-    // GUARD(VANT::LoadIni());
     char section[256];
     char param[256];
 
@@ -699,12 +681,10 @@ void VANTL::LoadIni()
     MAXFALL_CMP_VAL = ini->GetFloat(section, "fDisapearValue", 5.f);
 
     VantId = 1;
-    // UNGUARD
 }
 
 void VANTZ::LoadIni()
 {
-    // GUARD(VANT::LoadIni());
     char section[256];
     char param[256];
 
@@ -776,7 +756,6 @@ void VANTZ::LoadIni()
     MAXFALL_CMP_VAL = ini->GetFloat(section, "fDisapearValue", 5.f);
 
     VantId = 2;
-    // UNGUARD
 }
 
 void VANT_BASE::doMove()

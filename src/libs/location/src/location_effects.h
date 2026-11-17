@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocationEffects
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -83,19 +77,13 @@ class LocationEffects : public Entity
         float ktime;
     };
 
-    // --------------------------------------------------------------------------------------------
-    // construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     LocationEffects();
     ~LocationEffects() override;
 
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override
@@ -108,16 +96,9 @@ class LocationEffects : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     void DrawParticles(void *prts, int32_t num, int32_t size, int32_t texture, const char *tech, bool isEx = false,
                        int32_t numU = 0);
@@ -125,9 +106,7 @@ class LocationEffects : public Entity
   private:
     VRenderer *rs;
 
-    // ---------------------------------------------------
     // Ѕplashes from the character
-    // ---------------------------------------------------
     void CreateSplash(const glm::vec3 &pos, float power);
     void ProcessedChrSplash(float dltTime);
 
@@ -135,9 +114,7 @@ class LocationEffects : public Entity
     int32_t chrSplashRefCounter;
     int32_t splashesTxt;
 
-    // ---------------------------------------------------
     // Flies near laterns
-    // ---------------------------------------------------
 
     void AddLampFlys(glm::vec3 &pos);
     void ProcessedFlys(float dltTime);
@@ -149,9 +126,7 @@ class LocationEffects : public Entity
     int32_t numFly;
     int32_t flyTex;
 
-    // ---------------------------------------------------
     // Shotgun particles
-    // ---------------------------------------------------
     void SGInited();
     void SGRelease();
     void SGEnvPrt(const glm::vec3 &pos, const glm::vec3 &ndir);

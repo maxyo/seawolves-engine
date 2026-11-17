@@ -76,7 +76,6 @@ void CXI_SCROLLEDPICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini
                 auto *pA = pAttr->GetAttributeClass(n);
                 if (pA)
                 {
-                    // int32_t i = m_aImg.Add();
                     m_aImg.push_back(BuildinImage{});
                     const int32_t i = m_aImg.size() - 1;
                     m_aImg[i].bShow = false;

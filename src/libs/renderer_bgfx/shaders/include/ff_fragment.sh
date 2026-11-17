@@ -732,7 +732,7 @@ void main()
     // The skin weight of a character's pixel (ff_vertex.sh: the share of the head, neck and hand bones; 0 on every draw
     // that is not skinned): its relief, parallax, cavity and gloss fade out on faces, hands and hair, whose painted
     // shading the relief's models read as bumps.
-    // When in doubt the relief goes (the owner's choice): half a bone's share of skin (a collar, a cuff at the wrist)
+    // When in doubt the relief goes: half a bone's share of skin (a collar, a cuff at the wrist)
     // already takes all of it.
     float ffSkin = clamp(2.0 * v_normal.w, 0.0, 1.0);
     // A character's torso and arms: skin where the atlas there has the character's own skin colour (fx/skin_tone.hpp,

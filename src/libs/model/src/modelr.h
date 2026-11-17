@@ -124,8 +124,6 @@ class MODELR : public MODEL
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::loading_realize:
             if (root)
                 root->LoadNow(); // the loading screen hides the wait

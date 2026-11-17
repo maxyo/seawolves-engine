@@ -89,7 +89,6 @@ void CXI_TWOPICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     else
         m_idTwoTex = -1;
 
-    // get used colors
     m_dwSelectColor = GetIniARGB(ini1, name1, ini2, name2, "argbSelectCol", ARGB(255, 128, 128, 128));
     m_dwDarkColor = GetIniARGB(ini1, name1, ini2, name2, "argbDisableCol", ARGB(255, 48, 48, 48));
     m_dwShadowColor = GetIniARGB(ini1, name1, ini2, name2, "argbShadowCol", ARGB(255, 48, 48, 48));
@@ -97,7 +96,6 @@ void CXI_TWOPICTURE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     // texture coordinates
     const auto texRect = GetIniFloatRect(ini1, name1, ini2, name2, "texPos", FXYRECT(0.f, 0.f, 1.f, 1.f));
 
-    // Create rectangle
     m_vOne[0].tu = m_vTwo[0].tu = texRect.left;
     m_vOne[0].tv = m_vTwo[0].tv = texRect.top;
     m_vOne[1].tu = m_vTwo[1].tu = texRect.left;
@@ -259,7 +257,6 @@ void CXI_TWOPICTURE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

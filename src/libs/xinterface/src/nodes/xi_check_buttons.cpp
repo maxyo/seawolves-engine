@@ -30,10 +30,8 @@ void CXI_CHECKBUTTONS::Draw(bool bSelected, uint32_t Delta_Time)
     auto fX = static_cast<float>(m_rect.left);
     auto fY = static_cast<float>(m_rect.top);
 
-    // Print lines
     for (auto &button : m_aButton)
     {
-        // define the line color
         auto dwColor = m_dwNormalFontColor;
         if (button->bChoose)
             dwColor = m_dwSelectFontColor;
@@ -56,7 +54,6 @@ void CXI_CHECKBUTTONS::Draw(bool bSelected, uint32_t Delta_Time)
             button->pImg->Draw();
         }
 
-        // display all lines
         for (auto &line : button->aStr)
         {
             m_rs->ExtPrint(m_nFontNum, dwColor, 0, PR_ALIGN_LEFT, true, m_fFontScale, m_screenSize.x, m_screenSize.y,
@@ -89,7 +86,6 @@ void CXI_CHECKBUTTONS::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
     // Selecting text activity on mouse click
     m_bClickIntoTextActive = GetIniBool(ini1, name1, ini2, name2, "textClickable", false);
 
-    // get font number
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
     {
         if ((m_nFontNum = m_rs->LoadFont(param)) == -1)
@@ -97,14 +93,11 @@ void CXI_CHECKBUTTONS::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
     }
     m_fFontScale = GetIniFloat(ini1, name1, ini2, name2, "fontScale", 1.f);
 
-    // get normal font color
     m_dwNormalFontColor = GetIniARGB(ini1, name1, ini2, name2, "normalFontColor", 0xFFFFFFFF);
     // selected font color
     m_dwSelectFontColor = GetIniARGB(ini1, name1, ini2, name2, "selectFontColor", m_dwNormalFontColor);
-    // disable font color
     m_dwDisableFontColor = GetIniARGB(ini1, name1, ini2, name2, "disableFontColor", m_dwNormalFontColor);
 
-    //
     m_frTextOffset.left = m_frTextOffset.top = m_frTextOffset.right = m_frTextOffset.bottom = 0.f;
     m_frTextOffset = GetIniFloatRect(ini1, name1, ini2, name2, "rect_textoffset", m_frTextOffset);
 
@@ -116,17 +109,14 @@ void CXI_CHECKBUTTONS::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
     m_fpIconSize = GetIniFloatPoint(ini1, name1, ini2, name2, "iconsize", m_fpIconSize);
     if (ReadIniString(ini1, name1, ini2, name2, "icongroup", param, sizeof(param), ""))
         m_sIconGroupName = param;
-    //
     if (ReadIniString(ini1, name1, ini2, name2, "normalpicture", param, sizeof(param), ""))
         m_sNormalPicture = param;
     m_dwNormalPicColor = GetIniARGB(ini1, name1, ini2, name2, "normalpiccolor", 0xFFFFFFFF);
-    //
     if (ReadIniString(ini1, name1, ini2, name2, "selectpicture", param, sizeof(param), ""))
         m_sSelectPicture = param;
     else
         m_sSelectPicture = m_sNormalPicture;
     m_dwSelectPicColor = GetIniARGB(ini1, name1, ini2, name2, "selectpiccolor", m_dwNormalPicColor);
-    //
     if (ReadIniString(ini1, name1, ini2, name2, "disablepicture", param, sizeof(param), ""))
         m_sDisablePicture = param;
     else
@@ -197,7 +187,6 @@ void CXI_CHECKBUTTONS::ReleaseAll()
     for (const auto &button : m_aButton)
         delete button;
     m_aButton.clear();
-    // m_aButton.DelAllWithPointers();
 }
 
 int CXI_CHECKBUTTONS::CommandExecute(int wActCode)
@@ -208,7 +197,6 @@ int CXI_CHECKBUTTONS::CommandExecute(int wActCode)
         {
         case ACTION_ACTIVATE:
             break;
-            // case ACTION_MOUSEDBLCLICK:
         case ACTION_MOUSECLICK:
             CheckMouseClick(ptrOwner->GetMousePoint());
             break;
@@ -246,7 +234,6 @@ void CXI_CHECKBUTTONS::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 
@@ -372,7 +359,6 @@ void CXI_CHECKBUTTONS::AddButton(const char *pcText, bool bDisable, bool bSelect
 {
     auto pBD = new ButtonDescribe;
     Assert(pBD);
-    // pBD->aStr.Add();
     ButtonDescribe::StrDescribe strDescribe;
     if (pcText && pcText[0] == '#')
     {
@@ -408,8 +394,6 @@ void CXI_CHECKBUTTONS::ChangeText(int32_t nButtonNum, const char *pcText)
         return;
     m_aButton[nButtonNum]->aStr.clear();
     m_aButton[nButtonNum]->aStr.push_back(ButtonDescribe::StrDescribe{pcText, 0.0f});
-    // m_aButton[nButtonNum]->aStr[0].fX = 0.f;
-    // m_aButton[nButtonNum]->aStr[0].str = pcText;
 }
 
 void CXI_CHECKBUTTONS::CheckMouseClick(const FXYPOINT &pntMouse)
@@ -528,7 +512,6 @@ void CXI_CHECKBUTTONS::UpdateAllTextInfo()
 
 void CXI_CHECKBUTTONS::UpdateTextInfo(int32_t nButtonNum)
 {
-    // get the full text
     std::string sAllText;
     for (auto &btn : m_aButton[nButtonNum]->aStr)
         sAllText += btn.str;
@@ -539,11 +522,9 @@ void CXI_CHECKBUTTONS::UpdateTextInfo(int32_t nButtonNum)
     std::vector<std::string> asOutStr;
     CXI_UTILS::SplitStringByWidth(sAllText.c_str(), m_nFontNum, m_fFontScale, nWidth, asOutStr);
 
-    // m_aButton[nButtonNum]->aStr.clear();
     m_aButton[nButtonNum]->aStr.resize(asOutStr.size());
     for (int32_t n = 0; n < asOutStr.size(); n++)
     {
-        // m_aButton[nButtonNum]->aStr.Add();
         m_aButton[nButtonNum]->aStr[n].str = asOutStr[n];
         const int32_t nOffset = m_rs->StringWidth(asOutStr[n].c_str(), m_nFontNum, m_fFontScale, 0);
         switch (m_nFontAlignment)

@@ -5,7 +5,7 @@
 //     (GEOM_SERVICE_R::SetMaterial, texture[1], second UV set). Their values are heights; the game derives their maps
 //     itself (DeriveNormalMap).
 //   * ordinary colour textures of stone, wood, plaster and ground: PBRify's normals as the model gives them
-//     (relief_model.hpp, made by src/libs/relief; the owner's choice).
+//     (relief_model.hpp, made by src/libs/relief).
 // Which textures get relief comes from one ordered table of path / name rules (ClassifyTextureName) written from TEHO's
 // texture folders. Anything the table does not know gets no relief (and is logged once).
 //

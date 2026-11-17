@@ -85,7 +85,6 @@ std::FILE *file_helper::getfd() const
     return fd_;
 }
 
-//
 // return file path and its extension:
 //
 // "mylog.txt" => ("mylog", ".txt")

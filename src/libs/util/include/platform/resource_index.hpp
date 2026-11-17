@@ -6,11 +6,9 @@
 // working directory ("resource\\ini\\x.ini") or through the absolute game
 // directory. The index maps both lowercase spellings to the real on-disk path.
 //
-// scan() used to be two full recursive walks, one of "." and one of the
-// executable/game directory. On Android those are the same directory, so
-// startup paid for the whole tree twice. scan() now walks once and derives
-// both key families from each entry whenever the two roots are the same
-// directory, and falls back to the two walks otherwise.
+// scan() walks once and derives both key families from each entry whenever
+// the two roots are the same directory (always on Android, so the tree is not
+// walked twice), and walks both roots otherwise.
 
 #include <algorithm>
 #include <cctype>

@@ -31,7 +31,6 @@ enum PointType
 #define COLOR_GRAY D3DCOLOR_ARGB(200, 200, 200, 200);
 #define COLOR_SELECTED 0xFFFFFFFF;
 
-//-----------------------------------------------------------------------------------------------
 struct Path
 {
     uint8_t length;            // path length (number of elements)
@@ -47,13 +46,10 @@ struct Path
     };
 };
 
-//-----------------------------------------------------------------------------------------------
 struct Link
 {
     int first, next;
 };
-
-//-----------------------------------------------------------------------------------------------
 
 class Links
 {
@@ -69,8 +65,6 @@ class Links
         count = 0;
     };
 };
-
-//-----------------------------------------------------------------------------------------------
 
 struct Point
 {
@@ -99,8 +93,6 @@ struct Point
     bool IsCannon() const;
 };
 
-//-----------------------------------------------------------------------------------------------
-
 struct Points
 {
     std::vector<Point> point;
@@ -115,8 +107,6 @@ struct Points
         selected = -1;
     }
 };
-
-//-----------------------------------------------------------------------------------------------
 
 class SailorsPoints
 {
@@ -137,8 +127,6 @@ class SailorsPoints
     int WriteToFile(std::string fileName);
     int ReadFromFile(std::string fileName);
 };
-
-//-------------------------------------------------------------------------------------
 
 inline float Dest(const glm::vec3 &_v1, const glm::vec3 &_v2)
 {

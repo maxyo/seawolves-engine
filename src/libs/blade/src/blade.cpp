@@ -123,7 +123,6 @@ void BLADE::BLADE_INFO::DrawBlade(VRenderer *rs, unsigned int blendValue, MODEL 
         obj->mtx = perMtx;
         obj->ProcessStage(Stage::realize, 0);
 
-        //--------------------------------------------------------------------------
         rs->TextureSet(0, -1);
         rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(glm::mat4()));
 
@@ -252,7 +251,6 @@ BLADE::~BLADE()
 
 bool BLADE::Init()
 {
-    // GUARD(BLADE::BLADE())
 
     col = static_cast<COLLIDE *>(core.GetService("coll"));
     if (col == nullptr)
@@ -268,9 +266,7 @@ bool BLADE::Init()
     return true;
 }
 
-//------------------------------------------------------------------------------------
 // realize
-//------------------------------------------------------------------------------------
 void BLADE::Realize(uint32_t Delta_Time)
 {
     blade[0].time += 0.001f * (Delta_Time);
@@ -295,7 +291,6 @@ void BLADE::Realize(uint32_t Delta_Time)
     rs->SetTransform(D3DTS_TEXTURE1, storm::math::d3dMatrix(mtx));
     rs->SetRenderState(D3DRS_TEXTUREFACTOR, blendValue);
 
-    //------------------------------------------------------
     // draw gun
     glm::mat4 perMtx;
     int32_t sti;
@@ -345,12 +340,10 @@ void BLADE::Realize(uint32_t Delta_Time)
         obj->ProcessStage(Stage::realize, 0);
     }
 
-    //------------------------------------------------------
     // draw saber
     blade[0].DrawBlade(rs, blendValue, mdl, manNode);
     blade[1].DrawBlade(rs, blendValue, mdl, manNode);
 
-    //------------------------------------------------------
     // draw tied items
     for (int32_t n = 0; n < ITEMS_INFO_QUANTITY; n++)
         if (items[n].nItemIndex != -1)
@@ -414,7 +407,6 @@ void BLADE::GunFire()
     auto *mdl = static_cast<MODEL *>(core.GetEntityPointer(man));
     auto *manNode = mdl->GetNode(0);
 
-    //------------------------------------------------------
     // search gunfire
     glm::mat4 perMtx;
     int32_t sti;
@@ -497,7 +489,6 @@ uint64_t BLADE::ProcessMessage(MESSAGE &message)
             blade[n].locatorName = sabergunBeltName;
             blade[n].lifeTime = 0.0f;
         }
-        // core.Trace("MSG_BLADE_BELT::%s", beltName);
         break;
 
     case MSG_BLADE_HAND:
@@ -510,7 +501,6 @@ uint64_t BLADE::ProcessMessage(MESSAGE &message)
         {
             blade[n].locatorName = sabergunHandName;
         }
-        // core.Trace("MSG_BLADE_HAND::%s", handName);
         break;
 
     case MSG_BLADE_GUNSET:
@@ -518,15 +508,12 @@ uint64_t BLADE::ProcessMessage(MESSAGE &message)
         break;
     case MSG_BLADE_GUNBELT:
         gunLocName = gunBeltName;
-        // core.Trace("MSG_BLADE_GUNBELT::%s", gunLocName);
         break;
     case MSG_BLADE_GUNHAND:
         gunLocName = gunHandName;
-        // core.Trace("MSG_BLADE_GUNHAND::%s", gunLocName);
         break;
     case MSG_BLADE_GUNFIRE:
         GunFire();
-        // core.Trace("MSG_BLADE_GUNFIRE::%s", handName);
         break;
 
     case MSG_BLADE_TRACE_ON:
@@ -535,7 +522,6 @@ uint64_t BLADE::ProcessMessage(MESSAGE &message)
         {
             blade[0].lifeTime = blade[0].defLifeTime;
         }
-        // core.Trace("MSG_BLADE_TRACE_ON::%f", lifeTime);
         break;
 
     case MSG_BLADE_TRACE_OFF:
@@ -544,15 +530,12 @@ uint64_t BLADE::ProcessMessage(MESSAGE &message)
         {
             blade[0].lifeTime = 0.0f;
         }
-        // core.Trace("MSG_BLADE_TRACE_OFF");
         break;
 
     case MSG_BLADE_BLOOD:
-        // core.Trace("MSG_BLADE_BLOOD");
         break;
 
     case MSG_BLADE_LIGHT:
-        // core.Trace("MSG_BLADE_LIGHT");
         break;
     case MSG_BLADE_ALPHA:
         blendValue = message.Long();

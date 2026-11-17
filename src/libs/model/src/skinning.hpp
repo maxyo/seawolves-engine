@@ -3,9 +3,6 @@
 // CPU skinning kernel for two-bone blended vertices.
 //
 // For every vertex:
-//   M   = bone[id0] * weight + bone[id1] * (1 - weight)      (per element)
-//   M.x = -M.x                                               (elements 0, 4, 8, 12)
-//   out = (M.col0 * v.x + M.col1 * v.y) + (M.col2 * v.z + M.col3)
 // for position and normal alike (the legacy code transforms normals with the
 // translation included; that is preserved).
 //

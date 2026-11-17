@@ -66,7 +66,6 @@ SEAFOAM_PS::~SEAFOAM_PS()
     {
         for (n = 0; n < TexturesNum; n++)
             RenderService->TextureRelease(TextureID[n]);
-        // core.FreeService("renderer");
     }
     delete[] Particle;
     Particle = nullptr;
@@ -76,11 +75,8 @@ SEAFOAM_PS::~SEAFOAM_PS()
     TechniqueName = nullptr;
 }
 
-//----------------------------------------------------------------------------------
-
 bool SEAFOAM_PS::Init(INIFILE *ini, const char *psname)
 {
-    // GUARD(SEAFOAM_PS::Init)
     if (!ini)
         return false;
     int32_t n;
@@ -92,7 +88,6 @@ bool SEAFOAM_PS::Init(INIFILE *ini, const char *psname)
         throw std::runtime_error("No service: renderer");
 
     gs = static_cast<VGEOMETRY *>(core.GetService("geometry"));
-    // if(!gs) return false;
 
     // read textures ------------------------------------------------------------
     char string[MAX_PATH];
@@ -183,7 +178,6 @@ bool SEAFOAM_PS::Init(INIFILE *ini, const char *psname)
         Particle[n].pos.x = Emitter.x + ESpace * (0.5f - static_cast<float>(rand()) / RAND_MAX);
         Particle[n].pos.y = Emitter.y + ESpace * (0.5f - static_cast<float>(rand()) / RAND_MAX);
         Particle[n].pos.z = Emitter.z + ESpace * (0.5f - static_cast<float>(rand()) / RAND_MAX);
-        // Particle[n].size = 1.0f;
         Particle[n].size = 0.0f;
         Particle[n].color = 0xffffffff;
         Particle[n].color = ParticleColor;
@@ -221,8 +215,6 @@ bool SEAFOAM_PS::Init(INIFILE *ini, const char *psname)
         Particle[n].time = 0;
         Particle[n].live = false;
         Particle[n].done = false;
-        // if(bUniformEmit) Particle[n].time = -n*(Lifetime/ParticlesNum);
-        // else Particle[n].time = -EmitterIniTime * rand()/RAND_MAX;
 
         Particle[n].spinVal = Spin + SpinDeviation * (0.5f - static_cast<float>(rand()) / RAND_MAX);
         Particle[n].spin = Particle[n].spinVal;
@@ -302,10 +294,6 @@ void SEAFOAM_PS::UpdateVertexBuffer()
         rpos[2] = storm::math::transformPoint(RMatrix, ipos[2]);
         rpos[3] = storm::math::transformPoint(RMatrix, ipos[3]);
 
-        /*rpos[0] = ipos[0];
-        rpos[1] = ipos[1];
-        rpos[2] = ipos[2];
-        rpos[3] = ipos[3];*/
 
         // first & second left up
         pos.x = local_pos.x + rpos[0].x; // - halfsize;
@@ -402,7 +390,6 @@ void SEAFOAM_PS::Realize(uint32_t DeltaTime)
 
     RenderService->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(Matrix));
 
-    // Camera_EmitterPos = Matrix * Emitter;
 
     RenderService->GetCamera(CameraPos, CameraAng, Perspective);
 
@@ -417,8 +404,6 @@ void SEAFOAM_PS::Realize(uint32_t DeltaTime)
 
 
     bool bDraw;
-    // if(bColorInverse)bDraw = RenderService->TechniqueExecuteStart("particles_inv");
-    // else bDraw = RenderService->TechniqueExecuteStart("particles");
 
     bDraw = RenderService->TechniqueExecuteStart(TechniqueName);
     if (bDraw)
@@ -525,10 +510,8 @@ void SEAFOAM_PS::ProcessParticles(uint32_t DeltaTime)
             Particle[n].pos.y += DeltaTime * (Particle[n].v.y + Particle[n].chaos.y);
             Particle[n].pos.z += DeltaTime * (Particle[n].v.z + Particle[n].chaos.z);
 
-            // Particle[n].angle += DeltaTime * Particle[n].spin;
             SetFlowTrack(n);
 
-            // Particle[n].pos.y -= Particle[n].weight*Gravity*DeltaTime;
 
             Particle[n].speed *= Particle[n].speed_chaos;
 
@@ -545,14 +528,8 @@ void SEAFOAM_PS::ProcessParticles(uint32_t DeltaTime)
             Particle[n].v = Particle[n].ang * Particle[n].speed;
         }
 
-        /*if(fWindEffect != 0.0f && fWindPower != 0.0f)
-        {
-          Particle[n].pos += (DeltaTime*fWindEffect*fWindPower)*vWindDirection;
-        }*/
-        // bComplete = false;    // still have particles to run
     }
 
-    // core.Trace("Delta: %d",DeltaTime);
 
     DeltaTimeSLE += DeltaTime;
     if (DeltaTimeSLE >= (EmissionTime + CurrentEmissionTimeRand))
@@ -611,7 +588,6 @@ void SEAFOAM_PS::SetParticlesTracks(uint32_t DeltaTime)
         alpha = static_cast<uint32_t>(static_cast<float>(0xff) * val);
         color = Particle[n].color & (0xffffff);
 
-        // if(bColorInverse) {black = alpha; color = (black<<16)|(black<<8)|black;}
 
         color = ((alpha << 24) & 0xff000000) | color;
 
@@ -737,14 +713,6 @@ void SEAFOAM_PS::SetEmitter(glm::vec3 p, glm::vec3 a)
 {
     Emitter = p;
     EmitterDirection = storm::math::normalizeOrZero(a);
-    /*
-    for(n=0;n<ParticlesNum;n++)
-    {
-      Particle[n].ang.x = EmitterDirection.x + DirectionDeviation*(0.5f - (float)rand()/RAND_MAX);
-      Particle[n].ang.y = EmitterDirection.y + DirectionDeviation*(0.5f - (float)rand()/RAND_MAX);
-      Particle[n].ang.z = EmitterDirection.z + DirectionDeviation*(0.5f - (float)rand()/RAND_MAX);
-    }
-    */
 }
 
 void SEAFOAM_PS::LinkToObject(entid_t id, glm::vec3 _LinkPos)
@@ -770,14 +738,6 @@ void SEAFOAM_PS::LinkToObject(entid_t id, glm::vec3 _LinkPos)
     UpdateVertexBuffer();
 }
 
-/*
-void SEAFOAM_PS::AddTrackPoint(glm::vec3 pos)
-{
-    bUseFlowTrack = true;
-    nFlowTrackSize++;
-    pFlowTrack = (glm::vec3 *)RESIZE(pFlowTrack,nFlowTrackSize*sizeof(glm::vec3));
-    pFlowTrack[nFlowTrackSize - 1] = pos;
-}*/
 
 void SEAFOAM_PS::SetFlowTrack(uint32_t index)
 {
@@ -792,6 +752,5 @@ void SEAFOAM_PS::SetFlowTrack(uint32_t index)
     {
         Particle[index].flow_track_index++;
     }
-    // if(index==0)core.Trace("track: %d",Particle[index].flow_track_index);
 }
 

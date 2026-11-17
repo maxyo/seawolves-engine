@@ -1,26 +1,15 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // AnimationImp
-// --------------------------------------------------------------------------------------------
 // Implementing the Animation interface
-// ============================================================================================
 
 #include "animation_imp.h"
 #include "animation_service_imp.h"
 #include "core.h"
 #include "debug-trap.h"
 
-//============================================================================================
-
 // Animation Service Pointer
 AnimationServiceImp *AnimationImp::aniService = nullptr;
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 AnimationImp::AnimationImp(int32_t id, AnimationInfo *animationInfo)
 {
@@ -40,7 +29,6 @@ AnimationImp::AnimationImp(int32_t id, AnimationInfo *animationInfo)
     isAutoNormalize = true;
     // Custom blending
     isUserBlend = true;
-    // Procedural head look
     isControllableHead = false;
     headBoneIndex = 16;
     const char *dataStr = GetData("Head bone index");
@@ -57,10 +45,6 @@ AnimationImp::~AnimationImp()
     delete[] matrix;
 }
 
-//--------------------------------------------------------------------------------------------
-// Animation
-//--------------------------------------------------------------------------------------------
-
 // Access the action player
 ActionPlayer &AnimationImp::Player(int32_t index)
 {
@@ -75,7 +59,6 @@ AnimationTimer &AnimationImp::Timer(int32_t index)
     return timer[index];
 }
 
-// Events
 // Set internal event
 int32_t AnimationImp::SetEvent(AnimationEvent event, int32_t index, AnimationEventListener *ael)
 {
@@ -191,7 +174,6 @@ bool AnimationImp::IsUserBlend()
     return isUserBlend;
 }
 
-// Procedural head look
 bool AnimationImp::HeadControl(bool isControllable)
 {
     const auto b = isControllableHead;
@@ -210,9 +192,7 @@ void AnimationImp::RotateHead(float x, float y)
     customHeadAY = y;
 }
 
-//--------------------------------------------------------------------------------------------
 // AnimationImp
-//--------------------------------------------------------------------------------------------
 
 // Take a step in time
 void AnimationImp::Execute(int32_t dltTime)
@@ -274,7 +254,6 @@ void AnimationImp::BuildAnimationMatrices()
             }
 
             auto kBlend = 1.0f - action[0].kBlendCurrent * normBlend;
-            //-------------------------------------------------------------------------
             for (int32_t j = 0; j < nbones; j++)
             {
                 auto &bn = aniInfo->GetBone(j);
@@ -290,7 +269,6 @@ void AnimationImp::BuildAnimationMatrices()
                     storm::math::pos(inmtx) = p0 + kBlend * (p1 - p0);
                 }
 
-                // Procedural head look
                 if (j == headBoneIndex && isControllableHead)
                 {
                     inmtx = storm::math::rotationX(customHeadAX) * inmtx;
@@ -314,7 +292,6 @@ void AnimationImp::BuildAnimationMatrices()
                 ki = 0.0f;
             }
 
-            //-------------------------------------------------------------------------
             for (int32_t j = 0; j < nbones; j++)
             {
                 auto &bn = aniInfo->GetBone(j);
@@ -325,7 +302,6 @@ void AnimationImp::BuildAnimationMatrices()
                 if (j == 0)
                     storm::math::pos(inmtx) = bn.BlendPosition(f, ki);
 
-                // Procedural head look
                 if (j == headBoneIndex && isControllableHead)
                 {
                     inmtx = storm::math::rotationX(customHeadAX) * inmtx;
@@ -349,7 +325,6 @@ void AnimationImp::BuildAnimationMatrices()
                 ki = 0.0f;
             }
 
-            //-------------------------------------------------------------------------
             for (int32_t j = 0; j < nbones; j++)
             {
                 auto &bn = aniInfo->GetBone(j);
@@ -360,7 +335,6 @@ void AnimationImp::BuildAnimationMatrices()
                 if (j == 0)
                     storm::math::pos(inmtx) = bn.BlendPosition(f, ki);
 
-                // Procedural head look
                 if (j == headBoneIndex && isControllableHead)
                 {
                     inmtx = storm::math::rotationX(customHeadAX) * inmtx;
@@ -377,10 +351,6 @@ void AnimationImp::BuildAnimationMatrices()
         {
             core.Trace("AnimationImp::BuildAnimationMatrices -> Not support mode");
             psnip_trap();
-            /*_asm int 3;*/
-            //    float frame = 0.0f;
-            //    for(int32_t j = 0; j < nbones; j++)
-            //        aniInfo->GetBone(j).BlendFrame(frame);
         }
     for (int32_t j = 0; j < nbones; j++)
     {
@@ -389,7 +359,6 @@ void AnimationImp::BuildAnimationMatrices()
     }
 }
 
-// Events
 // Send events
 void AnimationImp::SendEvent(AnimationEvent event, int32_t index)
 {

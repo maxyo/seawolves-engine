@@ -52,12 +52,10 @@ void DataGraph::SetDefaultValue(float MaxValue, float MinValue)
     Min.Val = MinValue;
     Min.Time = MIN_GRAPH_TIME;
     MinGraph.push_back(Min);
-    // Min.Time = MAX_GRAPH_TIME;
     MinGraph.push_back(Min);
 
     GraphVertex Max;
     Max.Val = MaxValue;
-    // Max.Time = MIN_GRAPH_TIME;
     MaxGraph.push_back(Max);
     Max.Time = MAX_GRAPH_TIME;
     MaxGraph.push_back(Max);
@@ -104,7 +102,6 @@ void DataGraph::Load(MemFile *File)
         MaxVertex.Val = fValue;
         MaxGraph.push_back(MaxVertex);
 
-        // core.Trace("Max value %d = %3.2f, %3.2f", i, fTime, fValue);
     }
 
     uint32_t MinGraphItemsCount = 0;
@@ -126,7 +123,6 @@ void DataGraph::Load(MemFile *File)
         MinVertex.Val = fValue;
         MinGraph.push_back(MinVertex);
 
-        // core.Trace("Min value %d = %3.2f, %3.2f", i, fTime, fValue);
     }
 
     static char AttribueName[128];
@@ -135,17 +131,11 @@ void DataGraph::Load(MemFile *File)
     Assert(NameLength < 128);
     File->Read(AttribueName, NameLength);
 
-    // core.Trace("Name %s", AttribueName);
 
     SetName(AttribueName);
 
     // HACK! For backward compatibility
     // convert after loading the graphs into the desired format
-    // if (storm::iEquals (AttribueName, EMISSION_DIR_X))    ConvertDegToRad ();
-    // if (storm::iEquals (AttribueName, EMISSION_DIR_Y))    ConvertDegToRad ();
-    // if (storm::iEquals (AttribueName, EMISSION_DIR_Z))    ConvertDegToRad ();
-    // if (storm::iEquals (AttribueName, PARTICLE_DRAG))    NormalToPercent();
-    // if (storm::iEquals (AttribueName, PARTICLE_TRANSPARENCY))    NormalToAlpha();
 }
 
 // Set / get can be negative values in the graph or not
@@ -172,7 +162,6 @@ bool DataGraph::GetRelative() const
 
 void DataGraph::SetName(const char *szName)
 {
-    // core.Trace("DataGraph::SetName - '%s'", szName);
     Name = szName;
 }
 
@@ -198,7 +187,6 @@ float DataGraph::GetMinAtTime(float Time, float LifeTime)
         const auto ToTime = MinGraph[Index + 1].Time;
 
         // If the time is in the correct range
-        // if ((Time >= FromTime) && (Time <= ToTime))
         if (Time <= ToTime)
         {
             const auto FromTime = MinGraph[Index].Time;
@@ -242,7 +230,6 @@ float DataGraph::GetMaxAtTime(float Time, float LifeTime)
         const auto ToTime = MaxGraph[Index + 1].Time;
 
         // If the time is in the correct range
-        // if ((Time >= FromTime) && (Time <= ToTime))
         if (Time <= ToTime)
         {
             const auto FromTime = MaxGraph[Index].Time;

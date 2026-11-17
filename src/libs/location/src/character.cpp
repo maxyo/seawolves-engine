@@ -1,12 +1,5 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
-//    Character
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #ifdef __ANDROID__
 #ifdef __ANDROID__
@@ -28,8 +21,6 @@
 #include "math_inlines.h"
 #include "string_compare.hpp"
 #include "v_data.h"
-
-//============================================================================================
 
 #define CHARACTER_WAIT_AFTER_DEAD 6.0f //
 
@@ -118,8 +109,6 @@ const char *Character::fightNamesTbl[fgt_max] = {
     "fgt_strafe_l",      // Bounce to the left
     "fgt_strafe_r",      // Bounce right
 };
-
-//============================================================================================
 
 Character::ActionCharacter::ActionCharacter()
 {
@@ -397,10 +386,6 @@ void Character::EventListener::Event(Animation *animation, int32_t playerIndex, 
     character->ActionEvent(animation, playerIndex, eventName);
 }
 
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
-
 Character::Character()
 {
     isPlayerEnemy = false;
@@ -483,7 +468,6 @@ Character::Character()
     actionFightIdle[4].SetName("fight stand_5");
     actionFightIdle[5].SetName("fight stand_6");
     actionFightIdle[6].SetName("fight stand_7");
-    // actionFightIdle[7].SetName("fight stand_8");
     numFightActionIdles = 7;
     // Walking forward in combat mode
     fightwalk.SetName("fight walk");
@@ -603,8 +587,6 @@ Character::Character()
     recoilSound = SOUND_INVALID_ID;
     soundStep = false;
     soundGrass = false;
-    // hScale = 1.0f;//0.9f + rand()*0.2f/RAND_MAX;
-    // wScale = 1.2f;//0.95f + rand()*0.1f/RAND_MAX;
     group[0] = 0;
     numTargets = 0;
     groupID = -1;
@@ -618,7 +600,6 @@ Character::Character()
     m_pcHandLightLocator = "Saber_hand";
     m_nHandLightID = -1;
 
-    // Procedural head look
     curHeadLookState = HeadLookState::dflt;
     headLookChrTarget = {};
     headLookPointTarget = glm::vec3(0.0f);
@@ -652,11 +633,9 @@ Character::~Character()
     core.Send_Message(core.GetEntityId("CharactersGroups"), "si", "UnloadCharacter", GetId());
 
     // Analyzing detectors
-    // for(int32_t i = 0; i < numDetectors; i++) detector[i]->Exit(this);
     // Removing detectors
     for (int32_t i = 0; i < numDetectors; i++)
         delete detector[i];
-    //
     if (location && !isDeleted)
         location->supervisor.DelCharacter(this);
     core.EraseEntity(waterrings);
@@ -666,10 +645,8 @@ Character::~Character()
     delete[] characterID;
 }
 
-// Initialization
 bool Character::Init()
 {
-    // Location Pointer
     auto *const location = GetLocation();
     if (!location)
         return false;
@@ -695,7 +672,6 @@ bool Character::Init()
     return PostInit();
 }
 
-// Messages
 uint64_t Character::ProcessMessage(MESSAGE &message)
 {
     if (message.GetCurrentFormatType() == 's')
@@ -811,7 +787,6 @@ uint64_t Character::ProcessMessage(MESSAGE &message)
         location->AddDamageMessage(curPos + glm::vec3(0.0f, height, 0.0f), hit, chp, mhp);
     }
         return 1;
-    // Procedural head look
     case MSG_CHARACTER_HEADLOOK_DEFAULT:
         curHeadLookState = HeadLookState::dflt;
         return 1;
@@ -1106,9 +1081,7 @@ void Character::ReadFightActions(ATTRIBUTES *at, ActionCharacter actions[4], int
     }
 }
 
-//============================================================================================
 // Character model
-//============================================================================================
 
 MODEL *Character::Model() const
 {
@@ -1262,9 +1235,7 @@ void Character::DelSavePosition(bool isTeleport)
     }
 }
 
-//============================================================================================
 // Character commands
-//============================================================================================
 
 // To go
 void Character::StartMove(bool isBack)
@@ -1286,7 +1257,6 @@ void Character::StopMove()
 // Guide the character with the vector
 void Character::Turn(float dx, float dz)
 {
-    // if(priorityAction.name) return;
     const double vx = dx;
     double vz = dz;
     const double l = vx * vx + vz * vz;
@@ -1406,7 +1376,6 @@ bool Character::IsFightEnable() const
     }
     else
     {
-        //!!!        core.Trace("Event \"Location_CharacterIsFight\" -> return type is not int");
         return true;
     }
     return true;
@@ -1433,7 +1402,6 @@ void Character::Attack(Character *enemy, FightAction type)
         return;
     if (type < fgt_attack_fast || type > fgt_attack_feintc)
         return;
-    // if(!fightTbl[fgtCurType][type]) return;
     if (enemy)
     {
         enemyAttack = enemy->GetId();
@@ -1561,7 +1529,6 @@ void Character::Attack(Character *enemy, FightAction type)
 // Block
 void Character::Block()
 {
-    // boal interrupt everything with the block if (priorityAction.name) return;
     if (isSwim)
         return;
     if (!isFight)
@@ -1586,7 +1553,6 @@ void Character::Parry()
         return;
     fgtSetType = fgt_parry;
 
-    // fgtSetIndex = rand() % numParry;
     ObstacleZone zone[4];
     // moving to the left
     zone[0].use = true;
@@ -1609,7 +1575,6 @@ void Character::Parry()
     zone[3].z = 0.f;
     zone[3].dw = 0.5f;
     fgtSetIndex = GetRandomIndexByObstacle(zone, 4);
-    // core.Trace ("Selection result: \"%i\"", fgtSetIndex);
     if (fgtSetIndex < 0)
         fgtSetIndex = 3;
 
@@ -1715,7 +1680,6 @@ void Character::StrafeRight()
 void Character::Hit(FightAction type)
 {
     /*
-    //!!!
     entid_t eid;
     if(storm::iEquals(characterID, "Blaze"))
     {
@@ -1724,14 +1688,12 @@ void Character::Hit(FightAction type)
     char sbuf[256];
     sprintf_s(sbuf, "Hit! cur act: %s", fightNamesTbl[fgtCurType]);
     core.Send_Message(eid, "lls", 45020, false, sbuf);
-    //!!!
     //*/
     if (priorityAction.name)
         return;
     if (isSwim)
         return;
     isNFHit = false;
-    // if(!isFight)
     {
         if (!IsDead())
         {
@@ -1751,14 +1713,12 @@ void Character::Hit(FightAction type)
                 fgtSetType = fgt_hit_attack;
                 fgtSetIndex = rand() % numHits;
             }
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_attack");
         }
         else
         {
             HitChild(true);
             fgtSetType = fgt_blockhit;
             fgtSetIndex = 0;
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_blockhit");
         }
         break;
     case fgt_hit_round:
@@ -1767,14 +1727,12 @@ void Character::Hit(FightAction type)
             HitChild(false);
             fgtSetType = fgt_hit_round;
             fgtSetIndex = 0;
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_round");
         }
         else
         {
             HitChild(true);
             fgtSetType = fgt_blockhit;
             fgtSetIndex = 0;
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_blockhit");
         }
         break;
     case fgt_blockbreak:
@@ -1783,39 +1741,33 @@ void Character::Hit(FightAction type)
             HitChild(false);
             fgtSetType = fgt_hit_attack;
             fgtSetIndex = rand() % numHits;
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_attack");
         }
         else
         {
             HitChild(true);
             fgtSetType = fgt_blockbreak;
             fgtSetIndex = 0;
-            // core.Send_Message(eid, "lls", 45020, false, "fgt_blockbreak");
         }
         break;
     case fgt_hit_feint:
         HitChild(false);
         fgtSetType = fgt_hit_feint;
         fgtSetIndex = 0;
-        // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_feint");
         break;
     case fgt_hit_parry:
         HitChild(true);
         fgtSetType = fgt_hit_parry;
         fgtSetIndex = 0;
-        // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_parry");
         break;
     case fgt_hit_fire:
         HitChild(false);
         fgtSetType = fgt_hit_fire;
         fgtSetIndex = 0;
-        // core.Send_Message(eid, "lls", 45020, false, "fgt_hit_fire");
         break;
     default:
         HitChild(false);
         fgtSetType = fgt_hit_attack;
         fgtSetIndex = rand() % numHits;
-        // core.Send_Message(eid, "lls", 45020, false, "default hit!...");
     }
     if (restBlockBreak)
         fgtSetType = fgt_blockbreak;
@@ -1855,8 +1807,6 @@ bool Character::IsGunLoad() const
     else
     {
         core.Trace("Event \"Location_CharacterIsFire\" -> return type is not int");
-        // return false;
-        //!!!
         return true;
     }
     return true;
@@ -1967,10 +1917,6 @@ void Character::StartJump()
         SetPriorityAction(jump.name);
     }
 }
-
-//============================================================================================
-// Character
-//============================================================================================
 
 // Reset state
 void Character::Reset()
@@ -2199,7 +2145,6 @@ void Character::Move(float dltTime)
             }
         }
         // location->Print(curPos, 1000.0f, 4, 1.0f, 0xffffffff, 1.0f, "ay = %f, nay = %f, turnDir = %f, turnspd = %f",
-        // ay, nay, turnDir, turnspd);
         kSpd = 1.0f;
     }
     else
@@ -2269,11 +2214,9 @@ void Character::Move(float dltTime)
         }
         if (isJumpSnd)
         {
-            // SetSoundPosition(jumpSound);
         }
         else
         {
-            // ReleaseSound(jumpSound);
             jumpSound = SOUND_INVALID_ID;
         }
     }
@@ -2283,9 +2226,7 @@ void Character::Move(float dltTime)
         k = 1.0f;
     impulse -= impulse * k;
 
-    //!!!
     // if(core.Controls->GetDebugAsyncKeyState('7') < 0) core.Send_Message(effects, "sffff", "Splashes", curPos.x,
-    // curPos.y, curPos.z, 1.0f);
 
     // Wave height at a given point
     if (!location->IsSwimming())
@@ -2392,7 +2333,6 @@ void Character::Update(float dltTime)
         const glm::vec3 pos = curPos + glm::vec3(0.0f, 2.0f, 0.0f);
         location->DrawEnemyBars(pos, hp, energy, tuner.GetAlpha() * enemyBarsAlpha);
     }
-    //
     if (lockMove)
         dltTime = 0.0f;
     // calculate the time for group work
@@ -2412,7 +2352,6 @@ void Character::Update(float dltTime)
         const uint32_t blendColor = (static_cast<uint32_t>(alpha) << 24) | 0x00ffffff;
         core.Send_Message(blade, "ll", MSG_BLADE_ALPHA, blendColor);
     }
-    //
     PtcData &ptc = location->GetPtcData();
     if (deadName)
     {
@@ -2458,7 +2397,6 @@ void Character::Update(float dltTime)
     {
         vy = 0.0f;
     }
-    // SetSoundPosition(recoilSound);
     // Wave height at a given point
     glm::vec3 chrPos = curPos;
     if (isSwim && location->IsSwimming())
@@ -2468,7 +2406,6 @@ void Character::Update(float dltTime)
     }
     // put the matrix for the model
     m->mtx = storm::math::eulerMatrix(glm::vec3(0.0f, ay + strafeAngle * 3.1415f * 0.25f * 0.8f, 0.0f), chrPos);
-    // - glm::vec3(0.0f, 0.14f, 0.0f));
     // Walking up the stairs
     float sn = 0.0f;
     glm::vec3 nodeNorm;
@@ -2478,7 +2415,6 @@ void Character::Update(float dltTime)
         k = 1.0f;
     movecs += (nodeNorm.y - movecs) * k;
     isUp = nodeNorm.x * storm::math::vz(m->mtx).x + nodeNorm.z * storm::math::vz(m->mtx).z <= 0;
-    // Animation
     /*
     if(storm::iEquals(characterID, "Blaze"))
     {
@@ -2493,7 +2429,6 @@ void Character::Update(float dltTime)
     // If fell, write a debug line
     if (curPos.y < -1000.0f)
     {
-        // Assert(false);
         core.Trace("Character [%s] fall to underworld!!!", characterID ? characterID : "Unknow id");
         curPos.y = -500.0f;
         vy = 0.0f;
@@ -2544,7 +2479,6 @@ void Character::Update(float dltTime)
         if (tuner.chrAlpha > 1.0f)
             tuner.chrAlpha = 1.0f;
     }
-    //
     k = dltTime * 4.0f;
     if (k > 1.0f)
         k = 1.0f;
@@ -2556,7 +2490,6 @@ void Character::Update(float dltTime)
         soundStep = false;
     }
     soundGrass = false;
-    //
     MODEL *signMdl = static_cast<MODEL *>(core.GetEntityPointer(sign));
     if (signMdl)
     {
@@ -2577,8 +2510,6 @@ void Character::Update(float dltTime)
     {
         location->GetLights()->UpdateMovingLight(m_nHandLightID, GetHandLightPos());
     }
-
-    // Procedural head look
 
     Animation *ani = m->GetAnimation();
     if (!ani)
@@ -2953,7 +2884,6 @@ void Character::ActionEvent(Animation *animation, int32_t playerIndex, const cha
                         {
                             isFireState = false;
                             core.Send_Message(blade, "l", MSG_BLADE_GUNFIRE);
-                            // PlaySound("pistol_shot");
                             isFired = true;
                             float kDist;
                             Character *chr = FindGunTarget(kDist, CheckShotOnlyEnemyTest());
@@ -3086,11 +3016,6 @@ void Character::PlayStep()
                 {
                     defSnd = "run_echo";
                 }
-                /*else
-                if(storm::iEquals(mtl, "snd_iron"))
-                {
-                  defSnd = "run_iron";
-                }*/
             }
             PlaySound(defSnd, false, true);
         }
@@ -3156,10 +3081,6 @@ void Character::PlayStep()
         }
     }
 }
-
-// ============================================================================================
-// Encapsulation
-// ============================================================================================
 
 bool Character::zLoadModel(MESSAGE &message)
 {
@@ -3641,7 +3562,6 @@ bool Character::TestJump(glm::vec3 pos)
         v.y -= 9.8f * CHARACTER_JUMP_TIMESTEP;
         glm::vec3 src = pos - dlt * 0.001f;
         glm::vec3 dst = pos + dlt * 1.001f;
-        // location->DrawLine(src, 0xff00ff00, dst, 0xff00ff00, false);
         const float k = location->GetPtcData().Trace(src, dst);
         if (k < 1.0f)
         {
@@ -3686,7 +3606,6 @@ bool Character::BuildJump(glm::vec3 pos, float fAng)
         v.y -= 9.8f * CHARACTER_JUMP_TIMESTEP;
         glm::vec3 src = pos - dlt * 0.001f;
         glm::vec3 dst = pos + dlt * 1.001f;
-        // location->DrawLine(src, 0xff00ff00, dst, 0xff00ff00, false);
         // if we bump into any thread, we can't jump
         const float k = location->GetPtcData().Trace(src, dst);
         if (k < 1.0f)
@@ -4077,7 +3996,6 @@ void Character::UpdateAnimation()
             else if (isMove)
             {
                 curIdleIndex = -1;
-                // core.Trace("movesn = %f", movesn);
                 if (movecs > CHARACTER_COS_STAIR || IsRun())
                 {
                     if (!IsRun())
@@ -4370,7 +4288,6 @@ void Character::UpdateAnimation()
                         core.Send_Message(blade, "ll", MSG_BLADE_TRACE_ON, 0);
                         core.Event("Event_ChrSnd_Attack", "is", GetId(), "fast");
                         // boal transfer at the moment of hit core.Event ("ChrFgtActApply", "is", GetId (),
-                        // FGT_ATTACK_FAST);
                         camRotWait = camRotMax = 0.3f;
                         impulse += 5.0f * GetEnemyDirForImpulse();
                     }
@@ -4392,7 +4309,6 @@ void Character::UpdateAnimation()
                         core.Send_Message(blade, "ll", MSG_BLADE_TRACE_ON, 0);
                         core.Event("Event_ChrSnd_Attack", "is", GetId(), "force");
                         // boal transfer at the moment of hit core.Event ("ChrFgtActApply", "is", GetId (),
-                        // FGT_ATTACK_FORCE);
                         camRotWait = camRotMax = 0.3f;
                         impulse += 2.5f * GetEnemyDirForImpulse();
                     }
@@ -4409,7 +4325,6 @@ void Character::UpdateAnimation()
                         core.Send_Message(blade, "ll", MSG_BLADE_TRACE_ON, 0);
                         core.Event("Event_ChrSnd_Attack", "is", GetId(), "round");
                         // boal transfer at the moment of hit core.Event ("ChrFgtActApply", "is", GetId (),
-                        // FGT_ATTACK_ROUND);
                         camRotWait = camRotMax = 0.8f;
                     }
                     break;
@@ -4425,7 +4340,6 @@ void Character::UpdateAnimation()
                         core.Send_Message(blade, "ll", MSG_BLADE_TRACE_ON, 0);
                         core.Event("Event_ChrSnd_Attack", "is", GetId(), "break");
                         // boal transfer at the moment of hit core.Event ("ChrFgtActApply", "is", GetId (),
-                        // FGT_ATTACK_BREAK);
                         camRotWait = camRotMax = 0.3f;
                         impulse += 1.0f * GetEnemyDirForImpulse();
                     }
@@ -4514,7 +4428,6 @@ void Character::UpdateAnimation()
                         core.Trace("Character animation: not set fight parry hit action: \"%s\"", hitParry.name);
                     }
                     core.Event("ChrFgtActApply", "is", GetId(), "hit_parry");
-                    // boal bug fix FGT_ATTACK_PARRY);
                     break;
                 case fgt_hit_round: // Knockback reaction with a circular hit
                     core.Send_Message(blade, "ll", MSG_BLADE_TRACE_OFF, 0);
@@ -4924,12 +4837,10 @@ Character *Character::FindDialogCharacter()
     int32_t j = -1;
     for (size_t i = 0; i < fndCharacter.size(); i++)
     {
-        // Character
         Supervisor::FindCharacter &fc = fndCharacter[i];
         // If we are at war, then we do not talk to him
         if (fc.c->IsFight() || fc.c->liveValue < 0 || fc.c->deadName)
             continue;
-        // Distance
         if (fabsf(fc.dy) > 2.0f)
             continue;
         float d = sqrtf(fc.d2);
@@ -5018,10 +4929,6 @@ inline void Character::CheckAttackHit(bool isGunBlade)
         aname = FGT_ATTACK_FEINT;
         hitReaction = fgt_hit_feint;
         break;
-        /*case fgt_attack_feint: // boal added and removed for the test
-          aname = FGT_ATTACK_FEINT;
-          hitReaction = fgt_hit_feint;
-          break;*/
     default:
         return;
     }
@@ -5056,7 +4963,6 @@ inline void Character::CheckAttackHit(bool isGunBlade)
     bool isUseEnergy = true; // remove energy once boal
     for (size_t i = 0; i < fndCharacter.size(); i++)
     {
-        // Character
         Supervisor::FindCharacter &fc = fndCharacter[i];
         if (fc.c->liveValue < 0 || fc.c->deadName || fc.d2 <= 0.0f)
             continue;
@@ -5076,17 +4982,14 @@ inline void Character::CheckAttackHit(bool isGunBlade)
         if (fc.c->fgtCurType == fgt_parry && fc.c->isParryState)
         {
             isParry = true;
-            // fc.c->PlaySound("fgt_parry");
         }
         else if (fc.c->fgtCurType == fgt_attack_feint && fc.c->isFeintState)
         {
             // boal was a bug, there is no reset animation, so you cannot play the attack clip -->
-            // fc.c->StopFightAnimation();
             // StopFightAnimation (); // stop the NPC itself
             // boal <--
             fc.c->Attack(this, fgt_attack_feintc);
             fc.c->UpdateAnimation(); // boal
-            // fc.c->PlaySound("fgt_feint");
         }
         else if (!isDodge)
         {
@@ -5095,7 +4998,6 @@ inline void Character::CheckAttackHit(bool isGunBlade)
                 isBlocked = false;
             if (isBlocked)
             {
-                // fc.c->PlaySound("fgt_block");
             }
             else
             {
@@ -5105,9 +5007,7 @@ inline void Character::CheckAttackHit(bool isGunBlade)
                 }
                 else
                 {
-                    // fc.c->PlaySound("fgt_blockbreak");
                 }
-                // fc.c->PlaySound("fgt_inbody");
                 if (isHrrrSound && (rand() & 3))
                 {
                     isHrrrSound = false;
@@ -5434,10 +5334,6 @@ bool Character::CheckObstacle(float fx, float fz, float fzlen)
     const float xend = xmed + fk * fdz;
     const float zbeg = zmed + fk * fdx;
     const float zend = zmed - fk * fdx;
-    /*float xbeg = xmed - fzlen*0.5f*sa;
-    float xend = xmed + fzlen*0.5f*sa;
-    float zbeg = zmed + fzlen*0.5f*ca;
-    float zend = zmed - fzlen*0.5f*ca;*/
 
     float fTrace;
     float fHDist;

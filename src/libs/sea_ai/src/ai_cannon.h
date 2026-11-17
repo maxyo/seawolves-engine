@@ -3,10 +3,8 @@
 #include "ai_helper.h"
 #include "vai_objbase.h"
 
-// ============================================================================
 // Master class AICannon
 // Contain functions and parameters for cannon
-// ============================================================================
 class AICannon
 {
   private:

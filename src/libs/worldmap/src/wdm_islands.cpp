@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmIslands
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_islands.h"
 
@@ -55,9 +50,7 @@ float LabelPxPerDp(float viewportWidth)
 }
 } // namespace
 
-// ============================================================================================
 // Collision data
-// ============================================================================================
 
 glm::vec3 WdmIslands::centPos;
 int32_t WdmIslands::numEdges;
@@ -65,9 +58,7 @@ glm::vec3 WdmIslands::curPos;
 bool WdmIslands::checkMode;
 glm::mat4 WdmIslands::curMatrix;
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmIslands::WdmIslands()
 {
@@ -112,9 +103,6 @@ WdmIslands::WdmIslands()
         else if (label.name && label.name[0] && storm::iEquals(label.group_name, "quests"))
         {
             quests.push_back(Quest{storm::math::pos(*((glm::mat4 *)label.m)), label.name});
-            // Quest & q = quests[quests.Add()];
-            // q.pos = ((glm::mat4 *)label.m)->Pos();
-            // q.name = label.name;
         }
     }
     if (isMin && isMax)
@@ -160,7 +148,6 @@ WdmIslands::WdmIslands()
         {
             // General
             islands.push_back(Islands{});
-            // Islands & isl = islands[islands.Add()];
             auto &isl = islands.back();
             isl.model = model;
             model->mtx = *((glm::mat4 *)label.m);
@@ -433,7 +420,6 @@ void WdmIslands::SetIslandsData(ATTRIBUTES *apnt, bool isChange)
             }
             // Adding a new label
             const int32_t iEntry = hash & (sizeof(labelsEntry) / sizeof(labelsEntry[0]) - 1);
-            // index = labels.Add();
             labels.push_back(Label{});
             index = labels.size() - 1;
             labels[index].id = id;
@@ -560,7 +546,6 @@ bool WdmIslands::LabelsFindLocator(const char *name, glm::vec3 &pos) const
             continue;
         if (!storm::iEquals(label.group_name, "labels"))
             continue;
-        // if(!storm::iEquals(label.group_name, "geometry")) continue;
         if (storm::iEquals(label.name, name))
         {
             pos = storm::math::pos(*((glm::mat4 *)label.m));
@@ -581,7 +566,6 @@ int32_t WdmIslands::LabelsAddFont(const char *name)
             return fonts[i].id;
         }
     }
-    // Font & font = fonts[index = fonts.Add()];
     Font font;
     font.name = name;
     font.id = wdmObjects->rs->LoadFont((char *)name);
@@ -591,8 +575,8 @@ int32_t WdmIslands::LabelsAddFont(const char *name)
         font.id = FONT_DEFAULT;
     }
     fonts.push_back(font);
-    // The renderer's id, as for a font already loaded (it used to be the index into fonts: the first
-    // label of each new font was printed with another font, worked around in worldmap_init.c "BugFix").
+    // The renderer's id, as for a font already loaded (not the index into fonts: that printed the first
+    // label of each new font with another font).
     return font.id;
 }
 
@@ -1066,7 +1050,6 @@ void WdmIslandWaves::LRender(VRenderer *rs)
 void WdmIslandWaves::Render(VRenderer *rs, float k)
 {
     // Setting the matrix for the texture
-    // k = 0.5f + 0.5f * sinf (k * 2.0f * PI);
     glm::mat4 mtx;
     mtx[1][1] = 0.3f + 1.0f * sinf(k * PI);
     mtx[2][1] = 0.0f; // 0.2f*sinf((k - 0.25f)*2.0f*PI) - 0.5f;

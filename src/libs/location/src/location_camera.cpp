@@ -1,13 +1,7 @@
 #include "loading_transaction.hpp"
-//============================================================================================
 //    Spirenkov Maxim
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocationCamera
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "location_camera.h"
 #include <cmath>
@@ -28,8 +22,6 @@
 #define CAMERA_VIEW_TEST_R 3
 #define CAMERA_VIEW_TEST_ANG 30
 
-//============================================================================================
-
 //#define LOCATIONCAMERA_DEBUG
 
 #define LOCATIONCAMERA_RADIUS 0.5f      // Camera size
@@ -39,10 +31,6 @@
 #define LOCATIONCAMERA_DISTALPHA_MIN 0.8f // Distance from the character at which it is necessary to fade out alpha
 
 #define LOCATIONCAMERA_DEFAULT_PERSPECTIVE (1.57f + 1.0f) * 0.5f
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 LocationCamera::LocationCamera()
 {
@@ -90,7 +78,6 @@ LocationCamera::~LocationCamera()
     StoreRestoreDynamicFov(true);
 }
 
-// Initialization
 bool LocationCamera::Init()
 {
     // renderer
@@ -98,11 +85,9 @@ bool LocationCamera::Init()
     if (!rs)
         throw std::runtime_error("No service: renderer");
 
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 0);
 
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), 100000);
 
@@ -113,14 +98,12 @@ bool LocationCamera::Init()
     loc = core.GetEntityId("location");
 
     rs->SetPerspective(cameraPerspective);
-    // rs->SetPerspective(1.0f);
 
     StoreRestoreDynamicFov(false);
 
     return true;
 }
 
-// Execution
 // Apply the already-configured stock camera before resource discovery. No controls,
 // character locks, track events, morph time, dynamic-FOV time or Execute(0).
 void LocationCamera::PrimeLoadingCamera()
@@ -263,7 +246,6 @@ void LocationCamera::Realize(uint32_t delta_time)
             {
                 if (!isViewExecute)
                 {
-                    // kMorph = 0.0f;
                     oldPos = camPos;
                     oldLookTo = lookTo;
                 }
@@ -299,7 +281,6 @@ void LocationCamera::Realize(uint32_t delta_time)
 #endif
                 if (isViewExecute)
                 {
-                    // kMorph = 0.0f;
                     oldPos = camPos;
                     oldLookTo = lookTo;
                     for (int32_t i = 0; i < 10; i++)
@@ -401,7 +382,6 @@ void LocationCamera::Realize(uint32_t delta_time)
 void LocationCamera::Execute(uint32_t delta_time)
 #endif
 {
-    // rs->Print(10, 10, "%f", cf.fndRadius);
     /*
     glm::mat4 mtx;
     rs->GetTransform(D3DTS_VIEW, mtx);
@@ -411,7 +391,6 @@ void LocationCamera::Execute(uint32_t delta_time)
     */
 }
 
-// Messages
 uint64_t LocationCamera::ProcessMessage(MESSAGE &message)
 {
     switch (message.Long())
@@ -489,7 +468,6 @@ uint64_t LocationCamera::ProcessMessage(MESSAGE &message)
         const auto fTrackTime = message.Float();
         LoadCameraTrack(trackname.c_str(), fTrackTime);
         auto *pA = message.AttributePointer();
-        // SetTrackCameraPauses(pA);
         return 1;
     }
 
@@ -556,10 +534,6 @@ bool LocationCamera::Set()
     location = static_cast<Location *>(core.GetEntityPointer(loc));
     return location != nullptr;
 }
-
-//============================================================================================
-
-//============================================================================================
 
 // First-person View Camera
 void LocationCamera::ExecuteLook(float dltTime)
@@ -859,26 +833,6 @@ float LocationCamera::TrackPauseProcess()
     auto fOldTime = m_fTrackCurTime;
     m_fTrackCurTime += core.GetDeltaTime() * 0.001f;
 
-    //    for( int32_t nPause=m_nCurPauseIndex+1; nPause<m_aTrackPauses; nPause++ )
-    //        if( m_aTrackPauses[nPause].trackTime <= m_fTrackCurTime ) {
-    //        }
-
-    /*if(m_nCurPauseIndex >= 0) // in pause now
-    {
-      if( m_fTrackCurTime >= m_aTrackPauses[m_nCurPauseIndex].pauseTime )
-    }*/
-
     return m_fTrackCurTime;
 
-    /*    float fCurTime = m_fTrackCurTime + core.GetDeltaTime() * 0.001f;
-
-      if( m_nCurPauseIndex < 0 ) {
-        m_nCurPauseIndex = FindPauseIndex(m_fTrackCurTime,fCurTime);
-      } else {
-        fCurTime -= m_aTrackPauses[m_nCurPauseIndex].trackTime;
-        if( fCurTime >= m_aTrackPauses[m_nCurPauseIndex].pauseTime )
-        {
-          m_nCurPauseIndex =
-        }
-      }*/
 }

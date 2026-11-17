@@ -5,15 +5,11 @@
 #include "v_file_service.h"
 #include "vma.hpp"
 
-//--------------------------------------------------------------------------------------------------------------
-
 bool Point::IsMast() const
 {
     return (pointType == PT_TYPE_MAST_1 || pointType == PT_TYPE_MAST_2 || pointType == PT_TYPE_MAST_3 ||
             pointType == PT_TYPE_MAST_4 || pointType == PT_TYPE_MAST_5);
 };
-
-//--------------------------------------------------------------------------------------------------------------
 
 bool Point::IsCannon() const
 {
@@ -21,21 +17,7 @@ bool Point::IsCannon() const
             pointType == PT_TYPE_CANNON_B);
 };
 
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
-
 ;
-
-//--------------------------------------------------------------------------------------------------------------
 
 Path SailorsPoints::getPath(int src, int dst, int l)
 {
@@ -79,8 +61,6 @@ Path SailorsPoints::getPath(int src, int dst, int l)
     return mPath;
 };
 
-//--------------------------------------------------------------------------------------------------------------
-
 Path SailorsPoints::findPath(Path &path, int from, int to)
 {
     path = getPath(from, to, 0);
@@ -97,8 +77,6 @@ Path SailorsPoints::findPath(Path &path, int from, int to)
 
     return path;
 };
-
-//--------------------------------------------------------------------------------------------------------------
 
 void SailorsPoints::UpdateLinks()
 {
@@ -119,15 +97,9 @@ void SailorsPoints::UpdateLinks()
                     break;
                 }
 };
-//--------------------------------------------------------------------------------------------------------------
 
-//--------------------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------------------
-
-//--------------------------------------------------------------------------------------------------------------
 int SailorsPoints::WriteToFile(std::string fileName)
 {
-    // GUARD(SailorsPoints :: WriteToFile);
 
     auto pIni = fio->OpenIniFile(fileName.c_str());
     if (!pIni)
@@ -168,11 +140,8 @@ int SailorsPoints::WriteToFile(std::string fileName)
     // UNGUARD
 };
 
-//--------------------------------------------------------------------------------------------------------------
-
 int SailorsPoints::ReadFromFile(std::string fileName)
 {
-    // GUARD(SailorsPoints :: ReadFromFile);
 
     char param[256];
     char str[64];
@@ -194,7 +163,6 @@ int SailorsPoints::ReadFromFile(std::string fileName)
     points.point.resize(points.count);
     for (auto i = 0; i < points.count; i++)
     {
-        // points.point.Add();
         sprintf_s(str, sizeof(str), "%s%d", "point ", i);
         pIni->ReadString("POINT_DATA", str, param, sizeof(param) - 1);
 
@@ -214,7 +182,6 @@ int SailorsPoints::ReadFromFile(std::string fileName)
     links.link.resize(links.count);
     for (auto i = 0; i < links.count; i++)
     {
-        // links.link.Add();
 
         sprintf_s(str, sizeof(str), "%s%d", "link ", i);
         pIni->ReadString("LINK_DATA", str, param, sizeof(param) - 1);
@@ -230,5 +197,3 @@ int SailorsPoints::ReadFromFile(std::string fileName)
     return 0;
     // UNGUARD
 };
-
-//--------------------------------------------------------------------------------------------------------------

@@ -56,7 +56,6 @@ MAST::~MAST()
 
 bool MAST::Init()
 {
-    // GUARD(MAST::Init())
 
     SetDevice();
 
@@ -66,7 +65,6 @@ bool MAST::Init()
 
 void MAST::SetDevice()
 {
-    // GUARD(MAST::SetDevice())
 
     RenderService = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!RenderService)
@@ -83,7 +81,6 @@ void MAST::SetDevice()
 
 void MAST::Execute(uint32_t Delta_Time)
 {
-    // GUARD(void MAST::Execute(uint32_t Delta_Time))
 
     if (bUse)
     {
@@ -103,7 +100,6 @@ void MAST::Execute(uint32_t Delta_Time)
 
 void MAST::Realize(uint32_t Delta_Time)
 {
-    // GUARD(void MAST::Realize(uint32_t Delta_Time))
 
     if (m_mount_param.pNode)
     {
@@ -118,26 +114,6 @@ void MAST::Realize(uint32_t Delta_Time)
         mdl->ProcessStage(Stage::realize, Delta_Time);
         RenderService->SetRenderState(D3DRS_LIGHTING, false);
 
-        /*        glm::vec3 bp=mdl->mtx*mm.bp;
-                glm::vec3 ep=mdl->mtx*mm.ep;
-                glm::vec3 brey=mdl->mtx*mm.brey;
-                glm::vec3 erey=mdl->mtx*mm.erey;
-
-                glm::mat4 mtx;
-                mtx.SetIdentity();
-                RenderService->SetTransform(D3DTS_WORLD, mtx);
-
-                struct LINEVERTEX
-                {
-                    glm::vec3 pos;
-                    float   col;
-                };
-                LINEVERTEX pVerts[4];
-                pVerts[0].pos=bp; pVerts[0].col=0xffffff;
-                pVerts[1].pos=ep; pVerts[1].col=0xffffff;
-                pVerts[2].pos=brey; pVerts[2].col=0xffffff;
-                pVerts[3].pos=erey; pVerts[3].col=0xffffff;
-                RenderService->DrawPrimitiveUP(D3DPT_LINELIST, D3DLXLINEVERTEX_FORMAT, 2, pVerts, sizeof(LINEVERTEX));*/
     }
 
     // UNGUARD
@@ -145,7 +121,6 @@ void MAST::Realize(uint32_t Delta_Time)
 
 uint64_t MAST::ProcessMessage(MESSAGE &message)
 {
-    // GUARD(uint32_t MAST::ProcessMessage(MESSAGE message))
 
     switch (message.Long())
     {
@@ -396,7 +371,6 @@ void MAST::Mount(entid_t modelEI, entid_t shipEI, NODE *mastNodePointer)
 
 void MAST::LoadIni()
 {
-    // GUARD(MAST::LoadIni());
     char section[256];
 
     auto ini = fio->OpenIniFile(MAST_INI_FILE);
@@ -407,10 +381,6 @@ void MAST::LoadIni()
 
     sprintf_s(section, "MAST");
 
-    /*=========================================================================
-     =============================================================================
-    ======= LOADING PARAMETERS ======================================== ======
-    ==============================================================================*/
     // step of movement of the mast when lowering one end into the water
     MAST_MOVE_STEP = ini->GetFloat(section, "water_slide_step", MAST_MOVE_STEP);
     // acceleration of the step of free fall of the entire mast down
@@ -846,7 +816,6 @@ void HULL::Mount(entid_t modelEI, entid_t shipEI, NODE *hullNodePointer)
                 }
             }
     }
-    // bUse = true;
 }
 
 void HULL::AllRelease()

@@ -43,7 +43,7 @@ inline constexpr float kSkinToneMinSpread = 0.012f;
 // The least saturation (distance of the chromaticity from grey) of a reference that counts as skin.
 inline constexpr float kSkinToneMinSaturation = 0.025f;
 // Mahalanobis distance (squared) where the likeness starts to fall and where it is 0.
-// When in doubt the relief goes (the owner's choice): wide enough that beige and tan clothes of a character whose skin is
+// When in doubt the relief goes: wide enough that beige and tan clothes of a character whose skin is
 // that colour lose theirs too.
 inline constexpr float kSkinToneNear = 2.25f, kSkinToneFar = 6.25f; // 1.5 and 2.5 standard deviations
 

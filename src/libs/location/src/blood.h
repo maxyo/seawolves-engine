@@ -36,19 +36,13 @@ class Blood : public Entity
         glm::vec3 v[3];
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Blood();
     virtual ~Blood();
 
-    // Initialization
     bool Init() override;
-    // Work
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
-    //
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override
@@ -61,10 +55,6 @@ class Blood : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

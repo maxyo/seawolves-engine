@@ -10,12 +10,12 @@
 include(FetchContent)
 file(GLOB storm_bgfx_patches CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/../patches/bgfx-*.patch")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${storm_bgfx_patches})
-# bgfx.cmake be0ef0d (2026-11-10).
+# bgfx.cmake be0ef0d.
 storm_fetch_declare(storm_bgfx_cmake
     GIT_REPOSITORY https://github.com/bkaradzic/bgfx.cmake.git
     GIT_TAG be0ef0d69a9ce609de99dd420f1182c0888cc8f1
     STORM_POPULATE_ONLY)
-# bgfx eebf5686 (2026-11-11, BGFX_API_VERSION 166).
+# bgfx eebf5686 (BGFX_API_VERSION 166).
 storm_fetch_declare(storm_bgfx
     GIT_REPOSITORY https://github.com/bkaradzic/bgfx.git
     GIT_TAG eebf5686a8c5f1c77e1af2dad17b5746ba17da8f

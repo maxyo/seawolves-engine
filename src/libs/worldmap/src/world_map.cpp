@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WorldMap
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "world_map.h"
 
@@ -37,7 +32,6 @@
 
 CREATE_CLASS(WorldMap)
 
-//============================================================================================
 
 //#define EVENTS_OFF
 //#define ENCS_OFF
@@ -46,9 +40,7 @@ CREATE_CLASS(WorldMap)
 
 int32_t WorldMap::month[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WorldMap::WorldMap() : rs{}, aDate{}
 {
@@ -84,10 +76,6 @@ WorldMap::WorldMap() : rs{}, aDate{}
 
 WorldMap::~WorldMap()
 {
-    /*for(; firstObject >= 0; firstObject = object[firstObject].next)
-    {
-      delete object[firstObject].ro;
-    }*/
     delete camera;
     WdmRenderObject::DeleteAllObjects();
     wdmObjects->Clear();
@@ -95,19 +83,14 @@ WorldMap::~WorldMap()
     delete wdmObjects;
 }
 
-//============================================================================================
 // Entity
-//============================================================================================
 
 // Initialization
 bool WorldMap::Init()
 {
     storm::render::BeginScenePipelines("worldmap"); // its recorded Vulkan pipelines are created while it loads
-    // GUARD(LocationCamera::Init())
     // Layers
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(EXECUTE, GetId(), 10000);
     core.AddToLayer(REALIZE, GetId(), 10000);
@@ -352,7 +335,6 @@ bool WorldMap::Init()
         }
     }
     return true;
-    // UNGUARD
 }
 
 // Execution
@@ -387,7 +369,6 @@ void WorldMap::Realize(uint32_t delta_time)
                 core.Event("ExitFromWorldMap");
         }
     }
-    //---------------------------------------------------------
     const auto dltTime = 0.001f * delta_time;
     // Updating the date
     if (hour < 0.0f)
@@ -451,7 +432,6 @@ void WorldMap::Realize(uint32_t delta_time)
     tmp = aDate->GetAttribute("year");
     if (tmp)
         strcpy_s(wdmObjects->attrYear, tmp);
-    //---------------------------------------------------------
     if (camera && !wdmObjects->isPause)
     {
         camera->Move(dltTime, rs);
@@ -735,9 +715,7 @@ uint32_t WorldMap::AttributeChanged(ATTRIBUTES *apnt)
     return 0;
 }
 
-// ============================================================================================
 // Objects management
-// ============================================================================================
 
 // Add object
 WdmRenderObject *WorldMap::AddObject(WdmRenderObject *obj, int32_t level)
@@ -814,9 +792,7 @@ void WorldMap::DeleteObject(WdmRenderObject *obj)
     delete obj;
 }
 
-// ============================================================================================
 // Encapsulation
-// ============================================================================================
 
 // Objects management
 

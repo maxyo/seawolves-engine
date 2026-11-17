@@ -256,10 +256,8 @@ float AICannon::CalcMaxFireDistance(float fFireHeight, float fSpeedV0, float fAn
     const auto c = fFireHeight;
     const auto d = b * b - 4.0f * a * c;
     const auto t1 = (-b - sqrtf(d)) / (2.0f * a);
-    // float t2 = (-b + sqrtf(d)) / (2.0f * a);
 
     const auto fDistance = fSpeedV0 * t1 * cosf(fAngle);
-    // float s2 = fSpeedV0 * t2 * cosf(fAngle);
 
     return fDistance;
 }
@@ -274,7 +272,6 @@ void AICannon::Init(AIAttributesHolder *_pAHolder, const entid_t eid, GEOS::LABE
 
     vPos = storm::math::pos(m);
     vDir = glm::vec3(storm::math::vz(m).x, 0.0f, storm::math::vz(m).z);
-    // vDir = atan2f(m.Vz().x,m.Vz().z);
 }
 
 void AICannon::Save(CSaveLoad *pSL) const

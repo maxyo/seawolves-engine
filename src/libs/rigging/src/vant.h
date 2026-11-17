@@ -48,10 +48,6 @@ class VANT_BASE : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 
@@ -59,7 +55,6 @@ class VANT_BASE : public Entity
 
   protected:
     // parameters obtained from INI file //
-    // -------------------------------------
     int ROPE_QUANT;        // number of ropes
     float ROPE_WIDTH;      // rope thickness
     float upWidth;         // upper triangle width
@@ -81,7 +76,6 @@ class VANT_BASE : public Entity
     float fVantMaxDist;    // the square of the distance from which the guys are not visible
     float ZERO_CMP_VAL;    // Guy motion sampling step
     float MAXFALL_CMP_VAL; // the maximum change in the guy position at which the guy stops being displayed
-    // -------------------------------------
 
     bool bUse;
     bool bRunFirstTime;

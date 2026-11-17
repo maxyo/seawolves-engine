@@ -32,9 +32,6 @@ FREE_CAMERA::~FREE_CAMERA()
 
 bool FREE_CAMERA::Init()
 {
-    // GUARD(FREE_CAMERA::FREE_CAMERA())
-    // core.LayerCreate("realize",true,false);
-    // core.AddToLayer("system_messages",GetId(),1);
     SetDevice();
     // UNGUARD
     return true;
@@ -47,9 +44,6 @@ void FREE_CAMERA::SetDevice()
     pCollide = static_cast<COLLIDE *>(core.GetService("COLL"));
     Assert(pCollide);
 
-    /*core.CreateEntity(&sphere,"modelr");
-    core.Send_Message(sphere,"ls",MSG_MODEL_LOAD_GEO,"mirror");
-    core.AddToLayer(realize,sphere,10000);*/
 }
 
 void FREE_CAMERA::Execute(uint32_t Delta_Time)
@@ -81,8 +75,6 @@ void FREE_CAMERA::Move(uint32_t DeltaTime)
         return;
 
     // POINT pnt;
-    // GetCursorPos(&pnt);
-    // if(pnt.x != iLockX || pnt.y != iLockY)
     CONTROL_STATE cs;
 
     {
@@ -90,7 +82,6 @@ void FREE_CAMERA::Move(uint32_t DeltaTime)
         vAng.y += SENSITIVITY * static_cast<float>(cs.fValue);
         core.Controls->GetControlState("FreeCamera_Turn_V", cs);
         vAng.x += SENSITIVITY * static_cast<float>(cs.fValue);
-        // SetCursorPos(iLockX,iLockY);
     }
     if (bCameraOnEarth && pIslandBase)
     {
@@ -117,32 +108,10 @@ void FREE_CAMERA::Move(uint32_t DeltaTime)
     if (cs.state == CST_ACTIVE)
         vPos -= speed * glm::vec3(s0 * c1, -s1, c0 * c1);
 
-    /*if (core.Controls->GetAsyncKeyState(VK_LBUTTON))    vPos += speed*glm::vec3(s0*c1, -s1, c0*c1);
-    if (core.Controls->GetAsyncKeyState(VK_RBUTTON))    vPos -= speed*glm::vec3(s0*c1, -s1, c0*c1);
-    if(core.Controls->GetAsyncKeyState('I'))    vPos += speed*glm::vec3(0.0f, 0.1f , 0.0f);
-    if(core.Controls->GetAsyncKeyState('K'))    vPos += speed*glm::vec3(0.0f, -0.1f, 0.0f);*/
 
-    // vPos = glm::vec3(0.0f, 20.0f, 0.0f);
 
     pRS->SetCamera(vPos, vAng, GetPerspective());
 
-    /*glm::vec3 vRes;
-    glm::vec3 vDst = vPos + 2000.0f*glm::vec3(s0*c1, -s1, c0*c1);
-
-    walker_tpVW = core.LayerGetWalker("sun_trace");
-    float fRes = pCollide->Trace(*pVW,vPos,vDst,nullptr,0);
-    if (fRes > 1.0f) vRes = vDst;
-    else
-    {
-      vRes = vPos + fRes * (vDst - vPos);
-      entid_t ent = pCollide->GetObjectID();
-      MODELR *pEntity = (MODELR*)core.GetEntityPointer(ent);
-    }
-
-
-    MODEL* pModel = (MODEL*)core.GetEntityPointer(sphere);
-    pModel->mtx.BuildPosition(vRes.x,vRes.y,vRes.z);
-    delete pVW;*/
 }
 
 void FREE_CAMERA::Save(CSaveLoad *pSL)

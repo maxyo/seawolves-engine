@@ -1,9 +1,7 @@
 #ifndef COMMON_MESSAGES_HPP
 #define COMMON_MESSAGES_HPP
 
-//============================================================================================
 // Model messages
-//============================================================================================
 
 #define MSG_MODEL_LOAD_GEO 20500 // "ls", string
 #define MSG_MODEL_LOAD_ANI 20501
@@ -13,7 +11,6 @@
 #define MSG_MODEL_RESTORE 20505
 #define MSG_MODEL_SET_POSITION 20506
 //    SendMessage(ref _model, "lffffffffffff", MSG_MODEL_SET_POSITION, float _x, float _y, float _z,
-//        float _vxx, float _vxy, float _vxz, float _vyx, float _vyy, float _vyz, float _vzx, float _vzy, float _vzz);
 
 #define MSG_MODEL_BLEND 20507
 #define MSG_MODEL_SET_LIGHT_LMPATH 20508
@@ -28,9 +25,7 @@
 #define MSG_MODEL_SUBSTITUTE_GEOMETRY_NODE 20600 // "ss", geometry, new model name
 #define MSG_MODEL_PLAY_ACTION 20601 // "lls", player, action name
 
-//============================================================================================
 // blade messages
-//============================================================================================
 #define MSG_BLADE_SET 21000           //"lisfll, entity, modelName, lifeTime, color[2]
 #define MSG_BLADE_BELT 21001          //"l", default
 #define MSG_BLADE_HAND 21002          //"l"
@@ -45,23 +40,17 @@
 #define MSG_CHARACTER_BLADEHAND 21011 //"ll", boolBladeInHand
 #define MSG_BLADE_ALPHA 21012         //"ll", alpha|0xFFFFFF
 
-//============================================================================================
 // Island Messages
-//============================================================================================
 #define MSG_ISLAND_LOAD_GEO 50100 // "ls", island name
 #define MSG_ISLAND_SET_GEO 50101  // "lis", model_id,island name
 #define MSG_ISLAND_START 50102    // "lis", model_id,island name
 #define MSG_ISLAND_ADD_FORT 50103 // "li", model_id
 
-//============================================================================================
 // Sea Reflection Messages
-//============================================================================================
 #define MSG_SEA_REFLECTION_DRAW 50200 // "ls", island name
 #define MSG_SEA_SUNROAD_DRAW 50201    // "ls", island name
 
-//============================================================================================
 // Ship Messages
-//============================================================================================
 #define MSG_SHIP_CREATE 50300
 #define MSG_SHIP_DELETE 50301
 #define MSG_SHIP_SEA_INFO 50302
@@ -80,14 +69,10 @@
 #define MSG_SHIP_LIGHTSRESET 50402 // ugeen 25.12.19
 #define MSG_SHIP_DO_FAKE_FIRE 50403
 
-//============================================================================================
 // Weather Messages
-//============================================================================================
 #define MSG_WHR_LIGHTNING_ADD 54000
 
-//============================================================================================
 // Location messages
-//============================================================================================
 
 // Location
 // Add a model to a location
@@ -112,7 +97,6 @@
 #define MSG_LOCATION_GRP_RADIUS 30125 // "lsf" set the radius to the locator group
 #define MSG_LOCATION_LOC_RADIUS 30126 // "lssf" set the radius to the locator
 #define MSG_LOCATION_LOC_EXISTS 30127 // "lssf" set the radius to the locator
-// Add light source
 #define MSG_LOCATION_ADD_LIGHT 30128 // "lsfff" source name, source position
 // Register locators
 #define MSG_LOCATION_UPDATELOCATORS 30130 // "l" copy all locators to location attributes
@@ -223,9 +207,7 @@
 #define MSG_BLOTS_SETMODEL 30600 // "li" set the model, model_id
 #define MSG_BLOTS_HIT 30601      // "lffffff" set point x, y, z, nx, ny, nz
 
-//============================================================================================
 // World map messages
-//============================================================================================
 // Storm
 #define MSG_WORLDMAP_CREATESTORM 31000      // "l" Create storm
 #define MSG_WORLDMAP_CREATESTORM_TIME 31001 // "lf" Create storm and specify lifetime in seconds
@@ -243,22 +225,18 @@
 // Warring - a pair of warring ships
 #define MSG_WORLDMAP_CREATEENC_WAR 31120      // "lllll" type1, nation1, type2, nation2
 #define MSG_WORLDMAP_CREATEENC_WAR_TIME 31121 // "lllllf" type1, nation1, type2, nation2, live time in sec
-// Delete all encounters
 #define MSG_WORLDMAP_CREATEENC_RELEASE 31200 // ""
 // Launch going out to sea from script
 #define MSG_WORLDMAP_LAUNCH_EXIT_TO_SEA 31130 // ""
 // Setting a flag on the map
 #define MSG_WORLDMAP_SET_NATION_FLAG 31150 // "ll" nation
-// Print line with coordinates
 #define MSG_WORLDMAP_SET_COORDINATES 31151 // "ls" coordinates string
 // Show or hide WdmWindUI: wind, date, moral, supplies, coordinates, flag
 #define MSG_WORLDMAP_WIND_UI_SET_SHOW 31152 // "ll" status
 // Update WdmWindUI on the map: wind, date, moral, supplies, coordinates, flag
 #define MSG_WORLDMAP_UPDATE 31153 // "l" 
 
-// ============================================================================================
 // Effects
-//============================================================================================
 
 // Fader
 #define FADER_OUT 33000        //"lfl", fade time in sec, true - autodelte
@@ -267,9 +245,7 @@
 #define FADER_PICTURE 33003    //"ls", texture name
 #define FADER_PICTURE0 33004   //"ls", texture name
 
-//============================================================================================
 // Particle system
-//============================================================================================
 
 #define PS_CREATE 10000
 #define PS_SETVECTORS 10001
@@ -297,9 +273,7 @@
 #define LM_SETPOINTANDANGLES 1601
 #define LM_SETPOINTANDVECTOR 1602
 
-//============================================================================================
 // Sound Service messages
-//============================================================================================
 // Control functions
 #define MSG_SOUND_SET_ENABLED 77016         //"l"          enabled
 #define MSG_SOUND_SET_CAMERA_POSITION 77001 //"fff"       vector_x, vector_ym, vector_z
@@ -328,11 +302,8 @@
 #define MSG_SOUND_SCHEME_ADD 77015   //"s"          scheme_name
 // Aliases
 #define MSG_SOUND_ALIAS_ADD 77017 //"s"          alias_name
-//============================================================================================
 
-//============================================================================================
 // Animals messages
-//============================================================================================
 #define MSG_ANIMALS_SEAGULLS_SHOW 77100     //""
 #define MSG_ANIMALS_SEAGULLS_HIDE 77101     //""
 #define MSG_ANIMALS_SEAGULLS_FRIGHTEN 77102 //""
@@ -344,40 +315,24 @@
 #define MSG_ANIMALS_BUTTERFLIES_SHOW 77108  //""
 #define MSG_ANIMALS_BUTTERFLIES_HIDE 77109  //""
 #define MSG_ANIMALS_BUTTERFLIES_XYZ 77110   //""
-//============================================================================================
-//============================================================================================
 // Ball splash messages
-//============================================================================================
 #define MSG_BALLSPLASH_ADD 77200 //"ffffff"    position, ball_vector
-//============================================================================================
 
-//============================================================================================
 // Telescope messages
-//============================================================================================
 #define MSG_TELESCOPE_INIT_ARRAYS 77300 //"ee"
 #define MSG_TELESCOPE_REQUEST 77301
 #define MSG_TELESCOPE_SET_TYPE 77302 //"l", telescope_type
-//============================================================================================
 
-//============================================================================================
 // Sea operator messages
-//============================================================================================
 #define MSG_SEA_OPERATOR_FIRE 77400        //"isfff"        shipID, bortName, x,y,z
 #define MSG_SEA_OPERATOR_BALL_UPDATE 77401 //...fff...
 #define MSG_SEA_OPERATOR_SHIP_HIT 77402    // fffi        ballX,ballY,ballZ, hitShipCharacter
-//============================================================================================
 
-//============================================================================================
 // Peoples on ship
-//============================================================================================
 #define MSG_PEOPLES_ON_SHIP_MASTFALL 77500 //"ll"        characterIndex, mastNumber
 #define MSG_PEOPLES_ON_SHIP_HULLHIT 77600  //"lafff"
-//============================================================================================
 
-//============================================================================================
 // Camera on ship
-//============================================================================================
 #define MSG_DECK_CAMERA_SET_VIEWPOINT 41800 //"fff"        point.x, point.y, point.z
-//============================================================================================
 
 #endif

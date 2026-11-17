@@ -7,10 +7,6 @@
 #include <memory>
 #include <vector>
 
-///////////////////////////////////////////////////////////////////
-// DEFINES & TYPES
-///////////////////////////////////////////////////////////////////
-
 class TSD_ID
 {
   public:
@@ -78,9 +74,6 @@ class VSoundStream
     virtual void SetVolume(float volume) = 0;
 };
 
-///////////////////////////////////////////////////////////////////
-// INTERFACE DEFINITION
-///////////////////////////////////////////////////////////////////
 class VSoundService : public SERVICE
 {
   public:
@@ -94,7 +87,6 @@ class VSoundService : public SERVICE
     // + in most functions _id = 0 equals "apply to all"
     // + play assumes _name a plain file name
     // + for now loop_pause_time works only for OGG-STEREO sounds
-    ///////////////////////////////////////////////////////////////
     virtual TSD_ID SoundPlay(const char *_name,
                              eSoundType _type,          // sound type
                              eVolumeType _volumeType,   // volume type
@@ -151,8 +143,3 @@ class VSoundService : public SERVICE
     tSoundStatistics soundStatistics;
 };
 
-/*
-API_SERVICE_START("sound service")
-    DECLARE_MAIN_SERVICE(SoundService)
-API_SERVICE_END(SoundService)
-*/

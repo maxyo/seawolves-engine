@@ -91,7 +91,6 @@ class IFS : public INIFILE
     SECTION *SectionRoot;
     SECTION *SectionTop;
 
-    // KEY_NODE * FindKey(KEY_NODE * from, char * section_name, char * key_name, char * key_value);
     KEY_NODE *FindKey(const char *section_name, const char *key_name, const char *key_value);
     KEY_NODE *FindKey(const char *section_name, const char *key_name);
     SECTION *FindSection(const char *section_name);

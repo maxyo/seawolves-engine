@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim, 2003
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Location
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -55,19 +49,13 @@ class Location : public Entity
         float alpha;
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Location();
     ~Location() override;
 
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void ProcessStage(Stage stage, uint32_t delta) override
@@ -83,16 +71,10 @@ class Location : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
-    //--------------------------------------------------------------------------------------------
     // Location
-    //--------------------------------------------------------------------------------------------
   public:
     // Find locator group
     LocatorArray *FindLocatorsGroup(const char *gName);
@@ -140,9 +122,6 @@ class Location : public Entity
     // The object that controls the repulsion of characters
     Supervisor supervisor;
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     void Update(uint32_t delta_time);
     int32_t LoadStaticModel(const char *modelName, const char *tech, int32_t level, bool useDynamicLights);
@@ -213,7 +192,6 @@ class Location : public Entity
     float locationTimeUpdate;
 
     entid_t lighter;
-    // entid_t cubeShotMaker;
 
     DmgMessage message[32];
     int32_t curMessage;

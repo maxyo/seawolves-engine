@@ -76,7 +76,6 @@ void AIShipCameraController::Execute(float fDeltaTime)
                                                                            AIShip::AIShips[i]->GetBoxsize().z * 0.8f;
                     AIHelper::pRS->DrawSphere(vFakeShipPos, 2.0f, 0xFF00FF00);
                     const auto fDistance = storm::math::lengthXZ(vFakeShipPos - vFirePos);
-                    // AIShip::AIShips[i]->GetDistance(vFirePos);
                     if (fDistance <= 0.8f * AIShip::AIShips[i]->GetBoxsize().z)
                     {
                         if (fDistance > fBestDistance)
@@ -139,8 +138,6 @@ bool AIShipCameraController::Fire()
     AIHelper::pRS->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(m));
     storm::math::invertRigid(m);
     const auto vZ = storm::math::vz(m);
-    // glm::vec3 vZ = m * glm::vec3(0.0f, 0.0f, 1.0f);
-    // vZ = !glm::vec3(vZ.x, 0.0f, vZ.z);
     if (!GetAIShip()->GetCannonController()->isCanFire(vZ))
         return false;
 
@@ -150,7 +147,6 @@ bool AIShipCameraController::Fire()
         core.Event(SHIP_FIRE_ACTION, "aal", pTargetAPointer, pMainGroupCharacter, dwTarget);
     }
 
-    // if (pTargetAPointer) AIGroup::GroupSetAttack(GetAIShip()->GetACharacter(), pTargetAPointer);
     return GetAIShip()->GetCannonController()->Fire(storm::math::pos(m), vZ);
 }
 
@@ -162,17 +158,11 @@ void AIShipCameraController::Realize(float fDeltaTime)
     glm::mat4 m;
     RS_RECT rCam;
 
-    // AIHelper::pRS->GetTransform(D3DTS_VIEW, m); m.Transposition();    glm::vec3 vZ = m.Vz();
     const auto mOldView = m;
     AIHelper::pRS->GetTransform(D3DTS_VIEW, storm::math::d3dMatrix(mOldView));
     m = mOldView;
     storm::math::invertRigid(m);
     const auto vZ = storm::math::vz(m);
-    /*glm::vec3 campos,camang;
-    float campersp;
-    AIHelper::pRS->GetCamera(campos,camang,campersp);
-    m.BuildMatrix(camang);
-    glm::vec3 vZ = m.Vz();*/
     if (!GetAIShip()->GetCannonController()->isCanFire(vZ))
         return;
 
@@ -181,12 +171,10 @@ void AIShipCameraController::Realize(float fDeltaTime)
 
     rCam.dwColor = Colors[dwTarget];
 
-    // AIHelper::pRS->Print(0,0,"%d",rCam.dwColor);
 
     rCam.fAngle = 0.0f;
     const auto fSizeMultiply = 0.9f + (0.2f * ((fDelta > 1.0f) ? fDelta : (2.0f - fDelta)));
     rCam.fSize = fSizeMultiply * pACrosshair->GetAttributeAsFloat("Size");
-    // rCam.vPos = campos + m * glm::vec3(0.0f,0.0f,1.0f);
     rCam.vPos = storm::math::transformPoint(m, glm::vec3(0.0f, 0.0f, 1.0f));
     rCam.dwSubTexture = 0;
 

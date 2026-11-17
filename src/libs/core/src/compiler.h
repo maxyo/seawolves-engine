@@ -38,7 +38,6 @@ struct SEGMENT_DESC
     uint32_t id;
     uint32_t lines;
     bool bUnload;
-    //--------------
     char *pData;
     char *pCode;
     uint32_t BCode_Program_size;
@@ -53,11 +52,6 @@ struct OFFSET_INFO
     uint32_t segment_id;
 };
 
-/*struct DEFINE_INFO
-{
-    uint32_t deftype;
-    uint32_t data4b;
-};*/
 
 struct DOUBLE_DWORD
 {
@@ -110,7 +104,6 @@ class COMPILER : public VIRTUAL_COMPILER
 
     char *LoadFile(const char *file_name, uint32_t &file_size, bool bFullPath = false);
     // char *    AppendProgram(char * base_program, int32_t base_program_size, char * append_program, int32_t
-    // append_program_size, int32_t& new_program_size);
     bool AppendProgram(char *&pBase_program, uint32_t &Base_program_size, const char *pAppend_program,
                        uint32_t &Append_program_size, bool bAddLinefeed);
     void DTrace(const char *data_PTR, ...);
@@ -208,15 +201,6 @@ class COMPILER : public VIRTUAL_COMPILER
 
     S_TOKEN_TYPE SkipAuxiliaryTokens();
 
-    /*    void SkipExpression_L1();
-        void SkipExpression_L2();
-        void SkipExpression_L3();
-        void SkipExpression_L4();
-        void SkipExpression_L5();
-        void SkipExpression_L6();
-        void SkipExpression_L7();
-    */
-    //-----------------------------------------------------
     uint32_t CurrentFuncCode;
     void CompileNumber(SEGMENT_DESC &Segment);
     void CompileFloatNumber(SEGMENT_DESC &Segment);
@@ -312,7 +296,6 @@ private:
 
     COMPILER_STAGE CompilerStage;
     STRINGS_LIST LabelTable;
-    // STRINGS_LIST EventTable;
     STRINGS_LIST LabelUpdateTable;
     TOKEN Token;
     MESSAGE *pEventMessage;
@@ -340,7 +323,6 @@ private:
     S_DEFTAB DefTab;
     S_STACK SStack;
     S_EVENTTAB EventTab;
-    // TCLASS_LIST<S_EVENTMSG> EventMsg;
     POSTEVENTS_LIST EventMsg;
     std::vector<SLIBHOLDER> LibriaryFuncs;
 
@@ -356,7 +338,6 @@ private:
     uint32_t DebugSourceLine;
     char *pCompileTokenTempBuffer;
 
-    // HANDLE hSaveFileFileHandle;
 
     bool bDebugExpressionRun;
     bool bTraceMode;

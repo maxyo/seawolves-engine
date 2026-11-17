@@ -261,7 +261,6 @@ inline int graphicsSetting(const char *key, int fallback) {
     return value;
 }
 // The automatic graphics preset chose `preset` (renderer auto_preset.hpp, measurement `version`, `report` its
-// numbers as JSON), with the scene at `render_height` lines (> 0: the measured rung below «Низкая», preset 0 only;
 // 0: the preset's own): GameActivity.autoPresetChosen stores it unless the player chose a preset meanwhile, tells the
 // player in the game's `language` (the string service's, as the interfaces' models carry it) and asks for
 // "graphics:reload". False (logged) when the host could not be told.

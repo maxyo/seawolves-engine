@@ -279,7 +279,7 @@ SunFit FitBakedSun(const Occluders &occluders, std::span<const SunFitSample> all
             coarse.push_back({az, el});
     // The coarse directions are ranked on every kCoarseStride-th sample (most of the fit's rays went there) and only
     // the kCoarseKept best are rated on all of them: the coarse best is the same as rating all on all samples
-    // (the 30 towns of TEHO that bake a town light, 2026-11-16) with 0.45 instead of 1.08 million rays in a town.
+    // (the 30 towns of TEHO that bake a town light) with 0.45 instead of 1.08 million rays in a town.
     if (samples.size() >= kCoarseStride * kCoarseMinSamples)
     {
         std::vector<SunFitSample> spread;

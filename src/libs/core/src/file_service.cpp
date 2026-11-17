@@ -355,9 +355,7 @@ std::uintmax_t FILE_SERVICE::_RemoveDirectory(const char *pathName)
     return error ? 0 : removed;
 }
 
-//------------------------------------------------------------------------------------------------
 // inifile objects managment
-//
 
 std::unique_ptr<INIFILE> FILE_SERVICE::CreateIniFile(const char *file_name, bool fail_if_exist)
 {
@@ -412,19 +410,13 @@ std::unique_ptr<INIFILE> FILE_SERVICE::OpenIniFile(const char *file_name)
         if (Max_File_Index < n)
             Max_File_Index = n;
         OpenFiles[n]->IncReference();
-        //        POP_CONTROL(0)
         // INIFILE_T object belonged to entity and must be deleted by entity
-        // OpenFiles[n]->inifile_T = new INIFILE_T(OpenFiles[n]);
-        // if(OpenFiles[n]->inifile_T == null) throw std::runtime_error();
-        // return OpenFiles[n]->inifile_T;
 
         auto v = std::make_unique<INIFILE_T>(OpenFiles[n]);
         if (!v)
             throw std::runtime_error("Failed to create INIFILE_T");
         return v;
     }
-    //    POP_CONTROL(0)
-    ////UNGUARD
     return nullptr;
 }
 
@@ -434,7 +426,6 @@ void FILE_SERVICE::RefDec(INIFILE *ini_obj)
     {
         if (OpenFiles[n] != ini_obj)
             continue;
-        // OpenFiles[n]->SearchData = &OpenFiles[n]->Search;
         if (OpenFiles[n]->GetReference() == 0)
             throw std::runtime_error("Reference error");
         OpenFiles[n]->DecReference();
@@ -446,7 +437,6 @@ void FILE_SERVICE::RefDec(INIFILE *ini_obj)
         return;
     }
     throw std::runtime_error("bad inifile object");
-    // UNGUARD
 }
 
 void FILE_SERVICE::Close()
@@ -488,13 +478,10 @@ bool FILE_SERVICE::LoadFile(const char *file_name, char **ppBuffer, uint32_t *dw
     return true;
 }
 
-//------------------------------------------------------------------------------------------------
 // Resource paths
-//
 
 void terminate_with_char(std::string &buffer, const char chr)
 {
-    // Check if already has
     if (!buffer.empty() && buffer[buffer.length() - 1] != chr)
     {
         // Append to end and store
@@ -645,7 +632,6 @@ uint64_t FILE_SERVICE::GetPathFingerprint(const std::filesystem::path &path)
     return result;
 }
 
-//=================================================================================================
 
 INIFILE_T::~INIFILE_T()
 {

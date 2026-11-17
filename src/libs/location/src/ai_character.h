@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    AICharacter
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -56,16 +50,10 @@ class AICharacter : public Character
         };
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     AICharacter();
     virtual ~AICharacter();
 
-    //--------------------------------------------------------------------------------------------
-    // Character
-    //--------------------------------------------------------------------------------------------
   public:
     // Move the character to the desired position
     void Move(float dltTime) override;
@@ -76,9 +64,7 @@ class AICharacter : public Character
     // Mark the movement of the character
     void CharacterTeleport() override;
 
-    //--------------------------------------------------------------------------------------------
     // AICharacter
-    //--------------------------------------------------------------------------------------------
   public:
     // Nothing to do
     bool CmdNone();
@@ -91,8 +77,6 @@ class AICharacter : public Character
     // Set the character we don't collide with
     void SetExCharacter(AICharacter *chr);
 
-    // Events
-
     // Cannot further execute the command
     virtual void FailureCommand(){};
     // The character arrived at the point
@@ -104,9 +88,6 @@ class AICharacter : public Character
 
     static const char *GetCommandName(AICommand cmd);
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
     // private:
   protected:
     // Go to the point

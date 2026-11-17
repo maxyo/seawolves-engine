@@ -34,10 +34,6 @@ class ILogAndActions : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -51,7 +47,6 @@ class ILogAndActions : public Entity
 
   protected:
     // log stings parameters
-    // -----------------------
     int32_t m_nWindowWidth;  // X window size
     int32_t m_nWindowHeight; // Y window size
     int32_t m_nWindowLeft;
@@ -67,7 +62,6 @@ class ILogAndActions : public Entity
     STRING_DESCR *m_sRoot;
 
     // Action parameters
-    //-------------------
     bool m_bThatRealAction;
     int32_t m_nIconWidth;  // X icon size
     int32_t m_nIconHeight; // Y icon size

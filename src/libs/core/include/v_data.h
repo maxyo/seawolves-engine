@@ -39,7 +39,6 @@ class VDATA
     virtual ATTRIBUTES *GetAClass() = 0;
     virtual ATTRIBUTES *GetAClass(uint32_t index) = 0;
     virtual DATA *GetArrayElement(uint32_t index) = 0;
-    // virtual S_TOKEN_TYPE GetType()=0;
     virtual uint32_t GetElementsNum() = 0;
     virtual bool IsArray() = 0;
     virtual bool IsReference() = 0;
@@ -63,7 +62,6 @@ class VDATA
     virtual bool Minus(DATA *pV) = 0;
     virtual bool Compare(DATA *pV, char opA, char opB) = 0;
     virtual bool Neg() = 0;
-    //    virtual bool CompareAndSetResult(DATA * pV,S_TOKEN_TYPE op)=0;
 
     virtual void SetElementsNum(uint32_t asize) = 0;
 

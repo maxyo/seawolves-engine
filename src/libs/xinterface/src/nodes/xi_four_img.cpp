@@ -67,10 +67,6 @@ int CXI_FOURIMAGE::CommandExecute(int wActCode)
                 newSelectItem = i;
                 if (m_nSelectItem == newSelectItem && IsCurrentNode())
                 {
-                    /*core.Event("ievnt_command","ss","activate",m_nodeName);
-                    for(int n=0; n<COMMAND_QUANTITY; n++)
-                      if(pCommandsList[n].code==wActCode) break;
-                    if(n<COMMAND_QUANTITY) m_nCurrentCommandNumber = n;*/
                     retVal = ACTION_ACTIVATE;
                 }
             }
@@ -85,7 +81,6 @@ int CXI_FOURIMAGE::CommandExecute(int wActCode)
         if (m_bUsed[newSelectItem])
             m_nSelectItem = newSelectItem;
 
-        // set new current item
         auto *tmpAttr = core.Entity_GetAttributeClass(g_idInterface, "FourImage");
         tmpAttr->SetAttributeUseDword("current", m_nSelectItem);
     }
@@ -94,13 +89,11 @@ int CXI_FOURIMAGE::CommandExecute(int wActCode)
 
 void CXI_FOURIMAGE::Draw(bool bSelected, uint32_t Delta_Time)
 {
-    // GUARD(void CXI_FOURIMAGE::Draw())
 
     if (m_bUse)
     {
         Update(bSelected, Delta_Time);
 
-        // draw one picture
         for (auto i = 0; i < 4; i++)
         {
             if (m_oneTexID[i] == -1 || m_oneTexID[i] >= m_nTexturesQuantity)
@@ -112,7 +105,6 @@ void CXI_FOURIMAGE::Draw(bool bSelected, uint32_t Delta_Time)
             m_rs->DrawPrimitive(D3DPT_TRIANGLESTRIP, vBuf, sizeof(XI_ONETEX_VERTEX), i * 4, 2, "iFourImages_main");
         }
 
-        // create select border
         if (m_bShowBorder && bSelected)
         {
             XI_ONLYONETEX_VERTEX pV[4];
@@ -136,13 +128,11 @@ void CXI_FOURIMAGE::Draw(bool bSelected, uint32_t Delta_Time)
             pV[2].pos.y = static_cast<float>(m_imgRect[m_nSelectItem].top);
             pV[3].pos.x = static_cast<float>(m_imgRect[m_nSelectItem].right);
             pV[3].pos.y = static_cast<float>(m_imgRect[m_nSelectItem].bottom);
-            // show select border
             m_rs->TextureSet(0, m_texBorder);
             m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_ONLYONETEX_FVF, 2, pV, sizeof(XI_ONLYONETEX_VERTEX),
                                   "iFourImages_border");
         }
 
-        // draw two picture
         for (auto i = 0; i < 4; i++)
         {
             if (m_twoTexID[i] == -1 || m_twoTexID[i] >= m_nTexturesQuantity)
@@ -172,8 +162,6 @@ void CXI_FOURIMAGE::Draw(bool bSelected, uint32_t Delta_Time)
                 int32_t posX, posY;
                 posX = (m_imgRect[i].left + m_imgRect[i].right) / 2;
                 const auto color = 0xFFFFFFFF;
-                /*if(i==m_nSelectItem) color=m_dwCurSelectColor;
-                else color=m_dwBaseColor;*/
 
                 if (bUseOneString)
                 {
@@ -200,7 +188,6 @@ void CXI_FOURIMAGE::Draw(bool bSelected, uint32_t Delta_Time)
         }
     }
 
-    // UNGUARD
 }
 
 bool CXI_FOURIMAGE::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *name2, VRenderer *rs,
@@ -221,7 +208,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     char param1[256];
     const char *tmpstr;
 
-    // get base color
     m_dwBaseColor = GetIniARGB(ini1, name1, ini2, name2, "commonColor", ARGB(255, 128, 128, 128));
 
     // get color for light select image
@@ -230,7 +216,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     // get color for dark select image
     m_dwDarkSelectColor = GetIniARGB(ini1, name1, ini2, name2, "darkSelectCol", ARGB(255, 150, 150, 150));
 
-    // get blind parameters
     m_bColorType = true; // select item used select color
     m_nBlindCounter = 0; // currend blind counter
     m_nMaxBlindCounter = GetIniLong(ini1, name1, ini2, name2, "wBlindDelay");
@@ -240,7 +225,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         m_bDoBlind = false;
     m_dwCurSelectColor = m_dwLightSelectColor;
 
-    // get one string parameters
     bUseOneString = ReadIniString(ini1, name1, ini2, name2, "oneString", param, sizeof(param), "");
     if (bUseOneString)
     {
@@ -273,7 +257,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         m_xOneOffset = 0;
     }
 
-    // get two string parameters
     bUseTwoString = ReadIniString(ini1, name1, ini2, name2, "twoString", param, sizeof(param), "");
     if (bUseTwoString)
     {
@@ -310,7 +293,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     if (pAttribute != nullptr)
     {
         m_nSelectItem = pAttribute->GetAttributeAsDword("current", 0);
-        // get bad picture
         const char *sBadPict;
         if ((sBadPict = pAttribute->GetAttribute("BadOnePicture")) != nullptr)
             m_oneBadTexture = m_rs->TextureCreate(sBadPict);
@@ -321,7 +303,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
         else
             m_twoBadTexture = -1;
 
-        // get textures
         auto *pA = pAttribute->GetAttributeClass("ImagesGroup");
         if (pA == nullptr)
             m_nTexturesQuantity = 0;
@@ -430,7 +411,6 @@ void CXI_FOURIMAGE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
             GetRelativeRect(m_imgRect[i]);
     }
 
-    // get border picture
     if (ReadIniString(ini1, name1, ini2, name2, "border", param, sizeof(param), ""))
     {
         tmpstr = GetSubStr(param, param1, sizeof(param1));
@@ -459,7 +439,6 @@ void CXI_FOURIMAGE::ReleaseAll()
 
     TEXTURE_RELEASE(m_rs, m_oneBadTexture);
     TEXTURE_RELEASE(m_rs, m_twoBadTexture);
-    // Release all used textures
     for (i = 0; i < m_nTexturesQuantity; i++)
     {
         PICTURE_TEXTURE_RELEASE(pPictureService, m_sGroupName[i], m_nTextureId[i]);
@@ -480,7 +459,6 @@ void CXI_FOURIMAGE::ReleaseAll()
         m_pTwoStr[i] = nullptr;
     }
 
-    // release all image list names
     delete[] m_sBorderGroupName;
     m_sBorderGroupName = nullptr;
 
@@ -500,7 +478,6 @@ void CXI_FOURIMAGE::FillVertex()
         for (auto i = 0; i < 4; i++)
         {
             auto idx = i * 4;
-            // get texture rectangles
             if (m_oneImgID[i] != -1)
                 pPictureService->GetTexturePos(m_oneImgID[i], textRect1);
             else
@@ -566,7 +543,6 @@ void CXI_FOURIMAGE::FillVertex()
 
 void CXI_FOURIMAGE::Update(bool bSelected, uint32_t DeltaTime)
 {
-    //
     auto *pVert = static_cast<XI_ONETEX_VERTEX *>(m_rs->LockVertexBuffer(vBuf));
     if (pVert != nullptr)
     {
@@ -697,7 +673,6 @@ void CXI_FOURIMAGE::SaveParametersToIni()
         return;
     }
 
-    // save position
     char pcWriteKeyName[256];
     for (int32_t n = 0; n < 4; n++)
     {

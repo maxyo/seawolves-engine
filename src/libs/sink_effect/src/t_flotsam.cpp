@@ -10,12 +10,10 @@ MODEL *TFlotsam::models[sink_effect::FLOTSAM_MODELS_COUNT];
 char TFlotsam::modelNames[sink_effect::FLOTSAM_MODELS_COUNT][128];
 entid_t TFlotsam::modelIDs[sink_effect::FLOTSAM_MODELS_COUNT];
 
-//--------------------------------------------------------------------
 TFlotsam::TFlotsam() : sea(nullptr), enabled(false)
 {
 }
 
-//--------------------------------------------------------------------
 TFlotsam::~TFlotsam()
 {
     --modelsInitialized;
@@ -25,7 +23,6 @@ TFlotsam::~TFlotsam()
             core.EraseEntity(modelIDs[i]);
 }
 
-//--------------------------------------------------------------------
 void TFlotsam::Start(float _x, float _z, float _radius)
 {
     enabled = true;
@@ -40,16 +37,13 @@ void TFlotsam::Start(float _x, float _z, float _radius)
     turnY = randCentered(1.0f) * sink_effect::FLOTSAM_TURN_SPEED;
     maxFloatTime = static_cast<uint32_t>(randUpper(sink_effect::FLOTSAM_FLOAT_TIME));
     state = FLOTSAM_RISE;
-    // model = models[rand() % FLOTSAM_MODELS_COUNT];
     ModelID = modelIDs[rand() % sink_effect::FLOTSAM_MODELS_COUNT];
 }
 
-//--------------------------------------------------------------------
 void TFlotsam::Initialize(SEA_BASE *_sea)
 {
     if (!modelsInitialized)
     {
-        // modelsInitialized = true;
         strcpy_s(modelNames[0], "particles\\palka01");
         strcpy_s(modelNames[1], "particles\\palka02");
         strcpy_s(modelNames[2], "particles\\palka03");
@@ -67,7 +61,6 @@ void TFlotsam::Initialize(SEA_BASE *_sea)
     sea = _sea;
 }
 
-//--------------------------------------------------------------------
 void TFlotsam::Process(uint32_t _dTime)
 {
     if (!enabled)
@@ -102,7 +95,6 @@ void TFlotsam::Process(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 void TFlotsam::Realize(uint32_t _dTime)
 {
     if (!enabled)
@@ -123,12 +115,7 @@ void TFlotsam::Realize(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 bool TFlotsam::Enabled()
 {
     return enabled;
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

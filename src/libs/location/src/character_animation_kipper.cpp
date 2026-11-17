@@ -1,21 +1,11 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    CharacterAnimationKipper
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "character_animation_kipper.h"
 #include "entity.h"
 #include "core.h"
 #include "renderer.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 CharacterAnimationKipper::CharacterAnimationKipper()
 {
@@ -40,7 +30,6 @@ CharacterAnimationKipper::~CharacterAnimationKipper()
     }
 }
 
-// Initialization
 bool CharacterAnimationKipper::Init()
 {
     // check that the it's the only one
@@ -62,7 +51,6 @@ bool CharacterAnimationKipper::Init()
         throw std::runtime_error("Anumation service not created!");
     aniMan = asr->CreateAnimation("man");
     aniWoman = asr->CreateAnimation("towngirl");
-    // LockTexture("dialog\dialog.tga");
     return true;
 }
 

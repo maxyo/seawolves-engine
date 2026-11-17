@@ -577,7 +577,6 @@ inline std::vector<Set> loadLayer(const fs::path &layer)
     return sets;
 }
 
-// `paths` is the resource index (lowercase game-relative key -> real path);
 // `overlaid` the keys of it the UI overlay replaces. Selects the set that
 // identifies the player's game, patches what it can into `derivedRoot` and
 // redirects `paths` there. Returns what happened; throws LayerError when the

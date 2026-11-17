@@ -67,7 +67,6 @@ FONT::~FONT()
         vertexBuffer_->Release();
     if (textureHandle_ >= 0)
         renderService_.TextureRelease(textureHandle_);
-    // core.FreeService("renderer");
 }
 
 bool FONT::Init(const char *font_name, const char *iniName)
@@ -340,7 +339,6 @@ int32_t FONT::Print(int32_t x, int32_t y, char *data_PTR, const FONT_PRINT_OVERR
     renderService_.TextureSet(0, textureHandle_);
     device_.SetFVF(FONT_CHAR_FVF);
     device_.SetStreamSource(0, vertexBuffer_, 0, sizeof(FONT_CHAR_VERTEX));
-    // Device->SetIndices(0);
 
     const bool drawShadows = overrides.shadow.value_or(drawShadows_);
     const float scale = overrides.scale.value_or(scale_);

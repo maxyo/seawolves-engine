@@ -11,7 +11,6 @@
 #define RED(x) (((x) >> 16) & 0xFF)
 #define GREEN(x) (((x) >> 8) & 0xFF)
 #define BLUE(x) ((x)&0xFF)
-//#define ARGB(a,r,g,b)    (((a)<<24)|((r)<<16)|((g)<<8)|b)
 
 struct COMMANDDESCR
 {

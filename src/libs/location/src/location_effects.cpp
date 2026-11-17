@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocationEffects
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "location_effects.h"
 #include "core.h"
@@ -18,10 +12,6 @@
 #define LFX_SPLASHES_SRAD 0.14f
 
 #define LFX_PI 3.141592654f
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 LocationEffects::LocationEffects()
     : rs(nullptr), smoke{}, flinders{}, blood{}, buffer{}
@@ -66,7 +56,6 @@ LocationEffects::~LocationEffects()
     }
 }
 
-// Initialization
 bool LocationEffects::Init()
 {
     // renderer
@@ -74,11 +63,9 @@ bool LocationEffects::Init()
     if (!rs)
         throw std::runtime_error("No service: renderer");
 
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 10);
 
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), 1000000);
 
@@ -88,7 +75,6 @@ bool LocationEffects::Init()
     return true;
 }
 
-// Execution
 void LocationEffects::Execute(uint32_t delta_time)
 {
 }
@@ -101,7 +87,6 @@ void LocationEffects::Realize(uint32_t delta_time)
     ProcessedShotgun(dltTime);
 }
 
-// Messages
 uint64_t LocationEffects::ProcessMessage(MESSAGE &message)
 {
     const std::string &buf = message.String();
@@ -308,14 +293,11 @@ void LocationEffects::ProcessedChrSplash(float dltTime)
         }
         // increase the life time
         spl.time += dltTime * spl.kTime;
-        // Draw
         DrawParticles(spl.prt, LFX_SPLASHES_P_NUM, sizeof(ParticleSplash), splashesTxt, "LocCharacterSplashes");
     }
 }
 
-// ---------------------------------------------------
 // Flies near laterns
-// ---------------------------------------------------
 
 void LocationEffects::AddLampFlys(glm::vec3 &pos)
 {
@@ -393,7 +375,6 @@ void LocationEffects::ProcessedFlys(float dltTime)
             // Radius
             float r = 1.0f + 0.5f * sinf(f.a) + 0.2f * cosf(f.a * f.k * 2.1f);
             r *= flys[i].radius;
-            // Position
             f.pos.x = flys[i].pos.x + r * sinf(f.ax) * sinf(f.ay);
             f.pos.y = flys[i].pos.y + r * cosf(f.ax) * cosf(f.ay);
             f.pos.z = flys[i].pos.z + r * sinf(f.ax) * cosf(f.ay);
@@ -426,11 +407,8 @@ void LocationEffects::ProcessedFlys(float dltTime)
             f.angle += dltTime * f.k * 3.0f;
         }
     }
-    // Draw
     DrawParticles(fly.data(), numFly, sizeof(ParticleFly), flyTex, "LocFly", true, 4);
 }
-
-//---------------------------------------------------------------------------------
 
 void LocationEffects::SGInited()
 {
@@ -674,7 +652,6 @@ void LocationEffects::ProcessedShotgun(float dltTime)
         }
     }
     numFlinders = j;
-    //
     if (numFlinders)
     {
         DrawParticles(flinders, numFlinders, sizeof(flinders[0]), texFlinders, "ShootParticles");

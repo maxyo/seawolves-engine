@@ -10,7 +10,7 @@ namespace storm::android
 // identity stays native; the touch HUD receives a revision that fences that tuple.
 // The script offers one action at a time, by priority (BI_SetSeaState: Board, LandTroops,
 // Reload, Moor, Map). `map`: the script would also let the squadron go to the world map now
-// (its bMapEnter), so the HUD offers Map beside the action it shows (owner 2026-11-14: moor and
+// (its bMapEnter), so the HUD offers Map beside the action it shows (moor and
 // map together whenever both are possible); `mapLabel` is the script's caption of Map.
 struct SeaQuickActionFrame
 {
@@ -28,7 +28,6 @@ inline bool knownSeaQuickAction(std::string_view action)
 // Game-thread owned.
 //
 // Requests "1\t<activity>\t<revision>\t<verb>\t<value>":
-//   ack       value 1: the touch control showing exactly this revision is on the screen;
 //             value 0: it is not (any more). Said once per revision; the word lasts until the
 //             revision changes or the other word comes (android_hud_presenter.hpp). A covered
 //             action, or one the presenting UI has not answered yet, hides the native icon.

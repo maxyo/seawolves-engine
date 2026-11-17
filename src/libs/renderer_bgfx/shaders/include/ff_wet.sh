@@ -66,7 +66,7 @@ vec3 ffWetNormal(vec3 N, vec3 Ng, vec4 wet)
 // The highlight of the wet surface (the sun's, the lamps', the dynamic lights'; drawn where FX_LIGHT_SPECULAR is, by
 // default «Высокая»): the water film's GGX lobe (fxSpecLobe, power < 0) in place of the dry highlight (the water covers
 // the surface): a lamp's reflection stretches towards the viewer, the streak on a wet street. The lobe is kept broad and
-// dim, a lamp's soft reflection on a wet street rather than a mirror's spot (the owner's sheet of 2026-11-17: the sharp
+// dim, a lamp's soft reflection on a wet street rather than a mirror's spot (a sharp
 // lobe was a blown-out white spot): the film's roughness goes from 0.6 (damp) to 0.4 (soaked), a puddle's no smoother
 // (alpha at least 0.15), and its weight is 0.35 of the wetness (the peak about that of the old round reflection).
 // Metal keeps its own highlight (dry): its reflection (F0 far above water's 0.02) outshines the film's.

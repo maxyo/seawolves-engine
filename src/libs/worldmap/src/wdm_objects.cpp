@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmObjects
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_objects.h"
 
@@ -15,13 +10,10 @@
 #include "geometry.h"
 #include "string_compare.hpp"
 
-//============================================================================================
 
 WdmObjects *wdmObjects = nullptr;
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmObjects::WdmObjects()
 {
@@ -165,11 +157,6 @@ GEOS *WdmObjects::CreateGeometry(const char *path)
     auto *const geo = gs->CreateGeometry(modelPath.c_str(), "", 0);
     gs->SetTexturePath("");
     // Add to the table
-    // Model & m = models[models.Add()];
-    // m.path = path;
-    // m.hash = hash;
-    // m.next = -1;
-    // m.geo = geo;
     models.push_back(Model{geo, path, hash, -1});
     int32_t index = hash & (sizeof(entryModels) / sizeof(entryModels[0]) - 1);
     if (entryModels[index] < 0)
@@ -185,9 +172,7 @@ GEOS *WdmObjects::CreateGeometry(const char *path)
     return geo;
 }
 
-//============================================================================================
 // Debug functions
-//============================================================================================
 
 #define WdmObjects_myPI 3.1415926535897932384626433832795f
 
@@ -350,20 +335,6 @@ void WdmObjects::UpdateWind(float dltTime)
     dltTime = dltTime / 2.0f;
     windField.Step(dltTime);
 
-    /*
-    const int32_t size = 64;
-    for(int32_t z = 0; z < size; z++)
-    {
-      for(int32_t x = 0; x < size; x++)
-      {
-        float px = worldSizeX*(x/(float)size - 0.5f);
-        float pz = worldSizeZ*(z/(float)size - 0.5f);
-        float wx, wz;
-        windField.GetWind(px, pz, wx, wz);
-        DrawLine(glm::vec3(px, 1.0f, pz), glm::vec3(px, 1.0f, pz) + glm::vec3(wx, 0.0f, wz)*30.0f, 0xff00ff00);
-      }
-    }
-    */
 }
 
 // Get save string

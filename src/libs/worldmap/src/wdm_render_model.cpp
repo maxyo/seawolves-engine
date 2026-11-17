@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmRenderModel
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "geometry.h"
 
@@ -15,9 +10,7 @@
 #define WDM_MODEL_TECH "WdmModelDrawStd"
 #define WDM_MODEL_TECHA "WdmModelDrawStdA"
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmRenderModel::WdmRenderModel()
 {
@@ -70,14 +63,6 @@ void WdmRenderModel::LRender(VRenderer *rs)
     rs->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(mtx));
     Render(rs);
 
-    /*
-    if(drawCircle)
-    {
-      glm::mat4 m(mtx);
-      m.Pos() = m*center;
-      wdmObjects->DrawCircle(m, radius, 0x2f0fffff);
-      //wdmObjects->DrawCircle(mtx, modelRadius, 0x2fffff0f);
-    }*/
 }
 
 void WdmRenderModel::SetTech(const char *t, const char *ta)

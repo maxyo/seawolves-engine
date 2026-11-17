@@ -768,7 +768,6 @@ bool ShipWalk::Init(entid_t _shipID, int editorMode, const char *shipType, std::
         fileName += shipType;
         fileName += ".ini";
 
-        // GUARD_SAILORS(sailorsPoints.ReadFromFile)
         sailorsPoints.ReadFromFile(fileName);
         // UN//GUARD_SAILORS
 
@@ -799,15 +798,12 @@ bool ShipWalk::Init(entid_t _shipID, int editorMode, const char *shipType, std::
         }
 
         // people count
-        // ATTRIBUTES *att = ship->GetACharacter();
         const auto *paShip = ship->GetAShip();
         auto peopleCount = 5;
         if (paShip)
         {
             peopleCount = paShip->GetAttributeAsDword("lowpolycrew", peopleCount);
         }
-        // ATTRIBUTES *crewAttr = att->FindAClass(attr, "ship.crew");
-        // int peopleCount = (int) ceilf(CREW2VISIBLE((float) crewAttr->GetAttributeAsDword("quantity", 1)));
 
         if (peopleCount > 100)
             peopleCount = 100;

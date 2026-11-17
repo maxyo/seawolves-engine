@@ -46,7 +46,6 @@ uint64_t get_performance_counter();
     {                                                                                                                  \
         x = get_performance_counter() - x;                                                                             \
     }
-//
 
 class Core
 {
@@ -57,7 +56,6 @@ class Core
     // aborted (cancel, quit, failure); the running scripts are unwound and the engine exits.
     virtual bool PrepareLoadingScene() { return true; }
 
-    // return application window
     virtual storm::OSWindow *GetWindow() = 0;
     // set time scale; affect on std entity functions DeltaTime parameter
     virtual void SetTimeScale(float _scale) = 0;
@@ -79,10 +77,8 @@ class Core
     virtual uint32_t Entity_AttributeChanged(entid_t id_PTR, ATTRIBUTES *) = 0;
     virtual ATTRIBUTES *Entity_GetAttributePointer(entid_t id_PTR) = 0;
 
-    // send message to an object
     virtual uint64_t Send_Message(entid_t Destination, const char *Format, ...) = 0;
 
-    // save core state
     virtual bool SaveState(const char *file_name) = 0;
     // force core to load state file at the start of next game loop, return false if no state file
     virtual bool InitiateStateLoading(const char *file_name) = 0;
@@ -90,13 +86,11 @@ class Core
     // makes, for a caller that must refuse a record before it tears the game down.
     virtual std::string StateFileProblem(const char *file_name) = 0;
 
-    // return current fps
     virtual uint32_t EngineFps() = 0;
     // set fixed delta time mode, (-1) - off
     virtual void SetDeltaTime(int32_t delta_time) = 0;
     virtual uint32_t GetDeltaTime() = 0;
     virtual uint32_t GetRDeltaTime() = 0;
-    //
     virtual VDATA *Event(const std::string_view &event_name) = 0;
     template <typename... Args>
     VDATA *Event(const std::string_view &event_name, const std::string_view &format, Args... args)

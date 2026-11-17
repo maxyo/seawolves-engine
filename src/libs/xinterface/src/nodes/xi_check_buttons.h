@@ -100,13 +100,10 @@ class CXI_CHECKBUTTONS : public CINODE
     FXYPOINT m_fpIconSize;
     FXYPOINT m_fpIconOffset;
     std::string m_sIconGroupName;
-    //
     std::string m_sNormalPicture;
     uint32_t m_dwNormalPicColor;
-    //
     std::string m_sSelectPicture;
     uint32_t m_dwSelectPicColor;
-    //
     std::string m_sDisablePicture;
     uint32_t m_dwDisablePicColor;
 };

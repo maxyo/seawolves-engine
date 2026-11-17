@@ -33,8 +33,6 @@ DECK_CAMERA::~DECK_CAMERA()
 
 bool DECK_CAMERA::Init()
 {
-    // GUARD(DECK_CAMERA::Init())
-    // core.SystemMessages(GetId(),true);
     SetDevice();
     // UNGUARD
     return true;
@@ -252,8 +250,6 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
             src.x = dst.x = vRes.x;
             src.z = dst.z = vRes.z;
             auto fTmp = MultiTrace(src, dst, camera_pos.y);
-            // float fDist = 1000.f;
-            // if(fTmp<=1.f) fDist = src.y + fTmp*(dst.y-src.y) - camera_pos.y;
             if (fTmp <= 1.f)
                 camera_pos = vRes;
             else
@@ -415,7 +411,6 @@ void DECK_CAMERA::SetStartPos()
             core.Trace("WARNING! Bad camera locator on ship %s", pModel->GetNode(0)->GetName());
         }
 
-        // SetCursorPos(lock_x,lock_y);
     }
 }
 
@@ -606,26 +601,6 @@ void DECK_CAMERA::SetViewPoint(glm::vec3 &cViewPoint)
     if (pathNode == nullptr)
         return;
 
-    /*calculate camera position
-    glm::vec3 s_pos;
-    s_pos = pathNode->glob_mtx*(camera_pos+glm::vec3(0.f,h_eye,0.f));
-
-    glm::mat4 glbRotMtx;
-    glbRotMtx.BuildViewMatrix(s_pos,cViewPoint,glm::vec3(0.f,1.f,0.f));
-    glbRotMtx.SetPosition(0.f,0.f,0.f);
-
-    glm::mat4 invRotMtx;
-    pathNode->glob_mtx.Get3X3(invRotMtx);
-    invRotMtx.Transposition3X3();
-
-    glbRotMtx *= invRotMtx;
-
-    glm::vec3 v = glbRotMtx*glm::vec3(0,0,1.f);
-    float yAng = atan2f(v.x,v.z);
-    glbRotMtx.RotateY(-yAng);
-
-    v = glbRotMtx*glm::vec3(0,0,1.f);
-    float xAng = atan2f(-v.y,v.z);*/
 
     // Viewpoint in local coordinates
     glm::vec3 e_pos;

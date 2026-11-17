@@ -33,7 +33,6 @@ uint32_t ParticleSystem::Execute(float DeltaTime)
     {
         if (DeleteIfNeed())
         {
-            // core.Trace("AUTO DELETE !!!!\n");
             return 0;
         }
     }
@@ -68,15 +67,12 @@ void ParticleSystem::CreateFromDataSource(DataSource *pDataSource)
             throw std::runtime_error("Particles: Unknown emitter type !!!!");
         }
 
-        // Assert (pEmitter);
 
-        // CreateParticles (pEmitter, pEmitterDecription->Particles);
     }
 }
 
 IEmitter *ParticleSystem::CreatePointEmitter(DataSource::EmitterDesc *pEmitter)
 {
-    //    core.Trace("Create 'Point' emitter\n");
     auto *pNewEmitter = new PointEmitter(this);
     pNewEmitter->AttachToDataSource(pEmitter);
     pNewEmitter->SetGUID(EmitterID);

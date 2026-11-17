@@ -58,17 +58,12 @@ BIImageMaterial *BIImageRender::CreateMaterial(const char *pcTextureName, const 
             if (m_apMaterial[n]->GetMinPriority() > pMaterial->GetMinPriority())
                 break;
         m_apMaterial.insert(m_apMaterial.begin() + n, pMaterial);
-        // m_apMaterial.Insert(n);
-        // m_apMaterial[n] = pMaterial;
     }
     return pMaterial;
 }
 
 void BIImageRender::DeleteMaterial(BIImageMaterial *pMat)
 {
-    // int32_t n = m_apMaterial.Find( pMat );
-    // if( n >= 0 )
-    //    m_apMaterial.DelIndex( n );
     const auto it = std::find(m_apMaterial.begin(), m_apMaterial.end(), pMat);
     if (it != m_apMaterial.end())
         m_apMaterial.erase(it);
@@ -90,7 +85,6 @@ void BIImageRender::MaterialSorting()
             if (m_apMaterial[n]->GetMinPriority() < m_apMaterial[n - 1]->GetMinPriority())
             {
                 std::swap(m_apMaterial[n - 1], m_apMaterial[n]);
-                // m_apMaterial.Swap(n-1, n);
                 bContinue = true;
             }
         }

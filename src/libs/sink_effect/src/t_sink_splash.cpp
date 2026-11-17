@@ -5,35 +5,26 @@
 
 #include "rands.h"
 
-//--------------------------------------------------------------------
 TSinkSplash::TSinkSplash()
     : enabled(false), sea(nullptr), time(0), distortDivider(0), center(), dir(), growK(0)
 {
 }
 
-//--------------------------------------------------------------------
 TSinkSplash::~TSinkSplash()
 {
     Release();
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::Initialize(INIFILE *_ini, SEA_BASE *_sea)
 {
-    // ps = new SEPS_PS();
-    // ps->Init(_ini, "sink");
 
     sea = _sea;
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::Release()
 {
-    // if (ps)
-    //    delete ps;
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::Start(const glm::vec3 &_pos, uint16_t *_indexes, SINK_VERTEX *_vertexes, int32_t vOffset)
 {
     time = 0;
@@ -43,7 +34,6 @@ void TSinkSplash::Start(const glm::vec3 &_pos, uint16_t *_indexes, SINK_VERTEX *
 
     const auto midY = sea->WaveXZ(center.x, center.z) + sink_effect::SPLASH_MOVE_Y;
     distortDivider = rand(sink_effect::SPLASH_DISTORT_DIVIDER) + 10.0f;
-    //    _VSYSTEM_API->Trace("i=%X, v=%X", _indexes, _vertexes);
     const auto stepSize = sink_effect::GRID_LENGTH / sink_effect::GRID_STEPS;
     const auto halfSize = sink_effect::GRID_LENGTH / 2.0f;
     for (uint16_t z = 0; z < sink_effect::GRID_STEPS; ++z)
@@ -54,7 +44,6 @@ void TSinkSplash::Start(const glm::vec3 &_pos, uint16_t *_indexes, SINK_VERTEX *
             _vertexes->pos.y = midY;
             _vertexes->tu = static_cast<float>(x) / static_cast<float>(sink_effect::GRID_STEPS);
             _vertexes->tv = static_cast<float>(z) / static_cast<float>(sink_effect::GRID_STEPS);
-            //_vertexes->color = 0x44FFFF00;
             ++_vertexes;
         }
 
@@ -70,10 +59,8 @@ void TSinkSplash::Start(const glm::vec3 &_pos, uint16_t *_indexes, SINK_VERTEX *
             *(_indexes++) = vOffset + sink_effect::GRID_STEPS * z + x + 1;
         }
 
-    // ps->Reset();
 }
 
-//--------------------------------------------------------------------
 float TSinkSplash::HeightF(uint32_t _time, float _r, float _k)
 {
     auto tPhase = static_cast<float>(_time) * (PI / sink_effect::SPLASH_FADE_TIME);
@@ -88,7 +75,6 @@ float TSinkSplash::HeightF(uint32_t _time, float _r, float _k)
     return _k * (sink_effect::SPLASH_HEIGHT_MULTIPLIER * (/*(1.0f-k)*fCos*sin(tPhase) +*/ k * secondPart));
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::Process(uint32_t _dTime, uint16_t *_indexes, SINK_VERTEX *_vertexes)
 {
     if (!enabled)
@@ -105,8 +91,6 @@ void TSinkSplash::Process(uint32_t _dTime, uint16_t *_indexes, SINK_VERTEX *_ver
     localDir.x = sin(rho) * cos(alpha);
     localDir.y = 1.0f;
     localDir.z = sin(rho) * sin(alpha);
-    // localDir += /*(((float) time) / (2 * SPLASH_FADE_TIME))**/this->dir;
-    // ps->SetEmitter(pos, localDir);
 
     time += _dTime;
 
@@ -158,39 +142,17 @@ void TSinkSplash::Process(uint32_t _dTime, uint16_t *_indexes, SINK_VERTEX *_ver
         }
 }
 
-//--------------------------------------------------------------------
 bool TSinkSplash::Enabled()
 {
     return enabled;
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::Reset(uint16_t *_indexes, SINK_VERTEX *_vertexes)
 {
     time = 0;
     enabled = false;
-    /*
-      float midY = sea->WaveXZ(center.x, center.z) + SPLASH_MOVE_Y;
-      float stepSize = GRID_LENGTH / GRID_STEPS;
-      float halfSize = GRID_LENGTH / 2.0f;
-      int x,z;
-      for (z=0; z < GRID_STEPS; ++z)
-      for (x=0; x < GRID_STEPS; ++x)
-      {
-        _vertexes->pos.x = center.x + stepSize * x - halfSize;
-        _vertexes->pos.z = center.z + stepSize * z - halfSize;
-        _vertexes->pos.y = midY;
-        _vertexes->tu = ((float) x) / ((float) GRID_STEPS);
-        _vertexes->tv = ((float) z) / ((float) GRID_STEPS);
-        ++_vertexes;
-      }
-    */
 }
 
-//--------------------------------------------------------------------
 void TSinkSplash::AdditionalRealize(uint32_t dTime)
 {
-    // ps->Realize(_dTime);
 }
-
-//--------------------------------------------------------------------

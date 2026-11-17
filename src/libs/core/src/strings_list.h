@@ -1,6 +1,5 @@
 #pragma once
 
-//-------------------------------------------------------------------------------------------------
 // Simple class for creating and keeping in memory strings list
 // Also, each string can has its own data. Amount of memory for this data you can assign
 // using SetStringDataSize(..) function. When you changing the size for this data, all items in list

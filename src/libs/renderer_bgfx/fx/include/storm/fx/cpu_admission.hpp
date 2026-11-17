@@ -15,7 +15,7 @@ namespace storm::fx {
 //
 // Two budgets. Under a place's opaque loading picture the work takes every core: nothing is played and the load
 // ends sooner. While the game is played it takes the gameplay limit: a quarter of the cores, at most two (six of
-// eight cores at full load next to the game brought the owner's phone to thermal status SEVERE in a minute and a
+// eight cores at full load next to the game brought a phone to thermal status SEVERE in a minute and a
 // half and its GPU to throttle), and less when the renderer says the device is hot (set_gameplay_limit: one thread,
 // or none, effects/thermal.hpp). A limit of none admits nothing new until it rises or a place loads.
 class CpuAdmission {

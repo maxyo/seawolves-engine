@@ -1,7 +1,7 @@
 // The neural ×2 of a colour texture (fx/upscale.hpp): PBRify's 4x-PBRify_UpscalerSPANV4 (model/: pbrify-upscale.ncnn.*)
 // on the device the relief's networks run on (backend.hpp), in tiles of fx::kUpscaleTile texels padded by fx::kUpscalePad (wrapped around for a texture that
 // tiles, mirrored for an atlas), its ×4 box-filtered to ×2 in linear light. The alpha, which the network does not see,
-// is stretched bilinearly. Contract: README.md.
+// is stretched bilinearly.
 #pragma once
 
 #include "backend.hpp"

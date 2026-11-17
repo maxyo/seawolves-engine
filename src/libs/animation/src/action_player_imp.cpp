@@ -1,20 +1,10 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //    Storm engine v2.00
-//--------------------------------------------------------------------------------------------
 //    ActionPlayerImp
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "animation_imp.h"
 
 #include "string_compare.hpp"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 ActionPlayerImp::ActionPlayerImp()
 {
@@ -45,9 +35,7 @@ void ActionPlayerImp::SetAnimation(AnimationImp *animation, int32_t index)
     playerIndex = index;
 }
 
-//--------------------------------------------------------------------------------------------
 // ActionPlayer
-//--------------------------------------------------------------------------------------------
 
 // Set current action
 bool ActionPlayerImp::SetAction(const char *actionName)
@@ -249,9 +237,7 @@ const char *ActionPlayerImp::GetData(const char *dataName) const
     return it != userData.end() ? it->second.c_str() : nullptr;
 }
 
-//--------------------------------------------------------------------------------------------
 // AnimationImp
-//--------------------------------------------------------------------------------------------
 
 // Take a step in time
 void ActionPlayerImp::Execute(int32_t dltTime)
@@ -336,10 +322,6 @@ void ActionPlayerImp::CopyState(ActionPlayerImp &from)
     // Timer blending scaling factor
     kBlendTimer = from.kBlendTimer;
 }
-
-// --------------------------------------------------------------------------------------------
-// Encapsulation
-// --------------------------------------------------------------------------------------------
 
 // Position movement
 void ActionPlayerImp::MoveNormal(float dlt)

@@ -1,6 +1,4 @@
-//============================================================================================
 //    LocCrabs
-//============================================================================================
 
 #pragma once
 
@@ -14,11 +12,8 @@ class LocCrabs : public Entity
   public:
     LocCrabs();
     ~LocCrabs() override;
-    //--------------------------------------------------------------------------------------------
   public:
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     // Drawing
     void Realize(uint32_t delta_time);
@@ -33,17 +28,11 @@ class LocCrabs : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
 
-    //--------------------------------------------------------------------------------------------
   private:
     LocCrab crab[32];
     int32_t num;

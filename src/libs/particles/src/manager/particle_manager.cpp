@@ -103,15 +103,12 @@ bool ParticleManager::OpenProject(const char *FileName)
     CloseProject();
     ShortProjectName = FileName;
 
-    // std::string LongFileName = "resource\\particles\\";
     auto path = std::filesystem::path() / "resource" / "particles" / FileName;
     auto pathStr = path.extension().string();
     if (!storm::iEquals(pathStr, ".prj"))
         path += ".prj";
     pathStr = path.string();
     // MessageBoxA(NULL, (LPCSTR)path.c_str(), "", MB_OK); //~!~
-    // LongFileName += FileName;
-    // LongFileName.AddExtention(".prj");
 
     auto IniFile = fio->OpenIniFile(pathStr.c_str());
     if (!IniFile)
@@ -124,30 +121,14 @@ bool ParticleManager::OpenProject(const char *FileName)
 
     // Setting the texture of the project
     IniFile->ReadString("Textures", "MainTexture", IniStringBuffer, 8192, "none");
-    // core.Trace("Manager use texture: %s", IniStringBuffer);
     SetProjectTexture(IniStringBuffer);
 
-    /*
-      // Load the models into the cache
-      for (int n = 0; n < 9999; n++)
-      {
-        string Section;
-        Section.Format("Model_%04d", n);
-        bool ReadSuccess = IniFile->ReadString("ModelsCache", (char*)Section.c_str(), IniStringBuffer, 8192, "none");
-        if (!ReadSuccess) break;
-
-        //core.Trace("Cache geom: %s", IniStringBuffer);
-        pGeomCache->CacheModel(IniStringBuffer);
-
-      }
-    */
 
     // Loading data
     for (auto n = 0; n < 9999; n++)
     {
         char buf[64];
         snprintf(buf, std::size(buf), "System_%04d", n);
-        // Section.Format("System_%04d", n);
         const auto ReadSuccess = IniFile->ReadString("Manager", buf, IniStringBuffer, 8192, "none");
         if (!ReadSuccess)
             break;
@@ -198,7 +179,6 @@ void ParticleManager::RemoveResource(IParticleSystem *pResource)
     {
         if (Systems[n].pSystem == pResource)
         {
-            // Systems.ExtractNoShift(n);
             Systems[n] = Systems.back();
             Systems.pop_back();
             return;
@@ -224,7 +204,6 @@ void ParticleManager::Execute(float DeltaTime)
     ActiveBillboardParticles = 0;
     ActiveModelParticles = 0;
 
-    // pRS->Clear(0, NULL, D3DCLEAR_STENCIL | D3DCLEAR_TARGET |D3DCLEAR_ZBUFFER, 0xFF404080, 1.0f, 0);
 
     uint64_t TicksTime, ProcessTime;
     RDTSC_B(TicksTime);
@@ -244,8 +223,6 @@ void ParticleManager::Execute(float DeltaTime)
     pRS->TextureSet(0, pProjectTexture);
     pRS->TextureSet(1, pProjectTexture);
     pRS->TextureSet(3, pProjectTextureNormalMap);
-    //    pRS->SetTexture(0, pProjectTexture);
-    //    pRS->SetTexture(1, pProjectTexture);
     BB_Processor->Draw();
     MDL_Processor->Draw();
 
@@ -261,11 +238,6 @@ void ParticleManager::Execute(float DeltaTime)
 
     if (ShowStat)
     {
-        /*
-        IFont* pSysFont = pRS->GetSystemFont ();
-        float Width = pSysFont->GetLength("Graph read count - %d", GraphRead);
-        pSysFont->Release();
-        */
 
         D3DVIEWPORT9 ViewPort;
         pRS->GetViewport(&ViewPort);
@@ -280,20 +252,10 @@ void ParticleManager::Execute(float DeltaTime)
         spr[3].vPos = glm::vec3(x1, y2, 0.2f);
         pRS->DrawSprites(spr, 1, "dbgInfoSprite");
 
-        /*
-            pRS->Print(0, 16, 0xFFFFFFFF, "Systems - %d", ActiveSystems);
-            pRS->Print(0, 32, 0xFFFFFFFF, "Emitters - %d", ActiveEmitters);
-            pRS->Print(0, 48, 0xFFFFFFFF, "Billboards - %d", ActiveBillboardParticles);
-            pRS->Print(0, 64, 0xFFFFFFFF, "Models - %d", ActiveModelParticles);
-            pRS->Print(0, 80, 0xFFFFFFFF, "Total time - %d", nowTickTime);
-            pRS->Print(0, 96, 0xFFFFFFFF, "Update time - %d", nowUpdateTime);
-            pRS->Print(0, 112, 0xFFFFFFFF, "Graph read count - %d", GraphRead);
-        */
 
         if (GraphRead != 0)
         {
             float AverageReadTime = static_cast<float>(nowUpdateTime) / static_cast<float>(GraphRead);
-            //            pRS->Print(0, 128, 0xFFFFFFFF, "Average read time - %3.2f", AverageReadTime);
         }
     }
 
@@ -335,7 +297,6 @@ IParticleSystem *ParticleManager::CreateParticleSystemEx(const char *FileName, c
         return nullptr;
     }
 
-    //    core.Trace("Create system '%s'", FileName);
     ParticleSystem *pSys = CreateParticleSystemFromDataSource(pDataSource);
     pSys->SetName(FileName);
     return pSys;
@@ -499,7 +460,6 @@ void ParticleManager::CreateGeomCache()
 
         while (GeomName)
         {
-            // core.Trace("Cache geom %s", GeomName);
             pGeomCache->CacheModel(GeomName);
             GeomName = GetNextGeomName();
         }
@@ -519,14 +479,6 @@ void ParticleManager::WriteSystemCache(const char *FileName)
     pMemSave.OpenWrite(1048576);
     pDataSource->Write(&pMemSave);
 
-    // std::string LongFileName = "resource\\particles\\";
-    // LongFileName+=FileName;
-    // LongFileName.AddExtention(".xps");
-    /*
-      IWrite* pFile = pFS->Write(LongFileName.c_str(), iw_create_always, _FL_);
-      pFile->Write(pMemSave.c_str(), pMemSave.GetLength());
-      pFile->Release();
-    */
 
     pMemSave.Close();
     core.Trace("Particle system '%s' saved.", FileName);
@@ -544,11 +496,6 @@ void ParticleManager::WriteSystemCacheAs(const char *FileName, const char *NewNa
     MemFile pMemSave;
     pMemSave.OpenWrite(1048576);
     pDataSource->Write(&pMemSave);
-    /*
-      IWrite* pFile = pFS->Write(NewName, iw_create_always, _FL_);
-      pFile->Write(pMemSave.c_str(), pMemSave.GetLength());
-      pFile->Release();
-    */
 
     pMemSave.Close();
     core.Trace("Particle system '%s' saved.", NewName);

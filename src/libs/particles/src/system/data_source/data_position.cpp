@@ -29,7 +29,6 @@ void DataPosition::Load(MemFile *File)
     File->ReadType(vValue.x);
     File->ReadType(vValue.y);
     File->ReadType(vValue.z);
-    // core.Trace("Read position %3.2f, %3.2f, %3.2f", vValue.x, vValue.y, vValue.z);
     SetValue(vValue);
 
     static char AttribueName[128];
@@ -43,7 +42,6 @@ void DataPosition::Load(MemFile *File)
 
 void DataPosition::SetName(const char *szName)
 {
-    // core.Trace("DataPosition::SetName - '%s'", szName);
     Name = szName;
 }
 
@@ -55,7 +53,6 @@ const char *DataPosition::GetName() const
 void DataPosition::Write(MemFile *File) const
 {
     auto vValue = GetValue();
-    // core.Trace("Write position %3.2f, %3.2f, %3.2f", vValue.x, vValue.y, vValue.z);
     File->WriteType(vValue.x);
     File->WriteType(vValue.y);
     File->WriteType(vValue.z);

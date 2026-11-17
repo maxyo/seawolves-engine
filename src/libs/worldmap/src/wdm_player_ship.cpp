@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmPlayerShip
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_player_ship.h"
 
@@ -22,9 +17,7 @@
 #include "wdm_storm.h"
 #include "world_map.h"
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmPlayerShip::WdmPlayerShip()
 {
@@ -135,7 +128,6 @@ void WdmPlayerShip::Update(float dltTime)
                 if (r < actionRadius * actionRadius)
                 {
                     // Caught up
-                    // ((WdmEnemyShip *)wdmObjects->ships[i])->isLive = false;
                     wdmObjects->ships[i]->isSelect = true;
                     if (es->attack)
                         es->attack->isSelect = true;
@@ -170,7 +162,6 @@ void WdmPlayerShip::Update(float dltTime)
             {
                 if (r < actionRadius * actionRadius)
                 {
-                    // if(!es->isEntryPlayer)
                     if (wdmObjects->enemyShip != es)
                     {
                         es->isEntryPlayer = true;
@@ -271,7 +262,6 @@ bool WdmPlayerShip::ExitFromMap()
         {
             found = i;
             wdmObjects->ships[i]->isSelect = true;
-            // wdmObjects->enemyShip->isLive = false;
             wdmObjects->enemyShip->isSelect = true;
         }
     }

@@ -34,7 +34,7 @@ std::array<float, 16> Ortho(float cx, float cy, float half, float near_plane, fl
 
 SunShadowBudget SunShadowBudgetFor(ShadowQuality quality)
 {
-    // local-testing/shadow-audit/frame.md, "Budget per device class". Both layers are slices of one array texture
+    // Budget per device class. Both layers are slices of one array texture
     // (the lit programs have one sampler unit for the sun), so the dynamic layer has the static one's size.
     switch (quality)
     {

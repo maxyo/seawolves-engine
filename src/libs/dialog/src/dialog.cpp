@@ -190,7 +190,6 @@ void DIALOG::DlgTextDescribe::NextPage()
         currentLine_ = pageBreaks_[n];
 }
 
-//--------------------------------------------------------------------
 DIALOG::DIALOG()
 {
     curSnd = 0;
@@ -215,7 +214,6 @@ DIALOG::DIALOG()
     strcpy_s(charDefSnd, "\0");
 }
 
-//--------------------------------------------------------------------
 DIALOG::~DIALOG()
 {
 #ifdef __ANDROID__
@@ -582,7 +580,6 @@ void DIALOG::GetPointFromIni(INIFILE *ini, const char *pcSection, const char *pc
     sscanf(param, "%f,%f", &fpoint.x, &fpoint.y);
 }
 
-//--------------------------------------------------------------------
 bool DIALOG::Init()
 {
     forceEmergencyClose = false;
@@ -594,9 +591,7 @@ bool DIALOG::Init()
     Assert(RenderService);
 
     snd = static_cast<VSoundService *>(core.GetService("SoundService"));
-    // Assert( snd );
 
-    //----------------------------------------------------------
     LoadFromIni();
 
     CreateBack();
@@ -661,7 +656,6 @@ void DIALOG::InitLinks(VRenderer *pRS, D3DVIEWPORT9 &vp, INIFILE *pIni)
     linkDescribe_.SetSelectedColor(selection_color);
 }
 
-//--------------------------------------------------------------------
 void DIALOG::Realize(uint32_t Delta_Time)
 {
     RenderService->MakePostProcess();
@@ -712,7 +706,7 @@ void DIALOG::Realize(uint32_t Delta_Time)
     if (!mobileDialogue) {
 #endif
     CONTROL_STATE cs;
-    CONTROL_STATE cs1; // boal
+    CONTROL_STATE cs1;
     CONTROL_STATE cs2;
 
     // interruption of dialogue
@@ -722,7 +716,6 @@ void DIALOG::Realize(uint32_t Delta_Time)
 
     bool bDoUp = false;
     bool bDoDown = false;
-    //
     core.Controls->GetControlState("DlgUp", cs);
     if (cs.state == CST_ACTIVATED)
         bDoUp = true;
@@ -735,7 +728,6 @@ void DIALOG::Realize(uint32_t Delta_Time)
         if (cs.state == CST_ACTIVATED)
             bDoUp = true;
     }
-    //
     core.Controls->GetControlState("DlgDown", cs);
     if (cs.state == CST_ACTIVATED)
         bDoDown = true;
@@ -812,12 +804,12 @@ void DIALOG::Realize(uint32_t Delta_Time)
     // action
     core.Controls->GetControlState("DlgAction", cs);
     core.Controls->GetControlState("DlgAction2", cs2);
-    core.Controls->GetControlState("DlgAction1", cs1); // boal
+    core.Controls->GetControlState("DlgAction1", cs1);
     if (linkDescribe_.IsInEditMode())
     {
         cs.state = CST_INACTIVE;
     }
-    if (cs.state == CST_ACTIVATED || cs2.state == CST_ACTIVATED || cs1.state == CST_ACTIVATED) // boal
+    if (cs.state == CST_ACTIVATED || cs2.state == CST_ACTIVATED || cs1.state == CST_ACTIVATED)
     {
         // play click of the pressed key
         if (snd)
@@ -879,7 +871,6 @@ void DIALOG::Realize(uint32_t Delta_Time)
     }
 }
 
-//--------------------------------------------------------------------
 uint32_t DIALOG::AttributeChanged(ATTRIBUTES *pA)
 {
     // search for default settings
@@ -895,7 +886,7 @@ uint32_t DIALOG::AttributeChanged(ATTRIBUTES *pA)
     const char *nm = pA->GetThisName();
 
     // play sound d.speech
-    if (!parLinks && nm && storm::iEquals(nm, "greeting")) // was "snd"
+    if (!parLinks && nm && storm::iEquals(nm, "greeting"))
     {
         strcpy_s(soundName, pA->GetThisAttr());
         if (start)
@@ -906,7 +897,6 @@ uint32_t DIALOG::AttributeChanged(ATTRIBUTES *pA)
     return 0;
 }
 
-//--------------------------------------------------------------------
 uint64_t DIALOG::ProcessMessage(MESSAGE &message)
 {
     switch (message.Long())
@@ -940,7 +930,6 @@ uint64_t DIALOG::ProcessMessage(MESSAGE &message)
     return 0;
 }
 
-//--------------------------------------------------------------------
 void DIALOG::EmergencyExit()
 {
     if (forceEmergencyClose)

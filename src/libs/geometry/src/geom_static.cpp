@@ -284,7 +284,6 @@ GEOM::GEOM(const char *fname, const char *lightname, GEOM_SERVICE &_srv, int32_t
     }
 
     // read BSP
-    // rhead.flags &= ~FLAGS_BSP_PRESENT;
     if (rhead.flags & FLAGS_BSP_PRESENT)
     {
         RDF_BSPHEAD bhead;
@@ -434,7 +433,6 @@ void GEOM::Draw(const PLANE *pl, int32_t np, MATERIAL_FUNC mtf) const
                               object[o].center.z * pl[cp].nrm.z - pl[cp].d;
             if (dist > object[o].radius)
                 break;
-            // if(dist<-object[o].radius)    break;
         }
         // An object the camera rejects may still cast into the picture: the frame's shadow volumes decide, and it is
         // drawn for them only.
@@ -758,9 +756,7 @@ int32_t GEOM::FindName(const char *name) const
     return -1;
 }
 
-//--------------------------------------------------
 // label functions
-//--------------------------------------------------
 int32_t GEOM::FindLabelN(int32_t start_index, int32_t name_id)
 {
     for (; start_index < rhead.nlabels; start_index++)
@@ -795,9 +791,7 @@ void GEOM::SetLabel(int32_t l, const LABEL &lb)
     memcpy(&label[l].m[0][0], &lb.m[0][0], sizeof(lb.m));
 }
 
-//--------------------------------------------------
 // object functions
-//--------------------------------------------------
 int32_t GEOM::FindObjN(int32_t start_index, int32_t name_id)
 {
     for (; start_index < rhead.nobjects; start_index++)

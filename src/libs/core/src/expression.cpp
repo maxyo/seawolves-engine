@@ -2,9 +2,7 @@
 
 char ERR_INVALID_EXPRESSION[] = "Invalid Expression";
 
-//===============================================================================================================
 
-// test for makeref
 bool COMPILER::CompileExpression(SEGMENT_DESC &Segment)
 {
     uint32_t dwVarCode;
@@ -20,7 +18,6 @@ bool COMPILER::CompileExpression(SEGMENT_DESC &Segment)
 
     if (Token_type == AND)
     {
-        // make reference operation
 
         S_TOKEN_TYPE sttVariableType = Token.Get();
 
@@ -79,7 +76,6 @@ bool COMPILER::CompileExpression(SEGMENT_DESC &Segment)
             }
 
             // alloc for array index
-            // CompileToken(Segment,STACK_ALLOC);
             // after top of the stack must be array index
             Token.Get();
             if (!CompileExpression_L2(Segment))
@@ -94,7 +90,6 @@ bool COMPILER::CompileExpression(SEGMENT_DESC &Segment)
                 return false;
             }
 
-            // copy array index to BX
             CompileToken(Segment, STACK_POP);
             CompileToken(Segment, BX);
 
@@ -112,8 +107,6 @@ bool COMPILER::CompileExpression(SEGMENT_DESC &Segment)
             CompileToken(Segment, sttVariableType, 1, &dwVarCode, sizeof(uint32_t));
         }
 
-        // proceed to next token
-        // CompileAuxiliaryTokens(Segment);
 
         return true;
     }
@@ -141,14 +134,10 @@ bool COMPILER::CompileExpression_L0(SEGMENT_DESC &Segment)
         CompileAuxiliaryTokens(Segment);
 
         // copy to EX value of first operand
-        /*CompileToken(Segment,MOVE);
-        CompileToken(Segment,EX);
-        CompileToken(Segment,STACK_TOP);*/
 
         CompileToken(Segment, STACK_READ);
         CompileToken(Segment, EX);
 
-        // save jump update position
         const uint32_t dwUpdateOffset1 = Segment.BCode_Program_size + 2;
         // point of jump not determined yet
         dwJumpOffset1 = 0;
@@ -377,7 +366,6 @@ bool COMPILER::CompileExpression_L6(SEGMENT_DESC &Segment)
     return CompileExpression_L7(Segment);
 }
 
-// read value
 bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
 {
     uint32_t dwRCode = 0;
@@ -469,7 +457,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
         case CALL:
             // this is dynamic function call
 
-            // call type - dynamic
             sttFuncCallType = CALL;
 
             if (Token.Get() != UNKNOWN)
@@ -478,7 +465,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                 return false;
             }
 
-            // check for string variable
             sttVariableField = DetectUnknown(dwVarCode);
 
             if (sttVariableField == VARIABLE)
@@ -527,7 +513,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
             // just get, already checked by DetectUnknown
             FuncTab.GetFuncX(fi, dwRCode);
 
-            // if(fi.return_type == TVOID){ SetError("void function in expression: %s",fi.name); return false; }
 
             uint32_t func_args;
             func_args = 0;
@@ -543,7 +528,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
             }
             else
             {
-                // proceed with parameters list
                 do
                 {
                     // compile expression leave in stack top expression result
@@ -564,31 +548,7 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                 } while (Token.GetType() == COMMA);
             }
 
-            /*
-            // off for debug needs
-            if(sttFuncCallType != CALL)    // skip argument checking for dynamic function call
-            {
-              if(func_args != fi.arguments)
-              {
-                if(fi.segment_id != INTERNAL_SEGMENT_ID)
-                {
-                  // not internal function cant accept different arguments number
-                  SetError("function %s(args:%d) doesnt accept %d arguments",fi.name,fi.arguments,func_args);
-                  return false;
-                }
-                else
-                {
-                  if(!IsIntFuncVarArgsNum(dwRCode))
-                  {
-                    SetError("function '%s(args:%d)' doesnt accept %d arguments",fi.name,fi.arguments,func_args);
-                    return false;
-                  }
 
-                }
-              }
-            }//*/
-
-            // call function
             if (sttFuncCallType == CALL_FUNCTION)
                 CompileToken(Segment, CALL_FUNCTION, 1, (char *)&dwRCode, sizeof(uint32_t));
             else
@@ -599,15 +559,12 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
             }
             CompileToken(Segment, ARGS_NUM, 1, (char *)&func_args, sizeof(uint32_t));
 
-            // ...
-            // proceed to next token
             CompileAuxiliaryTokens(Segment);
 
             return true;
         case LOCAL_VARIABLE:
         case VARIABLE:
 
-            // set local or global type
             sttVariableField = sttResult;
 
             // variable code
@@ -656,7 +613,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                     }
                 }
 
-                // CompileToken(Segment,STACK_ALLOC);
                 // after top of the stack must be array index
                 Token.Get();
                 if (!CompileExpression_L2(Segment))
@@ -667,7 +623,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                     SetError("missing ']'");
                     return false;
                 }
-                // proceed to next token
                 sttResult = CompileAuxiliaryTokens(Segment);
 
                 // if not accessing attribute - copy value and return
@@ -675,7 +630,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                 {
                     // optimiztion possible: MOVE [STACK-1],[STACK]
 
-                    // copy array index to BX
                     CompileToken(Segment, STACK_POP);
                     CompileToken(Segment, BX);
 
@@ -683,15 +637,12 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                     CompileToken(Segment, STACK_WRITE_BXINDEX);
                     CompileToken(Segment, sttVariableField, 1, (char *)&dwVarCode, sizeof(uint32_t));
 
-                    // proceed to next token
-                    // CompileAuxiliaryTokens(Segment);
 
                     return true;
                 }
 
                 // in other case want to access attribute string value
 
-                // copy array index to BX
                 CompileToken(Segment, STACK_POP);
                 CompileToken(Segment, BX);
 
@@ -700,7 +651,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
                 CompileToken(Segment, AP);
                 CompileToken(Segment, sttVariableField, 1, (char *)&dwVarCode, sizeof(uint32_t));
 
-                // proceed to ADVANCE AP
             }
             else
             {
@@ -708,7 +658,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
 
                 if (sttResult != DOT)
                 {
-                    // copy variavle to stack
                     CompileToken(Segment, STACK_WRITE);
                     CompileToken(Segment, sttVariableField, 1, (char *)&dwVarCode, sizeof(uint32_t));
                     return true;
@@ -727,7 +676,6 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
             sttResult = Token.Get();
             do
             {
-                // if(sttResult == OPEN_BRACKET)
                 if (Token.GetType() == OPEN_BRACKET)
                 {
                     // access var

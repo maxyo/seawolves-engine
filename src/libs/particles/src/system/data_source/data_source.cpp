@@ -129,10 +129,6 @@ void DataSource::Load(MemFile *pMemFile)
     Ver[4] = 0;
     pMemFile->Read(Ver, 4);
 
-    /* // show warnings
-      if (strcmp (Ver, VERSION) != 0)
-              core.Trace ("Particles: Warning !!! Incorrect file version %s, must be %s", Ver, VERSION);
-    */
 
     // Number of emitters ...
     uint32_t EmiterCount = 0;
@@ -146,7 +142,6 @@ void DataSource::Load(MemFile *pMemFile)
         switch (emType)
         {
         case POINT_EMITTER: {
-            //                core.Trace ("Particles info: Point emitter");
             CreatePointEmitter(pMemFile);
             break;
         }
@@ -160,10 +155,8 @@ void DataSource::Load(MemFile *pMemFile)
 
 void DataSource::CreatePointEmitter(MemFile *pMemFile)
 {
-    // core.Trace ("Particles info: Point emitter");
     Emitters.push_back(EmitterDesc{});
     auto *PointEmitter = &Emitters.back();
-    // EmitterDesc* PointEmitter = &Emitters[Emitters.Add()];
     PointEmitter->Fields.Load(pMemFile);
 
     PointEmitter->Fields.Convert(&PointEmitterDesc);
@@ -180,12 +173,10 @@ void DataSource::CreatePointEmitter(MemFile *pMemFile)
         switch (ptType)
         {
         case BILLBOARD_PARTICLE: {
-            // core.Trace ("Particles info: Billboard particle");
             CreateBillBoardParticle(PointEmitter->Particles, pMemFile);
             break;
         }
         case MODEL_PARTICLE: {
-            // core.Trace ("Particles info: Model particle");
             CreateModelParticle(PointEmitter->Particles, pMemFile);
             break;
         }
@@ -199,7 +190,6 @@ void DataSource::CreatePointEmitter(MemFile *pMemFile)
 // Creates a BillBoard particle
 void DataSource::CreateBillBoardParticle(std::vector<ParticleDesc> &Particles, MemFile *pMemFile)
 {
-    // ParticleDesc *pDesc = &Particles[Particles.Add()];
     ParticleDesc desc;
     desc.Type = BILLBOARD_PARTICLE;
     desc.Fields.Load(pMemFile);
@@ -210,7 +200,6 @@ void DataSource::CreateBillBoardParticle(std::vector<ParticleDesc> &Particles, M
 // Creates Model particle
 void DataSource::CreateModelParticle(std::vector<ParticleDesc> &Particles, MemFile *pMemFile)
 {
-    // ParticleDesc *pDesc = &Particles[Particles.Add()];
     ParticleDesc desc;
     desc.Type = MODEL_PARTICLE;
     desc.Fields.Load(pMemFile);
@@ -245,7 +234,6 @@ DataSource::EmitterDesc *DataSource::GetEmitterDesc(int Index)
 FieldList *DataSource::CreateEmptyPointEmitter(const char *EmitterName)
 {
     Emitters.push_back(EmitterDesc{});
-    // EmitterDesc* PointEmitter = &Emitters[Emitters.Add()];
     auto *PointEmitter = &Emitters.back();
     PointEmitter->Fields.Convert(&PointEmitterDesc);
     PointEmitter->Type = POINT_EMITTER;
@@ -303,7 +291,6 @@ FieldList *DataSource::CreateBillBoardParticle(const char *ParticleName, const c
         return nullptr;
 
     Emitters[EmitterIndex].Particles.push_back(ParticleDesc{});
-    // ParticleDesc *pDesc = &Emitters[EmitterIndex].Particles[Emitters[EmitterIndex].Particles.Add()];
     auto *pDesc = &Emitters[EmitterIndex].Particles.back();
     pDesc->Type = BILLBOARD_PARTICLE;
     pDesc->Fields.Convert(&BillboardParticleDesc);
@@ -374,7 +361,6 @@ FieldList *DataSource::CreateModelParticle(const char *ParticleName, const char 
         return nullptr;
 
     Emitters[EmitterIndex].Particles.push_back(ParticleDesc{});
-    // ParticleDesc *pDesc = &Emitters[EmitterIndex].Particles[Emitters[EmitterIndex].Particles.Add()];
     auto *pDesc = &Emitters[EmitterIndex].Particles.back();
     pDesc->Type = MODEL_PARTICLE;
     pDesc->Fields.Convert(&ModelParticleDesc);
@@ -445,7 +431,6 @@ void DataSource::DeletePointEmitter(FieldList *pEmitter)
         if (&Emitters[n].Fields == pEmitter)
         {
             Emitters[n].Fields.DelAll();
-            // Emitters.ExtractNoShift(n);
             Emitters[n] = Emitters.back();
             Emitters.pop_back();
             break;
@@ -464,7 +449,6 @@ void DataSource::DeleteBillboard(FieldList *pEmitter, FieldList *pParticles)
                 if (&Emitters[n].Particles[i].Fields == pParticles)
                 {
                     Emitters[n].Particles[i].Fields.DelAll();
-                    // Emitters[n].Particles.Extract(i);
                     Emitters[n].Particles[i] = Emitters[n].Particles.back();
                     Emitters[n].Particles.pop_back();
                 }
@@ -484,7 +468,6 @@ void DataSource::DeleteModel(FieldList *pEmitter, FieldList *pParticles)
                 if (&Emitters[n].Particles[i].Fields == pParticles)
                 {
                     Emitters[n].Particles[i].Fields.DelAll();
-                    // Emitters[n].Particles.Extract(i);
                     Emitters[n].Particles[i] = Emitters[n].Particles.back();
                     Emitters[n].Particles.pop_back();
                 }

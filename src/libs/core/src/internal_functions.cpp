@@ -10,7 +10,6 @@
 #define BAD_FA "Bad function argument"
 #define MISSING_PARAMETER "Missing function parameter(s)"
 
-//#define _TOFF
 
 enum FUNCTION_CODE
 {
@@ -147,201 +146,7 @@ INTFUNCDESC IntFuncTable[] = {
     TVOID, 1, "TestRef", VAR_INTEGER, 1, "SetTimeScale", TVOID, 1, "CheckFunction", VAR_INTEGER, 0, "GetEngineVersion",
     VAR_INTEGER, 1, "sort", TVOID};
 
-/*
-char * FuncNameTable[]=
-{
-    "Rand",
-    "frnd",
-    "CreateClass",
-    "CreateEntity",
-    "DeleteClass",
-    "SetEventHandler",
-    "ExitProgram",
-    "GetEventData",
-    "Execute",
-    "Stop",
-    "SendMessage",
-    "LoadSegment",
-    "UnloadSegment",
-    "Trace",
-    "MakeInt",
-    "MakeFloat",
-    "LayerCreate",
-    "LayerDelete",
-    "LayerDeleteContent",
-    "LayerSetRealize",
-    "LayerSetExecute",
-    "LayerSetMessages",
-    "LayerAddObject",
-    "LayerDelObject",
-    "LayerFreeze",
-    "abs",
-    "sqrt",
-    "sqr",
-    "sin",
-    "cos",
-    "tan",
-    "atan",
-    "atan2",
-    "DeleteAttribute",
-    "SegmentIsLoaded",
-    "GetAttributesNum",
-    "GetAttributeN",
-    "GetAttributeName",
-    "DelEventHandler",
-    "EntityUpdate",
-    "IsEntity",
-    "DumpAttributes",
-    "sti",
-    "stf",
-    "CheckAttribute",
-    "argb",
-    "DeleteEntities",
-    "ClearEvents",
-    "SaveEngineState",
-    "LoadEngineState",
-    "Event",
-    "PostEvent",
-    "fts",
-    "ClearPostEvents",
-    "SetArraySize",
-    "GetAttributeValue",
-    "Vartype",
-    "Breakpoint",
-    "Pow",
-    "CopyAttributes",
-    "GetEntityPointer",
-    "GetEntityNext",
-    "GetEntityName",
-    "strcut",
-    "findSubStr",
-    "ClearRef",
-    "strlen",
-    "GetDeltaTime",
-    "EventsBreak",
-    "shl",
-    "shr",
-    "and",
-    "or",
-    "DeleteEntitiesByType",
-    "CreateControl",
-    "DeleteControl",
-    "MapControl",
-    "SetControlFlags",
-    "ClearEntityAP",
-    "GetArraySize",
-    "GetTargetPlatform",
-    "FindClass",
-    "GetSymbol",
-    "IsDigit",
-    "SaveVariable",
-    "LoadVariable",
-    "FindClassNext",
-    "SetControlTreshold",
-    "LockControl",
-    "TestRef",
-    "SetTimeScale",
-};
-*/
 
-/*
-DWORD FuncArguments[]=
-{
-    1,//"Rand",
-    0,//"frnd",
-    1,//"CreateClass",
-    2,//"CreateEntity",
-    1,//"DeleteClass",
-    3,//"SetEventHandler",
-    0,//"ExitProgram",
-    0,//"GetEventData",
-    1,//"Execute",
-    0,//"Stop",
-    0,//"SendMessage",
-    1,//"LoadSegment",
-    1,//"UnloadSegment",
-    1,//"Trace",
-    1,//"MakeInt",
-    1,//"MakeFloat",
-    2,//"LayerCreate",
-    1,//"LayerDelete",
-    1,//"LayerDeleteContent",
-    2,//"LayerSetRealize",
-    2,//"LayerSetExecute",
-    2,//"LayerSetMessages",
-    3,//"LayerAddObject",
-    2,//"LayerDelObject",
-    2,//"LayerFreeze",
-    1,//"abs",
-    1,//"sqrt",
-    1,//"sqr",
-    1,//"sin",
-    1,//"cos",
-    1,//"tan",
-    1,//"atan",
-    2,//"atan2",
-    2,//"DeleteAttribute",
-    1,//"SegmentIsLoaded",
-    1,//"GetAttributesNum",
-    2,//"GetAttributeN",
-    1,//"GetAttributeName",
-    2,//"DelEventHandler",
-    1,//"EntityUpdate",
-    1,//"IsEntity",
-    1,//"DumpAttributes",
-    1,//"sti",
-    1,//"stf",
-    2,// "CheckAttribute",
-    4,//"argb",
-    0,//"DeleteEntity"
-    0,//"ClearEvents"
-    1,//"SaveEngineState",
-    1,//"LoadEngineState",
-    0,//"Event",
-    0,//"PostEvent",
-    2,//"fts",
-    0,//"ClearPostEvents",
-    2,//"SetArraySize",
-    1,//"GetAttributeValue",
-    1,//"Vartype"
-    0,//"Breakpoint",
-    2,//"Pow",
-    2,//"CopyAttributes",
-    2,//"GetEntityPointer",
-    1,//"GetEntityNext",
-    1,//"GetEntityName",
-    3,//"strcut",
-    3,//"findSubStr",
-    1,//"ClearRef",
-    1,//"strlen"
-    //2,//"SetSaveData"
-    //1,//"GetSaveData"
-    0,//"GetDeltaTime"
-    0,//"EventsBreak"
-    2,//"shl",
-    2,//"shr",
-    2,//"and",
-    2,//"or",
-    1,//"DeleteEntitiesByType",
-    1,//"CreateControl",
-    1,//"DeleteControl",
-    2,//"MapControl",
-    2,//"SetControlFlags",
-    1,//"ClearEntityAP"
-    1,//"GetArraySize"
-    0,//"GetTargetPlatform"
-    2,//"FindClass"
-    2,//"GetSymbol"
-    2,//"IsDigit"
-    2,//"SaveVariable",
-    2,//"LoadVariable",
-    1,//"FindClassNext",
-    2,//"SetControlTreshold",
-    2,//"LockControl",
-    1,//"TestRef"
-    1,//"SetTimeScale"
-};
-*/
 uint32_t COMPILER::GetInternalFunctionArgumentsNum(uint32_t code)
 {
     if (GetIntFunctionsNum() <= code)
@@ -350,18 +155,15 @@ uint32_t COMPILER::GetInternalFunctionArgumentsNum(uint32_t code)
         return 0;
     }
     return IntFuncTable[code].dwArgsNum;
-    // return FuncArguments[code];
 }
 
 uint32_t COMPILER::GetIntFunctionsNum()
 {
     return sizeof(IntFuncTable) / sizeof(INTFUNCDESC);
-    // return sizeof(FuncNameTable)/sizeof(char *);
 }
 
 bool COMPILER::IsIntFuncVarArgsNum(uint32_t code)
 {
-    // if(code == FUNC_SEND_MESSAGE) return true;
     switch (code)
     {
     case FUNC_SEND_MESSAGE:
@@ -387,12 +189,10 @@ void COMPILER::DeleteScriptEntity(DATA &object)
 
 DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t arguments)
 {
-    //    char Format_string[MAX_PATH];
     entid_t ent;
     uint32_t functions_num;
     uint32_t function_code;
 
-    // functions_num = sizeof(FuncNameTable)/sizeof(char *);
     functions_num = sizeof(IntFuncTable) / sizeof(INTFUNCDESC);
 
     if (func_code >= functions_num)
@@ -941,26 +741,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
         return pV;
 
-        /*case FUNC_SETSAVEDATA:
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;}
-            pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;}
-
-            pV->Get(pChar);
-            pV2->Get(pChar2);
-            SetSaveData(pChar2,pChar);
-
-            pV = SStack.Push();    pV->Set((int32_t)1);    pVResult = pV;
-        return pV;
-
-        case FUNC_GETSAVEDATA:
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;}
-            pV->Get(pChar);
-            GetSaveData(pChar,&Access);
-            pV = SStack.Push();
-            Access.Get(pChar);
-
-            pV->Set(pChar);    pVResult = pV;
-        return pV;*/
 
     case FUNC_STRLEN:
         pV = SStack.Pop();
@@ -1117,50 +897,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
         return pV;
 
-        /*case FUNC_GETEntityNAME:
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->Get(ent);
-            pV = SStack.Push();
-            VMA * pClass;
-            pClass = core_internal.FindVMA(core_internal.GetEntityClassCode(ent));
-            if(pClass) pV->Set(pClass->GetName());
-            else pV->Set("unknown class");
-            pVResult = pV;
-        return pV;
-        case FUNC_GETEntity:
-            pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
-
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->Convert(VAR_STRING);
-            pV->Get(pChar);
-
-      walker = core_internal.LayerGetWalker(pChar);
-            ent = walker();
-
-            pV2 = pV2->GetVarPointer();
-            pV2->Set(ent);
-            pV2->SetType(VAR_AREFERENCE);
-      pV2->SetAReference(core_internal.Entity_GetAttributePointer(ent));
-
-            if(core.GetEntityPointer(ent)) TempLong1 = 1;
-            else TempLong1 = 0;
-            pV = SStack.Push();
-            pV->Set(TempLong1);
-            pVResult = pV;
-        return pV;
-        case FUNC_GETEntityNEXT:
-            ent = walker();
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->GetVarPointer();
-            pV->Set(ent);
-            pV->SetType(VAR_AREFERENCE);
-      pV->SetAReference(core_internal.Entity_GetAttributePointer(ent));
-            if(core.GetEntityPointer(ent)) TempLong1 = 1;
-            else TempLong1 = 0;
-            pV = SStack.Push();
-            pV->Set(TempLong1);
-            pVResult = pV;
-        return pV;*/
     case FUNC_POW:
         pV = SStack.Pop();
         if (!pV)
@@ -1312,27 +1048,8 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
         return pV;
 
-        /*case FUNC_LAYER_CREATE:
-
-            pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->Get(pChar);
-            pV2->Get(TempLong1);
-      if(TempLong1 == 0) //core_internal.LayerCreate(pChar,false,false);
-      else //core_internal.LayerCreate(pChar,true,false);
-        break;*/
-        /*case FUNC_LAYER_DELETE:
-            pV = SStack.Pop(); if(!pV) {SetError(INVALID_FA); break;};
-            pV->Get(pChar);
-      core_internal.LayerDelete(pChar);
-        break;
-        case FUNC_LAYER_DELETE_CONTENT:
-            pV = SStack.Pop(); if(!pV) {SetError(INVALID_FA); break;};
-            pV->Get(pChar);
-      core_internal.LayerDeleteContent(pChar);*/
         break;
     case FUNC_LAYER_SET_REALIZE:
-        // pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
         pV = SStack.Pop();
         if (!pV)
         {
@@ -1340,13 +1057,9 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             break;
         }
         pV->Get(TempLong1);
-        // pV2->Get(TempLong1);
-        // if(TempLong1 == 0) core_internal.LayerSetRealize(pChar,false);
-        // else core_internal.LayerSetRealize(pChar,true);
         core.SetLayerType(TempLong1, layer_type_t::realize);
         break;
     case FUNC_LAYER_SET_EXECUTE:
-        // pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
         pV = SStack.Pop();
         if (!pV)
         {
@@ -1354,19 +1067,8 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             break;
         }
         pV->Get(TempLong1);
-        // pV2->Get(TempLong1);
-        // if(TempLong1 == 0) core_internal.LayerSetExecute(pChar,false);
-        // else core_internal.LayerSetExecute(pChar,true);
         core.SetLayerType(TempLong1, layer_type_t::execute);
         break;
-        /*case FUNC_LAYER_SET_MESSAGES:
-            pV2 = SStack.Pop(); if(!pV2){SetError(INVALID_FA);break;};
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->Get(pChar);
-            pV2->Get(TempLong1);
-      if(TempLong1 == 0) core_internal.LayerClrFlags(pChar,LRFLAG_SYS_MESSAGES);
-      else core_internal.LayerSetFlags(pChar,LRFLAG_SYS_MESSAGES);
-        break;*/
     case FUNC_LAYER_ADDOBJECT:
         pV3 = SStack.Pop();
         if (!pV3)
@@ -1461,7 +1163,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
     case FUNC_FRAND:
         TempFloat1 = static_cast<float>(rand()) / RAND_MAX;
         pV = SStack.Push();
-        // TempFloat1 = 1.0f;    // ***
         pV->Set(TempFloat1);
         pVResult = pV;
         return pV;
@@ -1488,7 +1189,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
         return pV;
     }
-        // create entity
     case FUNC_CREATE_ENTITY:
 
         pV2 = SStack.Pop(); // class name
@@ -1497,7 +1197,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(MISSING_PARAMETER);
             break;
         }
-        // pV = SStack.Pop();    // object reference
         pV = SStack.Read(); // object reference
         if (!pV)
         {
@@ -1508,7 +1207,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pV2->Get(pChar);
         if (ent = core.CreateEntity(pChar, pV->GetAClass()))
         {
-            // core_internal.Entity_SetAttributePointer(&entid_t,pV->GetAClass());
             pV->Set(ent);
             SStack.Pop();
             pV = SStack.Push();
@@ -1541,7 +1239,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         SetError("Cant create class: %s", pChar);
         break;
-        //
     case FUNC_DELETE_Entity:
         pV = SStack.Pop();
         if (!pV)
@@ -1551,7 +1248,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         }
         DeleteScriptEntity(*pV);
         break;
-        //
     case FUNC_DEL_EVENT_HANDLER:
         pV2 = SStack.Pop();
         if (!pV2)
@@ -1593,12 +1289,9 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pV3->Get(TempLong1);
         SetEventHandler(pChar, pChar2, TempLong1);
         break;
-        //
     case FUNC_EXIT_PROGRAM:
         ExitProgram();
-        // core_internal.Exit();
         break;
-        //
     case FUNC_GET_EVENTDATA:
         if (pEventMessage == nullptr)
         {
@@ -1656,11 +1349,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             return nullptr;
         }
         break;
-        /*case FUNC_EXECUTE:
-            pV = SStack.Pop(); if(!pV){SetError(INVALID_FA);break;};
-            pV->Get(pChar);
-      core_internal.Execute(pChar);
-        break;*/
     case FUNC_LOAD_SEGMENT:
         pV = SStack.Pop();
         if (!pV)
@@ -1682,7 +1370,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
         return pV;
     }
-        //
     case FUNC_UNLOAD_SEGMENT:
         pV = SStack.Pop();
         if (!pV)
@@ -1713,7 +1400,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
     case FUNC_STOP:
         bCompleted = true;
         break;
-        //
 
     case FUNC_EVENT:
         s_off = SStack.GetDataNum() - arguments; // set stack offset
@@ -1829,7 +1515,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         pVResult = pV;
 
         return pV;
-        // break;
     }
     case FUNC_TRACE:
         pV = SStack.Pop();
@@ -2257,7 +1942,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
             SetError(INVALID_FA);
             break;
         }
-        // pV->Get(TempEid);
         pRoot = pV->GetAClass();
         if (pRoot == nullptr)
         {
@@ -2487,7 +2171,6 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         core_internal.ClearEvents();
         break;
     case FUNC_CLEAR_POST_EVENTS:
-        // EventMsg.Release();
         EventMsg.InvalidateAll();
         break;
     case FUNC_SAVEENGINESTATE:
@@ -2566,7 +2249,6 @@ bool COMPILER::CreateMessage(MESSAGE *pMs, uint32_t s_off, uint32_t var_offset, 
     if (pMs == nullptr)
         return false;
 
-    // read format string
     auto *pV = SStack.Read(s_off, var_offset);
     if (!pV)
     {
@@ -2574,14 +2256,12 @@ bool COMPILER::CreateMessage(MESSAGE *pMs, uint32_t s_off, uint32_t var_offset, 
         return false;
     }
     var_offset++;
-    // set pointer to format string
     pV->Get(Format_string);
     if (Format_string == nullptr)
     {
         SetError("format string is null");
         return false;
     }
-    // reset message class data
     pMs->Reset(Format_string);
     const auto invalid = [&](uint32_t index, const char *expected, DATA *argument) {
         SetError("message \"%s\": argument %u ('%c') must be %s, got %s; the message is not sent", Format_string,
@@ -2594,7 +2274,6 @@ bool COMPILER::CreateMessage(MESSAGE *pMs, uint32_t s_off, uint32_t var_offset, 
     uint32_t n = 0;
     while (Format_string[n])
     {
-        // read stack data
         pV = SStack.Read(s_off, var_offset);
         var_offset++;
         if (!pV)

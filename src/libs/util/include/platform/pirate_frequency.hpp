@@ -11,7 +11,7 @@ namespace storm::game
 {
 // The steps the settings screen offers: «Редко», «Реже», «Как в игре».
 inline constexpr int kPirateFrequencies[] = {20, 50, 100};
-// Owner request PIRATE-SPAWN-REDUCTION-01 (2026-11-15): five times fewer random pirates than the game has.
+// Default: five times fewer random pirates than the game has.
 inline constexpr int kPirateFrequencyDefault = 20;
 
 inline bool validPirateFrequency(int percent)

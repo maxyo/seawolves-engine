@@ -10,7 +10,7 @@
 namespace storm::mobile
 {
 // One record: the game keeps saves per profile folder (SAVE\<profile>\<file>). This port has
-// no profiles (owner decision): the list shows the records of every profile together.
+// no profiles: the list shows the records of every profile together.
 // The game names save folders ASCII-case-insensitively (android_writable_storage.hpp child():
 // "SAVE\\Player\\x" is the folder "player"), and its profile name (options
 // StartGameParam.PlayerProfile, "Player") need not be spelled like the folder ("player") on
@@ -65,7 +65,6 @@ inline std::string ProfileToChoose(bool chooserOpen, const std::string &game, bo
 // Defined by the platform host with ReadSaveList.
 bool ChooseSaveProfile(const std::string &profile);
 // What the save list shows of a record. The game stores a description in every save
-// (interface.c GetSaveDataString: "label@faces@HH:MM  DD.MM.YYYY@play time@language");
 // SFLB_DoSaveFileData appends "@hero@location" of the game in progress (mobile_save_facts). A record written
 // before that has no hero; its label (the name the game gave it: the location) stands for
 // the location. Published as the row's context: hero, location, gameDate (YYYY-MM-DD),

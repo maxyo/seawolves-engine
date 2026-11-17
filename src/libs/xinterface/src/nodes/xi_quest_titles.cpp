@@ -47,7 +47,6 @@ bool CXI_QUESTTITLE::GetLineNext(int fontNum, char *&pInStr, char *buf, int bufS
     SubRightWord(buf, fontNum, needWidth, m_rs);
     pInStr = pStart + strlen(buf);
 
-    // remove leading spaces
     while (*pInStr != 0 && static_cast<unsigned>(*pInStr) <= ' ')
         pInStr++;
 
@@ -92,7 +91,6 @@ void CXI_QUESTTITLE::Draw(bool bSelected, uint32_t Delta_Time)
     auto lineNum = 0;
     for (i = 0; i < m_stringQuantity && lineNum < m_allStrings; i++)
     {
-        // display selection
         if (bSelected && i == m_curIdx)
         {
             XI_NOTEX_VERTEX selV[4];
@@ -108,7 +106,6 @@ void CXI_QUESTTITLE::Draw(bool bSelected, uint32_t Delta_Time)
             m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_NOTEX_FVF, 2, selV, sizeof(XI_NOTEX_VERTEX), "iRectangle");
         }
 
-        // display progress icon
         XI_ONLYONETEX_VERTEX v[4];
         v[0].pos.z = v[1].pos.z = v[2].pos.z = v[3].pos.z = 1.f;
         v[0].pos.x = v[1].pos.x = static_cast<float>(m_rect.right) - m_iconWidth;
@@ -133,7 +130,6 @@ void CXI_QUESTTITLE::Draw(bool bSelected, uint32_t Delta_Time)
         m_rs->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, XI_ONLYONETEX_FVF, 2, v, sizeof(XI_ONLYONETEX_VERTEX),
                               "iDinamicPictures");
 
-        // display lines
         auto curColor = m_strList[i].complete ? m_dwCompleteColor : m_dwNonCompleteColor;
         if (m_strList[i].dwSpecColor != 0)
             curColor = m_strList[i].dwSpecColor;
@@ -250,7 +246,6 @@ void CXI_QUESTTITLE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -259,10 +254,8 @@ void CXI_QUESTTITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
 {
     char param[255];
 
-    //
     m_selectOffset = GetIniLong(ini1, name1, ini2, name2, "selectOffset", 8);
 
-    // get line space
     m_vertOffset = GetIniLong(ini1, name1, ini2, name2, "lineSpace", 30);
     if (m_vertOffset == 0)
         m_vertOffset = 10;
@@ -270,18 +263,15 @@ void CXI_QUESTTITLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     // counting the number of lines displayed on the screen
     m_allStrings = (m_rect.bottom - m_rect.top) / m_vertOffset;
 
-    // get golors
     m_dwCompleteColor = GetIniARGB(ini1, name1, ini2, name2, "completeColor", ARGB(255, 128, 128, 128));
     m_dwNonCompleteColor = GetIniARGB(ini1, name1, ini2, name2, "noncompleteColor", ARGB(255, 255, 255, 255));
     m_dwSelectRectangleColor = GetIniARGB(ini1, name1, ini2, name2, "selectColor", ARGB(255, 255, 255, 255));
 
-    // get font
     m_idFont = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
         m_idFont = m_rs->LoadFont(param);
     m_fontOffset = GetIniLong(ini1, name1, ini2, name2, "fontOffset", 4);
 
-    // get image info
     m_iconWidth = GetIniLong(ini1, name1, ini2, name2, "iconWidth", 32);
     m_iconHeight = GetIniLong(ini1, name1, ini2, name2, "iconHeight", 32);
     m_iconVOffset = m_vertOffset / 2 - m_iconHeight / 2;
@@ -327,7 +317,6 @@ void CXI_QUESTTITLE::SetNewTopQuest(ATTRIBUTES *pA, int topNum)
 #endif
     int i;
     m_nCommonQuantity = 0;
-    // delete old lines
     if (m_strList != nullptr)
     {
         for (i = 0; i < m_stringQuantity; i++)
@@ -352,9 +341,7 @@ void CXI_QUESTTITLE::SetNewTopQuest(ATTRIBUTES *pA, int topNum)
     m_nCommonQuantity = aq;
 
     std::string param;
-    // if(ptrOwner->QuestFileReader())
     {
-        // ptrOwner->QuestFileReader()->InitQuestsQuery();
 
         // calculating the number of lines to display
         m_stringQuantity = aq - topNum;
@@ -415,7 +402,6 @@ void CXI_QUESTTITLE::SetNewTopQuest(ATTRIBUTES *pA, int topNum)
             }
         }
 
-        // ptrOwner->QuestFileReader()->CloseQuestsQuery();
     }
 }
 

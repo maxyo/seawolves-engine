@@ -1,4 +1,4 @@
-// Where the relief networks run (README.md): ncnn, the one inference runtime, on the GPU through Vulkan compute or on
+// Where the relief networks run: ncnn, the one inference runtime, on the GPU through Vulkan compute or on
 // the CPU, both running the same graphs (fp16 weights, made by pnnx of the float models). One interface for both, for
 // the relief maps (prepare.cpp) and the texture upscale. Which device a game uses is measured once, logged with both numbers and
 // kept in the cache root (ChooseDevice).

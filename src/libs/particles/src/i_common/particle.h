@@ -45,19 +45,16 @@ struct BB_ParticleData
     // fabsf(Mass)
     float UMass;
 
-    // ===========================================================================
     // Final position / angle for rendering
     glm::vec3 RenderPos;
     float RenderAngle;
     glm::vec3 OldRenderPos;
     float OldRenderAngle;
 
-    // ===========================================================================
     // Distance to camera
     float CamDistance;
     bool Visible;
 
-    // ===========================================================================
     // Graphs
 
     DataGraph *Graph_SpinDrag;
@@ -74,7 +71,6 @@ struct BB_ParticleData
     DataGraph *graph_GravK;
     DataGraph *graph_AddPower;
 
-    // ===========================================================================
     // Coefficients for randomization
     float DragK;
     float SpinDragK;
@@ -89,11 +85,9 @@ struct BB_ParticleData
     float KTrackZ;
     float KPhysBlend;
 
-    // ===========================================================================
     // Pointer to the emitter that is attached to the particle
     IEmitter *AttachedEmitter;
 
-    // ===============================================
     // ID of the emitter to which the particle belongs
     uint32_t EmitterGUID;
 };
@@ -133,14 +127,12 @@ struct MDL_ParticleData
     // fabsf(Mass)
     float UMass;
 
-    // ===========================================================================
     // Final position / angle for rendering
     glm::vec3 RenderPos;
     glm::vec3 RenderAngle;
     glm::vec3 OldRenderPos;
     glm::vec3 OldRenderAngle;
 
-    // ===========================================================================
     // Graphs
 
     DataGraph *Graph_SpinDragX;
@@ -153,7 +145,6 @@ struct MDL_ParticleData
     DataGraph *Graph_PhysBlend;
     DataGraph *graph_GravK;
 
-    // ===========================================================================
     // Coefficients for randomization
     float DragK;
     float SpinDragK_X;
@@ -165,15 +156,12 @@ struct MDL_ParticleData
     float KTrackZ;
     float KPhysBlend;
 
-    // ===========================================================================
     // Pointer to the model to render
     GEOS *pScene;
 
-    // ===========================================================================
     // Pointer to the emitter that is attached to the particle
     IEmitter *AttachedEmitter;
 
-    // ===============================================
     // ID of the emitter to which the particle belongs
     uint32_t EmitterGUID;
 };

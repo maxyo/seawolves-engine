@@ -20,7 +20,6 @@
 
 CREATE_CLASS(SEA)
 
-//#define OLD_WORLD_POS
 
 #define NUM_VERTEXS 65500
 #define NUM_INDICES 165000
@@ -212,7 +211,6 @@ bool SEA::Init()
         char *pFBuffer = nullptr;
         uint32_t dwSize;
         sprintf_s(str, "resource\\sea\\sea%.4d.tga", i);
-        // sprintf_s(str, "resource\\sea\\sea0000.tga", i);
         fio->LoadFile(str, &pFBuffer, &dwSize);
         if (!pFBuffer)
         {
@@ -229,7 +227,6 @@ bool SEA::Init()
             for (uint32_t x = 0; x < XWIDTH; x++)
             {
                 const uint8_t bB = (*pFB);
-                // bB = byte(float(bB - 79.0f) * 255.0f / (139.0f - 79.0f));
                 if (bB < bMin)
                     bMin = bB;
                 if (bB > bMax)
@@ -333,7 +330,6 @@ void SEA::BuildVolumeTexture()
                 d2 = glm::vec3(1.f, d * fRight, 0.f);
                 d3 = glm::vec3(0.f, d * fBottom, 1.f);
 
-                // res = !((d0^d1) + (d2^d3));
 
                 glm::vec3 v1 = glm::cross(d1, d0);
                 glm::vec3 v2 = glm::cross(d3, d2);
@@ -345,7 +341,6 @@ void SEA::BuildVolumeTexture()
                 {
                     vRes1 = storm::math::normalizeOrZero(vRes * glm::vec3(100.0f, 1.0f, 100.0f));
                 }
-                // glm::vec3 vRes1 = !(vRes * glm::vec3(100.0f, 1.0f, 100.0f));
                 uint32_t dwRes = MAKELONG(static_cast<short>(vRes.x * 32767.5f), static_cast<short>(vRes.z * 32767.5f));
 
                 aNormals[i][x + y * XWIDTH] = dwRes;
@@ -391,7 +386,6 @@ void SEA::BuildVolumeTexture()
                     pVectors[x + y * (XWIDTH >> j)] = vVec / static_cast<float>(iNumVectors);
                 }
 
-            //
             for (uint32_t y = 0; y < (YWIDTH >> j); y++)
                     for (uint32_t x = 0; x < (XWIDTH >> j); x++)
                     {
@@ -419,12 +413,10 @@ void SEA::BuildVolumeTexture()
     for (const auto &vector : aVectors)
         delete[] vector;
     aVectors.clear();
-    // aVectors.DelAllWithPointers();
 }
 
 bool SEA::EditMode_Update()
 {
-    // return true;
     v4SeaColor = glm::vec4(10.0f / 255.0f, 55.0f / 255.0f, 100.0f / 255.0f, 1.0f);
     v4SkyColor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
@@ -460,21 +452,6 @@ int32_t SEA::VisCode(const glm::vec3 &vP)
 {
     int32_t vc = 0;
 
-    /*
-    glm::vec3 v = vP - vCamPos;
-
-    glm::vec3 vp1 = glm::vec3(pFrustumPlanes[0].Nx, pFrustumPlanes[0].Ny, pFrustumPlanes[0].Nz);
-    glm::vec3 vp2 = glm::vec3(pFrustumPlanes[1].Nx, pFrustumPlanes[1].Ny, pFrustumPlanes[1].Nz);
-    glm::vec3 vp3 = glm::vec3(pFrustumPlanes[2].Nx, pFrustumPlanes[2].Ny, pFrustumPlanes[2].Nz);
-    glm::vec3 vp4 = glm::vec3(pFrustumPlanes[3].Nx, pFrustumPlanes[3].Ny, pFrustumPlanes[3].Nz);
-
-    //if((v | pFrustumPlanes[0].n) < 0 ) vc |= 0x10;
-    if ((v | vp1) < 0 ) vc |= 0x01;
-    if ((v | vp2) < 0 ) vc |= 0x02;
-    if ((v | vp3) < 0 ) vc |= 0x04;
-    if ((v | vp4) < 0 ) vc |= 0x08;
-
-    */
 
     // Max - so the accuracy is much higher, blocks should not disappear sometimes in the distance
     PLANE *p = &pFrustumPlanes[0];
@@ -495,14 +472,8 @@ int32_t SEA::VisCode(const glm::vec3 &vP)
 
 bool SEA::isVisibleBBox(const glm::vec3 &vCenter, const glm::vec3 &v1, const glm::vec3 &v2)
 {
-    /*glm::vec3 vc = vCenter - vCamPos;
-    glm::vec3 vp1 = v1 - vCamPos;
-    glm::vec3 vp2 = v2 - vCamPos;
-    float fR2 = sqrtf(Sqr((vp1.x - vp2.x) * 0.5f) + Sqr((vp1.z - vp2.z)) * 0.5f);*/
 
     // if sphere not visible - return
-    //    for (uint32_t i=0; i<dwNumFrustumPlanes; i++)
-    //        if ((pFrustumPlanes[i].n | vc) - pFrustumPlanes[i].d < -fR2) return false;
 
     // check box visible
     int32_t vc = 0xFF;
@@ -885,7 +856,6 @@ void SEA::PrepareIndicesForBlock(uint32_t dwBlockIndex)
         const bool bTestedUp = pB->iY1 == pB2->iY2;
         const bool bTestedDown = pB->iY2 == pB2->iY1;
 
-        // if (!(core.Controls->GetAsyncKeyState('5')<0))
         if (bTestedUp || bTestedDown)
         {
             const int32_t iAddSrc = pB2->iIStart + ((bTestedUp) ? (pB2->iSize0 + 1) * pB2->iSize0 : 0);
@@ -916,7 +886,6 @@ void SEA::PrepareIndicesForBlock(uint32_t dwBlockIndex)
         // Test Left & Right
         const bool bTestedLeft = pB->iX1 == pB2->iX2;
         const bool bTestedRight = pB->iX2 == pB2->iX1;
-        // if ((core.Controls->GetAsyncKeyState('6')<0))
         if (bTestedLeft || bTestedRight)
         {
             const int32_t iAddSrc = pB2->iIStart + ((bTestedLeft) ? (pB2->iSize0) : 0);
@@ -1013,7 +982,6 @@ void SEA::SSE_WaveXZBlock(SeaBlock &pB)
     y1 += vSeaCenterPos.z;
     y2 += vSeaCenterPos.z;
 
-    // glm::vec3 vNormal, vTmp;
     int32_t iCurrentV = 0;
 
     int32_t iIStart1 = pB.iIStart;
@@ -1053,15 +1021,6 @@ void SEA::SSE_WaveXZBlock(SeaBlock &pB)
                 }
             }
 
-            /*vTmp.y = WaveXZ(cx, cz, &vNormal);
-
-            vTmp.x = cx - vNormal.x * fPosShift * 3.0f;
-            vTmp.z = cz - vNormal.z * fPosShift * 3.0f;
-
-            pVSea[dwVIndex].vPos = vTmp;
-            pVSea[dwVIndex].vNormal = vNormal;
-            pVSea[dwVIndex].tu = (cx - vNormal.x * 5.3f) * fBumpScale;
-            pVSea[dwVIndex].tv = (cz - vNormal.z * 5.3f) * fBumpScale;*/
 
             iIStart1++;
         }
@@ -1461,7 +1420,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
         rs->SetVertexShaderConstantF(GC_SHADOW_CONST1, (const float *)&vec3, 1);
         rs->SetVertexShaderConstantF(GC_ANIMATION, (const float *)&vec4, 1);
         {
-            // The surface the vertex shader puts on the grid (sea_surface_gpu.hpp): WaveXZ's waves, the vertex shift;
             // c8.w: whether it does (the CPU surface wrote the vertices displaced). The field is bound either way (the
             // ports declare it).
             const glm::dvec2 origin = MeshOrigin();
@@ -1547,26 +1505,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
     if (!storm::loading::active)
         waveSources_.clear(); // the Execute stage of the next frame adds them again
     RDTSC_E(dwTotalRDTSC);
-    // rs->Print(50, 300, "Total ticks with rendering %d", /*iVStart, iTStart, */dwTotalRDTSC);
-    /*rs->Print(50, 320, "calc blk%s: %d", (bHT) ? " (HT)" : "", dwBlockRDTSC);
-    rs->Print(50, 340, "Blocks in 1st thread: %d", iB1);
-    for (int32_t i=0; i<aThreadsTest; i++)
-      rs->Print(50, 360 + 20 * i, "Blocks in thread %d: %d", i + 1, aThreadsTest[i]);
-    */
-    // rs->Print(30, 140, "rdtsc = %d", dwBlockRDTSC);
-    // rs->Print(30, 160, "Intel CPU: %s, SSE: %s, HyperThreading: %s", (bIntel) ? "Yes" : "No", (bSSE) ? "On" : "Off",
-    // (bHyperThreading) ? "On" : "Off");
 
-    /*D3DVIEWPORT9 vp; rs->GetViewport(&vp);
-    float w = 256;
-    float h = 256;
-    RS_SPRITE spr[4];
-    FillSpriteVertex(spr[0], 0, 0, 0.1f, 0xFFFFFFFF, 0.0f, 0.0f);
-    FillSpriteVertex(spr[1], 0, h, 0.1f, 0xFFFFFFFF, 0.0f, 1.0f);
-    FillSpriteVertex(spr[2], w, h, 0.1f, 0xFFFFFFFF, 1.0f, 1.0f);
-    FillSpriteVertex(spr[3], w, 0, 0.1f, 0xFFFFFFFF, 1.0f, 0.0f);
-    rs->TextureSet(0, reflectionSunroad);
-    rs->DrawSprites(spr, 1, "Telescope");*/
 
     if (bUnderSea && bUnderSeaEnable)
     {
@@ -1579,7 +1518,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
             for (int32_t i = 0; i < 1000; i++)
             {
                 aSeaTrash.push_back(SeaTrash{});
-                // SeaTrash & st = aSeaTrash[aSeaTrash.Add()];
                 SeaTrash &st = aSeaTrash.back();
                 st.vPos = vCamPos + glm::vec3(RRnd(-d.x, d.x), RRnd(-d.y, d.y), RRnd(-d.z, d.z));
                 st.vSpeed = glm::vec3(0.1f, 0.0f, 0.0f);
@@ -1593,7 +1531,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
             for (int32_t i = 0; i < 50; i++)
             {
                 aSeaLights.push_back(SeaLight{});
-                // SeaLight & sl = aSeaLights[aSeaLights.Add()];
                 SeaLight &sl = aSeaLights.back();
                 sl.vPos = vCamPos + glm::vec3(RRnd(-d2.x, d2.x), RRnd(-d2.y, d2.y), RRnd(-d2.z, d2.z));
                 sl.vSpeed = glm::vec3(0.1f, 0.0f, 0.0f);
@@ -1609,7 +1546,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
             fLastTrashTime -= 0.03f;
 
             aSeaTrash.push_back(SeaTrash{});
-            // SeaTrash & st = aSeaTrash[aSeaTrash.Add()];
             SeaTrash &st = aSeaTrash.back();
             st.vPos = vCamPos + glm::vec3(RRnd(-d.x, d.x), RRnd(-d.y, d.y), RRnd(-d.z, d.z));
             st.vSpeed = glm::vec3(0.1f, 0.0f, 0.0f);
@@ -1624,7 +1560,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
             aSeaTrash[i].fTime -= fDeltaTime;
             if (!storm::loading::active && aSeaTrash[i].fTime <= 0.0f)
             {
-                // aSeaTrash.ExtractNoShift(i);
                 aSeaTrash[i] = aSeaTrash.back();
                 aSeaTrash.pop_back();
                 i--;
@@ -1636,7 +1571,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
         aTrashRects.clear();
         for (int32_t i = 0; i < aSeaTrash.size(); i++)
         {
-            //    RS_RECT & r = aTrashRects[aTrashRects.Add()];
             aTrashRects.push_back(RS_RECT{});
             RS_RECT &r = aTrashRects.back();
 
@@ -1669,7 +1603,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
             fLastLightTime -= 1.0f;
 
             aSeaLights.push_back(SeaLight{});
-            // SeaLight & sl = aSeaLights[aSeaLights.Add()];
             SeaLight &sl = aSeaLights.back();
             sl.vPos = vCamPos + glm::vec3(RRnd(-d2.x, d2.x), RRnd(-d2.y, d2.y), RRnd(-d2.z, d2.z));
             sl.vSpeed = glm::vec3(0.1f, 0.0f, 0.0f);
@@ -1698,7 +1631,6 @@ void SEA::Realize(uint32_t dwDeltaTime)
         for (int32_t i = 0; i < aSeaLights.size(); i++)
         {
             aLightsRects.push_back(RS_RECT{});
-            // RS_RECT & r = aLightsRects[aLightsRects.Add()];
             RS_RECT &r = aLightsRects.back();
             float fAlpha = 1.0f;
             if (aSeaLights[i].fTime >= 45.0f)

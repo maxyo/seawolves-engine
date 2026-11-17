@@ -146,7 +146,6 @@ void CXI_GLOWCURSOR::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -159,11 +158,9 @@ void CXI_GLOWCURSOR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
 
     m_rect.left = m_rect.top = m_rect.right = m_rect.bottom = 0;
 
-    // get fone color
     m_dwFoneColor = GetIniARGB(ini1, name1, ini2, name2, "foneColor", ARGB(255, 128, 128, 128));
     m_dwCurColor = m_dwFoneColor;
 
-    // get Blind color
     m_dwBlindColor = GetIniARGB(ini1, name1, ini2, name2, "blindColor", m_dwFoneColor);
     m_bUseBlind = m_dwBlindColor != m_dwFoneColor;
 
@@ -181,7 +178,6 @@ void CXI_GLOWCURSOR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     else
         m_fCurM_DownSpeed = 1.f;
 
-    // get outside picture offset
     fPnt = GetIniFloatPoint(ini1, name1, ini2, name2, "offset", FXYPOINT(40.f, 30.f));
     m_xOffset = fPnt.x;
     m_yOffset = fPnt.y;
@@ -194,7 +190,6 @@ void CXI_GLOWCURSOR::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
     if (ReadIniString(ini1, name1, ini2, name2, "backTexture", param, sizeof(param), ""))
         m_idBackTex = m_rs->TextureCreate(param);
 
-    // set constant buffers data
     for (i = 0; i < 14; i++)
     {
         m_pTexVert[i].color = m_dwFoneColor;
@@ -229,7 +224,6 @@ void CXI_GLOWCURSOR::SetRectanglesToPosition(const XYRECT &rectXY)
     fW = fW / (fW + fxOffset * 2.f);
     fH = fH / (fH + fyOffset * 2.f);
 
-    // set front rectangle position
     m_pTexVert[4].pos.x = m_pTexVert[10].pos.x = m_pTexVert[12].pos.x = rectXY.left - fxOffset;
     m_pTexVert[4].pos.y = m_pTexVert[6].pos.y = m_pTexVert[12].pos.y = rectXY.top - fyOffset;
     m_pTexVert[6].pos.x = m_pTexVert[8].pos.x = rectXY.right + fxOffset;

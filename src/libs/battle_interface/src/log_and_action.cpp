@@ -293,7 +293,6 @@ void ILogAndActions::Realize(uint32_t delta_time)
     rs->MakePostProcess();
 
     // Show Active Action
-    //---------------------
     if (m_bShowActiveCommand
 #ifdef __ANDROID__
         && !storm::android::worldMapHud.covered(storm::android::MapCommands,core.GetEntityId("WorldMap"))
@@ -361,13 +360,10 @@ void ILogAndActions::Realize(uint32_t delta_time)
         auto strY = m_nStringBegin;
         while (ptr != nullptr)
         {
-            // rs->Print(m_fontID,m_dwColor,strX,strY,"%s",ptr->str);
             if (ptr->alpha <= 255.f)
-                // rs->Print(m_fontID,m_dwColor+(int32_t(ptr->alpha)<<24),strX,m_nWindowUp+(int32_t)ptr->offset,"%s",ptr->str);
                 rs->ExtPrint(m_fontID, m_dwColor + (static_cast<int32_t>(ptr->alpha) << 24), 0, nAlign, true, m_fFontScale,
                              0, 0, strX, m_nWindowUp + static_cast<int32_t>(ptr->offset), "%s", ptr->str);
             else
-                // rs->Print(m_fontID,m_dwColor+0xFF000000,strX,m_nWindowUp+(int32_t)ptr->offset,"%s",ptr->str);
                 rs->ExtPrint(m_fontID, m_dwColor + 0xFF000000, 0, nAlign, true, m_fFontScale, 0, 0, strX,
                              m_nWindowUp + static_cast<int32_t>(ptr->offset), "%s", ptr->str);
             strY += m_nStringOffset;

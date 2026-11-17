@@ -1,19 +1,11 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    CameraFollow
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "camera_follow.h"
 #include "character.h"
 #include "location.h"
 #include "location_camera.h"
-
-//============================================================================================
 
 //#define LFC_DEBUG
 
@@ -30,10 +22,6 @@ float CameraFollow::fndcsAx;
 float CameraFollow::fndkAx;
 float CameraFollow::fndcsAy;
 float CameraFollow::fndkAy;
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 CameraFollow::CameraFollow()
     : camPos(), lookTo(), camradius(0), rotSpd(0), rotAcc(0)
@@ -54,8 +42,6 @@ void CameraFollow::SetLocationCamera(LocationCamera *locCamera)
     lc = locCamera;
     camradius = lc->radius;
 }
-
-//============================================================================================
 
 // Make calculations
 void CameraFollow::Update(float dltTime)
@@ -110,7 +96,6 @@ void CameraFollow::Update(float dltTime)
         camPos = lookTo + (camPos - lookTo)*k1;
       }
     }
-    //
     glm::vec3 dir = camPos - lookTo; dir.y = 0.0f;
     float r = sqrtf(~dir);
     lc->camPos = camPos;
@@ -133,16 +118,13 @@ void CameraFollow::MoveCamera(float dltTime)
     if (dltTime <= 0.0f)
         return;
 #ifdef __ANDROID__
-    // Mobile camera mode (owner decision 2026-11-11). The native follow camera swings behind
-    // the hero (likeCamay = chay below) and eases towards that heading with rotInertia; a
-    // touch port added (c665430f, 2026-10-18) an orbit for a held stick that eased towards
-    // camay + this frame's drag, so only dltTime * rotInertia of each frame's drag was applied
-    // and the rest was thrown away: about 1/24 at 60 fps, the camera "almost not responding"
-    // while running, while a fight (native turn) responded fully. On mobile, out of a fight,
-    // the camera turns only from the player's drag, by all of it, and never re-centres behind
-    // the hero; the radius still follows obstacles (FindRadius). The hero turns only with the
-    // stick (Player::Rotate ignores the drag here), so the camera and the travel vector never
-    // fight each other.
+    // Mobile camera mode. The native follow camera swings behind the hero (likeCamay = chay below)
+    // and eases towards that heading with rotInertia; easing towards camay + the frame's drag would
+    // apply only dltTime * rotInertia of each drag (about 1/24 at 60 fps), so the camera would barely
+    // respond. On mobile, out of a fight, the camera turns only from the player's drag, by all of it,
+    // and never re-centres behind the hero; the radius still follows obstacles (FindRadius). The hero
+    // turns only with the stick (Player::Rotate ignores the drag here), so the camera and the travel
+    // vector never fight each other.
     if (lc->character->MobileCameraOrbit() && !lc->isSpecialMode)
     {
         camay += lc->dragAy;
@@ -383,7 +365,6 @@ float CameraFollow::FindRadius(float curAng) const
 #ifdef LFC_DEBUG
     numPoly1 = 0;
     camSteps = 0;
-    //!!!
     if (core.Controls->GetDebugAsyncKeyState('8') < 0)
     {
         isFndTrg = true;
@@ -423,10 +404,7 @@ float CameraFollow::FindRadius(float curAng) const
 
 #endif
 
-    // isFndTrg = false;
-
 #ifdef LFC_DEBUG
-    /////////////////////
     static glm::vec3 ps(0.0f);
     static glm::vec3 vv[5];
     if (core.Controls->GetDebugAsyncKeyState('8') < 0)
@@ -450,7 +428,6 @@ float CameraFollow::FindRadius(float curAng) const
 
     Assert(p[0].Ny == 0.0f);
     Assert(p[1].Ny == 0.0f);
-    /////////////////////
 #endif
 
     fndRadius -= LCF_RADIUS;
@@ -473,7 +450,6 @@ bool CameraFollow::ApplyPoly(const glm::vec3 *v, int32_t n)
     if (dist <= 1e-10f)
         return true;
     norm *= 1.0f / sqrtf(dist);
-    // Distance
     dist = glm::dot(v[0], norm);
     // Distance to the plane of the polygon
     auto d = glm::dot(fndCamPos, norm) - dist;
@@ -496,7 +472,6 @@ bool CameraFollow::ApplyPoly(const glm::vec3 *v, int32_t n)
         if (d == 0.0f)
             continue;
         edge[i].n *= 1.0f / sqrtf(d);
-        // Distance
         edge[i].d = glm::dot(v[i], edge[i].n);
         edge[i].s = v[i];
         edge[i].e = v[j];
@@ -559,7 +534,6 @@ void CameraFollow::ApplyPolyFindNearest(EdgeInfo *e, int32_t ne, const glm::vec3
             p = e[i].s;
         else if (glm::dot(e[i].s - e[i].e, p - e[i].e) < 0.0f)
             p = e[i].e;
-        // Distance
         d = storm::math::lengthSquared(p - pos);
         if (minDist >= 0.0f)
         {
@@ -626,8 +600,6 @@ void CameraFollow::ChangeRadius(float dltTime, float radius)
     auto k = dltTime * 10.0f;
     if (k > 0.99f)
         k = 0.99f;
-    // kRadInertCur = kRadInert + (kRadInertCur - kRadInert)*k;
-    // k = dltTime*lc->radInertia*(0.1f + kRadInertCur*10.0f);
     if (radius > camradius)
         k *= 0.7f;
     if (k < 0.0f)
@@ -635,6 +607,5 @@ void CameraFollow::ChangeRadius(float dltTime, float radius)
     if (k > 1.0f)
         k = 1.0f;
     camradius += (radius - camradius) * k;
-    //    lc->location->GetRS()->Print(10, 70, "fndRadius = %f, camradius = %f", fndRadius, camradius);
 }
 

@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // AnimationServiceImp
-// --------------------------------------------------------------------------------------------
 // Animation service for creating AnimationManager objects
-// ============================================================================================
 
 #include "animation_service_imp.h"
 #include "loading_transaction.hpp"
@@ -21,8 +16,6 @@
 #include "v_file_service.h"
 
 CREATE_SERVICE(AnimationServiceImp)
-
-//============================================================================================
 
 // Keep animation data across short character/location transitions (unscaled frame milliseconds).
 constexpr uint32_t ASRV_DOWNTIME = 30'000;
@@ -57,13 +50,7 @@ constexpr uint32_t ASRV_DOWNTIME = 30'000;
 #define ASKWAE_NORMAL "normal" // On playing the animation forward
 #define ASKWAE_REVERSE "reverse" // On playing the animation backward
 
-//============================================================================================
-
 char AnimationServiceImp::key[1024];
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 AnimationServiceImp::AnimationServiceImp()
 {
@@ -84,8 +71,6 @@ AnimationServiceImp::~AnimationServiceImp()
     for (const auto &info : ainfo)
         delete info;
 }
-
-//============================================================================================
 
 // Phase for running the animation
 uint32_t AnimationServiceImp::RunSection()
@@ -115,7 +100,6 @@ void AnimationServiceImp::RunStart()
             if (ainfo[i]->GetDowntime() >= ASRV_DOWNTIME)
             {
                 // Unloading unused animation
-                // core.Trace("Download animation %s", ainfo[i]->GetName());
                 delete ainfo[i];
                 ainfo[i] = nullptr;
             }
@@ -129,7 +113,6 @@ void AnimationServiceImp::RunStart()
                 animations[i]->Execute(ASRV_MAXDLTTIME);
             if (dt > 0)
                 animations[i]->Execute(dt);
-            // core.Trace("Animation: 0x%.8x Time: %f", animation[i], animation[i]->Player(0).GetPosition());
         }
 }
 
@@ -294,7 +277,6 @@ int32_t AnimationServiceImp::LoadAnimation(const char *animationName)
             }
         }
         aci->SetLoop(isLoop);
-        // Events
         if (ani->ReadString(path, ASKW_EVENT, key, 256, ""))
         {
             do
@@ -406,7 +388,6 @@ int32_t AnimationServiceImp::LoadAnimation(const char *animationName)
                                    ASKW_EVENT, key + 257, path, animationName, em);
                     }
                 }
-                // core.Trace("Add event %s, time = %f to action %s", key + 1, (tm - stime)/float(etime - stime), path);
                 // Add an event
                 if (!aci->AddEvent(key + 1, tm, ev))
                 {
@@ -513,7 +494,6 @@ void AnimationServiceImp::LoadUserData(INIFILE *ani, const char *sectionName,
                 ;
             key[p] = 0;
             // Add data
-            // core.Trace("Add user data \"%s\", \"%s\" of \"%s\"", key + 1, uds, sectionName);
             data[key + 1] = uds;
         } while (ani->ReadStringNext((char *)sectionName, ASKW_DATA, key, 1023));
     }
@@ -618,7 +598,6 @@ bool AnimationServiceImp::LoadAN(const char *fname, AnimationInfo *info)
         }
         delete[] ang;
 
-        //-----------------------------------------------
         for (int32_t i = 0; i < header.nJoints; i++)
         {
             info->GetBone(i).BuildStartMatrix();
@@ -627,7 +606,6 @@ bool AnimationServiceImp::LoadAN(const char *fname, AnimationInfo *info)
         {
             storm::math::invertRigid(info->GetBone(i).start);
         }
-        //-----------------------------------------------
 
         // Close the file
         fio->_CloseFile(fileS);

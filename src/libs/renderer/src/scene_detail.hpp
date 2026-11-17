@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-// The game's grass density and open-sea detail belong to the graphics preset (owner decision 2026-11-16: the settings
+// The game's grass density and open-sea detail belong to the graphics preset (the settings
 // screen no longer offers «Трава» and «Детализация моря»). The renderer writes the preset's values into the game's own
 // option state, which the game's scripts already apply: the global iGrassQuality (0 full, 1 middle, 2 low, 3 off; the
 // grass asks it through GOpt_GetGrassQuality, which also keeps the game's storm rule) and InterfaceStates.SeaDetails

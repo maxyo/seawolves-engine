@@ -40,7 +40,6 @@ SAIL::SAIL()
 {
     // setting all general data to initial values
     // then rewritten from INI file
-    // ---------------------------------------------------
     // texture names
     texQuantity = 1;
     texNumCommon = 0;
@@ -135,7 +134,6 @@ SAIL::SAIL()
     // treangle sails
     FALL_TSAIL_ADD_MIN = 0.2f;
     FALL_TSAIL_ADD_RAND = 0.2f;
-    //-----------------------------------------------------
 
     GROUP_UPDATE_TIME = 4000;
 
@@ -208,11 +206,9 @@ SAIL::~SAIL()
 
 bool SAIL::Init()
 {
-    // GUARD(SAIL::SAIL())
 
     SetDevice();
 
-    // UNGUARD
     return true;
 }
 
@@ -337,7 +333,6 @@ void SAIL::Execute(uint32_t Delta_Time)
             if (cmod == nullptr)
                 continue;
             gdata[i].boxCenter = gdata[i].boxSize = slist[gdata[i].sailIdx[0]]->ss.boundSphere.rc;
-            // glm::vec3(0.f,0.f,0.f);
             gdata[i].speed_c = 0.f;
             gdata[i].maxSpeed = 0.f;
             gdata[i].curHole = 0;
@@ -391,9 +386,6 @@ void SAIL::Execute(uint32_t Delta_Time)
                 // make sails sway
                 slist[i]->goWave(&pv[slist[i]->ss.sVert], Delta_Time);
                 // set rolling / unrolling of sails
-                //                if( gdata[slist[i]->HostNum].bFinalSailDo )
-                //                    if(!slist[i]->ss.rollingSail)
-                //                        slist[i]->SetRolling(gdata[slist[i]->HostNum].bFinalSailUp);
                 // sail bounding box calculation
                 glm::vec3 vtmp = slist[i]->ss.boundSphere.rc - slist[i]->ss.boundSphere.r;
                 int itmp = slist[i]->HostNum;
@@ -477,7 +469,6 @@ void SAIL::Execute(uint32_t Delta_Time)
                     ATTRIBUTES *pA = pVai->GetACharacter()->GetAttributeClass("Ship");
                     if (pA != nullptr)
                         pA->SetAttributeUseDword("SP", fftoi(curSP));
-                    // pA->SetAttributeUseDword("SP", (int32_t)fSP);
                 }
             }
         }
@@ -516,7 +507,6 @@ void SAIL::Realize(uint32_t Delta_Time)
                     i = gdata[j].sailIdx[idx];
                     if (slist[i]->bFreeSail)
                         continue;
-                    // if(gdata[slist[i]->HostNum].bDeleted) continue;
                     RenderService->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(*slist[i]->pMatWorld));
                     RenderService->TextureSet(0, slist[i]->surfaceTex);
                     if (slist[i]->m_bIsGerald)
@@ -552,7 +542,6 @@ void SAIL::Realize(uint32_t Delta_Time)
                 for (idx = 0; idx < gdata[j].sailQuantity; idx++)
                 {
                     i = gdata[j].sailIdx[idx];
-                    // if(gdata[slist[i]->HostNum].bDeleted) continue;
                     RenderService->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(*slist[i]->pMatWorld));
                     RenderService->TextureSet(0, slist[i]->surfaceTex);
                     if (slist[i]->m_bIsGerald)
@@ -565,7 +554,6 @@ void SAIL::Realize(uint32_t Delta_Time)
                     uint32_t dwOld;
                     RenderService->GetSamplerState(2, D3DSAMP_ADDRESSU, &dwOld);
                     RenderService->SetSamplerState(2, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-                    // slist[i]->FillIndex(pt);
                     auto *pt = static_cast<uint16_t *>(RenderService->LockIndexBuffer(sg.indxBuf, D3DLOCK_DISCARD));
                     if (pt)
                         slist[i]->FillIndex(pt);
@@ -608,7 +596,6 @@ void SAIL::Realize(uint32_t Delta_Time)
 
 uint64_t SAIL::ProcessMessage(MESSAGE &message)
 {
-    // GUARD(uint32_t SAIL::ProcessMessage(MESSAGE message))
     entid_t tmpEI;
     int i;
 
@@ -971,7 +958,6 @@ uint64_t SAIL::ProcessMessage(MESSAGE &message)
     break;
     }
 
-    // UNGUARD
     return 0;
 }
 
@@ -1119,7 +1105,6 @@ void SAIL::SetAllSails(int groupNum)
             }
             else
             {
-                // throw std::runtime_error("SAIL: Null size");
                 core.Trace("SAIL: Can`t init sail");
                 STORM_DELETE(slist[i]);
                 sailQuantity--;
@@ -1189,11 +1174,6 @@ void SAIL::SetAllSails(int groupNum)
                                 if (ps != nullptr)
                                 {
                                     ps->SetAllHole(pASail->GetAttributeAsDword("hd"));
-                                    /*if( (ps->ss.eSailType==SAIL_TREANGLE?10:12) == (int)ps->ss.holeCount )
-                                    {// the whole sail is damaged - don't need it
-                                      ps->bDeleted = true;
-                                      bDeleteState = true;
-                                    }*/
                                 }
                             }
                         }
@@ -1296,7 +1276,6 @@ void SAIL::SetAllSails()
 
 void SAIL::LoadSailIni()
 {
-    // GUARD(SAIL::LoadSailIni());
     char section[256], param[256];
 
     auto ini = fio->OpenIniFile("resource\\ini\\rigging.ini");
@@ -1392,7 +1371,6 @@ void SAIL::LoadSailIni()
 
     GROUP_UPDATE_TIME = ini->GetInt(section, "msecSailUpdateTime", GROUP_UPDATE_TIME);
 
-    // UNGUARD
 }
 
 float SAIL::Trace(const glm::vec3 &src, const glm::vec3 &dst)
@@ -1464,10 +1442,8 @@ float SAIL::Trace(const glm::vec3 &src, const glm::vec3 &dst)
         }
 
         LastTraceGroup = i;
-        // ==============================================
         // the ray passed through the cube around the sails of the ship
         // start looking for the sail which it hit
-        // ==============================================
         float tmp;
         traceSail = -1;
         for (int j = 0; j < gdata[i].sailQuantity; j++)
@@ -1752,7 +1728,6 @@ void SAIL::DeleteSailGroup()
     const int old_groupQuantity = groupQuantity;
 
     // remove all sails from the deleted group //
-    // ---------------------------------------//
     for (sn = 0, sailQuantity = 0; sn < old_sailQuantity; sn++)
         if (gdata[slist[sn]->HostNum].bDeleted || slist[sn]->bDeleted)
         {

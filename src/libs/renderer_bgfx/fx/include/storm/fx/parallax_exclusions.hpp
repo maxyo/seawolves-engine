@@ -1,5 +1,5 @@
-// The parallax lists: the shipped one (data, src/parallax_exclusions.inc) and the owner's tuning file (the user list, in
-// the app's files directory: his choices from the in-game debug view, not a cache; folded into the shipped list later).
+// The parallax lists: the shipped one (data, src/parallax_exclusions.inc) and the tuning file (the user list, in
+// the app's files directory: choices from the in-game debug view, not a cache; folded into the shipped list later).
 // A texture takes the parallax by default when its class does (ReliefTakesParallax: masonry and characters) and its trusted share
 // reaches kParallaxMinCoverage; the lists decide the exceptions either way.
 //

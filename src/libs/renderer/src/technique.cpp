@@ -136,7 +136,6 @@ char *SkipToken(char *str, const char *cmp)
 
     int lens = strlen(str);
     int lenc = strlen(cmp);
-    //	if (strcmp(str,cmp) != 0) return NULL;
     for (int i = 0; i < lens; i++)
     {
         flag = 0;
@@ -186,7 +185,6 @@ char *FindToken(char *str, const char *cmp)
 
     int lens = strlen(str);
     int lenc = strlen(cmp);
-    //	if (strcmp(str,cmp) != 0) return NULL;
     for (int i = 0; i < lens; i++)
     {
         flag = 0;
@@ -287,7 +285,6 @@ typedef struct
 #define SRS_DWORD 0
 #define SRS_FLOAT 1
 
-// ---------------------------------------------------------------------------------
 
 SRSPARAM MYDECLUSAGE[] = {{"position", D3DDECLUSAGE_POSITION},
                           {"blendweight", D3DDECLUSAGE_BLENDWEIGHT},
@@ -459,7 +456,6 @@ SRS RenderStates[] = {
     {DEFSIZE(0), SRS_FLOAT, "TweenFactor", D3DRS_TWEENFACTOR},
     {DEFSIZE(MYD3DBLENDOP), SRS_DWORD, "BlendOp", D3DRS_BLENDOP}};
 
-// ---------------------------------------------------------------------------------
 // SetTextureStageState parameters
 SRSPARAM MYD3DTEXTUREOP[] = {{"disable", D3DTOP_DISABLE},
                              {"selectarg1", D3DTOP_SELECTARG1},
@@ -526,7 +522,6 @@ SRSPARAM MYD3DTEXTUREADDRESS[] = {{"wrap", D3DTADDRESS_WRAP},
 SRSPARAM MYD3DTEXTUREFILTERTYPE[] = {
     {"none", D3DTEXF_NONE}, {"point", D3DTEXF_POINT}, {"linear", D3DTEXF_LINEAR}, {"anisotropic", D3DTEXF_ANISOTROPIC},
 //{ "flatcubic", D3DTEXF_FLATCUBIC },
-    //{ "gaussiancubic", D3DTEXF_GAUSSIANCUBIC } };
 };
 
 SRSPARAM MYD3DTEXTURETRANSFORMFLAGS[] = {{"disable", D3DTTFF_DISABLE}, {"count1", D3DTTFF_COUNT1},
@@ -545,15 +540,6 @@ STSS TexturesStageStates[] = {
     {DEFSIZE(0), SRS_FLOAT, "bumpenvmat10", D3DTSS_BUMPENVMAT10},
     {DEFSIZE(0), SRS_FLOAT, "bumpenvmat11", D3DTSS_BUMPENVMAT11},
     {DEFSIZE(MYD3DTEXCOORDINDEX), SRS_DWORD, "texcoordindex", D3DTSS_TEXCOORDINDEX},
-    /* { DEFSIZE(MYD3DTEXTUREADDRESS) , SRS_DWORD, "addressu",		D3DTSS_ADDRESSU },
-     { DEFSIZE(MYD3DTEXTUREADDRESS) , SRS_DWORD, "addressv",		D3DTSS_ADDRESSV },
-     { DEFSIZE(0), SRS_DWORD, "bordercolor",						D3DTSS_BORDERCOLOR },
-     { DEFSIZE(MYD3DTEXTUREFILTERTYPE) , SRS_DWORD, "magfilter", D3DTSS_MAGFILTER },
-     { DEFSIZE(MYD3DTEXTUREFILTERTYPE) , SRS_DWORD, "minfilter", D3DTSS_MINFILTER },
-     { DEFSIZE(MYD3DTEXTUREFILTERTYPE) , SRS_DWORD, "mipfilter", D3DTSS_MIPFILTER },
-     { DEFSIZE(0), SRS_FLOAT, "mipmaplodbias",					D3DTSS_MIPMAPLODBIAS },
-     { DEFSIZE(0), SRS_DWORD, "maxmiplevel",						D3DTSS_MAXMIPLEVEL },
-     { DEFSIZE(0), SRS_DWORD, "maxanisotropy",					D3DTSS_MAXANISOTROPY },*/
     {DEFSIZE(0), SRS_FLOAT, "bumpenvlscale", D3DTSS_BUMPENVLSCALE},
     {DEFSIZE(0), SRS_FLOAT, "bumpenvloffset", D3DTSS_BUMPENVLOFFSET},
     {DEFSIZE(MYD3DTEXTURETRANSFORMFLAGS), SRS_DWORD, "texturetransformflags", D3DTSS_TEXTURETRANSFORMFLAGS},
@@ -573,7 +559,6 @@ SAMP SampleStates[] = {{DEFSIZE(MYD3DTEXTUREADDRESS), SRS_DWORD, "addressu", D3D
                        {DEFSIZE(0), SRS_DWORD, "maxanisotropy", D3DSAMP_MAXANISOTROPY},
                        {DEFSIZE(MYD3DTEXTUREADDRESS), SRS_DWORD, "addressw", D3DSAMP_ADDRESSW}};
 
-// ---------------------------------------------------------------------------------
 // transform block
 SRSPARAM TRANSFORM_TYPES[] = {{"view", D3DTS_VIEW},     {"projection", D3DTS_PROJECTION}, {"world", D3DTS_WORLD},
                               {"tex0", D3DTS_TEXTURE0}, {"tex1", D3DTS_TEXTURE1},         {"tex2", D3DTS_TEXTURE2},
@@ -582,7 +567,6 @@ SRSPARAM TRANSFORM_TYPES[] = {{"view", D3DTS_VIEW},     {"projection", D3DTS_PRO
                               {"tex7", D3DTS_TEXTURE7}
 };
 
-// ---------------------------------------------------------------------------------
 // params section for block
 #define PARAM_MATRIX 0
 #define PARAM_TEXTURE 1
@@ -751,7 +735,6 @@ uint32_t CTechnique::GetSRSIndex(char *pStr)
             return i;
     core.Trace("ERROR: SetRenderState: unknown parameter type <%s> in <%s> file, technique <%s>", pStr,
                sCurrentFileName, sCurrentBlockName);
-    // THROW;
     return INVALID_SRS_INDEX;
 }
 
@@ -762,7 +745,6 @@ uint32_t CTechnique::GetSTSSIndex(char *pStr)
         if (storm::iEquals(pStr, TexturesStageStates[i].cName))
             return i;
     // api->Trace("ERROR: SetTextureStageState: unknown parameter type <%s> in <%s> file, technique
-    // <%s>",pStr,sCurrentFileName,sCurrentBlockName); THROW;
     return INVALID_INDEX;
 }
 
@@ -773,7 +755,6 @@ uint32_t CTechnique::GetSAMPIndex(char *pStr)
         if (storm::iEquals(pStr, SampleStates[i].cName))
             return i;
     // api->Trace("ERROR: SetSamplerState: unknown parameter type <%s> in <%s> file, technique <%s>", pStr,
-    // sCurrentFileName, sCurrentBlockName); THROW;
     return INVALID_INDEX;
 }
 
@@ -785,7 +766,6 @@ uint32_t CTechnique::GetIndex(char *pStr, SRSPARAM *pParam, uint32_t dwNumParam,
     if (!bCanBeNumber)
         core.Trace("ERROR: Unknown parameter type <%s> in <%s> file, technique <%s>", pStr, sCurrentFileName,
                    sCurrentBlockName);
-    // THROW;
     return INVALID_INDEX;
 }
 
@@ -945,8 +925,6 @@ uint32_t CTechnique::ProcessPass(char *pFile, uint32_t dwSize, char **pStr)
             sscanf(temp, "%u", &dwIndex);
             *pPass++ = dwIndex;
             *pPass++ = dwInParamIndex;
-            // GetTokenWhile(SkipToken(*pStr,"="),temp,";");
-            //*pPass++ = GetCode(temp,0,0,null,false);
             SKIP3;
         }
 
@@ -1187,7 +1165,6 @@ uint32_t CTechnique::ProcessTechnique(char *pFile, uint32_t dwSize, char **pStr)
     }
         tolwr(*pStr);
         ClearComment(*pStr);
-        // if (isComment(*pStr)) SKIP2;
         if (isEndBracket(*pStr))
             break; // end of technique
         if (isPass(*pStr))
@@ -1470,7 +1447,6 @@ uint32_t CTechnique::ProcessBlock(char *pFile, uint32_t dwSize, char **pStr)
     }
         tolwr(*pStr);
         ClearComment(*pStr);
-        // if (isComment(*pStr)) SKIP1;
         if (isEndBracket(*pStr))
             break; // end of block
         if (isTechnique(*pStr))
@@ -1583,7 +1559,6 @@ bool CTechnique::DecodeFile(std::string sname)
 
     char *pStr = pFile;
 
-    // dwCurBlock = 0;
 
     while (nullptr != (pStr = GetString(pFile, dwSize, pStr)))
     {
@@ -1594,7 +1569,6 @@ bool CTechnique::DecodeFile(std::string sname)
     }
         tolwr(pStr);
         ClearComment(pStr);
-        // if (isComment(pStr)) SKIP;
         if (isPixelShader(pStr))
         {
             uint32_t dwRes = ProcessPixelShader(pFile, dwSize, &pStr);
@@ -1636,7 +1610,6 @@ bool CTechnique::ExecutePassStart()
     dwCurBlock = it->second;
     // for (uint32_t i=0;i<dwNumBlocks;i++) if (pBlocks[i].dwHashBlockName == dwHashCode &&
     // (storm::iEquals(pBlocks[i].pBlockName,sCurrentBlockName))) break; if (i==dwNumBlocks) return false;	// don't
-    // find concur block Assert(i == dwFind); dwCurBlock = i;
 
     block_t *pB = &pBlocks[dwCurBlock];
     if (pB->dwNumTechniques == 0)
@@ -1787,7 +1760,6 @@ bool CTechnique::ExecutePass(bool bStart)
         {
             D3DTRANSFORMSTATETYPE TransformType = (D3DTRANSFORMSTATETYPE)*pPass++;
             throw std::runtime_error("conversion from uint32_t to D3DMATRIX*");
-            // pRS->SetTransform(TransformType,(D3DMATRIX*)GetPassParameter(*pPass++,dwSubCode));
         }
         break;
         case CODE_RENDER: // Render functions
@@ -1836,7 +1808,6 @@ bool CTechnique::ExecutePass(bool bStart)
         case CODE_SPSCONST: {
             uint32_t dwShaderConstIndex = *pPass++;
             throw std::runtime_error("conversion from uint32_t to const float *");
-            // pRS->SetPixelShaderConstantF(dwShaderConstIndex, (const float*)GetPassParameter(*pPass++, dwSubCode), 1);
             //~!~
         }
         break;
@@ -1976,12 +1947,10 @@ void CTechnique::RestoreSavedStates()
         case CODE_SPS:
             dwValue = pSavedStates[dwTempSavedStatesPos++];
             throw std::runtime_error("conversion from uint32_t to storm::shim::PixelShader *");
-            // pRS->SetPixelShader((storm::shim::PixelShader*)dwValue);
             break;
         case CODE_SVS:
             dwValue = pSavedStates[dwTempSavedStatesPos++];
             throw std::runtime_error("conversion from uint32_t to storm::shim::PixelShader *");
-            // pRS->SetVertexShader((storm::shim::VertexShader*)dwValue);
             break;
         }
     }
@@ -1996,7 +1965,6 @@ void CTechnique::SetCurrentBlock(const char *name, uint32_t _dwNumParams, void *
 
         strcpy_s(sCurrentBlockName, name);
         tolwr(sCurrentBlockName);
-        // dwHashCode = MakeHashValue(sCurrentBlockName);
         dwCurNumParams = _dwNumParams;
 
         if (dwCurNumParams > dwCurParamsMax)

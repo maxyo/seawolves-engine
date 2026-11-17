@@ -5,10 +5,6 @@
 #include "lights.h"
 #include "model.h"
 
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
-
 extern float fCausticScale, fCausticDelta, fFogDensity, fCausticDistance;
 extern glm::vec4 v4CausticColor;
 extern bool bCausticEnable;
@@ -25,7 +21,6 @@ LocModelRealizer::~LocModelRealizer()
 {
 }
 
-// Initialization
 bool LocModelRealizer::Init()
 {
     rs = static_cast<VRenderer *>(core.GetService("renderer"));
@@ -33,7 +28,6 @@ bool LocModelRealizer::Init()
     return true;
 }
 
-// Execution
 void LocModelRealizer::Execute(uint32_t delta_time)
 {
 }
@@ -99,7 +93,6 @@ void LocModelRealizer::Realize(uint32_t delta_time) const
     }
 }
 
-// Messages
 uint64_t LocModelRealizer::ProcessMessage(MESSAGE &message)
 {
     switch (message.Long())

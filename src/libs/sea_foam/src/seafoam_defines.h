@@ -1,6 +1,5 @@
 #pragma once
 
-//#define SEAFOAM_TRACE_INFORMATION
 
 #define TRACE_STEPS_Y 5
 #define TRACE_STEPS_Z 13 // 13
@@ -23,10 +22,3 @@
 #define SEAFOAM_TRACE(a) _VSYSTEM_core.Trace(a);
 #define SEAFOAM_TRACE2(a, b) _VSYSTEM_core.Trace(a, b);
 #endif
-/*
-//--------------------------------------------------------------------
-float rand(float r);
-float randUpper(float r);
-float randCentered(float r);
-//--------------------------------------------------------------------
-*/

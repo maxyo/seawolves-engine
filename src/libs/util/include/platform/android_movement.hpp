@@ -41,8 +41,7 @@ inline bool ordinaryMovementAllowed(bool requested, bool moving, bool locked, bo
         !fighting && !queuedFight && locomotion;
 }
 // What a held stick does to the hero in this frame. Swimming takes it too: the native swim
-// (its own pace, the waves) goes the stick's way. It used to be left out of the touch path, so
-// in water nothing but the waves moved the hero and the stick could not steer him.
+// (its own pace, the waves) goes the stick's way, so the stick can steer him in water.
 enum class TouchGait { stop, swim, combatBack, combatSide, walk };
 inline TouchGait touchGait(const MovementAxes &axes, bool swimming, bool fighting)
 {
@@ -77,7 +76,7 @@ inline MovementDirection movementDirection(const MovementAxes &axes, float camer
 // The stick is held from its "1" packet until its "0" packet (pointer up or cancel in the
 // UI), a hard cancellation (lifecycle, screen, UI loss: cancelAndroidCombatInput), a new
 // owner or a failing guard: events, never a clock. A UI frame may take seconds on a slow
-// device; a held stick must not let go meanwhile (it used to after 350 ms of silence).
+// device; a held stick must not let go meanwhile.
 class MovementInput
 {
     inline static std::atomic<uint64_t> nextGeneration_{0};

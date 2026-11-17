@@ -8,13 +8,11 @@
 #include "shared/messages.h"
 #include "v_file_service.h"
 
-//--------------------------------------------------------------------
 TFishSchools::TFishSchools() : enabled(false)
 {
     memset(fishSchools, 0, sizeof(fishSchools));
 }
 
-//--------------------------------------------------------------------
 TFishSchools::~TFishSchools()
 {
     if (!created)
@@ -24,7 +22,6 @@ TFishSchools::~TFishSchools()
     core.EraseEntity(fishSchoolModel);
 }
 
-//--------------------------------------------------------------------
 void TFishSchools::LoadSettings()
 {
     auto ini = fio->OpenIniFile(ANIMALS_INI_FILENAME);
@@ -36,7 +33,6 @@ void TFishSchools::LoadSettings()
     maxDistance = ini->GetFloat(ANIMALS_FISHSCHOOLS_SECTION, "distance", FISHSCHOOL_DISTANCE);
 }
 
-//--------------------------------------------------------------------
 void TFishSchools::Init()
 {
     LoadSettings();
@@ -48,7 +44,6 @@ void TFishSchools::Init()
     enabled = false;
     CreateSchools();
 }
-//--------------------------------------------------------------------
 bool TFishSchools::CreateSchools()
 {
     if (created)
@@ -75,7 +70,6 @@ bool TFishSchools::CreateSchools()
     return true;
 }
 
-//--------------------------------------------------------------------
 uint64_t TFishSchools::ProcessMessage(int32_t _code, MESSAGE &message)
 {
     const uint32_t outValue = 0;
@@ -96,7 +90,6 @@ uint64_t TFishSchools::ProcessMessage(int32_t _code, MESSAGE &message)
     return outValue;
 }
 
-//--------------------------------------------------------------------
 void TFishSchools::Execute(uint32_t _dTime)
 {
     if (!enabled)
@@ -121,16 +114,10 @@ void TFishSchools::Execute(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 void TFishSchools::Realize(uint32_t _dTime)
 {
     if (!enabled)
         return;
-    /*
-      glm::vec3 cameraPos, cameraAng;
-      float   cameraPersp;
-      renderService->GetCamera(cameraPos, cameraAng, cameraPersp);
-    */
     sea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
     if (!sea)
     {
@@ -159,5 +146,3 @@ void TFishSchools::Realize(uint32_t _dTime)
         fishSchool->ProcessStage(Entity::Stage::realize, _dTime);
     }
 }
-
-//--------------------------------------------------------------------

@@ -32,7 +32,6 @@ char *STRINGS_LIST::GetString(uint32_t code)
 
 bool STRINGS_LIST::AddString(const char *_char_PTR)
 {
-    // GUARD(STRINGS_LIST::AddString)
     if (_char_PTR == nullptr)
         throw std::runtime_error("zero string");
     const auto hash = MakeHashValue(_char_PTR);
@@ -41,7 +40,6 @@ bool STRINGS_LIST::AddString(const char *_char_PTR)
     memcpy(record.get(), &hash, sizeof(hash));
     memcpy(record.get() + used_data_size + sizeof(uint32_t), _char_PTR, len);
     strings_.push_back(std::move(record));
-    // UNGUARD
     return true;
 }
 
@@ -84,11 +82,9 @@ bool STRINGS_LIST::GetStringData(uint32_t code, void *data_PTR)
 
 bool STRINGS_LIST::SetStringData(uint32_t code, void *data_PTR)
 {
-    // GUARD(STRINGS_LIST::SetStringData)
     if (code >= strings_.size() || data_PTR == nullptr)
         return false;
     memcpy(strings_[code].get() + sizeof(uint32_t), data_PTR, used_data_size);
-    // UNGUARD
     return true;
 }
 

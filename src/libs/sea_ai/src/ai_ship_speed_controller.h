@@ -3,10 +3,8 @@
 #include "vai_objbase.h"
 #include "vma.hpp"
 
-// ============================================================================
 // master class AIShipSpeedController
 // Contain base virtual functions
-// ============================================================================
 class AIShip;
 
 class AIShipSpeedController

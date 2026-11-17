@@ -56,7 +56,6 @@ const BIImage *BIImageMaterial::CreateImage(BIImageType type, uint32_t color, co
     pImg->SetType(type);
     pImg->SetPrioritet(nPrior);
     InsertImageToList(pImg);
-    // m_apImage.Add( pImg );
     m_bMakeBufferUpdate = true;
     RecalculatePriorityRange();
     return pImg;
@@ -91,7 +90,6 @@ void BIImageMaterial::ReleaseAllImages()
     for (const auto &image : m_apImage)
         delete image;
     m_apImage.clear();
-    // m_apImage.DelAllWithPointers();
     m_bDeleteEverything = false;
     m_bMakeBufferUpdate = true;
 }
@@ -102,7 +100,6 @@ void BIImageMaterial::Release()
     m_pImageRender->DeleteMaterial(this);
     for (const auto &image : m_apImage)
         delete image;
-    // m_apImage.DelAllWithPointers();
     TEXTURE_RELEASE(m_pRS, m_nTextureID);
     VERTEX_BUFFER_RELEASE(m_pRS, m_nVBufID);
     INDEX_BUFFER_RELEASE(m_pRS, m_nIBufID);
@@ -230,6 +227,4 @@ void BIImageMaterial::InsertImageToList(BIImage *pImg)
             break;
 
     m_apImage.insert(m_apImage.begin() + n, pImg);
-    // m_apImage.Insert( n );
-    // m_apImage[n] = pImg;
 }

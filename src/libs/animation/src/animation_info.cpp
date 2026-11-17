@@ -1,21 +1,12 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // AnimationInfo
-// --------------------------------------------------------------------------------------------
 // This is where animation information is stored, loaded 1 time
-// ============================================================================================
 
 #include "animation_info.h"
 
 #include "string_compare.hpp"
 #include "platform/platform.hpp"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 AnimationInfo::AnimationInfo(const char *animationName)
     : numFrames(0)
@@ -56,9 +47,7 @@ ActionInfo *AnimationInfo::AddAction(const char *anctionName, int32_t startframe
     return &actions.emplace_back(anctionName, startframe, endframe);
 }
 
-// --------------------------------------------------------------------------------------------
 // Working with animation
-// --------------------------------------------------------------------------------------------
 
 // Compare with current name
 bool AnimationInfo::operator==(const char *animationName)

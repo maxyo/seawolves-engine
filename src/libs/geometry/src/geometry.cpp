@@ -43,9 +43,7 @@ void GEOMETRY::SetTexturePath(const char *path)
     strcpy_s(texturePath, path);
 }
 
-//=================================================================================================
 // Block 1
-//=================================================================================================
 void GEOMETRY::SetTechnique(const char *name)
 {
     strcpy_s(technique, name);
@@ -162,9 +160,7 @@ GEOS *GEOMETRY::CreateGeometry(const char *file_name, const char *light_file_nam
 
     if (geoLog)
     {
-        //---------------------------------------------------------------
         // print statistics
-        //---------------------------------------------------------------
         GEOS::INFO gi;
         gp->GetInfo(gi);
         first += gi.ntriangles * 2 * 3 + vrtSize;
@@ -230,9 +226,7 @@ void GEOMETRY::DeleteGeometry(GEOS *gid)
     delete gid;
 }
 
-//=================================================================================================
 // Block 2
-//=================================================================================================
 
 void GEOM_SERVICE_R::SetRenderService(VRenderer *render_service)
 {
@@ -538,8 +532,6 @@ void GEOM_SERVICE_R::DrawIndexedPrimitive(int32_t minv, int32_t numv, int32_t vr
     if (!RenderService)
         return;
 
-    // uint32_t oldZBias;
-
     if (bCaustic)
     {
         glm::mat4 mWorld, mView, mProjection;
@@ -560,9 +552,6 @@ void GEOM_SERVICE_R::DrawIndexedPrimitive(int32_t minv, int32_t numv, int32_t vr
 
         RenderService->SetVertexDeclaration(vertexDecl_);
 
-        // RenderService->GetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, &oldZBias);
-        // float SSBias = -0.6f;
-        // RenderService->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, *(int*)&SSBias);
     }
 
     // draw animation
@@ -589,10 +578,6 @@ void GEOM_SERVICE_R::DrawIndexedPrimitive(int32_t minv, int32_t numv, int32_t vr
                                                          CurentIndexBuffer, minv, numv, startidx, numtrg, "caustic");
     }
 
-    // if (bCaustic)
-    //{
-    //    RenderService->SetRenderState(D3DRS_SLOPESCALEDEPTHBIAS, oldZBias);
-    //}
 }
 
 GEOS::ID GEOM_SERVICE_R::CreateLight(const GEOS::LIGHT)

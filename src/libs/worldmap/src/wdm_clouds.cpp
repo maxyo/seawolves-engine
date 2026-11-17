@@ -1,19 +1,13 @@
-//============================================================================================
 //    Spirenkov Maxim, 2001
-//--------------------------------------------------------------------------------------------
 //    Sea Dogs II
-//--------------------------------------------------------------------------------------------
 //    WdmClouds
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "wdm_clouds.h"
 
 #include "math_inlines.h"
 #include "wdm_objects.h"
 
-//============================================================================================
 
 #define WdmCloudsCloudRad 80.0f
 #define WdmCloudsCloudHeight 80.0f
@@ -265,9 +259,7 @@ void WdmClouds::Cloud::Kill(const Cloud &cld)
     }
 }
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 WdmClouds::WdmClouds()
 {
@@ -375,7 +367,6 @@ void WdmClouds::LRender(VRenderer *rs)
         rs->SetVertexShaderConstantF(4, storm::math::data(prj), 2);
         rs->DrawRects(rects, count, "WdmClouds", 2, 2);
     }
-    // rs->Print(20, 200, "Visible clouds = %i, Visible particles = %i", cnt, count);
 }
 
 void WdmClouds::CreateVertexDeclaration(VRenderer *rs)

@@ -33,7 +33,6 @@ bool GetStringDescribe(char *inStr, char *strName, char *outStr)
     auto strLenght = 0;
     auto bDoEmpty = true;
 
-    // Get string name
     for (ps1 = inStr; *ps1; ps1++)
     {
         const auto ch1 = *ps1;
@@ -59,7 +58,6 @@ bool GetStringDescribe(char *inStr, char *strName, char *outStr)
     }
     strName[strLenght] = 0;
 
-    // Get string value
     strLenght = 0;
     bDoEmpty = true;
     for (; *ps1; ps1++)
@@ -130,9 +128,7 @@ STRSERVICE::~STRSERVICE()
 
 bool STRSERVICE::Init()
 {
-    // GUARD(bool STRSERVICE::Init())
     LoadIni();
-    // UNGUARD
     return true;
 }
 
@@ -156,7 +152,6 @@ void STRSERVICE::RunEnd()
 
 void STRSERVICE::SetLanguage(const char *sLanguage)
 {
-    // GUARD(void STRSERVICE::SetLanguage(const char* sLanguage))
 
     int i;
     char param[2048];
@@ -171,7 +166,6 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
     if (m_sLanguage != nullptr && storm::iEquals(sLanguage, m_sLanguage))
         return;
 
-    // initialize ini file
     auto langIni = fio->OpenIniFile(sLanguageFile);
     if (!langIni)
     {
@@ -191,7 +185,6 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
 
     while (true)
     {
-        // delete old data
         delete[] m_sIniFileName;
         m_sIniFileName = nullptr;
         delete[] m_sLanguageDir;
@@ -246,9 +239,7 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         else
             break;
     }
-    //==========================================================================
     // reread fonts
-    //==========================================================================
     auto *RenderService = static_cast<VRenderer *>(core.GetService("renderer"));
     if (RenderService)
     {
@@ -264,13 +255,8 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         }
         RenderService->SetFontIniFileName(fullIniPath);
     }
-    //==========================================================================
 
-    //====================================================================
-    // Set language data
-    //====================================================================
 
-    // delete old stringes
     if (m_psString != nullptr)
     {
         for (i = 0; i < m_nStringQuantity; i++)
@@ -286,7 +272,6 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         m_psStrName = nullptr;
     }
 
-    // initialize ini file
     sprintf_s(param, "resource\\ini\\texts\\%s\\%s", m_sLanguageDir, m_sIniFileName);
     auto ini = fio->OpenIniFile(param);
     if (!ini)
@@ -295,7 +280,6 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         return;
     }
 
-    // get string quantity
     auto newSize = 0;
     if (ini->ReadString(nullptr, "string", param, sizeof(param) - 1, ""))
         do
@@ -322,7 +306,6 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         m_psStrName = nullptr;
     }
 
-    // fill stringes
     char strName[sizeof(param)];
     char string[sizeof(param)];
     ini->ReadString(nullptr, "string", param, sizeof(param) - 1, "");
@@ -330,14 +313,12 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
     {
         if (GetStringDescribe(param, strName, string))
         {
-            // fill string name
             auto len = strlen(param) + 1;
             m_psStrName[i] = new char[len];
             if (m_psStrName[i] == nullptr)
                 throw std::runtime_error("allocate memory error");
             strcpy_s(m_psStrName[i], len, strName);
 
-            // fill string self
             len = strlen(string) + 1;
             m_psString[i] = new char[len];
             if (m_psString[i] == nullptr)
@@ -358,13 +339,11 @@ void STRSERVICE::SetLanguage(const char *sLanguage)
         ini->ReadStringNext(nullptr, "string", param, sizeof(param) - 1);
     }
 
-    // end of search
 
     // Re-read the open user files in the new language under their ids
     for (const auto &problem : m_usersFiles.Reload([this](const std::string &name) { return LoadUsersStringFile(name); }))
         core.Trace("Warning: language %s: %s", m_sLanguage, problem.c_str());
 
-    // UNGUARD
 }
 
 char *STRSERVICE::GetLanguage()
@@ -376,7 +355,6 @@ char *STRSERVICE::GetLanguage()
 
 char *STRSERVICE::GetString(const char *stringName, char *sBuffer, size_t bufferSize)
 {
-    // GUARD(char* STRSERVICE::GetString(const char* stringName, char* sBuffer, size_t bufferSize))
 
     if (stringName != nullptr)
         for (int i = 0; i < m_nStringQuantity; i++)
@@ -395,7 +373,6 @@ char *STRSERVICE::GetString(const char *stringName, char *sBuffer, size_t buffer
             }
 
     return nullptr;
-    // UNGUARD
 }
 
 void STRSERVICE::SetDialogSourceFile(const char *fileName)
@@ -406,11 +383,9 @@ void STRSERVICE::SetDialogSourceFile(const char *fileName)
 
 void STRSERVICE::LoadIni()
 {
-    // GUARD(void STRSERVICE::LoadIni())
 
     char param[256];
 
-    // initialize ini file
     auto ini = fio->OpenIniFile(sLanguageFile);
     if (!ini)
     {
@@ -425,7 +400,6 @@ void STRSERVICE::LoadIni()
         core.Trace("WARNING! Language ini file have not global file name");
     }
 
-    // Get default language name
     if (!ini->ReadString("COMMON", "defaultLanguage", param, sizeof(param) - 1, ""))
     {
         core.Trace("WARNING! Language ini file have not default language.");
@@ -440,12 +414,10 @@ void STRSERVICE::LoadIni()
 
     SetDialogSourceFile("dialogsource.txt");
 
-    // UNGUARD
 }
 
 int32_t STRSERVICE::GetStringNum(const char *stringName)
 {
-    // GUARD(int32_t STRSERVICE::GetStringNum(const char* stringName))
 
     if (stringName != nullptr)
         for (int32_t i = 0; i < m_nStringQuantity; i++)
@@ -453,29 +425,24 @@ int32_t STRSERVICE::GetStringNum(const char *stringName)
                 return i;
     return -1L;
 
-    // UNGUARD
 }
 
 char *STRSERVICE::GetString(int32_t strNum)
 {
-    // GUARD(char* STRSERVICE::GetString(int32_t strNum))
 
     if (strNum < 0 || strNum >= m_nStringQuantity)
         return nullptr;
     return m_psString[strNum];
 
-    // UNGUARD
 }
 
 char *STRSERVICE::GetStringName(int32_t strNum)
 {
-    // GUARD(char* STRSERVICE::GetStringName(int32_t strNum))
 
     if (strNum < 0 || strNum >= m_nStringQuantity)
         return nullptr;
     return m_psStrName[strNum];
 
-    // UNGUARD
 }
 
 int32_t STRSERVICE::OpenUsersStringFile(const char *fileName)
@@ -571,7 +538,6 @@ bool STRSERVICE::GetNextUsersString(char *src, int32_t &idx, std::optional<std::
     }
     dataEnd -= 1;
 
-    // find ID name
     nameEnd = nameBeg = &src[idx];
     if ((tmpStr = strchr(nameEnd, '\n')) < dataBeg)
         do
@@ -687,13 +653,9 @@ bool STRSERVICE::GetNextUsersString(char *src, int32_t &idx, std::optional<std::
     return true;
 }
 
-//===============================================================
 // SCRIPT LIBS SECTION
-// ===============================================================
 // DESCRIPTION OF FUNCTIONS:
-// ==============================================================
 
-// Get the current language
 uint32_t _Language_GetLanguage(VS_STACK *pS)
 {
     char *strLangName = g_StringServicePointer->GetLanguage();
@@ -706,7 +668,6 @@ uint32_t _Language_GetLanguage(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-// Open language file
 uint32_t _Language_OpenFile(VS_STACK *pS)
 {
     auto pLngFileName = (VDATA *)pS->Pop();
@@ -726,7 +687,6 @@ uint32_t _Language_OpenFile(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-// Close language file
 uint32_t _Language_CloseFile(VS_STACK *pS)
 {
     auto pLngFileID = (VDATA *)pS->Pop();
@@ -790,7 +750,6 @@ uint32_t _XI_ConvertString(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-// Set language
 uint32_t _Language_SetLanguage(VS_STACK *pS)
 {
     auto pLngName = (VDATA *)pS->Pop();
@@ -889,7 +848,6 @@ uint32_t _SetColorCorrection(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-// Set mouse sensitivity
 uint32_t _SetMouseSensitivity(VS_STACK *pS)
 {
     auto *pYSens = (VDATA *)pS->Pop();
@@ -914,7 +872,6 @@ uint32_t _SetMouseSensitivity(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-// Set invert to key
 uint32_t _ControlMakeInvert(VS_STACK *pS)
 {
     auto *pControlFlag = (VDATA *)pS->Pop();
@@ -1106,7 +1063,6 @@ uint32_t _InterfaceDeleteFolder(VS_STACK *pS)
     if (!pDat)
         return IFUNCRESULT_FAILED;
     const char *sFolderName = pDat->GetString();
-    // int32_t nSuccess = fio->_RemoveDirectory(sFolderName);
     const int32_t nSuccess = DeleteFolderWithCantainment(sFolderName);
     pDat = (VDATA *)pS->Push();
     if (!pDat)
@@ -1244,7 +1200,6 @@ uint32_t _RestoreNodeLocks(VS_STACK *pS)
 
 uint32_t _IsKeyPressed(VS_STACK *pS)
 {
-    // get input data
     auto pDat = (VDATA *)pS->Pop();
     if (!pDat)
         return IFUNCRESULT_FAILED;
@@ -1267,7 +1222,6 @@ uint32_t _IsKeyPressed(VS_STACK *pS)
             bIsPressed = (core.Controls->GetAsyncKeyState(VK_MENU) < 0);
         }
     }
-    // set return data
     pDat = (VDATA *)pS->Push();
     if (!pDat)
         return IFUNCRESULT_FAILED;
@@ -1297,7 +1251,6 @@ uint32_t IsVirtualKeyPressed(VS_STACK *stack)
 
 uint32_t _RegistryExitKey(VS_STACK *pS)
 {
-    // get input data
     auto *pDat = (VDATA *)pS->Pop();
     if (!pDat)
         return IFUNCRESULT_FAILED;
@@ -1334,7 +1287,6 @@ uint32_t _AddControlTreeNode(VS_STACK *pS)
 
     const int32_t nNodIdx = core.Controls->AddControlTreeNode(nParent, pcBaseControl, pcOutControl, fTimeOut);
 
-    // set return data
     pDat = (VDATA *)pS->Push();
     if (!pDat)
         return IFUNCRESULT_FAILED;
@@ -1343,7 +1295,6 @@ uint32_t _AddControlTreeNode(VS_STACK *pS)
     return IFUNCRESULT_OK;
 }
 
-//==============================================================
 bool SCRIPT_INTERFACE_FUNCTIONS::Init()
 {
     IFUNCINFO sIFuncInfo;
@@ -1525,5 +1476,3 @@ bool SCRIPT_INTERFACE_FUNCTIONS::Init()
     return true;
 }
 
-//===============================================================
-//===============================================================

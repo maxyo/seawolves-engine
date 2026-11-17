@@ -1,10 +1,8 @@
 #ifndef SEA_AI_SCRIPT_DEFINES
 #define SEA_AI_SCRIPT_DEFINES
 
-//
 #define SEA_GET_LAYERS "SeaGetLayers"
 
-//
 #define EVENT_SEA_LOGIN "EventSeaLogin"
 
 // Abordage Section
@@ -120,7 +118,6 @@
 #define AI_PEOPLE_STATE 30030
 #define AI_HULL_STATE 30040
 
-// define AI tasks
 #define AITASK_NONE -1
 #define AITASK_DRIFT 0
 #define AITASK_ATTACK 1
@@ -132,11 +129,9 @@
 #define AITASK_MOVE 7
 #define AITASK_BRANDER 8
 
-// define AI tasks priority
 #define PRIMARY_TASK 0
 #define SECONDARY_TASK 1
 
-// define AI messages
 #define AI_MESSAGE_SET_CANNON_ATTRIBUTE 51000
 #define AI_MESSAGE_ADD_SHIP 51001
 #define AI_MESSAGE_CANNON_FIRE 51002

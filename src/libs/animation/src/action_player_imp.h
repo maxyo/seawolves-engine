@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //    Storm engine v2.00
-//--------------------------------------------------------------------------------------------
 //    ActionPlayerImp
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -19,9 +13,6 @@ class ActionInfo;
 
 class ActionPlayerImp : public ActionPlayer
 {
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     ActionPlayerImp();
     virtual ~ActionPlayerImp();
@@ -29,9 +20,7 @@ class ActionPlayerImp : public ActionPlayer
     // Set pointer to animation
     void SetAnimation(AnimationImp *animation, int32_t index);
 
-    //--------------------------------------------------------------------------------------------
     // ActionPlayer
-    //--------------------------------------------------------------------------------------------
   public:
     // Set current action
     bool SetAction(const char *actionName) override;
@@ -64,9 +53,7 @@ class ActionPlayerImp : public ActionPlayer
     // Get user data for this action
     const char *GetData(const char *dataName) const override;
 
-    //--------------------------------------------------------------------------------------------
     // ActionPlayerImp
-    //--------------------------------------------------------------------------------------------
   public:
     // Take a step in time
     void Execute(int32_t dltTime);
@@ -84,9 +71,6 @@ class ActionPlayerImp : public ActionPlayer
     // Current blending ratio
     float kBlendCurrent;
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Position movement
     void MoveNormal(float dlt);

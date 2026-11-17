@@ -7,7 +7,6 @@
 #define V_DIAGONAL_K 0.5f
 #define WIDEN_K 3.0f
 
-//--------------------------------------------------------------------
 TCarcass::TCarcass(int _levelsCount, int _measurePointsCount, VRenderer *_renderer, bool _normalsInverted /*= false*/)
     : normalsInverted(_normalsInverted), levelsCount(_levelsCount), ivElementIndex(0), indexesCreated(false), time(0),
       vSpeed(0.f), speedA(0.f), renderer(_renderer)
@@ -23,7 +22,6 @@ TCarcass::TCarcass(int _levelsCount, int _measurePointsCount, VRenderer *_render
         CARCASS_VERTEX_FORMAT, MEASURE_POINTS * (TRACE_STEPS_Z + 1) * sizeof(tCarcassVertex), 0, D3DPOOL_MANAGED);
 }
 
-//--------------------------------------------------------------------
 TCarcass::~TCarcass()
 {
     if (vBuffer)
@@ -32,7 +30,6 @@ TCarcass::~TCarcass()
         renderer->ReleaseIndexBuffer(iBuffer);
 }
 
-//--------------------------------------------------------------------
 void TCarcass::SetSpeed(float _uSpeed, float _vSpeed, float _speedA)
 {
     uSpeed = _uSpeed;
@@ -40,7 +37,6 @@ void TCarcass::SetSpeed(float _uSpeed, float _vSpeed, float _speedA)
     speedA = _speedA;
 }
 
-//--------------------------------------------------------------------
 void TCarcass::InitCircleMeasure(float _d, float _kx, float _ky)
 {
     float t, tStep, x, y;
@@ -57,7 +53,6 @@ void TCarcass::InitCircleMeasure(float _d, float _kx, float _ky)
     }
 }
 
-//--------------------------------------------------------------------
 void TCarcass::RebuildIndexes(uint16_t *_iBuffer)
 {
     auto i = 0;
@@ -96,7 +91,6 @@ void TCarcass::RebuildIndexes(uint16_t *_iBuffer)
     }
 }
 
-//--------------------------------------------------------------------
 void TCarcass::RebuildLevels(tCarcassVertex *_vBuffer, bool _firstDraw, uint32_t _dTime)
 {
     tCarcassVertex *tempVertex;
@@ -116,20 +110,15 @@ void TCarcass::RebuildLevels(tCarcassVertex *_vBuffer, bool _firstDraw, uint32_t
                 heightK = 1.f + 1.35f * static_cast<float>(level) / FRONT_FADE_LEVEL;
             else
                 heightK = 1.f + (1.f - levelK);
-            // tempVertex->pos = sceneMatrix * (levelStarts[level] + glm::vec3((1.f +
             // WIDEN_K*levelK)*measure.deltaPointX[measurePoint],
-            // heightK*measure.deltaPointY[measurePoint], 0.f));
             tempVertex->pos =
                 (levelStarts[level] + glm::vec3((1.f + WIDEN_K * levelK) * measure.deltaPointX[measurePoint],
                                               heightK * measure.deltaPointY[measurePoint], 0.f));
             tempVertex->pos.y += .01f;
 
             auto measureK = 0.f;
-            //((float) abs(measurePoint - (measure.pointsCount >> 1))) / ((measure.pointsCount >> 1));
             if (!measurePoint)
                 measureK = 1.f;
-            // if (measurePoint == (measure.pointsCount-1))
-            //    measureK = 1.f;
 
             auto levelA = 1.f;
             if (level <= FRONT_FADE_LEVEL)
@@ -160,18 +149,15 @@ void TCarcass::RebuildLevels(tCarcassVertex *_vBuffer, bool _firstDraw, uint32_t
     }
 }
 
-//--------------------------------------------------------------------
 bool TCarcass::Initialize()
 {
     return true;
 }
 
-//--------------------------------------------------------------------
 void TCarcass::Uninitialize()
 {
 }
 
-//--------------------------------------------------------------------
 void TCarcass::Execute(uint32_t _dTime, glm::mat4 &_mtx, const glm::vec3 *_starts)
 {
     sceneMatrix = _mtx;
@@ -195,16 +181,9 @@ void TCarcass::Execute(uint32_t _dTime, glm::mat4 &_mtx, const glm::vec3 *_start
     time += _dTime;
 }
 
-//--------------------------------------------------------------------
 void TCarcass::Realize(const char *_technique)
 {
     renderer->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(sceneMatrix));
     renderer->DrawBuffer(vBuffer, sizeof(tCarcassVertex), iBuffer, 0, MEASURE_POINTS * (TRACE_STEPS_Z + 1), 0,
                          2 * (MEASURE_POINTS - 1) * (TRACE_STEPS_Z - 1), const_cast<char *>(_technique));
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

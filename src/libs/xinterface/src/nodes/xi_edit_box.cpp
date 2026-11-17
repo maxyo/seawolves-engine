@@ -51,20 +51,17 @@ void CXI_EDITBOX::Draw(bool bSelected, uint32_t Delta_Time)
     if (m_nCurAlphaNum < 0)
         SetNewCurSymbol(0, 0);
 
-    // show back rectangle
     if (m_idVBRect >= 0)
         m_rs->DrawPrimitive(D3DPT_TRIANGLESTRIP, m_idVBRect, sizeof(XI_NOTEX_VERTEX), 0, 2, "iRectangle");
     // show background of the edit string
     if (m_idVBRect >= 0)
         m_rs->DrawPrimitive(D3DPT_TRIANGLESTRIP, m_idVBRect, sizeof(XI_NOTEX_VERTEX), 4, 2, "iRectangle");
-    // show buttons rectangles
     if (m_idVB >= 0 && m_idIB >= 0 && m_idBtnTex >= 0)
     {
         m_rs->TextureSet(0, m_idBtnTex);
         m_rs->DrawBuffer(m_idVB, sizeof(XI_ONLYONETEX_VERTEX), m_idIB, 0, m_nVQ, 0, m_nIQ, "iImageCollection");
     }
 
-    // Print buttons symbol
     int i, j, idx;
     auto top = m_nTopOffset + m_fChrTopOffset;
     for (idx = j = 0; j < m_nVert; j++)
@@ -107,7 +104,6 @@ void CXI_EDITBOX::Draw(bool bSelected, uint32_t Delta_Time)
         top += m_fVAdd;
     }
 
-    // show out string
     auto *pA = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
     const char *tmpstr = nullptr;
     if (pA)
@@ -352,7 +348,6 @@ void CXI_EDITBOX::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -365,7 +360,6 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
     m_frNormTex = GetIniFloatRect(ini1, name1, ini2, name2, "normTexRect", FXYRECT(0.f, 0.f, 1.f, 1.f));
     m_frSelTex = GetIniFloatRect(ini1, name1, ini2, name2, "selTexRect", FXYRECT(0.f, 0.f, 1.f, 1.f));
 
-    // get font number
     if (ReadIniString(ini1, name1, ini2, name2, "chrFont", param, sizeof(param), ""))
         if ((m_nChrFontNum = m_rs->LoadFont(param)) == -1)
             core.Trace("can`t load font:'%s'", param);
@@ -373,25 +367,20 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         if ((m_nStrFontNum = m_rs->LoadFont(param)) == -1)
             core.Trace("can`t load font:'%s'", param);
 
-    // Get font scale
     m_fChrScale = GetIniFloat(ini1, name1, ini2, name2, "chrScale", 1.f);
     m_fStrScale = GetIniFloat(ini1, name1, ini2, name2, "strScale", 1.f);
 
     m_nLeftOffset = GetIniLong(ini1, name1, ini2, name2, "offsLeft");
     m_nTopOffset = GetIniLong(ini1, name1, ini2, name2, "offsTop");
 
-    // get texture
     if (ReadIniString(ini1, name1, ini2, name2, "chrTexture", param, sizeof(param), ""))
         if ((m_idBtnTex = m_rs->TextureCreate(param)) == -1)
             core.Trace("can`t load texture:'%s'", param);
 
-    // Get rectangle color
     m_dwEditBoxColor = GetIniARGB(ini1, name1, ini2, name2, "argbBoxColor", 0);
 
-    // Get rectangle bound color
     m_dwBorderColor = GetIniARGB(ini1, name1, ini2, name2, "argbBoundColor", 0);
 
-    // Get alphabet
     m_nAlphaQuantity = 0;
     m_nCurAlphaNum = 0;
     m_nFirstChar = 0;
@@ -406,7 +395,6 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         if (nLen > sizeof(m_alpha) / 2 - 1)
             nLen = sizeof(m_alpha) / 2 - 1;
         strncpy_s(m_alpha, pTmpStr, nLen);
-        // m_alpha[nLen] = 0;
         m_nAlphaQuantity = strlen(m_alpha);
     }
     if (ReadIniString(ini1, name1, ini2, name2, "alphabetUP", param, sizeof(param) - 1, ""))
@@ -418,7 +406,6 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         if (len > sizeof(m_alpha) / 2 - 1)
             len = sizeof(m_alpha) / 2 - 1;
         strcpy_s(&m_alpha[sizeof(m_alpha) / 2], len, pTmpStr);
-        // m_alpha[len+sizeof(m_alpha)/2] = 0;
 
         if (static_cast<size_t>(m_nAlphaQuantity) != strlen(&m_alpha[sizeof(m_alpha) / 2]))
         {
@@ -426,7 +413,6 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         }
     }
 
-    // Get symbol buttons grate
     m_nHorz = GetIniLong(ini1, name1, ini2, name2, "hGrateSize", 1);
     if (m_nHorz <= 0)
         m_nHorz = 1;
@@ -435,7 +421,6 @@ void CXI_EDITBOX::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
     // Get max string size for edit string
     m_nMaxSize = GetIniLong(ini1, name1, ini2, name2, "stringLength", -1);
 
-    // Create buffers
     m_idVBRect = m_rs->CreateVertexBuffer(XI_NOTEX_FVF, 8 * sizeof(XI_NOTEX_VERTEX), D3DUSAGE_WRITEONLY);
     m_idVB = m_rs->CreateVertexBuffer(XI_ONLYONETEX_FVF, sizeof(XI_ONLYONETEX_VERTEX) * m_nAlphaQuantity * 4,
                                       D3DUSAGE_WRITEONLY);

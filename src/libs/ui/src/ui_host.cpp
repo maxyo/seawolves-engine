@@ -2109,7 +2109,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // its frames stop rebuilding or laying out (pictures that arrived, re-cut text): the CPU
     // of those frames by stage (FrameStats). GPU time is the renderer's.
     // A drawn frame whose UI work alone took kSlowFrameMs or more, with its split: what a stutter in the game's
-    // "ui" phase was (the owner's phone showed 56-116 ms there in play, with no line saying why). At most one line
+    // "ui" phase was. At most one line
     // every two seconds; a screen switch has its own report.
     void ReportSlowFrame()
     {

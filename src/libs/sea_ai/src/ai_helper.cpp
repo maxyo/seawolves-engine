@@ -24,9 +24,7 @@ AIHelper::~AIHelper()
 
 bool AIHelper::Uninit()
 {
-    // pRS = null;
     pIsland = nullptr;
-    // pCollide = null;
     pASeaCameras = nullptr;
     aCharacters.clear();
     aMainCharacters.clear();
@@ -56,22 +54,12 @@ bool AIHelper::Init() const
 
 ATTRIBUTES *AIHelper::GetMainCharacter(ATTRIBUTES *pACharacter)
 {
-    /*uint32_t dwIdx = aCharacters.Find(pACharacter);
-    if (dwIdx != INVALID_ARRAY_INDEX)
-      return aMainCharacters[dwIdx];
-    return null;*/
     const auto it = std::find(aCharacters.begin(), aCharacters.end(), pACharacter); //~!~
     return it != aCharacters.end() ? aMainCharacters[it - aCharacters.begin()] : nullptr;
 }
 
 void AIHelper::AddCharacter(ATTRIBUTES *pACharacter, ATTRIBUTES *pAMainCharacter)
 {
-    // uint32_t dwIdx = aCharacters.Find(pACharacter);
-    // if (dwIdx != INVALID_ARRAY_INDEX)
-    //{
-    //    aMainCharacters[dwIdx] = pAMainCharacter;
-    //    return;
-    //}
     const auto it = std::find(aCharacters.begin(), aCharacters.end(), pACharacter); //~!~
     if (it != aCharacters.end())
     {

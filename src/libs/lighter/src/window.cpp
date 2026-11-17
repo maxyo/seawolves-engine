@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Window
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "window.h"
 #include "entity.h"
@@ -14,9 +9,7 @@
 #include "shared/messages.h"
 #include <cstdint>
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 Window::Window()
 {
@@ -462,10 +455,6 @@ void Window::Draw(float dltTime)
         Print(textColor, lstx + 5.0f, lstx + 5.0f, lsty + (lsth - fontHeight * 0.6f) * 0.5f, 0.6f, false,
               list[selected].name);
     }
-    // DrawLRect(lstbx, lsty, lstbx + lstbw, lsty + lsth, c, frmColor);
-    // DrawLine(lstbx + 6.0f, lsty + 6.0f, lstbx + lstbw - 6.0f, lsty + 6.0f, cl);
-    // DrawLine(lstbx + 6.0f, lsty + 6.0f, lstbx + lstbw/2 + 1, lsty + lsth - 6.0f, cl);
-    // DrawLine(lstbx + lstbw - 6.0f, lsty + 6.0f, lstbx + lstbw/2 - 1, lsty + lsth - 6.0f, cl);
     // Controls
     int32_t prs;
     if (selected >= 0)
@@ -1026,8 +1015,6 @@ int32_t Window::SelPreset()
         prs = 9;
     if (Button(275.0f, vl + 20.0f, 20.0f, 20.0f, "10", &ins, 10))
         prs = 10;
-    // vl += 50.0f;
-    // Print(textColor, winx, winx + winw, vl, 0.6f, true, "Day");
     if (Button(5.0f, vl + 50.0f, 20.0f, 20.0f, "11", &ins, 11))
         prs = 11;
     if (Button(35.0f, vl + 50.0f, 20.0f, 20.0f, "12", &ins, 12))
@@ -1048,8 +1035,6 @@ int32_t Window::SelPreset()
         prs = 19;
     if (Button(275.0f, vl + 50.0f, 20.0f, 20.0f, "20", &ins, 20))
         prs = 20;
-    // vl += 50.0f;
-    // Print(textColor, winx, winx + winw, vl, 0.6f, true, "Evening");
     if (Button(5.0f, vl + 80.0f, 20.0f, 20.0f, "20", &ins, 21))
         prs = 21;
     if (Button(35.0f, vl + 80.0f, 20.0f, 20.0f, "21", &ins, 22))
@@ -1060,12 +1045,6 @@ int32_t Window::SelPreset()
         prs = 24;
     if (Button(125.0f, vl + 80.0f, 20.0f, 20.0f, "24", &ins, 25))
         prs = 25;
-    /*if(Button(155.0f, vl + 20.0f, 20.0f, 20.0f, "6", &ins, 26)) prs = 26;
-    if(Button(185.0f, vl + 20.0f, 20.0f, 20.0f, "7", &ins, 27)) prs = 27;
-    if(Button(215.0f, vl + 20.0f, 20.0f, 20.0f, "8", &ins, 28)) prs = 28;
-    if(Button(245.0f, vl + 20.0f, 20.0f, 20.0f, "9", &ins, 29)) prs = 29;
-    if(Button(275.0f, vl + 20.0f, 20.0f, 20.0f, "10", &ins, 30)) prs = 30;
-    */
     vl += 130.0f;
     Print(textColor, winx, winx + winw, vl, 0.6f, true, "Storm Outside");
     if (Button(5.0f, vl + 20.0f, 20.0f, 20.0f, "1", &ins, 31))
@@ -1076,14 +1055,6 @@ int32_t Window::SelPreset()
         prs = 28;
     if (Button(95.0f, vl + 20.0f, 20.0f, 20.0f, "4", &ins, 34))
         prs = 29;
-    /*
-    if(Button(125.0f, vl + 20.0f, 20.0f, 20.0f, "5", &ins, 35)) prs = 35;
-    if(Button(155.0f, vl + 20.0f, 20.0f, 20.0f, "6", &ins, 36)) prs = 36;
-    if(Button(185.0f, vl + 20.0f, 20.0f, 20.0f, "7", &ins, 37)) prs = 37;
-    if(Button(215.0f, vl + 20.0f, 20.0f, 20.0f, "8", &ins, 38)) prs = 38;
-    if(Button(245.0f, vl + 20.0f, 20.0f, 20.0f, "9", &ins, 39)) prs = 39;
-    if(Button(275.0f, vl + 20.0f, 20.0f, 20.0f, "10", &ins, 40)) prs = 40;
-    */
     vl += 50.0f;
     Print(textColor, winx, winx + winw, vl, 0.6f, true, "Hours Inside");
     if (Button(5.0f, vl + 20.0f, 20.0f, 20.0f, "1", &ins, 41))
@@ -1324,7 +1295,6 @@ void Window::UpdateColors()
         case ListElement::t_amb:
         case ListElement::t_light:
         case ListElement::t_glight:
-            //*list[i].color = list[i].c*(2.0f*powf(list[i].st, 2.0f));
             *list[i].color = list[i].c * (list[i].st * 2.0f);
             break;
         }

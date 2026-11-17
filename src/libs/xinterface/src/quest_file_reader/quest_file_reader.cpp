@@ -282,7 +282,6 @@ void QuestFileReader::SetQuestTextFileName(const std::string_view &fileName)
     std::string buffer(filesize, '\0');
     Assert(!buffer.empty());
 
-    // Read file content into buffer
     if (!fio->_ReadFile(fileS, buffer.data(), filesize))
     {
         core.Trace("Can`t read quest log file: %s", std::string(fileName).c_str());

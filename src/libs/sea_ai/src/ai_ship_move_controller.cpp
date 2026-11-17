@@ -3,9 +3,6 @@
 
 AIShipMoveController::AIShipMoveController(AIShip *pShip)
 {
-    // core.CreateEntity(&eidSphere,"modelr");
-    // core.Send_Message(eidSphere,"ls",MSG_MODEL_LOAD_GEO,"mirror");
-    // core.AddToLayer("sea_realize",eidSphere,10000);
     fMoveTime = FRAND(2.0f);
     dwCurPnt = 0;
     vDeflectForce = glm::vec3(0.0f);
@@ -25,13 +22,6 @@ bool AIShipMoveController::Init()
 
 void AIShipMoveController::Execute(float fDeltaTime)
 {
-    // return;
-    // entid_t    eid;
-    // core.FindClass(&eid,"sea",0);
-    // SEA_BASE * pSea = (SEA_BASE*)core.GetEntityPointer(eid);
-    // MODEL* pModel = (MODEL*)core.GetEntityPointer(eidSphere);
-    // pModel->mtx.BuildPosition(100.0f,pSea->WaveXZ(100.0f,200.0f),200.0f);
-    // pModel->mtx.m[3][3] = 1.0f / 0.1f;
 
     fMoveTime -= fDeltaTime;
 
@@ -46,7 +36,6 @@ void AIShipMoveController::Execute(float fDeltaTime)
     const auto vMovePoint = vDestPoint;
 
     vDeflectForce.z = 1.0f; // FRAND(2.0f) - 1.0f;
-    // vDeflectForce.z = FRAND(2.0f) - 1.0f;
 
     const auto vCurDir = glm::vec3(sinf(vCurAng.y), 0.0f, cosf(vCurAng.y));
     const auto vDestDir = storm::math::normalizeOrZero(vMovePoint - vCurPos);
@@ -65,7 +54,6 @@ void AIShipMoveController::Execute(float fDeltaTime)
     if (fabsf(fBrakingDistance - fDist) < 10.0f)
         fSpeed = 0.0f;
     GetAIShip()->GetSpeedController()->AddSpeed(fSpeed);
-    // pShip->SetSailState(fSpeed);
 
     const auto fRotationAngle = pShip->GetRotationAngle(&fTime);
 
@@ -80,8 +68,6 @@ void AIShipMoveController::Execute(float fDeltaTime)
         const auto vProd = glm::cross(vCurDir, vDestDir);
         const auto fSignRot = ((vProd.y > 0.0f) ? 1.0f : -1.0f);
         // check fSignRot with can Rotate in these direction
-        // float fBestRotate = GetAIShip()->GetTouchController()->GetBestRotateDirection();
-        // if (fBestRotate != 0.0f) fSignRot = fBestRotate;
         const auto fMul = (fDot > 0.0f) ? Bring2Range(1.0f, 0.1f, 0.0f, 1.0f, fDot) : 1.0f;
         auto fAngRot = fSignRot;
         if (fRotationAngle >= fRotAng)
@@ -89,40 +75,13 @@ void AIShipMoveController::Execute(float fDeltaTime)
         GetAIShip()->GetRotateController()->AddRotate(fMul * fAngRot);
         if (fMul > 0.3f)
             GetAIShip()->GetSpeedController()->MulSpeed(0.5f);
-        // pShip->SetRotate(fAngRot);
     }
 
-    // vDeflectForce = 0.0f;
     vRetardForce = glm::vec3(0.0f);
 }
 
 void AIShipMoveController::Realize(float fDeltaTime)
 {
-    /* espkk. code was unreachable (return)
-    RS_LINE line[2];
-    line[0].dwColor = 0xFFFFFF;
-    line[0].vPos = GetAIShip()->GetPos() + 50.0f * (!vDeflectForce);
-    line[1].dwColor = 0xFFFFFF;
-    line[1].vPos = GetAIShip()->GetPos();
-    AIHelper::pRS->DrawLines(&line[0],1,"Line");
-    vDeflectForce = 0.0f;
-
-    if (!GetAIShip()->isMainCharacter())
-    {
-      std::vector<RS_LINE>    aLines(_FL_);
-      {
-        RS_LINE * pRL = &aLines[aLines.Add()];
-        pRL->dwColor = 0xFFFFFF;
-        pRL->vPos = GetAIShip()->GetPos();
-        pRL = &aLines[aLines.Add()];
-        pRL->dwColor = 0xFFFFFF;
-        pRL->vPos = vDestPoint;
-      }
-      glm::mat4 m;
-      AIHelper::pRS->SetTransform(D3DTS_WORLD, m);
-      if (aLines.size() >= 2) AIHelper::pRS->DrawLines(&aLines[0], aLines.size()/2, "Line");
-    }
-    */
 }
 
 void AIShipMoveController::Move(glm::vec3 vMovePoint)
@@ -131,7 +90,6 @@ void AIShipMoveController::Move(glm::vec3 vMovePoint)
     if (fMoveTime > 0.0f)
         return;
     fMoveTime = 2.0f;
-    // if (fDist < 100.0f) return;
 
     if (AIHelper::pIsland)
     {

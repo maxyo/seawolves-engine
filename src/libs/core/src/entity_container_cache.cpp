@@ -5,7 +5,6 @@
 
 void EntityContainerCache::Add(hash_t hash, entid_t id)
 {
-    // insert ordered
     auto &entry = cache_[hash];
     const auto it = std::ranges::upper_bound(entry, id);
     entry.insert(it, id);
@@ -13,7 +12,6 @@ void EntityContainerCache::Add(hash_t hash, entid_t id)
 
 void EntityContainerCache::UpdateAdd(hash_t hash, entid_t id)
 {
-    // check if exists
     if (auto entry = cache_.find(hash); entry != cache_.end())
     {
         // high dword is a timestamp. therefore newly added ent_id should always be greater than existing values
@@ -23,10 +21,8 @@ void EntityContainerCache::UpdateAdd(hash_t hash, entid_t id)
 
 void EntityContainerCache::UpdateErase(hash_t hash, entid_t id)
 {
-    // check if exists
     if (auto entry = cache_.find(hash); entry != cache_.end())
     {
-        // erase ordered
         const auto it = std::ranges::lower_bound(entry->second, id);
         if (it != std::end(entry->second) && *it == id)
         {

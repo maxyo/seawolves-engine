@@ -9,22 +9,18 @@
 
 CREATE_CLASS(WaterRings)
 
-//------------------------------------------------------------------------------------
 WaterRings::WaterRings() : ivManager(nullptr)
 {
 }
 
-//------------------------------------------------------------------------------------
 WaterRings::~WaterRings()
 {
     delete ivManager;
     renderService->TextureRelease(ringTexture);
 }
 
-//------------------------------------------------------------------------------------
 bool WaterRings::Init()
 {
-    // GUARD(WaterRings::Init())
 
     core.AddToLayer(REALIZE, GetId(), 65551);
 
@@ -55,7 +51,6 @@ bool WaterRings::Init()
     // UNGUARD
 }
 
-//------------------------------------------------------------------------------------
 void WaterRings::Realize(uint32_t _dTime)
 {
     if (!sea)
@@ -83,7 +78,6 @@ void WaterRings::Realize(uint32_t _dTime)
     ivManager->DrawBuffers("waterring");
 }
 
-//------------------------------------------------------------------------------------
 uint64_t WaterRings::ProcessMessage(MESSAGE &message)
 {
     // add new ring
@@ -121,19 +115,10 @@ uint64_t WaterRings::ProcessMessage(MESSAGE &message)
             return 0;
         }
     }
-    /*
-    switch(message.Long())
-    {
-      case MSG_BLADE_SET:
-        return 0;
-      break;
-    }
-    */
 
     return 0;
 }
 
-//------------------------------------------------------------------------------------
 void WaterRings::UpdateGrid(int _ringI, uint16_t *_iPointer, RING_VERTEX *_vPointer, int32_t _vOffset)
 {
     Assert(_iPointer);
@@ -183,18 +168,10 @@ void WaterRings::UpdateGrid(int _ringI, uint16_t *_iPointer, RING_VERTEX *_vPoin
                 ringVertex->pos.x = ring->x + r * (gX * ring->cosA + gZ * ring->sinA);
                 ringVertex->pos.z = ring->z + r * (gZ * ring->cosA - gX * ring->sinA);
                 ringVertex->pos.y = waterrings::Y_DELTA + sea->WaveXZ(ringVertex->pos.x, ringVertex->pos.z);
-                // if (ring->state == RING_WALK)
                 {
                     ringVertex->tu = (static_cast<float>(x) / (waterrings::GRID_STEPS_COUNT - 1)) * .5f;
                     ringVertex->tv = static_cast<float>(z) / (waterrings::GRID_STEPS_COUNT - 1);
                 }
-                /*
-                else if (ring->state == RING_RUN)
-                {
-                  ringVertex->tu = ((float) x / (GRID_STEPS_COUNT - 1))*.5f+.5f;
-                  ringVertex->tv = (float) z / (GRID_STEPS_COUNT - 1);
-                }
-                */
                 ++ringVertex;
             }
     }
@@ -213,7 +190,3 @@ void WaterRings::UpdateGrid(int _ringI, uint16_t *_iPointer, RING_VERTEX *_vPoin
             }
     }
 }
-
-//------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------

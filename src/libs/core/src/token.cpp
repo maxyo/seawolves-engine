@@ -357,7 +357,6 @@ void TOKEN::LowCase()
 
 const char *TOKEN::GetData()
 {
-    // if(pTokenData[0] == 0) return 0;
     return pTokenData;
 }
 
@@ -385,7 +384,6 @@ S_TOKEN_TYPE TOKEN::Get(bool bKeepData)
     auto sym = *Program;
     switch (sym)
     {
-        // end of program
     case 0:
         DISCARD_DATABUFFER
         eTokenType = END_OF_PROGRAMM;
@@ -485,7 +483,6 @@ S_TOKEN_TYPE TOKEN::Get(bool bKeepData)
     if (stt == HOLD_COMPILATION)
     {
         psnip_trap();
-        // stt == HOLD_COMPILATION;
     }
     return stt;
 }
@@ -493,7 +490,6 @@ S_TOKEN_TYPE TOKEN::Get(bool bKeepData)
 // copy argument data to buffer and close the termination 0
 int32_t TOKEN::SetTokenData(const char *pointer, bool bKeepControlSymbols)
 {
-    // if(!IsOperator(pointer,Data_size))
     const auto Data_size = StopArgument(pointer, bKeepControlSymbols);
     if (Data_size == 0)
     {
@@ -576,17 +572,9 @@ int32_t TOKEN::StopArgument(const char *pointer, bool bKeepControlSymbols)
             return size;
         if (sym == ';')
             return size;
-        /*if(sym == 'f')
-        {
-          if(bDot && bOnlyDigit)
-          {
-            size++;
-            return size;
-          }
-        }*/
 
         if (sym == '{' || sym == '}' || sym == ':' || sym == '(' || sym == ')' || sym == '[' || sym == ']' ||
-            /*sym == '*' || */ sym == '^' || sym == '%' || sym == ',')
+            sym == '^' || sym == '%' || sym == ',')
         {
             if (size == 0)
                 return 1;
@@ -616,10 +604,6 @@ int32_t TOKEN::StopArgument(const char *pointer, bool bKeepControlSymbols)
                 return 1;
             if (!bOnlyDigit)
                 return size;
-            /*pointer--;
-            sym = *pointer;
-            if(sym < 0x30 || sym > 0x39) return size;
-            pointer++;*/
         }
 
         if (sym == '>' || sym == '<')
@@ -717,15 +701,6 @@ int32_t TOKEN::StopArgument(const char *pointer, bool bKeepControlSymbols)
         {
             pointer++;
             sym = *pointer;
-            /*if(sym != '/')
-            {
-              if(size == 0) return 1;
-              return size;
-            } else
-            {
-              if(size == 0) return 2;
-              return size;
-            }*/
 
             switch (sym)
             {
@@ -741,7 +716,6 @@ int32_t TOKEN::StopArgument(const char *pointer, bool bKeepControlSymbols)
             }
         }
 
-        // if(IsOperator(pointer)) return size;
         pointer++;
         size++;
     } while (true);
@@ -803,70 +777,6 @@ bool TOKEN::IsFloatNumber(const char *pointer)
     return true;
 }
 
-/*
-bool TOKEN::IsOperator(char * pointer)
-{
-    DWORD operators_num,n,i;
-    bool found;
-    operators_num = sizeof(Operators)/sizeof(char *);
-
-    for(n=0;n<operators_num;n++)
-    {
-        i = 0;
-        found = true;
-        while(Operators[n][i] && pointer[i])
-        {
-            if(Operators[n][i] != pointer[i]) { found = false; break; }
-            i++;
-        }
-        if(found)
-        {
-            if(Operators[n][0] == '.')
-            {
-                if(pointer[i] >= 0x30 && pointer[i] <= 0x39)
-                {
-                    return false;    // this is float number
-                }
-            }
-            return true;
-        }
-    }
-    return false;
-}
-*/
-/*
-bool TOKEN::IsOperator(char * pointer, int32_t & syms)
-{
-    DWORD operators_num,n,i;
-    bool found;
-    operators_num = sizeof(Operators)/sizeof(char *);
-    syms = 0;
-    for(n=0;n<operators_num;n++)
-    {
-        i = 0;
-        found = true;
-        while(Operators[n][i] && pointer[i])
-        {
-            if(Operators[n][i] != pointer[i]) { found = false; break; }
-            i++;
-        }
-        if(found)
-        {
-            syms = i;
-            if(Operators[n][0] == '.')
-            {
-                if(pointer[i] >= 0x30 && pointer[i] <= 0x39)
-                {
-                    return false;    // this is float number
-                }
-            }
-            syms = i;
-            return true;
-        }
-    }
-    return false;
-}
-*/
 void TOKEN::CacheToken(const char *pointer)
 {
     if (ProgramStepsNum < PROGRAM_STEPS_CACHE)
@@ -895,8 +805,6 @@ bool TOKEN::StepBack()
 S_TOKEN_TYPE TOKEN::ProcessToken(char *&pointer, bool bKeepData)
 {
     char sym;
-    // int32_t keywords_num;
-    // int32_t n;
     char *pBase;
 
     pointer += SetTokenData(pointer, bKeepData);
@@ -909,20 +817,9 @@ S_TOKEN_TYPE TOKEN::ProcessToken(char *&pointer, bool bKeepData)
         return eTokenType;
     }
 
-    /*keywords_num = sizeof(Keywords)/sizeof(S_KEYWORD);
-    for(n=0;n<keywords_num;n++)
-    {
-      if(storm::iEquals(pTokenData,Keywords[n].name))
-      {
-        eTokenType = Keywords[n].type;
-        break;
-      }
-    }*/
 
     eTokenType = Keyword2TokenType(pTokenData);
 
-    // if(IsOperator(GetData())) eTokenType = OPERATOR;
-    // else
     if (IsNumber(GetData()))
         eTokenType = NUMBER;
     else if (IsFloatNumber(GetData()))
@@ -946,13 +843,11 @@ S_TOKEN_TYPE TOKEN::ProcessToken(char *&pointer, bool bKeepData)
         if (bKeepData)
             break;
         DISCARD_DATABUFFER
-        // pointer++;
         break;
     case BLOCK_OUT:
         if (bKeepData)
             break;
         DISCARD_DATABUFFER
-        // pointer++;
         break;
     case LINE_COMMENT:
         if (bKeepData)
@@ -1054,15 +949,6 @@ int32_t TOKEN::TokenLines()
 
 S_TOKEN_TYPE TOKEN::Keyword2TokenType(const char *pString)
 {
-    /*    DWORD n;
-      for(n=0;n<dwKeywordsNum;n++)
-      {
-        if(storm::iEquals(pString,Keywords[n].name))
-        {
-          return Keywords[n].type;
-        }
-      }
-      return UNKNOWN;//*/
 
     const auto hash = MakeHashValue(pString, 4) % TOKENHASHTABLE_SIZE;
     for (uint32_t n = 0; n < KeywordsHash[hash].dwNum; n++)
@@ -1073,14 +959,11 @@ S_TOKEN_TYPE TOKEN::Keyword2TokenType(const char *pString)
             return Keywords[index].type;
         }
     }
-    return UNKNOWN; //*/
+    return UNKNOWN;
 }
 
 uint32_t TOKEN::MakeHashValue(const char *string, uint32_t max_syms)
 {
-    // if ('A' <= string[0] && string[0] <= 'Z') return (DWORD)(string[0] + 'a' - 'A');
-    // else return string[0];
-    // return (DWORD)string[0];
     uint32_t hval = 0;
     while (*string != 0)
     {
@@ -1108,11 +991,6 @@ bool TOKEN::InitializeHashTable()
 {
     static_assert(sizeof(Keywords) / sizeof(S_KEYWORD) < 256, "keywords num more then 256 - change index type");
     dwKeywordsNum = sizeof(Keywords) / sizeof(S_KEYWORD);
-    // if(dwKeywordsNum > 255)
-    //{
-    //    trace("keywords num more then 256 - change index type");
-    //    return false;
-    //}
 
     for (uint32_t n = 0; n < dwKeywordsNum; n++)
     {
@@ -1125,15 +1003,6 @@ bool TOKEN::InitializeHashTable()
     }
 
     // debug
-    /*DWORD i;
-    for(n=0;n<TOKENHASHTABLE_SIZE;n++)
-    {
-      trace("Hash: %d",n);
-      for(i=0;i<KeywordsHash[n].dwNum;i++)
-      {
-        trace("      String: %s",Keywords[KeywordsHash[n].pIndex[i]].name);
-      }
-    }//*/
 
     return true;
 }

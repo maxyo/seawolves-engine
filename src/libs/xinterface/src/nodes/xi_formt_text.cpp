@@ -138,7 +138,6 @@ void CXI_FORMATEDTEXT::Draw(bool bSelected, uint32_t Delta_Time)
     auto i = 0;
     for (auto *sd = m_listCur; sd != nullptr && i < m_allStrings; sd = sd->next, i++)
     {
-        // display lines
         if (sd->lineStr != nullptr && sd->lineStr[0] != 0)
         {
             if (sd->m_tags.size() == 0)
@@ -163,7 +162,7 @@ void CXI_FORMATEDTEXT::Draw(bool bSelected, uint32_t Delta_Time)
                 {
                     m_rs->ExtPrint(m_idFont, sd->m_tags[n].dwColor, 0, PR_ALIGN_LEFT, true, m_fFontScale,
                                    m_screenSize.x, m_screenSize.y, nX, curY, "%s", sd->m_tags[n].str.c_str());
-                    nX += anWidth[n]; // m_rs->StringWidth( (char*)sd->m_tags[n].str.c_str(), m_idFont, m_fFontScale );
+                    nX += anWidth[n];
                 }
             }
         }
@@ -176,7 +175,6 @@ bool CXI_FORMATEDTEXT::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, con
 {
     if (!CINODE::Init(ini1, name1, ini2, name2, rs, hostRect, ScreenSize))
         return false;
-    // SetGlowCursor(m_bSelectableCursor && m_nStringGroupQuantity>1);
     return true;
 }
 
@@ -314,10 +312,8 @@ bool CXI_FORMATEDTEXT::IsClick(int buttonID, int32_t xPos, int32_t yPos)
     bool retVal = false;
     if (xPos >= m_rect.left && xPos <= m_rect.right && yPos >= m_rect.top && yPos <= m_rect.bottom)
     {
-        // if(buttonID==MOUSE_RBUTTON)    return true;
         retVal = true;
     }
-    // if(buttonID!=MOUSE_LBUTTON)    return false;
 
     if (m_bUpEnable && m_idUpEnableTexture)
         if (xPos >= m_frUpPos.left && xPos <= m_frUpPos.right && yPos >= m_frUpPos.top && yPos <= m_frUpPos.bottom)
@@ -389,7 +385,6 @@ void CXI_FORMATEDTEXT::ChangePosition(XYRECT &rNewPos)
             pv[13].pos.y = pv[15].pos.y = 0;
         }
 
-        // get up enable rectangle position
         if (m_idUpEnableTexture >= 0 || m_idUpDisableTexture >= 0)
         {
             pv[4].tu = pv[5].tu = m_frUpDisableUV.left;
@@ -433,7 +428,6 @@ void CXI_FORMATEDTEXT::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -484,11 +478,9 @@ void CXI_FORMATEDTEXT::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
 
     m_nUpRectOffset = GetIniLong(ini1, name1, ini2, name2, "upOffset");
 
-    // get videoTexture
     if (ReadIniString(ini1, name1, ini2, name2, "videoName", param, sizeof(param), ""))
         m_pVidTex = m_rs->GetVideoTexture(param);
 
-    // get colors
     m_dwBackColor = GetIniARGB(ini1, name1, ini2, name2, "backColor", 0);
     m_bBackRectangle = ALPHA(m_dwBackColor) != 0;
     if (m_bBackRectangle)
@@ -535,7 +527,6 @@ void CXI_FORMATEDTEXT::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
             pv[13].pos.y = pv[15].pos.y = 0;
         }
 
-        // get up enable rectangle position
         if (ReadIniString(ini1, name1, ini2, name2, "UpEnableTexture", param, sizeof(param), ""))
             m_idUpEnableTexture = m_rs->TextureCreate(param);
         if (ReadIniString(ini1, name1, ini2, name2, "UpDisableTexture", param, sizeof(param), ""))
@@ -581,7 +572,6 @@ void CXI_FORMATEDTEXT::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
         m_rs->UnLockVertexBuffer(m_idVBuf);
     }
 
-    // get line space
     m_vertOffset = GetIniLong(ini1, name1, ini2, name2, "lineSpace", 30);
     if (m_vertOffset == 0)
         m_vertOffset = 10;
@@ -589,14 +579,11 @@ void CXI_FORMATEDTEXT::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
     // counting the number of lines displayed on the screen
     m_allStrings = static_cast<int32_t>(static_cast<float>(m_rect.bottom - m_rect.top) / m_vertOffset);
 
-    // get golors
     m_dwColor = GetIniARGB(ini1, name1, ini2, name2, "color", ARGB(255, 128, 128, 128));
 
-    // get font
     if (ReadIniString(ini1, name1, ini2, name2, "font", param, sizeof(param), ""))
         m_idFont = m_rs->LoadFont(param);
 
-    // get strings
     if (ini1 && ini1->ReadString(name1, "string", param, sizeof(param) - 1, ""))
         do
         {
@@ -609,7 +596,6 @@ void CXI_FORMATEDTEXT::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, 
             }
         } while (ini1->ReadStringNext(name1, "string", param, sizeof(param) - 1));
 
-    //
     VAlignment(GetIniLong(ini1, name1, ini2, name2, "valignment", 0));
 }
 
@@ -663,7 +649,6 @@ bool CXI_FORMATEDTEXT::GetLineNext(int fontNum, const char *&pInStr, char *buf, 
     const size_t lineSize = pInStr - pStart;
     if (lineSize > 0)
     {
-        // fill the buffer without tags
         int32_t i, j;
         for (i = 0, j = 0; i < lineSize && i < bufSize - 1; i++)
         {
@@ -730,7 +715,6 @@ bool CXI_FORMATEDTEXT::GetLineNext(int fontNum, const char *&pInStr, char *buf, 
         buf[1] = 0;
     }
 
-    // remove the line break
     if (pInStr[0] == '\\' && (pInStr[1] == 'n' || pInStr[1] == 'N'))
         pInStr += 2;
     // remove spaces (leading)
@@ -785,7 +769,6 @@ void CXI_FORMATEDTEXT::GetOneLine(int fontNum, const char *pStr, char *buf, int 
 
 void CXI_FORMATEDTEXT::SetFormatedText(const char *str)
 {
-    // delete old lines
     while (m_listRoot != nullptr)
     {
         m_listCur = m_listRoot;
@@ -873,7 +856,6 @@ int32_t CXI_FORMATEDTEXT::AddFormatedText(const char *str)
 
     STRING_DESCRIBER *dscrTmp = nullptr;
 
-    // find last string
     if (m_listRoot != nullptr)
         for (dscrTmp = m_listRoot; dscrTmp->next != nullptr; dscrTmp = dscrTmp->next)
             ;
@@ -940,7 +922,6 @@ int32_t CXI_FORMATEDTEXT::AddFormatedText(const char *str)
 
     CheckScrollButtons();
 
-    // SetGlowCursor(m_bSelectableCursor && m_nStringGroupQuantity>1);
 
     return textQ;
 }
@@ -994,7 +975,6 @@ void CXI_FORMATEDTEXT::MakeTagChecking(bool &tagState, uint32_t &tagColor, uint3
                 tmp[n] = tagBegin[n];
             }
             tmp[n] = 0;
-            // n = pStrDescr->m_tags.Add();
             pStrDescr->m_tags.push_back(STRING_DESCRIBER::TagInfo{tagState ? normColor : tagColor, tmp});
 
             tagBegin = str;
@@ -1014,10 +994,6 @@ void CXI_FORMATEDTEXT::MakeTagChecking(bool &tagState, uint32_t &tagColor, uint3
             tmp[n] = tagBegin[n];
         }
         tmp[n] = 0;
-        // n = pStrDescr->m_tags.Add();
-        // if( tagState ) pStrDescr->m_tags[n].dwColor = normColor;
-        // else pStrDescr->m_tags[n].dwColor = tagColor;
-        // pStrDescr->m_tags[n].str = tmp;
         pStrDescr->m_tags.push_back(STRING_DESCRIBER::TagInfo{tagState ? normColor : tagColor, tmp});
     }
 }
@@ -1063,7 +1039,6 @@ uint32_t CXI_FORMATEDTEXT::MessageProc(int32_t msgcode, MESSAGE &message)
             oldgroup = m_listCur->prev->strGroup;
         for (STRING_DESCRIBER *sd = m_listCur; sd != nullptr && i < m_allStrings; sd = sd->next, i++)
         {
-            // display lines
             if (sd->lineStr != nullptr && sd->lineStr[0] != 0 && sd->strGroup != oldgroup)
             {
                 oldgroup = sd->strGroup;
@@ -1094,7 +1069,6 @@ uint32_t CXI_FORMATEDTEXT::MessageProc(int32_t msgcode, MESSAGE &message)
             oldgroup = m_listCur->prev->strGroup;
         for (STRING_DESCRIBER *sd = m_listCur; sd != nullptr && i < m_allStrings; sd = sd->next, i++)
         {
-            // display lines
             if (sd->lineStr != nullptr && sd->lineStr[0] != 0 && sd->strGroup != oldgroup)
             {
                 oldgroup = sd->strGroup;
@@ -1428,7 +1402,6 @@ void CXI_FORMATEDTEXT::SetSpecialStrings(ATTRIBUTES *pARoot)
     if (pARoot == nullptr)
         return;
 
-    // delete old lines
     while (m_listRoot != nullptr)
     {
         m_listCur = m_listRoot;
@@ -1542,7 +1515,6 @@ void CXI_FORMATEDTEXT::ReplaceString(int32_t nGrpNum, const char *pSrcStr)
         return;
     }
 
-    // insert new
     InsertStringBefore(dscrCur, pSrcStr, nGrpNum, dwOldColor);
     if (!m_listCur)
     {

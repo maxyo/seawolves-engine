@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LocationCamera
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -38,20 +32,14 @@ class LocationCamera : public Entity
         // Free flying camera (debug)
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     LocationCamera();
     ~LocationCamera() override;
 
-    // Initialization
     bool Init() override;
-    // Execution
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
     void PrimeLoadingCamera();
-    // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
     uint32_t AttributeChanged(ATTRIBUTES *apnt) override;
@@ -69,10 +57,6 @@ class LocationCamera : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -89,9 +73,6 @@ class LocationCamera : public Entity
     bool IsThirdPersonFollow() const { return wmode == cwm_follow && !isLookMode && !isLockFPMode; }
 #endif
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
 #ifdef __ANDROID__
     void UpdateMovementHeading();

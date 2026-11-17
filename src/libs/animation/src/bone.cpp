@@ -1,12 +1,7 @@
-// ============================================================================================
 // Spirenkov Maxim aka Sp-Max Shaman, 2001
-// --------------------------------------------------------------------------------------------
 // Storm engine v2.00
-// --------------------------------------------------------------------------------------------
 // Bone
-// --------------------------------------------------------------------------------------------
 // Model bone containing its animation
-// ============================================================================================
 
 #include "bone.h"
 
@@ -15,10 +10,6 @@
 #include "vma.hpp"
 
 #include <cstring>
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 Bone::Bone()
 {
@@ -61,13 +52,9 @@ void Bone::SetPositions(const glm::vec3 *pArray, int32_t numPos)
     memcpy(pos.data(), pArray, numFrames * sizeof(glm::vec3));
 }
 
-//=====================================================================================
-
 #ifdef ANI_COMPRESS_ENABLE
 
-//-------------------------------------
 // Compressed animation
-//-------------------------------------
 
 // Set animation angles
 void Bone::SetAngles(const glm::quat *aArray, int32_t numAng)
@@ -102,9 +89,7 @@ inline void Bone::GetFrame(int32_t f, glm::quat &qt)
 
 #else
 
-//-------------------------------------
 // Uncompressed animation
-//-------------------------------------
 
 // Set animation angles
 void Bone::SetAngles(const glm::quat *aArray, int32_t numAng)
@@ -140,8 +125,6 @@ inline float Bone::Clamp(float v, const char *str)
     return v;
 }
 
-//=====================================================================================
-
 // Initialize start matrix
 void Bone::BuildStartMatrix()
 {
@@ -157,9 +140,7 @@ void Bone::BuildStartMatrix()
         start = inmtx;
 }
 
-// --------------------------------------------------------------------------------------------
 // Working with a bone
-// --------------------------------------------------------------------------------------------
 
 // Add animation frames
 glm::vec3 Bone::BlendPosition(int32_t frame, float kBlend) const

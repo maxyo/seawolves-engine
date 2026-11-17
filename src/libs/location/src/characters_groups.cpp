@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    CharactersGroups
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "characters_groups.h"
 #include "np_character.h"
@@ -22,10 +16,6 @@
 #define CGS_ALARMVIS 0.3f
 #define CGS_DEFMAXTIME 20.0f
 #define CGS_VIEWANGLE 100.0f
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 CharactersGroups::CharactersGroups()
 {
@@ -124,22 +114,18 @@ int32_t CharactersGroups::String::GetLen(const char *str)
     return strlen(str);
 }
 
-// Initialization
 bool CharactersGroups::Init()
 {
-    // Location Pointer
     const auto loc = core.GetEntityId("location");
     location = static_cast<Location *>(core.GetEntityPointer(loc));
     if (!location)
         return false;
     RegistryGroup("");
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 10);
     return true;
 }
 
-// Execution
 void CharactersGroups::Execute(uint32_t delta_time)
 {
     // Time
@@ -402,7 +388,6 @@ bool CharactersGroups::RemoveInvalidTargets(Character *chr, Character *check)
     return isValidate;
 }
 
-// Messages
 uint64_t CharactersGroups::ProcessMessage(MESSAGE &message)
 {
     const std::string &cmd = message.String();
@@ -596,7 +581,6 @@ bool CharactersGroups::MsgGetOptimalTarget(MESSAGE &message) const
             // calculate the heuristic value
             v *= 0.5f + n * n * 0.5f;
             // take into account the presence of his weapon
-            // if(!nc->IsSetBlade()) v *= v*100.0f;
             // take into account the choice of goal
             if (s >= 0)
             {
@@ -616,7 +600,6 @@ bool CharactersGroups::MsgGetOptimalTarget(MESSAGE &message) const
             s = 0;
     }
     c = static_cast<Character *>(core.GetEntityPointer(c->grpTargets[s].chr));
-    // if(!c->IsSetBlade()) return false;
     if (c->AttributesPointer)
     {
         vd->Set(static_cast<int32_t>(c->AttributesPointer->GetAttributeAsDword("index", -1)));

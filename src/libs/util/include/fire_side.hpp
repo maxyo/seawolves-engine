@@ -1,4 +1,4 @@
-// The gun side the player's camera aim fires (owner rule: the full circle, no dead sectors).
+// The gun side the player's camera aim fires (the full circle, no dead sectors).
 // Every direction selects the usable side whose fire zone is nearest to it (0 inside the zone,
 // else the angle to the zone's edge; inside, the side whose centre is nearest), and that side
 // aims at the nearest direction within its own zone. The sea AI's camera fire, its crosshair

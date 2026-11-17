@@ -1,4 +1,4 @@
-// The pack contract check (UI-2): the real UI pack drawn with the real screen and HUD adapters
+// The pack contract check: the real UI pack drawn with the real screen and HUD adapters
 // on the recorded models and states, without a GL context and without game data.
 //
 //   storm_ui_pack_check --pack DIR --fixtures DIR [--only NAME]

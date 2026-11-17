@@ -51,10 +51,10 @@ Json MapViewOf(const Widget &map, std::span<const Widget *const> markers);
 std::string NationOf(const ImageRef *image);
 // {id, label, variant, disabled, reason, busy} of a c-button; a tap presses the widget.
 Json ButtonView(Bindings &bindings, const Widget &button, const std::string &id, const char *variant);
-// The amount a quantity control sets is the player's draft until he confirms it (owner rule: picking an
+// The amount a quantity control sets is the player's draft until he confirms it (picking an
 // amount moves nothing). A change or a drag of the control moves only the draft; the deal's button
 // («Взять / Отдать N» for a free transfer, «Купить / Продать N» for a money deal) sends it to the game.
-// A transfer has no «Отмена» (owner, 2026-11-14): tapping another row, or the control back at its
+// A transfer has no «Отмена»: tapping another row, or the control back at its
 // origin, drops the draft. Every screen whose quantity moves something keeps one per open control: chests,
 // bodies and the exchange with an officer (itemsbox), storage, town loot, the store and its kin
 // (trade_commerce.cpp), the cargo and crew of the loot / exchange of ships (extra_transfer.cpp), the

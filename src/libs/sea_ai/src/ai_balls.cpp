@@ -66,7 +66,6 @@ void AIBalls::AddBall(ATTRIBUTES *pABall)
         return;
 
     aBallTypes[i].Balls.push_back(BALL_PARAMS{});
-    // BALL_PARAMS * pBall = &aBallTypes[i].Balls[aBallTypes[i].Balls.Add()];
     auto *pBall = &aBallTypes[i].Balls.back();
 
     pBall->iBallOwner = pABall->GetAttributeAsDword("CharacterIndex");
@@ -118,7 +117,6 @@ void AIBalls::Execute(uint32_t Delta_Time)
 
     aBallRects.clear();
 
-    // if (!pVWForts) pVWForts = (VIDWALKER*)core.LayerGetWalker("fort_cannon_trace");
 
     glm::mat4 mView = rs->GetView();
 
@@ -239,7 +237,6 @@ void AIBalls::Execute(uint32_t Delta_Time)
                     pBall->pParticle->Stop();
                     STORM_DELETE(pBall->pParticle);
                 }
-                // pBallsType->Balls.ExtractNoShift(j);
                 pBallsType->Balls[j] = pBallsType->Balls.back();
                 pBallsType->Balls.pop_back();
                 j--;
@@ -250,7 +247,6 @@ void AIBalls::Execute(uint32_t Delta_Time)
             if (pBall->sBallEvent.empty())
             {
                 aBallRects.push_back(RS_RECT{});
-                // RS_RECT * pRSR = &aBallRects[aBallRects.Add()];
                 RS_RECT *pRSR = &aBallRects.back();
                 pRSR->vPos = pBall->vPos;
                 pRSR->dwColor = 0xFFFFFF;
@@ -371,7 +367,6 @@ void BALL_PARAMS::Save(CSaveLoad *pSL)
 {
     pSL->SaveVector(vFirstPos);
     pSL->SaveVector(vPos);
-    // pSL->SaveDword(reinterpret_cast<uint32_t>(pParticle));
     pSL->SaveQword(reinterpret_cast<uint64_t>(pParticle));
     pSL->SaveString(sBallEvent);
     pSL->SaveLong(iBallOwner);
@@ -406,7 +401,6 @@ void BALL_PARAMS::Load(CSaveLoad *pSL)
 {
     vFirstPos = pSL->LoadVector();
     vPos = pSL->LoadVector();
-    // pParticle = reinterpret_cast<VPARTICLE_SYSTEM *>(pSL->LoadDword());
     pParticle = reinterpret_cast<VPARTICLE_SYSTEM *>(pSL->LoadQword());
     sBallEvent = pSL->LoadString();
     iBallOwner = pSL->LoadLong();
@@ -434,7 +428,6 @@ void AIBalls::Load(CSaveLoad *pSL)
         aBallType.Balls.resize(balls_size + dwNum);
         for (uint32_t j = 0; j < dwNum; j++)
         {
-            // BALL_PARAMS * pB = &aBallTypes[i].Balls[aBallTypes[i].Balls.Add()];
             BALL_PARAMS &pB = aBallType.Balls[balls_size + j];
             pB.Load(pSL);
             if (pB.pParticle)

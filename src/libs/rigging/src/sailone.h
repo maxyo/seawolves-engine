@@ -1,6 +1,5 @@
 // sailone.h: interface for the SAILONE class.
 //
-//////////////////////////////////////////////////////////////////////
 
 #pragma once
 
@@ -231,7 +230,6 @@ class SAILONE : public SAILONE_BASE
     float GetDistanceFromPointTo3Point(const glm::vec3 &v, const glm::vec3 &vB1, const glm::vec3 &vB2, const glm::vec3 &vB3);
 
     // Wind exposure parameters
-    // ------------------------------
     int VertIdx; // index in array of wind vectors
     int HorzIdx;
     bool WindUp; // raising the sail up from the wind
@@ -240,14 +238,12 @@ class SAILONE : public SAILONE_BASE
 
     glm::vec3 SailPnt[20]{};
 
-    // ------------------------------------
     // Unfolding the sail
     int rollType;       // sail folding type
     SAILROLLING *sroll; // structure at the time of folding / unfolding of the sail
     bool bRolling;      // the sail is rolled on the yard
 
     SAIL *pp;
-    // ------------------------------------
     // parameters for determining the position in the sail list
     int groupNum;       // sail group number in the node
     int mastNum;        // mast number

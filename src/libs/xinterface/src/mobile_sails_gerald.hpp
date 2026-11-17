@@ -7,7 +7,6 @@
 //          RESOURCE/Textures (for <ui-game-image texture=…>); actions ["select"] while selectable.
 //          `select@<screen revision>:<file>` makes it current like a tap on the scroll image.
 //   sails_gerald ANDROID_SAILS_GERALD  context: price (the script's price of the work), money
-//          (the hero's), applied (the file on the sails now, "" = none); enabled = false;
 //          unavailableReason names a fact the script did not have (sails-gerald:missing=...).
 #include "mobile_widget.hpp"
 #include <optional>

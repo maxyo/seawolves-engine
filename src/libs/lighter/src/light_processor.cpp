@@ -1,12 +1,7 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    LightProcessor
-//--------------------------------------------------------------------------------------------
 //
-//============================================================================================
 
 #include "light_processor.h"
 
@@ -14,9 +9,7 @@
 #define LIGHTPRC_SMOOTH_NUM 1000
 #define LIGHTPRC_BLUR_NUM 500
 
-// ============================================================================================
 // Construction, destruction
-// ============================================================================================
 
 LightProcessor::LightProcessor()
     : lights(nullptr), rs(nullptr), octtree(nullptr)
@@ -344,32 +337,6 @@ void LightProcessor::SmoothShadows()
         auto *const verts = octtree->verts.data();
         const auto numVerts = octtree->numVerts;
 
-        /*if constexpr (false)
-        {
-          float r2 = smoothRad * smoothRad;
-          static Vertex* ov[16384];
-          int32_t numV = 0;
-          int32_t num = geometry->numVrt;
-          int32_t n;
-          for (n = 0; n < num; n++)
-          {
-            float r = ~(vrt[n].p - v.p);
-            if (r < r2)
-            {
-              Assert(numV < sizeof(ov)/sizeof(OctFndVerts));
-              ov[numV++] = &vrt[n];
-            }
-          }
-          if (numVerts != numV) core.Trace("numVerts(%i) != numV(%i)", numVerts, numV);
-          for (n = 0; n < numVerts; n++)
-          {
-            int32_t k;
-            for (k = 0; k < numV; k++)
-              if (verts[n].v == ov[k]) break;
-            if (k >= numV) core.Trace("k >= numV");
-          }
-        }*/
-        // Assert(numVerts > 0);
         // go through all the sources
         for (int32_t n = 0; n < num; n++)
         {

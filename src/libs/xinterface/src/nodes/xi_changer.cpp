@@ -84,7 +84,6 @@ void CXI_CHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
 
     const auto bRelativeRect = !GetIniLong(ini1, name1, ini2, name2, "bAbsoluteRectangle", 0);
 
-    // get position quantity
     m_nPlaceQuantity = 0;
     if (ini1->ReadString(name1, "place", param, sizeof(param) - 1, ""))
         do
@@ -92,14 +91,12 @@ void CXI_CHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
             m_nPlaceQuantity++;
         } while (ini1->ReadStringNext(name1, "place", param, sizeof(param) - 1));
 
-    // create position array
     if (m_nPlaceQuantity > 0)
     {
         m_pPlace = new XYRECT[m_nPlaceQuantity];
         std::memset(m_pPlace, 0, sizeof(XYRECT) * m_nPlaceQuantity);
     }
 
-    // get rectangle positions
     ini1->ReadString(name1, "place", param, sizeof(param) - 1, "");
     for (i = 0; i < m_nPlaceQuantity; i++)
     {
@@ -109,11 +106,9 @@ void CXI_CHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
         ini1->ReadStringNext(name1, "place", param, sizeof(param) - 1);
     }
 
-    // get fone color
     m_dwFoneColor = GetIniARGB(ini1, name1, ini2, name2, "foneColor", ARGB(255, 255, 255, 255));
     m_dwCurColor = m_dwFoneColor;
 
-    // get Blind color
     m_dwBlindColor = GetIniARGB(ini1, name1, ini2, name2, "blindColor", m_dwFoneColor);
     m_bUseBlind = m_dwBlindColor != m_dwFoneColor;
 
@@ -131,7 +126,6 @@ void CXI_CHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
     else
         m_fCurM_DownSpeed = 1.f;
 
-    // get outside picture offset
     fPnt = GetIniFloatPoint(ini1, name1, ini2, name2, "offset", FXYPOINT(0.f, 0.f));
     m_xOffset = fPnt.x;
     m_yOffset = fPnt.y;
@@ -144,7 +138,6 @@ void CXI_CHANGER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const
     if (ReadIniString(ini1, name1, ini2, name2, "backTexture", param, sizeof(param), ""))
         m_idBackTex = m_rs->TextureCreate(param);
 
-    // set constant buffers data
     for (i = 0; i < 8; i++)
     {
         m_pTexVert[i].color = m_dwFoneColor;
@@ -216,7 +209,6 @@ int CXI_CHANGER::CommandExecute(int wActCode)
         if (bChangePosition && m_nCurrentPos >= 0 && m_nCurrentPos < m_nPlaceQuantity)
         {
             SetRectanglesToPosition(m_nCurrentPos);
-            // set attribute to new position
             auto *pAttr = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
             if (pAttr != nullptr)
                 pAttr->SetAttributeUseDword("current", m_nCurrentPos);
@@ -234,7 +226,6 @@ void CXI_CHANGER::SetRectanglesToPosition(int nPos)
     right = static_cast<float>(m_pPlace[nPos].right);
     bottom = static_cast<float>(m_pPlace[nPos].bottom);
 
-    // set background rectangle position
     m_pTexVert[4].pos.x = left - m_xOffset;
     m_pTexVert[4].pos.y = top - m_yOffset;
     m_pTexVert[5].pos.x = right + m_xOffset;
@@ -243,7 +234,6 @@ void CXI_CHANGER::SetRectanglesToPosition(int nPos)
     m_pTexVert[6].pos.y = bottom + m_yOffset;
     m_pTexVert[7].pos.x = right + m_xOffset;
     m_pTexVert[7].pos.y = bottom + m_yOffset;
-    // set front rectangle position
     m_pTexVert[0].pos.x = left;
     m_pTexVert[0].pos.y = top;
     m_pTexVert[1].pos.x = right;
@@ -291,7 +281,6 @@ void CXI_CHANGER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -325,7 +314,6 @@ uint32_t CXI_CHANGER::MessageProc(int32_t msgcode, MESSAGE &message)
         {
             m_nCurrentPos = n;
             SetRectanglesToPosition(m_nCurrentPos);
-            // set attribute to new position
             auto *pAttr = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
             if (pAttr != nullptr)
                 pAttr->SetAttributeUseDword("current", m_nCurrentPos);

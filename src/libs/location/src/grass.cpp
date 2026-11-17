@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Grass
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "grass.h"
 
@@ -17,8 +11,6 @@
 #include "storm/render/effects.hpp"
 
 #include <algorithm>
-
-// ============================================================================================
 
 #define GRASS_BLK_LOD 0.8f   // Degree at kLod - the less, the closer LODs switch
 #define GRASS_MAX_DIST 50.0f // Maximum visibility distance
@@ -42,10 +34,6 @@ constexpr float kFadeShare = 0.15f;          // the share of the visible distanc
 // The visible and LOD distances per graphics preset (Низкая, Средняя, Высокая): Высокая keeps the game's own
 constexpr float kPresetDistance[3] = {0.6f, 0.8f, 1.0f};
 } // namespace
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 Grass::Grass()
 {
@@ -96,14 +84,11 @@ Grass::~Grass()
     }
 }
 
-// Initialization
 bool Grass::Init()
 {
     // Layers
-    // core.LayerCreate("execute", true, false);
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.AddToLayer(EXECUTE, GetId(), 1000);
-    // core.LayerCreate("realize", true, false);
     core.SetLayerType(REALIZE, layer_type_t::realize);
     core.AddToLayer(REALIZE, GetId(), 1000);
 
@@ -346,7 +331,6 @@ void Grass::SetTexture(const char *texName)
     }
 }
 
-// Work
 void Grass::Execute(uint32_t delta_time)
 {
     if (initForce < 20)
@@ -524,8 +508,6 @@ void Grass::Realize(uint32_t delta_time)
     rs->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);
     rs->SetRenderState(D3DRS_ZWRITEENABLE, TRUE);
     rs->SetRenderState(D3DRS_ZENABLE, TRUE);
-
-    // if(core.Controls->GetDebugAsyncKeyState('H') < 0) return;
 
     // If there is no map, then there is no drawing
     if (!block)

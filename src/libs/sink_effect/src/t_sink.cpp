@@ -3,18 +3,15 @@
 
 #include "rands.h"
 
-//--------------------------------------------------------------------
 TSink::TSink() : enabled(false), texture(0), ivManager(nullptr), time(0)
 {
 }
 
-//--------------------------------------------------------------------
 TSink::~TSink()
 {
     Release();
 }
 
-//--------------------------------------------------------------------
 void TSink::Initialize(INIFILE *_ini, SEA_BASE *_sea, VRenderer *_renderer)
 {
     sea = _sea;
@@ -36,7 +33,6 @@ void TSink::Initialize(INIFILE *_ini, SEA_BASE *_sea, VRenderer *_renderer)
     }
 }
 
-//--------------------------------------------------------------------
 void TSink::Release()
 {
     if (ivManager)
@@ -51,7 +47,6 @@ void TSink::Release()
     }
 }
 
-//--------------------------------------------------------------------
 void TSink::Start(const glm::vec3 &_pos, float _radius)
 {
     if (enabled)
@@ -65,7 +60,6 @@ void TSink::Start(const glm::vec3 &_pos, float _radius)
     for (auto i = 0; i < sink_effect::MAX_SPLASHES; i++)
     {
         times[i] = static_cast<int32_t>(rand(sink_effect::SINK_TIME));
-        // ivIndexes[i] = -1;
     }
 
     for (auto i = 0; i < sink_effect::MAX_FLOTSAMS; i++)
@@ -74,7 +68,6 @@ void TSink::Start(const glm::vec3 &_pos, float _radius)
     }
 }
 
-//--------------------------------------------------------------------
 void TSink::Process(uint32_t _dTime)
 {
     if (!enabled)
@@ -154,7 +147,6 @@ void TSink::Process(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 void TSink::Realize(uint32_t _dTime)
 {
     if (!enabled)
@@ -185,11 +177,7 @@ void TSink::Realize(uint32_t _dTime)
     }
 }
 
-//--------------------------------------------------------------------
 bool TSink::Enabled()
 {
     return enabled;
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

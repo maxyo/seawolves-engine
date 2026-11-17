@@ -37,7 +37,6 @@ void SoundVisualisationEntity::SetMasterSoundService(SoundService *pSoundService
 
 void SoundVisualisationEntity::Wakeup() const
 {
-    // core.LayerCreate("sound_debug_realize", true , false);
     core.SetLayerType(SOUND_DEBUG_REALIZE, layer_type_t::realize);
     core.AddToLayer(SOUND_DEBUG_REALIZE, GetId(), -1);
 }

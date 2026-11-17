@@ -31,8 +31,6 @@ KEY_NODE::~KEY_NODE()
 {
     delete[] key_name;
     delete[] key_val;
-    // if(l_PTR) delete l_PTR;
-    // if(r_PTR) delete r_PTR;
 }
 
 void KEY_NODE::SetName(const char *name)
@@ -101,7 +99,6 @@ void KEY_NODE::Add(KEY_NODE **Root, KEY_NODE **Top)
     (*Top)->SetRightNode(this);
     // set node left link to previous top node
     SetLeftNode(*Top);
-    // set new top node
     *Top = this;
 }
 
@@ -123,7 +120,6 @@ uint32_t KEY_NODE::SetFlags(uint32_t _flags)
     return flags;
 }
 
-//=============================================================================================================
 
 SECTION::SECTION()
 {
@@ -317,7 +313,6 @@ KEY_NODE *SECTION::GetRoot()
     return Root;
 }
 
-//=============================================================================================================
 
 IFS::IFS(VFILE_SERVICE *_fs)
 {
@@ -450,7 +445,6 @@ void IFS::Format(char *file_data, int32_t file_size)
         if (data_PTR >= file_data + file_size)
             break; // end of file
 
-        // add new key object
         offset = 0;
         for (; data_PTR[offset]; offset++)
         {
@@ -469,8 +463,6 @@ void IFS::Format(char *file_data, int32_t file_size)
                     if (data_PTR[z] == SECTION_B)
                     {
                         data_PTR[z] = 0;
-                        // node->SetName(&data_PTR[i+1]);
-                        // node->SetFlags(KNF_SECTION);
 
                         Current_Section = new SECTION;
                         Current_Section->Add(&SectionRoot, &SectionTop);
@@ -482,13 +474,9 @@ void IFS::Format(char *file_data, int32_t file_size)
             }
 
             auto *node = Current_Section->AddNode();
-            // node = new KEY_NODE;
-            // if(node == 0) throw std::runtime_error("node creation error");
-            // node->Add(&Root,&Top);
 
             if (data_PTR[i] == COMMENT)
             {
-                // add as commentary
                 node->SetName(&data_PTR[i]);
                 node->SetFlags(KNF_COMMENTARY);
                 break;
@@ -574,7 +562,6 @@ bool UnderGameFolder(VFILE_SERVICE *fs, const std::filesystem::path &path)
 
 bool IFS::FlushFile()
 {
-    // GUARD(bool IFS::FlushFile())
     uint32_t write_size;
     char buff[2];
 
@@ -584,7 +571,6 @@ bool IFS::FlushFile()
     }
 
     // Write the new contents beside the file and rename over it. The previous
-    // delete-then-create sequence left no file at all (or a truncated one) if
     // the process died or a write failed in between.
     const std::string target = fs->ConvertPathResource(FileName);
     if (UnderGameFolder(fs, std::filesystem::u8path(target)))
@@ -600,7 +586,6 @@ bool IFS::FlushFile()
     auto fileS = fio->_CreateFile(pending.c_str(), std::ios::binary | std::ios::out | std::ios::trunc);
     if (!fileS.is_open())
     {
-        /*trace("file: (%s)",FileName);*/
         throw std::runtime_error("cant create file");
     }
     const std::filesystem::path pendingPath = std::filesystem::u8path(fs->ConvertPathResource(pending.c_str()));
@@ -608,14 +593,12 @@ bool IFS::FlushFile()
     try
     {
 
-        // node = Root;
 
         auto *section_node = SectionRoot;
         while (section_node)
         {
             if (section_node->GetName() != nullptr)
             {
-                // write section name -----------------------------------------------------------------
                 buff[0] = SECTION_A;
                 if (!fs->_WriteFile(fileS, buff, 1))
                 {
@@ -648,7 +631,6 @@ bool IFS::FlushFile()
                 const auto flags = node->SetFlags(0);
                 if (flags & KNF_COMMENTARY)
                 {
-                    // write commented line ---------------------------------------------------------------
                     write_size = strlen(node->GetName());
                     if (!fs->_WriteFile(fileS, node->GetName(), write_size))
                     {
@@ -663,7 +645,6 @@ bool IFS::FlushFile()
                 }
                 else if (flags & KNF_KEY)
                 {
-                    // write key -------------------------------------------------------------------------
                     write_size = strlen(node->GetName());
                     if (!fs->_WriteFile(fileS, node->GetName(), write_size))
                     {
@@ -737,7 +718,6 @@ bool IFS::FlushFile()
         throw std::runtime_error("cant replace file: " + error.message());
     }
 
-    // UNGUARD
     return false;
 }
 
@@ -755,17 +735,8 @@ KEY_NODE *IFS::FindKey(const char *section_name, const char *key_name, const cha
         return nullptr;
     return snode->FindKey(key_name, key_value);
 
-    // return FindKey(0,section_name,key_name,key_value);
 }
 
-/*KEY_NODE * IFS::FindKey(KEY_NODE * from, char * section_name, char * key_name, char * key_value)
-{
-    SECTION * snode;
-    if(SectionRoot == 0) return false;
-    snode = FindSection(section_name);
-    if(snode == 0) return false;
-    return snode->FindKey(from,key_name,key_value);
-}*/
 
 SECTION *IFS::FindSection(const char *section_name)
 {
@@ -919,7 +890,6 @@ bool IFS::ReadString(SEARCH_DATA *sd, const char *section_name, const char *key_
             core_internal.Trace("Warning! IniFile Read String: section=%s, key=%s", section_name, key_name);
             if (buffer)
                 buffer[0] = 0;
-            // throw std::runtime_error(string not found);
         }
         else if (buffer)
             strcpy_s(buffer, buffer_size, def_string);
@@ -942,7 +912,6 @@ bool IFS::ReadString(SEARCH_DATA *sd, const char *section_name, const char *key_
 
     uint32_t write_size = strlen(char_PTR) + 1;
     // commented out because it didn't let to load new ani
-    // if(write_size > buffer_size) throw std::runtime_error(buffer size too small);
 
     strcpy_s(buffer, buffer_size, node->GetValue());
     return true;
@@ -952,18 +921,15 @@ bool IFS::ReadStringNext(SEARCH_DATA *sd, const char *section_name, const char *
                          uint32_t buffer_size)
 {
     auto *snode = FindSection(section_name, sd->Section);
-    // snode = sd->Section;
     if (snode == nullptr)
         return false;
 
     auto start = false;
     auto *node = snode->GetRoot();
-    // node = sd->Key;
     while (node)
     {
         if (start == true)
         {
-            // if(CompareStrings(node->GetName(),key_name) == 0)
             if (storm::iEquals(node->GetName(), key_name))
             {
                 if (buffer == nullptr)
@@ -974,7 +940,6 @@ bool IFS::ReadStringNext(SEARCH_DATA *sd, const char *section_name, const char *
                 {
                     buffer[0] = 0;
                     return true;
-                    // throw std::runtime_error(no key value);
                 }
 
                 const uint32_t write_size = strlen(char_PTR) + 1;
@@ -1188,7 +1153,6 @@ bool IFS::Reload()
         delete old_root;
     }
     bDataChanged = false;
-    // Reference = 0;
     SectionRoot = nullptr;
     SectionTop = nullptr;
     SectionSNode = nullptr;

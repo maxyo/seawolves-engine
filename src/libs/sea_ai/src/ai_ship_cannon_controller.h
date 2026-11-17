@@ -6,10 +6,8 @@
 class AIShip;
 class VAI_INNEROBJ;
 
-// ============================================================================
 // master class AIShipCannonController
 // Contain base virtual functions
-// ============================================================================
 class AIShipCannonController
 {
   private:

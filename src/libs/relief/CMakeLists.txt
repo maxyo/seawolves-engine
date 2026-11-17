@@ -1,8 +1,8 @@
-# Relief preparation (README.md): PBRify's models through ncnn, on the GPU or the CPU. The game makes its maps with them
+# Relief preparation: PBRify's models through ncnn, on the GPU or the CPU. The game makes its maps with them
 # while it runs (renderer_bgfx effects/relief_generator); storm_relief_cli does a whole game at once.
 include(FetchContent)
 
-# PBRify's normal, height and roughness models (CC0-1.0, model/README.md): not in the repository (the owner's rule). The
+# PBRify's normal, height and roughness models (CC0-1.0): not in the repository. The
 # float models are fetched by their pins; model/make_ncnn_models.py converts them to ncnn graphs at build time, once per
 # machine (storm_derived_files, cmake/StormDerivedFiles.cmake), and the results must be byte for byte the pinned ones.
 # The maps' method includes the weights' digests (fx/relief_model.hpp): a new model must change them.
@@ -60,7 +60,7 @@ storm_derived_files(storm_relief_ncnn_models storm_relief_ncnn_models
     SOURCES ${storm_relief_sources}
     INPUTS ${storm_relief_inputs}
     OUTPUTS ${storm_relief_pins})
-# PBRify's 4x upscaler (CC0-1.0, model/README.md, fx/upscale.hpp): model/make_upscale_model.py exports the release's
+# PBRify's 4x upscaler (CC0-1.0, fx/upscale.hpp): model/make_upscale_model.py exports the release's
 # .pth with spandrel and converts it by pnnx to an ncnn graph, but those bytes depend on the CPU's ISA (an AVX2 machine
 # makes other ones than the AVX-512 reference machine). So the build fetches the reference machine's files by sha256
 # from the engine's release models-upscale-v1, one download per file; the host target storm_upscale_model_check makes

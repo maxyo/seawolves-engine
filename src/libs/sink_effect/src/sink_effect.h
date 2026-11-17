@@ -7,10 +7,6 @@
 #include "geometry.h"
 #include "sea_base.h"
 
-///////////////////////////////////////////////////////////////////
-// CLASS DEFINITION
-///////////////////////////////////////////////////////////////////
-
 class SINKEFFECT : public Entity
 {
   public:
@@ -32,10 +28,6 @@ class SINKEFFECT : public Entity
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 

@@ -122,12 +122,6 @@ void AIShipTouchController::Execute(float fDeltaTime)
     const auto fSpeed = KNOTS2METERS(pShip->State.vSpeed.z);
     fRaySize = vBoxSize.z * 5.0f + fSpeed * 10.0f;
 
-    /*vBoxSize = GetAIShip()->GetBoxsize() / 2.0f;
-    m.BuildRotateY(GetAIShip()->GetAng().y);
-    v[0] = m * glm::vec3(-vBoxSize.x, 0.0f, -vBoxSize.z);
-    v[1] = m * glm::vec3(vBoxSize.x, 0.0f, -vBoxSize.z);
-    v[2] = m * glm::vec3(vBoxSize.x, 0.0f, vBoxSize.z);
-    v[3] = m * glm::vec3(-vBoxSize.x, 0.0f, vBoxSize.z);*/
 
     // reset
     if (dtTouchTime.Update(fDeltaTime))
@@ -201,7 +195,6 @@ void AIShipTouchController::Execute(float fDeltaTime)
         // get out from my road section
         for (i = 1; i < aTouchRays.size() / 4; i++)
         {
-            // i1 = ;
         }
 
         // search new free direction
@@ -209,13 +202,11 @@ void AIShipTouchController::Execute(float fDeltaTime)
         fRotateFactor = 0.0f;
         if (dwMaxIdx != 0)
             fRotateFactor = (dwMaxIdx < aTouchRays.size() / 2) ? 2.5f : -2.5f;
-        // float fRotate = GetBestRotateDirection() * 2.5f;
         GetAIShip()->GetRotateController()->AddRotate(fRotateFactor);
 
         fClosed *= 1.6f;
         fSpeedFactor = 1.0f - fClosed / (aTouchRays.size() / 2.0f);
         fSpeedFactor = CLAMP(fSpeedFactor);
-        // pShip->SetSailState(fSpeedFactor);
     }
     else
     {

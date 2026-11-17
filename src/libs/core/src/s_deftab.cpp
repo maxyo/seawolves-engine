@@ -89,7 +89,6 @@ uint32_t S_DEFTAB::AddDef(DEFINFO &di)
     pTable[n].data4b = di.data4b;
     pTable[n].deftype = di.deftype;
     pTable[n].segment_id = di.segment_id;
-    // pTable[Def_num] = di;
     pTable[Def_num].hash = hash;
     pTable[Def_num].name = nullptr;
     UpdateHashTable(Def_num, hash, true);
@@ -161,12 +160,6 @@ uint32_t S_DEFTAB::FindDef(const char *def_name)
     }
     return INVALID_DEF_CODE;
 
-    /*
-    for(n=0;n<Def_num;n++)
-    {
-      if(pTable[n].hash == hash) return n;
-    }
-    return INVALID_DEF_CODE;*/
 }
 
 void S_DEFTAB::UpdateHashTable(uint32_t code, uint32_t hash, bool in)
@@ -179,7 +172,6 @@ void S_DEFTAB::UpdateHashTable(uint32_t code, uint32_t hash, bool in)
             continue;
         if (!in)
         {
-            // take element out of list
             HashLine[hash_index].pElements[n] = HashLine[hash_index].pElements[HashLine[hash_index].nNumElements - 1];
             HashLine[hash_index].nNumElements--;
             HashLine[hash_index].pElements.resize(HashLine[hash_index].nNumElements);

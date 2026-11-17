@@ -20,7 +20,6 @@ void CXI_VIDEO::Draw(bool bSelected, uint32_t Delta_Time)
 {
     if (m_bUse)
     {
-        // Create rectangle
         XI_ONETEX_VERTEX v[4];
         v[0].pos.x = static_cast<float>(m_rect.left);
         v[0].pos.y = static_cast<float>(m_rect.top);
@@ -103,7 +102,6 @@ void CXI_VIDEO::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

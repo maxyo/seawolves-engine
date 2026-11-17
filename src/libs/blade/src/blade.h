@@ -97,18 +97,9 @@ class BLADE : public Entity
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta);
-            //    break;
         case Stage::realize:
             Realize(delta);
             break;
-            // case Stage::lost_render:
-            //    LostRender();
-            //    break;
-            // case Stage::restore_render:
-            //    RestoreRender();
-            //    break;
         }
     }
 

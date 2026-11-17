@@ -114,7 +114,6 @@ void AIShipTaskController::FindRunAwayPoint()
         if (pAWind)
             fWindAngle = pAWind->GetAttributeAsFloat();
         const auto vWindDir = glm::vec3(cosf(fWindAngle), 0.0f, sinf(fWindAngle));
-        // core.Trace("fWindAngle = %.3f", fWindAngle);
 
         vRAPoint = storm::math::normalizeOrZero((-vRAPoint) + (fWindK * vWindDir));
         // set destination point
@@ -131,12 +130,6 @@ void AIShipTaskController::FindRunAwayPoint()
         SetDestinationPoint(vRAPoint);
     }
 
-    /*if (core.Controls->GetDebugAsyncKeyState('X') < 0)
-    {
-      GetAIShip()->GetShipPointer()->Render().DrawVector(GetAIShip()->GetPos(), GetAIShip()->GetPos() + 20.0f *
-    vRAPoint, 0xFFFFFFFF); GetAIShip()->GetShipPointer()->Render().DrawSphere(GetAIShip()->GetPos() + 50.0f *
-    vRAPoint, 4.0f, 0xFFFFFFFF);
-    }*/
 }
 
 void AIShipTaskController::DoTask(float fDeltaTime)
@@ -210,7 +203,6 @@ void AIShipTaskController::SetNewTask(uint32_t dwPriority, uint32_t _dwNewTaskTy
     pTask->SetActive(true);
     pTask->dwTaskType = _dwNewTaskType;
     pTask->pATaskCharacter = nullptr;
-    // pTask->pTaskAIObj = null;
     pTask->vTaskPnt = vPnt;
 }
 

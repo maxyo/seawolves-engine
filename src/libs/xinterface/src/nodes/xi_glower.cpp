@@ -23,14 +23,12 @@ void CXI_GLOWER::Draw(bool bSelected, uint32_t Delta_Time)
     {
         if (m_glows[i].action != GLOW_ACTION_NONE)
         {
-            // recalculate color
             if (m_glows[i].action == GLOW_ACTION_COLORUP)
                 m_glows[i].rect.dwColor = ColorInterpolate(m_dwMaxColor, m_dwMinColor,
                                                            static_cast<float>(m_glows[i].curTime) / m_glows[i].allTime);
             if (m_glows[i].action == GLOW_ACTION_BLEND)
                 m_glows[i].rect.dwColor = ColorInterpolate(
                     m_dwMaxColor, m_dwMinColor, 1.f - static_cast<float>(m_glows[i].curTime) / m_glows[i].allTime);
-            // show this rectangle
             m_rs->DrawRects(&m_glows[i].rect, 1, "iGlow");
 
             m_glows[i].rect.fAngle += m_glows[i].angleSpeed * Delta_Time;
@@ -112,7 +110,6 @@ void CXI_GLOWER::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -123,12 +120,10 @@ void CXI_GLOWER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
     char param[255];
     int32_t x, y;
 
-    // get texture
     m_texID = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "texture", param, sizeof(param), ""))
         m_texID = m_rs->TextureCreate(param);
 
-    // calculate glow blinks quantity
     m_nQuantity = 0;
     if (ini1->ReadString(name1, "pos", param, sizeof(param) - 1, ""))
         do
@@ -138,7 +133,6 @@ void CXI_GLOWER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
     if (m_nQuantity > MAX_USED_RECTANGLE)
         m_nQuantity = MAX_USED_RECTANGLE;
 
-    // set common default value
     for (i = 0; i < m_nQuantity; i++)
     {
         m_glows[i].action = GLOW_ACTION_NONE;
@@ -147,7 +141,6 @@ void CXI_GLOWER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         m_glows[i].rect.vPos.z = 1.f;
     }
 
-    // fill rectangle pos
     ini1->ReadString(name1, "pos", param, sizeof(param) - 1, "");
     for (i = 0; i < m_nQuantity; i++)
     {
@@ -157,12 +150,10 @@ void CXI_GLOWER::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const 
         ini1->ReadStringNext(name1, "pos", param, sizeof(param) - 1);
     }
 
-    // fill rectangles size
     x = GetIniLong(ini1, name1, ini2, name2, "spriteSize", 8);
     for (i = 0; i < m_nQuantity; i++)
         m_glows[i].rect.fSize = static_cast<float>(x);
 
-    // set colors
     m_dwMinColor = GetIniARGB(ini1, name1, ini2, name2, "minColor", 0);
     m_dwMaxColor = GetIniARGB(ini1, name1, ini2, name2, "maxColor", 0xFFFFFFFF);
 

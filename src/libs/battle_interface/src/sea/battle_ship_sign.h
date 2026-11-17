@@ -128,7 +128,6 @@ class BIShipIcon
 #endif
     int32_t m_nShipSquareQ;
     uint32_t m_dwShipColor;
-    // FRECT m_rShipUV;
     BIFPOINT m_pntShipOffset;
     FPOINT m_pntShipIconSize;
     uint32_t m_dwShipNCols;

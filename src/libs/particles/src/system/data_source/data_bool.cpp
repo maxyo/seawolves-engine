@@ -44,7 +44,6 @@ void DataBool::Load(MemFile *File)
 
 void DataBool::SetName(const char *szName)
 {
-    // core.Trace("DataBool::SetName - '%s'", szName);
     Name = szName;
 }
 

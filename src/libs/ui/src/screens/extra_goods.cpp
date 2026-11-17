@@ -118,7 +118,7 @@ class GoodsOrderScreen final : public Screen
                                      [&bindings, open_row, origin = draft_.Origin()](int delta) {
                                          bindings.Send(*open_row, "order", open_row->row_id + "=" + std::to_string(origin + delta));
                                      });
-            // A standing order is a setting, not a transfer: it keeps its «Отмена» (owner, 2026-11-14).
+            // A standing order is a setting, not a transfer: it keeps its «Отмена».
             draft_.CancelAction(bindings, actions);
         }
 

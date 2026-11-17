@@ -31,7 +31,6 @@ XI_TableLineDescribe::XI_TableLineDescribe(CXI_TABLE *pTable)
 
 XI_TableLineDescribe::~XI_TableLineDescribe()
 {
-    // m_aCell.DelAllWithPointers();
     for (const auto &cell : m_aCell)
         delete cell;
 
@@ -197,7 +196,6 @@ void XI_TableCellDescribe::SetData(int32_t nColIndex, ATTRIBUTES *pAttr, bool bH
     m_nLeftLineWidth = nColIndex == 0 ? m_pTable->m_nBorderWidth : m_pTable->m_nVLineWidth;
     m_nTopLineHeight = bHeader ? m_pTable->m_nHeaderLineHeight : m_pTable->m_nHLineHeight;
 
-    // read the picture
     int32_t nIconQuantity = 0;
     pA = pAttr->GetAttributeClass("icon");
     if (pA)
@@ -222,11 +220,9 @@ void XI_TableCellDescribe::SetData(int32_t nColIndex, ATTRIBUTES *pAttr, bool bH
             nIconQuantity++;
         }
     }
-    // delete unnecessary pictures
     while (static_cast<int32_t>(m_aImage.size()) > nIconQuantity)
         m_aImage.erase(m_aImage.begin() + nIconQuantity);
 
-    // read the line
     m_dwColor =
         pAttr->GetAttributeAsDword("color", bHeader ? m_pTable->m_dwFontTitleColor : m_pTable->m_dwFontCellColor);
     m_fScale = pAttr->GetAttributeAsFloat("scale", bHeader ? m_pTable->m_fFontTitleScale : m_pTable->m_fFontCellScale);
@@ -288,8 +284,6 @@ void XI_TableCellDescribe::SetData(int32_t nColIndex, ATTRIBUTES *pAttr, bool bH
     pA = pAttr->GetAttributeClass("textoffsets");
     for (int32_t n = 0; n < asStr.size(); n++)
     {
-        // m_aStrings.Add();
-        // asStr[n].TrimRight();
         m_aStrings.push_back(StrDescribe{});
         TOREMOVE::rtrim(asStr[n]);
 
@@ -456,23 +450,18 @@ bool CXI_TABLE::Init(INIFILE *ini1, const char *name1, INIFILE *ini2, const char
 
 void CXI_TABLE::ReleaseAll()
 {
-    // release all rows
-    // m_aLine.DelAllWithPointers();
     for (const auto &line : m_aLine)
         delete line;
     m_aLine.clear();
     STORM_DELETE(m_pHeader);
 
-    // release back image
     m_bBackPresent = false;
     m_BackImg.Unload();
 
-    // release border data
     PICTURE_TEXTURE_RELEASE(pPictureService, m_sBorderIconGroupName.c_str(), m_idBorderTexture);
     VERTEX_BUFFER_RELEASE(m_rs, m_idBorderVBuf);
     INDEX_BUFFER_RELEASE(m_rs, m_idBorderIBuf);
 
-    // release fonts from list
     FONT_RELEASE(m_rs, m_nFontCellID);
     FONT_RELEASE(m_rs, m_nFontTitleID);
     for (int32_t n = 0; n < m_anFontList.size(); n++)
@@ -569,7 +558,6 @@ int CXI_TABLE::CommandExecute(int wActCode)
                     SelectRow(n, nCol);
                 else
                     SelectRow(n);
-                // core.Event( "OnTableClick", "sll", m_nodeName, m_nSelectIndex, nCol+1 );
             }
         }
         break;
@@ -583,7 +571,6 @@ int CXI_TABLE::CommandExecute(int wActCode)
                     SelectRow(n, nCol);
                 else
                     SelectRow(n);
-                // core.Event( "OnTableClick", "sll", m_nodeName, (m_pHeader?n:(n+1)), nCol+1 );
                 core.Event("OnTableClick", "sll", m_nodeName, m_nSelectIndex, nCol + 1);
             }
         }
@@ -637,12 +624,10 @@ void CXI_TABLE::ChangePosition(XYRECT &rNewPos)
             else
                 nHAdd = 0;
         }
-        //
         m_rect.right = m_rect.left = rNewPos.left;
         for (n = 0; n < m_anColsWidth.size(); n++)
             m_rect.right += m_anColsWidth[n];
         m_rect.right += m_nBorderWidth;
-        //
         m_rect.bottom = m_rect.top = rNewPos.top;
         for (n = 0; n < m_anRowsHeights.size(); n++)
             m_rect.bottom += m_anRowsHeights[n];
@@ -692,11 +677,9 @@ void CXI_TABLE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 
-    // save cols width
     std::string sTmp;
     for (int32_t n = 0; n < m_anColsWidth.size(); n++)
     {
@@ -706,7 +689,6 @@ void CXI_TABLE::SaveParametersToIni()
     }
     pIni->WriteString(m_nodeName, "colswidth", (char *)sTmp.c_str());
 
-    // save rows height
     sTmp = "";
     for (int32_t n = 0; n < m_anRowsHeights.size(); n++)
     {
@@ -837,7 +819,6 @@ void CXI_TABLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
             m_nFontTitleVAlignment = ALIGN_BOTTOM;
     }
 
-    // select image
     if (ReadIniString(ini1, name1, ini2, name2, "selectimage", param, sizeof(param), ""))
     {
         m_SelectImg.LoadAccordingToString(param);
@@ -852,43 +833,33 @@ void CXI_TABLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
         m_sBorderIconGroupName = param;
         m_idBorderTexture = pPictureService->GetTextureID(param);
     }
-    //
     m_nBorderIcon_LeftTop = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderlefttop", param, sizeof(param), ""))
         m_nBorderIcon_LeftTop = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_LeftBottom = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderleftbottom", param, sizeof(param), ""))
         m_nBorderIcon_LeftBottom = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_RightTop = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderrighttop", param, sizeof(param), ""))
         m_nBorderIcon_RightTop = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_RightBottom = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderrightbottom", param, sizeof(param), ""))
         m_nBorderIcon_RightBottom = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_Left = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderleft", param, sizeof(param), ""))
         m_nBorderIcon_Left = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_Right = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderright", param, sizeof(param), ""))
         m_nBorderIcon_Right = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_Top = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "bordertop", param, sizeof(param), ""))
         m_nBorderIcon_Top = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_Bottom = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderbottom", param, sizeof(param), ""))
         m_nBorderIcon_Bottom = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_VLine = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "bordervline", param, sizeof(param), ""))
         m_nBorderIcon_VLine = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
-    //
     m_nBorderIcon_HLine = -1;
     if (ReadIniString(ini1, name1, ini2, name2, "borderhline", param, sizeof(param), ""))
         m_nBorderIcon_HLine = pPictureService->GetImageNum(m_sBorderIconGroupName.c_str(), param);
@@ -949,7 +920,6 @@ void CXI_TABLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
     nUsedQ = 0;       // hard-coded columns
     nCommonWidth = 0; // the total width of these columns
     m_anColsWidth.clear();
-    // read from INI
     if (ReadIniString(ini1, name1, ini2, name2, "colswidth", param, sizeof(param), ""))
     {
         const char *pcTmp = param;
@@ -997,7 +967,6 @@ void CXI_TABLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const c
 
     UpdateBorders();
 
-    // read table rows
     UpdateTableCells();
     SelectLine(0);
 }
@@ -1027,7 +996,6 @@ void CXI_TABLE::UpdateBorders()
         // index buffer
         m_idBorderIBuf = m_rs->CreateIndexBuffer(q * 6 * sizeof(uint16_t));
         Assert(m_idBorderIBuf != -1);
-        // fill in
         auto *pT = static_cast<uint16_t *>(m_rs->LockIndexBuffer(m_idBorderIBuf));
         for (n = 0; n < q; n++)
         {
@@ -1045,7 +1013,6 @@ void CXI_TABLE::UpdateBorders()
         Assert(m_idBorderVBuf != -1);
     }
 
-    // fill the vertex buffer
     auto *pV = static_cast<XI_ONETEX_VERTEX *>(m_rs->LockVertexBuffer(m_idBorderVBuf));
     // horizontal lines
     nTop = m_rect.top;
@@ -1156,7 +1123,6 @@ void CXI_TABLE::WriteSquare(XI_ONETEX_VERTEX *pV, int32_t nImgID, uint32_t dwCol
 
 void CXI_TABLE::UpdateTableCells()
 {
-    // Set new current image
     ATTRIBUTES *pARoot = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
     if (!pARoot)
     {
@@ -1171,7 +1137,6 @@ void CXI_TABLE::UpdateTableCells()
 
     int32_t nNewSel = pARoot->GetAttributeAsDword("select", m_nSelectIndex + 1) - 1;
 
-    // read lines from attributes
     m_nTopIndex = pARoot->GetAttributeAsDword("top", 0); // first index of the attribute being read
     // first check for header
     ATTRIBUTES *pAttr = pARoot->GetAttributeClass("hr");
@@ -1207,7 +1172,6 @@ void CXI_TABLE::UpdateTableCells()
         pTL->SetData(r + (m_pHeader ? 1 : 0), pAttr, false);
         nY += pTL->GetLineHeight();
     }
-    // delete extra lines
     while (static_cast<int32_t>(m_aLine.size()) > r)
     {
         STORM_DELETE(m_aLine[r]);
@@ -1403,7 +1367,6 @@ void CXI_TABLE::UpdateLineQuantity()
     int32_t nmin = 1;
     char pcAttrName[64];
 
-    // find the minimum element
     while (true)
     {
         sprintf_s(pcAttrName, "tr%d", nmin * 2);
@@ -1479,7 +1442,6 @@ void CXI_TABLE::RecalculateLineHeights()
     // if the last line goes beyond the dimensions, then shorten it in height
     if (nY > m_rect.bottom && m_aLine.size() > 0)
     {
-        // int32_t nLine = m_aLine.Last();
         m_aLine.back()->SetLineHeight(m_aLine.back()->GetLineHeight() - (nY - m_rect.bottom));
         nY = m_rect.bottom;
     }
@@ -1497,7 +1459,6 @@ void CXI_TABLE::RecalculateLineHeights()
         nY += nH;
     }
 
-    // delete the remaining lines
     while (n < m_anRowsHeights.size())
         m_anRowsHeights.erase(m_anRowsHeights.begin() + n);
 }

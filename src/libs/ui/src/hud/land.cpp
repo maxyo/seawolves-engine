@@ -85,7 +85,7 @@ const Named kCommands[] = {
 };
 
 // Root commands that are transitions: they have their own button (the boot), not rows of the
-// actions sheet (owner, 2026-11-14).
+// actions sheet.
 const char *const kTransitions[] = {"BI_FastReload", "BI_OutDoor"};
 constexpr const char *kTravelCommand = "BI_FastReload";
 
@@ -208,7 +208,7 @@ class LandScene final : public Scene
         else
             hud_.Error("land HUD: the engine offers no analog movement (inputOwner or movementGeneration missing); no move stick");
 
-        // The menu split (owner, 2026-11-14): the actions at the top, as the sea orders; the
+        // The menu split: the actions at the top, as the sea orders; the
         // transitions under the thumb where the actions were, the boot (no transitions in a fight).
         if (commands.known && commands.available)
         {
@@ -530,7 +530,7 @@ class LandScene final : public Scene
             input.On("block", "up", [this](const Event &) { Strike("block", "up"); });
             input.Ignore("block", "click");
         }
-        // The shot is always in the combat cluster (owner decision) once the engine binds it:
+        // The shot is always in the combat cluster once the engine binds it:
         // without a firearm equipped it is inactive, and a tap on it toasts the reason (the
         // press behaviour of a disabled button).
         if (combat.Has("pistol") && combat.pistol == "no_weapon")
@@ -567,7 +567,7 @@ class LandScene final : public Scene
             // opponent replaces the location; they never overlap).
             view.elements.erase("location");
         }
-        // The boarding deck fight (owner 2026-11-17, variant B): our men and theirs as two bars facing
+        // The boarding deck fight: our men and theirs as two bars facing
         // each other, each full at the fight's start, with the men left; the deck (the location line)
         // as its title. It takes the location line's place like the cabin's captain, who replaces it.
         else if (states.vitals.known && states.vitals.boarding)

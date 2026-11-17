@@ -6,23 +6,18 @@
 
 CREATE_CLASS(SINKEFFECT)
 
-//--------------------------------------------------------------------
 SINKEFFECT::SINKEFFECT() : renderer(nullptr), sea(nullptr)
 {
 }
 
-//--------------------------------------------------------------------
 SINKEFFECT::~SINKEFFECT()
 {
-    // GUARD(SINKEFFECT::~SINKEFFECT)
 
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 bool SINKEFFECT::Init()
 {
-    // GUARD(SINKEFFECT::Init)
 
     sea = static_cast<SEA_BASE *>(core.GetEntityPointer(core.GetEntityId("sea")));
 
@@ -34,10 +29,8 @@ bool SINKEFFECT::Init()
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 uint64_t SINKEFFECT::ProcessMessage(MESSAGE &message)
 {
-    // GUARD(SINKEFFECT::ProcessMessage)
 
     const auto code = message.Long();
     const uint32_t outValue = 0;
@@ -51,13 +44,6 @@ uint64_t SINKEFFECT::ProcessMessage(MESSAGE &message)
             auto &&entities = core.GetEntityIds("ship");
             for (auto ent : entities)
             {
-                /*
-                shipBase = (SHIP_BASE *) core.GetEntityPointer(shipID);
-                if (shipBase->GetACharacter() == attrs)
-                {
-                  TryToAddSink(shipBase->GetPos(), shipBase->GetBoxsize().z / 2.0f);
-                  return outValue;
-                }*/
 
                 auto *shipBase = static_cast<SHIP_BASE *>(core.GetEntityPointer(ent));
                 if (shipBase->GetACharacter() == attrs)
@@ -75,10 +61,8 @@ uint64_t SINKEFFECT::ProcessMessage(MESSAGE &message)
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SINKEFFECT::Realize(uint32_t _dTime)
 {
-    // GUARD(SINKEFFECT::Realize)
 
     for (auto i = 0; i < sink_effect::MAX_SINKS; ++i)
         sinks[i].Realize(_dTime);
@@ -86,39 +70,14 @@ void SINKEFFECT::Realize(uint32_t _dTime)
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SINKEFFECT::Execute(uint32_t _dTime)
 {
-    // GUARD(SINKEFFECT::Execute)
-    /*
-      if (core.Controls->GetAsyncKeyState('X'))
-      {
-        if (renderer && sea)
-        {
-          static glm::vec3 pos, ang, nose, head;
-          static glm::mat4 view;
-          //glm::vec3 dir(randCentered(2.0f), -1.0f, randCentered(2.0f));
-          glm::vec3 dir(0.0f, -1.0f, 0.0f);
-
-          renderer->GetTransform(D3DTS_VIEW, view);
-          view.Transposition();
-          nose = view.Vz();
-          //head = view.Vy();
-          pos = view.Pos();
-
-          pos += 10.0f * !nose;
-          pos.y = sea->WaveXZ(pos.x, pos.y);
-          TSink *sinks= TryToAddSink(pos, 10.0f);
-        }
-      }
-    */
     for (auto i = 0; i < sink_effect::MAX_SINKS; ++i)
         sinks[i].Process(_dTime);
 
     // UNGUARD
 }
 
-//--------------------------------------------------------------------
 void SINKEFFECT::InitializeSinks()
 {
     auto psIni = fio->OpenIniFile("resource\\ini\\particles.ini");
@@ -130,7 +89,6 @@ void SINKEFFECT::InitializeSinks()
     }
 }
 
-//--------------------------------------------------------------------
 TSink *SINKEFFECT::TryToAddSink(const glm::vec3 &_pos, float _r)
 {
     for (auto i = 0; i < sink_effect::MAX_SINKS; ++i)
@@ -144,5 +102,3 @@ TSink *SINKEFFECT::TryToAddSink(const glm::vec3 &_pos, float _r)
 
     return nullptr;
 }
-
-//--------------------------------------------------------------------

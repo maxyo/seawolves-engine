@@ -119,7 +119,6 @@ inline float lengthXZ(const glm::vec3 &v)
     return static_cast<float>(glm::length(glm::dvec2(static_cast<double>(v.x), static_cast<double>(v.z))));
 }
 
-//============================================================================
 // Matrices
 //
 // glm::mat4 holds the same 16 floats, in the same order, as a D3D matrix:
@@ -127,7 +126,6 @@ inline float lengthXZ(const glm::vec3 &v)
 // thinks in D3D row vectors (p' = p * World * View * Proj); GLM multiplies
 // column vectors, so that product is written Proj * View * World * p here.
 // "Apply a, then b" is therefore  b * a.
-//============================================================================
 
 // Axis and position columns as vectors (the fourth component is skipped).
 // These view a four-float column as a three-float vector in place, like the
@@ -233,7 +231,6 @@ inline void copy3x3(glm::mat4 &destination, const glm::mat4 &source)
             destination[column][row] = source[column][row];
 }
 
-// position = -(p rotated by m)
 inline void setInversePosition(glm::mat4 &m, float x, float y, float z)
 {
     m[3] = glm::vec4(-(glm::mat3(m) * glm::vec3(x, y, z)), m[3].w);
@@ -365,13 +362,9 @@ inline glm::mat4 mirrorMatrix(float Nx, float Ny, float Nz, float D)
     return result;
 }
 
-//============================================================================
 // Quaternions
 //
-// glm::quat stores x, y, z, w (animation and camera track files are read
 // straight into it) but its constructor takes (w, x, y, z).
-// glm::mat4_cast(q) is the game's quaternion-to-matrix conversion.
-//============================================================================
 static_assert(sizeof(glm::quat) == 4 * sizeof(float) && offsetof(glm::quat, x) == 0 && offsetof(glm::quat, w) == 12);
 
 // Rotation of a matrix as a quaternion. Not glm::quat_cast: this picks the
@@ -411,7 +404,6 @@ inline glm::quat quatFromMatrix(const glm::mat4 &m)
 }
 
 // Shortest-arc interpolation as the animations were authored with. Not
-// glm::slerp: this switches to a plain lerp below ~26 degrees (cos > 0.9),
 // blends in double and does not renormalize.
 inline glm::quat slerp(const glm::quat &q1, const glm::quat &q2, float kBlend)
 {
@@ -445,9 +437,7 @@ inline glm::quat slerp(const glm::quat &q1, const glm::quat &q2, float kBlend)
     return glm::quat(result.w, result.x, result.y, result.z);
 }
 
-//============================================================================
 // Colours: glm::vec4 holding (r, g, b, a) in 0..1.
-//============================================================================
 
 // Unpacks a D3D ARGB colour.
 inline glm::vec4 colorFromARGB(uint32_t c)
@@ -469,9 +459,7 @@ inline uint32_t colorToARGB(const glm::vec4 &color)
            (static_cast<uint32_t>(static_cast<uint8_t>(round_to_int(c.w * 255.0f))) << 24);
 }
 
-//============================================================================
 // Planes and spheres. A plane is glm::vec4(N, D) with the equation N . p = D.
-//============================================================================
 
 // Plane through `point` with the given normal.
 inline glm::vec4 planeFromPointNormal(const glm::vec3 &normal, const glm::vec3 &point)

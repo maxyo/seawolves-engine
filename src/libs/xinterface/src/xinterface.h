@@ -49,7 +49,6 @@ class XINTERFACE : public XINTERFACE_BASE
     FXYRECT m_frectDefHelpTextureUV;
 
     // parameters obtained from INI file //
-    // -------------------------------------
     float fScale;
     XYRECT GlobalScreenRect;
     uint32_t dwScreenWidth;
@@ -62,7 +61,6 @@ class XINTERFACE : public XINTERFACE_BASE
     int32_t m_nBlendSpeed;
     XYRECT GlobalRect;
     FXYPOINT m_fpMouseOutZoneOffset;
-    //-------------------------------------
 
     // mouse data
     bool m_bShowMouse;
@@ -79,7 +77,6 @@ class XINTERFACE : public XINTERFACE_BASE
     CINODE *m_pMouseNode;
     VDATA *m_pMouseWeel;
 
-    // save render state parameters
     uint32_t m_dwStoreFlag_Fog;
 
   public:
@@ -105,10 +102,6 @@ class XINTERFACE : public XINTERFACE_BASE
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 
@@ -245,7 +238,6 @@ class XINTERFACE : public XINTERFACE_BASE
     void ReleaseContextHelpData();
     void ShowContextHelp();
 
-    // draw function
     void DrawNode(CINODE *nod, uint32_t Delta_Time, int32_t startPrior = 0, int32_t endPrior = 32000) const;
     // initialisation function
     void LoadIni();
@@ -259,10 +251,8 @@ class XINTERFACE : public XINTERFACE_BASE
     void MouseClick(bool bFirstClick);
     void MouseDeClick();
     CINODE *GetClickNode(CINODE *searchNod, int32_t xPos, int32_t yPos) const;
-    // release function
     void ReleaseOld();
     void ReleaseDinamicPic(const char *sPicName);
-    // save load functions
     bool SFLB_DoSaveFileData(const char *saveName, const char *saveData) const;
     bool SFLB_GetSaveFileData(const char *saveName, int32_t bufSize, char *buf);
     char *SaveFileFind(int32_t saveNum, char *buffer, size_t bufSize, int32_t &fileSize);
@@ -281,7 +271,6 @@ class XINTERFACE : public XINTERFACE_BASE
     // Options functions
     void SaveOptionsFile(const char *fileName, ATTRIBUTES *pAttr);
     void LoadOptionsFile(std::string_view filename, ATTRIBUTES *pAttr);
-    //
     int LoadIsExist();
     uint32_t m_dwCurDeltaTime;
     int m_dwGameTimeSec;
@@ -305,7 +294,6 @@ class XINTERFACE : public XINTERFACE_BASE
 
     KEYSTATE oldKeyState;
 
-    // save find data
     struct SAVE_FIND_DATA
     {
         char *save_file_name;
@@ -429,7 +417,6 @@ class XINTERFACE : public XINTERFACE_BASE
 
     IMAGE_Entity *m_imgLists;
 
-    // send events data
     struct EVENT_Entity
     {
         char *sEventName;
@@ -511,12 +498,6 @@ class CONTROLS_CONTAINER : public Entity
         case Stage::execute:
             Execute(delta);
             break;
-            // case Stage::realize:
-            //    Realize(delta); break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

@@ -1,8 +1,8 @@
 // New game (interface "selectcharacter", mockup V2-Menu-NewGame): the game options on the
 // left (difficulty, sea battle type, the option toggles), the hero, the occupation and
 // «Начать игру» on the right. The game's own windows over this interface (CONFIRM_WINDOW_*,
-// NOTE_WINDOW_*) become a C-Dialog with the game's buttons. Profiles are not offered
-// (owner decision). Fills the pack screen <s-new-game>.
+// NOTE_WINDOW_*) become a C-Dialog with the game's buttons. Profiles are not offered.
+// Fills the pack screen <s-new-game>.
 #include "controls.h"
 
 namespace storm::ui::screens

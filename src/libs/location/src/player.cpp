@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Player
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "player.h"
 #include <platform/android_haptics.hpp>
@@ -24,10 +18,6 @@
 #include <platform/android_combat_input.hpp>
 #endif
 
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
-
 Player::Player()
 {
     baterfl = {};
@@ -40,7 +30,6 @@ Player::Player()
     kSMReload = 1.0f;
     locCam = nullptr;
     shootgunMode = false;
-    // shootgunMode = false;
 }
 
 Player::~Player()
@@ -134,7 +123,6 @@ void Player::Move(float dltTime)
     {
         locCam->LockFPMode(shootgunMode);
     }
-    // tuner.isVisible = !shootgunMode;
 
     const auto oldSGMode = shootgunMode;
     shootgunMode = false;
@@ -173,9 +161,7 @@ void Player::Move(float dltTime)
     if (task.task == npct_none)
     {
         isEnableJump = true;
-        //------------------------------------
         Rotate(dltTime);
-        //------------------------------------
 #ifdef __ANDROID__
         // The HUD's dash button (combat action "dash", engine-only control "ChrRecoil"): the
         // backstep of pulling the stick back.
@@ -184,7 +170,6 @@ void Player::Move(float dltTime)
 #endif
         if (lastChange > 0.3f)
         {
-            // lastChange = 0.0f;
 #ifdef __ANDROID__
             if (androidAxes && command.cmd == aicmd_none && !shootgunMode && !isJump)
             {
@@ -294,7 +279,6 @@ void Player::Move(float dltTime)
         }
         else
             lastChange += dltTime;
-        //------------------------------------
         if (!shootgunMode)
         {
             if (IsChangeFightMode())
@@ -399,7 +383,6 @@ void Player::Move(float dltTime)
                 if (IsFire())
                     FireFromShootgun();
         }
-        //------------------------------------
     }
     else
         isEnableJump = false;
@@ -468,9 +451,6 @@ void Player::Update(float dltTime)
         }
     }
 
-    // float kDist;
-    // Character * c = FindGunTarget(kDist);
-    // if(c) c->Select();
     NPCharacter::Update(dltTime);
     storm::render::SetEffectsPlayerPosition({curPos.x, curPos.y, curPos.z}, this,
                                             storm::render::EffectsPlayerRole::Character);
@@ -693,12 +673,8 @@ void Player::StrafeWhenMove(float dltTime)
 {
     strafeMove = 0.0f;
 
-    // ----------------------------------------------------------------------------------------
     // If you need to turn off strafe - uncomment return
     // stopstrafe
-    // ----------------------------------------------------------------------------------------
-
-    // return;
 
     if (!isSpecialMode)
     {
@@ -760,7 +736,6 @@ bool Player::IsDoBlock()
     isSetBlock = IsFight() && (held(primary) || held(secondary));
     return isSetBlock;
 #else
-    //    return true;
     CONTROL_STATE cs;
     core.Controls->GetControlState("ChrBlock", cs);
     if (cs.state == CST_ACTIVATED)
@@ -902,10 +877,8 @@ Player *Player::FindAttackCharacter()
     int32_t j = -1;
     for (size_t i = 0; i < fndCharacter.size(); i++)
     {
-        // Character
         auto &fc = fndCharacter[i];
         // do not look at non-combatants
-        // if(!fc.c->IsFight()) continue;
         auto *chr = static_cast<Player *>(fc.c);
         if (chr == this)
             continue;

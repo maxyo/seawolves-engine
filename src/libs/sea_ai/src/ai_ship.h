@@ -21,10 +21,8 @@ enum AI_OBJTYPE
     AIOBJ_UNKNOWN = 0x7FFFFFFF
 };
 
-// ============================================================================
 // virtual AI Class
 // Contain base virtual functions
-// ============================================================================
 
 class VAI_INNEROBJ : public AIAttributesHolder
 {
@@ -155,10 +153,8 @@ class VAI_INNEROBJ : public AIAttributesHolder
     virtual void SetAngleY(float fAngleY) = 0;
 };
 
-// ============================================================================
 // master class AIShip
 // Contain base virtual functions
-// ============================================================================
 class AIShip : public VAI_INNEROBJ
 {
   private:
@@ -400,9 +396,7 @@ class AIShip : public VAI_INNEROBJ
     void Load(CSaveLoad *pSL);
 };
 
-// ============================================================================
 // child of AIShip : war type ship
-// ============================================================================
 class AIShipWar : public AIShip
 {
   public:
@@ -410,9 +404,7 @@ class AIShipWar : public AIShip
     ~AIShipWar() override;
 };
 
-// ============================================================================
 // child of AIShip : trade type ship
-// ============================================================================
 class AIShipTrade : public AIShip
 {
   public:
@@ -420,9 +412,7 @@ class AIShipTrade : public AIShip
     ~AIShipTrade() override;
 };
 
-// ============================================================================
 // child of AIShip : boat type ship
-// ============================================================================
 class AIShipBoat : public AIShip
 {
   public:

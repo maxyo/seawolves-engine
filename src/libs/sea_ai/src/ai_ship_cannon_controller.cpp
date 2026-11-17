@@ -235,11 +235,9 @@ void AIShipCannonController::Execute(float fDeltaTime)
             // aShipBorts[i].fChargePercent >= 0.999f)
             {
                 core.Event(SHIP_BORT_RELOADED, "as", GetAIShip()->GetACharacter(), bort.sName.c_str());
-                // core.Trace("%s bort is reloaded", aShipBorts[i].sName.c_str());
             }
 
             // update borts parameters for script
-            // if (GetAIShip()->isMainCharacter())
             {
                 ATTRIBUTES *pAPlayer = GetAIShip()->GetACharacter();
                 ATTRIBUTES *pABorts = pAPlayer->FindAClass(pAPlayer, "Ship.Cannons.Borts");
@@ -257,7 +255,6 @@ void AIShipCannonController::Execute(float fDeltaTime)
                 //        pACurBort->SetAttributeUseFloat("DamageRatio",
                 //                                        1.0f - static_cast<float>(GetBortIntactCannonsNum(i)) /
                 //                                        static_cast<float>(pBort
-                //                                          ->aCannons.size()));
             }
         }
     }
@@ -321,13 +318,6 @@ bool AIShipCannonController::UpdateParameters()
             RotateAroundY(v.x, v.z, vZ.z, vZ.x);
             bort.vDirection = v;
 
-            /*v = glm::vec3(sinf(fDir - fZone/2.0f), 0.0f, cosf(fDir - fZone/2.0f));
-            RotateAroundY(v.x,v.z,vZ.z,vZ.x);
-            aShipBorts[i].vAngleVectors[0] = v;
-
-            v = glm::vec3(sinf(fDir + fZone/2.0f), 0.0f, cosf(fDir + fZone/2.0f));
-            RotateAroundY(v.x,v.z,vZ.z,vZ.x);
-            aShipBorts[i].vAngleVectors[1] = v;*/
         }
     }
     return true;
@@ -456,13 +446,6 @@ bool AIShipCannonController::isCanFireBort(const AISHIP_BORT &bort, const glm::v
     const float fY0 = glm::dot(vFireDir, bort.vDirection);
     if (fY0 <= bort.fCosFireZone)
         return false;
-    /*fY0 = (vFireDir ^ aShipBorts[i].vAngleVectors[0]).y;
-    fY1 = (vFireDir ^ aShipBorts[i].vAngleVectors[1]).y;
-    if (bTempFlag)
-    {
-      core.Trace("AIShipCannonController: bort = %d, fY0 = %.8f, fY1 = %.8f", dwBort, fY0, fY1);
-    }
-    if ((SIGN(fY0) == SIGN(fY1)) || (SIGN(fY0) == 1)) return false;*/
 
     if (pfZapasDistance)
         *pfZapasDistance = bort.fMaxFireDistance - fFireDist;
@@ -713,7 +696,6 @@ bool AIShipCannonController::Init(ATTRIBUTES *_pAShip)
             break;
 
         aShipBorts.emplace_back();
-        // AISHIP_BORT * pBort = &aShipBorts[aShipBorts.Add()];
         AISHIP_BORT &bort = aShipBorts.back();
         bort.sName = pBortAttribute->GetThisName();
         bort.fFireZone = pBortAttribute->GetAttributeAsFloat("FireZone");
@@ -755,7 +737,6 @@ bool AIShipCannonController::ScanShipForCannons()
             GEOS::LABEL label;
             pNode->geo->GetLabel(i, label);
             for (auto &bort : aShipBorts)
-                //       if (aShipBorts[j] == label.group_name) {
                 if (storm::iEquals(bort.sName, label.group_name))
                 {
                     bort.aCannons.emplace_back();
@@ -798,9 +779,6 @@ bool AIShipCannonController::ScanShipForCannons()
     }
 
     // TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
-    /*core.Trace("NumBorts = %d",aShipBorts.size());
-    for (uint32_t i=0;i<aShipBorts.size();i++)
-      core.Trace("Bort = %s, Num cannons = %d",aShipBorts[i].sName.c_str(),aShipBorts[i].aCannons.size());*/
     // TEST !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1
     return true;
 }
@@ -899,11 +877,9 @@ void AIShipCannonController::CheckCannonsBoom(float fTmpCannonDamage, const glm:
                                                 1.0f - (static_cast<float>(GetBortIntactCannonsNum(bort)) +
                                                         static_cast<float>(GetBortDisabledCannonsNum(bort))) /
                                                            static_cast<float>(bort.aCannons.size()));
-                // aShipBorts[i].dwNumDamagedCannons++;
                 // pACurBort->SetAttributeUseFloat("DamageRatio",
                 //                                1.0f - static_cast<float>(GetBortIntactCannonsNum(i)) /
                 //                                static_cast<float>(pBort
-                //                                  ->aCannons.size()));
             }
         }
     }

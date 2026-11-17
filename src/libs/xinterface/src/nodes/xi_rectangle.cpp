@@ -54,7 +54,6 @@ int CXI_RECTANGLE::CommandExecute(int wActCode)
 
 void CXI_RECTANGLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, const char *name2)
 {
-    // fill vertex positions
     for (auto i = 0; i < 4; i++)
         m_pVert[i].pos.z = 1.f;
     m_pVert[0].pos.x = static_cast<float>(m_rect.left);
@@ -66,19 +65,14 @@ void CXI_RECTANGLE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, con
     m_pVert[3].pos.x = static_cast<float>(m_rect.right);
     m_pVert[3].pos.y = static_cast<float>(m_rect.bottom);
 
-    // Get rectangle left colors
     m_dwLeftColor = GetIniARGB(ini1, name1, ini2, name2, "leftColor", 0);
 
-    // Get rectangle top colors
     m_dwTopColor = GetIniARGB(ini1, name1, ini2, name2, "topColor", 0);
 
-    // Get rectangle right colors
     m_dwRightColor = GetIniARGB(ini1, name1, ini2, name2, "rightColor", 0);
 
-    // Get rectangle bottom colors
     m_dwBottomColor = GetIniARGB(ini1, name1, ini2, name2, "bottomColor", 0);
 
-    // Get bounder parameters
     m_dwBorderColor = GetIniARGB(ini1, name1, ini2, name2, "borderColor", 0);
     m_bBorder = ALPHA(m_dwBorderColor) != 0;
 
@@ -89,28 +83,24 @@ void CXI_RECTANGLE::UpdateColors()
 {
     int alpha, red, green, blue;
 
-    // set left top vertex color
     alpha = (ALPHA(m_dwLeftColor) * ALPHA(m_dwTopColor)) >> 8L;
     red = (RED(m_dwLeftColor) * RED(m_dwTopColor)) >> 8L;
     green = (GREEN(m_dwLeftColor) * GREEN(m_dwTopColor)) >> 8L;
     blue = (BLUE(m_dwLeftColor) * BLUE(m_dwTopColor)) >> 8L;
     m_pVert[0].color = ARGB(alpha, red, green, blue);
 
-    // set left bottom vertex color
     alpha = (ALPHA(m_dwLeftColor) * ALPHA(m_dwBottomColor)) >> 8L;
     red = (RED(m_dwLeftColor) * RED(m_dwBottomColor)) >> 8L;
     green = (GREEN(m_dwLeftColor) * GREEN(m_dwBottomColor)) >> 8L;
     blue = (BLUE(m_dwLeftColor) * BLUE(m_dwBottomColor)) >> 8L;
     m_pVert[1].color = ARGB(alpha, red, green, blue);
 
-    // set right top vertex color
     alpha = (ALPHA(m_dwRightColor) * ALPHA(m_dwTopColor)) >> 8L;
     red = (RED(m_dwRightColor) * RED(m_dwTopColor)) >> 8L;
     green = (GREEN(m_dwRightColor) * GREEN(m_dwTopColor)) >> 8L;
     blue = (BLUE(m_dwRightColor) * BLUE(m_dwTopColor)) >> 8L;
     m_pVert[2].color = ARGB(alpha, red, green, blue);
 
-    // set right bottom vertex color
     alpha = (ALPHA(m_dwRightColor) * ALPHA(m_dwBottomColor)) >> 8L;
     red = (RED(m_dwRightColor) * RED(m_dwBottomColor)) >> 8L;
     green = (GREEN(m_dwRightColor) * GREEN(m_dwBottomColor)) >> 8L;
@@ -152,7 +142,6 @@ void CXI_RECTANGLE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }

@@ -3,7 +3,7 @@
 //
 // A save keeps its description (interface.c GetSaveDataString) with the thumbnail in the
 // extended section after the script state (core save_file.hpp: the 40-byte header holds
-// sFileInfo[32], extOffset, extSize). SFLB_DoSaveFileData used to write that section only
+// sFileInfo[32], extOffset, extSize). SFLB_DoSaveFileData writes that section only
 // with a screenshot; the application's background autosave (no frame to take it from)
 // therefore wrote records with extSize 0. Their script state is whole, but seadogs.c
 // LoadGame asks MSG_INTERFACE_GET_SAVE_DATA for the description first and silently drops the

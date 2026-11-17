@@ -5,13 +5,9 @@
 //
 //   #include "app_events.hpp"
 //   const int id = storm::AppEvents::instance().subscribe([](const storm::AppEvent &e) {
-//       if (e.type == storm::AppEventType::WindowResized) relayout(e.width, e.height);
-//   });
 //   ...
-//   storm::AppEvents::instance().unsubscribe(id);
 //
 // Threading contract
-// ------------------
 // Every handler runs on the game thread (the thread that called install()).
 // SDL raises some events on other threads (on Android: focus, resize, low
 // memory and terminate come from the Java UI thread). Those are queued and
@@ -19,7 +15,6 @@
 // after SDL_PumpEvents(), outside of any frame.
 //
 // Normal vs early subscribers
-// ---------------------------
 // subscribe(handler)        delivered by dispatch(). Use this by default.
 // subscribe(handler, true)  "early": if SDL raises the event on the game
 //                           thread, the handler runs immediately, inside the
@@ -40,7 +35,6 @@
 // function on the game thread.
 //
 // Event order on Android
-// ----------------------
 //   Home/recents:  WindowFocusLost*, WillEnterBackground, DidEnterBackground
 //                  ... suspended ... WillEnterForeground, DidEnterForeground,
 //                  WindowFocusGained*            (* from the Java thread, so

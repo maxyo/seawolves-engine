@@ -35,7 +35,6 @@ HELPCHOOSER::~HELPCHOOSER()
 
 void HELPCHOOSER::SetDevice()
 {
-    // get render service
     rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (!rs)
         throw std::runtime_error("No service: renderer");
@@ -43,9 +42,7 @@ void HELPCHOOSER::SetDevice()
 
 bool HELPCHOOSER::Init()
 {
-    // GUARD(HELPCHOOSER::Init())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
@@ -259,7 +256,6 @@ bool HELPCHOOSER::RunChooser(const char *ChooserGroup)
             throw std::runtime_error("Allocate memory error");
         }
     }
-    // fill in all the rectangles
     ini->ReadString(ChooserGroup, "rect", param, sizeof(param) - 1, "");
     for (i = 0; i < m_nRectQ; i++)
     {
@@ -294,7 +290,6 @@ bool HELPCHOOSER::RunChooser(const char *ChooserGroup)
         ini->ReadStringNext(ChooserGroup, "rect", param, sizeof(param) - 1);
     }
 
-    // set the mouse
     m_fCurMouseX = 0.f;
     m_fCurMouseY = 0.f;
     m_nMouseWidth = ini->GetInt("COMMON", "mouseWidth", 32);
@@ -305,7 +300,6 @@ bool HELPCHOOSER::RunChooser(const char *ChooserGroup)
         if (ini->ReadString("COMMON", "mouseTexture", param, sizeof(param) - 1, ""))
             m_idMouseTexture = rs->TextureCreate(param);
 
-    // create a vertex buffer
     m_idVBuf = rs->CreateVertexBuffer(HCHOOSER_FVF, 18 * sizeof(HCHOOSER_VERTEX), D3DUSAGE_WRITEONLY);
     if (m_idVBuf == -1)
         core.Trace("WARNING! Can`t create vertex buffer for help chooser");

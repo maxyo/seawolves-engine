@@ -1,5 +1,4 @@
-// Settings (interface "option_screen"): three pages on a rail, each in columns of C-Setting rows (owner-approved
-// rework 2026-11-16). «Игра»: «Частота пиратов на карте» (the app's pirate_frequency, platform/pirate_frequency.hpp),
+// Settings (interface "option_screen"): three pages on a rail, each in columns of C-Setting rows. «Игра»: «Частота пиратов на карте» (the app's pirate_frequency, platform/pirate_frequency.hpp),
 // the game's Директсейл, advanced navigation, boarding autosave and its marks. «Управление»: one «Чувствительность»
 // for the game's two mouse sensitivities (the touch camera drag goes through them), «Инверсия по вертикали», the sea
 // camera, the camera turn at doors. «Звук и графика»: the game's volumes; the quality preset «Низкая / Средняя /
@@ -9,8 +8,8 @@
 // texture quality (at the next start). A debuggable app adds «Отладка», its single fx overrides. The application's
 // options come from the platform host on the state channel "appSettings", are kept as a draft and go back with
 // «Готово» (Bindings::SendHost). The game applies its own controls as they change and keeps or drops them with
-// BTN_OK / BTN_CANCEL: «Готово» is BTN_OK, ← is BTN_CANCEL, and there is no unsaved-changes question (owner
-// decision). Fills the pack screen <s-settings>.
+// BTN_OK / BTN_CANCEL: «Готово» is BTN_OK, ← is BTN_CANCEL, and there is no unsaved-changes question.
+// Fills the pack screen <s-settings>.
 #include "controls.h"
 
 #include <platform/display_options.hpp>
@@ -282,7 +281,7 @@ class SettingsScreen final : public Screen
             DebugSegment(bindings, debug, "fx_alpha_to_coverage", "Alpha to coverage", {-1, 0, 1}, onOff);
             DebugSegment(bindings, debug, "fx_anisotropy", "Анизотропия", {-1, 1, 4, 8}, {"пресет", "выкл", "4x", "8x"});
             DebugSegment(bindings, debug, "fx_ao_volume", "Затенение (объём)", {-1, 0, 1, 2, 3}, {"пресет", "выкл", "игра", "умер", "сильн"});
-            // FSR 1 and SMAA (cc59cbe9, 924e22d2): the scene's internal height (native on displays not taller),
+            // FSR 1 and SMAA: the scene's internal height (native on displays not taller),
             // the post AA, RCAS;
             // «Замер GPU» logs GPU timer averages, which «Поделиться логом» carries out.
             if (Known("fx_render_height"))
@@ -297,7 +296,7 @@ class SettingsScreen final : public Screen
             // (src/libs/geometry/far_lod), in tenths of a pixel; «выкл» draws every model whole.
             if (Known("fx_far_lod"))
                 DebugSegment(bindings, debug, "fx_far_lod", "Дальние LOD", {-1, 0, 10, 20}, {"пресет", "выкл", "1 px", "2 px"});
-            // The lamps' relight of locations (f0265528, fb6f189e): how many lamps cast shadows, the
+            // The lamps' relight of locations: how many lamps cast shadows, the
             // shadow filter, how much brighter characters indoors are than the room, the lamp views.
             if (Known("fx_lamp_shadows"))
             {
@@ -307,7 +306,7 @@ class SettingsScreen final : public Screen
                              {"пресет", "0%", "20%", "50%", "100%"});
                 DebugSegment(bindings, debug, "fx_lamp_debug", "Лампы: отладка", {-1, 0, 1, 2}, {"пресет", "выкл", "цвета", "маска"});
             }
-            // The share of a lamp's own colour in the light it adds to baked surfaces (7f1592e6).
+            // The share of a lamp's own colour in the light it adds to baked surfaces.
             if (Known("fx_lamp_tint"))
                 DebugSegment(bindings, debug, "fx_lamp_tint", "Цвет ламп на стенах", {-1, 0, 25, 50, 100},
                              {"пресет", "0%", "25%", "50%", "100%"});
@@ -321,7 +320,7 @@ class SettingsScreen final : public Screen
                 DebugSegment(bindings, debug, "fx_light_level", "Огни: яркость", {-1, 50, 70, 85, 100},
                              {"пресет", "50%", "70%", "85%", "100%"});
             }
-            // Sunlight through the sails (fe7b54e5): its strength.
+            // Sunlight through the sails: its strength.
             if (Known("fx_sail_light"))
                 DebugSegment(bindings, debug, "fx_sail_light", "Свет сквозь паруса", {-1, 0, 100, 200, 300},
                              {"пресет", "выкл", "100%", "200%", "300%"});
@@ -331,10 +330,10 @@ class SettingsScreen final : public Screen
                 DebugSegment(bindings, debug, "fx_town_light", "Свет городов", {-1, 0, 1}, {"пресет", "игра", "наш"});
                 DebugSegment(bindings, debug, "fx_town_light_debug", "Свет городов: отладка", {-1, 0, 1}, onOff);
             }
-            // The town walls relit per pixel (32d9ce5d).
+            // The town walls relit per pixel.
             if (Known("fx_town_walls"))
                 DebugSegment(bindings, debug, "fx_town_walls", "Стены городов", {-1, 0, 1}, {"пресет", "игра", "наши"});
-            // Gloss maps (6e5576d5, Высокая): per-texel highlights of the sun and lamps, metal in its own colour.
+            // Gloss maps (Высокая): per-texel highlights of the sun and lamps, metal in its own colour.
             if (Known("fx_gloss"))
             {
                 DebugSegment(bindings, debug, "fx_gloss", "Блеск", {-1, 0, 1}, onOff);
@@ -351,7 +350,7 @@ class SettingsScreen final : public Screen
                 DebugSegment(bindings, debug, "fx_character_relief_strength", "Сила рельефа персонажей",
                              {-1, 25, 50, 75, 100}, {"пресет", "25%", "50%", "75%", "100%"});
             }
-            // Waves from objects (49b75861): ripples, their lift of the surface, their views.
+            // Waves from objects: ripples, their lift of the surface, their views.
             if (Known("fx_sea_waves"))
             {
                 DebugSegment(bindings, debug, "fx_sea_waves", "Море: рябь от объектов", {-1, 0, 1}, onOff);
@@ -441,7 +440,7 @@ class SettingsScreen final : public Screen
         const std::string size = bytes < 0 ? bindings.Text("settings.cache_measuring")
                                            : Size(bindings, static_cast<double>(bytes), bytes < kGiB ? 0.0 : static_cast<double>(bytes));
         // Pending: the row says so in its normal colours and has no button any more; «Очистить» is pressed and held
-        // (the owner's rule for destructive actions: the c-setting button confirms by a hold).
+        // (destructive actions: the c-setting button confirms by a hold).
         column.rows.push_back(Json{{"kind", "button"},
                                    {"id", "app-cache-clear"},
                                    {"label", Fill(bindings.Text("settings.cache"), {size})},

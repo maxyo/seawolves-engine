@@ -1,5 +1,5 @@
 // The CPU side of the parallax probe (fx_pom_probe, effects/parallax_probe.hpp): which relief texture is under the
-// screen centre, for the owner's tuning of the parallax per texture.
+// screen centre, for tuning the parallax per texture.
 //
 // The renderer finds it exactly on the GPU: while the probe is on, every relief draw into the game picture whose
 // bounding sphere lies on the centre ray (OnCentreRay) is drawn a second time, after the whole scene, with the depth

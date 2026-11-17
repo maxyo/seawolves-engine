@@ -44,7 +44,7 @@ float ReliefDepthTexels(ReliefClass relief)
         return 1.25f;
     case ReliefClass::Wood:
         return 1.0f;
-    case ReliefClass::Character: // the owner's shallow character depth
+    case ReliefClass::Character: // the shallow character depth
         return 2.0f;
     case ReliefClass::Prop:
         return 0.75f;

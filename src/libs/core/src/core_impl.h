@@ -54,14 +54,12 @@ class CoreImpl final : public CorePrivate
     uint32_t MakeHashValue(const char *string);
     VMA *FindVMA(const char *class_name);
     VMA *FindVMA(int32_t hash);
-    //------------------------------------------------------------------------------------------------
     // API functions : (virtual API)
 
     // common programm control
 
     // shutdown core, delete all objects and close programm
     void Exit();
-    // return application handle
     storm::OSWindow *GetWindow() override;
     // set time scale; affect on std entity functions DeltaTime parameter
     void SetTimeScale(float _scale) override;
@@ -88,22 +86,18 @@ class CoreImpl final : public CorePrivate
 
     // messeges system
 
-    // send message to an object
     uint64_t Send_Message(entid_t Destination, const char *Format, ...) override;
 
-    // save core state
     bool SaveState(const char *file_name) override;
     // force core to load state file at the start of next game loop, return false if no state file
     bool InitiateStateLoading(const char *file_name) override;
     std::string StateFileProblem(const char *file_name) override;
 
-    // return current fps
     uint32_t EngineFps() override;
     // set fixed delta time mode, (-1) - off
     void SetDeltaTime(int32_t delta_time) override;
     uint32_t GetDeltaTime() override;
     uint32_t GetRDeltaTime() override;
-    //    
     VDATA *Event(const std::string_view &event_name) override;
     VDATA *Event(const std::string_view &event_name, MESSAGE& message) override;
     uint32_t PostEvent(const char *Event_name, uint32_t post_time, const char *Format, ...) override;

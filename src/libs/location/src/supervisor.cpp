@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Supervisor
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #include "supervisor.h"
 #include "character.h"
@@ -14,10 +8,6 @@
 #include "locator_array.h"
 #include "core.h"
 #include "math_inlines.h"
-
-// ============================================================================================
-// Construction, destruction
-// ============================================================================================
 
 Supervisor::Supervisor()
     : isDelete(false)
@@ -195,7 +185,6 @@ void Supervisor::Update(float dltTime)
         character[i].c->numColCharacter = chr - character[i].c->startColCharacter;
     }
     character[i].c->numColCharacter = 0;
-    // Calculations
     for (i = 0; i < character.size(); i++)
         character[i].c->Calculate(dltTime);
     // Collision of characters and setting new coordinates

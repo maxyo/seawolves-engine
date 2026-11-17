@@ -95,7 +95,6 @@ void Astronomy::STARS::Init(ATTRIBUTES *pAP)
 
     fPrevFov = -1.0f;
 
-    // if (!bEnable) return;
 
     iTexture = sTexture == nullptr ? -1 : pRS->TextureCreate(sTexture);
 
@@ -163,7 +162,6 @@ void Astronomy::STARS::Init(ATTRIBUTES *pAP)
             auto fMinMag = -100.0f, fMaxMag = 100.0f;
             for (uint32_t i = 0; i < dwSize; i++)
             {
-                // Star & s = aStars[aStars.Add()];
                 aStars.push_back(Star{});
                 auto &s = aStars.back();
 
@@ -185,7 +183,6 @@ void Astronomy::STARS::Init(ATTRIBUTES *pAP)
                 pVPos[i] = vPos;
                 pVColors[i] = ARGB(s.fAlpha * 255.0f, 255, 255, 255);
             }
-            // core.Trace("Stars: min = %.3f, max = %.3f", fMinMag, fMaxMag);
 
             // write all the buffers to the cache in order not to recalculate the next time
             std::error_code error;
@@ -248,11 +245,9 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
     glm::vec3 vCamPos, vCamAng;
     float fFov;
     glm::mat4 mView, IMatrix;
-    // RS_RECT rr[1000];
 
     pRS->GetCamera(vCamPos, vCamAng, fFov);
 
-    // RDTSC_B(dw1);
 
     auto fMaxMag = Bring2Range(fTelescopeMagnitude, fVisualMagnitude, 0.14f, 1.285f, fFov);
 
@@ -313,99 +308,10 @@ void Astronomy::STARS::Realize(double dDeltaTime, double dHour)
 
     pRS->SetStreamSource(1, -1, 0);
 
-    /*Astronomy::pRS->GetTransform(D3DTS_VIEW, mView);
-    Astronomy::pRS->GetCamera(vCamPos, vCamAng, fFov);
-    float fScaleY = Astronomy::pRS->GetHeightDeformator();
-
-    float fFV = Bring2Range(0.01f, 1.0f, 0.01f, 1.285f, fFov);
-    float fMaxMag = Bring2Range(fTelescopeMagnitude, fVisualMagnitude, 0.14f, 1.285f, fFov);
-
-    float fRAHour = float(double(PIm2) * dHour * 15.0 / 360.0);
-
-    float fTexDX = 1.0f / float(dwSubTexturesX);
-    float fTexDY = 1.0f / float(dwSubTexturesY);
-
-    StarVertex * pV = null;
-
-    Astronomy::pRS->TextureSet(0, iTexture);
-    Astronomy::pRS->SetTransform(D3DTS_VIEW, IMatrix);
-    Astronomy::pRS->SetTransform(D3DTS_WORLD, IMatrix);
-
-    uint32_t dwStars = 0;
-    int32_t idx = 0;
-    for (uint32_t i=0; i<aStars.size(); i+=1)
-    {
-      if (idx == 0 && !pV)
-      {
-        pV = (StarVertex*)Astronomy::pRS->LockVertexBuffer(iVertexBuffer, D3DLOCK_DISCARD);
-        if (!pV) break;
-      }
-
-      Star & s = aStars[i];
-      RS_RECT & r = rr[idx];
-
-      int32_t iRA;
-      float fRa = float(COS_TABLE_SIZE) * (fRAHour + s.fRA); FTOL(iRA, fRa);
-
-      float fCosRA = fCosTable[iRA & (COS_TABLE_SIZE - 1)];
-      float fSinRA = fCosTable[(iRA + COS_TABLE_SIZE / 4) & (COS_TABLE_SIZE - 1)];
-
-      glm::vec3 vPos = vCamPos + fRadius * glm::vec3(s.fCosDec * fCosRA, s.fCosDec * fSinRA, s.fSinDec);
-      if (vPos.y < 0.0f) continue;
-
-      float fHA = (vPos.y < fHeightFade) ? vPos.y / fHeightFade : 1.0f;
-
-      float fAlpha = 255.0f * fHA * Bring2Range(1.0f, 0.01f, -0.1f, fMaxMag, s.fMag);
-      if (fAlpha <= (0.010001f * 255.0f)) continue;
-
-      // fill vertex buffer
-      glm::vec3 vPos1 = mView * vPos;
-      //if (vPos.z < 0.0f) continue;
-      uint32_t dwAlpha; FTOL(dwAlpha, fAlpha);
-      uint32_t dwStarsColor = (dwAlpha << 24L) | dwColor;
-      float fStarsSize = fSize * fFV;
-
-      pV[0].vPos = vPos1 + glm::vec3(-fStarsSize, -fStarsSize * fScaleY, 0.0f);
-      pV[0].dwColor = dwStarsColor;
-      pV[0].tu = s.fTexX; pV[0].tv = s.fTexY;
-
-      pV[1].vPos = vPos1 + glm::vec3(-fStarsSize, fStarsSize * fScaleY, 0.0f);
-      pV[1].dwColor = dwStarsColor;
-      pV[1].tu = s.fTexX; pV[1].tv = s.fTexY + fTexDY;
-
-      pV[2].vPos = vPos1 + glm::vec3(fStarsSize, -fStarsSize * fScaleY, 0.0f);
-      pV[2].dwColor = dwStarsColor;
-      pV[2].tu = s.fTexX + fTexDX; pV[2].tv = s.fTexY;
-
-      pV[3].vPos = vPos1 + glm::vec3(fStarsSize, fStarsSize * fScaleY, 0.0f);
-      pV[3].dwColor = dwStarsColor;
-      pV[3].tu = s.fTexX + fTexDX; pV[3].tv = s.fTexY + fTexDY;
-
-      pV += 4;
-
-      idx++;
-      dwStars++;
-      if (idx == MAX_RECTS)
-      {
-        Astronomy::pRS->UnLockVertexBuffer(iVertexBuffer);
-        Astronomy::pRS->DrawBuffer(iVertexBuffer, sizeof(StarVertex), iIndexBuffer, 0, idx * 4, 0, idx * 2, "Stars");
-        pV = null;
-        idx = 0;
-      }
-    }
-
-    if (idx && pV)
-    {
-      Astronomy::pRS->UnLockVertexBuffer(iVertexBuffer);
-      Astronomy::pRS->DrawBuffer(iVertexBuffer, sizeof(StarVertex), iIndexBuffer, 0, idx * 4, 0, idx * 2, "Stars");
-    }*/
-    // RDTSC_E(dw1);
 
     // Hidden deterministic colors must not validate the ordinary randomized cache.
     fPrevFov = storm::loading::active ? -1.0f : fFov;
 
-    // core.Trace("RDTSC = %d", dw1);
-    // Astronomy::pRS->SetTransform(D3DTS_VIEW, mView);
 }
 
 void Astronomy::STARS::TimeUpdate(ATTRIBUTES *pAP)

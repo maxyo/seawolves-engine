@@ -1,10 +1,8 @@
 #pragma once
 #include "renderer.h"
 
-//-----------------------------------------------------------------------------
 // Name: class VideoToTexture
 // Desc: play video into texture
-//-----------------------------------------------------------------------------
 class CVideoTexture : public Entity
 {
   public:

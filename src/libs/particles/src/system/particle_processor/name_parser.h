@@ -12,8 +12,6 @@ class GeomNameParser
     char NamesString[MAX_STRING_SIZE];
 
   public:
-    // GeomNameParser () : Tokens(_FL_) {};
-    //~GeomNameParser () {};
 
     const char *GetRandomName(const char *names)
     {

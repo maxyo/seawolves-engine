@@ -488,7 +488,6 @@ int32_t BIShipCommandList::AbilityAdding()
         const int32_t selPictureNum = pA->GetAttributeAsDword("selPicNum", 0);
         const int32_t textureNum = pA->GetAttributeAsDword("texNum", -1);
         // retVal += AddToIconList( textureNum, pictureNum, selPictureNum, -1, -1, pA->GetThisName(), i, null,
-        // pA->GetAttribute("note") );
         const int32_t cooldownPictureNum = pA->GetAttributeAsDword("cooldownPicNum", -1);
         const char *eventName = pA->GetAttribute("event");
         retVal += AddToIconList(textureNum, pictureNum, selPictureNum, cooldownPictureNum, -1, eventName, -1, nullptr,

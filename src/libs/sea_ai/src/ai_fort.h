@@ -5,10 +5,8 @@
 
 #include "ship_lights.h"
 
-// ============================================================================
 // Master class AIFort
 // Contain AI part for fort, fort cannons, collision part and other
-// ============================================================================
 class AIShip;
 class AIGroup;
 
@@ -304,10 +302,6 @@ class AIFort : public VAI_OBJBASE
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-              LostRender(delta); break;
-            case Stage::restore_render:
-              RestoreRender(delta); break;*/
         }
     }
 

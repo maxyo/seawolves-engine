@@ -75,9 +75,7 @@ class GEOS
 
     virtual int32_t FindName(const char *name) const = 0;
 
-    //-----------------------------------------
     // get info of entire object
-    //-----------------------------------------
     struct INFO
     {
         int32_t ntextures;
@@ -93,9 +91,7 @@ class GEOS
 
     virtual void GetInfo(INFO &i) const = 0;
 
-    //-----------------------------------------
     // label
-    //-----------------------------------------
     enum LABEL_FLAGS
     {
         LABLE_FORCEDWORD = 0x7FFFFFFF
@@ -116,9 +112,7 @@ class GEOS
     virtual void GetLabel(int32_t l, LABEL &lb) const = 0;
     virtual void SetLabel(int32_t l, const LABEL &lb) = 0;
 
-    //-----------------------------------------
     // materials
-    //-----------------------------------------
     enum TEXTURE_TYPE
     {
         TEXTURE_NONE = 0,
@@ -145,9 +139,7 @@ class GEOS
     virtual void SetMaterial(int32_t m, const MATERIAL &mt) = 0;
     using MATERIAL_FUNC = void (*)(const MATERIAL &mt);
 
-    //-----------------------------------------
     // object
-    //-----------------------------------------
     enum OBJECT_FLAGS
     {
         VISIBLE = (1 << 0),
@@ -160,7 +152,6 @@ class GEOS
         COLLISION_ENABLE = (1 << 4),
         // if yes - object will be stored to BSP
         VERTEX_WEIGHT = (1 << 5),
-        // animation
         MERGE = (1 << 6),
         // object is "merged"-type
         CULLENABLE = (1 << 7),
@@ -188,9 +179,7 @@ class GEOS
     virtual void GetObj(int32_t o, OBJECT &ob) const = 0;
     virtual void SetObj(int32_t o, const OBJECT &ob) = 0;
 
-    //-----------------------------------------
     // light sources
-    //-----------------------------------------
     enum LIGHT_TYPE
     {
         LIGHT_POINT = 0,
@@ -225,9 +214,6 @@ class GEOS
     virtual void GetLight(int32_t l, LIGHT &lt) const = 0;
     virtual void SetLight(int32_t l, const LIGHT &lt) = 0;
 
-    //-----------------------------------------
-    // draw
-    //-----------------------------------------
     struct PLANE
     {
         VERTEX nrm;
@@ -242,9 +228,7 @@ class GEOS
         return false;
     }
 
-    //-----------------------------------------
     // collision, ray shooting
-    //-----------------------------------------
     struct TRACE_INFO
     {
         float a, b; // valid only for ray tracing
@@ -264,9 +248,7 @@ class GEOS
     // Get detail info on last ray hit or clip
     virtual bool GetCollisionDetails(TRACE_INFO &ti) const = 0;
 
-    //-----------------------------------------
     // all other
-    //-----------------------------------------
 
     // Get ID of texture
     virtual int32_t FindTexture(int32_t start_index, int32_t name_id) = 0;
@@ -325,9 +307,7 @@ class GEOS
     {
     }
 
-    //-----------------------------------------
     // unused
-    //-----------------------------------------
     virtual ~GEOS(){};
 };
 

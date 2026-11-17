@@ -25,7 +25,7 @@ struct WaveIdle
         if (has_sources)
         {
             if (Sleeping())
-                pending_retention = 1.0f; // the owner already reset the sleeping field
+                pending_retention = 1.0f; // the caller already reset the sleeping field
             seconds = 0.0f;
             // Already faded state is never amplified on reentry; any fade awaiting a simulation step stays due.
             return;

@@ -96,7 +96,7 @@ struct DrawSphere
     bool valid = false;
 };
 
-// A draw's sphere computed when prepare() first needs it (perf audit finding 9: walking the vertices of every dynamic
+// A draw's sphere computed when prepare() first needs it (walking the vertices of every dynamic
 // lit draw cost 12-14 % of the engine's CPU at sea, where most draws choose no point lights).
 // The vertices a draw reaches, in its vertex buffer's CPU copy (shim::Device::draw_vertices): `count` vertices of
 // `stride` bytes from `data`; empty when they cannot be read.

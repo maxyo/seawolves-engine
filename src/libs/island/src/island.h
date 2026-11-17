@@ -118,9 +118,6 @@ class ISLAND : public ISLAND_BASE
 
     // debug
     // dead code
-    /*void DoZapSuperGenerator();
-    void DoZapSuperGeneratorInnerDecodeFiles(const char *sub_dir, const char *mask);
-    bool DoZapSuperGeneratorDecodeFile(const char *sname);*/
 
   public:
     ISLAND();
@@ -133,18 +130,12 @@ class ISLAND : public ISLAND_BASE
     {
         switch (stage)
         {
-            // case Stage::execute:
-            //    Execute(delta); break;
         case Stage::loading_realize:
             Realize(0);
             break;
         case Stage::realize:
             Realize(delta);
             break;
-            /*case Stage::lost_render:
-                LostRender(delta); break;
-            case Stage::restore_render:
-                RestoreRender(delta); break;*/
         }
     }
 

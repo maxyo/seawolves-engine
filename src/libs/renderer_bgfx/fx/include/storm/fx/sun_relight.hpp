@@ -13,7 +13,7 @@
 //     draws multiply the game's own lightmap by it (ff_fragment.sh ffTownRatio, one more texture fetch): the paint,
 //     its painted shadows, crevices and grain, always come from the game's lightmap at its full resolution.
 // The ratio is smooth where the paint is not: its map is far coarser than the paint, a texel about 0.2 m (RatioSize;
-// the owner's sheet of 2026-11-17: the moving edges a little softer than at the place map's own 0.04-0.08 m texel, the
+// the moving edges a little softer than at the place map's own 0.04-0.08 m texel, the
 // painted darks the same, under 1 MB for a town instead of 5-9).
 // Its encoding (fs_fx_sun_relight.sc encodeRatio writes it, ff_fragment.sh ffTownRatio reads it): a texel e (0..255)
 // holds the ratio 3^((e - 127) / 127): 127 is exactly 1 (the game's light kept), 0 a third, 254 three times; steps of

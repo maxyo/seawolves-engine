@@ -67,7 +67,6 @@ bool SHIPPOINTER::Init()
         return false;
     }
 
-    //"battle_interface\\shippointer.tga");
     m_idFriendTex = rs->TextureCreate(pA->GetAttribute("friend"));
     m_idEnemyTex = rs->TextureCreate(pA->GetAttribute("enemy"));
 
@@ -187,15 +186,6 @@ VAI_OBJBASE *SHIPPOINTER::FindShipByChrIndex(int32_t chrIdx) const
         }
     }
 
-    /*if( NetFindClass(false,&ei,"netship") ) do
-    {
-      VAI_OBJBASE * ps = (VAI_OBJBASE*)core.GetEntityPointer(ei);
-      if(ps!= nullptr && ps->GetACharacter()!= nullptr)
-      {
-        if( (int32_t)ps->GetACharacter()->GetAttributeAsDword("id",-2) == chrIdx )
-          return ps;
-      }
-    } while( NetFindClassNext(false,&ei) );*/
 
     return nullptr;
 }

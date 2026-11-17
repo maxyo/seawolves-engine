@@ -1,12 +1,6 @@
-//============================================================================================
 //    Spirenkov Maxim aka Sp-Max Shaman, 2001
-//--------------------------------------------------------------------------------------------
 //
-//--------------------------------------------------------------------------------------------
 //    Grass
-//--------------------------------------------------------------------------------------------
-//
-//============================================================================================
 
 #pragma once
 
@@ -91,20 +85,14 @@ class Grass : public Entity
         int32_t useCounter; // Grass Influence Counter
     };
 
-    // --------------------------------------------------------------------------------------------
-    // Construction, destruction
-    // --------------------------------------------------------------------------------------------
   public:
     Grass();
     ~Grass() override;
 
-    // Initialization
     bool Init() override;
-    // Work
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
     void PrepareLoadingPose();
-    //
     uint64_t ProcessMessage(MESSAGE &message) override;
 
     void RestoreRender();
@@ -138,9 +126,6 @@ class Grass : public Entity
 
     std::vector<CharacterPos> characters;
 
-    // --------------------------------------------------------------------------------------------
-    // Encapsulation
-    // --------------------------------------------------------------------------------------------
   private:
     // Box visibility check
     bool VisibleTest(const PLANE *plane, int32_t numPlanes, const glm::vec3 &min, const glm::vec3 &max);

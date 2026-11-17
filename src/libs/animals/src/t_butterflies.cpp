@@ -6,12 +6,10 @@
 
 #pragma warning(disable : 4244)
 
-//--------------------------------------------------------------------
 TButterflies::TButterflies() : enabled(false), yDefineTime(0)
 {
 }
 
-//--------------------------------------------------------------------
 TButterflies::~TButterflies()
 {
     renderService->TextureRelease(texture);
@@ -19,7 +17,6 @@ TButterflies::~TButterflies()
     delete ivManager;
 }
 
-//--------------------------------------------------------------------
 void TButterflies::LoadSettings()
 {
     auto ini = fio->OpenIniFile(ANIMALS_INI_FILENAME);
@@ -30,10 +27,8 @@ void TButterflies::LoadSettings()
     maxDistance = ini->GetFloat(ANIMALS_BUTTERFLIES_SECTION, "distance", BUTTERFLY_DISTANCE);
 
     // DEBUG!
-    // butterfliesCount = 1;
 }
 
-//--------------------------------------------------------------------
 void TButterflies::Init()
 {
     LoadSettings();
@@ -56,7 +51,6 @@ void TButterflies::Init()
     texture = renderService->TextureCreate("butter.tga");
 }
 
-//--------------------------------------------------------------------
 uint64_t TButterflies::ProcessMessage(int32_t _code, MESSAGE &message)
 {
     const uint32_t outValue = 0;
@@ -84,7 +78,6 @@ uint64_t TButterflies::ProcessMessage(int32_t _code, MESSAGE &message)
     return outValue;
 }
 
-//--------------------------------------------------------------------
 void TButterflies::Execute(uint32_t _dTime)
 {
     if (!enabled)
@@ -126,13 +119,11 @@ void TButterflies::Execute(uint32_t _dTime)
     {
         butterflies[i].Calculate(_dTime, collide, its);
         butterflies[i].Draw(ivManager);
-        // butterflies[i].Draw(renderService);
     }
 
     ivManager->UnlockBuffers();
 }
 
-//--------------------------------------------------------------------
 void TButterflies::Realize(uint32_t dTime)
 {
     if (!enabled)
@@ -142,9 +133,5 @@ void TButterflies::Realize(uint32_t dTime)
 
     renderService->SetTransform(D3DTS_WORLD, static_cast<D3DMATRIX *>(storm::math::d3dMatrix(wMatrix)));
     renderService->TextureSet(0, texture);
-    // for (int i = 0; i<butterfliesCount; i++)
-    //    butterflies[i].Draw(renderService, butterfly);
     ivManager->DrawBuffers("Butterfly");
 }
-
-//--------------------------------------------------------------------

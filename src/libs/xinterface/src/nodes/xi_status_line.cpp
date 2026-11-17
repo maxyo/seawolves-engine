@@ -66,10 +66,8 @@ void CXI_STATUSLINE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
         m_idTex = pPictureService->GetTextureID(m_sGroupName);
     }
 
-    // Calculate vertex and index quantity
     m_nVert = 2 * 4;
     m_nIndx = 2 * 6;
-    // Create vertex and index buffers
     m_vBuf = m_rs->CreateVertexBuffer(XI_ONLYONETEX_FVF, m_nVert * sizeof(XI_ONLYONETEX_VERTEX), D3DUSAGE_WRITEONLY);
     m_iBuf = m_rs->CreateIndexBuffer(m_nIndx * 2);
     m_nIndx /= 3;
@@ -98,7 +96,6 @@ void CXI_STATUSLINE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
         }
         fMediumX += m_fLineOffset;
 
-        // get screen coordinates
         scrRect1.left = static_cast<float>(m_rect.left);
         scrRect2.left = static_cast<float>(m_rect.left) + fMediumX;
         scrRect1.top = scrRect2.top = static_cast<float>(m_rect.top);
@@ -106,7 +103,6 @@ void CXI_STATUSLINE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
         scrRect2.right = static_cast<float>(m_rect.right);
         scrRect1.bottom = scrRect2.bottom = static_cast<float>(m_rect.bottom);
 
-        // get texture coordinates
         fMediumX /= (m_rect.right - m_rect.left);
         if (ReadIniString(ini1, name1, ini2, name2, "filledPicture", param, sizeof(param), ""))
             pPictureService->GetTexturePos(m_sGroupName, param, m_texRect1);
@@ -120,7 +116,6 @@ void CXI_STATUSLINE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
         memcpy(&texRect2, &m_texRect2, sizeof(FRECT));
         texRect2.left = m_texRect2.left + (m_texRect2.right - m_texRect2.left) * fMediumX;
 
-        // fill index buffer
         pIBuf[0] = 0;
         pIBuf[4] = pIBuf[1] = 1;
         pIBuf[3] = pIBuf[2] = 2;
@@ -130,7 +125,6 @@ void CXI_STATUSLINE::LoadIni(INIFILE *ini1, const char *name1, INIFILE *ini2, co
         pIBuf[9] = pIBuf[8] = 6;
         pIBuf[11] = 7; // empty rectangle
 
-        // fill vertex buffer
         for (auto i = 0; i < m_nVert; i++)
             pVBuf[i].pos.z = 1.f;
         // screen and texture coordinates for filled rectangle
@@ -199,7 +193,6 @@ void CXI_STATUSLINE::SaveParametersToIni()
         return;
     }
 
-    // save position
     sprintf_s(pcWriteParam, sizeof(pcWriteParam), "%d,%d,%d,%d", m_rect.left, m_rect.top, m_rect.right, m_rect.bottom);
     pIni->WriteString(m_nodeName, "position", pcWriteParam);
 }
@@ -236,7 +229,6 @@ void CXI_STATUSLINE::Refresh() const
             fMediumX *= (fCurValue - fMinValue) / (fMaxValue - fMinValue);
 
         FXYRECT scrRect1, scrRect2;
-        // get screen coordinates
         scrRect1.left = static_cast<float>(m_rect.left);
         scrRect2.left = static_cast<float>(m_rect.left) + fMediumX;
         scrRect1.top = scrRect2.top = static_cast<float>(m_rect.top);
@@ -244,7 +236,6 @@ void CXI_STATUSLINE::Refresh() const
         scrRect2.right = static_cast<float>(m_rect.right);
         scrRect1.bottom = scrRect2.bottom = static_cast<float>(m_rect.bottom);
 
-        // get texture coordinates
         fMediumX /= (m_rect.right - m_rect.left);
 
         FRECT texRect1, texRect2;

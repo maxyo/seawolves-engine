@@ -20,8 +20,6 @@ struct SAILGROUP
 class SAIL : public SAIL_BASE
 {
     // parameters loaded from INI file //
-    // --------------------------------------
-    // float sailDownStep;
     float SsailWindDepend;
     float TsailWindDepend;
     float FLEXSPEED;
@@ -73,7 +71,6 @@ class SAIL : public SAIL_BASE
     // wind description
     WIND globalWind;
     float *WindVect;
-    //------------------------------------------
 
     friend SAILONE;
     bool bUse;

@@ -46,9 +46,7 @@ FLAG::~FLAG()
 
 bool FLAG::Init()
 {
-    // GUARD(FLAG::FLAG())
     SetDevice();
-    // UNGUARD
     return true;
 }
 
@@ -144,7 +142,6 @@ void FLAG::Realize(uint32_t Delta_Time)
             RenderService->DrawBuffer(vBuf, sizeof(FLAGLXVERTEX), iBuf, 0, nVert, 0, nIndx, "ShipFlag");
         //_asm rdtsc  _asm sub eax,rtm _asm mov rtm,eax
         // Print info
-        // RenderService->Print(0,220,"Flags tics= %d",rtm);
     }
 }
 
@@ -154,9 +151,7 @@ uint64_t FLAG::ProcessMessage(MESSAGE &message)
 
     switch (code)
     {
-        //**********************
         // Start Initialisation
-        //----------------------
     case MSG_FLAG_INIT: {
         const auto eidModel = message.EntityID();
         const auto nNation = message.Long();
@@ -521,9 +516,6 @@ void FLAG::AddLabel(GEOS::LABEL &gl, NODE *nod, bool isSpecialFlag, bool isShip,
     cv.x = gl.m[3][0] + storm::math::data(nod->loc_mtx)[3];
     cv.y = gl.m[3][1] + storm::math::data(nod->loc_mtx)[7];
     cv.z = gl.m[3][2] + storm::math::data(nod->loc_mtx)[11];
-    /*cv.x = gl.m[3][0];
-    cv.y = gl.m[3][1];
-    cv.z = gl.m[3][2];*/
     // set flag point
     switch (gl.name[1])
     {
@@ -575,7 +567,6 @@ void FLAG::SetTreangle() const
 
 void FLAG::LoadIni()
 {
-    // GUARD(FLAG::LoadIni());
     char section[256];
     char param[256];
 
@@ -636,7 +627,6 @@ void FLAG::LoadIni()
     fWindMaxValue = ini->GetFloat(section, "fWindMaxValue", 12.f);
     // minimum number of segments in the flag
     MinSegmentQuantity = ini->GetInt(section, "MinSegQuantity", 4);
-    // UNGUARD
 }
 
 uint32_t FLAG::AttributeChanged(ATTRIBUTES *attributes)

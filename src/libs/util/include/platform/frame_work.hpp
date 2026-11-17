@@ -6,7 +6,6 @@
 // so script events raised from an entity's Execute count as script), and the Execute and Realize stages also per
 // entity class (EntityScope, inclusive). EndFrame closes the frame into the windows of its readers:
 //
-//   * Profile: the renderer's effects profile line (fx_gpu_profile=1), about once a second;
 //   * Summary: the "frame work:" line every 30 s next to "frame pacing:", in every session.
 //
 // A window keeps the means per phase, the per-frame work for percentiles, the slowest frame with its own split and
@@ -308,7 +307,6 @@ inline std::string TopClasses(const ClassTimes &times, uint32_t frames, size_t c
 
 // The window as key=value pairs, ms per frame (empty without frames):
 // game_work_ms game_work_p95_ms <phase>_ms... worst_work_ms worst=<phase:ms,...> worst_entity=<stage:Class:ms>
-// sync=<kind:ms,...> worst_sync=<kind:msxcount,...> execute_top=<Class:ms,...> realize_top=<Class:ms,...>.
 inline std::string Describe(const Window &window, size_t top = 4)
 {
     if (window.frames == 0)

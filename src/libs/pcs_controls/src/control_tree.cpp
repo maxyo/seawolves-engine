@@ -8,7 +8,7 @@ ControlTree::ControlChild::ControlChild()
     index = -1;
     sControlName = "";
     bActive = false;
-    fTimeOut = 0.05f; // boal fix  // 0.5f;
+    fTimeOut = 0.05f;
     fCurTime = 0.f;
     sOutControlName = "";
     nLayer = 0;
@@ -46,13 +46,8 @@ void ControlTree::ControlChild::Process(float fDeltaTime, ControlTree *pControlT
         {
             fCurTime += fDeltaTime;
         }
-        /*else
-        {
-            bActive = false; // boal to allow deactivation
-        } */
     }
     else
-    // if (! bActive) // boal if not already
     // if the control has not been activated, then check it for activation
     {
         // nothing is pressed - leave

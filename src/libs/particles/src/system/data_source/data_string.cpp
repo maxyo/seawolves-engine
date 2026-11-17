@@ -40,7 +40,6 @@ void DataString::Load(MemFile *File)
 
 void DataString::SetName(const char *szName)
 {
-    // core.Trace("DataString::SetName - '%s'", szName);
     Name = szName;
 }
 

@@ -88,7 +88,6 @@ void SeaLocatorShow::PrintLocator(ATTRIBUTES *pA)
     glm::mat4 m;
     m = storm::math::rotationY(fAng);
     storm::math::pos(m) = vPos;
-    // m.BuildPosition(vPos.x,vPos.y,vPos.z);
     AIHelper::pRS->SetTransform(D3DTS_WORLD, storm::math::d3dMatrix(m));
 
     AIHelper::pRS->DrawPrimitiveUP(D3DPT_TRIANGLELIST, D3DFVF_XYZ | D3DFVF_DIFFUSE, sphereNumTrgs, sphereVertex,
@@ -111,15 +110,10 @@ void SeaLocatorShow::PrintLocator(ATTRIBUTES *pA)
         auto vPos1 = GetLocatorPos(pA);
         auto vCenter = glm::vec3(vPos1.x, 2.0f, vPos1.z);
 
-        // SphVertex* pVrt = &Vrts[Vrts.Add()];
-        // pVrt->v = vCenter;
-        // pVrt->c = 0x4F00FF00;
         Vrts.push_back(SphVertex{vCenter, 0x4F00FF00});
         for (uint32_t i = 0; i < 32; i++)
         {
             auto fAngle = static_cast<float>(i) / 31.0f * PIm2;
-            // pVrt = &Vrts[Vrts.Add()];
-            // pVrt->v = vCenter + glm::vec3(sinf(fAngle) * fRadius, 0.0f, cosf(fAngle) * fRadius);
             // pVrt->c = 0x0F00FF00
             Vrts.push_back(
                 SphVertex{vCenter + glm::vec3(sinf(fAngle) * fRadius, 0.0f, cosf(fAngle) * fRadius), 0x0F00FF00});

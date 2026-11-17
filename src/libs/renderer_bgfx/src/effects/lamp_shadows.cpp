@@ -26,7 +26,7 @@ constexpr uint64_t kMapFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_COMPARE_LEQUAL | B
 // Candles of one candlestick or sconce: one lamp, one shadow.
 constexpr float kFixtureRadius = 0.5f;
 // The lamps' strength on baked surfaces at Settings::lamp_gain 1: half of the light the lit models take from the
-// same lamp (the look the owner chose on the v3 sheets; the game's bakes hold little lamp light of their own).
+// same lamp (the chosen look; the game's bakes hold little lamp light of their own).
 constexpr float kBakedGain = 0.5f;
 // Lamps whose light begins farther from the camera than this take no slot.
 constexpr float kLampSight = 40.0f;

@@ -8,12 +8,6 @@ bool TSplash::startRender = true;
 float dU = 1.f / SPLASH_FRAMES_COUNT;
 
 int TSplash::buffersUsage = 0;
-/*
-WORD        *TSplash::iBuffer       = 0;
-GRID_VERTEX *TSplash::vBuffer       = 0;
-WORD        *TSplash::iBuffer2      = 0;
-GRID_VERTEX *TSplash::vBuffer2      = 0;
-*/
 int32_t TSplash::iBuffer = 0;
 int32_t TSplash::vBuffer = 0;
 int32_t TSplash::iBuffer2 = 0;
@@ -31,7 +25,6 @@ uint32_t TSplash::topIndex = 0;
 uint32_t TSplash::topIndex2 = 0;
 
 uint32_t ambientColor = 0;
-//--------------------------------------------------------------------
 uint32_t Desaturate(uint32_t _color, float _k)
 {
     auto r = (_color >> 16) & 0xFF;
@@ -45,12 +38,10 @@ uint32_t Desaturate(uint32_t _color, float _k)
     return (r << 16) | (g << 8) | b;
 }
 
-//--------------------------------------------------------------------
 TSplash::TSplash() : enabled(false), time(0)
 {
 }
 
-//--------------------------------------------------------------------
 TSplash::~TSplash()
 {
     Release();
@@ -58,16 +49,12 @@ TSplash::~TSplash()
     if (!--buffersUsage)
     {
         if (iBuffer)
-            // delete iBuffer;
             renderer->ReleaseIndexBuffer(iBuffer);
         if (vBuffer)
-            // delete vBuffer;
             renderer->ReleaseVertexBuffer(vBuffer);
         if (iBuffer2)
-            // delete iBuffer2;
             renderer->ReleaseIndexBuffer(iBuffer2);
         if (vBuffer2)
-            // delete vBuffer2;
             renderer->ReleaseVertexBuffer(vBuffer2);
         if (texture)
             renderer->TextureRelease(texture);
@@ -79,7 +66,6 @@ TSplash::~TSplash()
     }
 }
 
-//--------------------------------------------------------------------
 void TSplash::Initialize(INIFILE *_ini, SEA_BASE *_sea, VRenderer *_renderer)
 {
     ambientColor = 0;
@@ -89,12 +75,6 @@ void TSplash::Initialize(INIFILE *_ini, SEA_BASE *_sea, VRenderer *_renderer)
 
     if (!buffersUsage++)
     {
-        /*
-        iBuffer  = new WORD[TRIANGLES_COUNT*3];
-        vBuffer  = new GRID_VERTEX[GRID_STEPS*GRID_STEPS];
-        iBuffer2 = new WORD[VPLANES_COUNT*6];
-        vBuffer2 = new GRID_VERTEX[VPLANES_COUNT*4];
-        */
         iBuffer =
             renderer->CreateIndexBuffer(MAX_SPLASHES * TRIANGLES_COUNT * 3 * sizeof(uint16_t), D3DUSAGE_WRITEONLY);
         vBuffer = renderer->CreateVertexBuffer(GRID_FVF, MAX_SPLASHES * GRID_STEPS * GRID_STEPS * sizeof(GRID_VERTEX),
@@ -142,18 +122,15 @@ void TSplash::Initialize(INIFILE *_ini, SEA_BASE *_sea, VRenderer *_renderer)
     }
 }
 
-//--------------------------------------------------------------------
 void TSplash::Release()
 {
 }
 
-//--------------------------------------------------------------------
 void TSplash::Start(const glm::vec3 &_pos, const glm::vec3 &_dir)
 {
     time = 0;
     center = _pos;
     dir = _dir;
-    //_VSYSTEM_core.Trace("start dir.x=%f, dir.z=%f", this->dir.x, this->dir.z);
     enabled = true;
     growK = randUpper(2.0f);
 
@@ -171,7 +148,6 @@ void TSplash::Start(const glm::vec3 &_pos, const glm::vec3 &_dir)
     }
 }
 
-//--------------------------------------------------------------------
 float TSplash::HeightF(uint32_t _time, float _r, float _k)
 {
     auto tPhase = static_cast<float>(_time) * (2.f * PId2 / (SPLASH_FRAME_DELAY * SPLASH_FRAMES_COUNT));
@@ -183,7 +159,6 @@ float TSplash::HeightF(uint32_t _time, float _r, float _k)
     return (.55f + k * fabsf(cosf(rK * 10.f + _time / 7e2f))) * rK * rK;
 }
 
-//--------------------------------------------------------------------
 bool TSplash::Process(uint32_t _dTime)
 {
     if (!enabled)
@@ -267,7 +242,6 @@ bool TSplash::Process(uint32_t _dTime)
     return true;
 }
 
-//--------------------------------------------------------------------
 void TSplash::PostProcess()
 {
     if (startRender)
@@ -279,7 +253,6 @@ void TSplash::PostProcess()
     unlockTicks += ticksUnlock;
 }
 
-//--------------------------------------------------------------------
 bool TSplash::Process2(uint32_t _dTime)
 {
     if (!enabled)
@@ -362,7 +335,6 @@ bool TSplash::Process2(uint32_t _dTime)
     return true;
 }
 
-//--------------------------------------------------------------------
 void TSplash::PostProcess2()
 {
     if (startRender)
@@ -374,7 +346,6 @@ void TSplash::PostProcess2()
     unlockTicks += ticksUnlock;
 }
 
-//--------------------------------------------------------------------
 void TSplash::Realize(uint32_t _dTime)
 {
     if (startRender)
@@ -395,7 +366,6 @@ void TSplash::Realize(uint32_t _dTime)
     realizeTicks += ticksRealize;
 }
 
-//--------------------------------------------------------------------
 void TSplash::Realize2(uint32_t _dTime)
 {
     if (!topIndex)
@@ -417,11 +387,7 @@ void TSplash::Realize2(uint32_t _dTime)
     realizeTicks += ticksRealize;
 }
 
-//--------------------------------------------------------------------
 bool TSplash::Enabled()
 {
     return enabled;
 }
-
-//--------------------------------------------------------------------
-//--------------------------------------------------------------------

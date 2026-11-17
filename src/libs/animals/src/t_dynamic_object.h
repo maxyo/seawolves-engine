@@ -1,13 +1,11 @@
 #pragma once
 
-//#include <windows.h>
 #include "storm_glm.h"
 
 #define ATTRACT_FACTOR 0.9f // 0.01f
 #define DEFLECT_FACTOR 10.5f
 #define MOVEMENT_FACTOR 0.012f // 0.015f
 
-//--------------------------------------------------------------------
 class TDynamicObject
 {
   public:
@@ -32,10 +30,6 @@ class TDynamicObject
         return pos;
     }
 
-    // void Draw(HDC _dc, DWORD _color);
   private:
     glm::vec3 pos, velocity;
-    // float ang;
 };
-
-//--------------------------------------------------------------------

@@ -1,8 +1,8 @@
 // Pause menu (interface "game_menu", mockups V2-Menu-Game and V2-Menu-ExitConfirm): the
 // primary «Продолжить» over a 2 × 2 grid of save, load, settings and exit, centred over
 // the paused scene. The game's exit question (CONFIRM_EXIT_*, or CONFIRM_WINDOW_* in some
-// versions) becomes the danger C-Dialog. The one exit leads to the game's main menu (owner
-// decision): the game's own exit to the main menu where it has one (CL: MB_EXITMENU), else
+// versions) becomes the danger C-Dialog. The one exit leads to the game's main menu:
+// the game's own exit to the main menu where it has one (CL: MB_EXITMENU), else
 // its exit from the program (TEHO: MB_EXITGAME/MB_QUIT, ExitProgram), after which the host
 // starts a fresh engine straight at the main menu (host action `app-exit-to-main-menu`; the
 // engine runs once per process). The app itself is left by the main menu's own exit.

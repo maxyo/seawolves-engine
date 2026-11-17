@@ -56,8 +56,8 @@ struct FuncInfo
     uint32_t extern_arguments;
 };
 
-// Per-call view of a function. The interpreter used to deep-copy FuncInfo
-// (two strings and the local variable vector) on every script call; a frame
+// Per-call view of a function. A frame (copying FuncInfo with its two strings
+// and local variable vector on every script call would be costly)
 // only snapshots the scalar fields and points at the table entry, whose
 // address is stable for the lifetime of the table (see FuncTable::funcs_).
 struct FuncFrame
@@ -83,7 +83,6 @@ class FuncTable
     FuncTable() = default;
     ~FuncTable();
 
-    // get func index by name
     size_t FindFunc(std::string_view func_name) const;
     // add func to table, returns func index
     size_t AddFunc(const FuncInfo &fi);
@@ -100,7 +99,6 @@ class FuncTable
 
     // set func's compiler offset
     bool SetFuncOffset(const std::string &func_name, uint32_t offset);
-    // add local var to func
     bool AddFuncVar(size_t func_index, const LocalVarInfo &lvi);
     // add arg to func (must precede all regular local vars in order not to break compiler logic)
     bool AddFuncArg(size_t func_index, const LocalVarInfo &lvi, bool is_extern = false);

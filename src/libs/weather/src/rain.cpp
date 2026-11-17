@@ -96,14 +96,7 @@ void RAIN::GenerateRain()
 
     Release();
 
-    /*STORM_DELETE(pRainBlocks);
-    if (iVertexBuffer>=0) RS->ReleaseVertexBuffer(iVertexBuffer);
-    iVertexBuffer = -1;*/
 
-    // fRainHeight = Weather->GetFloat(whf_rain_height);
-    // fRainRadius = Weather->GetFloat(whf_rain_radius);
-    // float fRainRadiusD2 = fRainRadius / 2.0f;
-    // dwNumDrops = Weather->GetInt(whi_rain_drops_num);
 
     if (dwNumDrops == 0)
         return;
@@ -288,10 +281,6 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
             }
             else if (fTest2 <= 1.0f)
             {
-                // seadrop_t & sea_drop = aSeaDrops[aSeaDrops.Add()];
-                // sea_drop.vPos = vSrc + fTest * (vDst - vSrc);
-                // sea_drop.fTime = 1.0f;
-                // sea_drop.fLifeTime = 1.0f;
                 aSeaDrops.push_back(seadrop_t{vSrc + fTest * (vDst - vSrc), 1.0f, 1.0f});
             }
 
@@ -299,7 +288,6 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
             {
                 // Add a drop
                 aDrops.push_back(drop_t{});
-                // drop_t & drop = aDrops[aDrops.Add()];
                 drop_t &drop = aDrops.back();
                 drop.vPos = vSrc + fTest * (vDst - vSrc);
                 drop.fLifeTime = fDropsLifeTime + fDeltaTime;
@@ -312,9 +300,6 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
                             break;
                     if (k == aShips.size())
                     {
-                        // ship_t & ship = aShips[aShips.Add()];
-                        // ship.eid = pShip->GetId();
-                        // ship.pShip = pShip;
                         aShips.push_back(ship_t{pShip->GetId(), pShip});
                     }
                     glm::mat4 mShip = *pShip->GetMatrix();
@@ -344,14 +329,12 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
         if (drop.fLifeTime <= 0.0f || (drop.iShip >= 0 && !aShips[drop.iShip].pShip))
         {
             if (storm::loading::active) continue;
-            // aDrops.ExtractNoShift(i);
             aDrops[i] = aDrops.back();
             aDrops.pop_back();
             i--;
             continue;
         }
 
-        // RS_RECT & r = aRects[aRects.Add()];
         RS_RECT r;
         if (drop.iShip >= 0)
             r.vPos = storm::math::transformPoint(*aShips[drop.iShip].pShip->GetMatrix(), drop.vPos);
@@ -371,7 +354,6 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
     }
 
     rs->TextureSet(0, iRainDropsTexture);
-    // rs->SetTexture(0, null);
     rs->DrawRects(aRects.data(), aRects.size(), "rain_drops", 8, 1);
 
     // draw circles on the water
@@ -390,7 +372,6 @@ void RAIN::RealizeDrops(uint32_t Delta_Time)
         if (drop.fTime <= 0.0f)
         {
             if (storm::loading::active) continue;
-            // aSeaDrops.ExtractNoShift(i);
             aSeaDrops[i] = aSeaDrops.back();
             aSeaDrops.pop_back();
             i--;

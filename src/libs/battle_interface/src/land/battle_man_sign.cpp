@@ -463,7 +463,6 @@ void BIManSign::Release()
 {
     STORM_DELETE(m_pCommandList);
     TEXTURE_RELEASE(m_pRS, m_nBackTextureID);
-    // TEXTURE_RELEASE( m_pRS, m_nShipTextureID );
     TEXTURE_RELEASE(m_pRS, m_nManStateTextureID);
     TEXTURE_RELEASE(m_pRS, m_nGunChargeTextureID);
     VERTEX_BUFFER_RELEASE(m_pRS, m_nVBufID);
