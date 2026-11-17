@@ -42,6 +42,10 @@ class PostChain
         uint16_t target_height = 0;
         bgfx::ViewId first_view = 0;
         bool flip_v = false; // mirror the final image vertically (when the caller's own blit would)
+        // Render scale: the scene's depth (sampleable, the scene's size), written into the depth attachment of `target`
+        // (which then has one, D24S8) by the pass that writes the target's every pixel at its size: RCAS, or EASU
+        // without sharpening. Its stencil is cleared. Invalid: the target's depth is left alone.
+        bgfx::TextureHandle scene_depth = BGFX_INVALID_HANDLE;
         // Sun shafts and lens flare: sun position in scene uv (0..1, origin top-left), 0..1 visibility (0 when
         // the sun is behind the camera, below the horizon or under clouds) and the sun's colour (0..1, the game's).
         std::array<float, 3> sun_color{1.0f, 0.9f, 0.7f};
@@ -117,13 +121,14 @@ class PostChain
     void EnsureLut(const Settings &settings, const ColorGrade &scene_grade, bool scene_cut);
     bgfx::ProgramHandle Program(int index);
     void EnsureUniforms();
+    void BindSceneDepth(bgfx::ViewId view, bgfx::TextureHandle depth); // Frame::scene_depth, in the pass that writes it
 
     static constexpr int kMaxBloomLevels = 6;
     // The chain's programs; the lens flare's is the last one. Shared by the chains of one device (SharePrograms):
     // destroyed with the last chain that uses them.
     struct Programs
     {
-        static constexpr int kCount = 16;
+        static constexpr int kCount = 18;
         std::array<bgfx::ProgramHandle, kCount> handles{};
         Programs() { handles.fill(BGFX_INVALID_HANDLE); }
         ~Programs();
@@ -165,6 +170,7 @@ class PostChain
     bgfx::UniformHandle s_smaa_weights_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fsr_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle u_fsr_out_ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_scene_depth_ = BGFX_INVALID_HANDLE;
     bool reported_shafts_ = false;
     bool reported_lut_ = false;
 };

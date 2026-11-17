@@ -2,6 +2,11 @@ $input v_uv
 // FSR 1 RCAS: robust contrast-adaptive sharpening at the display size (fx_fsr.sh), after EASU or on a native
 // picture. FSR_RCAS_DENOISE keeps the dither and fine noise from being sharpened up.
 #include "fx_fsr.sh"
+#if FX_DEPTH
+// Render scale: the scene's depth into the target's (nearest), for the 3D the game draws after the scene boundary on
+// the display-size picture (PostChain::Frame::scene_depth).
+SAMPLER2D(s_fxSceneDepth, 1);
+#endif
 
 AF4 FsrRcasLoadF(ASU2 p) { return fxFsrTexel(p); }
 void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b) {}
@@ -14,4 +19,7 @@ void main()
     AF3 c;
     FsrRcasF(c.r, c.g, c.b, fxFsrPixel(v_uv, u_fxFsr[3].zw), fxFsrCon(0));
     gl_FragColor = vec4(c, 1.0);
+#if FX_DEPTH
+    gl_FragDepth = texture2D(s_fxSceneDepth, v_uv).r;
+#endif
 }

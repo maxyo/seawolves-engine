@@ -59,7 +59,7 @@ int main(){
   auto noDepth=support;noDepth.scene_depth=false;
   check(!storm::fx::ConstrainSettings(setting,noDepth,changes).sea_turbidity,"missing depth explicit fallback");
   auto noResolve=support;noResolve.msaa_depth=false;setting.msaa=4;
-  check(!storm::fx::ConstrainSettings(setting,noResolve,changes).sea_turbidity,"unresolved MSAA explicit fallback");
+  check(storm::fx::ConstrainSettings(setting,noResolve,changes).sea_turbidity,"MSAA without depth resolve keeps turbidity: the sea reads its single-sample backdrop");
   setting.msaa=1;check(storm::fx::ConstrainSettings(setting,noResolve,changes).sea_turbidity,"single sample supported without MSAA resolve");
  }
  if(!failed)std::cout<<"PASS optical transmission/composition and actual Medium/High capability policy\n";

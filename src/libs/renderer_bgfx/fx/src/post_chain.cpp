@@ -46,18 +46,22 @@ enum ProgramIndex
     kEasu,
     kRcas,
     kWobble,
-    kFlare, // vs_fx_sprite + fs_fx_sprite
+    kFlare,     // vs_fx_sprite + fs_fx_sprite
+    kEasuDepth, // + the scene's depth (Frame::scene_depth)
+    kRcasDepth,
 };
 
 constexpr const char *kFragmentNames[] = {
     "fs_fx_copy",        "fs_fx_bloom_prefilter", "fs_fx_bloom_down",  "fs_fx_bloom_up", "fs_fx_shafts",
     "fs_fx_composite",   "fs_fx_composite_b",     "fs_fx_composite_t", "fs_fx_composite_bt",
     "fs_fx_smaa_edges",  "fs_fx_smaa_weights",    "fs_fx_smaa_blend",  "fs_fx_easu",     "fs_fx_rcas",
-    "fs_fx_wobble",      "fs_fx_sprite",
+    "fs_fx_wobble",      "fs_fx_sprite",          "fs_fx_easu_depth",  "fs_fx_rcas_depth",
 };
-static_assert(std::size(kFragmentNames) == kFlare + 1);
+static_assert(std::size(kFragmentNames) == kRcasDepth + 1);
 
 constexpr uint64_t kWriteColor = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A;
+// The scene's depth into the target's: every pixel, whatever was there (Frame::scene_depth).
+constexpr uint64_t kWriteDepth = BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_ALWAYS;
 } // namespace
 
 PostChain::~PostChain()
@@ -91,7 +95,7 @@ void PostChain::Shutdown()
     Destroy(u_wobble_);
     for (bgfx::UniformHandle *uniform :
          {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_,
-          &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_})
+          &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_, &s_scene_depth_})
         Destroy(*uniform);
     lut_strength_ = -1.0f;
     pending_slice_ = -1;
@@ -117,7 +121,7 @@ void PostChain::OnDeviceLost()
     u_wobble_ = BGFX_INVALID_HANDLE;
     for (bgfx::UniformHandle *uniform :
          {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_,
-          &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_})
+          &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_, &s_scene_depth_})
         *uniform = BGFX_INVALID_HANDLE;
     lut_strength_ = -1.0f;
     pending_slice_ = -1;
@@ -144,7 +148,15 @@ void PostChain::EnsureUniforms()
         s_smaa_weights_ = bgfx::createUniform("s_fxSmaaWeights", bgfx::UniformType::Sampler);
         u_fsr_ = bgfx::createUniform("u_fxFsr", bgfx::UniformType::Vec4, 4);
         u_fsr_out_ = bgfx::createUniform("u_fxFsrOut", bgfx::UniformType::Vec4);
+        s_scene_depth_ = bgfx::createUniform("s_fxSceneDepth", bgfx::UniformType::Sampler);
     }
+}
+
+void PostChain::BindSceneDepth(bgfx::ViewId view, bgfx::TextureHandle depth)
+{
+    // The pass writes every pixel's colour and depth: nothing of the target is loaded (a tile GPU reads no memory).
+    bgfx::setViewClear(view, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL, 0x00000000, 1.0f, 0);
+    bgfx::setTexture(1, s_scene_depth_, depth, kClampPoint);
 }
 
 bgfx::ProgramHandle PostChain::Program(int index)
@@ -170,7 +182,7 @@ bool PostChain::Prepare(const Settings &settings, int &budget)
     // The programs Submit() picks for these settings (a frame with the scene depth and the sun on screen).
     // A set over the program enum, not a list: it holds every program at most once, so no preset can overflow it.
     // std::bitset::set checks the index, so a new program past kCount fails loudly instead of writing the stack.
-    static_assert(Programs::kCount == kFlare + 1, "Programs::kCount must cover the program enum");
+    static_assert(Programs::kCount == kRcasDepth + 1, "Programs::kCount must cover the program enum");
     std::bitset<Programs::kCount> needed;
     needed.set(kWobble); // underwater, on every preset
     needed.set(kCopy);   // a frame at the display size without post effects (or a scale that is 1 there)
@@ -179,6 +191,8 @@ bool PostChain::Prepare(const Settings &settings, int &budget)
         needed.set(kEasu);
         if (settings.sharpen)
             needed.set(kRcas);
+        needed.set(settings.sharpen ? kRcasDepth : kEasuDepth); // the game's frames carry the scene's depth up
+
     }
     if (!settings.PostIsIdentity() && SupportsLut3d())
     {
@@ -512,7 +526,11 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
         bgfx::setUniform(u_fsr_out_, out_size);
         // EASU fetches texels: the sampler state does not matter.
         bgfx::setTexture(0, s_scene_, current, kClampPoint);
-        SubmitScreenTriangle(view++, Program(kEasu), kWriteColor, !then_sharpen && frame.flip_v);
+        const bool with_depth = !then_sharpen && bgfx::isValid(frame.scene_depth);
+        if (with_depth)
+            BindSceneDepth(view, frame.scene_depth);
+        SubmitScreenTriangle(view++, Program(with_depth ? kEasuDepth : kEasu), kWriteColor | (with_depth ? kWriteDepth : 0),
+                             !then_sharpen && frame.flip_v);
         current = bgfx::getTexture(upscaled_.fb);
     }
     if (then_sharpen)
@@ -525,7 +543,11 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
         SetupView(view, "fx fsr rcas", frame.target, frame.target_width, frame.target_height, true);
         bgfx::setUniform(u_fsr_, fsr, 4);
         bgfx::setTexture(0, s_scene_, current, kClampPoint);
-        SubmitScreenTriangle(view++, Program(kRcas), kWriteColor, frame.flip_v);
+        const bool with_depth = bgfx::isValid(frame.scene_depth);
+        if (with_depth)
+            BindSceneDepth(view, frame.scene_depth);
+        SubmitScreenTriangle(view++, Program(with_depth ? kRcasDepth : kRcas), kWriteColor | (with_depth ? kWriteDepth : 0),
+                             frame.flip_v);
     }
     // ---- lens flare: procedural sprites added on top of the finished image ----
     if (settings.lens_flare && frame.sun_visibility > 0.0f)

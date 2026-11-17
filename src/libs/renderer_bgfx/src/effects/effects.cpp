@@ -549,10 +549,11 @@ void Host::on_device_lost()
     lighting_.on_device_lost();
     sky_.OnDeviceLost();
     sea_depth_.OnDeviceLost();
-    depth_copy_.OnDeviceLost();
     u_sea_fx_ = s_sea_depth_ = s_sea_sun_road_ = BGFX_INVALID_HANDLE;
     sea_no_sun_road_ = BGFX_INVALID_HANDLE;
     sea_depth_frame_ = UINT32_MAX;
+    sea_backdrop_fb_ = BGFX_INVALID_HANDLE; // gone with the device
+    release_sea_backdrop();
     sea_waves_.OnDeviceLost();
     sea_waves_idle_ = {};
     u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
@@ -571,7 +572,6 @@ void Host::shutdown()
     lighting_.shutdown();
     sky_.Shutdown();
     sea_depth_.Shutdown();
-    depth_copy_.Shutdown();
     sea_waves_.Shutdown();
     sea_waves_idle_ = {};
     sea_waves_frame_ = UINT32_MAX;
@@ -587,6 +587,7 @@ void Host::shutdown()
         sea_no_sun_road_ = BGFX_INVALID_HANDLE;
     }
     sea_depth_frame_ = UINT32_MAX;
+    release_sea_backdrop();
     place_.shutdown();
     ao_bound_ = nullptr;
     lighting_.set_ao_volume(nullptr);
@@ -747,13 +748,10 @@ void Host::activate(const fx::Settings &settings, const fx::Support &support)
     // The preset's height is the top of the dynamic resolution's ladder; the same height keeps its step.
     dynamic_.reset(state.render_height);
     state.render_height = dynamic_.height();
-    const bool depth_read = scene_depth_read();
     renderer_state_changed_ = renderer_state_changed_ ||
                               (device_ready_ && (state.msaa_samples != renderer_state_.msaa_samples ||
                                                  state.render_height != renderer_state_.render_height ||
-                                                 state.max_anisotropy != renderer_state_.max_anisotropy ||
-                                                 depth_read != depth_read_));
-    depth_read_ = depth_read;
+                                                 state.max_anisotropy != renderer_state_.max_anisotropy));
     renderer_state_ = state;
     // The level of every anisotropic sampler (patches/bgfx-anisotropy-level.patch: one cap per backend), applied
     // at the next reset.
@@ -839,6 +837,7 @@ uint16_t Host::submit_post(const PostTargets &targets)
     frame.target = targets.target;
     frame.target_width = targets.target_width;
     frame.target_height = targets.target_height;
+    frame.scene_depth = targets.scene_depth;
     last_post_size_ = {targets.width, targets.height, targets.target_width, targets.target_height};
     frame.first_view = targets.first_view;
     frame.flip_v = false; // the target is the game's next offscreen picture, same row order as the scene
@@ -899,9 +898,12 @@ void Host::advance_switch()
     const int per_frame = from_cache ? kCachedProgramsPerFrame : kProgramsPerFrame;
     int budget = per_frame;
     // The post chain's programs also on «Низкая»: the underwater wobble runs on every preset.
-    const bool ready = post_.Prepare(target_, budget) && (!(target_.sea_soft_edges || target_.sea_turbidity) || sea_depth_.Prepare(budget)) &&
+    // The sea's backdrop draws with the sun's caster programs (world.cpp).
+    const bool sea_depth = target_.sea_soft_edges || target_.sea_turbidity;
+    const bool ready = post_.Prepare(target_, budget) &&
+                       (!sea_depth || (sea_depth_.Prepare(budget) &&
+                                       lighting_.casters().prepare_programs(*device, Casters::Pass::Sun, budget))) &&
                        (!target_.sea_waves || sea_waves_.Prepare(budget)) &&
-                       (target_.render_height == 0 || depth_copy_.Prepare(budget)) &&
                        lighting_.prepare_programs(*device, target_, budget);
     switch_programs_ += per_frame - budget;
     report_.prepared_programs = switch_programs_;
@@ -1107,7 +1109,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                 profile_views_[view.name] += static_cast<double>(view.gpuTimeEnd - view.gpuTimeBegin) * to_ms;
                 // The scene target's views, and its passes: runs of them that no other target's view cuts (a cut
                 // stores, resolves and loads the multisampled scene on a tile GPU). In the frame's view order.
-                const bool scene = std::strcmp(view.name, "scene") == 0;
+                const bool scene = std::strncmp(view.name, "scene", 5) == 0; // shim::Device::name_view
                 profile_scene_views_ += scene;
                 profile_scene_passes_ += scene && !profile_in_scene_;
                 profile_in_scene_ = scene;
@@ -1172,7 +1174,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             const SunShadows::Counters sun = lighting_.shadows().take_counters();
             // The towns' relight since the start: the place's sun map drawn, lightmaps composed.
             const TownLight::SunCounters town = lighting_.town_light().sun_counters();
-            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u scene_views=%.1f scene_passes=%.1f gpu_views=%s post_views=%u lit_draws=%u "
+            shim::logf("effects profile: preset %d scene=%ux%u display=%ux%u %s cpu_frame_ms=%.2f draws=%.0f %s thermal=%s background_cpu=%u/%u scene_lines=%u scene_views=%.1f scene_passes=%.1f sea_backdrop_draws=%.0f gpu_views=%s post_views=%u lit_draws=%u "
                        "baked_draws=%u coverage_draws=%u relief_draws=%u parallax_draws=%u gloss_draws=%u aerial_draws=%u shadowed_draws=%u sun_ground_draws=%u ao_draws=%u lamp_draws=%u lamp_slots=%d lamp_static_faces=%d sun_static_redraws=%u sun_static_tiles=%u sun_static_triangles=%u sun_dynamic_frames=%u sun_dynamic_casters=%u lightmapped_draws=%u town_relit_draws=%u town_place_draws=%u town_composes=%u town_wall_draws=%u wet_draws=%u compound_uploads=%u compound_bytes=%u compound_members_bound=%u compound_fallbacks=%u flash_events=%u flashes=%u flashed_draws=%u %s%s",
                        preset_, last_post_size_[0], last_post_size_[1], last_post_size_[2], last_post_size_[3], gpu,
                        profile_sum_cpu_ / kProfileFrames, static_cast<double>(profile_draws_) / kProfileFrames,
@@ -1180,13 +1182,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        thermal_text(), fx::SharedCpuAdmission().stats().reserved, fx::SharedCpuAdmission().stats().phase_cap,
                        renderer_state_.render_height,
                        profile_gpu_frames_ ? static_cast<double>(profile_scene_views_) / profile_gpu_frames_ : 0.0,
-                       profile_gpu_frames_ ? static_cast<double>(profile_scene_passes_) / profile_gpu_frames_ : 0.0, views.c_str(),
+                       profile_gpu_frames_ ? static_cast<double>(profile_scene_passes_) / profile_gpu_frames_ : 0.0,
+                       static_cast<double>(sea_backdrop_draws_) / kProfileFrames, views.c_str(),
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        lighting_.take_flash_events(), counts.flashes, counts.flashed,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
             profile_count_ = profile_gpu_frames_ = 0;
+            sea_backdrop_draws_ = 0;
             profile_scene_views_ = profile_scene_passes_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;
             profile_sum_smaa_ = profile_sum_easu_ = profile_sum_rcas_ = profile_sum_sea_waves_ = 0.0;

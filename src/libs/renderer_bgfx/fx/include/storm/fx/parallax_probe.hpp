@@ -30,9 +30,11 @@ struct ProbePick
 };
 ProbePick PickProbeTarget(std::span<const int32_t> samples);
 
-// The view order that runs view `probe` right after view `last` (probe < last): the ids for the positions
-// probe .. last, as bgfx::setViewOrder(probe, last - probe + 1, order) takes them after an identity order.
-std::vector<uint16_t> ProbeViewOrder(uint16_t probe, uint16_t last);
+// The view order that runs view `probe` right after view `last`. `order`: the execution order of the views probe + 1 ..
+// probe + order.size() (a permutation of them; identity when nothing is reordered). Returns the ids for the positions
+// probe .. probe + order.size(), as bgfx::setViewOrder(probe, size, ids) takes them after an identity order: `order` up
+// to and including `last`, then `probe`, then the rest of `order`. Empty when `last` is not in `order`.
+std::vector<uint16_t> ProbeViewOrder(uint16_t probe, uint16_t last, std::span<const uint16_t> order);
 
 // An edge-triggered action from a settings value (fx_pom_toggle): every applied value that differs from the previous
 // one fires, except the first value seen (the value a start or a re-application restores, not a change by the

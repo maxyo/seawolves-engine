@@ -120,19 +120,51 @@ void Host::prepare_sea(shim::Device &device)
     bool soft_edges = device_ready_ && settings_.sea_soft_edges;
     bool turbidity = device_ready_ && settings_.sea_turbidity;
     bool depth_ready = false;
-    if (soft_edges || turbidity)
+    const uint32_t frame = shim::Context::instance().submitted_frames();
+    const bool into_scene = device.rt == device.back_color && !device.scene_done;
+    if ((soft_edges || turbidity) && into_scene)
     {
-        // The scene distance behind the sea: the depth of the current target, read in a view of its own before the
-        // first sea draw into this target in this frame; the sea then continues in a new view on the same target.
+        // The scene distance behind the sea: the backdrop of this frame (sea_backdrop), captured at the sea's first
+        // draw into the scene in a view ahead of the scene. A frame without one (the first frame of a sea) has hard
+        // edges.
+        if (sea_backdrop_frame_ != frame && sea_backdrop_armed(device))
+        {
+            // Nothing drew depth before the sea: the backdrop is the cleared depth, as the scene's is.
+            std::array<float, 32> transform{};
+            memcpy(transform.data(), &device.s.view.m[0][0], sizeof(float) * 16);
+            const std::array<float, 16> projection = backend_projection(device, device.s.proj);
+            std::copy(projection.begin(), projection.end(), transform.begin() + 16);
+            if (open_sea_backdrop_view(device, transform))
+                bgfx::touch(sea_backdrop_view_);
+        }
+        if (sea_backdrop_frame_ == frame && (sea_depth_frame_ != frame || sea_depth_source_ != &sea_backdrop_depth_))
+        {
+            const bgfx::ViewId capture = device.effects_target_view("fx sea depth", {}, {sea_backdrop_depth_.idx});
+            const bool captured = sea_depth_.Capture(capture, sea_backdrop_depth_, sea_backdrop_width_, sea_backdrop_height_,
+                                                     near_plane, far_plane);
+            if (bgfx::isValid(sea_depth_.Texture()))
+                device.schedule.write(capture, sea_depth_.Texture().idx);
+            sea_depth_frame_ = captured ? frame : UINT32_MAX;
+            sea_depth_target_ = captured ? device.rt : nullptr;
+            sea_depth_source_ = captured ? &sea_backdrop_depth_ : nullptr;
+        }
+        depth_ready = sea_backdrop_frame_ == frame && sea_depth_frame_ == frame && sea_depth_target_ == device.rt &&
+                      sea_depth_source_ == &sea_backdrop_depth_ && bgfx::isValid(sea_depth_.Texture());
+    }
+    else if (soft_edges || turbidity)
+    {
+        // The sea in another target: the depth of that target, read in a view of its own before the first sea draw
+        // into it in this frame; the sea then continues in a new view on the same target.
         shim::TexStore *color = device.rt ? device.rt->store.get() : nullptr;
         // new_view may substitute single_depth for a multisampled back-depth attachment.
         // Use what this target actually writes, never the nominal D3D depth surface.
         if (color) device.ensure_view();
         shim::TexStore *depth = color ? device.view_depth : nullptr;
         // A multisampled target is read through its resolve textures, which hold the depth too only where the
-        // backend resolves it (Support::msaa_depth; ConstrainSettings keeps the soft edges off otherwise).
-        const bool readable = color && depth && (!color->target_flags || support_.msaa_depth);
-        const uint32_t frame = shim::Context::instance().submitted_frames();
+        // backend resolves it (Support::msaa_depth; ConstrainSettings keeps the soft edges off otherwise) and where
+        // the depth is no write-only attachment (the scene's at the display size, Device::create_scene_stores).
+        const bool readable = color && depth && !(depth->target_flags & BGFX_TEXTURE_RT_WRITE_ONLY) &&
+                              (!(depth->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) || support_.msaa_depth);
         if (!readable)
         {
             soft_edges = turbidity = false;
@@ -157,8 +189,15 @@ void Host::prepare_sea(shim::Device &device)
     }
     soft_edges &= depth_ready;
     turbidity &= depth_ready;
+    if (into_scene) // the next frames draw the backdrop (sea_backdrop)
+    {
+        sea_drawn_frame_ = shim::Context::instance().frame_index();
+        sea_drawn_ = true;
+    }
     advance_sea_waves(device);
     set_sea_waves_uniforms();
+    if (bgfx::isValid(sea_waves_.Surface()))
+        device.note_read(sea_waves_.Surface()); // bound when the ripples are on
     const bool specular = device_ready_ && settings_.sea_specular && has_weather();
     const auto &sun = weather_.sun_dir;
     const float strength = settings_.sea_specular_strength;
@@ -174,7 +213,10 @@ void Host::prepare_sea(shim::Device &device)
     };
     bgfx::setUniform(u_sea_fx_, sea_fx, 5);
     if (depth_ready) // otherwise neither optical feature reads the unit
+    {
         bgfx::setTexture(fx::kNormalMapStage, s_sea_depth_, sea_depth_.Texture(), BGFX_SAMPLER_UVW_CLAMP | BGFX_SAMPLER_POINT);
+        device.note_read(sea_depth_.Texture());
+    }
 }
 
 // The Sea2 port's sun road cube (fs_port_sea2.sc s_cube2, stage 2 -> unit 7): the game binds its sun road there (sea.cpp);
@@ -261,9 +303,11 @@ void Host::advance_sea_waves(shim::Device &device)
         };
         return d(a) < d(b);
     });
+    // Views into the ripple field's own targets, which only these passes and the sea's draws (Device::note_read)
+    // touch: they run ahead of the scene (ViewSchedule).
     std::array<bgfx::ViewId, fx::SeaWaves::kMaxSteps + 1> views{};
     for (int i = 0; i <= steps; ++i)
-        views[i] = device.effects_view(true);
+        views[i] = device.effects_target_view("fx sea waves", {}, {});
     const auto &focus = sea_frame_.focus;
     // The waves travel at a third of the speed of the hull nearest the field's centre (the ship the camera follows):
     // its side waves then leave it at the Kelvin wedge's 19.5 degrees, whatever its speed. Eased over about 2 s.
@@ -278,7 +322,11 @@ void Host::advance_sea_waves(shim::Device &device)
     sea_waves_.Advance(std::span(views.data(), static_cast<size_t>(steps) + 1), {focus[0], focus[2]}, sea_wave_sources_,
                        sea_wave_speed_, support_.sea_waves_float, support_.sea_waves_surface_float,
                        sea_waves_idle_.TakeRetention());
-    device.effects_view(true); // the sea goes on in a view of its own on its target
+    // The steps and the surface pass all count as writing the surface: they keep their order, and the sea's draws
+    // that sample it (set_sea_waves_uniforms) run after them.
+    if (bgfx::isValid(sea_waves_.Surface()))
+        for (int i = 0; i <= steps; ++i)
+            device.schedule.write(views[i], sea_waves_.Surface().idx);
 }
 
 void Host::set_sea_waves_uniforms()
@@ -319,6 +367,126 @@ void Host::set_sea_waves_uniforms()
     bgfx::setUniform(u_sea_waves_, w.data(), 4);
     if (ripples)
         bgfx::setTexture(fx::kShadowMapStage, s_sea_waves_, sea_waves_.Surface(), BGFX_SAMPLER_UVW_CLAMP);
+}
+
+void Host::release_sea_backdrop()
+{
+    if (bgfx::isValid(sea_backdrop_fb_))
+        bgfx::destroy(sea_backdrop_fb_); // and its depth texture with it
+    sea_backdrop_fb_ = BGFX_INVALID_HANDLE;
+    sea_backdrop_depth_ = BGFX_INVALID_HANDLE;
+    sea_backdrop_width_ = sea_backdrop_height_ = 0;
+    sea_backdrop_frame_ = UINT32_MAX;
+    sea_backdrop_view_ = UINT16_MAX;
+    sea_backdrop_clear_z_ = -1.0f;
+    sea_drawn_ = false;
+}
+
+void Host::sea_backdrop_clear(const shim::Device &device, float z)
+{
+    if (device.rt == device.back_color && !device.scene_done)
+        sea_backdrop_clear_z_ = z;
+}
+
+bool Host::sea_backdrop_armed(const shim::Device &device) const
+{
+    const auto &context = shim::Context::instance();
+    return device_ready_ && (settings_.sea_soft_edges || settings_.sea_turbidity) && sea_drawn_ &&
+           context.frame_index() <= sea_drawn_frame_ + kSeaBackdropFrames &&
+           !(sea_depth_frame_ == context.submitted_frames() && sea_depth_source_ == &sea_backdrop_depth_) &&
+           device.rt == device.back_color && !device.scene_done;
+}
+
+bool Host::open_sea_backdrop_view(shim::Device &device, const std::array<float, 32> &transform)
+{
+    const uint32_t frame = shim::Context::instance().submitted_frames();
+    if (sea_backdrop_frame_ == frame && transform == sea_backdrop_transform_ && sea_backdrop_clear_z_ < 0.0f)
+        return true;
+    const shim::TexStore &scene = *device.rt->store;
+    const uint16_t w = static_cast<uint16_t>(scene.width), h = static_cast<uint16_t>(scene.height);
+    if (!bgfx::isValid(sea_backdrop_fb_) || sea_backdrop_width_ != w || sea_backdrop_height_ != h)
+    {
+        if (bgfx::isValid(sea_backdrop_fb_))
+            bgfx::destroy(sea_backdrop_fb_);
+        sea_backdrop_depth_ = bgfx::createTexture2D(w, h, false, 1, bgfx::TextureFormat::D24S8,
+                                                    BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP | BGFX_SAMPLER_POINT);
+        sea_backdrop_fb_ = bgfx::createFrameBuffer(1, &sea_backdrop_depth_, true);
+        sea_backdrop_width_ = w;
+        sea_backdrop_height_ = h;
+    }
+    const uint16_t view = device.side_view("fx sea backdrop", sea_backdrop_depth_.idx);
+    if (view == UINT16_MAX)
+        return false;
+    bgfx::setViewFrameBuffer(view, sea_backdrop_fb_);
+    bgfx::setViewRect(view, 0, 0, w, h);
+    // A new frame starts as the scene's depth was cleared (the far plane unless the game said otherwise), as does a
+    // clear of the scene's depth within the frame; a second camera draws on.
+    const bool clear = sea_backdrop_frame_ != frame || sea_backdrop_clear_z_ >= 0.0f;
+    bgfx::setViewClear(view, clear ? BGFX_CLEAR_DEPTH : BGFX_CLEAR_NONE, 0,
+                       sea_backdrop_clear_z_ >= 0.0f ? sea_backdrop_clear_z_ : 1.0f, 0);
+    bgfx::setViewTransform(view, transform.data(), transform.data() + 16);
+    sea_backdrop_view_ = view;
+    sea_backdrop_frame_ = frame;
+    sea_backdrop_transform_ = transform;
+    sea_backdrop_clear_z_ = -1.0f;
+    return true;
+}
+
+bool Host::sea_backdrop(shim::Device &device, const shim::LayoutInfo &layout, bool vertex_port)
+{
+    // Before the sea's capture in a frame that follows one with a sea in the scene; what writes depth there.
+    if (!sea_backdrop_armed(device) || layout.rhw || !device.s.rs[D3DRS_ZENABLE] || !device.s.rs[D3DRS_ZWRITEENABLE] ||
+        device.s.proj.m[2][3] == 0.0f)
+        return false;
+    const shim::TexStore &scene = *device.rt->store;
+    const D3DVIEWPORT9 &viewport = device.s.viewport;
+    const DWORD zfunc = device.s.rs[D3DRS_ZFUNC];
+    const char *left_out = vertex_port ? "with a vertex shader of its own"
+                           : viewport.X != 0 || viewport.Y != 0 || viewport.Width != scene.addressed_width(0) ||
+                                     viewport.Height != scene.addressed_height(0) || viewport.MinZ != 0.0f ||
+                                     viewport.MaxZ != 1.0f
+                               ? "into a part of the target or its depth range"
+                           : zfunc != D3DCMP_LESSEQUAL && zfunc != D3DCMP_LESS ? "with another depth test"
+                           : device.s.rs[D3DRS_STENCILENABLE]                 ? "with a stencil test"
+                           : device.s.rs[D3DRS_DEPTHBIAS] || device.s.rs[D3DRS_SLOPESCALEDEPTHBIAS] ? "with a depth bias"
+                                                                                                   : nullptr;
+    if (left_out)
+    {
+        // The sea fades as if it were not there (logged once per reason).
+        if (std::find(sea_backdrop_logged_.begin(), sea_backdrop_logged_.end(), left_out) == sea_backdrop_logged_.end())
+        {
+            shim::logf("effects: sea backdrop: a draw before the sea %s is left out of the soft edges' depth (logged once)",
+                       left_out);
+            sea_backdrop_logged_.emplace_back(left_out);
+        }
+        return false;
+    }
+    sea_backdrop_material_ = caster_material(device, layout);
+    if (!sea_backdrop_material_.casts)
+        return false;
+    const std::array<float, 16> projection = backend_projection(device, device.s.proj);
+    std::array<float, 32> transform;
+    memcpy(transform.data(), &device.s.view.m[0][0], sizeof(float) * 16);
+    std::copy(projection.begin(), projection.end(), transform.begin() + 16);
+    // No bgfx::touch in a new view: the draw being set up would lose its bindings; the copy that follows draws in it.
+    return open_sea_backdrop_view(device, transform);
+}
+
+void Host::submit_sea_backdrop(shim::Device &device, bool skinned, uint64_t cull, bool keep)
+{
+    const bgfx::ProgramHandle program =
+        lighting_.casters().program(device, Casters::Pass::Sun, skinned, sea_backdrop_material_);
+    bgfx::setScissor(UINT16_MAX);
+    bgfx::setStencil(BGFX_STENCIL_NONE);
+    bgfx::setTransform(&device.s.world.m[0][0]);
+    bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LEQUAL | cull);
+    if (bgfx::isValid(program))
+    {
+        bgfx::submit(sea_backdrop_view_, program, 0, keep ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+        ++sea_backdrop_draws_;
+    }
+    else if (!keep)
+        bgfx::discard();
 }
 
 } // namespace storm::effects

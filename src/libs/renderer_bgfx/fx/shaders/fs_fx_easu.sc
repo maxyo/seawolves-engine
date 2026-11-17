@@ -4,6 +4,11 @@ $input v_uv
 #include "fx_fsr.sh"
 
 uniform vec4 u_fxFsrOut; // xy: output size in pixels
+#if FX_DEPTH
+// Render scale: the scene's depth into the target's (nearest), for the 3D the game draws after the scene boundary on
+// the display-size picture (PostChain::Frame::scene_depth).
+SAMPLER2D(s_fxSceneDepth, 1);
+#endif
 
 // textureGather(p): the 2x2 texels around the corner p, in the order x (-,+) y (+,+) z (+,-) w (-,-). FsrEasuF gathers
 // red, green and blue of each corner in turn, so the red call fetches the four texels and the other two reuse them.
@@ -32,4 +37,7 @@ void main()
     AF3 c;
     FsrEasuF(c, fxFsrPixel(v_uv, u_fxFsrOut.xy), fxFsrCon(0), fxFsrCon(1), fxFsrCon(2), fxFsrCon(3));
     gl_FragColor = vec4(c, 1.0);
+#if FX_DEPTH
+    gl_FragDepth = texture2D(s_fxSceneDepth, v_uv).r;
+#endif
 }

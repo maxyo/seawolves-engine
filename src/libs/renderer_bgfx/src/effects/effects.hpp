@@ -12,7 +12,6 @@
 #include "storm/fx/settings.hpp"
 #include "storm/fx/sky.hpp"
 #include "storm/fx/sky_model.hpp"
-#include "storm/fx/depth_copy.hpp"
 #include "storm/fx/sea_depth.hpp"
 #include "storm/fx/sea_waves.hpp"
 #include "storm/fx/wave_idle.hpp"
@@ -61,17 +60,7 @@ class Host
     // The post chain runs: an effect is on, or the game's underwater wobble (on every preset) is.
     bool post_active() const { return device_ready_ && (!settings_.PostIsIdentity() || wobble_.on); }
     void set_wobble(const render::EffectsWobble &wobble) { wobble_ = wobble; }
-    // The scene depth is sampled: by the sea's soft edges and turbidity, or carried to the
-    // display-size picture for the 3D drawn after the scene boundary when the scene may draw at a lower height.
-    bool scene_depth_read() const { return settings_.sea_soft_edges || settings_.sea_turbidity || settings_.render_height > 0; }
-    // Render scale: the scene depth (`source`, internal size) into the depth of the display-size picture (`target`)
-    // in `view`, after the post chain upscaled the scene (Device::scene_complete).
-    void copy_scene_depth(bgfx::ViewId view, bgfx::TextureHandle source, bgfx::FrameBufferHandle target, uint16_t width,
-                          uint16_t height)
-    {
-        depth_copy_.Submit(view, source, target, width, height);
-    }
-    // True once after a settings switch made MSAA, anisotropy or the scene depth read change (the shim rebuilds
+    // True once after a settings switch made MSAA, anisotropy or the render scale change (the shim rebuilds
     // what of the scene target differs, between frames).
     bool take_renderer_state_change()
     {
@@ -103,6 +92,8 @@ class Host
         uint16_t width = 0, height = 0;               // the scene: the internal size with Settings::render_height
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
         uint16_t target_width = 0, target_height = 0; // the display-size picture the interfaces draw on
+        // Render scale: the scene's depth, which the chain writes into the target's depth (fx::PostChain::Frame).
+        bgfx::TextureHandle scene_depth = BGFX_INVALID_HANDLE;
         bgfx::ViewId first_view = 0;
         // The scene camera: D3D row-vector matrices of the last perspective draw into the scene.
         std::array<float, 16> view{};
@@ -139,6 +130,16 @@ class Host
     void prepare_sea(shim::Device &device);
     void bind_sea_sun_road(shim::Device &device);
     void set_sea_frame(const render::EffectsSeaFrame &frame);
+    // The sea's soft edges and turbidity without a cut of the scene: what the scene draws before the sea (the island,
+    // the town, the hulls) is drawn again, depth only, into a single-sample target of its own (Device::draw), whose
+    // views run ahead of the scene (ViewSchedule) and which the sea's capture reads. True when the draw being
+    // submitted goes there too: submit_sea_backdrop then submits it (`keep`: its bindings stay for a later copy).
+    // Drawn in frames that follow one with a sea in the scene (kSeaBackdropFrames): the first frame of a sea has hard
+    // edges.
+    bool sea_backdrop(shim::Device &device, const shim::LayoutInfo &layout, bool vertex_port);
+    void submit_sea_backdrop(shim::Device &device, bool skinned, uint64_t cull, bool keep);
+    // The game clears the scene's depth (Device::Clear): the backdrop is cleared with it.
+    void sea_backdrop_clear(const shim::Device &device, float z);
 
   private:
     static constexpr int kProgramsPerFrame = 1;
@@ -194,11 +195,10 @@ class Host
     bool dynamic_played_ = false;         // the last frame was a played one (no place loading)
     double dynamic_frame_ms_ = 0.0;       // the previous end_frame, a steady clock
     int64_t dynamic_gpu_end_ = 0;         // bgfx::Stats::gpuTimeEnd already judged
-    bool depth_read_ = false;
     fx::SelfTest self_test_;
     fx::Settings tested_{};               // the settings of the running self-test
     std::vector<fx::Settings> verified_; // settings whose self-test passed on this device
-    std::string notice_; // scene_depth_read() when the scene target was last (re)built
+    std::string notice_; // for the player: a stage the self-test switched off (take_notice)
     float device_max_anisotropy_ = 0.0f; // shim::DeviceInfo::max_anisotropy
     render::EffectsReport report_{};
     render::EffectsWeather weather_{};
@@ -222,7 +222,6 @@ class Host
     Lighting lighting_;
     fx::Sky sky_;
     fx::SeaDepth sea_depth_;
-    fx::DepthCopy depth_copy_;
     PlaceBake place_;
     const AoVolumes::Bound *ao_bound_ = nullptr;
     float camera_height_ = 0.0f; // of the last world pass
@@ -238,6 +237,23 @@ class Host
     const void *sea_depth_target_ = nullptr;
     const void *sea_depth_source_ = nullptr;
     bool sea_depth_logged_ = false;
+    // The sea backdrop: its depth target, the frame and camera of its current view.
+    static constexpr uint64_t kSeaBackdropFrames = 60; // drawn while a sea was in the scene this many frames ago
+    uint64_t sea_drawn_frame_ = 0;                      // the last frame (Context::frame_index) with a sea in the scene
+    bool sea_drawn_ = false;
+    bgfx::TextureHandle sea_backdrop_depth_ = BGFX_INVALID_HANDLE;
+    bgfx::FrameBufferHandle sea_backdrop_fb_ = BGFX_INVALID_HANDLE;
+    uint16_t sea_backdrop_width_ = 0, sea_backdrop_height_ = 0;
+    uint32_t sea_backdrop_frame_ = UINT32_MAX; // submitted frame of the backdrop's current view
+    uint16_t sea_backdrop_view_ = UINT16_MAX;
+    std::array<float, 32> sea_backdrop_transform_{};
+    float sea_backdrop_clear_z_ = -1.0f; // >= 0: the next backdrop view starts with this depth (sea_backdrop_clear)
+    CasterMaterial sea_backdrop_material_{};
+    std::vector<std::string> sea_backdrop_logged_;
+    uint64_t sea_backdrop_draws_ = 0; // over the profile line's frames (fx_gpu_profile)
+    void release_sea_backdrop();
+    bool sea_backdrop_armed(const shim::Device &device) const;
+    bool open_sea_backdrop_view(shim::Device &device, const std::array<float, 32> &transform);
     // Waves from objects: the sea's frame (set_sea_frame) and the simulation.
     void advance_sea_waves(shim::Device &device);
     void set_sea_waves_uniforms();

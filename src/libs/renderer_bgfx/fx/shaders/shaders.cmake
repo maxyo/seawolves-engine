@@ -34,10 +34,12 @@ endforeach()
 # FSR 1 (include/fx_fsr.sh): EASU upscale, RCAS sharpening.
 storm_fx_add_shader(fx_shaders fs_fx_easu "${fx_sc}/fs_fx_easu.sc")
 storm_fx_add_shader(fx_shaders fs_fx_rcas "${fx_sc}/fs_fx_rcas.sc")
+# ... the pass that writes the display-size picture last also writes the scene's depth there (render scale).
+storm_fx_add_shader(fx_shaders fs_fx_easu_depth "${fx_sc}/fs_fx_easu.sc" DEFINES FX_DEPTH)
+storm_fx_add_shader(fx_shaders fs_fx_rcas_depth "${fx_sc}/fs_fx_rcas.sc" DEFINES FX_DEPTH)
 
 
 storm_fx_add_shader(fx_shaders fs_fx_sea_depth "${fx_sc}/fs_fx_sea_depth.sc")
-storm_fx_add_shader(fx_shaders fs_fx_depth_copy "${fx_sc}/fs_fx_depth_copy.sc")
 storm_fx_add_shader(fx_shaders fs_fx_waves_step "${fx_sc}/fs_fx_waves_step.sc")
 storm_fx_add_shader(fx_shaders fs_fx_waves_surface "${fx_sc}/fs_fx_waves_surface.sc")
 

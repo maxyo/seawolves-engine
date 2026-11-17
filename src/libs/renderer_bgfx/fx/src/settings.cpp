@@ -255,18 +255,17 @@ constexpr Rule kRules[] = {
     {[](const Settings &s, const Support &c) { return s.anisotropy > 1 && !c.anisotropy; }, [](Settings &s) { s.anisotropy = 1; },
      "anisotropic filtering is not available: switched off"},
     // At a render scale the scene depth is carried to the display-size picture for the 3D drawn after the scene
-    // (DepthCopy): it must be readable.
+    // (the post chain's last pass, PostChain::Frame::scene_depth): it must be readable.
     {[](const Settings &s, const Support &c) { return s.msaa > 1 && !c.msaa_depth && s.render_height > 0; },
      [](Settings &s) { s.render_height = 0; },
      "render scale cannot carry the depth of a multisampled scene on this renderer: the scene at native resolution (or turn MSAA off)"},
     {[](const Settings &s, const Support &c) { return s.render_height > 0 && !c.scene_depth; }, [](Settings &s) { s.render_height = 0; },
      "render scale needs a sampleable scene depth texture: the scene at native resolution"},
-    {[](const Settings &s, const Support &c) { return s.sea_turbidity && (!c.scene_depth || (s.msaa > 1 && !c.msaa_depth)); },
+    // The sea's turbidity and soft edges read the depth of what the scene draws before the sea from a single-sample
+    // target of their own (its backdrop, src/effects/world.cpp), never the multisampled scene's.
+    {[](const Settings &s, const Support &c) { return s.sea_turbidity && !c.scene_depth; },
      [](Settings &s) { s.sea_turbidity = false; },
-     "water turbidity needs readable scene depth (including MSAA resolve): legacy transmission retained"},
-    {[](const Settings &s, const Support &c) { return s.msaa > 1 && !c.msaa_depth && s.sea_soft_edges; },
-     [](Settings &s) { s.sea_soft_edges = false; },
-     "soft sea edges cannot read the depth of a multisampled scene on this renderer: switched off (or turn MSAA off)"},
+     "water turbidity needs a sampleable depth texture: legacy transmission retained"},
     {[](const Settings &s, const Support &) { return (s.lighting_flags & kLightingRim) && !(s.lighting_flags & kLightingPerPixel); },
      [](Settings &s) { s.lighting_flags &= ~static_cast<uint32_t>(kLightingRim); }, "rim light needs per-pixel lighting: switched off"},
     {[](const Settings &s, const Support &) {

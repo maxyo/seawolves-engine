@@ -6,6 +6,7 @@
 #include "shim.hpp"
 #include "storm/render/frame_owner.hpp"
 #include "storm/render/missing_texture.hpp"
+#include "view_schedule.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -496,6 +497,18 @@ struct Device final : Object
     // Graphics effects (src/effects/world.cpp): the view for an fx draw on the current render target, in submission
     // order; `fresh` opens a new one. Marked as drawn into; the shim re-sends its sticky uniforms afterwards.
     uint16_t effects_view(bool fresh);
+    // Graphics effects: a view for a pass into a target of the effects' own (the pass sets the frame buffer), in
+    // submission order, scheduled by what it writes and reads (bgfx texture ids, ViewSchedule): it runs ahead of the
+    // scene when the scene drew nothing it reads. The game's next draw opens a view of its own.
+    uint16_t effects_target_view(const char *name, std::initializer_list<uint16_t> writes,
+                                 std::initializer_list<uint16_t> reads);
+    // Graphics effects: a view of its own beside the game's current one (which stays open), into a target of the
+    // effects that only `writes` names: Target lane (ViewSchedule). UINT16_MAX when the budget is spent (logged).
+    uint16_t side_view(const char *name, uint16_t writes);
+    // Graphics effects: the draw about to be submitted samples `texture` (drawn by an effects target view).
+    void note_read(bgfx::TextureHandle texture);
+    // A view for a bgfx::blit out of `source` into a read-back texture (Target lane, ViewSchedule).
+    uint16_t blit_view(bgfx::TextureHandle source);
     static Device *current; // the one device (effects hooks reach it through the public render API)
     bgfx::ProgramHandle program(uint32_t vs_id, uint32_t fs_id);
     // Creates program(vs_id, fs_id) unless it exists, within `budget` (reduced when one is created): the effects
@@ -563,6 +576,19 @@ struct Device final : Object
     D3DMATRIX scene_view{}, scene_proj{}; // camera of the last perspective draw into the game picture
     uint16_t view = 0;
     uint16_t views_used = 0;
+    // What every game view of the bgfx frame writes and reads, and the execution order made of it (apply_view_order,
+    // before every bgfx::frame()).
+    ViewSchedule schedule{render::kGameViewBegin};
+    std::vector<uint16_t> view_order;
+    ViewSchedule::Lane lane_of(const TexStore &color) const;
+    // Names a game view by its lane and target (the effects profile's gpu_views and scene passes): "scene" (the game
+    // picture before the scene boundary), "picture" (the processed one) or "target", with its size.
+    void name_view(uint16_t id, const TexStore &color, uint32_t face, uint32_t level, bool depth, char (&name)[48]) const;
+    // Before bgfx::frame(): `frame_end` at the end of the game's frame, false at a read-back's flush in its middle.
+    void apply_view_order(bool frame_end);
+    // The display-size depth came back from parking in this frame (leave_scaled_picture): nothing needs it after its
+    // last view (apply_view_order invalidates it there; the next frame clears it before use).
+    bool display_depth_parked = false;
     bool view_dirty = true;
     bool view_has_content = false;
     bool view_overflow_logged = false;

@@ -6,7 +6,7 @@
 // centre ray (fx::OnCentreRay; the sphere is computed only while the probe is on) is submitted a second time
 // (shim::Device::draw, its buffers kept) into kView with the same program, uniforms and textures, depth test EQUAL, no
 // writes, a one-pixel scissor at the centre and an occlusion query. kView is placed right after the frame's last scene
-// view (bgfx::setViewOrder, place()), so it tests against the scene's final depth before the post chain or the
+// view (place(); shim::Device::apply_view_order sets the order), so it tests against the scene's final depth before the post chain or the
 // interface touch it: the draw that is in front at the centre passes, a hidden one fails, an alpha-tested hole (a
 // fence) discards as in the scene. A CPU ray against bounds would pick a table seen through a wall's window frame, or
 // the wall behind a lamp post, by its sphere; against the triangles it would need the skinned and animated vertices
@@ -40,7 +40,7 @@ class ParallaxProbe
     static constexpr int kBatches = 6;    // frames between a query's submission and its reading
     static constexpr int kPerFrame = 32;  // probe draws a frame at most (logged once when more are on the ray)
 
-    // fx_pom_probe (Host::apply). Off releases the queries and restores the view order.
+    // fx_pom_probe (Host::apply). Off releases the queries.
     void set_enabled(bool on);
     bool enabled() const { return enabled_; }
     // fx_pom_toggle's edge (Host::apply): switches the parallax of the texture under the centre (logged).
@@ -66,8 +66,8 @@ class ParallaxProbe
     // kView runs right after it. True when the probe drew this frame (the scene's depth must survive its last view).
     bool place(bgfx::ViewId last_view);
     bool placed() const { return placed_; }
-    // Before bgfx::frame (Device::Present): an unused kView goes back to its place.
-    void before_frame();
+    // The view kView runs right after in this frame (the device's view order), UINT16_MAX: kView keeps its place.
+    bgfx::ViewId placed_after() const { return placed_ ? after_ : bgfx::ViewId(UINT16_MAX); }
     // After the frame (Host::end_frame): reads the queries of kBatches frames ago, updates the target and logs it.
     void end_frame(bool scene_frame, NormalMaps &normal_maps);
 
@@ -95,7 +95,8 @@ class ParallaxProbe
     std::vector<bgfx::OcclusionQueryHandle> queries_; // kBatches * kPerFrame, while enabled
     std::array<Batch, kBatches> batches_{};
     int current_ = 0;
-    bool placed_ = false, remapped_ = false;
+    bool placed_ = false;
+    bgfx::ViewId after_ = 0;
     Target target_{};
     bool view_set_ = false; // kView has this frame's target
     bool mismatch_logged_ = false;

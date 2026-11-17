@@ -228,6 +228,16 @@ that is not highp, in either blob.
   files) keep their mip range.
 - Render-target to texture copies (`StretchRect`, D3DX surface loads) stay on the GPU: the
   destination becomes a render target.
+- The game's views run in an order of their own (`src/shim/view_schedule.hpp`, `bgfx::setViewOrder` before every
+  `bgfx::frame()`): each view records what it writes and reads, and passes into other targets (the sea's cube faces,
+  the ripple steps, the sea's backdrop and depth capture) run ahead of the scene, so the multisampled scene is one
+  pass instead of being stored, resolved and loaded again around them. A view that reads what the scene drew keeps
+  its place and the cut is logged ("view order: ... cuts the scene"). `fx_gpu_profile=1` counts the scene's views and
+  passes (`scene_views`, `scene_passes`); the views are named by lane ("scene", "picture", "target") and size.
+- At a render scale the post chain's last full-screen pass (RCAS, or EASU without sharpening) also writes the scene's
+  depth into the display-size picture, in one pass with its colour and nothing loaded; that depth is invalidated after
+  its last view of the frame and cleared before it is used again. The multisampled depth of a scene drawn at the
+  display size is a write-only attachment, never resolved: nothing samples it.
 
 ## Known limits
 

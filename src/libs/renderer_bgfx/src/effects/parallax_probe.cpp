@@ -33,9 +33,7 @@ void ParallaxProbe::release()
     queries_.clear();
     for (Batch &batch : batches_)
         batch = Batch{};
-    if (remapped_)
-        bgfx::setViewOrder(0, UINT16_MAX, nullptr);
-    remapped_ = placed_ = view_set_ = false;
+    placed_ = view_set_ = false;
 }
 
 void ParallaxProbe::shutdown()
@@ -48,7 +46,7 @@ void ParallaxProbe::on_device_lost()
     queries_.clear(); // the handles went with the device
     for (Batch &batch : batches_)
         batch = Batch{};
-    remapped_ = placed_ = view_set_ = false;
+    placed_ = view_set_ = false;
 }
 
 bgfx::OcclusionQueryHandle ParallaxProbe::candidate(const NormalMapEntry *entry, const float view[16], const float proj[16],
@@ -112,20 +110,9 @@ bool ParallaxProbe::place(bgfx::ViewId last_view)
 {
     if (!enabled_ || placed_ || batches_[current_].draws.empty() || last_view <= kView)
         return false;
-    const std::vector<uint16_t> order = fx::ProbeViewOrder(kView, last_view);
-    bgfx::setViewOrder(0, UINT16_MAX, nullptr); // setViewOrder swaps from the current order: identity first
-    bgfx::setViewOrder(kView, static_cast<uint16_t>(order.size()), order.data());
-    remapped_ = placed_ = true;
+    after_ = last_view;
+    placed_ = true;
     return true;
-}
-
-void ParallaxProbe::before_frame()
-{
-    if (remapped_ && !placed_)
-    {
-        bgfx::setViewOrder(0, UINT16_MAX, nullptr);
-        remapped_ = false;
-    }
 }
 
 void ParallaxProbe::end_frame(bool scene_frame, NormalMaps &normal_maps)

@@ -1,5 +1,6 @@
 #include "storm/fx/parallax_probe.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace storm::fx
@@ -44,15 +45,16 @@ ProbePick PickProbeTarget(std::span<const int32_t> samples)
     return pick;
 }
 
-std::vector<uint16_t> ProbeViewOrder(uint16_t probe, uint16_t last)
+std::vector<uint16_t> ProbeViewOrder(uint16_t probe, uint16_t last, std::span<const uint16_t> order)
 {
-    std::vector<uint16_t> order;
-    if (last <= probe)
-        return order;
-    for (uint16_t id = probe + 1; id <= last; ++id)
-        order.push_back(id);
-    order.push_back(probe);
-    return order;
+    std::vector<uint16_t> ids;
+    const auto at = std::find(order.begin(), order.end(), last);
+    if (at == order.end())
+        return ids;
+    ids.assign(order.begin(), at + 1);
+    ids.push_back(probe);
+    ids.insert(ids.end(), at + 1, order.end());
+    return ids;
 }
 
 } // namespace storm::fx

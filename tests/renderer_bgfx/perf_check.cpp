@@ -379,14 +379,16 @@ struct Expected
 // The point-sprite API expands U_VS from 4 to 7 vec4s and includes the viewport.
 // The reflection target adds one U_VS update per frame: over two frames this is
 // 8 updates * 112 bytes instead of 6 * 64, hence +2 updates and +512 bytes.
+// The views run in an order of their own (shim/view_schedule.hpp): the first draw of every view sends all the
+// shim's uniforms again (3 views a frame here), hence 110 updates and 9728 bytes instead of 84 and 7296.
 const Expected kExpected[] = {
     {"draws", &render::PerfCounters::draws, 194},
     {"skipped_draws", &render::PerfCounters::skipped_draws, 0},
     {"views", &render::PerfCounters::views, 6},
     {"program_changes", &render::PerfCounters::program_changes, 4},
     {"state_changes", &render::PerfCounters::state_changes, 6},
-    {"uniform_updates", &render::PerfCounters::uniform_updates, 84},
-    {"uniform_bytes", &render::PerfCounters::uniform_bytes, 7296},
+    {"uniform_updates", &render::PerfCounters::uniform_updates, 110},
+    {"uniform_bytes", &render::PerfCounters::uniform_bytes, 9728},
     {"uniform_draws", &render::PerfCounters::uniform_draws, 46},
     {"texture_binds", &render::PerfCounters::texture_binds, 182},
     {"texture_changes", &render::PerfCounters::texture_changes, 122},

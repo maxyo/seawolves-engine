@@ -10,7 +10,7 @@ s=(root/path).read_text()
 start=s.index('    // The interface is drawn on the processed picture')
 tail=s[start:s.index('\n}\n',start)]
 start=s.index('    if (views_used > 0 && !render::HideSceneBeauty')
-probe=s[start:s.index('    probe.before_frame();',start)]
+probe=s[start:s.index('    effects.lighting().shadows().before_frame();',start)]
 start=s.index('    render::BeginSceneWork(')
 begin_bridge=s[start:s.index('    return D3D_OK;',start)]
 fixture=r'''
@@ -37,7 +37,7 @@ struct Store {uint64_t serial;int handle=0;int width=1280,height=720;};
 using TexStore=Store;
 struct Ptr {Store* p=nullptr; Store* get(){return p;} Store* operator->(){return p;} operator bool(){return p;}};
 struct Color {Ptr store;};
-struct Host {template<class...T>void copy_scene_depth(T...) {}};
+struct Host {};
 struct Probe {void place(int){}};
 struct Device {
  Store a{8},b{9},c{10},depth{11};Color color{{&a}},depth_color{{&depth}};

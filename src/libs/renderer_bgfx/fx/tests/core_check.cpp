@@ -639,13 +639,14 @@ void CheckSupport()
     CHECK(constrained.msaa == 4 && constrained.PostIsIdentity());
     CHECK(ValidateSettings(constrained, no_lut).empty());
 
-    // MSAA without depth resolve: the multisampled scene keeps MSAA and gives up what needs depth.
+    // MSAA without depth resolve: the multisampled scene keeps MSAA and gives up the render scale, whose depth copy
+    // reads the scene's depth; the sea reads its own single-sample backdrop and keeps its soft edges and turbidity.
     Support no_msaa_depth = all;
     no_msaa_depth.msaa_depth = false;
     changes.clear();
     constrained = ConstrainSettings(high, no_msaa_depth, changes);
-    CHECK(constrained.msaa == 4 && !constrained.sea_soft_edges && constrained.render_height == 0 &&
-          !constrained.sea_turbidity && changes.size() == 3);
+    CHECK(constrained.msaa == 4 && constrained.sea_soft_edges && constrained.render_height == 0 &&
+          constrained.sea_turbidity && changes.size() == 1);
     // Only 2x for the scene target formats (per-format caps): 4x is lowered to 2x, reported, alpha to coverage stays.
     Support msaa_x2 = all;
     msaa_x2.msaa_samples = 2;
@@ -3139,11 +3140,14 @@ void CheckParallaxProbe()
     };
     for (uint16_t i = 0; i < kViews; ++i)
         remap[i] = position[i] = i;
+    std::vector<uint16_t> game(kViews - 8);
+    for (uint16_t i = 0; i < game.size(); ++i)
+        game[i] = static_cast<uint16_t>(8 + i);
     for (const uint16_t last : {uint16_t(12), uint16_t(30)})
     {
         set_order(0, kViews, nullptr);
-        const std::vector<uint16_t> order = ProbeViewOrder(7, last);
-        CHECK(order.size() == static_cast<size_t>(last - 7 + 1));
+        const std::vector<uint16_t> order = ProbeViewOrder(7, last, game);
+        CHECK(order.size() == game.size() + 1);
         set_order(7, static_cast<uint16_t>(order.size()), order.data());
         bool ok = position[7] == position[last] + 1 && position[last + 1] == position[7] + 1;
         for (uint16_t id = 0; id + 1 < kViews; ++id)
@@ -3151,12 +3155,26 @@ void CheckParallaxProbe()
                 ok = ok && position[id] < position[id + 1];
         CHECK(ok);
     }
+    {
+        // The game views in an order of their own (the view schedule): the probe follows `last` there, the rest keep
+        // the schedule's order.
+        std::vector<uint16_t> scheduled = game;
+        std::rotate(scheduled.begin(), scheduled.begin() + 3, scheduled.begin() + 6); // 11, 12, 13 ahead of 8, 9, 10
+        set_order(0, kViews, nullptr);
+        const std::vector<uint16_t> order = ProbeViewOrder(7, 9, scheduled);
+        set_order(7, static_cast<uint16_t>(order.size()), order.data());
+        bool ok = position[7] == position[9] + 1;
+        for (size_t i = 0; i + 1 < scheduled.size(); ++i)
+            if (scheduled[i] != 9)
+                ok = ok && position[scheduled[i]] + 1 == position[scheduled[i + 1]];
+        CHECK(ok && position[11] == 7 && position[8] == 10);
+    }
     set_order(0, kViews, nullptr);
     bool identity_again = true;
     for (uint16_t i = 0; i < kViews; ++i)
         identity_again = identity_again && remap[i] == i;
     CHECK(identity_again);
-    CHECK(ProbeViewOrder(7, 7).empty());
+    CHECK(ProbeViewOrder(7, 7, game).empty());
 
     EdgeTrigger toggle;
     CHECK(!toggle.Apply(-1)); // the stored value at the start

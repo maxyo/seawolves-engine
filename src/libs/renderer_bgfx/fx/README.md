@@ -65,7 +65,9 @@ the display, FSR 1's range) applies to 3D frames: the shim
 (`src/shim/device.cpp`) draws them into internal-size scene stores while the game keeps addressing display pixels
 (viewports, scissors, `GetDesc`), the post chain runs at the internal size (ambient occlusion, bloom, grade, SMAA;
 the sea's soft edges draw into the internal scene) and EASU writes the display-size picture the
-interfaces then draw on. Frames without 3D (menus, loading screens) are drawn at the display size; the change is
+interfaces then draw on; its last full-screen pass at the display size (RCAS, or EASU without sharpening) writes the
+scene's depth there too (`PostChain::Frame::scene_depth`), for the 3D the game draws after the scene boundary (ship
+foam, particles, the ship pointer). Frames without 3D (menus, loading screens) are drawn at the display size; the change is
 logged as "effects: render scale ...: the 3D scene at WxH (internal height H), upscaled by FSR 1 to WxH" (or "the 3D
 scene at the display size"). Without post effects the chain is EASU + RCAS alone. RCAS runs only after an upscale. With `fx_gpu_profile=1` the
 profile line gives `scene=`/`display=` sizes and `gpu_smaa_ms`, `gpu_easu_ms`, `gpu_rcas_ms`. `fx_gpu_profile` is a measurement
@@ -88,7 +90,7 @@ own D3D cannon light on the ships.
 | --- | --- |
 | `include/storm/fx/settings.hpp` | `Settings`, presets «Низкая / Средняя / Высокая», grades «Оригинал / Карибы / Пасмурно», `ConstrainSettings` |
 | `include/storm/fx/post_chain.hpp` | `PostChain`: scene colour → target |
-| `include/storm/fx/sea_depth.hpp` | `SeaDepth`: the scene distance behind the game's sea, for its soft edges |
+| `include/storm/fx/sea_depth.hpp` | `SeaDepth`: the scene distance behind the game's sea, for its soft edges and turbidity; read from the sea's backdrop (`src/effects/world.cpp`: what the scene draws before the sea, drawn again depth-only into a single-sample target in views ahead of the scene; the first frame of a sea has hard edges) |
 | `include/storm/fx/sea_waves.hpp`, `wave_clock.hpp` | `SeaWaves`: the ripple simulation around the camera (its sea shader side: `shaders/include/sea_waves.sh` of the renderer) |
 | `include/storm/fx/sky.hpp` | `Sky`: the atmosphere state of the weather (grade of the place and hour, hemisphere ambient, aerial perspective); the sky itself is the game's on every preset |
 | `include/storm/fx/lighting.hpp`, `shaders/include/fx_lighting.sh` | lighting flags and uniforms for the fixed-function emulator |

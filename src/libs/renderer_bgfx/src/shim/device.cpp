@@ -232,11 +232,13 @@ void Device::create_scene_stores(uint32_t width, uint32_t height)
     const uint32_t scaled_width = std::max(1u, static_cast<uint32_t>(std::lround(width * scale)));
     const uint32_t scaled_height = std::max(1u, static_cast<uint32_t>(std::lround(height * scale)));
     const uint64_t picture_msaa = scaled ? 0 : msaa;
-    // A multisampled depth is resolved into a texture only when an effect reads it (ambient occlusion, the high
-    // water's scene capture): otherwise it stays a write-only render buffer, so leaving the scene target resolves
-    // colour alone (less bandwidth on tile GPUs, and no depth/stencil resolve blit, which drivers get wrong).
-    const auto depth_flags = [&](uint64_t samples) {
-        return samples | (samples && !host.scene_depth_read() ? BGFX_TEXTURE_RT_WRITE_ONLY : 0);
+    // A multisampled depth is resolved into a texture only when something reads it: at a render scale the post chain
+    // carries the scene's depth to the display-size picture. The depth of a scene at the display size is a write-only
+    // render buffer (nothing samples it: the sea reads its own backdrop, effects/world.cpp), so leaving the scene
+    // target resolves colour alone (less bandwidth on tile GPUs, and no depth/stencil resolve blit, which drivers get
+    // wrong). The 3D drawn after the scene boundary goes on testing against it as an attachment.
+    const auto depth_flags = [&](uint64_t samples, bool read) {
+        return samples | (samples && !read ? BGFX_TEXTURE_RT_WRITE_ONLY : 0);
     };
     // A settings switch rebuilds only the targets it changes (an anisotropy change none of them).
     const auto fits = [](const std::shared_ptr<TexStore> &store, uint32_t w, uint32_t h, uint64_t flags) {
@@ -250,8 +252,8 @@ void Device::create_scene_stores(uint32_t width, uint32_t height)
     };
     if (!fits(back_color->store, width, height, picture_msaa))
         back_color->store = target(width, height, D3DFMT_A8R8G8B8, D3DUSAGE_RENDERTARGET, picture_msaa);
-    if (!fits(back_depth->store, width, height, depth_flags(picture_msaa)))
-        back_depth->store = target(width, height, D3DFMT_D24S8, D3DUSAGE_DEPTHSTENCIL, depth_flags(picture_msaa));
+    if (!fits(back_depth->store, width, height, depth_flags(picture_msaa, false)))
+        back_depth->store = target(width, height, D3DFMT_D24S8, D3DUSAGE_DEPTHSTENCIL, depth_flags(picture_msaa, false));
     // The second display-size picture of the post chain's ping-pong; a scaled 3D frame needs none (the chain writes
     // the display-size picture directly), so it is made only when a 3D frame is drawn at the display size.
     if (!host.post_active() || scaled)
@@ -262,8 +264,8 @@ void Device::create_scene_stores(uint32_t width, uint32_t height)
     {
         if (!fits(scaled_color, scaled_width, scaled_height, msaa))
             scaled_color = target(scaled_width, scaled_height, D3DFMT_A8R8G8B8, D3DUSAGE_RENDERTARGET, msaa);
-        if (!fits(scaled_depth, scaled_width, scaled_height, depth_flags(msaa)))
-            scaled_depth = target(scaled_width, scaled_height, D3DFMT_D24S8, D3DUSAGE_DEPTHSTENCIL, depth_flags(msaa));
+        if (!fits(scaled_depth, scaled_width, scaled_height, depth_flags(msaa, true)))
+            scaled_depth = target(scaled_width, scaled_height, D3DFMT_D24S8, D3DUSAGE_DEPTHSTENCIL, depth_flags(msaa, true));
         for (TexStore *store : {scaled_color.get(), scaled_depth.get()})
         {
             store->game_width = width;
@@ -349,7 +351,8 @@ void Device::leave_scaled_picture(bool copy, bool depth_kept)
     back_depth->store = std::move(held_depth);
     held_color.reset();
     held_depth.reset();
-    held_depth_clear = !depth_kept; // else it holds the scene's (copy_scene_depth)
+    held_depth_clear = !depth_kept; // else it holds the scene's (the post chain's depth)
+    display_depth_parked = true;
     view_dirty = true;
 }
 
@@ -533,11 +536,11 @@ HRESULT Device::Present()
     if (views_used > 0 && !render::HideSceneBeauty(context.Surface().generation,
             held_color ? held_color->serial : back_color->store->serial))
         probe.place(static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used - 1));
-    probe.before_frame();
     effects.lighting().shadows().before_frame();
     if (context.ready())
         copy_frame(shown_store);
     const uint32_t presented = context.last_frame();
+    apply_view_order(true);
     context.present(shown.handle, shown.width, shown.height);
     // A frame in which the surface or the back buffer changed is not kept: drawn across a surface re-creation or a
     // resize its picture can be lost with the old surface (a black picture behind the menu after a rotation). The
@@ -563,6 +566,7 @@ HRESULT Device::Present()
     else if (scaled_next)
         enter_scaled_picture();
     views_used = 0;
+    schedule.begin();
     view_dirty = true;
     view_has_content = false;
     invalidate_uniforms();
@@ -623,8 +627,7 @@ void Device::scene_complete()
     out->sync();
     clear_if_new(out);
     const uint16_t budget = render::kGameViewEnd - render::kGameViewBegin;
-    // A scaled scene also carries its depth to the display-size picture afterwards (one view).
-    if (views_used + fx::PostChain::kMaxViews + (scaled ? 1 : 0) > budget)
+    if (views_used + fx::PostChain::kMaxViews > budget)
     {
         if (!post_view_logged)
             logf("ERROR: effects: %u game views used, no room for the post chain (%u): frame presented without it",
@@ -657,26 +660,32 @@ void Device::scene_complete()
     targets.height = static_cast<uint16_t>(scene->height);
     targets.target_width = static_cast<uint16_t>(out->width);
     targets.target_height = static_cast<uint16_t>(out->height);
-    targets.target = framebuffer(out, 0, 0, nullptr);
+    // At a render scale the chain also carries the scene's depth to the display-size picture, for the 3D the game
+    // draws after the scene boundary (ship foam, particles, the ship pointer), depth-tested against the scene as on
+    // the original renderer: the scaled depth is sampleable (create_scene_stores). Left cleared, those draws showed
+    // through ships and islands.
+    targets.target = framebuffer(out, 0, 0, scaled ? held_depth.get() : nullptr);
+    if (scaled)
+        targets.scene_depth = back_depth->store->handle;
     targets.first_view = static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used);
     memcpy(targets.view.data(), &scene_view.m[0][0], sizeof(float) * 16);
     memcpy(targets.projection.data(), &scene_proj.m[0][0], sizeof(float) * 16);
     const auto post_count = host.submit_post(targets);
+    // The chain writes the processed picture (and targets of its own nothing else touches) and reads the scene.
+    for (uint16_t i = 0; i < post_count; ++i)
+    {
+        schedule.open(targets.first_view + i, ViewSchedule::Lane::Post, "post chain", {out->handle.idx});
+        schedule.read(targets.first_view + i, scene->handle.idx);
+        if (scaled)
+        {
+            schedule.write(targets.first_view + i, held_depth->handle.idx);
+            schedule.read(targets.first_view + i, back_depth->store->handle.idx);
+        }
+    }
     views_used += post_count;
     // The interface is drawn on the processed picture, which is then presented.
     if (scaled)
-    {
-        // The game draws 3D after the scene boundary too (ship foam, particles, coronas, the ship pointer): on the
-        // display-size picture, depth-tested against the scene as on the original renderer. Its depth gets the
-        // scene's (the scaled depth is sampleable: Host::scene_depth_read); left cleared, those draws showed
-        // through ships and islands.
-        TexStore *scene_depth = back_depth->store.get();
-        TexStore *display_depth = held_depth.get();
-        host.copy_scene_depth(static_cast<bgfx::ViewId>(render::kGameViewBegin + views_used++), scene_depth->handle,
-                              framebuffer(held_color.get(), 0, 0, display_depth),
-                              static_cast<uint16_t>(display_depth->width), static_cast<uint16_t>(display_depth->height));
-        leave_scaled_picture(false, true);
-    }
+        leave_scaled_picture(false, true); // its depth holds the scene's
     else
     {
         std::swap(back_color->store, post_color);
@@ -694,6 +703,116 @@ uint16_t Device::effects_view(bool fresh)
     view_has_content = true; // a later Clear opens a new view instead of clearing the fx draws
     invalidate_uniforms();
     return id;
+}
+
+uint16_t Device::effects_target_view(const char *name, std::initializer_list<uint16_t> writes,
+                                     std::initializer_list<uint16_t> reads)
+{
+    const uint16_t id = effects_view(true);
+    schedule.open(id, ViewSchedule::Lane::Target, name, writes);
+    for (const uint16_t texture : reads)
+        schedule.read(id, texture);
+    view_dirty = true; // the pass sets the view's frame buffer: the game's next draw opens a view of its own
+    return id;
+}
+
+uint16_t Device::side_view(const char *name, uint16_t writes)
+{
+    if (views_used >= render::kGameViewEnd - render::kGameViewBegin)
+    {
+        if (!view_overflow_logged)
+            logf("ERROR: view budget exhausted (%u): '%s' left out", render::kGameViewEnd - render::kGameViewBegin, name);
+        view_overflow_logged = true;
+        return UINT16_MAX;
+    }
+    const uint16_t id = render::kGameViewBegin + views_used++;
+    ++perf().views;
+    schedule.open(id, ViewSchedule::Lane::Target, name, {writes});
+    bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
+    bgfx::setViewName(id, name);
+    return id;
+}
+
+uint16_t Device::blit_view(bgfx::TextureHandle source)
+{
+    // A view of its own on the current target: bgfx blits at the start of the view, it draws nothing there.
+    view_dirty = true;
+    const uint16_t id = ensure_view();
+    schedule.open(id, ViewSchedule::Lane::Target, "blit", {});
+    schedule.read(id, source.idx);
+    bgfx::setViewName(id, "blit");
+    view_dirty = true;
+    return id;
+}
+
+void Device::note_read(bgfx::TextureHandle texture)
+{
+    if (bgfx::isValid(texture))
+        schedule.read(ensure_view(), texture.idx);
+}
+
+ViewSchedule::Lane Device::lane_of(const TexStore &color) const
+{
+    // The scene: the game picture before the scene boundary (its first interface); the picture: the processed one the
+    // interfaces draw on; a target: any other.
+    if (!color.backbuffer)
+        return ViewSchedule::Lane::Target;
+    if (&color == back_color->store.get() && !scene_done)
+        return ViewSchedule::Lane::Scene;
+    return ViewSchedule::Lane::Picture;
+}
+
+void Device::name_view(uint16_t id, const TexStore &color, uint32_t face, uint32_t level, bool depth, char (&name)[48]) const
+{
+    const ViewSchedule::Lane lane = lane_of(color);
+    const char *kind = lane == ViewSchedule::Lane::Target  ? "target"
+                       : lane == ViewSchedule::Lane::Scene ? "scene"
+                                                           : "picture";
+    const uint64_t msaa = (color.target_flags & BGFX_TEXTURE_RT_MSAA_MASK) >> BGFX_TEXTURE_RT_MSAA_SHIFT;
+    const uint32_t samples = msaa > 1 ? 1u << (msaa - 1) : 1u;
+    if (color.kind == TexKind::Cube)
+        snprintf(name, sizeof(name), "%s %u cube face %u%s", kind, color.level_width(level), face, depth ? " +d" : "");
+    else
+        snprintf(name, sizeof(name), "%s %ux%u%s%s", kind, color.level_width(level), color.level_height(level),
+                 samples == 4 ? " x4" : samples == 2 ? " x2" : "", depth ? " +d" : "");
+    bgfx::setViewName(id, name);
+}
+
+void Device::apply_view_order(bool frame_end)
+{
+    auto &host = effects::Host::instance();
+    schedule.plan(views_used, view_order);
+    // The display-size depth back from parking holds nothing a later frame needs: invalidated after its last view
+    // in execution order (a tile GPU never writes it back), and cleared in the first view that uses it next (one
+    // frame may draw on it without a scene). Not at a read-back's flush: this frame goes on drawing with it.
+    if (frame_end && display_depth_parked)
+    {
+        const TexStore &depth = *back_depth->store;
+        const uint16_t last = schedule.last_writer(depth.handle.idx);
+        if (last != UINT16_MAX && !(depth.target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && schedule.clear_of(last).known)
+        {
+            const ViewSchedule::Clear &clear = schedule.clear_of(last);
+            bgfx::setViewClear(last, clear.flags | BGFX_CLEAR_DISCARD_DEPTH | BGFX_CLEAR_DISCARD_STENCIL, clear.rgba,
+                               clear.z, clear.stencil);
+            held_depth_clear = true;
+        }
+    }
+    if (frame_end)
+        display_depth_parked = false;
+    // setViewOrder swaps from the current order: identity first, then the game views (with the parallax probe's view
+    // right after the scene's last one while it runs, effects/parallax_probe.hpp).
+    bgfx::setViewOrder(0, UINT16_MAX, nullptr);
+    using effects::ParallaxProbe;
+    const bgfx::ViewId probe_after = host.lighting().probe().placed_after();
+    if (probe_after != UINT16_MAX)
+    {
+        static_assert(ParallaxProbe::kView + 1 == render::kGameViewBegin, "the probe's view precedes the game's");
+        const std::vector<uint16_t> ids = fx::ProbeViewOrder(ParallaxProbe::kView, probe_after, view_order);
+        if (!ids.empty())
+            bgfx::setViewOrder(ParallaxProbe::kView, static_cast<uint16_t>(ids.size()), ids.data());
+    }
+    else if (!view_order.empty())
+        bgfx::setViewOrder(render::kGameViewBegin, static_cast<uint16_t>(view_order.size()), view_order.data());
 }
 
 HRESULT Device::GetBackBuffer(UINT, UINT, D3DBACKBUFFER_TYPE, Surface **surface)
@@ -737,6 +856,10 @@ void Device::clear_if_new(TexStore *store)
                 return;
             }
             const uint16_t id = render::kGameViewBegin + views_used++;
+            char name[48];
+            name_view(id, *store, face, level, false, name);
+            schedule.open(id, lane_of(*store), name, {store->handle.idx});
+            schedule.set_clear(id, {BGFX_CLEAR_COLOR, 0x00000000, 1.0f, 0});
             bgfx::setViewFrameBuffer(id, framebuffer(store, face, level, nullptr));
             bgfx::setViewMode(id, bgfx::ViewMode::Sequential);
             bgfx::setViewRect(id, 0, 0, static_cast<uint16_t>(store->level_width(level)),
@@ -804,6 +927,9 @@ uint16_t Device::new_view()
     ++perf().views;
     view_dirty = false;
     view_has_content = false;
+    // Views run in an order of their own (ViewSchedule): a view must not rely on uniform values a draw of the view
+    // submitted before it left behind, so its first draw sends all of them.
+    invalidate_uniforms();
     TexStore *color = rt->store.get();
     // A depth buffer smaller than the colour target cannot be attached.
     TexStore *depth = ds ? ds->store.get() : nullptr;
@@ -824,16 +950,14 @@ uint16_t Device::new_view()
     view_framebuffer = framebuffer(color, rt->face, rt->level, depth);
     view_depth = depth;
     bgfx::setViewFrameBuffer(view, view_framebuffer);
-    // Named by its target for the GPU timers per view (the effects profile's gpu_views).
+    // Named by its lane and target for the GPU timers per view (the effects profile's gpu_views, scene passes), and
+    // recorded for the view order.
     {
         char name[48];
-        if (color == scaled_color.get())
-            snprintf(name, sizeof(name), "scene");
-        else if (color == back_color->store.get())
-            snprintf(name, sizeof(name), "display");
-        else
-            snprintf(name, sizeof(name), "target %ux%u", color->level_width(rt->level), color->level_height(rt->level));
-        bgfx::setViewName(view, name);
+        name_view(view, *color, rt->face, rt->level, depth != nullptr, name);
+        schedule.open(view, lane_of(*color), name, {color->handle.idx});
+        if (depth)
+            schedule.write(view, depth->handle.idx);
     }
     bgfx::setViewMode(view, bgfx::ViewMode::Sequential);
     // The display-size depth back from parking (render scale) holds an old frame: cleared in the first view that
@@ -845,6 +969,7 @@ uint16_t Device::new_view()
         held_depth_clear = false;
     }
     bgfx::setViewClear(view, view_clear_bits, 0, 1.0f, 0);
+    schedule.set_clear(view, {view_clear_bits, 0, 1.0f, 0});
     view_clear_set = view_clear_bits;
     view_clear_rgba = 0;
     view_clear_z = 1.0f;
@@ -894,13 +1019,17 @@ HRESULT Device::Clear(DWORD count, const D3DRECT *, DWORD flags, D3DCOLOR color,
     if (flags & D3DCLEAR_TARGET)
         bits |= BGFX_CLEAR_COLOR;
     if ((flags & D3DCLEAR_ZBUFFER) && ds)
+    {
         bits |= BGFX_CLEAR_DEPTH;
+        effects::Host::instance().sea_backdrop_clear(*this, z); // the sea's backdrop of the scene's depth
+    }
     if ((flags & D3DCLEAR_STENCIL) && ds)
         bits |= BGFX_CLEAR_STENCIL;
     if (!view_has_content)
         bits |= view_clear_bits; // the view's own depth clear (new_view) stays
     const uint32_t rgba = ((color & 0x00FFFFFF) << 8) | (color >> 24);
     bgfx::setViewClear(view, bits, rgba, z, static_cast<uint8_t>(stencil));
+    schedule.set_clear(view, {bits, rgba, z, static_cast<uint8_t>(stencil)});
     view_clear_set = bits;
     view_clear_rgba = rgba;
     view_clear_z = z;
@@ -1143,6 +1272,7 @@ HRESULT Device::StretchRect(Surface *src, const RECT *src_rect, Surface *dst, co
     Context::instance().draw_fullscreen(id, from->store->handle, flags,
                                         opaque ? BGFX_STATE_WRITE_RGB : BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A, u0, v0, u1,
                                         v1);
+    schedule.read(id, from->store->handle.idx);
     view_has_content = true;
     rt = saved_rt;
     ds = saved_ds;
@@ -1186,8 +1316,7 @@ HRESULT Device::GetRenderTargetData(Surface *target, Surface *dest)
         BGFX_TEXTURE_BLIT_DST | BGFX_TEXTURE_READ_BACK | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP);
     if (!bgfx::isValid(staging))
         return D3DERR_INVALIDCALL;
-    view_dirty = true;
-    const uint16_t id = ensure_view();
+    const uint16_t id = blit_view(from->store->handle);
     bgfx::TextureRegion source, destination;
     source.init(from->store->handle);
     source.mip = static_cast<uint8_t>(from->level);
@@ -1201,6 +1330,7 @@ HRESULT Device::GetRenderTargetData(Surface *target, Surface *dest)
     read_region.init(staging);
     const uint32_t ready_frame = bgfx::read(read_region, pixels.data());
     uint32_t current = 0;
+    apply_view_order(false);
     // The render thread writes `pixels` while it executes the frame the read was recorded in; that frame is finished
     // when bgfx::frame() has returned the next number, and `ready_frame` is one later still. Flush frames present
     // nothing and are never refused (Context::run_frame), so `pixels` outlives the write.
@@ -1208,6 +1338,7 @@ HRESULT Device::GetRenderTargetData(Surface *target, Surface *dest)
         Context::instance().run_frame(BGFX_FRAME_FLUSH, &current);
     // A flush ends the bgfx frame: views and sticky uniforms start over.
     views_used = 0;
+    schedule.begin();
     view_has_content = false;
     invalidate_uniforms();
     bgfx::destroy(staging);
@@ -1297,8 +1428,7 @@ void Device::copy_frame(const TexStorePtr &shown)
     if (StretchRect(&from, nullptr, &to, nullptr, D3DTEXF_LINEAR) != D3D_OK)
         return;
     copy.target->sync();
-    view_dirty = true;
-    const uint16_t id = ensure_view();
+    const uint16_t id = blit_view(copy.target->handle);
     bgfx::TextureRegion source, destination, read_region;
     source.init(copy.target->handle);
     destination.init(copy.staging);

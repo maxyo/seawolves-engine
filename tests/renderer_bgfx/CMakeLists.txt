@@ -46,6 +46,11 @@ add_executable(coast_foam_vertex_check coast_foam_vertex_check.cpp)
 target_include_directories(coast_foam_vertex_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
 target_link_libraries(coast_foam_vertex_check PRIVATE storm_bgfx storm_check_sdl)
 
+# view_schedule_check: the execution order of the game's views (src/shim/view_schedule.hpp). No GPU.
+add_executable(view_schedule_check view_schedule_check.cpp)
+target_include_directories(view_schedule_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_link_libraries(view_schedule_check PRIVATE storm_bgfx storm_check_sdl)
+
 # backend_select_check: the choice between Vulkan and OpenGL ES, the denylist and the crash guard of a Vulkan start
 # (src/shim/backend_select.hpp). No GPU.
 add_executable(backend_select_check backend_select_check.cpp)

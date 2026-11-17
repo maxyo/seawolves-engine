@@ -1511,6 +1511,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             fx::SetSkinToneSampling(fx_draw.skin_tone, skin_width, skin_height, skin_levels);
         bgfx::setTexture(static_cast<uint8_t>(unit), Context::instance().sampler(unit), handle, flags);
         ++perf().texture_binds;
+        if (store->render_target)
+            schedule.read(view_id, store->handle.idx); // the view runs after the one that drew it (ViewSchedule)
         if (const TextureFade::Sample fade = store->fade.observe(handle.idx, source, fades.now(), fades.epoch());
             fade.from != kNoTexture)
         {
@@ -1632,8 +1634,11 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
             probe_query = probe.candidate(fx_draw.relief_entry, &s.view.m[0][0], &s.proj.m[0][0], center, bounds.radius,
                                           {view_framebuffer, view_rect, view_min_z, view_max_z});
         }
-    // Effects: a probe draw keeps its buffers for its copy.
-    bgfx::submit(view_id, handle, 0, bgfx::isValid(probe_query) ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
+    // Effects: a probe draw keeps its buffers for its copy, a draw before the sea for its copy into the sea's backdrop
+    // (Host::sea_backdrop).
+    auto &effects_host = effects::Host::instance();
+    const bool backdrop = effects_host.sea_backdrop(*this, *layout, vs_port);
+    bgfx::submit(view_id, handle, 0, bgfx::isValid(probe_query) || backdrop ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
     if (rt == back_color && !layout->rhw) render::SceneBeautySubmitted();
     render::SceneOpaqueDrawSubmitted(opaqueCoverage, !s.rs[D3DRS_ALPHABLENDENABLE] || s.rs[D3DRS_BLENDOP] == D3DBLENDOP_ADD);
     if (bgfx::isValid(probe_query))
@@ -1651,8 +1656,10 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
         bgfx::setStencil(BGFX_STENCIL_NONE); // the scene's stencil is not the one this draw saw
         const uint32_t width = rt->store->level_width(rt->level), height = rt->store->level_height(rt->level);
         bgfx::setScissor(static_cast<uint16_t>(width / 2), static_cast<uint16_t>(height / 2), 1, 1);
-        bgfx::submit(effects::ParallaxProbe::kView, handle, probe_query, 0, BGFX_DISCARD_ALL);
+        bgfx::submit(effects::ParallaxProbe::kView, handle, probe_query, 0, backdrop ? BGFX_DISCARD_NONE : BGFX_DISCARD_ALL);
     }
+    if (backdrop)
+        effects_host.submit_sea_backdrop(*this, layout->skinned, bits & BGFX_STATE_CULL_MASK, false);
     view_has_content = true;
     render::PerfCounters &counters = perf();
     ++counters.draws;
