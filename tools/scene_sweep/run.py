@@ -108,6 +108,9 @@ def parse_arguments():
     parser.add_argument('--game', type=Path, required=True, help='game directory (PROGRAM, RESOURCE, engine.ini)')
     parser.add_argument('--engine', type=Path, help='host engine binary built with -DSTORM_SCENE_SWEEP=ON')
     parser.add_argument('--out', type=Path, help='report directory (report.json, summary.txt, shots/, contact/)')
+    parser.add_argument('--relief-models', type=Path,
+                        help="the relief networks' folder (engine.ini relief_models); default: the one the engine's build "
+                             'made (relief_models_path.txt beside --engine). Without one the engines make no relief maps')
     parser.add_argument('--jobs', type=int)
     parser.add_argument('--single-session', action='store_true',
                         help='run exactly one engine without retries; preserve --only order (requires --jobs 1)')
@@ -508,7 +511,9 @@ class Shard(threading.Thread):
         settings = inventory.read_script(source / 'engine.ini')
         for key, value in (('full_screen', 0), ('screen_x', self.size[0]), ('screen_y', self.size[1]),
                            ('vsync', 0), ('show_fps', 0),
-                           ('render_backend', 'vulkan' if self.arguments.render == 'vulkan' else 'gles')):
+                           ('render_backend', 'vulkan' if self.arguments.render == 'vulkan' else 'gles'),
+                           *((('relief_models', self.arguments.relief_models.resolve()),) if self.arguments.relief_models
+                             else ())):
             settings, count = re.subn(rf'(?mi)^{key}\s*=.*$', f'{key} = {value}', settings)
             if not count:
                 settings = f'{key} = {value}\n' + settings
@@ -883,6 +888,13 @@ def main():
         return 0
     arguments.out = arguments.out.resolve()
     arguments.engine = arguments.engine.resolve()
+    if arguments.relief_models is None and (arguments.engine.parent / 'relief_models_path.txt').exists():
+        arguments.relief_models = Path((arguments.engine.parent / 'relief_models_path.txt').read_text().strip())
+    if arguments.relief_models is not None and not arguments.relief_models.is_dir():
+        sys.exit(f'--relief-models {arguments.relief_models}: not a directory')
+    if arguments.relief_models is None:
+        print('no relief models (--relief-models, relief_models_path.txt beside --engine): the engines make no relief '
+              'maps, wait=relief returns at once')
     for tool in ('Xvfb', 'cp'):
         if not shutil.which(tool):
             sys.exit(f'{tool} not found')

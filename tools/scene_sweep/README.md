@@ -130,6 +130,10 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
   the scene counts (loaded, a variant active or captured, the engine's report every 10 s while it prepares a variant).
   The script fails a scene that has not loaded 30 s before that with its own reason (`not loaded after ... ms`), and
   a variant that waits for a background product (`wait=`) as long after its settings became active.
+- `--relief-models DIR` the relief networks the engines make their relief maps with (engine.ini `relief_models`); by
+  default the folder the engine's build made (`relief_models_path.txt` beside `--engine`). Without it no relief map is
+  made (the run says so) and `wait=relief` returns at once: pass it for relief A/B sheets of engines copied out of their
+  build.
 - `--lossless` saves the shots as PNG (comparison sheets of fine texture detail; JPEG by default).
 - `--settle MS` how long each scene renders after its fader before the capture (default 300).
   Frame time and the renderer counters are means over this window: raise it (e.g. 5000) with
