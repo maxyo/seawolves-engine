@@ -440,6 +440,25 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
 #endif
 }
 
+// How much of the lamps' part `lamp` a baked colour takes over its lamp-free part `base` (both in the space they add
+// in: energy in linear light), one scale for all channels so the lamps' hue stays. The scene is 8-bit and the
+// composite gives it its highlights back (fxExpandLdr): a channel past 1 is clipped, so near a lamp the relit colour
+// burnt out to a flat yellow-white without its texture. Up to half of the headroom h that `base` leaves in the lamps'
+// direction their light is added as it is; above, a shoulder with the same slope where it starts, x -> h - h*h/(4x),
+// reaches h only at infinite light: the pool stays bright, its texture and colour stay.
+float ffLampRoll(vec3 base, vec3 lamp)
+{
+    float peak = max(lamp.r, max(lamp.g, lamp.b));
+    if (peak <= 1e-4)
+        return 1.0;
+    vec3 room = max(vec3_splat(1.0) - base, vec3_splat(0.0)) * peak;
+    vec3 along = max(lamp, vec3_splat(1e-3 * peak));
+    float h = min(room.r / along.r, min(room.g / along.g, room.b / along.b));
+    if (peak <= 0.5 * h)
+        return 1.0;
+    return h * (1.0 - h / (4.0 * peak)) / peak;
+}
+
 // The light of the lights that move (a carried lantern, a ship's lanterns) at the pixel, with their shadows. The
 // bake holds nothing of them: it is plain added light, as the game's own point lights, not a part of the relit sum:
 // `lampMoved` of ffLampLight.
@@ -923,11 +942,22 @@ void main()
     // and takes light in that tone, with only a share of the lamp's own, far more saturated colour
     // (u_fxLampGrid[4].z; with all of it a candle-lit wall goes orange-red where the game's is warm white).
     vec3 lampTone = mix(vec3_splat(dot(lamps.rgb, vec3(0.299, 0.587, 0.114))), lamps.rgb, u_fxLampGrid[4].z);
+    // The lamp-free part and the lamps' part add, the latter within the picture's headroom (ffLampRoll).
+    vec3 surface = current.rgb * aoVolume;
     if (fxLinear())
-        current.rgb *= aoVolume * sqrt((vec3_splat(baked * baked * movingShade * movingShade) + gain * gain * lampTone) /
-                                       (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a));
+    {
+        surface *= surface / (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a);
+        vec3 base = surface * (baked * baked * movingShade * movingShade);
+        vec3 lamp = surface * (gain * gain * lampTone);
+        current.rgb = sqrt(base + lamp * ffLampRoll(base, lamp));
+    }
     else
-        current.rgb *= aoVolume * (vec3_splat(baked * movingShade) + gain * lampTone) / (baked + u_fxLamps[0].w * gain * lamps.a);
+    {
+        surface /= baked + u_fxLamps[0].w * gain * lamps.a;
+        vec3 base = surface * (baked * movingShade);
+        vec3 lamp = surface * (gain * lampTone);
+        current.rgb = base + lamp * ffLampRoll(base, lamp);
+    }
     // The lamps' highlights on the baked colours, at the lamps' gain on them.
     vec3 ffLampBakedSpec = ffLampSpec * (fxLinear() ? gain * gain : gain);
 #else
