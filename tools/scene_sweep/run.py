@@ -888,13 +888,19 @@ def main():
         return 0
     arguments.out = arguments.out.resolve()
     arguments.engine = arguments.engine.resolve()
-    if arguments.relief_models is None and (arguments.engine.parent / 'relief_models_path.txt').exists():
-        arguments.relief_models = Path((arguments.engine.parent / 'relief_models_path.txt').read_text().strip())
     if arguments.relief_models is not None and not arguments.relief_models.is_dir():
         sys.exit(f'--relief-models {arguments.relief_models}: not a directory')
     if arguments.relief_models is None:
-        print('no relief models (--relief-models, relief_models_path.txt beside --engine): the engines make no relief '
-              'maps, wait=relief returns at once')
+        made = arguments.engine.parent / 'relief_models_path.txt'
+        built = Path(made.read_text().strip()) if made.exists() else None
+        if built is not None and built.is_dir():
+            arguments.relief_models = built
+        else:
+            # The build names its folder at configure time; the networks are copied there only by the target
+            # storm_relief_model_files (the engine target does not need them).
+            print('no relief models (--relief-models, or the engine build\'s ' +
+                  (f'{built}, not made: ninja storm_relief_model_files' if built else 'relief_models_path.txt') +
+                  '): the engines make no relief maps, wait=relief returns at once')
     for tool in ('Xvfb', 'cp'):
         if not shutil.which(tool):
             sys.exit(f'{tool} not found')
