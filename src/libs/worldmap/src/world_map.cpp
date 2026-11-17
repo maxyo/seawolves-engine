@@ -88,7 +88,7 @@ WorldMap::~WorldMap()
 // Initialization
 bool WorldMap::Init()
 {
-    storm::render::BeginScenePipelines("worldmap"); // its recorded Vulkan pipelines are created while it loads
+    storm::render::BeginScenePipelines("worldmap", GetId()); // its recorded Vulkan pipelines are created while it loads
     // Layers
     core.SetLayerType(EXECUTE, layer_type_t::execute);
     core.SetLayerType(REALIZE, layer_type_t::realize);

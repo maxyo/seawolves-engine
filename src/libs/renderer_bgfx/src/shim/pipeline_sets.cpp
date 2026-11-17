@@ -612,9 +612,9 @@ void Context::UnregisterPipelineProgram(uint16_t program)
 
 namespace storm::render
 {
-void BeginScenePipelines(const char *scene)
+void BeginScenePipelines(const char *scene, uint64_t owner)
 {
-    effects::BeginSceneResources(scene);
+    effects::BeginSceneResources(scene, owner);
     shim::PipelineSets::instance().begin_scene(scene);
 }
 

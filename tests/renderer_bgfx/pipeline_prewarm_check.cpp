@@ -234,7 +234,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
     {
         Renderer r(window);
         Device &d = *r.device;
-        render::BeginScenePipelines(kScene);
+        render::BeginScenePipelines(kScene, 0);
         settle(d, -1); // the clear and the first interface pipelines
         // 1. Only the interface has new pipelines: nothing may be left out.
         uint32_t before = bgfx::getVkDrawsLeftOut();
@@ -263,7 +263,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         // 3. A new start: the recorded scene pipeline is prewarmed while the scene loads.
         Renderer r(window);
         Device &d = *r.device;
-        render::BeginScenePipelines(kScene);
+        render::BeginScenePipelines(kScene, 0);
         int held = 0;
         // On the prewarm's progress, no deadline: a hold that never ends hangs here (run.py's deadlock guard).
         std::printf("step: the fade-in ends once the scene's pipelines exist\n");
@@ -289,7 +289,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
     {
         Renderer r(window);
         ok &= expect(!fs::exists(sets), "a corrupt pipelines.bin is removed");
-        render::BeginScenePipelines(kScene);
+        render::BeginScenePipelines(kScene, 0);
         // Nothing recorded now, but the pipeline cache still holds the scene's pipeline: with pipeline creation
         // cache control it is taken from there at the draw, which is not left out.
         const uint32_t left_out = settle(*r.device, 3).left_out;
@@ -311,7 +311,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         Device &d = *r.device;
         for (int i = 0; i < 5; ++i)
             frame(d, -1, 0, 0);
-        render::BeginScenePipelines("elsewhere"); // writes the sets if anything was forgotten
+        render::BeginScenePipelines("elsewhere", 0); // writes the sets if anything was forgotten
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         ok &= expect(file_has_waiting_recipe(sets), "a recorded pipeline whose program does not exist yet is kept");
         const bgfx::ProgramHandle program =
@@ -321,7 +321,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         owner.RegisterPipelineProgram("ext_vs", "ext_fs", program.idx);
         for (int i = 0; i < 5; ++i)
             frame(d, -1, 0, 0);
-        render::BeginScenePipelines("elsewhere again");
+        render::BeginScenePipelines("elsewhere again", 0);
         await_waiting_recipe_gone(sets);
         std::printf("PASS registered: it is asked for (refused here: not a bgfx recipe)\n");
         owner.UnregisterPipelineProgram(program.idx);
@@ -369,7 +369,7 @@ int main()
     {
         // OpenGL ES: no pipelines; nothing is held and nothing left out.
         Renderer r(window);
-        render::BeginScenePipelines(kScene);
+        render::BeginScenePipelines(kScene, 0);
         frame(*r.device, 3, 1, 2);
         ok &= expect(!render::HoldSceneReveal(), "OpenGL ES: no fade-in is held");
     }

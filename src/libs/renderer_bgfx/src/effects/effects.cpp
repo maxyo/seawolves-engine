@@ -53,6 +53,7 @@ struct LocationLoad {
     SceneReadiness gate;
     SceneFailures failures;
     std::string scene, detail;
+    uint64_t owner = 0;
     std::unordered_map<uint64_t, std::weak_ptr<shim::TexStore>> textures;
     // Scene textures that failed, each logged once as an ERROR; they never hold the reveal.
     std::unordered_set<std::string> failed_textures;
@@ -81,7 +82,7 @@ uint64_t load_milliseconds() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 }
-void BeginSceneResources(const char *scene)
+void BeginSceneResources(const char *scene, uint64_t owner)
 {
     auto &load = location_load();
     texture::Service::instance().end_loading_cache_scope();
@@ -95,6 +96,7 @@ void BeginSceneResources(const char *scene)
     ReliefGenerator::instance().set_neighbours({}, {}); // the previous place's neighbours are not this one's
     load.textures.clear(); load.failed_textures.clear(); load.fallback_textures.clear(); load.detail.clear();
     load.scene = scene ? scene : "";
+    load.owner = owner;
     // Stock completion covers both on-land loading and SEA_AI's explicit sea scene.
     // Other scene names are not silently admitted to this resource contract.
     load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea";
@@ -1504,7 +1506,7 @@ SceneLoadStatus GetSceneLoadStatus()
     const bool error = load.gate.state() == effects::SceneReadiness::State::Error || r.failed > 0;
     return {load.gate.generation(), !load.sealed, error, !load.sealed && error && load.failures.can_retry(),
             load.sealed ? "inactive" : error ? "error" : load.gate.state() == effects::SceneReadiness::State::Ready ? "ready" : "preparing",
-            r.textures, r.relief, r.shadows, r.failed, load.detail, load.cooling ? "cooling" : "generating"};
+            r.textures, r.relief, r.shadows, r.failed, load.detail, load.cooling ? "cooling" : "generating", load.owner};
 }
 void ArmSceneOpaqueDraw(bool full_screen, bool solid, uint8_t alpha) {
     auto &load = effects::location_load();
@@ -1693,6 +1695,16 @@ void CompleteSceneReveal() {
             effects::ReliefGenerator::instance().set_neighbours(std::move(load.neighbours_place), std::move(load.neighbours));
         load.neighbours_place.clear(); load.neighbours.clear();
     }
+}
+void AbandonSceneLoad(uint64_t generation) {
+    auto &load = effects::location_load();
+    if (load.sealed || generation != load.gate.generation()) return;
+    shim::logf("ERROR: location readiness: %s was unloaded before its reveal (its load failed); nothing to reveal, the "
+               "game goes on without it", load.scene.c_str());
+    load.sealed = true;
+    fx::SharedCpuAdmission().begin(0, false);
+    texture::Service::instance().end_loading_cache_scope();
+    load.neighbours_place.clear(); load.neighbours.clear();
 }
 void SetEffectsNeighbours(std::string_view place, std::vector<EffectsNeighbour> neighbours)
 {

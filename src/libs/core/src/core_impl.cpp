@@ -361,6 +361,12 @@ bool CoreImpl::PrepareLoadingScene()
         const auto status = storm::render::GetSceneLoadStatus();
         if (!status.active || status.generation != initial.generation)
             return AbortLoadingTransaction(storm::loading::Outcome::Invalidated, initial.generation);
+        if (status.owner && !IsEntityValid(status.owner)) {
+            storm::render::AbandonSceneLoad(initial.generation);
+            Trace("ERROR: Stock loading transaction abandoned generation=%llu: the scene's owner was deleted before its "
+                  "reveal (its load failed); the game goes on", static_cast<unsigned long long>(initial.generation));
+            return true;
+        }
         const std::string signature = status.state + '/' + std::to_string(status.textures) + '/' +
             std::to_string(status.shadows) + '/' + std::to_string(status.failed);
         const auto now = std::chrono::steady_clock::now();

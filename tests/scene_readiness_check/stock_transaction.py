@@ -33,11 +33,12 @@ int pendingUntil=4,suspendFor=0,cancelAt=0;bool error=false,ack=false,prepared=f
 int scheduledStarts=0,scheduledPresents=0,scheduledEnds=0,scheduledSuspends=0;
 int waitPolls=0,waits=0,cpuEnds=0,cpuSuspends=0;bool invalidateAfterPresent=false;
 namespace storm::render {
-struct Status {bool active=true;uint64_t generation=7;std::string state,phase,detail;uint32_t textures=0,relief=0,shadows=0,failed=0;}; Status status;
+struct Status {bool active=true;uint64_t generation=7;std::string state,phase,detail;uint32_t textures=0,relief=0,shadows=0,failed=0;uint64_t owner=0;}; Status status;
 Status GetSceneLoadStatus(){return status;}
 void SceneLoadingTransactionFrame(){}
 bool HoldSceneReveal(){assert(prepared);return error||frames<pendingUntil;}
 void CompleteSceneReveal(){assert(!error&&frames>=pendingUntil);status.active=false;}
+int abandons=0;void AbandonSceneLoad(uint64_t g){assert(g==7);status.active=false;++abandons;}
 void EndSceneCpuBudget(uint64_t g){assert(g==7);++cpuEnds;}
 void SuspendSceneCpuBudget(uint64_t g){assert(g==7);++cpuSuspends;}
 }
@@ -98,6 +99,7 @@ struct CoreImpl {
  bool AbortLoadingTransaction(storm::loading::Outcome outcome,uint64_t generation);
  void *GetService(const char*s){return std::string(s)=="renderer"?static_cast<SERVICE*>(&renderer):static_cast<SERVICE*>(&animation);}
  std::vector<int> GetEntityIds(layer_type_t){return {0,1};}
+ bool IsEntityValid(int id){return id!=99;}
  Entity *GetEntityPointerSafe(int id){return id==2?&weather:id?&dialog:&resource;}
  void ForEachEntity(const std::function<void(Entity*)>&f){f(&resource);f(&dialog);f(&weather);}
 } core;
@@ -115,7 +117,7 @@ void reset(){
  storm::platform::loadingPlatformPump=hostPump;
  storm::platform::loadingSchedulePump=schedulePump;
  storm::render::status={true,7};renderer.progressTexture=1;
- vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;all_traces.clear();
+ storm::render::abandons=0;vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;all_traces.clear();
 }
 // An abort: no exception, the scripts unwound once, the engine exit requested, the outcome in the log.
 bool aborted(const char *outcome,bool error){
@@ -158,6 +160,12 @@ int main(){
  assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_FAILED&&aborted("cancelled",false)&&frames>=4);
  {size_t at=all_traces.find("made no progress");assert(at!=std::string::npos&&all_traces.find("made no progress",at+1)==std::string::npos);}
  CoreImpl::kLoadingStall=std::chrono::seconds(300);
+ // The scene's owner deleted before the reveal (a location whose load failed): abandoned loudly, the game goes on.
+ reset();storm::render::status.owner=99;pendingUntil=1000;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&storm::render::abandons==1&&vm.aborts==0&&!core.Exit_flag);
+ assert(frames==0&&scheduledEnds==1&&cpuEnds==1&&all_traces.find("ERROR: Stock loading transaction abandoned generation=7")!=std::string::npos);
+ reset();storm::render::status.owner=5;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&storm::render::abandons==0&&frames>=4);
 }
 '''
 source=source.replace('METHOD',method).replace('ABORT',abort).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))

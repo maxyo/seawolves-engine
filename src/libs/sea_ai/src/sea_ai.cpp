@@ -26,7 +26,7 @@ SEA_AI::~SEA_AI()
 bool SEA_AI::Init()
 {
     // The sea scene (sea login; not a town's sea): its recorded Vulkan pipelines are created while it loads.
-    storm::render::BeginScenePipelines("sea");
+    storm::render::BeginScenePipelines("sea", GetId());
     Helper.SetDevice();
     return true;
 }

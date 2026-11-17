@@ -247,7 +247,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         for (int f = 0; next < kCombos; ++f)
         {
             if (f % 5 == 0)
-                render::BeginScenePipelines(f % 10 == 0 ? "stress/a" : "stress/b");
+                render::BeginScenePipelines(f % 10 == 0 ? "stress/a" : "stress/b", 0);
             r.frame(next, f % 3 == 2);
             next += kDrawsPerFrame;
         }
@@ -281,7 +281,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         }
         if (round == 0)
             ok &= expect(!made.empty(), "the recorded shaders are the shim's embedded ones");
-        render::BeginScenePipelines(round % 2 ? "stress/b" : "stress/a");
+        render::BeginScenePipelines(round % 2 ? "stress/b" : "stress/a", 0);
         // The prewarms are asked for at the next frame and queued by the render thread a frame later; draws of new
         // combinations go in front of them.
         for (int f = 0; f < 1 + round % 3; ++f)
@@ -302,7 +302,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         // 3. A device shut down while prewarms and waiting draws are pending.
         step("shut down with pipelines pending");
         Renderer r(window);
-        render::BeginScenePipelines("stress/a");
+        render::BeginScenePipelines("stress/a", 0);
         r.frame(3);
         r.frame(60);
         std::printf("     pending at shutdown: %u\n", bgfx::getVkPipelinesPending());
@@ -311,7 +311,7 @@ bool vulkan(SDL_Window *window, const fs::path &root)
         // 4. And once more: nothing left of the earlier starts gets in the way.
         step("a start after them");
         Renderer r(window);
-        render::BeginScenePipelines("stress/b");
+        render::BeginScenePipelines("stress/b", 0);
         for (int f = 0; f < 10; ++f)
             r.frame(f * 11, f % 4 == 3);
         ok &= expect(r.settle(1) == 0, "a start after them: every draw appears once its pipeline exists");

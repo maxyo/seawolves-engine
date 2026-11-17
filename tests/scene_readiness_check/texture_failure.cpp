@@ -1,10 +1,12 @@
 // A model texture that cannot be created: one the game's data names but does not ship (KnownMissingGameTexture) is a
 // known data defect, logged once per session as a WARNING with the model that asked for it; any other is an ERROR of
-// the scene being loaded. No GPU: the renderer's log lines are collected through its sink.
+// the scene being loaded. A scene whose owner was deleted before its reveal is abandoned with an ERROR. No GPU: the
+// renderer's log lines are collected through its sink.
 #include <bits/stdc++.h>
 #include "effects/scene_readiness.hpp"
 #include "storm/render/log.hpp"
 #include "storm/render/pipelines.hpp"
+#include "scene_load_status.hpp"
 using namespace storm;
 using render::LogLevel;
 namespace {
@@ -38,10 +40,10 @@ int main() {
     assert(!render::KnownMissingGameTexture(nullptr));
 
     render::SetLogSink(Collect);
-    effects::BeginSceneResources("sea");
+    effects::BeginSceneResources("sea", 0);
     render::FailSceneTexture("resource\\textures\\PHONG256_BW.GIF.tx", "resource\\models\\ships\\Sloop1\\Sloop1_mast2.gm");
     render::FailSceneTexture("PHONG256_BW.GIF", "resource\\models\\ships\\Frigate_h1\\Frigate_h1.gm");
-    effects::BeginSceneResources("location/FortFrance_town"); // another scene, the same session
+    effects::BeginSceneResources("location/FortFrance_town", 0); // another scene, the same session
     render::FailSceneTexture("ships\\Sloop1\\PHONG256_BW.GIF", "resource\\models\\ships\\Sloop1\\sloop1_mast201.gm");
     // One WARNING for the session, naming the first model; no ERROR for it in any scene.
     assert(Count(LogLevel::Warning, "WARNING: known game data defect: texture 'phong256_bw.gif' requested by "
@@ -63,6 +65,15 @@ int main() {
     assert(Count(LogLevel::Warning, "") == 2);
     render::FailSceneTexture("resource\\textures\\ships\\checker.tga.tx", "resource\\models\\ships\\z.gm");
     assert(Count(LogLevel::Error, "texture 'ships/checker'") == 1);
+
+    effects::BeginSceneResources("location/OldWorld_Port", 42);
+    const auto status = render::GetSceneLoadStatus();
+    assert(status.active && status.owner == 42);
+    render::AbandonSceneLoad(status.generation + 1); // not this load
+    assert(render::GetSceneLoadStatus().active);
+    render::AbandonSceneLoad(status.generation);
+    assert(!render::GetSceneLoadStatus().active);
+    assert(Count(LogLevel::Error, "ERROR: location readiness: location/OldWorld_Port was unloaded before its reveal") == 1);
     render::SetLogSink(nullptr);
-    std::puts("PASS a texture the game's data names but does not ship: one WARNING per session; any other missing: ERROR");
+    std::puts("PASS a texture the game's data names but does not ship: one WARNING per session; any other missing: ERROR; an abandoned scene: ERROR");
 }

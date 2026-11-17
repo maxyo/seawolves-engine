@@ -26,8 +26,15 @@
       "game": "TEHO 1.7.3",
       "scene": "loc:OldWorld_*",
       "file": "PROGRAM/locations/init/OldWorld.c",
-      "error": "timeout: no progress within ",
-      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. Without its model the location never becomes ready; the engine's location readiness holds the game (no script frames, \"slow preparation\" logged every 120 s), so the script cannot fail the scene itself and the runner kills the engine after --timeout."
+      "error": "not loaded after ",
+      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. Without its model the stock location loader unloads the location (LocationLoader: not loaded model); the engine abandons its preparation with an ERROR and the game goes on without a location, so the sweep's load times out."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "loc:OldWorld_*",
+      "file": "PROGRAM/locations/init/OldWorld.c",
+      "error": "was unloaded before its reveal (its load failed)",
+      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. Without its model the stock location loader unloads the location (LocationLoader: not loaded model); the engine abandons its preparation with an ERROR and the game goes on without a location, so the sweep's load times out."
     },
     {
       "game": "TEHO 1.7.3",
@@ -215,8 +222,15 @@
       "game": "TEHO 1.7.3",
       "scene": "*:Clone_location",
       "file": "PROGRAM/locations/init/QuestLocations.c",
-      "error": "timeout: no progress within ",
-      "reason": "The game's scripts define Clone_location (PROGRAM/locations/init/QuestLocations.c) with the model farmfield and the loading picture loading\\\\Farmfield.tga; the game ships neither and nothing leads there: unfinished, unreachable content. Without its model the location never becomes ready; the engine's location readiness holds the game (no script frames), so the runner kills the engine after --timeout."
+      "error": "not loaded after ",
+      "reason": "The game's scripts define Clone_location (PROGRAM/locations/init/QuestLocations.c) with the model farmfield and the loading picture loading\\\\Farmfield.tga; the game ships neither and nothing leads there: unfinished, unreachable content. Without its model the stock location loader unloads the location (LocationLoader: not loaded model); the engine abandons its preparation with an ERROR and the game goes on without a location, so the sweep's load times out."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*:Clone_location",
+      "file": "PROGRAM/locations/init/QuestLocations.c",
+      "error": "was unloaded before its reveal (its load failed)",
+      "reason": "The game's scripts define Clone_location (PROGRAM/locations/init/QuestLocations.c) with the model farmfield and the loading picture loading\\\\Farmfield.tga; the game ships neither and nothing leads there: unfinished, unreachable content. Without its model the stock location loader unloads the location (LocationLoader: not loaded model); the engine abandons its preparation with an ERROR and the game goes on without a location, so the sweep's load times out."
     },
     {
       "game": "TEHO 1.7.3",

@@ -14,8 +14,9 @@ namespace storm::render
 
 // Game thread, when a scene starts loading ("location/<id>", "sea", "worldmap"): from now on created pipelines are
 // recorded under `scene`, and the ones recorded under it in earlier runs are created ahead. The next fade-in may
-// be held (HoldSceneReveal).
-void BeginScenePipelines(const char *scene);
+// be held (HoldSceneReveal). `owner`: the entity whose scene it is (0 for none); its deletion before the reveal
+// abandons the load (AbandonSceneLoad).
+void BeginScenePipelines(const char *scene, uint64_t owner);
 
 // Game thread, every frame of a fade-in (location/src/fader.cpp): true while the scene begun last still waits for
 // pipelines and current-location resources. Locations never expire into an incomplete reveal;

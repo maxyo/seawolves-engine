@@ -359,7 +359,7 @@ bool Location::Init()
     const char *id = AttributesPointer ? AttributesPointer->GetAttribute("id") : nullptr;
     if (!id)
         core.Trace("Location::Init: the location has no id: its pipelines are recorded as location/?");
-    storm::render::BeginScenePipelines(("location/" + std::string(id ? id : "?")).c_str());
+    storm::render::BeginScenePipelines(("location/" + std::string(id ? id : "?")).c_str(), GetId());
     return true;
 }
 
