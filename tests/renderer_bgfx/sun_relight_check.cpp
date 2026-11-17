@@ -604,7 +604,7 @@ int main()
 
             scene.plates = false;
             // The game frees a location's lightmap textures before it reports the lightmaps gone: the town light reads
-            // none after it is freed (a sun step composes again; the ASan build of this check, run.py, reports a use
+            // none after it is freed and composes no ratio for it (a sun step; the ASan build of this check, run.py, reports a use
             // after free; nothing here may hold the store, or its memory would stay allocated) and takes no texture
             // made later for the freed one (matched by serial, not address).
             {
@@ -621,7 +621,7 @@ int main()
                 check(device->CreateTexture(kPaint, kPaint, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture, nullptr), "CreateTexture");
                 scene.lightmap = texture;
                 frame();
-                expect(!town.relit(shim::store_of(texture)) && !bgfx::isValid(town.replacement(shim::store_of(texture))),
+                expect(!bgfx::isValid(town.ratio(shim::store_of(texture)).texture),
                        "a texture made after the lightmap is freed is not taken for it");
                 scene.lightmap = nullptr;
             }

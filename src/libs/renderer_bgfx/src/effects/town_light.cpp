@@ -629,8 +629,9 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
     }
     // One ratio map a frame (one view): a town has one to four. The taps spread over the texel (its sun is the share
     // of it the sun reaches: no stair steps of whole texels along a shadow's edge).
+    // A lightmap the game has freed (before it reports the lightmaps gone) is drawn no more: no ratio for it.
     for (Map &map : maps_)
-        if (map.compose_due && map.relight != fx::SunRelight::kNoMap)
+        if (map.compose_due && map.relight != fx::SunRelight::kNoMap && !map.store.expired())
         {
             fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
             std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
