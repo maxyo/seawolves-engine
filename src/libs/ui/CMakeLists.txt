@@ -87,7 +87,7 @@ function(storm_ui_line_tables)
         endforeach()
     endif()
 endfunction()
-storm_ui_line_tables(rmlui_core rmlui_debugger freetype lunasvg plutovg)
+storm_ui_line_tables(rmlui_core freetype lunasvg plutovg)
 # Licence texts of the pinned dependencies (<build>/licenses), packaged with libstorm_ui.so.
 foreach(notice
         "${storm_ui_rmlui_SOURCE_DIR}/LICENSE.txt|RmlUi-MIT.txt"
@@ -163,7 +163,7 @@ add_library(storm_ui STATIC
 target_compile_features(storm_ui PUBLIC cxx_std_20)
 # The finger physics shared with the game cameras (header-only, standard library only).
 target_include_directories(storm_ui PUBLIC include PRIVATE src "${CMAKE_CURRENT_SOURCE_DIR}/../util/include")
-target_link_libraries(storm_ui PUBLIC RmlUi::RmlUi nlohmann_json::nlohmann_json PRIVATE lunasvg::lunasvg plutovg::plutovg)
+target_link_libraries(storm_ui PUBLIC RmlUi::Core nlohmann_json::nlohmann_json PRIVATE lunasvg::lunasvg plutovg::plutovg)
 if(ANDROID)
     target_sources(storm_ui PRIVATE src/asset_files.cpp) # the pack in the APK assets
     target_link_libraries(storm_ui PRIVATE android)
