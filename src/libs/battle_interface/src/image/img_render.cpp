@@ -1,6 +1,5 @@
 #include "img_render.h"
 #include "storm_assert.h"
-#include "string.h"
 
 #include <algorithm>
 
@@ -22,14 +21,8 @@ void BIImageRender::Render()
     if (GetFirstPrioritetRange())
         do
         {
-            CutPrioritetRangeByStrings();
-
             for (int32_t n = 0; n < m_apMaterial.size(); n++)
                 m_apMaterial[n]->Render(m_nBeginOutputPrioritet, m_nEndOutputPrioritet);
-
-            for (int32_t n = 0; n < m_apStrings.size(); n++)
-                static_cast<BIString *>(m_apStrings[n])
-                    ->RenderPrioritetRange(m_nBeginOutputPrioritet, m_nEndOutputPrioritet);
         } while (GetNextPrioritetRange());
 }
 
@@ -104,28 +97,12 @@ void BIImageRender::MaterialSorting()
     }
 }
 
-void BIImageRender::CutPrioritetRangeByStrings()
-{
-    for (int32_t n = 0; n < m_apStrings.size(); n++)
-    {
-        const auto iprior = static_cast<BIString *>(m_apStrings[n])->GetPrioritet();
-        if (iprior < m_nBeginOutputPrioritet)
-            continue;
-        if (iprior > m_nEndOutputPrioritet)
-            continue;
-        m_nEndOutputPrioritet = iprior;
-    }
-}
-
 void BIImageRender::Release()
 {
     // destructors themselves erase pointers from vectors
 
     while (m_apMaterial.size() > 0)
         delete m_apMaterial.front();
-
-    while (m_apStrings.size() > 0)
-        delete m_apStrings.front();
 }
 
 bool BIImageRender::GetFirstPrioritetRange()

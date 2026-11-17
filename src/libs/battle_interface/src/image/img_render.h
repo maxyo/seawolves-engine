@@ -20,7 +20,6 @@ class BIImageRender
     void MaterialSorting();
     void TranslateBasePosToRealPos(float fXBase, float fYBase, float &fXReal, float &fYReal) const;
 
-    void CutPrioritetRangeByStrings();
 
   protected:
     void Release();
@@ -32,7 +31,6 @@ class BIImageRender
 
     VRenderer *m_pRS;
     std::vector<BIImageMaterial *> m_apMaterial;
-    std::vector<IBIString *> m_apStrings;
     // bool m_bDeleteEverything;
 
     float m_fHScale, m_fVScale;
