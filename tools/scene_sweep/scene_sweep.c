@@ -670,12 +670,28 @@ void SceneSweep_StartLocation(int hour)
 		SceneSweep_Fail("no such location");
 		return;
 	}
-	// Enter where the game itself puts the hero: boarding locations (decks, cabins) at
-	// their boarding.Loc.Hero locator in the "rld" group, as Cabin_LoadLocation and the
-	// teleport menu do; other locations through their first door, or the first walk point.
-	string group = "goto";
-	string locator = "goto1";
+	// Enter where the game itself puts the hero: boarding locations at their boarding.Loc.Hero locator in the "rld"
+	// group (Cabin_LoadLocation, the teleport menu), the fighting decks at the fighters' first place (LAi_LoadLocation:
+	// "rld" "loc<n>"), other locations through their first door; without doors the decks a boat brings the hero to
+	// at goto5 (DeckBoat_LoadLocation), the others at the model's reload1 (where the game's quests enter Terrain and
+	// the ship decks).
+	string group = "reload";
+	string locator = "reload1";
 	aref reloads;
+	bool doors = false;
+	if(CheckAttribute(&Locations[n], "reload"))
+	{
+		makearef(reloads, Locations[n].reload);
+		if(GetAttributesNum(reloads) > 0)
+		{
+			aref first = GetAttributeN(reloads, 0);
+			if(CheckAttribute(first, "name"))
+			{
+				doors = true;
+				locator = first.name;
+			}
+		}
+	}
 	if(CheckAttribute(&Locations[n], "boarding.Loc.Hero"))
 	{
 		group = "rld";
@@ -683,24 +699,17 @@ void SceneSweep_StartLocation(int hour)
 	}
 	else
 	{
-		// A deck one only reaches from the deck before it in a boarding (the gun deck): it has
-		// no hero locator of its own and no doors; the fighters' places ("rld") are its walk points.
-		if(CheckAttribute(&Locations[n], "boarding") && !CheckAttribute(&Locations[n], "reload"))
+		if(CheckAttribute(&Locations[n], "boarding.locatorNum"))
 		{
 			group = "rld";
 			locator = "loc0";
 		}
-		if(CheckAttribute(&Locations[n], "reload"))
+		else
 		{
-			makearef(reloads, Locations[n].reload);
-			if(GetAttributesNum(reloads) > 0)
+			if(!doors && CheckAttribute(&Locations[n], "boarding"))
 			{
-				aref first = GetAttributeN(reloads, 0);
-				if(CheckAttribute(first, "name"))
-				{
-					group = "reload";
-					locator = first.name;
-				}
+				group = "goto";
+				locator = "goto5";
 			}
 		}
 	}
