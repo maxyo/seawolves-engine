@@ -3,17 +3,10 @@
   "defects": [
     {
       "game": "TEHO 1.7.3",
-      "scene": "loc:UnderWater",
+      "scene": "*:UnderWater",
       "file": "RESOURCE/MODELS/Locations/UnderWater/UnderWater_morning10.col",
-      "error": "engine error: geometry: resource\\models\\locations\\UnderWater\\UnderWater.gm has 86193 vertices but its vertex colour file resource\\models\\locations\\UnderWater\\UnderWater_morning10.col has 83897 entries",
+      "error": "geometry: resource\\models\\locations\\UnderWater\\UnderWater.gm has 86193 vertices but its vertex colour file resource\\models\\locations\\UnderWater\\UnderWater_morning10.col has 83897 entries",
       "reason": "The game ships a baked vertex colour file made for an older version of the model (2296 vertices fewer). The engine reports it (geom_static.cpp) and draws the model's own vertex colours, as the original engine did; the data is the game's."
-    },
-    {
-      "game": "TEHO 1.7.3",
-      "scene": "*",
-      "file": "PROGRAM/scripts/PsHero.c",
-      "error": "RUNTIME ERROR in scripts\\PsHero.c(924)",
-      "reason": "The game's script that moves the free captains (PsHero) between towns when a day passes picks a destination t<rand(iNum-1)>; when the captain's town has no travel paths iNum is 0, the script itself traces \"Can't find travel path\", falls back to t0 and reads arDest.t0.town, which does not exist: missed attribute t0, null ap, no rAP data, all at line 924. It is the game's own script on the state of a new game with days passing (the sweep passes a day between locations); it fires on the day change, whatever scene is loading, and the scene still renders. Seen once so far, at loc:Plantation_F1 at midnight; not checked whether a played game reaches the same state."
     },
     {
       "game": "TEHO 1.7.3",
@@ -24,17 +17,213 @@
     },
     {
       "game": "TEHO 1.7.3",
-      "scene": "loc:OldWorld_*",
-      "file": "PROGRAM/locations/init/OldWorld.c",
-      "error": "not loaded after ",
-      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. Without its model the game's loader gives up (locations_loader.c: MSG_LOCATION_ADD_MODEL returns 0) and no location ever loads; the engine keeps running frames (checked: a 900 s run, the main thread in its frame loop), the sweep fails the scene when its load time is up."
+      "scene": "*",
+      "file": "PROGRAM/scripts/PsHero.c",
+      "error": "RUNTIME ERROR in scripts\\PsHero.c(",
+      "reason": "The game's day-change script that moves the free captains (PsHero) between towns reads arDest.t0 of a town without travel paths (the hidden colony SanAndres): missed attribute t0, null ap, no rAP data at lines 924-934. It fires on the day change, whatever scene is loading. The app fixes it with its script patch pgg-travel-target (ledger NEW-PSHERO-T0); the sweep runs the game's scripts unpatched."
     },
     {
       "game": "TEHO 1.7.3",
       "scene": "loc:OldWorld_*",
-      "file": "PROGRAM/scripts/PsHero.c",
-      "error": "script error: RUNTIME ERROR in scripts\\PsHero.c(",
-      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. While the sweep waits for a location that never loads, game days pass and the game's own PsHero day-change script (the \"*\" entry above, there at line 924) fails at its neighbouring lines (929-934) on the same missing travel path."
+      "file": "PROGRAM/locations/init/OldWorld.c",
+      "error": "timeout: no progress within ",
+      "reason": "The game's scripts define the OldWorld locations (PROGRAM/locations/init/OldWorld.c: OldWorld_Port, OldWorld_Town_Part1..4, OldWorld_Town_Exit), but the game ships none of their models (no RESOURCE/MODELS/Locations/OldWorld) and nothing else in its scripts leads there: unfinished, unreachable content. Without its model the location never becomes ready; the engine's location readiness holds the game (no script frames, \"slow preparation\" logged every 120 s), so the script cannot fail the scene itself and the runner kills the engine after --timeout."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/fireplac'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/fireplace0'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/fireplacet'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/fireplsce'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/torc'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/torch0'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/torchlight",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/nightinsects0'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/nightinsects'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/poorman'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/governor'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/cavewind0'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/MODELS/Locations (sound locators) and PROGRAM/sound.c",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/locator'",
+      "reason": "PROGRAM/sound.c SetStaticSounds plays, for each locator of a location's \"sound\" group, the alias named by the locator's name without its last two characters (strcut(name, 0, len-3)): \"fireplace01\" -> \"fireplace\". These models name their locators with one or three digits or a typo (fireplace1 -> \"fireplac\", fireplace001 -> \"fireplace0\", torch1 -> \"torc\", torchlight101 -> \"torchlight1\", fireplsce01, cavewind001, locator01), or with a name that has no alias in RESOURCE/INI/aliases/sound_alias.ini (nightinsects, poorman, governor). The engine finds no alias and no file of that name and reports it; the original game is silent there too."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/INI/aliases/sound_alias.ini",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/Ambient/LAND/animals_night_008.wav'",
+      "reason": "RESOURCE/INI/aliases/sound_alias.ini names Ambient/LAND/animals_night_008.wav for an entry of a night ambience alias; the game does not ship that file (RESOURCE/Sounds/Ambient/LAND has others). The engine reports the file when the alias picks it."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/INI/aliases/sound_alias.ini",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/Reef/reef_01.wav'",
+      "reason": "RESOURCE/INI/aliases/sound_alias.ini names Reef/reef_01.wav for the reef aliases; the game does not ship that file (RESOURCE/Sounds/Reef has others). The engine reports the file when the alias picks it."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "RESOURCE/INI/aliases/sound_alias.ini",
+      "error": "Audio load/play failed 'RESOURCE/Sounds/ship_bow'",
+      "reason": "The storm's bow splash (src/libs/sea_foam, as the original engine) plays the alias ship_bow, which TEHO's sound_alias.ini does not define and no file of that name exists."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/ITEMS/initItems.c",
+      "error": "missing model: resource\\models\\items\\",
+      "reason": "InitStdBlade gives every blade folder = \"items\", but the blade models (blade_NN, slave_NN, topor_NN) are in RESOURCE/MODELS/Ammo. A blade lying as a random item in a location (ITEMS/itemLogic.c Items_LoadModel) asks for items\\\\<model>.gm, which does not exist; the original game shows nothing there either."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:Beliz",
+      "file": "RESOURCE/MODELS/Islands/Beliz",
+      "error": "but its vertex colour file resource\\models\\islands\\Beliz",
+      "reason": "RESOURCE/MODELS/Islands/Beliz: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:Caracas",
+      "file": "RESOURCE/MODELS/Islands/Caracas",
+      "error": "but its vertex colour file resource\\models\\islands\\Caracas",
+      "reason": "RESOURCE/MODELS/Islands/Caracas: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:Cartahena",
+      "file": "RESOURCE/MODELS/Islands/Cartahena",
+      "error": "but its vertex colour file resource\\models\\islands\\Cartahena",
+      "reason": "RESOURCE/MODELS/Islands/Cartahena: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:Cumana",
+      "file": "RESOURCE/MODELS/Islands/Cumana",
+      "error": "but its vertex colour file resource\\models\\islands\\Cumana",
+      "reason": "RESOURCE/MODELS/Islands/Cumana: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:Maracaibo",
+      "file": "RESOURCE/MODELS/Islands/Maracaibo",
+      "error": "but its vertex colour file resource\\models\\islands\\Maracaibo",
+      "reason": "RESOURCE/MODELS/Islands/Maracaibo: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:PortoBello",
+      "file": "RESOURCE/MODELS/Islands/PortoBello",
+      "error": "but its vertex colour file resource\\models\\islands\\PortoBello",
+      "reason": "RESOURCE/MODELS/Islands/PortoBello: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "sea:SantaCatalina",
+      "file": "RESOURCE/MODELS/Islands/SantaCatalina",
+      "error": "but its vertex colour file resource\\models\\islands\\SantaCatalina",
+      "reason": "RESOURCE/MODELS/Islands/SantaCatalina: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp). (_refl and _seabed of the Main's islands carry colour files of 21231 and 10577 entries whatever their size.)"
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "loc:CommonPackhouse_3",
+      "file": "RESOURCE/MODELS/Locations/Inside/sklad02",
+      "error": "but its vertex colour file resource\\models\\locations\\inside\\sklad02",
+      "reason": "RESOURCE/MODELS/Locations/Inside/sklad02: the model's vertex colour file (.col) was made for another version of the model: its entry count differs from the vertex count. The engine reports it and draws the model's own vertex colours (geom_static.cpp)."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*:Clone_location",
+      "file": "PROGRAM/locations/init/QuestLocations.c",
+      "error": "missing model: resource\\models\\locations\\farmfield.gm",
+      "reason": "The game's scripts define Clone_location (PROGRAM/locations/init/QuestLocations.c) with the model farmfield and the loading picture loading\\\\Farmfield.tga; the game ships neither and nothing leads there: unfinished, unreachable content. Without its model no location loads."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*:Clone_location",
+      "file": "PROGRAM/locations/init/QuestLocations.c",
+      "error": "timeout: no progress within ",
+      "reason": "The game's scripts define Clone_location (PROGRAM/locations/init/QuestLocations.c) with the model farmfield and the loading picture loading\\\\Farmfield.tga; the game ships neither and nothing leads there: unfinished, unreachable content. Without its model the location never becomes ready; the engine's location readiness holds the game (no script frames), so the runner kills the engine after --timeout."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "loc:SanAndres_town",
+      "file": "PROGRAM/locations/init/Providence.c",
+      "error": "missing model: resource\\models\\locations\\Town_SanAndres\\Town\\SanAndres_jump_patch.gm",
+      "reason": "The hidden colony's town names a jump patch model the game does not ship (RESOURCE/MODELS/Locations/Town_SanAndres/Town has the day and night patches only)."
     }
   ]
 }

@@ -26,7 +26,13 @@ int main() {
         assert(render::KnownMissingGameTexture(name) && std::strstr(render::KnownMissingGameTexture(name), "blade_29.gm"));
     for (const char *name : {"A_big.tga", "resource\\textures\\A_BIG.TGA.tx"})
         assert(render::KnownMissingGameTexture(name) && std::strstr(render::KnownMissingGameTexture(name), "storeSmall_locators.gm"));
-    for (const char *name : {"A_big22.tga", "phong256.gif", "phong256_bw.gif.bak", "ships\\Sloop1\\sloop1.tga", "", "resource\\textures\\",
+    for (const char *name : {"resource\\textures\\LIGHTING\\DAY1\\LOCATIONS\\DECKS\\DECK01\\SHADOW.TGA.tx",
+                             "lighting\\storm\\locations\\decks\\deck01\\shadow.tga"})
+        assert(render::KnownMissingGameTexture(name) && std::strstr(render::KnownMissingGameTexture(name), "deck01.gm"));
+    assert(render::KnownMissingGameTexture("PHONG256.GIF") && render::KnownMissingGameTexture("TORNADO\\ITEMS.TGA"));
+    for (const char *name : {"A_big22.tga", "phong256.gif.bak", "phong256_bw.gif.bak", "items.tga",
+                             "lighting/locations/decks/deck01/shadow", "lighting/day1/x/locations/decks/deck01/shadow",
+                             "lighting/day1/locations/decks/deck01/shadow2", "ships\\Sloop1\\sloop1.tga", "", "resource\\textures\\",
                              "checker.tga", "resource\\textures\\characters\\checker.tga.tx", "x\\ammo\\checker.tga"})
         assert(!render::KnownMissingGameTexture(name));
     assert(!render::KnownMissingGameTexture(nullptr));

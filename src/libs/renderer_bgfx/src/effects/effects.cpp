@@ -1597,12 +1597,59 @@ const KnownMissing *FindKnownMissing(const std::string &normalized)
         // A material of the store's locator model: Textures/ ships A_big22.tga only, in TEHO and in Caribbean Legend
         // (Steam) alike.
         {"a_big", "RESOURCE/MODELS/Locations/Inside/StoreSmall/storeSmall_locators.gm"},
+        // Materials named by these models and shipped in no folder (2026-11-17 pre-release sweep).
+        {"phong256.gif", "RESOURCE/MODELS/Ships/Frigate_h1/Frigate_h1.gm"},
+        {"capmd_2_dm", "RESOURCE/MODELS/Locations/Decks/capmd_2/capmd_2.gm"},
+        {"groundrock2", "RESOURCE/MODELS/Locations/Outside/Shores/MountainPathDMChest/MountainPathDMChest_sb.gm"},
+        {"hut_church_window", "RESOURCE/MODELS/Locations/Inside/church_IM/church_IM.gm"},
+        {"jungle_land_09", "RESOURCE/MODELS/Locations/Outside/Jungles/TownExitM/DouExit_dno.gm"},
+        {"kanion_leaf", "RESOURCE/MODELS/Locations/Outside/Canyon/canyon_locators.gm"},
+        {"location_06_1", "RESOURCE/MODELS/Locations/Inside/SmallResidence/SmallResidence_locators.gm and "
+                          "RESOURCE/MODELS/Locations/Inside/pirateresidence/ResP_l.gm"},
+        {"new_mountain", "RESOURCE/MODELS/Locations/Outside/Shores/Shore13/plan3.gm"},
+        {"rsd_1", "RESOURCE/MODELS/Locations/Inside/BigHouse01/BigHouse01_locators.gm and "
+                  "RESOURCE/MODELS/Locations/Inside/BigHouse01_2Door/BigHouse01_2Door_locators.gm"},
+        {"sh03_conenvday", "RESOURCE/MODELS/Locations/Inside/sklad/sklad.gm"},
+        {"sh03_envday", "RESOURCE/MODELS/Locations/Inside/SmallResidence/SmallResidence.gm and "
+                        "RESOURCE/MODELS/Locations/Inside/Pirate_House/PirH_w.gm"},
+        {"treasuregoldb", "RESOURCE/MODELS/Locations/Inside/DungeonOld2/Treasures.gm"},
+        {"treasuregoldc", "RESOURCE/MODELS/Locations/Inside/DungeonOld2/Treasures.gm"},
+        {"treasuregoldd", "RESOURCE/MODELS/Locations/Inside/DungeonOld2/Treasures.gm"},
+        {"waterblend", "RESOURCE/MODELS/Locations/Outside/Jungles/TownExitM/Waterfall.gm"},
+        // Shipped in Textures/Islands/Guadeloupe/ and Textures/MainMenu/Russian/, not in the location's folder.
+        {"guadeloupemask", "RESOURCE/MODELS/Locations/Outside/pyramid1/pyramid1.gm"},
+        // The debris model is loaded with the texture path Tornado/; Items.tga is shipped in Textures/ only.
+        {"tornado/items", "RESOURCE/MODELS/Tornado/palka03.gm"},
+        // Loading pictures of two unreachable locations (PROGRAM/locations/init/QuestLocations.c).
+        {"loading/farmfield", "PROGRAM/locations/init/QuestLocations.c (Clone_location)"},
+        {"loading/art/open_sea_clear", "PROGRAM/locations/init/QuestLocations.c (Ship_deck)"},
+        // Lightmaps of these models: their folders are missing under Textures/lighting/ in every weather ("*").
+        {"lighting/*/locations/decks/capquest/shadow", "RESOURCE/MODELS/Locations/Decks/capquest/capquest.gm"},
+        {"lighting/*/locations/decks/deck01/shadow", "RESOURCE/MODELS/Locations/Decks/deck01/deck01.gm"},
+        {"lighting/*/locations/decks/deck2/shadow", "RESOURCE/MODELS/Locations/Decks/deck2/deck2.gm"},
+        {"lighting/*/locations/inside/fort_1/shadow", "RESOURCE/MODELS/Locations/Inside/fort_1/fort1.gm"},
+        {"lighting/*/locations/inside/fort_2/shadow", "RESOURCE/MODELS/Locations/Inside/fort_2/fort2.gm"},
+        {"lighting/*/locations/inside/fort_3/shadow", "RESOURCE/MODELS/Locations/Inside/fort_3/fort3.gm"},
+        {"lighting/*/locations/outside/jungles/terrain/shadow",
+         "RESOURCE/MODELS/Locations/Outside/Jungles/Terrain/Terrain.gm"},
     };
     const size_t slash = normalized.rfind('/');
     const std::string_view file = slash == std::string::npos ? std::string_view(normalized)
                                                              : std::string_view(normalized).substr(slash + 1);
+    // An entry without a folder matches the file in any folder; "*" stands for one folder (the weather).
+    const auto matches = [&](std::string_view texture) {
+        if (texture.find('/') == std::string_view::npos)
+            return file == texture;
+        const size_t star = texture.find('*');
+        if (star == std::string_view::npos)
+            return std::string_view(normalized) == texture;
+        const std::string_view head = texture.substr(0, star), tail = texture.substr(star + 1);
+        const std::string_view path(normalized);
+        return path.size() > head.size() + tail.size() && path.starts_with(head) && path.ends_with(tail) &&
+               path.substr(head.size(), path.size() - head.size() - tail.size()).find('/') == std::string_view::npos;
+    };
     for (const KnownMissing &known : kKnown)
-        if ((known.texture.find('/') == std::string_view::npos ? file : std::string_view(normalized)) == known.texture)
+        if (matches(known.texture))
             return &known;
     return nullptr;
 }
