@@ -1,44 +1,17 @@
 # Screens: game interfaces in the portable UI
 
-The engine describes every open game interface (a menu screen) as an `InterfaceModel`
+The engine describes every open game interface as an `InterfaceModel`
 (`include/storm_ui/interface_model.h`): the interface id and its widgets in reading order.
 `Host::SetInterface` routes the model to a *screen*: C++ code here that turns the widgets
 into the props of a pack screen (`<s-…>`, application repository
 `mobile-ui/design/screens/<name>/`) and component events back into engine actions.
+Interfaces without a ported screen (`kPorted` in `registry.cpp`) get the generic layout (`generic.cpp`).
 
 ```
 engine ──InterfaceModel──▶ Router ──admission──▶ ported Screen ─┐
                                    └─(unknown id)─▶ generic layout ─┤─▶ props ─▶ <s-…> in the pack
 engine ◀──────Action {screen, opening, node, index, verb, value}──┘◀─ events (id, verb, value)
 ```
-
-| File | Role |
-|---|---|
-| `screen.h` | the contracts: `Screen`, `NodeRule`, `Admission`, `Bindings`, `Router`, `StateConsumer`, `Surface` |
-| `registry.cpp` | ported screens by interface id (every other interface gets the generic layout), state consumers |
-| `router.cpp` | admission, shared extras («Прочее» sheet, note, reading sheet), event dispatch, busy marks, throttled sends, `EngineCommand` |
-| `amount.*` | the one reading of a whole number in a game caption or cell (`ParseAmount`: first number, thousands groups, a leading minus; none → `nullopt`); `Amount`: a caption that always carries a number logs an error line once per screen and caption when it does not |
-| `controls.*` | shared view builders: buttons and their roles, action rows, control rows (toggle, segment, slider, stepper, field); `AmountDraft`: the amount of a quantity control that moves something is a draft until its «Взять / Отдать N» (or «Купить / Продать N») is pressed; a transfer has no «Отмена» (another row, or the amount set back, drops it), a setting kept as a draft (the treasurer's order) has one |
-| `generic.cpp` | the generic auto-layout for interfaces without a ported screen |
-| `trade_crew.cpp` | crew hire: the trade layout with one always-open row; both crews' experience and morale as the ship screen draws them (`hero::CrewQuality`, numbers from the adapter's `ANDROID_CREWHIRE`) |
-| `trade_shipyard.cpp` | shipyard: one list (our fleet slots, the yard's offers), the ship card with an offer's figures beside our chosen ship's, held buy / sell (the game's confirmation of a held deal is answered), the game's windows as sheets; sends the engine's `yard@` capability tokens, one per model revision; the repair sliders run 0…100 % from the ship's state (`floor`) to what the purse pays (`ceiling`, the game's repair prices from the adapter's `ANDROID_YARDREPAIR`), «Все» fills the hull first; the cannons window is the game's deck plan with the guns of each side around it |
-| `trade_commerce.cpp` | reference ported screens: store, contraband, cannons, items trade, storage, chests — one layout (the list that never moves: filter chips, columns sorted by a tap on their caption, `goods quick` = the whole stack in one tap for free transfers; the open deal in the list's dock with its facts (both prices, the weight by its icon, «за N шт.»: the game sells goods by the piece at a pack's price pro rata), confirmed by its button for money deals and free transfers alike; «Выгодно» = export, import, high demand), a column table per interface |
-| `extra_games.cpp` | tavern dice and cards (`boal_dice`, `boal_cards`): the felt from the script images and facts the engine exports (`ANDROID_TABLE_GAME`) |
-| `extra_goods.cpp` | the treasurer's purchase list (`goodstransfer`): rows the engine exports (`ANDROID_GOODS_ORDER`), a standing order set as a draft and saved by «Сохранить N» (`order` action, AmountDraft) |
-| `extra_repair.cpp` | self repair (`repair`): hull, masts, sails as amounts sent as the game's arrow presses, materials per amount |
-| `extra_transfer.cpp` | loot and exchange (`transfer_main`): cargo by pack arrows (each direction by its own arrow, the amount in whole packs, ends where the game's presses stop) and the crew by the crew window's arrows (ends at MaxCrew and the hold, each ship's MinCrew marked on the slider from `ANDROID_TRANSFER`), sent on the confirm (`goods quick` takes a whole stock), crew tab, the «Корабли» tab of ours (both ships' figures side by side), the other ship's card in the dock, the game's windows as modals / a sheet; the question window's script mode from `ANDROID_TRANSFER`; dangerous answers held |
-| `extra_sails.cpp` | sail emblems (`sailsgerald`): the emblem ribbon (`SCROLL_GERALD` rows with texture paths) and one contextual primary |
-| `extra_alchemy.cpp` | alchemy (`alchemy`): recipe rows the engine exports (`ANDROID_ALCHEMY_RECIPE`, `choose`), the components and N batches crafted by one guarded `craft` action (`ANDROID_ALCHEMY`) |
-| `hero_ship.cpp` | the ship (`ship`): overview, crew, hold over the one stock screen; the game's windows (drop overboard, cannons by side, shares, the morale and exchange questions) as our controls; facts from the adapter `android_hero.c` (`ANDROID_SHIP`, `ANDROID_SHARES`) |
-| `dialogue.cpp` | state channel `dialogue`: speech paged by `<ui-pages>` (pure rules in `../text_pages.h`), replies in two columns, the answer editor (text through the IME bridge, or an amount on the number panel), the menu button (`pause` to the platform host) |
-| `menu_saves.cpp` | the save list (`save_load`); state channel `loadFailure` (`{record, reason}`, engine core `load_watch.hpp`): a toast naming the record a requested load failed on |
-| `menu_game_over.cpp` | state channel `gameOver` (`{kind: sea\|land\|defeat, language}` or `null`, engine xinterface `info_handler.cpp`): the game-over screen |
-| `menu_title.cpp` | the title screen (`mainmenu`); state channel `titleIntent` (`{intent: Continue}`, the platform host: the app's Test Lab Game Loop): «Продолжить» once (at once when the title is up, else at its next build), an error without a record |
-| `maps.cpp` | the game's maps (`mapview`, `mapbest`, `papermap`): c-map-view (pan, pinch, zoom; the game's markers), a tap is `point` in the picture's base units, the colony sheet from the game's colony window, `release` closes it |
-| `launcher.cpp` | the application's own screens (launcher, download library, about) from the platform host's `launcher` channel; the contract is at the top of the file |
-
-The design rules are GENERIC-LAYOUT (pipeline, type → component, button roles, templates,
-verbs, §8 admission and extras) and the V2 mockups of the design canvas.
 
 ## Adding a screen
 
@@ -49,46 +22,35 @@ verbs, §8 admission and extras) and the V2 mockups of the design canvas.
    as tokens). The root is `<c-screen id="header" key="header" … actions="{{ json(extras.actions) }}">`
    and ends with `<s-extras id="extras" extras="{{ json(extras) }}"/>`; put
    `<s-note id="extras-note" text="{{extras.note}}"/>` under the main block. Nothing may
-   assume 915 × 412: the viewport is the real dp size of the display.
-2. **C++.** A class derived from `Screen` in `src/screens/<zone>_<name>.cpp`:
+   assume a fixed size: the viewport is the real dp size of the display.
+2. **C++.** A class derived from `Screen` (`screen.h`) in `src/screens/<zone>_<name>.cpp`:
    - `Component()` → `"s-<name>"`;
-   - `Nodes()` → the KNOWN list: every node the design draws with the type it expects
-     (`"a|b"` alternatives, `NAME*` prefix); `required = true` marks REQUIRED. REQUIRED
-     names only what the game always sends: a game table comes as its rows (`choice`) and,
-     with no rows, as one `table` widget (headers, no verbs), so a table is required as
+   - `Nodes()` → every node the design draws with the type it expects (`"a|b"` alternatives,
+     `NAME*` prefix); `required = true` marks REQUIRED. REQUIRED names only what the game always
+     sends: a table with no rows comes as one `table` widget, so a table is required as
      `"choice|table"` and its rows are read with `admitted.Rows(node)`;
-   - `Build(admitted, bindings)` → the props (JSON) for the pack screen. Read widgets with
-     `admitted.One/All/Rows/Label`; bind every interactive element by its element id:
-     `bindings.Forward(id, widget, "press")`, `bindings.On(id, verb, handler)` and inside a
-     handler `bindings.Send(widget, verb, value)`, `SendLatest` (drags), `Back(exit)`,
-     `EditText` / `AskText` (the screen gets the typed text), `Read`, `Rebuild()` for local
-     state kept in members, `SendHost(node, value)` for a setting of the application itself (an `Action` without a
-     screen that the platform host keeps; `app-settings` = the renderer options). Every modal
-     the view shows (a `c-dialog`, a sheet with a scrim) is declared in that Build with
-     `bindings.Modal(id, cancel)`, the topmost last: a tap on its scrim (`dismiss`) and the
-     back key (`Host::WantsBack`) run `cancel`, which must do what the modal's ✕ / «Отмена»
-     does. A modal that must be answered by its buttons (a mandatory choice of the game, a
-     consequence such as refusing the wages or the defectors, a password inside a running
-     import) passes `nullptr`: the tap and the back key are refused, logged, and the dialog
-     shakes (`Surface::Refuse`). Never bind `dismiss` by hand (an error). Something else of
-     the screen's own that the back key closes first (an inline window) returns true from
-     `OwnsBack()` and closes it in `Back()`. Mark events that are
-     expected but need nothing with `bindings.Ignore(id, verb)`.
+   - `Build(admitted, bindings)` → the props (JSON). Read widgets with `admitted.One/All/Rows/Label`;
+     bind every interactive element by its id: `bindings.Forward(id, widget, "press")`,
+     `bindings.On(id, verb, handler)` and inside a handler `bindings.Send`, `SendLatest` (drags),
+     `Back(exit)`, `EditText` / `AskText`, `Read`, `Rebuild()`, `SendHost(node, value)` (a setting of
+     the application). Declare every modal the view shows with `bindings.Modal(id, cancel)`, topmost
+     last; `cancel` must do what the modal's ✕ / «Отмена» does, `nullptr` makes it mandatory (scrim
+     tap and back key are refused and logged). Never bind `dismiss` by hand. Something else the back
+     key closes first returns true from `OwnsBack()` and closes it in `Back()`. Mark expected events
+     that need nothing with `bindings.Ignore(id, verb)`.
    Add the file to `CMakeLists.txt`.
-3. **Registry.** Add `{"<interface id>", Create…}` to `kPorted` in `registry.cpp`. Until
-   then the generic layout draws the interface; the platform host draws none.
-4. **Tests.** Record a model (below), add it to `tests/models/`, extend
-   `tests/screens_check.cpp` (admission, the props that matter, every action mapping) and
-   add every modal of the screen to the walk in `tests/modals_check.cpp`.
+3. **Registry.** Add `{"<interface id>", Create…}` to `kPorted` in `registry.cpp`.
+4. **Tests.** Add a synthetic model to `tests/models/`, extend `tests/screens_check.cpp`
+   (admission, the props that matter, every action mapping) and add every modal of the screen
+   to the walk in `tests/modals_check.cpp`.
 
 Element ids: an event carries the id of the nearest ancestor that has one. Components
 inside lists report under the list's id with their own verb (`goods row 3`,
-`goods change 150`); header parts report under `header` (`section ship`,
-`subject-next`), its buttons as `header-back`, `header-close`. A subject switch with a list is
-`SubjectSwitch` (controls.h): `subject-list` opens c-screen's subject sheet, whose rows report
-as `header-subject-<i>`.
+`goods change 150`); header parts report under `header` (`section ship`, `subject-next`),
+its buttons as `header-back`, `header-close`. A subject switch with a list is `SubjectSwitch`
+(controls.h); its sheet rows report as `header-subject-<i>`.
 
-Verbs and what the engine receives (`EngineCommand`, today's queue line
+Verbs and what the engine receives (`EngineCommand`, queue line
 `widget:<screen>\t<node>\t<index>\t<wire>`):
 
 | verb | value | wire |
@@ -103,182 +65,73 @@ Verbs and what the engine receives (`EngineCommand`, today's queue line
 
 ## What the router does for every screen
 
-- **Admission.** All REQUIRED nodes present with their type → the ported screen. A model
-  that misses one is held hidden for the first second of the opening (the game fills its
-  nodes over its first frames); after that it is a defect: an error names the missing nodes
-  (`Router::Rejection()`, logged once per node set), the danger toast `ui.error.screen`, and
-  the interface closes through the engine's back, as when a screen throws. The generic
-  layout never stands in for a ported screen; mark nodes REQUIRED only when every way the
-  game opens the interface has them.
-- **Extras.** Widgets a ported screen does not know: buttons, choices and controls become
-  rows of the «Прочее» sheet under the header «⋯»; texts become one parchment note.
-  Logged once per (screen, node set): `screen store extras=B_GUILD,GUILD_NOTE`.
-- **Busy until answered (R22).** An event that sent something marks its element
-  (`bindings.Pending(id)`). Widget actions carry a request number and the engine answers each
-  (`Router::Answer`): a refusal ends the mark at once (logged), applied answers end it with the model
-  that follows them, a new revision ends every mark. No answer in 5 s is an error. A mark of an event
-  that sent no widget action (back, a dialogue reply) goes with the next revision or after 1.5 s.
-  An amount draft (`AmountDraft`) waits for the answers to its deal the same way: refused, or applied
-  with the game's figures unchanged in the model after them, it opens again at the game's figures.
-- **Incremental update.** Every revision sets new props on the same mounted screen; the
-  component tree is patched in place, so scroll offsets and pressed parts survive.
-- **Nothing is dropped quietly.** Malformed models, a missing pack screen, an event
-  without a binding and a state channel without a consumer are error log lines and, with
-  `Config::show_errors`, toasts.
+- **Admission.** All REQUIRED nodes present → the ported screen. A model missing one is held
+  hidden for the first second of the opening; after that it is an error (missing nodes logged,
+  toast `ui.error.screen`) and the interface closes through the engine's back. Mark nodes
+  REQUIRED only when every way the game opens the interface has them.
+- **Extras.** Widgets a ported screen does not know become rows of the «Прочее» sheet (header «⋯»);
+  texts become one note.
+- **Busy until answered.** An event that sent something marks its element
+  (`bindings.Pending(id)`) until the engine answers; no answer in 5 s is an error.
+- **Incremental update.** Every revision patches the mounted screen in place; scroll offsets and
+  pressed parts survive.
+- **Nothing is dropped quietly.** Malformed models, a missing pack screen, an event without a
+  binding and a state channel without a consumer are error lines and, with `Config::show_errors`,
+  toasts.
 
 ## UI strings
 
-Screens never contain text for the player. Texts the game sends (captions, names,
-prices) pass through; everything else is a key of the pack's string table
-(`mobile-ui/design/strings/<lang>.json`, one table per shipped language):
+Screens never contain player text of their own. Texts the game sends pass through; everything
+else is a key of the pack's string table (`mobile-ui/design/strings/<lang>.json`):
 
 - C++: `bindings.Text("trade.price")`; a key kept in a table goes through
   `StringKey("trade.store")` so the pack build still sees it;
 - templates: `{{ tr('common.next') }}`.
 
-The table of the interface's game language is used (`InterfaceModel::language`). To add a
-string: add the key to every `strings/<lang>.json` (the design build fails if one
-language lacks it or if a used key is undefined), keep the zone prefix (`trade.`,
-`crew.`, `common.` for shared words). A language without tables and a key missing at run
-time are errors in the log (and toasts in debug hosts); English or the key itself is
-shown, never nothing. The word lists in `controls.cpp` (`kExitLabels`,
-`kConfirmLabels`, `kDangerWords`) that recognise button roles are matching data, not UI
-text. They are a marked C++ table (not part of the pack) holding the words of all six
-languages (ru, en, de, es, fr, it); add a language's words there together with its string
-table. `Roles` in `tests/screens_check.cpp` has one case per language.
+Add a key to every `strings/<lang>.json` (the design build fails otherwise) with its zone prefix
+(`trade.`, `crew.`, `common.`). The word lists in `controls.cpp` (`kExitLabels`, `kConfirmLabels`,
+`kDangerWords`) recognise button roles in all six game languages; add a language's words there with
+its string table, and a case to `Roles` in `tests/screens_check.cpp`.
 
 ## Game pictures in rows
 
-Widgets name pictures by group and picture of the game's `pictures.ini`
-(`ImageRef{kind "atlas", group, image}`). `PictureOf(image)` (controls.h) turns that into
-the row image `{kind: "item", texture: "atlas:GROUP/Picture"}`; `<ui-game-image>` resolves
-it at run time through `<game root>/RESOURCE/INI/interfaces/pictures.ini`
-(`picture_atlas.h`) to the texture and rectangle. Nothing of the game is bundled; without
-a game root the neutral placeholder stays.
-
-A picture the engine names by file (a map, an interlude picture, a map item) comes as
-`ImageRef{kind "texture", image "interfaces/maps/kayman", uv}`; `TextureOf(image)` (controls.h)
-gives `{texture, uv}` for `<ui-game-image texture uv [fit="contain|cover"]>`, and `MapViewOf`
-the props of `c-map-view` for a scrolled picture (`map` widget and its `map_marker` rows).
+`PictureOf(image)` (controls.h) turns a `pictures.ini` reference into a row image
+(`atlas:GROUP/Picture`); `TextureOf(image)` gives `{texture, uv}` for
+`<ui-game-image texture uv [fit="contain|cover"]>`, `MapViewOf` the props of `c-map-view`.
+Pictures are resolved from the game root at run time; nothing of the game is bundled.
 
 ## State channels
 
-`Host::SetState(channel, json)` carries the state of the game outside interfaces. A zone
-implements `StateConsumer` (`Channel()`, `OnState(json, router)`) and registers it in
-`CreateStateConsumers()`. `dialogue.cpp` turns its state into an `InterfaceModel` of its
-own and lets a ported screen draw it. The HUD channels are consumed in `../hud`; the
-platform host's `appSettings` (its renderer options) is read by the settings screen.
+`Host::SetState(channel, json)` carries game state outside interfaces. Implement
+`StateConsumer` (`Channel()`, `OnState(json, router)`) and register it in
+`CreateStateConsumers()`. The HUD channels are consumed in `../hud/states.cpp`; channel names
+are listed in the engine's `tools/android/app_contract.json`.
 
 ## The HUD
 
-`src/hud` draws the in-game HUD under game interfaces, from state channels:
+`src/hud` draws the in-game HUD from state channels:
 
 ```
 engine ──state JSON──▶ consumer (states.cpp) ──typed States──▶ Scene::Build ──View──▶ mount (ui_host.cpp)
 engine ◀──"<verb>:<value>" (Action, screen "hud")── Hud::Send ◀── Input handlers ◀── component events
 ```
 
-| File | Role |
-|---|---|
-| `hud.h` | the contracts: `States`, `View`, `Input`, `Scene`, `SceneEntry`, `Mount`, `Hud`, the layout |
-| `hud.cpp` | **the migration switch** `kScenes` (gameplay mode → scene), visibility, event dispatch, the event log |
-| `states.cpp` | one consumer per channel: the engine's JSON checked once, kept typed; bad data is rejected aloud |
-| `land.cpp` | the land scene: explore and combat sets, the action sheet, the sword-move wheel |
-| `spyglass.cpp` | the spyglass card (`<s-hud-spyglass>`): laid by the Hud as the view's `overlay` over any scene, and alone where no scene owns the mode; acknowledged per drawn frame (`spyglass:<generation>`) so the engine hides its own info |
-| `world_map.cpp` | the world-map scene: fleet, compass (a tap shows the details beside it), helm slider, sail lever (held SailUp/SailDown), camera, menu, the map's commands |
-| `sea.cpp` | the sea scene: sailing and naval battle, fleet, minimap (the engine's radar in its disc), sail lever, helm slider, guns and ammunition fan, quick action, orders sheet |
+A scene builds a `View`: the layout scene of the pack's `hud-layout.json`, the props of its
+elements by id (an element left out is not mounted), an optional sheet and elements to dim.
+`Input::On(id, verb, handler)` binds component events. A layout element may add
+`"behavior": "hold"` (reports `down` / `up`) or `"swipe"` (`data` → `data-swipe-*`);
+`"toastsBelow": true` keeps toasts below a top status.
 
-Channels (JSON as the engine publishes it unless noted):
+Adding a scene:
 
-| channel | shape | state |
-|---|---|---|
-| `gameplay` | `{schemaVersion: 1, revision, mode: explore\|melee\|sailing\|naval\|worldmap\|unknown, language, inputOwner, analogMovement, movementGeneration, capabilities: […], blocked: why the mode is unknown (starting\|paused\|loading\|transition\|interface\|dialogue\|cutscene\|video\|commands\|no-scene\|no-land-interface\|no-player\|group\|error)}` | `Gameplay` |
-| `combat` | `{schemaVersion: 2, gameplayRevision, activityGeneration, playerId, mode, actions: {name: generation}, interactKind, interactName (whom the talk button talks to, may be ""), interactDialog (that person's dialog file stem in lower case, "common_store": the talk hint's icon by role, `hud::LandTalkIcon`), pistol: {state, progress 0…20}}`; a command carries the activity and the action's own generation, so an action appearing or going away (`interact` as people walk past) fences only itself | `Combat` |
-| `vitals` | `{health, energy, reload: 0…1, loaded, capacity, id, name, face (the hero), effects: [poison\|drunk\|healing], potions, officers: [{id, name, face, health, energy}], dash?: 0…1, opponent?: {name, health} (the cabin captain), boarding?: {ours, theirs, oursStart, theirsStart} (the deck fight's men)}` or `null` | `Vitals` |
-| `worldInfo` | a JSON string: the engine's location lines, `\n` between them | `States::world_info` |
-| `contextAction` | a JSON string: the script's quick action name, `""` = none | `States::context_action` |
-| `reloadPlace` | `{place, locked}`: the door the hero stands at — where its reload locator leads (the reload's label in the game's `LocLables.txt`) and whether the game keeps it closed now (its `Closed` quick action; the hint then shows a closed lock and there is no enter button), or `null` | `States::door` |
-| `landCommands` | `{schemaVersion: 1, sceneEpoch, revision, activityGeneration, available, active, complete, stage, pendingLabel, selectedItemId, canBack, canClose, items: [{id, kind, label, source, picture, enabled, cooldown}], offered: [event]}` or `null`. `picture` = `"<texture stem>:<cell>"` of the game's picture of the item (a travel place by its `LandTarget_SLB` cell: `hud::LandPlaceIcon`; the slot name `fr_<n>` is only a position in the town's table); `offered` = the root command events the scripts enable now, open or not (the actions button at the top for the others, the transitions button for `BI_FastReload`, which opens with `open\tBI_FastReload` straight into the travel stage) | `LandCommands` |
-| `spyglass` | `{schemaVersion: 1, revision, on, generation, target: null \| {kind: ship\|fort, name, type, class, hull, sails, crew, cannons, cannonsMax, charge, nation, sail, speed, distance, captain, cannonType, portrait, skills: {…}}}`, fields the telescope cannot show left out | `Spyglass` |
-| `ship` | the engine's ship telemetry (`android_ship_telemetry.hpp`): `{schemaVersion: 1, gameplayRevision, sequence, hudRevision, valid, …own ship, fleet: […] (each ship with `picture: {texture, uv}`, its battle-interface icon), navigator…, shipSpeedKnots, windSpeed, cannonCharge, timeScale, abilities: [{id, state: ready|active|recovery|blocked, fill}], ammo, ammoCount, ammoCounts, sailState, canSetSails, dateTimeText, locationText}` | `Ship` |
-| `seaOrders` | `{schemaVersion: 1, sceneEpoch, revision, activityGeneration, available, active, complete, stage: commands\|options\|targets, recipientId, selectedItemId, pendingLabel, canBack, canClose, recipients: […], items: [{id, kind, label, source, enabled, cooldown}]}` or `null` | `SeaOrders` |
-| `seaQuickAction` | `{schemaVersion: 1, activity, revision, available, action: Map\|Moor\|Board\|LandTroops\|Reload, label}` | `SeaQuick` |
-| `worldMap` | the engine's world-map frame (`android_worldmap.hpp`): `{schemaVersion: 1, revision, activity, gameplayRevision, available, mask, commandsReady, shipsVisible, instrumentsVisible, date, hour, windForce, windAngle, heading, speed, morale, foodDays, rumDays, coordinates, flag, stormState (0 none, 1 storm, 2 storm with a tornado), moonPhase (0 new … 4 full … 7, the game's moon of the map's day: day / 4), rainState (the rain the sea will have, from the scripts' WeatherParams: 0 none, 1 clouds gathering, 2 raining), ships: [{id, name, hull, sails, crew, crewMax, shipClass, type, picture: {texture, uv}}], commands: [{id, label}]}` | `WorldMap` |
-| `presentation` | written by the platform host: `{screen, loading, cinematic, dialogue, live}` | `Presentation` |
-| `video` | `{fullscreen: true}` while a game video plays over the whole screen (engine aviplayer.cpp; never for a player embedded in an interface node), `null` after | the host (ui_host.cpp): the interface screen is hidden and takes no touch or back key until it ends |
-
-The HUD is visible when a scene draws the gameplay mode, `presentation` reports a free game
-(no screen, loading, cutscene or dialogue of the platform host) and no interface of the UI
-is mounted. While `live` is false it is drawn but takes no input, and the scene gives up
-what it holds (`Released`, `Suspended`).
-
-A scene builds a `View`: the layout scene of the pack's `hud-layout.json`, the live props of
-its elements by id (an element left out is not mounted), an optional sheet (a pack part,
-modal or not; a tap on a modal sheet's scrim is its ✕: the engine draws a sheet here only
-when it offers both ← and ✕), elements to dim. The mount patches elements in place, so an element that the
-old and the new view share keeps its pointer (the stick survives explore ↔ combat). Layout
-props come first, the scene's props on top; a prop the scene stops giving returns to its
-default. `Input::On(id, verb, handler)` binds component events; an event without a binding,
-a layout scene or element the pack lacks, and a channel carrying something else than its
-contract are errors (log, toast in debug hosts), never quiet drops.
-
-The party (land: the hero and his officers, face portraits) and the squadron (sea and world
-map: each ship's picture of the battle interface's icon atlas) are one cell kind
-(`MemberCell`: a round picture ringed by its bars) in `c-hud-plate` variants `officers` / `fleet`. A tap
-on a sea ship opens the orders for it; a tap on a land member or a map ship sends the shortcut
-`characterscreen` / `shipscreen` and leaves the subject with `Hud::RequestSubject`; the hero
-screen that opens takes it once (`Bindings::TakeSubject`) and selects that person or ship with
-its header switch.
-
-Input goes out with `Hud::Send(verb, value, slot)`: the engine command is `<verb>:<value>`
-(`move`, `combat`, `landcommands`, `context`; at sea `hold` (held controls: helm, spyglass),
-`deckwalk` (the walk stick on deck), `sails`, `gameplay`, `seaquick`, `orders`, `shiphud`, `navigator`; on the world map `hold` and `worldmap`); a `slot` marks a latest-value input (stick
-position, coverage acknowledgement) of which a queueing host keeps only the newest. The sticks
-are analog (`StickStrength`: a dead zone of 8 of the travel, then a response curve): the helm
-holds its turn with a strength 1…100 (`HoldSet`, the engine's `CONTROL_STATE::fValue`, so the
-ship turns as far as the slider is pulled), the deck walk stick sends its vector, forward and
-sideways. Three
-verbs are for the platform host: `shortcut` (`mainmenu` = the game's own menu, everywhere:
-every scene and the layout `menu` where no scene draws, a cut-scene or a blocked game, have the
-one menu button; `character`) and `presence` (`shown` / `menu` (only that button) / `hidden`).
-There is no menu of the platform's own. Sequences, owners and revisions are formed here; the
-platform adds nothing.
-
-Touches over the game are decided per pointer at pointer-down: `Host::WantsTouch(x, y)` is
-true on an interactive HUD element (what the behaviours report as `Regions`), anywhere
-while a modal sheet, an interface or a plain document is shown or the game is between scenes
-(gameplay mode "unknown" because the engine is starting, loading, has no scene or launched an
-interface not shown yet: those touches wait for the next interface, gameplay drops them, and
-every held or dropped touch is logged with the gameplay and presentation state;
-`tests/routing_check.cpp` lists every state), and false elsewhere, so the game keeps the rest (camera
-look). It is answered from the layout of the last frame and is thread-safe. The land move stick floats: its layout element is the zone (anchor and size in
-`hud-layout.json`, drawn under every other element), the stick rests at `restLeft` /
-`restBottom` and appears under the thumb that lands anywhere in the zone where no other
-control is hit; plates that only show are `pointer-events: none`, so they do not shield
-it. A top status the toasts must not cover (the cabin captain, the boarding bars) is marked `"toastsBelow": true` in `hud-layout.json`; the pack gives it `toastClear` (its bottom below the safe top) and, while it is shown, the host starts its toast stack below it. A layout element may add a behaviour: `"behavior": "hold"` (reports `down` /
-`up`) or `"swipe"` (a drag picks a move; `data` → `data-swipe-*`).
-
-Remaining fallbacks, each logged and tested: a context action name the land table lacks
-keeps its button with the generic icon (info line, once); a land menu the engine marks as
-not drawable, or with a kind this runtime does not know, stays the engine's own menu (error
-line, no coverage acknowledged); `storm_ui_shot` without a `presentation` state uses an
-idle game in front and says so.
-
-### Porting a scene (sea, world map)
-
-1. Add the channel structs to `States` and a consumer per channel to `states.cpp`
-   (`AddStateConsumers`): parse strictly, `hud.Reject(...)`-style errors for bad data.
-2. Write `Scene` in `src/hud/<zone>.cpp`: `Build` sets `view.layout` (`sea`, `sea-battle`,
-   `world-map`), the props of the elements and the bindings; timed work in `Tick`, coverage
-   acknowledgements in `Drawn` (only a drawn frame may hide the engine's own indicators),
-   `Released` / `Suspended` for cancelled input and a lost screen, `Holds` when the engine
-   reports no mode while something of the scene is open.
-3. Add `{"<name>", modes, Create…}` to `kScenes`. From then on `HostOwnsHud(mode)` is false
-   and the platform host must not draw that mode's HUD; delete its code there.
-4. Pack: elements and their offsets are already in `hud-layout.json`; add `behavior` /
-   `data` where a control is held or swiped, and sheets as `screens/hud-…` parts.
-5. Tests: synthetic states in `tests/states`, a scene check like `tests/hud_land_check.cpp`
-   (recording mount for the scene, the runtime with `tests/pack` for touches).
+1. Add the channel structs to `States` and a strict consumer per channel to `states.cpp`.
+2. Write `Scene` in `src/hud/<zone>.cpp`: `Build` sets `view.layout`, props and bindings; timed
+   work in `Tick`, coverage acknowledgements in `Drawn` (only a drawn frame may hide the
+   engine's own indicators), `Released` / `Suspended` for cancelled input and a lost screen,
+   `Holds` when the engine reports no mode while something of the scene is open.
+3. Add `{"<name>", modes, Create…}` to `kScenes` in `hud.cpp`.
+4. Pack: elements in `hud-layout.json`, sheets as `screens/hud-…` parts.
+5. Tests: synthetic states in `tests/states`, a scene check like `tests/hud_land_check.cpp`.
 
 ```sh
 build/ui-host/storm_ui_shot --pack <app>/build/ui-pack --size 915x412 --density 2 --out land.png \

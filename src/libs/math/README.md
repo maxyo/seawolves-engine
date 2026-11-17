@@ -32,9 +32,5 @@ engine's conventions (`namespace storm::math`). Include it instead of GLM header
 
 ## Tests
 
-`tests/glm_math/run.py` builds the contract and randomized checks. With `--baseline <revision>` it builds the
-same harness against the math headers of an older revision (for example `c6788d72`, the last one with the
-original hand-written classes) and reports bit-exactness and ULP distance for every operation.
-Known, intentional differences from the original classes are below one ULP of the result's magnitude:
-`glm::length` and `v / f` work in `float` where the old code took a `double` detour, `eulerMatrix` multiplies
-the three sines and cosines in GLM's order, and `-v` of a zero component yields `+0`.
+`tests/glm_math/run.py` builds the contract and randomized checks. `--baseline <revision>` builds the same
+harness against the math headers of another revision and reports bit-exactness and ULP distance per operation.

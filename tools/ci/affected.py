@@ -6,7 +6,7 @@ build it leaves out is reported with the reason.
 
   affected.py [--base origin/develop] [--head HEAD] [--json]
 
-Rules (README.md here):
+Rules:
 - Markdown files (*.md) are documentation: they affect nothing.
 - The compiler launchers (tools/ccache) and tests/<file> select everything. The host check runner and what it
   fetches for every check (tools/ci/run_host_tests.py, tools/ci/check_tmp.py, cmake/glm.cmake,

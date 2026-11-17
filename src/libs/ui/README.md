@@ -1,15 +1,17 @@
 # Portable game UI runtime
 
 `storm_ui` draws the game interface from a *UI pack* supplied by the application
-(documents, styles, component specs, icons, fonts). It is built on RmlUi and is the same
-code on every platform; the platform host only owns the window, the frame loop and
+(documents, styles, component specs, icons, fonts). It is built on RmlUi and renders only through
+bgfx (`include/storm_ui/backend_bgfx.h`); the platform host owns the window, the frame loop and
 touch delivery. The pack and the design rules live in the application repository
-(`mobile-ui/design`, see its README and ARCHITECTURE.md).
+(`mobile-ui/design`). Game interfaces and the HUD: [src/screens/README.md](src/screens/README.md).
 
 Build option `STORM_ENABLE_UI` (off in the main engine build; the directory is also a
-stand-alone CMake project). Dependencies are SHA256-pinned release archives fetched at
-configure time: RmlUi 6.3 (MIT), FreeType 2.14.3 (FTL), lunasvg 3.5.0 with plutovg
+stand-alone CMake project for host checks and captures). Dependencies are SHA256-pinned release
+archives fetched at configure time: RmlUi 6.3 (MIT), FreeType 2.14.3 (FTL), lunasvg 3.5.0 with plutovg
 (MIT), nlohmann/json 3.12.0 (MIT). Local fixes on top of the RmlUi pin live in `patches/rmlui-*.patch`.
+The build pulls in `src/libs/renderer_bgfx` for bgfx (offline:
+`-DFETCHCONTENT_SOURCE_DIR_STORM_{BGFX,BX,BIMG,BGFX_CMAKE}=<checkouts>`, bgfx patched).
 No game data is involved in building or testing.
 
 ## Build and check on the host
@@ -17,197 +19,56 @@ No game data is involved in building or testing.
 ```sh
 cmake -S src/libs/ui -B build/ui-host -G Ninja
 cmake --build build/ui-host
-ctest --test-dir build/ui-host --output-on-failure       # template language, .tx decoder, screen routing
+ctest --test-dir build/ui-host --output-on-failure
 build/ui-host/storm_ui_shot --pack <pack dir> --doc gallery/button.rml --out shot.png
 ```
 
-The pack contract check draws a real pack (the application's `mobile-ui/design`, built by its
-`build.py --pack DIR`) with the real screen and HUD adapters on every recorded model and state of
-`tests/` (cases and the screens without one: `tests/pack-contract.json`), without a GL context:
-`build/ui-host/storm_ui_pack_check --pack DIR --fixtures src/libs/ui/tests`. A case fails on any
-error line of the host and any element marked `ui-error`; a ported screen with no case and no
-listed reason fails too. The application runs it in its host checks (`tests/ui_pack_contract`);
-here it is the ctest `ui_pack_contract` when configured with `-DSTORM_UI_PACK=<built pack>`.
+Pack contract check: draws a real pack (the application's `mobile-ui/design/build.py --pack DIR`) with the
+real screen and HUD adapters on every recorded model and state of `tests/` (cases and exemptions:
+`tests/pack-contract.json`), without a GL context:
+`build/ui-host/storm_ui_pack_check --pack DIR --fixtures src/libs/ui/tests`. A case fails on any error line
+and any element marked `ui-error`; a ported screen with no case and no listed reason fails too. It is the
+ctest `ui_pack_contract` when configured with `-DSTORM_UI_PACK=<built pack>`, and the application runs it
+in `tests/ui_pack_contract`.
 
-The build pulls in `src/libs/renderer_bgfx` for bgfx, its shader build and the pinned sources
-(offline: `-DFETCHCONTENT_SOURCE_DIR_STORM_{BGFX,BX,BIMG,BGFX_CMAKE}=<checkouts>`, bgfx patched). `storm_ui_shot` renders
-off-screen through the UI's bgfx backend on bgfx's GLES 3.0 renderer (Mesa llvmpipe, headless,
-simulated clock), the tool acting as the frame owner with the engine's UI view range (`--views N`)
-and decoding game pictures from `--game-root` itself. It can replay touches:
-`--script "down 1 660 88; wait 0.5; shot held.png; up 1 660 88"`. `shot` first lets the backend finish
-its texture work; `seen <png>` saves what the last frame left on the screen, as the player saw it.
-`mark` remembers that picture, `whole` fails unless the last frame showed the marked picture still or the
-new one with nothing missing, `arrived` fails while the marked picture is still there (the
-`ui_whole_frame` test).
-Reported component actions are printed as `action <id> <verb> <value>`; `--safe L,T,R,B`
-applies safe-area insets in dp (what `Host::SetSafeArea` receives from the platform: the
-system bars). Component templates read them as `safe.left` … `safe.bottom`. `--cutout X,Y,W,H`
-(dp, repeatable) adds a display cutout (`Host::SetCutouts`, the platform's
-`DisplayCutout.getBoundingRects`): screens and the HUD lay out edge to edge, and after layout
-only what falls under a cutout and must stay readable or touchable moves out by the minimum
-(the cutout's depth plus 4 dp, a translate): text, icons, pictures and components no larger than
-a quarter of the screen. A flex row of several things no taller than a quarter of the screen (a header
-bar, a strip of tabs) under a cutout of the left or right edge is laid out beside it instead (padding):
-its own layout decides who gives way, so its controls never land on each other and take their taps where
-they are drawn. A lone thing moves inside the box that holds it and no further (logged once when that
-leaves it partly under the cutout). Backgrounds, panels, rows and lists run under it, and nothing inside a scrolling element
-(`overflow: auto` / `scroll`) is ever moved: scrolled content ignores the cutout. Touch regions and the
-behaviours' hit boxes follow the move.
+### storm_ui_shot
+
+Renders off-screen through the bgfx backend (GLES 3.0 on headless Mesa llvmpipe, simulated clock).
+Options: `--views N` (UI view range), `--game-root` (decodes game pictures itself), `--safe L,T,R,B`
+(safe-area insets in dp, `safe.left` … `safe.bottom` in templates), `--cutout X,Y,W,H` (dp, repeatable
+display cutout), `--interface <model.json>`, `--state <channel>=<file.json>`, `--size`, `--density`.
+Component actions are printed as `action <id> <verb> <value>`.
+
+`--script` replays touches and checks frames, e.g.
+`--script "down 1 660 88; wait 0.5; shot held.png; up 1 660 88"`: `shot` waits for the backend's texture
+work; `seen <png>` saves what the last frame left on the screen; `mark` remembers that picture, `whole` fails
+unless the last frame showed the marked picture or the new one complete, `arrived` fails while the marked
+picture is still there; `bench 300 [<channel> <a.json> <b.json>]` measures frames as a platform host makes
+them (with a channel the two states alternate every frame).
 
 ## Android
 
-The engine's Android build (`tools/android/ci_engine.sh`) makes the UI runtime: `game/libstorm_ui.so`
-(target `storm_ui_runtime`) next to `libengine.so` and `libbgfx.so`, and the licence texts of its
-dependencies in `<build>/licenses/`. The APK ships the three from that one build:
+`tools/android/ci_engine.sh` builds `game/libstorm_ui.so` (target `storm_ui_runtime`) next to
+`libengine.so` and `libbgfx.so`, and the licence texts of its dependencies in `<build>/licenses/`. The APK
+ships the three from that one build. `libbgfx.so` is the only bgfx of a process; `libengine.so` and
+`libstorm_ui.so` both link it. Application screens without the engine (launcher, downloads, gallery) load
+`libstorm_ui.so` alone through `org.stormengine.port.StormUi` (`android/jni_host.cpp`) on their
+GLSurfaceView's context. UI code is built with `-gline-tables-only` in builds with debug info.
+Debuggable Android builds log frame costs every 5 s (logcat tag `StormUiFrames`).
 
-- `libbgfx.so` (`storm_bgfx_runtime`, `src/libs/renderer_bgfx`): bgfx, bx and bimg whole, the
-  only bgfx of a process. `libengine.so` (renderer, effects, textures) and `libstorm_ui.so` both
-  link it, so the game's UI draws with the engine's bgfx and nothing of bgfx is in the APK twice.
-- `libstorm_ui.so`: `storm_ui`, the bgfx backend, RmlUi, FreeType, lunasvg/plutovg and
-  `android/jni_host.cpp`. The game links it (`src/libs/ui_host` in `libengine.so` hosts the UI in
-  the engine's frame); the application screens without the engine (launcher, downloads,
-  gallery, each in its own process) load it alone: their Java view (`StormUiView`, a
-  GLSurfaceView) owns the EGL context, bgfx draws on it (`bgfx::PlatformData::context`) through
-  the same backend, `android/jni_host.cpp` playing the frame owner. That JNI surface belongs to
-  `org.stormengine.port.StormUi`.
+## Rules for pack and screen authors
 
-Builds with debug info (the engine's Android builds, `-g`) give the UI runtime and its
-third-party code line tables only (`-gline-tables-only`): stack traces keep function, file and
-line, and the debug APK, which ships its libraries unstripped, stays small. Debug play APK
-(Release native build, 2026-11-11): 59.1 MB before the UI was drawn by the engine; 84.1 MB with
-`storm_ui` linked into `libengine.so` at full `-g` (`libengine.so` 214 MB uncompressed); 64.6 MB
-now (`libengine.so` 105 MB, `libstorm_ui.so` 31 MB, `libbgfx.so` 8 MB uncompressed).
-
-The stand-alone project of this directory is for host checks and captures only.
-
-## Parts
-
-| File | Role |
-|---|---|
-| `include/storm_ui/ui.h` | `Host`: load a document, touches in, frames out, actions out, safe-area insets |
-| `include/storm_ui/render_backend.h` | the only renderer-specific seam |
-| `include/storm_ui/backend_bgfx.h`, `src/backend_bgfx.cpp`, `shaders/` | the render backend (bgfx) and frame client |
-| `src/components.*`, `src/template.*` | `<c-…>` elements rendered from spec + template + props |
-| `src/behaviors.cpp` | press, hold-to-confirm, long-press tooltip, range (the knob, `data-range-knob`, stays under the finger between the value's steps: a transform, no layout), stick, lever, table columns |
-| `src/draw_elements.cpp` | `<ui-ring>` (hold progress), `<ui-paper>` (aged parchment), `<ui-clamp>` (text in N lines, stepped down to `min-size` before it is cut with an ellipsis) |
-| `src/icons.cpp` | `<ui-icon>`: SVG symbols rasterised per size and colour; `icon-shadow: <colour> <x> <y> <sigma>` bakes a drop shadow into the raster (use it instead of `filter: drop-shadow` on an icon: no offscreen layer per frame) |
-| `src/picture_atlas.*` | the game's `pictures.ini` (group + picture → texture + rectangle), read from the game root at run time |
-| `src/game_image.cpp` | `<ui-game-image>`: pictures from the renderer (`AcquireGamePicture`); the loading placeholder shows until then, a picture that cannot be had is logged with texture, cell and reason and marked `image-missing` |
-| `include/storm_ui/tx_texture.h`, `src/tx_texture.cpp` | `.tx` decoding on the CPU for a frame owner without the engine's texture module (`storm_ui_shot --game-root`) |
-| `src/ui_host.cpp` | RmlUi set-up, pointer routing, toasts, tooltip, the HUD mount, the touch map, Prepare/Frame |
-| `src/frame_renderer.*` | between RmlUi and the backend: frame counters, the filter-result cache, the frame hash (see "Frame cost") |
-| `src/hud/` | the in-game HUD: state consumers, scenes by gameplay mode, engine input (see `src/screens/README.md`, "The HUD") |
-
-Errors are loud, not defaults: an unknown `<c-…>` tag, an attribute a component does not
-have, an enum value outside its options, a template or class expression error and an icon
-missing from the pack are logged with the element (`[ui 1] Component <c-button>
-(c-button#id …): …`) and drawn as the striped `ui-error` marker or a crossed red icon.
-In host checks and captures (`Config::strict_templates`) a template path that names nothing (an
-unknown name, a missing key, an index past the end) is such an error too; a path the data may
-leave out is marked in the template, `opt(r.reason)` or `or(r.id, r_i)` (`src/template.h`).
-The documented fallbacks: with no game root and no picture loader, game pictures are
-"unavailable" (one info line) and keep their neutral placeholder. Code that throws is the
-exception boundary's (UI-1, `tests/boundary_check.cpp`): a screen (its `Build`, a handler, its
-`Back`, a text answer) that throws is an error line naming the screen, the interface, the call and
-the exception, the danger toast `ui.error.screen`, and the interface closes through the engine's
-back (no replacement layout is built; the generic layout throwing closes it the same way). A
-ported screen whose REQUIRED nodes are missing once the opening settled is the same defect
-(`src/screens/README.md`, Admission). A HUD
-scene or the spyglass overlay that throws is an error line, the toast `ui.error.hud` at its first
-failure, and it is off until its retry (its modes show the game-menu button meanwhile): 2 s after
-the first failure, twice as late after each further one, at most 60 s. The touch HUD is the only
-HUD on Android, so it recovers by itself. A state consumer that throws drops that state with an
-error line. The game session goes on.
-
-Over the game the platform asks `Host::WantsTouch` at pointer-down and gives the UI only
-the pointers that land on it; everything else stays the game's. Inside the UI each pointer
-is captured by the nearest interactive component under it.
-Drag behaviours (stick, lever, slider) keep their pointer exclusively, so several
-controls work at once; a tap that travels more than 10 dp is withdrawn and becomes a
-list scroll.
-
-## Renderer
-
-Nothing above `RenderBackend` calls a graphics API. There is one backend, bgfx
-(`backend_bgfx.h`, target `storm_ui_bgfx`), passed as the required `Config::backend`:
-
-- the game: inside the engine frame (`src/libs/ui_host`);
-- the screens without the engine: on the GLSurfaceView's context (`android/jni_host.cpp`);
-- captures: on a headless EGL display (`tools/ui_shot.cpp`).
-
-The screens without the engine had RmlUi's GL3 renderer until 2026-11-11. Measured when it was
-replaced (emulator, x86_64 with arm64 translation, 1280x720, five cold launcher starts each):
-`libstorm_ui.so` 7 346 848 → 8 052 904 bytes stripped (+706 KB; +276 KB gzip; bgfx has since
-moved to the shared `libbgfx.so`, see «Android»); device start
-(GL3 backend / `bgfx::init` with its capability probes) 429–615 ms → 1356–1687 ms; host start
-(fonts, pack) unchanged at 0.4–1.9 s; activity start (`am start -W`) 1.5–2.4 s both. The extra
-second before the launcher's first frame on the emulator is bgfx probing texture formats through
-the emulator's GL translation. It was kept for one backend: one renderer to keep correct, one
-picture path, captures that draw what the game draws.
-
-It draws through `storm/render/frame_owner.hpp`. It is a `FrameClient`: register
-  it with `FrameOwner::AddClient`, `AttachHost(host)`, and it lays out on
-  `OnSurfaceChanged`, calls `Host::Frame()` in `OnUiRender` (the frame owner's UI view range, after the
-  game picture, native resolution, composited premultiplied over the back buffer), and
-  on device loss forgets its handles and lets RmlUi regenerate textures and geometry.
-  It follows RmlUi's stock GL3 renderer (not built) pass for pass: 2× MSAA layer stack with a shared
-  D24S8 stencil for clip masks, the same gradient, blur, drop-shadow, colour-matrix and
-  mask shaders (`shaders/*.sc`, built by `storm_bgfx_embed_shaders`). Each render-target
-  switch takes one view, and a scheduler lets passes of different elements share views.
-  Layer work that only fills a texture (box-shadow images) runs in its own buffers,
-  packed side by side, and may span frames when views are short. Running out of the
-  frame owner's 64 views is an error (logged): the effects concerned are not drawn.
-
-Game pictures: `<ui-game-image>` asks the backend (`AcquireGamePicture`), which gets them from
-the frame owner's `.tx` loader (straight alpha, sampled by its own shader); a picture the
-renderer cannot load keeps the placeholder and is logged as an error. Without a picture source
-(the screens without the engine) the neutral placeholder stays.
-
-## Frame cost
-
-The platform host draws only when something changed: it calls `Host::Prepare` after every
-call into the UI (a state, a touch, a timer) and asks for a `Frame` only when Prepare says
-the frame on the screen is out of date. A state the engine publishes again, or one that
-changes nothing visible, costs a Prepare (timers, routing, `Context::Update`) and no
-drawing. What counts as a change: host calls that alter the documents (touches, toasts,
-props, documents, the HUD mount's own edits), rebuilt or re-laid-out components, ticking
-behaviours, RmlUi animations and transitions, game pictures that arrived, re-cut text,
-and a texture made in the last frame. `Config::verify_unchanged` (host checks and
-`storm_ui_shot`) draws every frame anyway and reports a frame Prepare called unchanged that
-draws other commands (`FrameStats::mispredicted`, an error line).
-
-`src/frame_renderer.*` sits between RmlUi and the backend's `Rml::RenderInterface`, so every
-backend gets the same savings without code of its own:
-
-- it counts the frame (`Host::LastFrameStats`: CPU of update and render, rebuilds, boxes
-  laid out, meshes compiled, draws, clip masks, layers, cached layers, texture uploads);
-- it caches filter results: an element with `filter:` (drop-shadow, grayscale, brightness,
-  opacity) costs a backend an offscreen layer, a filter pass and a composite every frame.
-  The runtime buffers the layer's commands and, when they match a frame before (meshes by
-  content, textures, positions, scissor, transform, stencil, filters), draws the saved
-  result as one textured quad. A layer composited into an empty region (an element
-  scrolled out of a list) is dropped. The look is unchanged: captures before and after are
-  pixel-identical (`storm_ui_shot` on every bench scene);
-- it hashes the drawing commands of each frame (the verification above).
-
-A backend must implement layers and `SaveLayerAsTexture` (RmlUi's box shadows need them
-too); without it a filtered element is not drawn and an error says so.
-
-A frame is shown whole or not at all. The textures RmlUi saves from a layer (box shadows: the
-panels of a screen) are made by jobs of the backend that may not fit into the frame that first
-draws them. Such a frame is held back (`RenderBackend::FrameHeld`): the jobs run, the frame on the
-screen is submitted again, the host draws the new frame again until its textures are there, and
-nothing that waits for a frame on the screen (held touches, HUD acknowledgements, the screen
-switch line) is told before. Drawn at once, a new screen appeared twice: first without its panels,
-a frame later with them. `FrameStats::held` counts the frames held for the one shown; a job that
-does not finish in 30 frames is an error and the frame is then shown as it is.
-
-`storm_ui_shot … --script "wait 1; bench 300 [<channel> <a.json> <b.json>]"` measures
-frames as a platform host makes them (GPU finished per frame) and prints the costs; with a
-channel the two states alternate every frame. `tests/frame_cost_check.cpp` holds the rules:
-a steady HUD needs no frame, a drawn steady frame rebuilds, lays out, compiles and uploads
-nothing, an unchanged filtered layer costs the backend no layer. Debuggable Android builds
-log the frame costs every 5 s (logcat tag `StormUiFrames`).
+- Errors are loud: an unknown `<c-…>` tag, an attribute a component does not have, an enum value outside
+  its options, a template or class expression error and an icon missing from the pack are logged with the
+  element and drawn as the striped `ui-error` marker or a crossed red icon. With
+  `Config::strict_templates` (host checks, captures) a template path that names nothing is an error too;
+  mark optional data in the template with `opt(r.reason)` or `or(r.id, r_i)` (`src/template.h`).
+- A screen that throws closes its interface with an error line and the toast `ui.error.screen`; a HUD scene
+  that throws is off until a backed-off retry (toast `ui.error.hud`).
+- `icon-shadow: <colour> <x> <y> <sigma>` bakes a drop shadow into an icon; use it instead of
+  `filter: drop-shadow` on icons.
+- The host draws only when `Host::Prepare` reports the frame out of date; a frame is shown only when its
+  textures are ready. `tests/frame_cost_check.cpp` holds the frame-cost rules.
 
 ## Licence boundary
 

@@ -15,12 +15,8 @@ python3 tools/android/build_torrent.py --work /tmp/storm-torrent --jobs 4 \
   --ndk /absolute/path/to/android-ndk-r30
 ```
 
-The first command builds and runs a synthetic loopback-only BitTorrent fixture
-(transfer, resume repair, invalid magnets, stall time, free-space check), metadata
-discovery fixtures, JSON builders under allocation failure, production JNI
-allocation-fault tests, and a real JVM `-Xcheck:jni` Unicode test.
-The second builds JNI; it does not build the engine, install an APK or access a
-device. Build dependencies: Python 3.12+, CMake 3.20+, Ninja, C++17, Perl, make
+The first command builds and runs the host tests (`tests/torrent`); the second
+builds the Android library. Build dependencies: Python 3.12+, CMake 3.20+, Ninja, C++17, Perl, make
 and JDK 17 (required for host JNI regression tests).
 Package only `android/libstorm_torrent.so` and the NDK's matching `libc++_shared.so`.
 All embedded dependencies are statically linked. Retain their license notices.
@@ -64,8 +60,7 @@ and `error`. Nothing fails silently:
 * `stalledSeconds` counts seconds without new verified bytes (or metadata) while
   in `metadata` or `downloading`; the application decides when that is a stall.
   `networkError` is the latest non-fatal tracker or listen-socket failure.
-* Allocation failure makes a call throw; it never yields truncated JSON or a
-  changed metadata snapshot (`tests/torrent/test_json_faults.cpp`).
+* Allocation failure makes a call throw; it never yields truncated JSON.
 
 ## Metadata, version 2
 
@@ -112,10 +107,7 @@ worker thread. Closing can block while network/disk threads drain. Cancel means
 pause and close; retain the directory for resume unless the user explicitly
 deletes the set. Persist the source, selected indices and per-set directory in
 the application, but restore the download only after an explicit user action.
-Polling automatically requests an asynchronous checkpoint every 30 seconds.
-A synchronous `torrent.id` marker identifies the set before payload writes, so
-recovery also works after a process dies before its first checkpoint. Existing
-files are hashed again on resume; piece bits from the checkpoint are not trusted.
+Existing files are hashed again on resume.
 
 Paths, duplicate names, traversal, symlinks, file count and total size are checked
 before selection. Staging directories must not be shared with other writers.
@@ -124,14 +116,5 @@ space check. BitTorrent hashes verify pieces, not the legitimacy or suitability
 of game content. Selected v1 files can require boundary pieces containing bytes
 of adjacent unselected files; those bytes stay in libtorrent's private part file.
 
-HTTPS tracker/web-seed certificates remain verified. The builder applies a narrow
-Android trust-store patch to libtorrent, loading system PEM roots individually
-from Conscrypt APEX, with the legacy system trust directory as fallback. No verification bypass is
-used. DHT/PEX, UDP, HTTP and HTTPS trackers are supported; private torrents retain
-libtorrent's protocol restrictions. Tracker reachability and Android background
-execution still depend on network and OS lifecycle conditions.
-
-References: [libtorrent API](https://www.libtorrent.org/single-page-ref.html),
-[libtorrent releases](https://github.com/arvidn/libtorrent/releases),
-[OpenSSL sources](https://openssl-library.org/source/),
-[Boost source checksum](https://archives.boost.io/release/1.90.0/source/boost_1_90_0.tar.bz2.json).
+HTTPS tracker/web-seed certificates are verified against the Android system trust
+store. DHT/PEX, UDP, HTTP and HTTPS trackers are supported.

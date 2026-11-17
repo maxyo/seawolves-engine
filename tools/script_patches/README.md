@@ -37,10 +37,10 @@ is honoured.
 Allowed targets (`isPatchTargetPath`): `program/dialog.c`,
 `program/dialogs/<language>/**` (each language file is its own target),
 `program/quests/`, `program/sea_ai/`, `program/loc_ai/`, `program/weather/`,
-`program/battle_interface/` (the town flag of locations without a town),
-`program/locations/`, `program/interface/` (the tab-switch countdown of the hero screens) and
-`program/characters/` (the carried weight, `GetItemsWeight`), `program/scripts/PsHero.c` (the PGG travel target; the rest of `program/scripts/` stays closed),
-`.c`/`.h` only; the list grows only when a real fix needs another directory.
+`program/battle_interface/`, `program/locations/`, `program/interface/`,
+`program/characters/`, `program/scripts/PsHero.c` (the rest of `program/scripts/`
+stays closed), `.c`/`.h` only; the list grows only when a real fix needs another
+directory.
 `program/interface/` is also the UI overlay's directory: a file is never both replaced
 and patched, so a target the overlay replaces is a damaged layer (`applyLayer` throws).
 `program/controls` stays excluded.
@@ -68,9 +68,8 @@ and patched, so a target the overlay replaces is a damaged layer (`applyLayer` t
   `fs::GetCachePath()`, which «Очистить кэш» empties) and the index points there.
   A file is written only when missing or damaged, keeping its mtime stable;
   directories of other bases or patch versions are removed. A file that went
-  missing while the game runs is derived again when it is next opened
-  (`rederive`, logged); if that cannot be done the game stops (`LayerError`).
-  The app removes the old `<filesDir>/script-patches/derived` (GameCache.stale).
+  missing while the game runs is derived again when it is next opened; if that
+  cannot be done the game stops (`LayerError`).
 - **Script cache.** The compiled script cache key covers the program tree and
   the patch layer (`programLayers`, `FILE_SERVICE::GetPathFingerprint`): a new
   patch, a new set or a changed player file recompiles.

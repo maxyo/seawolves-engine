@@ -1,217 +1,47 @@
 # Graphics effects package for the bgfx renderer
 
-Upgrades on top of the legacy look: post-processing (ambient occlusion, tone curve, colour grades by place and
-hour, bloom, sun shafts, lens flare, dither, SMAA, the FSR 1 upscale and sharpening), improvements of the game's own sea (`SeaDepth`), and per-pixel lighting for the fixed-function emulator: sun, point and spot lights, sun
-shadows, an ambient-occlusion volume of interiors, rim light, linear-light sums, relief from derived normal maps
-and aerial perspective. MSAA, alpha to coverage and anisotropic filtering are renderer state: fx decides them
-(`RendererStateFor`), the renderer applies them.
+Post-processing (ambient occlusion, tone curve, colour grades, bloom, sun shafts, lens flare, dither, SMAA, the
+FSR 1 upscale and sharpening), sea improvements and per-pixel lighting for the fixed-function emulator (sun, point
+and spot lights, sun shadows, interior ambient-occlusion volume, relief from derived normal maps, aerial
+perspective, wet surfaces). The package depends on bgfx only and takes plain structs; `src/effects`
+(`effects::Host`) owns the settings, feeds per-frame inputs and calls it. Licences: [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Part of the engine build: `renderer_bgfx/CMakeLists.txt` adds this directory and links `storm_bgfx_fx`;
-`src/effects` (`effects::Host`) owns the settings, feeds the per-frame inputs from the engine and calls the fx
-objects. The package itself depends on bgfx only, takes plain structs instead of engine types, and generates
-every texture it needs.
+## Presets and options
 
-## Presets
+The player chooses «Низкая / Средняя / Высокая» (`Settings::FromPreset`, `include/storm/fx/settings.hpp`). Every
+preset renders the 3D scene at an internal height (900 / 1000 / 1100 lines, `fx_render_height`, never below half
+the display) on taller displays and upscales it with FSR 1; interfaces are drawn at the display size. «Низкая» is
+the legacy image with the upscale only; «Средняя» and «Высокая» add the effects listed in `Settings::FromPreset`.
+Where MSAA is unavailable `ConstrainSettings` replaces it with SMAA 1x (logged).
 
-The player chooses «Низкая / Средняя / Высокая» (`QualityPreset`, `Settings::FromPreset`); single options are
-`fx_*` keys of engine.ini / `STORM_FX_OPTIONS` (`src/effects/effects.cpp`), for development.
+Single options are `fx_*` keys of engine.ini or `STORM_FX_OPTIONS` (parsed in `src/effects/effects.cpp`), for
+development. Useful ones:
 
-Every preset renders the 3D scene at an internal height on taller displays and upscales it with FSR 1 (EASU, then
-RCAS sharpening at the display size); the game's interfaces are drawn at the display size after it. A height, not a
-factor: a display that is not taller renders natively, so a 720-line phone (and a 1080-line one on Высокая) is not
-scaled for nothing.
+- `fx_gpu_profile=1`: per-view GPU timings (costs CPU on GL; off by default);
+- `fx_sea_waves_debug=1|2`: ripple slope and foam / normal tilt;
+- `fx_wet_force`: forces a rain wetness for review;
+- `fx_gloss_debug`, `fx_character_relief` (0/1/2), `fx_character_relief_strength`,
+  `fx_character_parallax_depth`, `fx_character_skin_colour`: relief and gloss review (debuggable builds);
+- `fx_light_linear`: linear-light sums (in no preset: the game's lights were tuned in gamma space).
 
-| Preset | Internal height | 3200x1440 | 2400x1080 | 1600x720 |
-| --- | --- | --- | --- | --- |
-| Низкая | 900 | 2000x900 (0.63) | 2000x900 (0.83) | native |
-| Средняя | 1000 | 2222x1000 (0.69) | 2222x1000 (0.93) | native |
-| Высокая | 1100 | 2444x1100 (0.76) | native | native |
-
-The heights never decrease from Низкая to Высокая: a higher preset never renders the scene smaller.
-
-- **Низкая**: the legacy image (no effect) at the internal height above, upscaled by EASU + RCAS only (no other pass).
-
-On every preset the post chain also draws the game's underwater screen wobble (`Render.SeaEffect`,
-`PostChain::Frame::wobble`, `fs_fx_wobble.sc`): the legacy look, which the D3D9 engine's dead post-process chain
-never showed on this port.
-- **Средняя**: faint bloom on the brightest highlights, MSAA 4x + alpha to coverage (on the internal picture,
-  before the upscale), dither,
-  a gentle Caribbean grade, anisotropy 4, the sea's band limit and the sun's glint on it (a highlight from the bumped
-  normal along the game's own sun road, in the sun's colour), per-pixel lighting with 4 point lights and normal
-  maps, the sky / ground ambient (sky-tinted from above, warmer from below, averaging to the game's flat ambient), sun shadows (low), the ambient-occlusion volume of interiors, the AgX tone curve on the luminance
-  (strength 0.6), the grade of the place and hour (hue and warmth only), aerial perspective and height fog, rim light,
-  sunlight through the sails (a warm term on sails and flags with the sun behind them, scaled by the luminance of the
-  canvas texture, the sun's visibility taken on the sail's sunlit side), waves from objects (`fx_sea_waves`,
-  `fx_sea_waves_lift`): a wave-equation ripple field of 128 m around the camera stirred by swimmers, waders and hulls
-  along their real waterline (`SeaWaves`; a ship's wake is what its hull leaves in the field, stepped in game time,
-  so accelerated time runs it faster within the WaveClock frame budget) in the sea's normals, Fresnel, crest foam and vertices
-  (`shaders/include/sea_waves.sh`); the foam is the game's own foam texture (pena.tga) thresholded by the foam
-  amount. The lift needs vertex texture fetch (GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS; switched off loudly
-  without it); the state uses RG32F where supported, otherwise packed RGBA8 (never RG16F: the small height
-  differences lose precision). The surface independently uses RGBA16F where supported, otherwise RGBA8 (logged). `fx_sea_waves_debug=1` shows the ripple slope red, crest foam blue; `=2` the
-  tilt the waves add to the sea's normal (x red, z blue, flat = grey); wet surfaces in the rain (outdoors: darker,
-  glossier, reflecting the sky and the lamps, dry under roofs; `fx_wet_surfaces`).
-- **Высокая**: as Средняя with anisotropy 8, soft sea edges, specular, 8 point
-  lights, soft sun shadows and ambient occlusion, the sun glare (replacing the game's sun glow and flare sprites)
-  sun shafts and puddles in the hollows of the relief in the rain.
-
-Where MSAA is unavailable (no multisampled targets, a GPU-family profile, a failed self-test) `ConstrainSettings`
-replaces it with SMAA 1x (logged "MSAA unavailable: SMAA instead"; without the post chain or R8/RG8 textures there
-is no anti-aliasing, logged too). MSAA stays the anti-aliasing where it exists: it resolves the sub-pixel rigging,
-masts and alpha-tested foliage that a post filter cannot recover, and costs little on tile GPUs.
-
-The internal height (`Settings::render_height`, option `fx_render_height`, `fx::RenderScale()`; never below half
-the display, FSR 1's range) applies to 3D frames: the shim
-(`src/shim/device.cpp`) draws them into internal-size scene stores while the game keeps addressing display pixels
-(viewports, scissors, `GetDesc`), the post chain runs at the internal size (ambient occlusion, bloom, grade, SMAA;
-the sea's soft edges draw into the internal scene) and EASU writes the display-size picture the
-interfaces then draw on; its last full-screen pass at the display size (RCAS, or EASU without sharpening) writes the
-scene's depth there too (`PostChain::Frame::scene_depth`), for the 3D the game draws after the scene boundary (ship
-foam, particles, the ship pointer). Frames without 3D (menus, loading screens) are drawn at the display size; the change is
-logged as "effects: render scale ...: the 3D scene at WxH (internal height H), upscaled by FSR 1 to WxH" (or "the 3D
-scene at the display size"). Without post effects the chain is EASU + RCAS alone. RCAS runs only after an upscale. With `fx_gpu_profile=1` the
-profile line gives `scene=`/`display=` sizes and `gpu_smaa_ms`, `gpu_easu_ms`, `gpu_rcas_ms`. `fx_gpu_profile` is a measurement
-option, off by default: it times every view with GPU timer queries (BGFX_DEBUG_PROFILER), which costs CPU in the GL
-backend (on the x86_64 emulator about 40 ms more GL submit per frame in a town); without it bgfx times only the whole
-frame (`gpu_ms` in RenderMetrics). The GPU self-test of
-a settings switch runs the chain with an upscale when the settings have an internal height.
-
-Implemented but in no preset (option only): linear-light sums (`fx_light_linear`). The game's lights and its
-baked colours were tuned to add in gamma space; summed in linear light, models lit by several terms (the room light
-and the lamps of an interior, the vertex lights and the ambient) come out darker than the bake around them. Wind sway (`fx_wind.sh`)
-is not wired into the game. `Shadows::CasterProgram`,
-`Sky::BindAerial/BindWind` are used by `tools/fx-preview` only. The flash lights (`FlashLights`) light shots and
-explosions in the game on Средняя (4 at once) and Высокая (8), option `fx_flash_lights`; «Низкая» keeps the game's
-own D3D cannon light on the ships.
-
-## Layout
-
-| Path | Contents |
-| --- | --- |
-| `include/storm/fx/settings.hpp` | `Settings`, presets «Низкая / Средняя / Высокая», grades «Оригинал / Карибы / Пасмурно», `ConstrainSettings` |
-| `include/storm/fx/post_chain.hpp` | `PostChain`: scene colour → target |
-| `include/storm/fx/sea_depth.hpp` | `SeaDepth`: the scene distance behind the game's sea, for its soft edges and turbidity; read from the sea's backdrop (`src/effects/world.cpp`: what the scene draws before the sea, drawn again depth-only into a single-sample target in views ahead of the scene; the first frame of a sea has hard edges) |
-| `include/storm/fx/sea_waves.hpp`, `wave_clock.hpp` | `SeaWaves`: the ripple simulation around the camera (its sea shader side: `shaders/include/sea_waves.sh` of the renderer) |
-| `include/storm/fx/sky.hpp` | `Sky`: the atmosphere state of the weather (grade of the place and hour, hemisphere ambient, aerial perspective); the sky itself is the game's on every preset |
-| `include/storm/fx/lighting.hpp`, `shaders/include/fx_lighting.sh` | lighting flags and uniforms for the fixed-function emulator |
-| `include/storm/fx/light_set.hpp` | point / spot lights: selection per draw call, flash lights |
-| `include/storm/fx/relief_model.hpp`, `relief_store.hpp` | PBRify's normal and height models' input, crop, axes and mips (run by src/libs/relief); the relief directory's files and keys |
-| `include/storm/fx/gloss_map.hpp` | gloss from PBRify's roughness network (class from the path rules; GGX-to-Blinn power, grooves, dark texels, metal mask, class caps) that shapes the sun's and the lamps' highlights |
-| `include/storm/fx/parallax_trust.hpp`, `parallax_exclusions.hpp` | where the relief's height can be trusted with the parallax (a per-texel mask made with the relief: windows and glass out), and the shipped and user exclusion lists |
-| `include/storm/fx/upscale.hpp` | the neural ×2 textures (PBRify's 4x upscaler boxed to ×2, made by src/libs/relief): which textures, their cache files, the GPU budget from the RAM and the choice of the resident ones by distance |
-| `include/storm/fx/height_map.hpp` | the relief's material texture: PBRify's height (normalised per atlas region) for the parallax and the cavity, the gloss beside it |
-| `include/storm/fx/normal_map.hpp` | normal maps of the grey "bump" heights; the path/name rules table that gives each texture its relief class |
-| `include/storm/fx/shadows.hpp` | `Shadows`: the sun's shadow maps, two layers of one array: the still geometry (drawn when `SunLayerTracker` asks) and the moving casters (every frame that has any) |
-| `include/storm/fx/sun_relight.hpp` | `SunRelight`: the place's sun map and the GPU compose of the towns' light ratio maps (the hour's sun over the bake's, multiplied into the game's own lightmaps by the lightmapped draws) |
-| `include/storm/fx/wetness.hpp` | the rain's wetness outdoors: rise and drying over time, the puddle pattern's wrapped origin (the shader: `renderer_bgfx/shaders/include/ff_wet.sh`; option `fx_wet_force` forces a wetness for review) |
-| `include/storm/fx/ao_volume.hpp` | ambient-occlusion volume of interiors: CPU bake from the static geometry, disk-cache format (the renderer side: `src/effects/ao_volume.hpp`) |
-| `shaders/include/fx_aerial.sh`, `fx_wind.sh`, `fx_coverage.sh` | aerial perspective, wind sway (not wired), alpha to coverage for the emulator |
-| `include/storm/fx/capabilities.hpp`, `log.hpp` | what the device supports; error reporting |
-| `include/storm/fx/{color_lut,noise_bake,sky_model,lighting_model,shadow_model}.hpp` | CPU side, no GPU needed (`storm_bgfx_fx_core`) |
-| `shaders/` | bgfx shader sources; `shaders.cmake` lists every compiled variant |
-| `tests/core_check.cpp` | unit checks of the CPU side |
-| `THIRD_PARTY.md` | licences |
+Parallax exclusions: the shipped list is `src/parallax_exclusions.inc`; the user file `pom_user_exclusions.txt`
+in the app's files directory takes `exclude <name>` / `include <name>` lines (written by the debug view's
+toggle). The log line `effects parallax: texture ...` says why a texture has no parallax.
 
 ## Build
 
-Built with the renderer (see above). Shaders are compiled offline with the pinned shaderc into embedded blobs, each
-variant for OpenGL ES (`STORM_FX_SHADER_PROFILE`, default `300_es`) and for Vulkan (SPIR-V); the target
-`storm_fx_shaders_all_profiles` also compiles every variant for Metal. Unit checks of the CPU side: `storm_fx_core_check`, run by
-`tests/renderer_bgfx/run.py`. Stand-alone preview of every effect: `tools/fx-preview/README.md`.
+Built with the renderer. Shaders are compiled offline with the pinned shaderc into embedded blobs for OpenGL ES
+(`STORM_FX_SHADER_PROFILE`, default `300_es`) and Vulkan (SPIR-V); `shaders/shaders.cmake` lists every variant. Unit
+checks of the CPU side (`storm_fx_core_check` and the `fx_*` ctests) run from `tests/renderer_bgfx/run.py`.
+Stand-alone preview of every effect: [tools/fx-preview](../../../../tools/fx-preview/README.md).
 
-## Use
+## Rules
 
-The game's path is `src/effects` (`effects::Host`); the API in short:
-
-```cpp
-// Once, and whenever the player changes an option: what the device cannot do is taken out explicitly.
-const fx::Support support = fx::DetectSupport({.scene_depth = ..., .msaa_depth = ..., .anisotropy = ...}); // logged once
-std::vector<std::string> changes;
-fx::Settings settings = fx::ConstrainSettings(fx::Settings::FromPreset(fx::QualityPreset::Medium), support, changes);
-for (const auto &line : changes) log(line);      // and grey the options out on the settings screen
-const fx::RendererState state = fx::RendererStateFor(settings); // MSAA, alpha to coverage, anisotropy
-
-// Per frame.
-sky.Update(weather, time, camera_height);        // every frame, also when only the lighting uses it
-if (settings.sea_soft_edges)                     // before the game's sea draws; its shader samples Texture()
-    sea_depth.Capture(capture_view, scene_depth, w, h, near, far);
-post_frame.scene_grade = fx::SceneGrade(sky.State(), overcast, interior);
-post.Submit(settings, post_frame);               // scene colour (+ depth for occlusion) -> back buffer
-
-// Per lit draw call of the fixed-function emulator (its program chosen by src/effects/lighting.cpp):
-lighting.Apply(fx::ComputeLighting(input, fx::LightingMaterial::Hull(), &sky.State(), settings));
-lighting.Apply(fx::PackPointLights(fx::SelectLights(lights, center, radius, fx::PointLightBudget(settings)), view));
-shadows.Bind(view, fx::SunReceiver{});          // both layers; SunReceiver::ground: the moving casters only
-```
-
-## No silent fallbacks
-
-The package never swaps an effect for a lesser one behind the caller's back. `ConstrainSettings()` is the
-only place where a request is lowered, it happens before rendering, and every change comes back as a line of
-text. A call that still cannot be honoured (soft sea edges or ambient occlusion
-without a depth texture, a missing device feature) is refused or left out and reported once through
-`fx/log.hpp` at `LogLevel::Error`; `tools/fx-preview` fails on any such report. Two limits are part of the
-design and are reported, not hidden: the per-draw light budget (`Lighting::TakeDroppedLights()`) and sun
-shadows fading out as the sun reaches the horizon.
-
-All colour targets are gamma-encoded RGBA8, like the legacy pipeline; no float render targets are required.
-After a lost context call `OnDeviceLost()` on each object; resources are re-created on the next use.
-Stage 15 belongs to the shadow map, stage 14 to the derived normal map and, in the sea's own pixel shader, to `SeaDepth::Texture()` (above the
-fixed-function emulator's units).
-
-Normal maps come from the player's own textures, on the device; never ship or commit them. Which textures get one is
-the ordered rules table of `ClassifyTextureName`: every surface (the owner: the parallax wherever it can work) — stone,
-wood, building atlases, plaster, ground, sand and cloth, metal, and as props whatever no rule names; nothing where it
-cannot work or would be wrong (characters, which have their own path; sails and flags, rigging and nets, foliage,
-water, glass, sky, UI, effects, light maps). Colour textures get
-PBRify's normals as the model gives them (`relief_model.hpp`, the owner's choice), made by src/libs/relief; grey "bump"
-textures get `DeriveNormalMap` of their heights, in the game. Both live in the relief directory (`relief_store.hpp`) as EAC RG11 with
-mips: 1 byte per texel plus a third (a 512² map 0.35 MB; prepared maps are 512, fx::kReliefMapSize; Settings::normal_map_size caps the resident
-size).
-
-Gloss maps (`gloss_map.hpp`, Settings::gloss, «Средняя» and «Высокая») come from the same textures the same way:
-which textures get one and which are metal is the path's class (`ClassifyGlossName`; characters none); the gloss itself
-is PBRify's roughness network (the owner's choice), run with the relief's networks by src/libs/relief at 256², its GGX
-roughness turned into the highlight's Blinn-Phong power, darkened in the height's grooves and on dark non-metal texels,
-at least half a gloss on the texels that read as metal by their colour (`GlossMetalMask`: not rust, not the carriages'
-wood), capped on cloth, ground and plaster (0.1) and stone (0.35). A texture without a relief height has its own gloss
-map in the relief directory: EAC RG11 with mips (256², 87 KB), R the metal mask (the highlight's tint), G the gloss. The lit and baked programs with FX_LIGHT_SPECULAR read them at stage 7
-(fx_lighting.sh `fxGlossSpec`: energy-kept Blinn-Phong, power 8..181, reflectance gloss^2.5 / 2): the sun's highlight on
-lit and on baked surfaces outdoors (where the bake shows the open sun), the lamps' highlights with their shadows.
-Every relief map also holds the relief's material texture (`height_map.hpp`): R PBRify's height for the parallax and the cavity, G the gloss (so these textures
-have no gloss map of their own), EAC RG11 with the same mips in the same file (a 512² material 0.35 MB). With Settings::parallax (Высокая: occlusion, 8..24 steps by view angle;
-Средняя: one-tap offset mapping) the lit and baked draws with relief take the FX_LIGHT_PARALLAX variants: the material
-at stage 7 (`kMaterialStage`, `s_fxMaterial`, the unit the gloss reads), the relief stage's texture (stage 0's colour, or
-stage 1's grey height texture with its own heights; stage 0's gloss then yields unit 7, counted) and the normal map read
-where the eye's ray meets the relief (`fx_lighting.sh` fxParallax), fading out between 10 and 15 m.
-The height is normalised per atlas region (`height_map.hpp`), each class has its
-own depth (`ReliefDepthTexels`: stone 6 texels of the 512 map, building atlases 4, the grey height maps 1.5, plaster 1.25,
-wood 1, props 0.75, metal 0.375; a depth in texels is proportional to the texel's
-size in the world). `ReliefParallaxMaxDepth` keeps stone and building atlases between 1 and 5 cm; other classes keep
-the previous 5 mm to `kParallaxMaxDepth` 2.5 cm range. Raising the masonry texel depth alone would leave large wall
-atlases at the old cap. Only
-masonry takes the parallax by default (`ReliefTakesParallax`: stone and the house atlases); wood, furniture, props,
-plaster ground and metal keep normals and cavity only, the shipped list names the exceptions. The depth fades out towards
-grazing views (N.V 0.08..0.35) and
-the rest of the shift is held to twice the depth, and clamp-addressed textures have none (the
-reads would run off their edge). On Высокая the relief also shadows itself towards the sun (fxParallaxShadow, six taps
-of the height; not indoors): the lit draws' sun term, half of the baked colours.
-The same height gives the relief's cavity on Высокая and Средняя (fxReliefCavity: the height against itself two and a
-half levels coarser, one more tap): joints, gaps and recesses take the ambient in full, half of the direct light,
-three quarters of the baked colours; it also draws where the parallax is off or clamped.
-Character relief is separate from masonry: Medium uses normals, High adds shallow 2-texel parallax with eight steps
-and no self-shadow, at half normal strength. Head, neck and hand bone weights suppress relief on skin and hair;
-torso and arm texels use their own atlas's face/hand skin reference (`skin_tone.hpp`). With no usable reference,
-those torso/arm weights conservatively suppress relief too, including on separate clothing atlases. Debuggable
-builds expose `fx_character_relief` (0/1/2), `fx_character_relief_strength` (0..100),
-`fx_character_parallax_depth` (0..1000; 100 is the default two texels), `fx_character_skin_colour` (1 by default)
-and `fx_gloss_debug=5` (red skin mask, green relief). Character maps are generated on demand for loaded textures;
-fresh player distance leads the queue, with projected size (characters weighted threefold) breaking equal distances.
-Where the height cannot be trusted (windows, glass: `parallax_trust.hpp`) the relief generation puts it at the top, by a
-per-texel mask, so the parallax shifts nothing there; normals and, where the height is trusted, the cavity stay. A texture
-with fewer trusted texels than `kParallaxMinCoverage` (35 %), or one on the shipped list (`src/parallax_exclusions.inc`,
-data parsed and logged at start) or excluded in the owner's user file (`pom_user_exclusions.txt` in the app's files
-directory, `exclude <name>` / `include <name>` lines, written by the debug view's toggle), draws without the parallax
-(its cavity stays). The mask, a quarter of the map's size, and the coverage are kept in the relief file (layout 4).
-The census logs each texture's parallax or the reason it has none ("effects parallax: texture ...") and a coverage
-table by class and reason ("effects parallax coverage, ..."), the textures drawn in the last 300 frames.
+- No silent fallbacks: `ConstrainSettings()` is the only place a request is lowered, before rendering, and every
+  change comes back as a line of text. A call that still cannot be honoured is refused and reported once through
+  `fx/log.hpp` at `LogLevel::Error`; `tools/fx-preview` fails on any such report.
+- After a lost context call `OnDeviceLost()` on each object; resources are re-created on the next use.
+- Stage 15 belongs to the shadow map, stage 14 to the derived normal map (and `SeaDepth::Texture()` in the sea
+  shader), stage 7 to the gloss / relief material.
+- Normal, height and gloss maps are made on the device from the player's own textures (src/libs/relief); never ship
+  or commit them.

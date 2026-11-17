@@ -1,6 +1,6 @@
 # The PBRify models of the relief maps
 
-Not in the repository (the owner's rule): the build makes them. The game runs ncnn graphs (fp16 weights) of
+Not in the repository: the build makes them. The game runs ncnn graphs (fp16 weights) of
 Kim2091/PBRify_Remix's SPAN models (CC0-1.0), the same files on the GPU and on the CPU (`../backend.hpp`):
 
 | Graph | Made of | `.bin` sha256 (the `.param` pins are in `../CMakeLists.txt`) |
@@ -37,17 +37,6 @@ To change a model or the tools: edit the script or its requirements, make the fi
 requirements, then `<script> --sources <dir> --output <dir>`), and update the sha256 pins in `../CMakeLists.txt` and
 `fx::kRelief*ModelDigest` / `fx::kUpscaleModelDigest`.
 
-## Accuracy
-
-The fp16 graphs against the float models (onnxruntime fp32) on 10 TEHO textures at 512 px, inner area: on the CPU
-(fp16 weights, fp32 arithmetic) 84..87 dB, mean normal error 0.01 degrees; on the GPU (fp16 storage and arithmetic)
-normal 57 dB / 0.19 degrees, height and roughness alike, x4 63 dB. The int8 models the CPU ran before: normal 40 dB /
-1.77 degrees, height 45 dB, roughness 44 dB, x4 38 dB. The fp16 graphs against the float models: 58 dB on a brick
-pattern. ncnn on the CPU against ncnn on the GPU: 57..62 dB
-on 8 TEHO textures at 512 px (only their arithmetic differs). Until 2026-11 the CPU ran int8 quantisations of the same
-models through onnxruntime; ncnn's graphs against them: 35..47 dB (the int8 models' own error; side by side the
-difference is grain, no structure).
-
 ## The upscaler
 
 `pbrify-upscale.ncnn.param` (sha256 `2cbb837676788bcb187766e8e47f35cb312f1e63ca341a09a84ab02b1c90ebdd`) and
@@ -59,8 +48,7 @@ and the file pinned by sha256): exported with spandrel, converted by pnnx (fp16 
 Unlike the relief models, these bytes depend on the CPU: GitHub's AVX2 runners make another ncnn `.bin` than the
 AVX-512 reference machine that made the pins. So the build does not make them: it fetches the reference machine's files
 by sha256 from the engine's GitHub release `models-upscale-v1` (CC0-1.0, noted there), one `storm_fetch_declare` per
-file (offline, `FETCHCONTENT_SOURCE_DIR_STORM_PBRIFY_UPSCALE_{PARAM,BIN}` name folders with the files; the release's
-int8 file is no longer used). The host target `storm_upscale_model_check` makes them again with the script, as a
+file (offline, `FETCHCONTENT_SOURCE_DIR_STORM_PBRIFY_UPSCALE_{PARAM,BIN}` name folders with the files). The host target `storm_upscale_model_check` makes them again with the script, as a
 `storm_derived_files` (`STORM_DEPS_CACHE/derived/storm_upscale_model-<digest>`; delete that folder to make them again
 for the same inputs), and fails unless every file matches its pin. To change the model: edit the script or its
 requirements, build `storm_upscale_model_check` on the reference machine with the new pins, publish the files as a new

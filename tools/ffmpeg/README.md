@@ -13,7 +13,7 @@ by every build directory and worktree pointing at the same cache. The default ca
 `<prepared sources>/../ffmpeg-cache` (e.g. `build/android-ci/ffmpeg-cache`); override with
 `-DSTORM_FFMPEG_CACHE=`. A lock file serialises concurrent builds of one target. Compiles go
 through `tools/ccache/launcher` (not part of the key; a missing ccache fails the build, see
-`tools/ccache/README.md`). A cold build takes about two minutes per target on the development host.
+`tools/ccache/README.md`).
 
 ## Licence
 
@@ -60,14 +60,3 @@ hosts, so the x86 SIMD paths are off).
 
 `host` adds `--disable-x86asm` (no nasm on the development hosts; the host build only serves
 tests and the desktop development build).
-
-## Size (arm64-v8a, stripped by `make install`)
-
-| library | bytes |
-| --- | --- |
-| libavcodec.so | 2,834,608 |
-| libswscale.so | 1,152,744 |
-| libavutil.so | 722,240 |
-| libavformat.so | 333,408 |
-| libswresample.so | 97,112 |
-| total | 5,140,112 |
