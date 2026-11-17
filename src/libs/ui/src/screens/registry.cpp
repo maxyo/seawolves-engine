@@ -34,6 +34,7 @@ std::unique_ptr<Screen> CreateSailEmblemScreen();
 std::unique_ptr<Screen> CreateGameOverScreen();
 std::unique_ptr<StateConsumer> CreateGameOverConsumer();
 std::unique_ptr<StateConsumer> CreateLoadFailureConsumer();
+std::unique_ptr<StateConsumer> CreateSaveFailureConsumer();
 std::unique_ptr<StateConsumer> CreateTitleIntentConsumer();
 std::unique_ptr<Screen> CreateNationsScreen();
 std::unique_ptr<Screen> CreateHeroScreen();
@@ -133,6 +134,7 @@ std::vector<std::unique_ptr<StateConsumer>> CreateStateConsumers()
     consumers.push_back(CreateRenderCapsConsumer());
     consumers.push_back(CreateGameOverConsumer());
     consumers.push_back(CreateLoadFailureConsumer());
+    consumers.push_back(CreateSaveFailureConsumer());
     consumers.push_back(CreateTitleIntentConsumer());
     consumers.push_back(CreateLauncherConsumer());
     hud::AddStateConsumers(consumers); // gameplay, combat, vitals, worldInfo, contextAction, reloadPlace, landCommands, ship, seaOrders, seaQuickAction, presentation, spyglass

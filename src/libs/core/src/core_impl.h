@@ -9,6 +9,9 @@
 #include "timer.h"
 #include "vma.hpp"
 
+#include <optional>
+#include <string>
+
 #define ENGINE_SCRIPT_VERSION 54128
 
 class CoreImpl final : public CorePrivate
@@ -36,6 +39,9 @@ class CoreImpl final : public CorePrivate
     void ProcessRealize();
     void ProcessStateLoading();
     void ReportFailedLoad();
+    // A save that could not be written (SaveState) is told one frame later: after a background
+    // autosave that is the first frame back in the foreground.
+    void ReportFailedSave();
     void ProcessRunStart(uint32_t section_code);
     void ProcessRunEnd(uint32_t section_code);
 
@@ -175,6 +181,13 @@ private:
     SERVICES_LIST Services_List; // list for subsequent calls RunStart/RunEnd service functions
 
     char *State_file_name;
+
+    struct SaveFailure
+    {
+        std::string record, reason;
+        bool space = false; // the storage is full
+    };
+    std::optional<SaveFailure> save_failure_;
 
     float fTimeScale;
 };

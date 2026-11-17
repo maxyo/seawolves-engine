@@ -251,6 +251,7 @@ bool CoreImpl::Run()
         const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Load);
         ProcessStateLoading();
         ReportFailedLoad();
+        ReportFailedSave();
     }
     // A scene the scripts opened this frame without the loading screen, so without the ReloadProgressEnd that runs
     // the stock loading transaction (a quest's sea login: SeaLogin alone; the sea's Tele reload): prepared here by the
@@ -824,6 +825,7 @@ bool CoreImpl::SaveState(const char *file_name)
     if (!Compiler->SaveState(image))
     {
         storm::save::trash().rollback(); // nothing was written: undo the slot delete that preceded this save
+        save_failure_ = SaveFailure{name, "the script state could not be serialized"};
         return false;
     }
 
@@ -841,6 +843,12 @@ bool CoreImpl::SaveState(const char *file_name)
         spdlog::error("Cannot save '{}' (resolved '{}'): {}; the previous save, if any, is unchanged", name,
                       path.string(), error);
         storm::save::trash().rollback();
+        std::error_code ec;
+        const auto space = std::filesystem::space(path.parent_path().empty() ? std::filesystem::path(".") : path.parent_path(), ec);
+        const bool full = error.find(std::generic_category().message(ENOSPC)) != std::string::npos ||
+                          error.find(std::generic_category().message(EDQUOT)) != std::string::npos ||
+                          (!ec && space.available < image.size());
+        save_failure_ = SaveFailure{name, error, full};
         return false;
     }
 
@@ -981,6 +989,27 @@ void CoreImpl::ReportFailedLoad()
         return out + '"';
     };
     storm::android::publishUiState("loadFailure", "{\"record\":" + quoted(failure->record) + ",\"reason\":" + quoted(failure->reason) + "}");
+#endif
+}
+
+// Said in the log, the scripts told (AndroidSaveFailed(record, reason): app script
+// interface/android_save_failure.c brings the save screen back after a save of the player) and
+// the UI tells the player (channel "saveFailure" {record, reason, space}, once: null follows).
+void CoreImpl::ReportFailedSave()
+{
+    if (!save_failure_)
+        return;
+    const SaveFailure failure = std::move(*save_failure_);
+    save_failure_.reset();
+    spdlog::error("SAVE FAILED: record '{}': {}{}", failure.record, failure.reason, failure.space ? " (the storage is full)" : "");
+    if (!Compiler->HasActiveEventHandler("AndroidSaveFailed", "AndroidSaveFailed"))
+        spdlog::error("SAVE FAILED: no script handles AndroidSaveFailed");
+    Core::Event("AndroidSaveFailed", "ss", failure.record.c_str(), failure.reason.c_str());
+#ifdef __ANDROID__
+    storm::android::publishUiState("saveFailure", "{\"record\":" + storm::android::uiJsonText(failure.record) +
+                                                      ",\"reason\":" + storm::android::uiJsonText(failure.reason) +
+                                                      ",\"space\":" + (failure.space ? "true" : "false") + "}");
+    storm::android::publishUiState("saveFailure", "null");
 #endif
 }
 

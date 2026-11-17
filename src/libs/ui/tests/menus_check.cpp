@@ -793,6 +793,24 @@ static void LoadFailure()
     Expect(surface.alerts.size() == 1 && surface.errors.size() == 1, "a malformed failure is an error, never a quiet drop");
 }
 
+// A save that could not be written (core ReportFailedSave): the player is told, the full storage as such.
+static void SaveFailure()
+{
+    FakeSurface surface;
+    Router router(surface);
+    router.SetState("saveFailure", Json{{"record", "SAVE\\player\\Ле Франсуа"}, {"reason", "write temporary save: No space left on device"}, {"space", true}});
+    Expect(surface.alerts.size() == 1 && surface.alerts.front() == "<save.save_failed_space>" && surface.errors.empty(),
+           "a save of the player on a full storage: the alert says the storage is full");
+    router.SetState("saveFailure", nullptr);
+    Expect(surface.alerts.size() == 1 && surface.errors.empty(), "null says nothing");
+    router.SetState("saveFailure", Json{{"record", "SAVE\\player\\Ле Франсуа"}, {"reason", "replace save: Permission denied"}, {"space", false}});
+    Expect(surface.alerts.size() == 2 && surface.alerts.back() == "<save.save_failed>: Ле Франсуа", "another failure names the record");
+    router.SetState("saveFailure", Json{{"record", "SAVE\\player\\Автосохранение 2"}, {"reason", "write temporary save: No space left on device"}, {"space", true}});
+    Expect(surface.alerts.size() == 3 && surface.alerts.back() == "<save.autosave_failed_space>", "an autosave says it is the autosave");
+    router.SetState("saveFailure", Json{{"record", "SAVE\\player\\x"}, {"reason", "?"}});
+    Expect(surface.alerts.size() == 3 && surface.errors.size() == 1, "a malformed failure is an error, never a quiet drop");
+}
+
 int main(int argc, char **argv)
 {
     const std::string models = argc > 1 ? argv[1] : "tests/models";
@@ -806,6 +824,7 @@ int main(int argc, char **argv)
     GameOver(models);
     QuickSave(models);
     LoadFailure();
+    SaveFailure();
     Saves(models);
     Autosaves(models);
     Settings(models);

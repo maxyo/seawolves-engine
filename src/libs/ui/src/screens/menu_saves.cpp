@@ -404,6 +404,38 @@ class LoadFailureConsumer final : public StateConsumer
     }
 };
 
+// Channel "saveFailure" {record, reason, space}: a save could not be written (core
+// CoreImpl::ReportFailedSave, one frame after it: a background autosave is told back in the
+// foreground). The previous record is unchanged. The scripts bring the save screen back after a
+// save of the player; the player is told here, the full storage said as such.
+class SaveFailureConsumer final : public StateConsumer
+{
+  public:
+    const char *Channel() const override
+    {
+        return "saveFailure";
+    }
+    void OnState(const Json &state, Router &router) override
+    {
+        if (state.is_null())
+            return;
+        if (!state.is_object() || !state.contains("record") || !state["record"].is_string() || !state.contains("reason") ||
+            !state["reason"].is_string() || !state.contains("space") || !state["space"].is_boolean())
+        {
+            router.ReportError("state channel saveFailure: expected {record, reason, space}, got " + state.dump());
+            return;
+        }
+        const std::string record = state["record"].get<std::string>();
+        const size_t slash = record.find_last_of("\\/");
+        const std::string file = slash == std::string::npos ? record : record.substr(slash + 1);
+        const bool space = state["space"].get<bool>();
+        if (IsAutosave(file))
+            router.Alert(space ? StringKey("save.autosave_failed_space") : StringKey("save.autosave_failed"), "");
+        else
+            router.Alert(space ? StringKey("save.save_failed_space") : StringKey("save.save_failed"), space ? "" : file);
+    }
+};
+
 } // namespace
 
 std::unique_ptr<Screen> CreateSavesScreen()
@@ -414,6 +446,11 @@ std::unique_ptr<Screen> CreateSavesScreen()
 std::unique_ptr<StateConsumer> CreateLoadFailureConsumer()
 {
     return std::make_unique<LoadFailureConsumer>();
+}
+
+std::unique_ptr<StateConsumer> CreateSaveFailureConsumer()
+{
+    return std::make_unique<SaveFailureConsumer>();
 }
 
 } // namespace storm::ui::screens

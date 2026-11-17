@@ -115,6 +115,7 @@
     "AndroidLoadFailed": [],
     "AndroidNationFlags": [],
     "AndroidOpenScreen": ["character", "ship", "journal", "items"],
+    "AndroidSaveFailed": [],
     "AndroidSaveIdentity": []
   },
   "jni": {

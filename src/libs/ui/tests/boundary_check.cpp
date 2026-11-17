@@ -277,7 +277,7 @@ static void CheckConsumers()
     Router router(surface, kScreens);
     throw_in_build = false;
     router.SetInterface(Model(1, 1));
-    for (const char *channel : {"gameOver", "dialogue", "launcher", "titleIntent", "loadFailure", "appSettings", "gameplay", "ship", "worldMap"})
+    for (const char *channel : {"gameOver", "dialogue", "launcher", "titleIntent", "loadFailure", "saveFailure", "appSettings", "gameplay", "ship", "worldMap"})
     {
         router.SetState(channel, Json::array({1, "two", nullptr}));
         router.SetState(channel, Json("not an object"));
