@@ -129,7 +129,7 @@ add_dependencies(storm_relief_model_files storm_relief_ncnn_models)
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/ncnn.cmake")
 
-add_library(storm_relief_core STATIC prepare.cpp relief.hpp backend.cpp backend.hpp upscale.cpp upscale.hpp)
+add_library(storm_relief_core STATIC prepare.cpp relief.hpp tx_file.cpp tx_file.hpp backend.cpp backend.hpp upscale.cpp upscale.hpp)
 target_compile_features(storm_relief_core PUBLIC cxx_std_20)
 target_include_directories(storm_relief_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(storm_relief_core PUBLIC storm_bgfx_fx_core storm_texture_core PRIVATE ncnn)
@@ -148,6 +148,9 @@ if(NOT ANDROID)
     # The finalization alone (finalizer.hpp) on synthetic planes: real encoders, writers and CPU admission, no models.
     add_executable(storm_relief_finalizer_check tests/finalizer_check.cpp)
     target_link_libraries(storm_relief_finalizer_check PRIVATE storm_relief_core)
+    # The .tx reader (tx_file.hpp) on synthetic files: the levels it reads, and damaged files refused.
+    add_executable(storm_relief_tx_check tests/tx_file_check.cpp)
+    target_link_libraries(storm_relief_tx_check PRIVATE storm_relief_core)
     add_executable(storm_relief_check tests/relief_check.cpp)
     target_link_libraries(storm_relief_check PRIVATE storm_relief_core)
     add_dependencies(storm_relief_check storm_relief_model_files)

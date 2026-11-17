@@ -5,6 +5,7 @@
 
 #include "backend.hpp"
 #include "device_retry.hpp"
+#include "tx_file.hpp"
 
 #include "formats.hpp"
 #include "eac_encoder.hpp"
@@ -61,99 +62,11 @@ void Log(const char *format, ...)
 namespace
 {
 using Clock = std::chrono::steady_clock;
-constexpr uint32_t kTxFlagPalette = 1, kTxFlagCubemap = 2;
 
 double Seconds(Clock::time_point since)
 {
     return std::chrono::duration<double>(Clock::now() - since).count();
 }
-
-// A game texture file: the header of the .tx format and its levels in the order the renderer reads them (each level a
-// quarter of the one above). Only the levels from `first` on are read: a key needs the small probe level alone, and
-// reading whole files made the game's first pass over 1376 textures take 88 s on an emulator.
-struct TxFile
-{
-    uint32_t flags = 0, width = 0, height = 0, levels = 0, format = 0, top_bytes = 0;
-    bool unsupported_cube = false; // A completely readable, structurally valid cube has no relief key.
-    int first = 0;             // the first level in `data`
-    std::vector<uint8_t> data; // levels first .. levels - 1
-
-    // The header alone.
-    bool Header(std::ifstream &in)
-    {
-        unsupported_cube = false;
-        int32_t header[6];
-        if (!in.read(reinterpret_cast<char *>(header), sizeof(header)))
-            return false;
-        flags = static_cast<uint32_t>(header[0]);
-        width = static_cast<uint32_t>(header[1]);
-        height = static_cast<uint32_t>(header[2]);
-        levels = static_cast<uint32_t>(header[3]);
-        format = static_cast<uint32_t>(header[4]);
-        top_bytes = static_cast<uint32_t>(header[5]);
-        if (!texture::tx_format_known(format) || width == 0 || height == 0 || width > 8192 || height > 8192 ||
-            levels == 0 || top_bytes != texture::d3d_level_bytes(format, width, height))
-            return false;
-        if (flags == kTxFlagCubemap)
-        {
-            // Stock Ammo/EnvAmmo is classified as metal, but its cube layout is intentionally unsupported.
-            // Distinguish that from a failed read only after validating all six faces' payload extent.
-            uint32_t max_levels = 1;
-            for (uint32_t side = width; side > 1; side >>= 1) ++max_levels;
-            if (width != height || levels > max_levels)
-                return false;
-            size_t face_bytes = 0;
-            for (uint32_t level = 0; level < levels; ++level)
-                face_bytes += texture::d3d_level_bytes(format, std::max(1u, width >> level),
-                                                       std::max(1u, height >> level));
-            in.seekg(0, std::ios::end);
-            const auto end = in.tellg();
-            unsupported_cube = in.good() && end >= std::streamoff(24 + 6 * face_bytes);
-            return false;
-        }
-        return !(flags & (kTxFlagPalette | kTxFlagCubemap));
-    }
-    // The header and the levels from the one `choose` picks (given the header) on.
-    template <typename Choose> bool Load(const std::filesystem::path &path, Choose &&choose)
-    {
-        std::ifstream in(path, std::ios::binary);
-        if (!Header(in))
-            return false;
-        first = std::clamp(choose(*this), 0, static_cast<int>(levels) - 1);
-        in.seekg(static_cast<std::streamoff>(24 + Offset(first)));
-        data.assign(std::istreambuf_iterator<char>(in), {});
-        return !data.empty();
-    }
-    // The levels from the probe level on (the key, the grey test).
-    bool LoadProbe(const std::filesystem::path &path)
-    {
-        return Load(path, [](const TxFile &tx) { return std::max(ProbeLevel(tx), 0); });
-    }
-    static int ProbeLevel(const TxFile &tx)
-    {
-        return fx::ReliefProbeLevel(static_cast<int>(tx.width), static_cast<int>(tx.height), static_cast<int>(tx.levels));
-    }
-    size_t Offset(int level) const
-    {
-        size_t offset = 0, size = top_bytes;
-        for (int l = 0; l < level; ++l)
-        {
-            offset += size;
-            size /= 4;
-        }
-        return offset;
-    }
-    // Level `level` (at least `first`).
-    std::span<const uint8_t> Level(int level) const
-    {
-        if (level < first)
-            return {};
-        const size_t offset = Offset(level) - Offset(first), size = static_cast<size_t>(top_bytes) >> (2 * level);
-        if (offset + size > data.size())
-            return {};
-        return {data.data() + offset, size};
-    }
-};
 
 struct Candidate
 {
@@ -339,35 +252,20 @@ long long PeakRssKb()
 
 bool ReadTextureLevel(const std::filesystem::path &file, int max_size, std::vector<uint8_t> &rgba, int &width, int &height)
 {
-    // Only the header and the one level are read (a game file holds every level: up to 4/3 of its top level).
-    std::ifstream in(file, std::ios::binary);
-    int32_t header[6];
-    if (!in.read(reinterpret_cast<char *>(header), sizeof(header)))
+    TxFile tx;
+    if (!tx.Load(file, [max_size](const TxFile &t) {
+            int level = 0;
+            while (level + 1 < static_cast<int>(t.levels) && std::max(t.width >> level, t.height >> level) > uint32_t(max_size))
+                ++level;
+            return level;
+        }))
         return false;
-    const uint32_t flags = static_cast<uint32_t>(header[0]), w = static_cast<uint32_t>(header[1]),
-                   h = static_cast<uint32_t>(header[2]), levels = static_cast<uint32_t>(header[3]),
-                   format = static_cast<uint32_t>(header[4]), top_bytes = static_cast<uint32_t>(header[5]);
-    if ((flags & (kTxFlagPalette | kTxFlagCubemap)) || !texture::tx_format_known(format) || w == 0 || h == 0 || w > 8192 ||
-        h > 8192 || levels == 0 || top_bytes != texture::d3d_level_bytes(format, w, h))
-        return false;
-    // The levels as TxFile::Level lays them out: each a quarter of the one above.
-    uint32_t level = 0;
-    size_t offset = 0, size = top_bytes;
-    while (level + 1 < levels && std::max(w >> level, h >> level) > uint32_t(max_size))
-    {
-        offset += size;
-        size /= 4;
-        ++level;
-    }
-    const uint32_t lw = std::max(1u, w >> level), lh = std::max(1u, h >> level);
-    if (size < texture::d3d_level_bytes(format, lw, lh))
-        return false;
-    std::vector<uint8_t> bytes(size);
-    in.seekg(static_cast<std::streamoff>(sizeof(header) + offset));
-    if (!in.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(size)))
+    const uint32_t lw = std::max(1u, tx.width >> tx.first), lh = std::max(1u, tx.height >> tx.first);
+    const std::span<const uint8_t> bytes = tx.Level(tx.first);
+    if (bytes.size() < texture::d3d_level_bytes(tx.format, lw, lh))
         return false;
     rgba.assign(size_t(lw) * lh * 4, 0);
-    if (!texture::decode_rgba8(format, bytes.data(), lw, lh, rgba.data()))
+    if (!texture::decode_rgba8(tx.format, bytes.data(), lw, lh, rgba.data()))
         return false;
     width = static_cast<int>(lw);
     height = static_cast<int>(lh);
@@ -733,8 +631,16 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         return level;
     };
     // The keys from the probe level; the models' level only when a map is to be made.
-    if (!candidate || !tx.LoadProbe(file))
+    if (!candidate)
         return Outcome::Skipped;
+    if (!tx.LoadProbe(file))
+    {
+        if (!tx.unreadable)
+            return Outcome::Skipped; // not a texture the relief reads (TxFile::Error says why)
+        failure = tx.Error();
+        Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
+        return Outcome::Failed;
+    }
     const std::optional<uint64_t> key = PreparedKey(*candidate, tx, map_size, relief);
     const std::optional<uint64_t> gloss_key = GlossKey(*candidate, tx);
     if (!key && !gloss_key)
@@ -748,7 +654,11 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         failure = "cancelled"; return Outcome::Failed;
     }
     if (!tx.Load(file, source_level))
-        return Outcome::Skipped;
+    {
+        failure = tx.Error(); // its probe read a moment ago: the file changed or is damaged
+        Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
+        return Outcome::Failed;
+    }
     const double read_ms = lap();
     // The source: the first level no larger than twice the map, which the models' inputs are box-filtered down from.
     const int level = tx.first;
@@ -971,7 +881,9 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
     const std::string name = fx::NormalizeTexturePath(std::filesystem::relative(file, textures, error).generic_string());
     TxFile tx;
     // From the level the game loaded as its top (0: the file's), the probe level below it.
-    if (error || !tx.Load(file, [&source_size](const TxFile &t) {
+    if (error)
+        return Outcome::Skipped;
+    if (!tx.Load(file, [&source_size](const TxFile &t) {
             if (source_size <= 0)
                 source_size = static_cast<int>(std::max(t.width, t.height));
             int level = 0;
@@ -980,7 +892,12 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
                 ++level;
             return level;
         }))
-        return Outcome::Skipped;
+    {
+        if (!tx.unreadable)
+            return Outcome::Skipped;
+        failure = tx.Error();
+        return Outcome::Failed;
+    }
     const fx::ReliefVerdict verdict = fx::ClassifyTextureName(name);
     const fx::UpscaleTarget target =
         fx::ClassifyUpscale(name, fx::NameSuggestsHeightMap(name) ? fx::ReliefClass::HeightMap : verdict.relief, false);
