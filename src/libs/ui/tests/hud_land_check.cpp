@@ -211,7 +211,22 @@ static void CheckExplore()
     bench.Frame(0.3);
     Expect(!mount.Has("hint"), "away from the door: gone");
     bench.Set("contextAction", Json("Reload"));
-    Expect(!mount.Has("hint"), "a door the game names no place for: the button alone");
+    Expect(hint("door", "hud.context.enter", false), "a door the game names no place for: the button's own words");
+    // the prison exit (NEW-PRE-LAND2-DOOR-LABEL): a guard at the edge of the cone beside the door.
+    // The hint says what the button does at every moment; a talk hint never holds over the door button.
+    talk["interactName"] = "Эдмон Симон";
+    bench.Set("combat", talk);
+    Expect(mount.shown.elements["context"]["icon"] == "talk" && hint("talk", "hud.context.talk: Эдмон Симон", false),
+           "the guard in front: the talk button and its hint");
+    bench.Set("combat", State("combat-explore"));
+    Expect(mount.shown.elements["context"]["icon"] == "door" && hint("door", "hud.context.enter", false),
+           "the guard out of the cone: the door button and the door's hint at once: " + mount.shown.elements["hint"].dump());
+    Json armed = State("combat-explore-talk");
+    armed["interactKind"] = "boarding";
+    bench.Set("combat", armed);
+    Expect(mount.shown.elements["context"]["icon"] == "grapple" && !mount.Has("hint"), "a button the hint has no words for: no hint");
+    bench.Set("combat", State("combat-explore"));
+    talk.erase("interactName");
     bench.Set("contextAction", Json(""));
     bench.Frame(1.0);
     bench.Set("contextAction", Json("Pick"));
@@ -762,7 +777,7 @@ static void CheckTouches(const std::string &pack)
 
     // The test layout (800 × 400): the move zone at 0…336 × 176…400 with the stick resting at
     // 40…140 × 270…370, inside the zone the transitions button at 250…302 × 338…390 and the log
-    // box at 150…250 × 220…250; weapon at 728…780 × 338…390, context at 716…780 × 256…320,
+    // box at 150…250 × 220…250, the hint box at 340…640 × 350…390; weapon at 728…780 × 338…390, context at 716…780 × 256…320,
     // hero at 682…730 × 10…58, vitals at 10…210 × 10…50.
     Expect(host.WantsTouch(90, 320), "the stick is the UI's");
     Expect(host.WantsTouch(750, 360) && host.WantsTouch(740, 290) && host.WantsTouch(700, 30), "buttons are the UI's");

@@ -78,6 +78,14 @@
      "propsMirrored": {}
     },
     {
+     "id": "hint",
+     "component": "c-box",
+     "rcss": "position: absolute; left: 340dp; bottom: 10dp; width: 300dp; height: 40dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; right: 340dp; bottom: 10dp; width: 300dp; height: 40dp;",
+     "propsMirrored": {}
+    },
+    {
      "id": "travel",
      "component": "c-button",
      "rcss": "position: absolute; left: 250dp; bottom: 10dp; width: 52dp; height: 52dp;",

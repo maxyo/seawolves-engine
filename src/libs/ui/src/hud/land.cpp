@@ -244,13 +244,14 @@ class LandScene final : public Scene
         }
 
         if (melee)
+        {
             BuildCombat(states, ready, view, input);
-        else
-            BuildContext(states, ready, view, input);
-        if (melee)
             DropHint(); // the combat layout has no hint (V2-Land-Combat): it does not linger into a fight
+        }
+        else if (const Context context = BuildContext(states, ready, view, input); context.button && !context.hint)
+            DropHint(); // a button the hint has no words for: a hint of what the button did before must not stay
         else
-            BuildHint(ready ? WantedHint(states) : std::nullopt, view);
+            BuildHint(context.button ? context.hint : ready ? LockedDoorHint(states) : std::nullopt, view);
     }
 
     double Tick(const States &states, double now) override
@@ -394,27 +395,43 @@ class LandScene final : public Scene
         });
     }
 
-    // --- context slot (explore) ---
+    // --- context slot (explore) and the bottom hint ---
 
-    void BuildContext(const States &states, bool ready, View &view, Input &input)
+    struct Hint
+    {
+        std::string icon, text;
+    };
+
+    // The context button and the hint that says what it does, from one place: the hint never
+    // names another target than the button acts on (a guard beside the door the button opens).
+    struct Context
+    {
+        bool button = false;
+        std::optional<Hint> hint;
+    };
+
+    Context BuildContext(const States &states, bool ready, View &view, Input &input)
     {
         if (!ready)
-            return;
+            return {};
         if (states.combat.Has("interact"))
         {
             // The engine's action key: somebody to talk to stands in front of the hero, or the game
             // waits for it to go on after a won boarding fight (it outranks the script's icon).
             const std::string &kind = states.combat.interact_kind;
             const bool talk = kind == "dialog", boarding = kind == "boarding";
-            view.elements["context"] = Json{{"icon", talk ? "talk" : boarding ? "grapple" : "hand"},
-                                            {"label", hud_.Text(talk ? "hud.context.talk" : boarding ? "hud.context.boarding" : "hud.context.action")}};
+            const std::string label = hud_.Text(talk ? "hud.context.talk" : boarding ? "hud.context.boarding" : "hud.context.action");
+            view.elements["context"] = Json{{"icon", talk ? "talk" : boarding ? "grapple" : "hand"}, {"label", label}};
             input.On("context", "click", [this](const Event &) { Strike("interact", "tap"); });
-            return;
+            if (!talk)
+                return {true, std::nullopt};
+            const std::string &name = states.combat.interact_name;
+            return {true, Hint{LandTalkIcon(states.combat.interact_dialog), name.empty() ? label : label + ": " + name}};
         }
         const std::string action = Lower(states.context_action);
         // "Talk" belongs to the engine's target query above, never to the cached script icon.
         if (action.empty() || action == "talk" || action == "nothing")
-            return;
+            return {};
         const Named *known = nullptr;
         for (const Named &entry : kContext)
             if (action == entry.key)
@@ -426,36 +443,23 @@ class LandScene final : public Scene
             hud_.Log("land HUD: context action '" + states.context_action + "' has no icon of its own");
             known = &kContext[std::size(kContext) - 1];
         }
-        view.elements["context"] = Json{{"icon", known->icon}, {"label", hud_.Text(known->label)}};
+        const std::string label = hud_.Text(known->label);
+        view.elements["context"] = Json{{"icon", known->icon}, {"label", label}};
         input.On("context", "click", [this, name = states.context_action](const Event &) { hud_.Send("context", name); });
+        // A door: where it leads (an open lock); a door, a thing or a chest the game names no
+        // place or object for: the button's own words and icon.
+        if (action == "reload" && !states.door.place.empty())
+            return {true, Hint{"unlock", Capitalized(states.door.place)}};
+        if (action == "reload" || action == "pick" || action == "openbox")
+            return {true, Hint{known->icon, label}};
+        return {true, std::nullopt};
     }
 
-    // --- the bottom hint ---
-
-    struct Hint
+    // No button: a door the game keeps closed now still says where it leads, with a closed lock.
+    static std::optional<Hint> LockedDoorHint(const States &states)
     {
-        std::string icon, text;
-    };
-
-    // What the hint names now: whom the talk button talks to, where the door ahead leads, or
-    // what the context button does to a thing or a chest.
-    std::optional<Hint> WantedHint(const States &states) const
-    {
-        if (states.combat.Has("interact") && states.combat.interact_kind == "dialog")
-        {
-            const std::string talk = hud_.Text("hud.context.talk");
-            return Hint{LandTalkIcon(states.combat.interact_dialog), states.combat.interact_name.empty() ? talk : talk + ": " + states.combat.interact_name};
-        }
-        // A door: where it leads, with an open or a closed lock as the game keeps it now.
-        if (!states.door.place.empty())
-            return Hint{states.door.locked ? "lock" : "unlock", Capitalized(states.door.place)};
-        const std::string action = Lower(states.context_action);
-        // A thing to take, a chest: the game names no object, so the hint names the action
-        // (the context button's own words and icon).
-        if (action == "pick" || action == "openbox")
-            for (const Named &entry : kContext)
-                if (action == entry.key)
-                    return Hint{entry.icon, hud_.Text(entry.label)};
+        if (states.door.locked && !states.door.place.empty())
+            return Hint{"lock", Capitalized(states.door.place)};
         return std::nullopt;
     }
 

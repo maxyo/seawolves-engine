@@ -34,6 +34,14 @@
     "safeLeft": {
      "type": "number",
      "default": 0
+    },
+    "icon": {
+     "type": "text",
+     "default": ""
+    },
+    "leaving": {
+     "type": "bool",
+     "default": false
     }
    },
    "template": "<div slot=\"1\"></div>"
