@@ -82,11 +82,15 @@ float HullProfile::HalfBeam(int side, float z, float y) const
 
 namespace
 {
+// A hull whose local up gives less world height than this (heeled past ~72 degrees, or capsized) has no waterline the
+// stations can describe; WaterHeight's steps also only converge while its local up rises at least this much.
+constexpr float kMinUp = 0.3f;
+
 // Local height at which the hull side at local (x, z) meets the sea: the sea's height under the point, brought into
 // the hull's frame along its local up (a few fixed-point steps: the sea varies slowly over a hull's beam).
 float WaterHeight(const glm::mat4 &world, SEA_BASE &sea, float x, float z, float y)
 {
-    const float up = std::max(world[1][1], 0.3f); // world y per local y
+    const float up = world[1][1]; // world y per local y, >= kMinUp (HullWaterline)
     for (int step = 0; step < 3; ++step)
     {
         const glm::vec3 p = storm::math::transformPoint(world, glm::vec3(x, y, z));
@@ -104,6 +108,8 @@ Waterline HullWaterline(const HullProfile &profile, const glm::mat4 &world, cons
         for (int r = 0; r < 4; ++r)
             if (!std::isfinite(world[c][r]))
                 return Waterline::NonFinite;
+    if (world[1][1] < kMinUp)
+        return Waterline::Dry;
     constexpr int kStations = render::EffectsWaveSource::kHullStations;
     constexpr int kScan = 48;
     // The water along the centre line, then the waterline's ends: where the hull there has any beam at that height.

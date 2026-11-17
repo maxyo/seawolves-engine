@@ -39,7 +39,7 @@ class HullProfile
 enum class Waterline
 {
     Found,
-    Dry,      // the hull is out of the water: no waterline
+    Dry,      // the hull is out of the water, or heeled past ~72 degrees (capsized): no waterline
     NonFinite // the hull's matrix or the sea's height under it is not a finite number: no waterline
 };
 
