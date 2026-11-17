@@ -628,7 +628,8 @@ void test_service(const fs::path &directory)
     CHECK(job != nullptr);
     CHECK(service.submit(layout, key, GpuFormat::Etc2Rgb8, payload) == job); // deduplicated
     parked.reset();
-    for (int i = 0; i < 500 && job->state.load() != Job::Done; ++i)
+    // On the job's progress, no deadline: one that never finishes hangs here (run.py's deadlock guard reports it).
+    while (job->state.load() != Job::Done)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     CHECK(job->state.load() == Job::Done && job->result && job->result->size == ktx_size(GpuFormat::Etc2Rgb8, output_layout(layout)));
     // the cache file is written before the job reports Done

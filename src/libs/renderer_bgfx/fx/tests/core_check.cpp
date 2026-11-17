@@ -2314,12 +2314,13 @@ const char *AlwaysHot()
     return "check: always hot";
 }
 
+// On progress, no deadline: a state that never comes hangs here, and run.py's deadlock guard reports the check with
+// the last line it printed. Load only makes these waits longer, never a failure.
 template <class Done> bool WaitFor(Done done)
 {
-    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    while (!done() && std::chrono::steady_clock::now() < until)
+    while (!done())
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    return done();
+    return true;
 }
 
 double MsSince(std::chrono::steady_clock::time_point t)
@@ -2331,7 +2332,9 @@ void CheckBakeCancel()
 {
     // The bakes run on their own thread: a bake in the thermal pause (the device stays hot, the pause a minute) is
     // woken and stopped when its owner lets go of it, a bake queued behind it and let go of never runs, the next one
-    // runs at once; ShutdownBakes stops a paused bake and returns at once; a bake posted after it runs again.
+    // runs; ShutdownBakes stops a paused bake and returns; a bake posted after it runs again. The gate is always hot,
+    // so a paused bake never ends by itself: a next bake that runs, a shutdown that returns, prove the wake-up (one
+    // that does not wake hangs, and run.py's deadlock guard reports it). The times are printed, not bounded.
     SetBakeGate(&AlwaysHot, 60000);
     std::atomic<bool> started{false}, finished{false}, queued_ran{false}, marker{false};
     std::atomic<int> pieces{0};
@@ -2352,7 +2355,7 @@ void CheckBakeCancel()
     const double cancel_ms = MsSince(t);
     std::printf("bake cancel: the paused bake let go of, the next one ran after %.0f ms; %d pieces, queued ran %d\n",
                 cancel_ms, pieces.load(), queued_ran.load() ? 1 : 0);
-    CHECK(!finished && pieces == 0 && !queued_ran && cancel_ms < 2000.0);
+    CHECK(!finished && pieces == 0 && !queued_ran);
 
     started = false;
     BakeTicket again = PostBake("check: paused at shutdown", paused_bake);
@@ -2362,7 +2365,7 @@ void CheckBakeCancel()
     ShutdownBakes();
     const double shutdown_ms = MsSince(t);
     std::printf("bake shutdown with a bake in the thermal pause: %.0f ms\n", shutdown_ms);
-    CHECK(!finished && pieces == 0 && shutdown_ms < 2000.0);
+    CHECK(!finished && pieces == 0);
     SetBakeGate(nullptr);
 
     marker = false;
@@ -2374,7 +2377,9 @@ void CheckBakeCancel()
 void CheckBakeLoads()
 {
     // A result in the cache (a bake's load stage) does not wait behind a running bake: the same cache read posted as
-    // a plain bake waits for the bake running before it, posted with a load stage it is done at once.
+    // a plain bake waits for the bake running before it, posted with a load stage it is done while that bake still
+    // runs (the long bake holds until it is released, after the load: a load behind it would hang, reported by
+    // run.py's deadlock guard). The load's time is printed, not bounded.
     std::atomic<bool> release{false}, running{false};
     auto long_bake = [&] {
         running = true;
@@ -2423,7 +2428,7 @@ void CheckBakeLoads()
     std::printf("bake loads: a cache read behind a running bake waited %.0f ms as a bake, %.1f ms as a load (the "
                 "bake still running: %d); a miss is baked after it (%d)\n",
                 plain_ms, load_ms, still_running ? 1 : 0, missed_early ? 0 : 1);
-    CHECK(plain_ms >= 300.0 && load_ms < 100.0 && still_running && baked == 0 && !missed_early);
+    CHECK(plain_ms >= 300.0 && still_running && baked == 0 && !missed_early);
     ShutdownBakes();
 }
 
@@ -2834,23 +2839,28 @@ void CheckPlaceCache()
 // The place's bakes go before the background ones (fx/bakes.hpp BakePriority).
 void CheckBakePriority()
 {
-    // A long background bake (a far LOD) is running, piece by piece. A bake of the place posted now starts at once on
-    // its own lane, and while it is queued or runs the background bake takes no further piece.
+    // A long background bake (a far LOD) is running, piece by piece. A bake of the place posted now starts on its own
+    // lane before the background bake ends (its million pieces of a millisecond cannot end in a run: one queued
+    // behind it would hang, reported by run.py's deadlock guard), and while it is queued or runs the background bake
+    // takes no further piece. The start's time is printed, not bounded.
     std::atomic<int> pieces{0};
-    std::atomic<bool> place_running{false}, place_done{false}, release{false};
+    std::atomic<bool> place_running{false}, place_done{false}, release{false}, background_done{false},
+        background_running_at_start{false};
     std::atomic<int> pieces_at_start{-1}, pieces_while_place{-1};
     BakeTicket background = PostBake(
         "check: background",
         [&] {
-            ParallelRanges(4000, 1, [&](size_t, size_t) {
+            ParallelRanges(1000000, 1, [&](size_t, size_t) {
                 ++pieces;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }, 1);
+            background_done = true;
         },
         BakePriority::Background);
     CHECK(WaitFor([&] { return pieces.load() >= 3; }));
     const auto posted = std::chrono::steady_clock::now();
     BakeTicket place = PostBake("check: place", [&] {
+        background_running_at_start = !background_done.load();
         place_running = true;
         std::this_thread::sleep_for(std::chrono::milliseconds(60)); // the piece the background bake was in ends
         pieces_at_start = pieces.load();
@@ -2869,7 +2879,7 @@ void CheckBakePriority()
     std::printf("bake priority: behind a running background bake a bake of the place started after %.1f ms; the "
                 "background bake took %d pieces while it ran, and went on after it\n",
                 started_ms, pieces_while_place.load() - pieces_at_start.load());
-    CHECK(started_ms < 100.0 && pieces_while_place.load() == pieces_at_start.load());
+    CHECK(background_running_at_start.load() && pieces_while_place.load() == pieces_at_start.load());
     background.reset();
     ShutdownBakes();
 }

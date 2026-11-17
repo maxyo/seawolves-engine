@@ -185,18 +185,14 @@ int main(int argc, char **argv)
         auto waiting = std::async(std::launch::async, [&finalizer, p = std::move(p)]() mutable {
             return finalizer.Run(std::move(p));
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // On progress, no deadline: a finalizer that never queues, or never ends after its cancel, hangs here and
+        // run.py's deadlock guard reports the last step printed.
+        while (admission.queued() != 1)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         CHECK(waiting.wait_for(std::chrono::seconds(0)) == std::future_status::timeout); // waiting for a permit
-        CHECK(admission.queued() == 1);
         *cancel = true;
-        const bool ready = waiting.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
-        CHECK(ready);
-        if (!ready)
-        {
-            std::printf("FAILED: the cancelled finalizer still waits for a permit\n");
-            std::fflush(stdout);
-            std::_Exit(1);
-        }
+        std::printf("step: the cancelled finalizer ends its wait for a permit\n");
+        std::fflush(stdout);
         const auto result = waiting.get();
         CHECK(result.outcome == Outcome::Failed && result.failure == "cancelled");
         CHECK(!result.relief_written && !result.gloss_written);
@@ -211,16 +207,13 @@ int main(int argc, char **argv)
         auto queued = std::async(std::launch::async, [&finalizer, p = std::move(display)]() mutable {
             return finalizer.Run(std::move(p));
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        while (admission.queued() != 1)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         CHECK(queued.wait_for(std::chrono::seconds(0)) == std::future_status::timeout);
         CHECK(!std::filesystem::exists(x2));
         held.reset();
-        if (queued.wait_for(std::chrono::seconds(2)) != std::future_status::ready)
-        {
-            std::printf("FAILED: the ×2 still waits with every permit free\n");
-            std::fflush(stdout);
-            std::_Exit(1);
-        }
+        std::printf("step: the x2 runs once every permit is free\n");
+        std::fflush(stdout);
         CHECK(queued.get().outcome == Outcome::Prepared && fx::HasUpscaled(x2, kReliefKey));
         CHECK(admission.stats().reserved == 0);
     }
