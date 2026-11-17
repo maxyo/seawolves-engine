@@ -505,27 +505,21 @@ void TownLight::upload_map(Map &map)
         std::copy_n(&normal_sky[from], 4, &normal_sky[to]);
     }
     map.texel_metres = TexelMetres(texels);
-    // The ratio map at about the place map's texels (seen from above, the coarsest it gets): the sun's shadow edges are
-    // as sharp as that map holds them; within the device's largest texture.
-    const float place_texel = [&] {
-        const fx::SunPlace above = fx::ComputeSunPlace({0.0f, 1.0f, 0.0f}, lightmapped_->positions, fx::kSunRayReach,
-                                                       fx::SunRelight::kPlaceSize);
-        return std::max(above.texel[0], above.texel[1]);
-    }();
-    // No finer than the game's lightmap texture itself (a small place's sun map is finer than its paint).
+    // The ratio map's texels about fx::SunRelight::kRatioTexelMetres apart, within the device's largest texture and no
+    // finer than the game's lightmap texture itself.
     const int largest = std::min(static_cast<int>(bgfx::getCaps()->limits.maxTextureSize),
                                  [&] {
                                      const auto store = map.store.lock();
                                      return store ? static_cast<int>(std::max(store->width, store->height)) : texels.width;
                                  }());
-    const std::array<int, 2> size = fx::SunRelight::RatioSize(texels.width, texels.height, map.texel_metres, place_texel, largest);
+    const std::array<int, 2> size = fx::SunRelight::RatioSize(texels.width, texels.height, map.texel_metres, largest);
     map.ratio_metres = map.texel_metres * static_cast<float>(texels.width) / static_cast<float>(size[0]);
     map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky}, size[0], size[1]);
     if (map.relight != fx::SunRelight::kNoMap)
-        shim::logf("effects: town light of %s: a %dx%d lightmap (texels %.2f m apart) takes a %dx%d light ratio map (%.2f m, "
-                   "the place's sun map %.2f m from above), %.1f MB of GPU memory for the town's relight (and %.1f MB "
+        shim::logf("effects: town light of %s: a %dx%d lightmap (texels %.2f m apart) takes a %dx%d light ratio map (%.2f m), "
+                   "%.1f MB of GPU memory for the town's relight (and %.1f MB "
                    "uploaded for a compose, let go after it)",
-                   name_.c_str(), texels.width, texels.height, map.texel_metres, size[0], size[1], map.ratio_metres, place_texel,
+                   name_.c_str(), texels.width, texels.height, map.texel_metres, size[0], size[1], map.ratio_metres,
                    static_cast<double>(relight_.Bytes()) / (1024.0 * 1024.0),
                    static_cast<double>(relight_.PassBytes()) / (1024.0 * 1024.0));
     map.compose_due = true;

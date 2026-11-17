@@ -12,7 +12,9 @@
 //     ratio, (a + b sun + c sky) now over the same with the bake's sun then, log-encoded. The lightmapped
 //     draws multiply the game's own lightmap by it (ff_fragment.sh ffTownRatio, one more texture fetch): the paint,
 //     its painted shadows, crevices and grain, always come from the game's lightmap at its full resolution.
-// The ratio is smooth where the paint is not: its map needs the place map's resolution, not the paint's (RatioSize).
+// The ratio is smooth where the paint is not: its map is far coarser than the paint, a texel about 0.2 m (RatioSize;
+// the owner's sheet of 2026-11-17: the moving edges a little softer than at the place map's own 0.04-0.08 m texel, the
+// painted darks the same, under 1 MB for a town instead of 5-9).
 // Its encoding (fs_fx_sun_relight.sc encodeRatio writes it, ff_fragment.sh ffTownRatio reads it): a texel e (0..255)
 // holds the ratio 3^((e - 127) / 127): 127 is exactly 1 (the game's light kept), 0 a third, 254 three times; steps of
 // 0.9 %, filtered in the log (a blend of two ratios is their geometric mean).
@@ -54,8 +56,8 @@ class SunRelight
   public:
     // Size of the place's sun map (texels per side).
     static constexpr int kPlaceSize = 2048;
-    // The ratio map's texels per texel of the place map seen from above (RatioSize).
-    static constexpr float kRatioPerPlaceTexel = 1.0f;
+    // The world size the ratio map's texels aim at (RatioSize).
+    static constexpr float kRatioTexelMetres = 0.2f;
 
     // `retire`: takes a ratio map ClearMaps lets go of (kept until no draw can read it any more); null: destroyed at once.
     using Retire = void (*)(bgfx::TextureHandle);
@@ -67,10 +69,9 @@ class SunRelight
     // The device can do it: D16 compare target, RGBA8 / RG8 textures, a one-channel (or RGBA8) target with mips.
     static bool Supported();
 
-    // The ratio map's size for a lightmap of `width` x `height` texels `texel_metres` apart, under a place map whose
-    // texel seen from above is `place_texel` metres: about kRatioPerPlaceTexel of its texels per place map texel, at
-    // least the lightmap's own, at most `largest` per side (the same scale on both sides).
-    static std::array<int, 2> RatioSize(int width, int height, float texel_metres, float place_texel, int largest);
+    // The ratio map's size for a lightmap of `width` x `height` texels `texel_metres` apart: texels about
+    // kRatioTexelMetres apart, at least the lightmap's own, at most `largest` per side (the same scale on both sides).
+    static std::array<int, 2> RatioSize(int width, int height, float texel_metres, int largest);
 
     using Map = uint32_t;
     static constexpr Map kNoMap = UINT32_MAX;

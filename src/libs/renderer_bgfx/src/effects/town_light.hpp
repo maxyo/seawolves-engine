@@ -17,9 +17,8 @@
 // moved by fx::kSunStepDegrees; every lightmap's light ratio is then composed again on the GPU, one a frame, into its own
 // ratio map (fx/sun_relight.hpp; render(), in two pre-game views). Both suns are read through the same map and filter,
 // over the footprint of a ratio map texel. The fit, the tone and the texels' positions use a level of the game's
-// lightmap of at most 512 texels (location.cpp ReadLightmap). The ratio map has about the place map's texels
-// (fx::SunRelight::RatioSize: finer cannot sharpen the sun's edges, the place map does not hold them): about 1-3 MB for
-// a town. A draw that samples one of the game's lightmaps keeps it and multiplies it by the ratio (ratio(); the shim
+// lightmap of at most 512 texels (location.cpp ReadLightmap). The ratio map's texels are about 0.2 m apart
+// (fx::SunRelight::RatioSize): under 1 MB for a town, and the inputs are uploaded only for a pass. A draw that samples one of the game's lightmaps keeps it and multiplies it by the ratio (ratio(); the shim
 // binds the ratio map at a fixed-function unit the draw leaves free, ff_fragment.sh ffTownRatio): its paint, painted
 // shadows and grain come from the game's own lightmap at its full resolution on every preset, for one more texture
 // fetch. The ratio fades in over shim::kTextureFadeMs when it comes (also after the location was revealed) and out

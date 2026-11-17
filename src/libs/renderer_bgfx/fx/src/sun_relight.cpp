@@ -61,10 +61,10 @@ bool SunRelight::Supported()
            (Renders(bgfx::TextureFormat::R8, true) || Renders(bgfx::TextureFormat::RGBA8, true));
 }
 
-std::array<int, 2> SunRelight::RatioSize(int width, int height, float texel_metres, float place_texel, int largest)
+std::array<int, 2> SunRelight::RatioSize(int width, int height, float texel_metres, int largest)
 {
     const float most = static_cast<float>(largest) / static_cast<float>(std::max({width, height, 1}));
-    const float scale = std::clamp(texel_metres * kRatioPerPlaceTexel / std::max(place_texel, 1e-3f), 1.0f, std::max(most, 1.0f));
+    const float scale = std::clamp(texel_metres / kRatioTexelMetres, 1.0f, std::max(most, 1.0f));
     const auto side = [&](int texels) {
         return std::min(static_cast<int>(std::ceil(static_cast<float>(texels) * scale - 1e-3f)), std::max(texels, largest));
     };

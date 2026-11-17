@@ -18,8 +18,8 @@
 //     its 512, location.cpp ReadLightmap), and a patch of open ground is painted with joints finer than a texel of
 //     that level: seen from close by, the relit lightmap keeps them as the game's does (its paint is the game's
 //     texture itself, only multiplied by the ratio);
-//   * the ratio map's size follows the place map's texel (fx::SunRelight::RatioSize), never finer than the game's
-//     lightmap texture.
+//   * the ratio map's texels are about 0.2 m apart (fx::SunRelight::RatioSize), never coarser than the lightmap's nor
+//     finer than the game's lightmap texture.
 #include "device.hpp"
 #include "check_backend.hpp"
 
@@ -275,16 +275,18 @@ void dump(const std::vector<uint8_t> &picture, const char *name)
 int main()
 {
     {
-        // A town's 512 lightmap with texels 0.24 m apart under a place map of 0.08 m: three times the texels per side;
-        // never coarser than the lightmap, never finer than the largest size given (the game's texture, 2048).
-        const std::array<int, 2> town = fx::SunRelight::RatioSize(512, 512, 0.24f, 0.08f, 2048);
-        const std::array<int, 2> fine = fx::SunRelight::RatioSize(512, 256, 0.24f, 0.01f, 2048);
-        const std::array<int, 2> coarse = fx::SunRelight::RatioSize(512, 512, 0.24f, 0.5f, 2048);
-        std::printf("ratio map sizes: town %dx%d, fine place map %dx%d, coarse %dx%d\n", town[0], town[1], fine[0], fine[1],
-                    coarse[0], coarse[1]);
-        if (town[0] != 1536 || town[1] != 1536 || fine[0] != 2048 || fine[1] != 1024 || coarse[0] != 512 || coarse[1] != 512)
+        // A 512 lightmap with texels 0.18 m apart keeps its 512 (already finer than 0.2 m); a town's 0.24 m takes 615
+        // (0.2 m); 0.4 m twice the texels per side; 0.8 m would take four times, but never finer than the largest size
+        // given (the game's texture, 1024 here), the same scale on both sides.
+        const std::array<int, 2> fine = fx::SunRelight::RatioSize(512, 512, 0.18f, 2048);
+        const std::array<int, 2> town = fx::SunRelight::RatioSize(512, 512, 0.24f, 2048);
+        const std::array<int, 2> twice = fx::SunRelight::RatioSize(512, 512, 0.4f, 2048);
+        const std::array<int, 2> capped = fx::SunRelight::RatioSize(512, 256, 0.8f, 1024);
+        std::printf("ratio map sizes: fine %dx%d, town %dx%d, coarse lightmap %dx%d, capped %dx%d\n", fine[0], fine[1], town[0],
+                    town[1], twice[0], twice[1], capped[0], capped[1]);
+        if (fine[0] != 512 || fine[1] != 512 || town[0] != 615 || town[1] != 615 || twice[0] != 1024 || twice[1] != 1024 || capped[0] != 1024 || capped[1] != 512)
         {
-            std::printf("FAIL: the ratio map's size follows the place map's texel within the lightmap's and the texture's\n");
+            std::printf("FAIL: the ratio map's texels are about 0.2 m apart, within the lightmap's and the texture's sizes\n");
             return 1;
         }
     }
