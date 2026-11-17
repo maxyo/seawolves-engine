@@ -185,6 +185,14 @@ inline std::optional<Point> project(float dx,float dz,float heading,float worldR
     if(x*x+y*y>radius*radius)return {};
     return Point{x*std::cos(heading)-y*std::sin(heading),-(y*std::cos(heading)+x*std::sin(heading))};
 }
+// A contact marker reaching `extent` from its centre (half its length plus its outline) kept wholly
+// inside the disc of `radius`: one farther out moves in along its own bearing onto radius - extent,
+// so a ship at the edge of the map's range stays visible instead of going under the rim.
+inline Point keepInside(Point p,float radius,float extent) {
+    const float distance=std::hypot(p.x,p.y),limit=std::max(0.f,radius-extent);
+    if(!(distance>limit))return p;
+    return Point{p.x*limit/distance,p.y*limit/distance};
+}
 // The minimap's land: 0/1 land cells (n × n, row z) smoothed by a 5-tap binomial both ways into
 // a field 0…255 whose 127.5 contour is a rounded coast between cell centres.
 inline std::vector<uint8_t> landField(const std::vector<uint8_t> &land,uint32_t n){

@@ -172,6 +172,10 @@ int main(){
     auto turn=project(0,100,pi/2,400,1,80);assert(turn&&near(turn->x,-20)&&near(turn->y,0));
     auto east=project(100,0,pi/2,400,1,80);assert(east&&near(east->x,0)&&near(east->y,-20));
     assert(project(400,0,0,400,1,80));assert(!project(401,0,0,400,1,80));
+    {auto edge=keepInside({0,-80},80,6);assert(near(edge.x,0)&&near(edge.y,-74));
+     auto diagonal=keepInside({60,60},80,10);assert(near(std::hypot(diagonal.x,diagonal.y),70)&&near(diagonal.x,diagonal.y));
+     auto centre=keepInside({10,-20},80,6);assert(near(centre.x,10)&&near(centre.y,-20));
+     auto origin=keepInside({0,0},80,6);assert(near(origin.x,0)&&near(origin.y,0));}
     auto zoomed=project(0,100,0,400,.5f,80);assert(zoomed&&near(zoomed->y,-40));
     assert(!project(0,0,0,400,0,80));assert(!project(0,0,std::numeric_limits<float>::quiet_NaN(),400,1,80));
     assert(near(zoom(.015f,.01f,.01f,2,true),.01f));assert(near(zoom(1.995f,.01f,.01f,2,false),2));

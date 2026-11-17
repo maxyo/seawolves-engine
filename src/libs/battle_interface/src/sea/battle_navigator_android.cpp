@@ -270,22 +270,6 @@ bool BATTLE_NAVIGATOR::DrawAndroid() const {
     const auto shipLength=[&](const SHIP_DESCRIBE_LIST::SHIP_DESCR *ship){
         const float metres=ship&&ship->pShip?ship->pShip->GetBoxsize().z:0.f;
         return std::clamp(std::isfinite(metres)?metres/metresPerPixel:0.f,7*ink.dp,14*ink.dp);};
-    // Every eligible contact in the colours of the design (enemy, ally, neutral); a script's
-    // explicit colour for a ship still wins, the dead are grey.
-    const auto *main=g_ShipList.GetMainCharacterShip();
-    for(auto *ship=g_ShipList.GetShipRoot();ship;ship=ship->next){
-        if(ship==main||!ship->pShip)continue;
-        const auto pos=ship->pShip->GetPos();
-        const auto p=sea_nav::project(pos.x-m_fXPos,pos.z-m_fYPos,m_fAngle,m_fWorldRad,m_fCurScale,inner);
-        const float length=shipLength(ship);
-        if(!p||std::hypot(p->x,p->y)>inner-length*.4f)continue;
-        uint32_t color=ship->dwShipColor;
-        if(!color)color=ship->relation==BI_RELATION_ENEMY?0xffd2503f:ship->relation==BI_RELATION_FRIEND?0xff8cc4df:0xffe0c487;
-        if(ship->isDead)color=0xff7d7d78;
-        const float heading=ship->pShip->GetAng().y-m_fAngle;
-        hull({cx+p->x,cy+p->y},std::isfinite(heading)?heading:0.f,length,color,0xe0101418,ink.dp);
-    }
-    mesh.flush(rs);
     // Readiness along the rim: per side a band over its arc, gold where loaded (all gold =
     // ready to fire), teal while it reloads, rust for the share of its guns that is broken.
     for(int i=0;i<4;++i){const auto &b=m_androidBorts[i];if(!b.present)continue;
@@ -312,10 +296,29 @@ bool BATTLE_NAVIGATOR::DrawAndroid() const {
             mesh.triangle(dot,{dot.x+p.x,dot.y+p.y},{dot.x+q.x,dot.y+q.y},streamer|0xff000000);}
         mesh.flush(rs);
     }
-    // the own ship, heading up, in the cream of the HUD's text
-    hull({cx,cy},0.f,std::max(shipLength(main),10*ink.dp),0xfff4ead2,0xf0101418,1.2f*ink.dp);
     // the thin brass rim of the design
     mesh.arc(0,2*pi,120.f*(radius-.5f*ink.dp)/radius,std::max(1.f,ink.dp),0xc0a98948);
+    mesh.flush(rs);
+    // Every eligible contact in the colours of the design (enemy, ally, neutral); a script's
+    // explicit colour for a ship still wins, the dead are grey. Drawn over the readiness bands and
+    // the rim, wholly inside it: a contact at the edge of the range is never hidden under them.
+    const auto *main=g_ShipList.GetMainCharacterShip();
+    for(auto *ship=g_ShipList.GetShipRoot();ship;ship=ship->next){
+        if(ship==main||!ship->pShip)continue;
+        const auto pos=ship->pShip->GetPos();
+        const auto p=sea_nav::project(pos.x-m_fXPos,pos.z-m_fYPos,m_fAngle,m_fWorldRad,m_fCurScale,inner);
+        if(!p)continue;
+        const float length=shipLength(ship);
+        const auto marker=sea_nav::keepInside(*p,inner,length*.5f+ink.dp);
+        uint32_t color=ship->dwShipColor;
+        if(!color)color=ship->relation==BI_RELATION_ENEMY?0xffd2503f:ship->relation==BI_RELATION_FRIEND?0xff8cc4df:0xffe0c487;
+        if(ship->isDead)color=0xff7d7d78;
+        const float heading=ship->pShip->GetAng().y-m_fAngle;
+        hull({cx+marker.x,cy+marker.y},std::isfinite(heading)?heading:0.f,length,color,0xe0101418,ink.dp);
+    }
+    mesh.flush(rs);
+    // the own ship, heading up, in the cream of the HUD's text
+    hull({cx,cy},0.f,std::max(shipLength(main),10*ink.dp),0xfff4ead2,0xf0101418,1.2f*ink.dp);
     mesh.flush(rs);
     m_androidLayoutId=layout->id;
     seaNavigator.didDraw(layout->id);
