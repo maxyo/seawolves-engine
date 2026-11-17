@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -512,9 +513,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         PlaceToasts();
     }
 
-    // The host's toast stack: at the top edge, clear of the cutout (8 dp: its offset in base.rcss)
-    // and of a top status of the HUD that is shown (LayoutElement::toast_clear: the cabin captain,
-    // the boarding bars), whose layout dp grow by the player's UI scale.
+    // The host's toast stack: at the top edge, clear of the cutout (8 dp: its offset in base.rcss),
+    // of a top status of the HUD that is shown (LayoutElement::toast_clear: the cabin captain,
+    // the boarding bars), whose layout dp grow by the player's UI scale, and of a shown screen's
+    // header (its tabs stay visible and pressable under a toast).
     void PlaceToasts()
     {
         const auto [left, top, right, bottom] = display_safe_;
@@ -525,10 +527,26 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 stack->SetProperty(Rml::PropertyId::Left, Rml::Property(left, Rml::Unit::DP));
                 stack->SetProperty(Rml::PropertyId::Right, Rml::Property(right, Rml::Unit::DP));
                 const float clear = hud_toast_clear_ > 0.0f ? (hud_toast_clear_ + kToastStatusGap) * scale : 0.0f;
-                stack->SetProperty(Rml::PropertyId::Top, Rml::Property(top + std::max(8.0f, clear), Rml::Unit::DP));
+                const float header = screen_toast_clear_ > 0.0f ? screen_toast_clear_ + kToastStatusGap : 0.0f;
+                stack->SetProperty(Rml::PropertyId::Top, Rml::Property(std::max(top + std::max(8.0f, clear), header), Rml::Unit::DP));
             }
     }
     static constexpr float kToastStatusGap = 6.0f; // dp between a top status and the toasts under it
+
+    // The bottom of the shown screen's header in layout dp (0: none shown); true when it moved.
+    bool ScreenHeaderMoved()
+    {
+        float bottom = 0.0f;
+        if (screen_root_ && document_ && document_->IsVisible())
+            if (Rml::Element *header = document_->QuerySelector("c-header"); header && header->IsVisible(true))
+                bottom = (header->GetAbsoluteOffset(Rml::BoxArea::Border).y + header->GetBox().GetSize(Rml::BoxArea::Border).y) /
+                         config_.density;
+        if (std::fabs(bottom - screen_toast_clear_) < 0.5f)
+            return false;
+        screen_toast_clear_ = bottom;
+        PlaceToasts();
+        return true;
+    }
 
     void SetToastClear(float clear)
     {
@@ -845,11 +863,13 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const bool clamps = TextClampsChanged() || edges;
         // What fell under a cutout with this layout moves out of it (SetCutouts).
         const bool cutouts = moved && AvoidCutouts();
+        const bool header = moved && ScreenHeaderMoved();
         // Components that measure their layout (columns) set styles from it.
         bool measured = SettleLaidOutComponents();
         if (edges || cutouts)
             regions_moved_ = true; // a scroll or a cutout moved what is drawn without a layout
-        if (clamps || cutouts || measured) // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout
+        // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout, the toasts moved under a header
+        if (clamps || cutouts || measured || header)
             UpdateContext();
         // A measurement is drawn with the layout it makes. Measuring settles in one more pass
         // (a scrollbar it adds: two); one that keeps changing is an error of the component.
@@ -2343,6 +2363,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::unique_ptr<hud::Hud> hud_;
     hud::Layout layout_;
     float hud_toast_clear_ = 0.0f; // the shown HUD's top status bottom (layout dp), 0 = none
+    float screen_toast_clear_ = 0.0f; // the shown screen's header bottom (layout dp), 0 = none
     std::string hud_path_;
     Rml::ElementDocument *hud_document_ = nullptr;
     std::unordered_map<std::string, Json> hud_props_;       // props last given to each mounted element
