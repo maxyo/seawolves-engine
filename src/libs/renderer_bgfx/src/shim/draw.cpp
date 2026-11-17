@@ -1331,6 +1331,11 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
                           : "skinned draw without a bone palette in D3DVERTEXTEXTURESAMPLER0");
         return false;
     }
+    if (vs_port && s.vs->port->vertex_texture && !store_of(s.vertex_texture))
+    {
+        skip_draw("a vertex port that reads D3DVERTEXTEXTURESAMPLER0 without a texture there");
+        return false;
+    }
     // Without lighting the unlit variant leaves the lights out of the program (see ff_vertex.sh).
     const bool lit = s.rs[D3DRS_LIGHTING] != 0 && !layout->rhw;
     // Effects: a plain draw under a moving caster's sun shadow takes the pair with the dynamic layer's tap (FfDraw::ground).
@@ -1582,6 +1587,8 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     }
 
     if (layout->skinned && !bind_palette())
+        return false;
+    if (vs_port && s.vs->port->vertex_texture && !bind_vertex_texture(vs_id))
         return false;
 
     apply_ff_uniforms(*layout, vs_port, ps_port, fx_draw, call.type == D3DPT_POINTLIST);
@@ -1906,6 +1913,51 @@ bool Device::bind_geometry(const DrawCall &call, const LayoutInfo &layout, uint3
     return true;
 }
 
+// Sets the texture a vertex port reads at D3DVERTEXTEXTURESAMPLER0 (the sea's height field) on the encoder, as
+// bind_palette sets a skinned draw's palette: last before the draw's submit, after everything that submits draws of
+// its own on the way (effects::Host::prepare_sea's scene depth capture), which would take a texture set before them
+// with them and leave this draw reading none. False: the draw cannot be issued (skip_draw() said why).
+bool Device::bind_vertex_texture(uint32_t vs_id)
+{
+    TexStore *texture = store_of(s.vertex_texture);
+    texture->sync();
+    if (!bgfx::isValid(texture->handle))
+    {
+        skip_draw("a vertex port's D3DVERTEXTEXTURESAMPLER0 texture has no GPU texture");
+        return false;
+    }
+    // A program whose vertex shader lost the sampler (a compiler that strips it) would read nothing there.
+    auto declared = vertex_sampler_declared_.find(vs_id);
+    if (declared == vertex_sampler_declared_.end())
+    {
+        bool found = false;
+        bgfx::UniformHandle uniforms[64];
+        const uint16_t count = vs_id < shaders.size() && bgfx::isValid(shaders[vs_id])
+                                   ? bgfx::getShaderUniforms(shaders[vs_id], uniforms, 64)
+                                   : 0;
+        for (uint16_t i = 0; i < count && !found; ++i)
+        {
+            bgfx::UniformInfo info{};
+            bgfx::getUniformInfo(uniforms[i], info);
+            found = std::strcmp(info.name, "s_vtex") == 0;
+        }
+        if (!found)
+            logf("ERROR: vertex shader %u reads D3DVERTEXTEXTURESAMPLER0 but its compiled program declares no s_vtex "
+                 "sampler: its draws are skipped",
+                 vs_id);
+        declared = vertex_sampler_declared_.emplace(vs_id, found).first;
+    }
+    if (!declared->second)
+    {
+        skip_draw("a vertex port whose compiled program has no s_vtex sampler");
+        return false;
+    }
+    bgfx::setTexture(static_cast<uint8_t>(kVertexTextureUnit), Context::instance().sampler(kVertexTextureUnit),
+                     texture->handle, BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+    ++perf().texture_binds;
+    return true;
+}
+
 // Sets the bone palette of a skinned draw on the encoder. False: the draw cannot be issued (skip_draw() said why).
 bool Device::bind_palette()
 {
@@ -1936,7 +1988,7 @@ bool Device::bind_palette()
                            0.0f};
     memcpy(instance.data, base, sizeof(base));
     bgfx::setInstanceDataBuffer(&instance);
-    bgfx::setTexture(static_cast<uint8_t>(kBonePaletteUnit), Context::instance().sampler(kBonePaletteUnit), texture,
+    bgfx::setTexture(static_cast<uint8_t>(kVertexTextureUnit), Context::instance().sampler(kVertexTextureUnit), texture,
                      BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
     ++perf().texture_binds;
     return true;

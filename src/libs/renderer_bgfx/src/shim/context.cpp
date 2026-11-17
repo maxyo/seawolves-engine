@@ -716,6 +716,7 @@ void Context::stop_backend()
 {
     bgfx::shutdown(); // joins the render thread; every bgfx handle is gone with it
     missing_texture_ = BGFX_INVALID_HANDLE;
+    ++backend_generation_;
     bgfx::setRenderFrameDone(nullptr);
     if (vulkan_backend_)
         bgfx::setVkUnboundTextures(BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE, BGFX_INVALID_HANDLE);
@@ -812,8 +813,9 @@ void Context::create_resources()
                                                 "s_cube1", "s_cube2", "s_vol0", "s_vol1", "s_vol2",
                                                 // pixel-port extras: cube at stage 3, volume at stage 4 (sea)
                                                 "s_cube3", "s_vol4",
-                                                // skinned fixed-function draws (ff_vertex.sh FF_SKIN)
-                                                "s_bones"};
+                                                // D3DVERTEXTEXTURESAMPLER0 of the vertex shaders: skinned draws
+                                                // (ff_skin.sh), the sea's ports (sea_surface.sh)
+                                                "s_vtex"};
     for (uint32_t i = 0; i < kSamplerUnits; ++i)
         samplers_[i] = bgfx::createUniform(names[i], bgfx::UniformType::Sampler);
     blit_program_ = bgfx::createProgram(create_embedded_shader(shader_id_by_name("vs_blit")),

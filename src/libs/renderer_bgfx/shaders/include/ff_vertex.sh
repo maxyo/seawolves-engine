@@ -5,7 +5,7 @@
 // FF_UNLIT (vs_ff_unlit.sc, draws without D3DRS_LIGHTING) leaves the lights and the material out of the
 // program, so bgfx's GL backend does not re-upload them (53 vec4) with every uniform change of an unlit draw.
 // FF_SKIN (vs_ff*_skin.sc) skins GEOS::AVERTEX0 vertices (one blend weight, two bone indices) with the bone
-// palette in s_bones exactly like the former CPU kernel (src/libs/model/src/skinning.hpp), before world*view; with
+// palette in s_vtex exactly like the former CPU kernel (src/libs/model/src/skinning.hpp), before world*view; with
 // FX_FF_LIT v_normal.w carries the vertex's skin weight (0 for draws that are not skinned).
 #include "storm_common.sh"
 

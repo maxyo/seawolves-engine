@@ -27,9 +27,10 @@ namespace storm::shim
 {
 
 // Texture units: 0..4 2D stage N, 5..7 cube of stage 0..2, 8..10 volume of stage 0..2,
-// 11 cube of stage 3, 12 volume of stage 4 (pixel ports), 13 the bone palette (vertex shader).
+// 11 cube of stage 3, 12 volume of stage 4 (pixel ports), 13 D3DVERTEXTEXTURESAMPLER0 read by vertex shaders (s_vtex:
+// the bone palette of skinned draws, ff_skin.sh; the sea's height field, sea_surface.sh).
 inline constexpr uint32_t kSamplerUnits = 14;
-inline constexpr uint32_t kBonePaletteUnit = 13;
+inline constexpr uint32_t kVertexTextureUnit = 13;
 
 // What the GPU and its driver say about themselves. OpenGL ES: read once on bgfx's render thread (the only thread
 // with the GL context). Vulkan: from the probe made before bgfx::init (backend_select.hpp). Empty strings on the
@@ -156,6 +157,8 @@ class Context final : public render::FrameOwner
     // Counts bgfx::frame() calls (presents and read-backs): transient buffers live until the next one.
     uint32_t submitted_frames() const { return submitted_frames_; }
     const bgfx::Caps *caps() const { return caps_; }
+    // Counts bgfx shutdowns: a handle created under another generation is gone (never destroy it).
+    uint32_t backend_generation() const { return backend_generation_; }
     bool flip_y() const { return flip_y_; }
     // D3DTADDRESS_BORDER. OpenGL ES: GL_CLAMP_TO_BORDER (EXT/OES/NV_texture_border_clamp), which bgfx otherwise
     // turns into clamp-to-edge without telling. Vulkan: always.
@@ -297,6 +300,7 @@ class Context final : public render::FrameOwner
     std::filesystem::path backend_state_directory_;
     render::BackendChoice backend_choice_;
     std::optional<VulkanStartGuard> backend_guard_; // a Vulkan start not yet confirmed by presented frames
+    uint32_t backend_generation_ = 0;
     uint32_t backend_presented_ = 0;                // presented frames of this device
     bool fail_self_test_ = false;                   // render::FailRenderBackendSelfTest
     BonePalettes bone_palettes_;
@@ -452,6 +456,7 @@ struct Device final : Object
     void draw_caster(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, bool offscreen);
     bool bind_geometry(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count);
     bool bind_palette();
+    bool bind_vertex_texture(uint32_t vs_id);
     // The vertices the draw reaches (D3D's MinVertexIndex / NumVertices for indexed draws) in its vertex buffer's CPU
     // copy or its user pointer: false when they cannot be read.
     bool draw_vertices(const DrawCall &call, const LayoutInfo &layout, uint32_t element_count, const uint8_t *&data,
@@ -609,6 +614,7 @@ struct Device final : Object
     std::unordered_map<uint64_t, std::unique_ptr<LayoutInfo>> fvf_layouts;
     std::map<std::pair<uint32_t, uint32_t>, bgfx::ProgramHandle> programs;
     std::vector<bgfx::ShaderHandle> shaders; // index = shader id
+    std::unordered_map<uint32_t, bool> vertex_sampler_declared_; // bind_vertex_texture: per vertex shader id
 
     // uniform handles + last value sent (uniforms are sticky in submission order)
     struct Uniform

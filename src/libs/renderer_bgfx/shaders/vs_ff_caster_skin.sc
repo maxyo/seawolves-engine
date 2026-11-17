@@ -1,5 +1,5 @@
 $input a_position, a_weight, a_indices, i_data0
-// vs_ff_caster for GPU-skinned draws (GEOS::AVERTEX0, bone palette at kBonePaletteUnit as in vs_ff*_skin).
+// vs_ff_caster for GPU-skinned draws (GEOS::AVERTEX0, bone palette at kVertexTextureUnit as in vs_ff*_skin).
 #include "storm_common.sh"
 #include "ff_skin.sh"
 

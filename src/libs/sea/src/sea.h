@@ -23,6 +23,8 @@ class SEA : public SEA_BASE
 
     storm::render::VertexDeclarationId vertexDecl_;
 
+    // A vertex of the sea's mesh. GPU surface: a point of the flat grid (vPos, metres from MeshOrigin; the rest 0),
+    // displaced by the vertex shader (sea_surface_gpu.hpp). CPU surface: displaced here, every frame.
     struct SeaVertex
     {
         glm::vec3 vPos;
@@ -40,8 +42,6 @@ class SEA : public SEA_BASE
         int32_t iLOD;
         int32_t iIStart;
         int32_t iIFirst, iILast;
-
-        bool bInProgress, bDone;
     };
 
     struct SeaTrash
@@ -117,6 +117,32 @@ class SEA : public SEA_BASE
     std::vector<uint32_t *> aNormals;
     std::vector<uint8_t *> aBumps;
     std::vector<SeaBlock> aBlocks;
+    // The flat grid in the buffers (GPU surface): the blocks it was built from (iTX, iTY, iSize, iLOD each), its tree's
+    // place and step. Rebuilt only when one of them changes (BuildMesh); the CPU surface rewrites the buffers.
+    std::vector<int32_t> aMeshBlocks;
+    glm::vec3 vMeshTree{};
+    float fMeshGridStep = 0.0f;
+    bool bMeshBuilt = false;
+    // The height field the vertex shader reads (sea_gpu::pack_field), D3DVERTEXTEXTURESAMPLER0
+    int32_t iFieldTexture = -1;
+
+    // Where the sea's vertices are displaced. Checking: on the CPU until the GPU surface self-check (sea_surface_check.hpp)
+    // has compared the shader's surface with SurfaceXZ on this device; Gpu after it passed; Cpu when it failed or
+    // could not run (logged as an error: the fallback costs game-thread time).
+    enum class Surface
+    {
+        Checking,
+        Gpu,
+        Cpu,
+    };
+    Surface surface_ = Surface::Checking;
+    uint32_t surfaceCheck_ = 0;        // the check in flight (its ticket), 0 none
+    uint32_t surfaceCheckFrames_ = 0;  // frames it has been in flight
+    uint32_t surfaceCheckLosses_ = 0;  // checks lost with the device and started again
+    static constexpr uint32_t kSurfaceCheckFrames = 600;
+    static constexpr uint32_t kSurfaceCheckLosses = 3;
+    void UpdateSurfaceCheck();
+    void SurfaceCheckFailed(const std::string &why);
 #ifdef __ANDROID__
     storm::ParallelFor waveWorkers_; // per-block wave evaluation, see Realize()
 #endif
@@ -124,7 +150,41 @@ class SEA : public SEA_BASE
     glm::vec4 v4SeaColor, v4SkyColor, v4SeaParameters;
 
 
-    float *pSeaFrame1, *pSeaFrame2, *pSeaNormalsFrame1, *pSeaNormalsFrame2;
+    // A wave's two frames and the blend between them: a texel's height (0..1, the bytes / 255) and normal (x, z of
+    // aNormals), blended as SampleWave reads them.
+    struct FrameBlend
+    {
+        const uint8_t *h1 = nullptr, *h2 = nullptr;
+        const uint32_t *n1 = nullptr, *n2 = nullptr;
+        float delta = 0.0f;
+
+        float Height(uint32_t texel) const
+        {
+            const float f1 = h1[texel], f2 = h2[texel];
+            return (1.0f / 255.0f) * (f1 + (f2 - f1) * delta);
+        }
+        void Normal(uint32_t texel, float &nx, float &nz) const
+        {
+            const float nx1 = static_cast<float>(static_cast<short>(n1[texel])) / 32767.5f;
+            const float nx2 = static_cast<float>(static_cast<short>(n2[texel])) / 32767.5f;
+            const float nz1 = static_cast<float>(static_cast<short>(n1[texel] >> 0x10)) / 32767.5f;
+            const float nz2 = static_cast<float>(static_cast<short>(n2[texel] >> 0x10)) / 32767.5f;
+            nx = nx1 + (nx2 - nx1) * delta;
+            nz = nz1 + (nz2 - nz1) * delta;
+        }
+    };
+    FrameBlend WaveBlend(float fFrame) const;
+    // One of the sea's two waves: its frames' blend, texels per metre, amplitude and move.
+    struct Wave
+    {
+        FrameBlend blend;
+        float scale = 0.0f, amp = 0.0f;
+        glm::vec3 move{};
+    };
+    Wave waves_[2]; // this frame's (UpdateWaves): WaveXZ, the CPU surface
+    void UpdateWaves();
+    static float SampleWave(const Wave &wave, float x, float z, float &nX, float &nZ);
+    static float SurfaceXZ(const Wave (&waves)[2], float x, float z, glm::vec3 *pNormal);
 
     glm::vec3 vMove1, vMove2;
     float fFrame1, fFrame2;
@@ -167,16 +227,17 @@ class SEA : public SEA_BASE
     bool isVisibleBBox(const glm::vec3 &vCenter, const glm::vec3 &v1, const glm::vec3 &v2);
     void CalculateLOD(const glm::vec3 &v1, const glm::vec3 &v2, int32_t &iMaxLOD, int32_t &iMinLOD);
     inline float CalcLod(const float &x, const float &y, const float &z);
-    [[deprecated]] void WaveXZBlock(SeaBlock &pB);
     void SSE_WaveXZBlock(SeaBlock &pB);
-    SeaBlock *GetUndoneBlock();
     void FitBlocksToBuffer();
     void PrepareIndicesForBlock(uint32_t dwBlockIndex);
+    void WriteBlockVertices(const SeaBlock &block, SeaVertex *pVertices) const;
+    bool BuildMesh();
+    void BuildCpuMesh();
+    glm::dvec2 MeshOrigin() const;
+    void BuildFieldTexture();
 
     int32_t VisCode(const glm::vec3 &vP);
 
-    void CalculateHeightMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint8_t *> &aFrames);
-    void CalculateNormalMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint32_t *> &aFrames);
 
     bool SunRoad_Render2();
     bool EnvMap_Render2();

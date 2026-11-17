@@ -1,5 +1,7 @@
 #include "loading_transaction.hpp"
 #include "sea.h"
+#include "sea_surface_gpu.hpp"
+#include "storm/render/sea_surface_check.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -104,11 +106,6 @@ SEA::SEA()
     vFogColor = glm::vec3(0.0f);
     bFogEnable = false;
 
-    pSeaFrame1 = new float[XWIDTH * YWIDTH];
-    pSeaFrame2 = new float[XWIDTH * YWIDTH];
-    pSeaNormalsFrame1 = new float[2 * XWIDTH * YWIDTH];
-    pSeaNormalsFrame2 = new float[2 * XWIDTH * YWIDTH];
-
     iVSeaBuffer = -1;
     iISeaBuffer = -1;
 
@@ -129,6 +126,7 @@ SEA::~SEA()
                      dwFramesCut, dwMostBlocksCut);
     ReleaseTargets();
     rs->TextureRelease(volumeTexture);
+    rs->TextureRelease(iFieldTexture);
 
     rs->TextureRelease(iSeaTrashTexture);
     rs->TextureRelease(iSeaLightTexture);
@@ -153,15 +151,6 @@ SEA::~SEA()
         delete[] aBumps[i];
     for (int32_t i = 0; i < aNormals.size(); i++)
         delete[] aNormals[i];
-
-    delete[] pSeaFrame1;
-    pSeaFrame1 = nullptr;
-    delete[] pSeaFrame2;
-    pSeaFrame2 = nullptr;
-    delete[] pSeaNormalsFrame1;
-    pSeaNormalsFrame1 = nullptr;
-    delete[] pSeaNormalsFrame2;
-    pSeaNormalsFrame2 = nullptr;
 }
 
 void SEA::SFLB_CreateBuffers()
@@ -278,6 +267,8 @@ bool SEA::Init()
         delete[] bump;
 
     BuildVolumeTexture();
+    BuildFieldTexture();
+    UpdateWaves();
 
     EditMode_Update();
 
@@ -289,9 +280,9 @@ void SEA::BuildVolumeTexture()
     std::vector<glm::vec3 *> aVectors;
     uint32_t i, j;
 
-    for (const auto &normal : aNormals)
-        delete[] normal;
-    aNormals.clear();
+    // The per-texel normals are the heights' alone (bSimpleSea changes only the texture): made once, and their buffers
+    // stay where they are for the sea's life (the waves' frame blends point into them).
+    const bool bNormals = aNormals.empty();
 
     D3DLOCKED_BOX box[4];
 
@@ -304,8 +295,8 @@ void SEA::BuildVolumeTexture()
     aVectors.reserve(FRAMES);
     for (i = 0; i < FRAMES; i++)
     {
-        auto pBuffer = new uint32_t[XWIDTH * YWIDTH];
-        aNormals.push_back(pBuffer);
+        if (bNormals)
+            aNormals.push_back(new uint32_t[XWIDTH * YWIDTH]);
 
         auto *pVectors = new glm::vec3[XWIDTH * YWIDTH];
         aVectors.push_back(pVectors);
@@ -592,7 +583,7 @@ void SEA::CalculateLOD(const glm::vec3 &v1, const glm::vec3 &v2, int32_t &iMaxLO
 
 void SEA::AddBlock(int32_t iTX, int32_t iTY, int32_t iSize, int32_t iLOD)
 {
-    aBlocks.emplace_back(SeaBlock{0, 0, 0, 0, iSize >> iLOD, iTX, iTY, iSize, iLOD, 0, 0, 0, false, false});
+    aBlocks.emplace_back(SeaBlock{0, 0, 0, 0, iSize >> iLOD, iTX, iTY, iSize, iLOD, 0, 0, 0});
 }
 
 // The block tree is anchored to the world. It spans twice MaxDim grid cells and its origin follows the camera only
@@ -657,8 +648,6 @@ void SEA::SSE_WaveXZ(SeaVertex **pArray)
 
     for (int i = 0; i < 4; i++)
     {
-        int32_t iX11, iX12, iX21, iX22, iY11, iY12, iY21, iY22;
-
         float fDistance = Sqr(pArray[i]->vPos.x - vCamPos.x) + Sqr(pArray[i]->vPos.z - vCamPos.z);
         if (fDistance > fMaxSeaDistance * fMaxSeaDistance)
         {
@@ -673,73 +662,15 @@ void SEA::SSE_WaveXZ(SeaVertex **pArray)
 
         bDistancePass = true;
 
-        float x1 = (pArray[i]->vPos.x + vMove1.x) * fScale1;
-        float z1 = (pArray[i]->vPos.z + vMove1.z) * fScale1;
-        iX11 = ffloor(x1 + 0.0f), iX12 = iX11 + 1;
-        iY11 = ffloor(z1 + 0.0f), iY12 = iY11 + 1;
-        float fX1 = (x1 - iX11);
-        float fZ1 = (z1 - iY11);
-        iX11 &= (XWIDTH - 1);
-        iX12 &= (XWIDTH - 1);
-        iY11 &= (XWIDTH - 1);
-        iY12 &= (XWIDTH - 1);
-
-        float x2 = (pArray[i]->vPos.x + vMove2.x) * fScale2;
-        float z2 = (pArray[i]->vPos.z + vMove2.z) * fScale2;
-        iX21 = ffloor(x2 + 0.0f), iX22 = iX21 + 1;
-        iY21 = ffloor(z2 + 0.0f), iY22 = iY21 + 1;
-        float fX2 = (x2 - iX21);
-        float fZ2 = (z2 - iY21);
-        iX21 &= (XWIDTH - 1);
-        iX22 &= (XWIDTH - 1);
-        iY21 &= (XWIDTH - 1);
-        iY22 &= (XWIDTH - 1);
-
-        float a1, a2, a3, a4;
-
-        a1 = pSeaFrame1[iX11 + iY11 * XWIDTH];
-        a2 = pSeaFrame1[iX12 + iY11 * XWIDTH];
-        a3 = pSeaFrame1[iX11 + iY12 * XWIDTH];
-        a4 = pSeaFrame1[iX12 + iY12 * XWIDTH];
-        pArray[i]->vPos.y = fAmp1 * (a1 + fX1 * (a2 - a1) + fZ1 * (a3 - a1) + fX1 * fZ1 * (a4 + a1 - a2 - a3));
-
-        a1 = pSeaFrame2[iX21 + iY21 * XWIDTH];
-        a2 = pSeaFrame2[iX22 + iY21 * XWIDTH];
-        a3 = pSeaFrame2[iX21 + iY22 * XWIDTH];
-        a4 = pSeaFrame2[iX22 + iY22 * XWIDTH];
-        pArray[i]->vPos.y += fAmp2 * (a1 + fX2 * (a2 - a1) + fZ2 * (a3 - a1) + fX2 * fZ2 * (a4 + a1 - a2 - a3));
-
-        float nx1, nx2, nx3, nx4, nz1, nz2, nz3, nz4;
-
-        nx1 = pSeaNormalsFrame1[2 * (iX11 + iY11 * XWIDTH) + 0];
-        nz1 = pSeaNormalsFrame1[2 * (iX11 + iY11 * XWIDTH) + 1];
-        nx2 = pSeaNormalsFrame1[2 * (iX12 + iY11 * XWIDTH) + 0];
-        nz2 = pSeaNormalsFrame1[2 * (iX12 + iY11 * XWIDTH) + 1];
-        nx3 = pSeaNormalsFrame1[2 * (iX11 + iY12 * XWIDTH) + 0];
-        nz3 = pSeaNormalsFrame1[2 * (iX11 + iY12 * XWIDTH) + 1];
-        nx4 = pSeaNormalsFrame1[2 * (iX12 + iY12 * XWIDTH) + 0];
-        nz4 = pSeaNormalsFrame1[2 * (iX12 + iY12 * XWIDTH) + 1];
-
-        float nX1 = (nx1 + fX1 * (nx2 - nx1) + fZ1 * (nx3 - nx1) + fX1 * fZ1 * (nx4 + nx1 - nx2 - nx3));
-        float nZ1 = (nz1 + fX1 * (nz2 - nz1) + fZ1 * (nz3 - nz1) + fX1 * fZ1 * (nz4 + nz1 - nz2 - nz3));
-
-        nx1 = pSeaNormalsFrame2[2 * (iX21 + iY21 * XWIDTH) + 0];
-        nz1 = pSeaNormalsFrame2[2 * (iX21 + iY21 * XWIDTH) + 1];
-        nx2 = pSeaNormalsFrame2[2 * (iX22 + iY21 * XWIDTH) + 0];
-        nz2 = pSeaNormalsFrame2[2 * (iX22 + iY21 * XWIDTH) + 1];
-        nx3 = pSeaNormalsFrame2[2 * (iX21 + iY22 * XWIDTH) + 0];
-        nz3 = pSeaNormalsFrame2[2 * (iX21 + iY22 * XWIDTH) + 1];
-        nx4 = pSeaNormalsFrame2[2 * (iX22 + iY22 * XWIDTH) + 0];
-        nz4 = pSeaNormalsFrame2[2 * (iX22 + iY22 * XWIDTH) + 1];
-
-        float nX2 = (nx1 + fX2 * (nx2 - nx1) + fZ2 * (nx3 - nx1) + fX2 * fZ2 * (nx4 + nx1 - nx2 - nx3));
-        float nZ2 = (nz1 + fX2 * (nz2 - nz1) + fZ2 * (nz3 - nz1) + fX2 * fZ2 * (nz4 + nz1 - nz2 - nz3));
+        float nX1, nZ1, nX2, nZ2;
+        pArray[i]->vPos.y = SampleWave(waves_[0], pArray[i]->vPos.x, pArray[i]->vPos.z, nX1, nZ1);
+        pArray[i]->vPos.y += SampleWave(waves_[1], pArray[i]->vPos.x, pArray[i]->vPos.z, nX2, nZ2);
 
         nY1[i] = 1.0f - (Sqr(nX1) + Sqr(nZ1));
         nY2[i] = 1.0f - (Sqr(nX2) + Sqr(nZ2));
 
-        vNormal[i].x = fScale1 * fAmp1 * nX1 + fScale2 * fAmp2 * nX2;
-        vNormal[i].z = fScale1 * fAmp1 * nZ1 + fScale2 * fAmp2 * nZ2;
+        vNormal[i].x = waves_[0].scale * waves_[0].amp * nX1 + waves_[1].scale * waves_[1].amp * nX2;
+        vNormal[i].z = waves_[0].scale * waves_[0].amp * nZ1 + waves_[1].scale * waves_[1].amp * nZ2;
     }
 
     if (bDistancePass)
@@ -812,10 +743,66 @@ bool SEA::HeightField(SeaHeightField &field) const
     return true;
 }
 
+// The frame `fFrame` blended with the next one (frames wrap), texel by texel as SampleWave reads them.
+SEA::FrameBlend SEA::WaveBlend(float fFrame) const
+{
+    const int32_t iFrame1 = fftol(fFrame) % static_cast<int32_t>(aBumps.size());
+    const int32_t iFrame2 = (iFrame1 + 1) % static_cast<int32_t>(aBumps.size());
+    return {aBumps[iFrame1], aBumps[iFrame2], aNormals[iFrame1], aNormals[iFrame2], fFrame - iFrame1};
+}
+
+// One wave at the world position (x, z): its height in metres (the frames' blend sampled bilinearly, wrapping) and
+// the bilinear blend of the per-texel normals' x and z.
+float SEA::SampleWave(const Wave &wave, float x, float z, float &nX, float &nZ)
+{
+    const float x1 = (x + wave.move.x) * wave.scale;
+    const float z1 = (z + wave.move.z) * wave.scale;
+    int32_t iX1 = ffloor(x1 + 0.0f), iX2 = iX1 + 1;
+    int32_t iY1 = ffloor(z1 + 0.0f), iY2 = iY1 + 1;
+    const float fX = (x1 - iX1);
+    const float fZ = (z1 - iY1);
+    iX1 &= (XWIDTH - 1);
+    iX2 &= (XWIDTH - 1);
+    iY1 &= (XWIDTH - 1);
+    iY2 &= (XWIDTH - 1);
+
+    const FrameBlend &b = wave.blend;
+    const float a1 = b.Height(iX1 + iY1 * XWIDTH);
+    const float a2 = b.Height(iX2 + iY1 * XWIDTH);
+    const float a3 = b.Height(iX1 + iY2 * XWIDTH);
+    const float a4 = b.Height(iX2 + iY2 * XWIDTH);
+
+    float nx1, nx2, nx3, nx4, nz1, nz2, nz3, nz4;
+    b.Normal(iX1 + iY1 * XWIDTH, nx1, nz1);
+    b.Normal(iX2 + iY1 * XWIDTH, nx2, nz2);
+    b.Normal(iX1 + iY2 * XWIDTH, nx3, nz3);
+    b.Normal(iX2 + iY2 * XWIDTH, nx4, nz4);
+    nX = (nx1 + fX * (nx2 - nx1) + fZ * (nx3 - nx1) + fX * fZ * (nx4 + nx1 - nx2 - nx3));
+    nZ = (nz1 + fX * (nz2 - nz1) + fZ * (nz3 - nz1) + fX * fZ * (nz4 + nz1 - nz2 - nz3));
+    return wave.amp * (a1 + fX * (a2 - a1) + fZ * (a3 - a1) + fX * fZ * (a4 + a1 - a2 - a3));
+}
+
+// The surface of the two waves at (x, z), within the sea's reach: its height, and its unit normal in `pNormal`.
+float SEA::SurfaceXZ(const Wave (&waves)[2], float x, float z, glm::vec3 *pNormal)
+{
+    float nX1, nZ1, nX2, nZ2;
+    float fRes = SampleWave(waves[0], x, z, nX1, nZ1);
+    fRes += SampleWave(waves[1], x, z, nX2, nZ2);
+    if (pNormal)
+    {
+        const float nY1 = sqrtf(1.0f - (Sqr(nX1) + Sqr(nZ1)));
+        const float nY2 = sqrtf(1.0f - (Sqr(nX2) + Sqr(nZ2)));
+        glm::vec3 vNormal;
+        vNormal.x = waves[0].scale * waves[0].amp * nX1 + waves[1].scale * waves[1].amp * nX2;
+        vNormal.z = waves[0].scale * waves[0].amp * nZ1 + waves[1].scale * waves[1].amp * nZ2;
+        vNormal.y = nY1 + nY2;
+        *pNormal = storm::math::normalizeOrZero(vNormal);
+    }
+    return fRes;
+}
+
 float SEA::WaveXZ(float x, float z, glm::vec3 *pNormal)
 {
-    int32_t iX11, iX12, iX21, iX22, iY11, iY12, iY21, iY22;
-
     const float fDistance = Sqr(x - vCamPos.x) + Sqr(z - vCamPos.z);
     if (fDistance > fMaxSeaDistance * fMaxSeaDistance)
     {
@@ -823,107 +810,7 @@ float SEA::WaveXZ(float x, float z, glm::vec3 *pNormal)
             *pNormal = glm::vec3(0.0f, 1.0f, 0.0f);
         return 0.0f;
     }
-
-    const float x1 = (x + vMove1.x) * fScale1;
-    const float z1 = (z + vMove1.z) * fScale1;
-    iX11 = ffloor(x1 + 0.0f), iX12 = iX11 + 1;
-    iY11 = ffloor(z1 + 0.0f), iY12 = iY11 + 1;
-    const float fX1 = (x1 - iX11);
-    const float fZ1 = (z1 - iY11);
-    iX11 &= (XWIDTH - 1);
-    iX12 &= (XWIDTH - 1);
-    iY11 &= (XWIDTH - 1);
-    iY12 &= (XWIDTH - 1);
-
-    const float x2 = (x + vMove2.x) * fScale2;
-    const float z2 = (z + vMove2.z) * fScale2;
-    iX21 = ffloor(x2 + 0.0f), iX22 = iX21 + 1;
-    iY21 = ffloor(z2 + 0.0f), iY22 = iY21 + 1;
-    const float fX2 = (x2 - iX21);
-    const float fZ2 = (z2 - iY21);
-    iX21 &= (XWIDTH - 1);
-    iX22 &= (XWIDTH - 1);
-    iY21 &= (XWIDTH - 1);
-    iY22 &= (XWIDTH - 1);
-
-    float a1, a2, a3, a4;
-
-    a1 = pSeaFrame1[iX11 + iY11 * XWIDTH];
-    a2 = pSeaFrame1[iX12 + iY11 * XWIDTH];
-    a3 = pSeaFrame1[iX11 + iY12 * XWIDTH];
-    a4 = pSeaFrame1[iX12 + iY12 * XWIDTH];
-    float fRes = fAmp1 * (a1 + fX1 * (a2 - a1) + fZ1 * (a3 - a1) + fX1 * fZ1 * (a4 + a1 - a2 - a3));
-
-    a1 = pSeaFrame2[iX21 + iY21 * XWIDTH];
-    a2 = pSeaFrame2[iX22 + iY21 * XWIDTH];
-    a3 = pSeaFrame2[iX21 + iY22 * XWIDTH];
-    a4 = pSeaFrame2[iX22 + iY22 * XWIDTH];
-    fRes += fAmp2 * (a1 + fX2 * (a2 - a1) + fZ2 * (a3 - a1) + fX2 * fZ2 * (a4 + a1 - a2 - a3));
-
-    float nx1, nx2, nx3, nx4, nz1, nz2, nz3, nz4;
-
-    nx1 = pSeaNormalsFrame1[2 * (iX11 + iY11 * XWIDTH) + 0];
-    nz1 = pSeaNormalsFrame1[2 * (iX11 + iY11 * XWIDTH) + 1];
-    nx2 = pSeaNormalsFrame1[2 * (iX12 + iY11 * XWIDTH) + 0];
-    nz2 = pSeaNormalsFrame1[2 * (iX12 + iY11 * XWIDTH) + 1];
-    nx3 = pSeaNormalsFrame1[2 * (iX11 + iY12 * XWIDTH) + 0];
-    nz3 = pSeaNormalsFrame1[2 * (iX11 + iY12 * XWIDTH) + 1];
-    nx4 = pSeaNormalsFrame1[2 * (iX12 + iY12 * XWIDTH) + 0];
-    nz4 = pSeaNormalsFrame1[2 * (iX12 + iY12 * XWIDTH) + 1];
-
-    const float nX1 = (nx1 + fX1 * (nx2 - nx1) + fZ1 * (nx3 - nx1) + fX1 * fZ1 * (nx4 + nx1 - nx2 - nx3));
-    const float nZ1 = (nz1 + fX1 * (nz2 - nz1) + fZ1 * (nz3 - nz1) + fX1 * fZ1 * (nz4 + nz1 - nz2 - nz3));
-
-    nx1 = pSeaNormalsFrame2[2 * (iX21 + iY21 * XWIDTH) + 0];
-    nz1 = pSeaNormalsFrame2[2 * (iX21 + iY21 * XWIDTH) + 1];
-    nx2 = pSeaNormalsFrame2[2 * (iX22 + iY21 * XWIDTH) + 0];
-    nz2 = pSeaNormalsFrame2[2 * (iX22 + iY21 * XWIDTH) + 1];
-    nx3 = pSeaNormalsFrame2[2 * (iX21 + iY22 * XWIDTH) + 0];
-    nz3 = pSeaNormalsFrame2[2 * (iX21 + iY22 * XWIDTH) + 1];
-    nx4 = pSeaNormalsFrame2[2 * (iX22 + iY22 * XWIDTH) + 0];
-    nz4 = pSeaNormalsFrame2[2 * (iX22 + iY22 * XWIDTH) + 1];
-
-    const float nX2 = (nx1 + fX2 * (nx2 - nx1) + fZ2 * (nx3 - nx1) + fX2 * fZ2 * (nx4 + nx1 - nx2 - nx3));
-    const float nZ2 = (nz1 + fX2 * (nz2 - nz1) + fZ2 * (nz3 - nz1) + fX2 * fZ2 * (nz4 + nz1 - nz2 - nz3));
-    // float nX2 = 0.0f;
-    // float nZ2 = 0.0f;
-
-    /*float fDistance = sqrt_ss(Sqr(x - vCamPos.x) + Sqr(fRes - vCamPos.y) + Sqr(z - vCamPos.z));
-    {
-      float distance_mul = 1.0f - fDistance / 1900.0f;
-      if (distance_mul < 0.0f) distance_mul = 0.0f;
-
-      fRes *= distance_mul;
-
-      nX1 *= distance_mul;
-      nZ1 *= distance_mul;
-
-      nX2 *= distance_mul;
-      nZ2 *= distance_mul;
-    }*/
-
-    if (pNormal)
-    {
-        /*pNormal->x = 0.0f;
-        pNormal->y = 1.0f;
-        pNormal->z = 0.0f;*/
-        const float nY1 = sqrtf(1.0f - (Sqr(nX1) + Sqr(nZ1)));
-        const float nY2 = sqrtf(1.0f - (Sqr(nX2) + Sqr(nZ2)));
-
-        glm::vec3 vNormal;
-
-        vNormal.x = fScale1 * fAmp1 * nX1 + fScale2 * fAmp2 * nX2;
-        vNormal.z = fScale1 * fAmp1 * nZ1 + fScale2 * fAmp2 * nZ2;
-        vNormal.y = nY1 + nY2;
-
-        // vNormal.x += 2.0f * vNormal.x;
-        // vNormal.z += 2.0f * vNormal.z;
-        vNormal = storm::math::normalizeOrZero(vNormal);
-
-        *pNormal = vNormal;
-    }
-
-    return fRes;
+    return SurfaceXZ(waves_, x, z, pNormal);
 }
 
 // Orders the blocks far to near (coarse LOD first, PrepareIndicesForBlock stitches each block to the coarser ones
@@ -1196,123 +1083,227 @@ void SEA::SSE_WaveXZBlock(SeaBlock &pB)
         }
     }
 
-    pB.bDone = true;
 }
 
-void SEA::WaveXZBlock(SeaBlock &pB)
+// This frame's waves (fFrame*, fScale*, fAmp*, vMove*) for WaveXZ and the CPU surface.
+void SEA::UpdateWaves()
 {
-    float cx, cz, fStep = fGridStep * static_cast<float>(1 << pB.iLOD);
-    float fSize = fGridStep * pB.iSize;
-    int32_t x, y, size0 = pB.iSize >> pB.iLOD;
+    waves_[0] = {WaveBlend(fFrame1), fScale1, fAmp1, vMove1};
+    waves_[1] = {WaveBlend(fFrame2), fScale2, fAmp2, vMove2};
+}
 
-    float x1 = static_cast<float>(pB.iTX * pB.iSize) * fGridStep;
-    float y1 = static_cast<float>(pB.iTY * pB.iSize) * fGridStep;
-    float x2 = x1 + static_cast<float>(size0) * fStep;
-    float y2 = y1 + static_cast<float>(size0) * fStep;
-
-    pB.iX1 = fftoi(x1 / fGridStep);
-    pB.iX2 = fftoi(x2 / fGridStep);
-    pB.iY1 = fftoi(y1 / fGridStep);
-    pB.iY2 = fftoi(y2 / fGridStep);
-
-    x1 += vSeaCenterPos.x;
-    x2 += vSeaCenterPos.x;
-    y1 += vSeaCenterPos.z;
-    y2 += vSeaCenterPos.z;
-
-    glm::vec3 vNormal, vTmp;
-
-    int32_t iIStart1 = pB.iIStart;
-    const int32_t iIFirst = pB.iIFirst;
-    const int32_t iILast = pB.iILast;
-
-    // calculate
-    for (cz = y1, y = 0; y <= size0; y++, cz += fStep)
-    {
-        for (cx = x1, x = 0; x <= size0; x++, cx += fStep)
+// The grid points of the block this block owns (PrepareIndicesForBlock: [iIFirst, iILast]; the points on an edge
+// shared with a block before it are that block's), metres from MeshOrigin, flat: the vertex shader displaces them.
+void SEA::WriteBlockVertices(const SeaBlock &block, SeaVertex *pVertices) const
+{
+    const auto half = static_cast<int32_t>(TreeDim() / 2);
+    const int32_t step = 1 << block.iLOD, size0 = block.iSize >> block.iLOD;
+    const int32_t x0 = block.iTX * block.iSize - half, z0 = block.iTY * block.iSize - half;
+    int32_t point = block.iIStart;
+    for (int32_t y = 0; y <= size0; y++)
+        for (int32_t x = 0; x <= size0; x++)
         {
-            const uint32_t dwVIndex = pIndices[iIStart1];
-
-            if (static_cast<int32_t>(dwVIndex) < iIFirst || static_cast<int32_t>(dwVIndex) > iILast)
-            {
-                iIStart1++;
+            const auto vertex = static_cast<int32_t>(pIndices[point++]);
+            if (vertex < block.iIFirst || vertex > block.iILast)
                 continue;
-            }
-
-            vTmp.y = WaveXZ(cx, cz, &vNormal);
-
-            vTmp.x = cx - vNormal.x * fPosShift * 3.0f - vWorldOffset.x;
-            vTmp.z = cz - vNormal.z * fPosShift * 3.0f - vWorldOffset.z;
-
-            pVSea[dwVIndex].vPos = vTmp;
-            pVSea[dwVIndex].vNormal = vNormal;
-            pVSea[dwVIndex].tu = (cx - vNormal.x * 5.3f) * fBumpScale;
-            pVSea[dwVIndex].tv = (cz - vNormal.z * 5.3f) * fBumpScale;
-
-            iIStart1++;
+            pVertices[vertex] = {glm::vec3(static_cast<float>(x0 + x * step) * fGridStep, 0.0f,
+                                           static_cast<float>(z0 + y * step) * fGridStep),
+                                 glm::vec3(0.0f), 0.0f, 0.0f};
         }
+}
+
+// The mesh's origin in the world (x, z): the middle of the block tree, so the grid's numbers stay within a quarter of
+// the tree around the camera (PlaceTree).
+glm::dvec2 SEA::MeshOrigin() const
+{
+    const double half = static_cast<double>(TreeDim() / 2) * fGridStep;
+    return {vSeaCenterPos.x + half, vSeaCenterPos.z + half};
+}
+
+// GPU surface: the flat grid of this frame's blocks in the buffers, written only when the blocks, the tree's place or
+// the grid step changed since the grid there was built; the vertex shader displaces it every frame (sea_surface.sh).
+// True when it was written.
+bool SEA::BuildMesh()
+{
+    bool same = bMeshBuilt && vMeshTree == vSeaCenterPos && fMeshGridStep == fGridStep &&
+                aMeshBlocks.size() == aBlocks.size() * 4;
+    for (size_t i = 0; same && i < aBlocks.size(); i++)
+    {
+        const SeaBlock &b = aBlocks[i];
+        const int32_t *key = &aMeshBlocks[i * 4];
+        same = key[0] == b.iTX && key[1] == b.iTY && key[2] == b.iSize && key[3] == b.iLOD;
     }
+    if (same)
+        return false;
+    aMeshBlocks.clear();
+    for (const SeaBlock &b : aBlocks)
+        aMeshBlocks.insert(aMeshBlocks.end(), {b.iTX, b.iTY, b.iSize, b.iLOD});
+    vMeshTree = vSeaCenterPos;
+    fMeshGridStep = fGridStep;
+    bMeshBuilt = true;
 
-    pB.bDone = true;
-
+    iVStart = 0;
+    iTStart = 0;
+    iIStart = 0;
+    memset(pIndices, 0xFF, NUM_VERTEXS * sizeof(pIndices[0]) * 3);
+    auto *pVertices = static_cast<SeaVertex *>(rs->LockVertexBuffer(iVSeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
+    pTriangles = static_cast<uint16_t *>(rs->LockIndexBuffer(iISeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
+    if (!pVertices || !pTriangles)
+        throw std::runtime_error("SEA: cannot lock the sea's vertex or index buffer");
+    for (uint32_t i = 0; i < aBlocks.size(); i++)
+        PrepareIndicesForBlock(i);
+    for (const SeaBlock &b : aBlocks)
+        WriteBlockVertices(b, pVertices);
+    rs->UnLockVertexBuffer(iVSeaBuffer);
+    rs->UnLockIndexBuffer(iISeaBuffer);
+    return true;
 }
 
-SEA::SeaBlock *SEA::GetUndoneBlock()
+// CPU surface (until the GPU surface self-check passed, or for good when it failed): every vertex of this frame's
+// blocks displaced here (SSE_WaveXZBlock) and the buffers written again.
+void SEA::BuildCpuMesh()
 {
-    SeaBlock *pB = nullptr;
-    for (int32_t i = 0; i < aBlocks.size(); i++)
-        if (!aBlocks[i].bInProgress)
-        {
-            pB = &aBlocks[i];
-            pB->bInProgress = true;
-            return pB;
-        }
-    return pB;
+    bMeshBuilt = false; // the GPU surface builds its grid again
+    iVStart = 0;
+    iTStart = 0;
+    iIStart = 0;
+    memset(pIndices, 0xFF, NUM_VERTEXS * sizeof(pIndices[0]) * 3);
+
+    auto *pVSea2 = static_cast<SeaVertex *>(rs->LockVertexBuffer(iVSeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
+    pTriangles = static_cast<uint16_t *>(rs->LockIndexBuffer(iISeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
+
+    for (uint32_t i = 0; i < aBlocks.size(); i++)
+        PrepareIndicesForBlock(i);
+
+    // Blocks write disjoint vertex ranges ([iIFirst, iILast], assigned above by PrepareIndicesForBlock) and only read
+    // per-frame constants and the waves' frames, so they can be evaluated concurrently. The vertex buffer upload
+    // below stays on this thread.
+#ifdef __ANDROID__
+    // libc++ in the NDK has no parallel algorithms; use the engine's fork-join helper.
+    waveWorkers_.run(aBlocks.size(), [this](size_t index) { SSE_WaveXZBlock(aBlocks[index]); });
+#else
+    std::for_each(std::execution::par_unseq, std::begin(aBlocks), std::end(aBlocks),
+                  [this](auto &i) { SSE_WaveXZBlock(i); });
+#endif
+
+    if (iVStart && iTStart)
+        memcpy(pVSea2, pVSea, iVStart * sizeof(SeaVertex));
+
+    rs->UnLockVertexBuffer(iVSeaBuffer);
+    rs->UnLockIndexBuffer(iISeaBuffer);
 }
 
-void SEA::CalculateNormalMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint32_t *> &aFrames)
+// The height field of the vertex shader (sea_gpu::pack_field): the frames of aBumps and aNormals, once per sea.
+void SEA::BuildFieldTexture()
 {
-    const int32_t iFrame1 = fftol(fFrame) % aFrames.size();
-    const int32_t iFrame2 = (iFrame1 + 1) % aFrames.size();
-
-    const float fDelta = fFrame - iFrame1;
-
-    uint32_t *pB1 = aFrames[iFrame1];
-    uint32_t *pB2 = aFrames[iFrame2];
-
-    for (int32_t y = 0; y < YWIDTH; y++)
-        for (int32_t x = 0; x < XWIDTH; x++)
-        {
-            const uint32_t dw1 = pB1[x + y * XWIDTH];
-            const uint32_t dw2 = pB2[x + y * XWIDTH];
-            const float nx1 = static_cast<float>(static_cast<short>(dw1)) / 32767.5f;
-            const float nx2 = static_cast<float>(static_cast<short>(dw2)) / 32767.5f;
-            const float nz1 = static_cast<float>(static_cast<short>(dw1 >> 0x10)) / 32767.5f;
-            const float nz2 = static_cast<float>(static_cast<short>(dw2 >> 0x10)) / 32767.5f;
-
-            pfOut[2 * (x + y * XWIDTH) + 0] = (nx1 + (nx2 - nx1) * fDelta);
-            pfOut[2 * (x + y * XWIDTH) + 1] = (nz1 + (nz2 - nz1) * fDelta);
-        }
+    iFieldTexture = rs->TextureCreate(sea_gpu::kAtlasSize, sea_gpu::kAtlasSize, 1, 0, D3DFMT_A32B32G32R32F,
+                                      D3DPOOL_MANAGED);
+    D3DLOCKED_RECT locked{};
+    if (iFieldTexture < 0 || !rs->TextureLock(iFieldTexture, 0, locked, 0))
+        throw std::runtime_error("SEA: cannot create the sea's height field texture");
+    const std::vector<float> texels = sea_gpu::pack_field(aBumps.data(), aNormals.data());
+    constexpr size_t kRowBytes = sea_gpu::kAtlasSize * 4 * sizeof(float);
+    for (int32_t y = 0; y < sea_gpu::kAtlasSize; y++)
+        memcpy(static_cast<uint8_t *>(locked.pBits) + static_cast<size_t>(y) * locked.Pitch,
+               texels.data() + static_cast<size_t>(y) * sea_gpu::kAtlasSize * 4, kRowBytes);
+    rs->TextureUnlock(iFieldTexture, 0);
 }
 
-void SEA::CalculateHeightMap(float fFrame, float fAmplitude, float *pfOut, std::vector<uint8_t *> &aFrames)
+void SEA::SurfaceCheckFailed(const std::string &why)
 {
-    const int32_t iFrame1 = fftol(fFrame) % aFrames.size();
-    const int32_t iFrame2 = (iFrame1 + 1) % aFrames.size();
+    surface_ = Surface::Cpu;
+    spdlog::error("sea: the GPU surface self-check failed on {}: {}. The sea's vertices stay displaced on the CPU "
+                  "(more game-thread time a frame) instead of a wrong surface",
+                  storm::render::SeaSurfaceCheckDevice(), why);
+}
 
-    const float fDelta = fFrame - iFrame1;
-
-    uint8_t *pB1 = aFrames[iFrame1];
-    uint8_t *pB2 = aFrames[iFrame2];
-
-    for (int32_t y = 0; y < YWIDTH; y++)
-        for (int32_t x = 0; x < XWIDTH; x++)
-        {
-            const float f1 = pB1[x + y * XWIDTH];
-            const float f2 = pB2[x + y * XWIDTH];
-
-            pfOut[x + y * XWIDTH] = fAmplitude * (f1 + (f2 - f1) * fDelta);
-        }
+// The GPU surface self-check (sea_surface_check.hpp): the vertex shader's surface for points of this sea's field,
+// read back and compared with SurfaceXZ (WaveXZ's formula), before the sea's vertices are displaced on the GPU.
+void SEA::UpdateSurfaceCheck()
+{
+    if (surface_ != Surface::Checking)
+        return;
+    // The check's own surface over this sea's field, whatever the weather: two waves of fixed amplitudes (a field read
+    // as zeros or garbage cannot match), the second across the frames' wrap (63 -> 0); a far origin, moves.
+    constexpr double kOriginX = 1234.5, kOriginZ = -678.25;
+    const Wave waves[2] = {{WaveBlend(13.37f), 0.35f, 6.0f, glm::vec3(37.5f, 0.0f, -12.25f)},
+                           {WaveBlend(63.6f), 1.3f, 1.5f, glm::vec3(-8.0f, 0.0f, 21.75f)}};
+    constexpr uint32_t kPoints = storm::render::kSeaSurfaceCheckMaxPoints;
+    float points[kPoints][2];
+    for (uint32_t i = 0; i < kPoints; i++)
+    {
+        // A spiral out to 90 m: every texel phase, both waves
+        const float angle = static_cast<float>(i) * 2.39996f, radius = 1.37f * static_cast<float>(i) + 0.21f;
+        points[i][0] = radius * std::cos(angle);
+        points[i][1] = radius * std::sin(angle);
+    }
+    if (surfaceCheck_ == 0)
+    {
+        float registers[sea_gpu::kRegisters][4]{};
+        for (int w = 0; w < 2; w++)
+            sea_gpu::wave_register(kOriginX, kOriginZ, waves[w].move.x, waves[w].move.z, waves[w].scale, waves[w].amp,
+                                   registers[w]);
+        registers[2][0] = 13.37f;
+        registers[2][1] = 63.6f;
+        registers[4][2] = 1.0e8f; // every point within reach (camera at the origin)
+        std::string why;
+        bool retry = false;
+        surfaceCheck_ = storm::render::StartSeaSurfaceCheck(rs->GetTextureFromID(iFieldTexture), &registers[0][0],
+                                                            &points[0][0], kPoints, why, retry);
+        surfaceCheckFrames_ = 0;
+        if (!surfaceCheck_ && !retry)
+            SurfaceCheckFailed("it cannot run: " + why);
+        return;
+    }
+    std::vector<storm::render::SeaSurfaceSample> samples;
+    switch (storm::render::PollSeaSurfaceCheck(surfaceCheck_, samples))
+    {
+    case storm::render::SeaSurfaceCheckState::Pending:
+        if (++surfaceCheckFrames_ > kSurfaceCheckFrames)
+            SurfaceCheckFailed(fmt::format("no result after {} frames", kSurfaceCheckFrames));
+        return;
+    case storm::render::SeaSurfaceCheckState::Lost:
+        surfaceCheck_ = 0;
+        if (++surfaceCheckLosses_ > kSurfaceCheckLosses)
+            SurfaceCheckFailed(fmt::format("its result was lost {} times", surfaceCheckLosses_));
+        return;
+    case storm::render::SeaSurfaceCheckState::Done:
+        break;
+    }
+    surfaceCheck_ = 0;
+    // Within float rounding of the two (world positions on the CPU, wrapped texel coordinates on the GPU) and a half
+    // float target's precision: a millimetre in a surface metres high, normals to 1/500.
+    float worstHeight = 0.0f, worstNormal = 0.0f;
+    uint32_t wrong = 0;
+    std::string example;
+    for (uint32_t i = 0; i < kPoints; i++)
+    {
+        glm::vec3 normal;
+        const auto x = static_cast<float>(kOriginX + points[i][0]), z = static_cast<float>(kOriginZ + points[i][1]);
+        const float height = SurfaceXZ(waves, x, z, &normal);
+        const storm::render::SeaSurfaceSample &gpu = samples[i];
+        const float dh = std::fabs(gpu.height - height);
+        const float dn = std::max({std::fabs(gpu.nx - normal.x), std::fabs(gpu.ny - normal.y), std::fabs(gpu.nz - normal.z)});
+        const bool bad = !(dh <= 0.004f + 0.002f * std::fabs(height)) || !(dn <= 0.002f);
+        worstHeight = std::max(worstHeight, std::isfinite(dh) ? dh : INFINITY);
+        worstNormal = std::max(worstNormal, std::isfinite(dn) ? dn : INFINITY);
+        if (bad && wrong++ == 0)
+            example = fmt::format("point {} ({:.2f}, {:.2f}): GPU height {:.4f} normal ({:.4f}, {:.4f}, {:.4f}), CPU "
+                                  "height {:.4f} normal ({:.4f}, {:.4f}, {:.4f})",
+                                  i, points[i][0], points[i][1], gpu.height, gpu.nx, gpu.ny, gpu.nz, height, normal.x,
+                                  normal.y, normal.z);
+    }
+    if (wrong)
+    {
+        SurfaceCheckFailed(fmt::format("{} of {} points differ from the CPU's surface (largest difference: height {:.4f} "
+                                       "m, normal {:.4f}); first {}",
+                                       wrong, kPoints, worstHeight, worstNormal, example));
+        return;
+    }
+    surface_ = Surface::Gpu;
+    spdlog::info("sea: the GPU surface self-check passed on {}: {} points match the CPU's surface (largest difference: "
+                 "height {:.5f} m, normal {:.5f}); the sea's vertices are displaced on the GPU",
+                 storm::render::SeaSurfaceCheckDevice(), kPoints, worstHeight, worstNormal);
 }
 
 void SEA::Realize(uint32_t dwDeltaTime)
@@ -1354,8 +1345,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
         fFrame1 -= FRAMES;
     while (fFrame2 >= FRAMES)
         fFrame2 -= FRAMES;
-
-    // pSeaParameters->SetTexture(0, pAnimTexture);
+    UpdateWaves();
 
     uint64_t dwTotalRDTSC;
     RDTSC_B(dwTotalRDTSC);
@@ -1400,54 +1390,17 @@ void SEA::Realize(uint32_t dwDeltaTime)
 
     PlaceTree();
 
-    iVStart = 0;
-    iTStart = 0;
-    iIStart = 0;
-
-    memset(pIndices, 0xFF, NUM_VERTEXS * sizeof(pIndices[0]) * 3);
-
-    uint64_t dwX;
-    RDTSC_B(dwX);
-    // SetEvent(hEventCalcMaps);
-    CalculateHeightMap(fFrame1, 1.0f / 255.0f, pSeaFrame1, aBumps);
-    CalculateNormalMap(fFrame1, 1.0f / 255.0f, pSeaNormalsFrame1, aNormals);
-
-    CalculateHeightMap(fFrame2, 1.0f / 255.0f, pSeaFrame2, aBumps);
-    CalculateNormalMap(fFrame2, 1.0f / 255.0f, pSeaNormalsFrame2, aNormals);
-    RDTSC_E(dwX);
-    // core.Trace("dwX = %d", dwX);
-
     aBlocks.clear();
     BuildTree(0, 0, 0);
     FitBlocksToBuffer();
     cubeSeaInView_ = !aBlocks.empty(); // the next frame's cube faces (CubeFacesDue)
 
-    uint32_t i;
-
-    auto *pVSea2 = static_cast<SeaVertex *>(rs->LockVertexBuffer(iVSeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
-    pTriangles = static_cast<uint16_t *>(rs->LockIndexBuffer(iISeaBuffer, D3DLOCK_DISCARD | D3DLOCK_NOSYSLOCK));
-
-    for (i = 0; i < aBlocks.size(); i++) {
-        PrepareIndicesForBlock(i);
-    }
-
-    // Blocks write disjoint vertex ranges ([iIFirst, iILast], assigned above by
-    // PrepareIndicesForBlock) and only read per-frame constants and the height /
-    // normal maps, so they can be evaluated concurrently. The vertex buffer
-    // upload below stays on this thread.
-#ifdef __ANDROID__
-    // libc++ in the NDK has no parallel algorithms; use the engine's fork-join helper.
-    waveWorkers_.run(aBlocks.size(), [this](size_t index) { SSE_WaveXZBlock(aBlocks[index]); });
-#else
-    std::for_each(std::execution::par_unseq, std::begin(aBlocks), std::end(aBlocks),
-                  [this](auto &i) { SSE_WaveXZBlock(i); });
-#endif
-
-    if (iVStart && iTStart)
-        memcpy(pVSea2, pVSea, iVStart * sizeof(SeaVertex));
-
-    rs->UnLockVertexBuffer(iVSeaBuffer);
-    rs->UnLockIndexBuffer(iISeaBuffer);
+    UpdateSurfaceCheck();
+    const bool bGpuSurface = surface_ == Surface::Gpu;
+    if (bGpuSurface)
+        BuildMesh();
+    else
+        BuildCpuMesh();
 
     if (iVStart && iTStart)
     {
@@ -1507,6 +1460,29 @@ void SEA::Realize(uint32_t dwDeltaTime)
         rs->SetVertexShaderConstantF(GC_CONSTANT2, (const float *)&vec2, 1);
         rs->SetVertexShaderConstantF(GC_SHADOW_CONST1, (const float *)&vec3, 1);
         rs->SetVertexShaderConstantF(GC_ANIMATION, (const float *)&vec4, 1);
+        {
+            // The surface the vertex shader puts on the grid (sea_surface_gpu.hpp): WaveXZ's waves, the vertex shift;
+            // c8.w: whether it does (the CPU surface wrote the vertices displaced). The field is bound either way (the
+            // ports declare it).
+            const glm::dvec2 origin = MeshOrigin();
+            float surface[sea_gpu::kRegisters][4]{};
+            sea_gpu::wave_register(origin.x, origin.y, vMove1.x, vMove1.z, fScale1, fAmp1, surface[0]);
+            sea_gpu::wave_register(origin.x, origin.y, vMove2.x, vMove2.z, fScale2, fAmp2, surface[1]);
+            surface[2][0] = fFrame1;
+            surface[2][1] = fFrame2;
+            surface[2][2] = fPosShift * 3.0f;
+            surface[2][3] = fBumpScale;
+            surface[3][0] = static_cast<float>(origin.x - vWorldOffset.x);
+            surface[3][1] = static_cast<float>(origin.y - vWorldOffset.z);
+            surface[3][2] = static_cast<float>(origin.x * fBumpScale);
+            surface[3][3] = static_cast<float>(origin.y * fBumpScale);
+            surface[4][0] = static_cast<float>(vCamPos.x - origin.x);
+            surface[4][1] = static_cast<float>(vCamPos.z - origin.y);
+            surface[4][2] = fMaxSeaDistance * fMaxSeaDistance;
+            surface[4][3] = bGpuSurface ? sea_gpu::kSurfaceGpu : sea_gpu::kSurfaceCpu;
+            rs->SetVertexShaderConstantF(sea_gpu::kFirstRegister, &surface[0][0], sea_gpu::kRegisters);
+            rs->TextureSet(D3DVERTEXTEXTURESAMPLER0, iFieldTexture);
+        }
         rs->SetVertexShaderConstantF(GC_CAMERA_POS, (const float *)&vec5, 1);
         rs->SetVertexShaderConstantF(GC_MTX_WVP, (const float *)&mWorldViewProj, 4);
 
@@ -1577,6 +1553,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
             rs->DrawIndexedPrimitiveNoVShader(D3DPT_TRIANGLELIST, iVSeaBuffer, sizeof(SeaVertex), iISeaBuffer, 0,
                                               iVStart, 0, iTStart, "Sea2_SunRoad");
         }
+        rs->TextureSet(D3DVERTEXTEXTURESAMPLER0, -1); // a skinned draw's bone palette goes there
     }
 
     if (!storm::loading::active)

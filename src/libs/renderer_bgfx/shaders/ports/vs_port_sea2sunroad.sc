@@ -3,14 +3,15 @@ $output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, 
 // Port of the technique shader sea_sea2sunroad_vertex_shader (vs_1_1) of src/techniques/weather/sea.fx, one D3D9 instruction per line.
 #define PORT_VSC_COUNT 39 // registers c0..c38 (the GL program uploads exactly these)
 #include "port_vs.sh"
+#include "sea_surface.sh"
 #include "sea_waves.sh"
 
 void main()
 {
-    vec4 v0 = a_position; // dcl_position0 v0
+    // dcl_position0 v0, dcl_normal0 v1, dcl_texcoord0 v2: the sea's surface (sea_surface.sh)
+    vec4 v0, v1, v2;
+    seaVertex(a_position, a_normal, a_texcoord0, v0, v1, v2);
     v0.y += seaWavesLift(v0.xz); // waves from objects (sea_waves.sh)
-    vec4 v1 = vec4(a_normal, 1.0); // dcl_normal0 v1
-    vec4 v2 = a_texcoord0; // dcl_texcoord0 v2
     vec4 r0 = vec4_splat(0.0);
     vec4 r1 = vec4_splat(0.0);
     vec4 r2 = vec4_splat(0.0);

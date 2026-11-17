@@ -15,6 +15,8 @@ struct ShaderPort
     uint8_t vsc_count;       // vertex ports: constant registers c0.. the shader declares (PORT_VSC_COUNT)
     bool slope_bias = false; // pixel ports compiled with STORM_SLOPE_BIAS (their technique sets the bias)
     bool sea_fx = false;     // the Sea2 ports: effects::Host::prepare_sea sets u_seaFx / s_seaDepth and the waves (sea_waves.sh)
+    // vertex ports that read D3DVERTEXTEXTURESAMPLER0 (s_vtex at kVertexTextureUnit): the sea's height field (sea_surface.sh)
+    bool vertex_texture = false;
     uint32_t shader_id() const;
 };
 // Reference blob: kShaderRefMagic, the key bytes zero-padded to whole DWORDs, 0x0000FFFF.

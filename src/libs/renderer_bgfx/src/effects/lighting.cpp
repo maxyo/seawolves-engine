@@ -33,7 +33,7 @@ constexpr bool FfUnitsDistinct()
             return false;
         used |= 1u << unit;
     }
-    return shim::kBonePaletteUnit < 16 && !(used & (1u << shim::kBonePaletteUnit));
+    return shim::kVertexTextureUnit < 16 && !(used & (1u << shim::kVertexTextureUnit));
 }
 static_assert(FfUnitsDistinct(), "two texture units of the lit and baked programs meet (fx::kFxStages)");
 

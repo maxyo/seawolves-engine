@@ -6,6 +6,11 @@
 // then draw exactly the picture «Высокая» draws without them. The capture once held the post's distance for the
 // water pixels next to it (a coarser capture; a multisampled edge pixel) and faded them out: bright fringes along
 // every rope, sail and hull over the sea on the phone.
+//
+// The same sea displaced on the GPU (sea_surface.sh: a flat grid lifted to the same height by the height field at
+// D3DVERTEXTEXTURESAMPLER0) must draw the CPU's picture with the soft edges on: their scene depth capture is a draw
+// of its own right before the first sea draw, and a vertex texture bound before it went with it (a flat sea on
+// Vulkan, where nothing stays bound between draws).
 #include "device.hpp"
 #include "ports.hpp"
 #include "check_backend.hpp"
@@ -91,6 +96,19 @@ class Scene
                     *reinterpret_cast<uint32_t *>(static_cast<uint8_t *>(box.pBits) + z * box.SlicePitch + y * box.RowPitch + x * 4) =
                         0x8080FF80;
         bump_->UnlockBox(0);
+        // The height field (sea_surface_gpu.hpp: 1024 x 1024 RGBA32F): every texel at half height, a flat normal.
+        constexpr uint32_t kField = 1024;
+        check(d_.CreateTexture(kField, kField, 1, 0, D3DFMT_A32B32G32R32F, D3DPOOL_MANAGED, &field_, nullptr),
+              "CreateTexture(field)");
+        D3DLOCKED_RECT field;
+        check(field_->LockRect(0, &field, nullptr, 0), "LockRect(field)");
+        for (uint32_t y = 0; y < kField; ++y)
+            for (uint32_t x = 0; x < kField; ++x)
+            {
+                float *texel = reinterpret_cast<float *>(static_cast<uint8_t *>(field.pBits) + y * field.Pitch) + x * 4;
+                texel[0] = 0.5f, texel[1] = texel[2] = texel[3] = 0.0f;
+            }
+        field_->UnlockRect(0);
         // The reflected scene: one sky colour.
         check(d_.CreateCubeTexture(4, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &env_, nullptr), "CreateCubeTexture");
         for (int face = 0; face < 6; ++face)
@@ -110,10 +128,13 @@ class Scene
         vs_->Release();
         ps_->Release();
         bump_->Release();
+        field_->Release();
         env_->Release();
     }
 
-    Picture render()
+    // `gpu_surface`: the sea a flat grid at y = 0 that the vertex shader lifts from the field (c4..c8, c8.w = 1),
+    // otherwise the vertices as the CPU writes them (c8.w = 0).
+    Picture render(bool gpu_surface = false)
     {
         check(d_.BeginScene(), "BeginScene");
         check(d_.SetRenderTarget(0, back_), "SetRenderTarget");
@@ -158,6 +179,7 @@ class Scene
         d_.SetPixelShader(ps_);
         d_.SetTexture(0, bump_);
         d_.SetTexture(3, env_);
+        d_.SetTexture(D3DVERTEXTEXTURESAMPLER0, field_);
         float c[59][4] = {};
         const auto set = [&](int r, float x, float y, float z, float w) {
             c[r][0] = x, c[r][1] = y, c[r][2] = z, c[r][3] = w;
@@ -166,6 +188,15 @@ class Scene
         set(1, 2.0f, -1.0f, 0.00036621652552071f, 0.0f); // no fog
         set(2, 0.0f, 0.0f, 0.0f, 0.0f);
         set(23, 0.0f, 0.0f, 0.0f, 1.0f); // camera
+        if (gpu_surface)
+        {
+            // One wave of amplitude -6 m over the half-height field: 3 m below the camera; a flat normal, no shift.
+            set(4, 1.0f, 0.0f, 0.0f, -6.0f);
+            set(5, 1.0f, 0.0f, 0.0f, 0.0f);
+            set(6, 0.0f, 0.0f, 0.0f, 1.0f / 800.0f);
+            set(7, 0.0f, 0.0f, 0.5f, 0.0f);
+            set(8, 0.0f, 0.0f, 1.0e12f, 1.0f);
+        }
         // World-view-projection as the vertex shader reads it (m4x4 with c24..c27: the columns of the D3D matrix).
         for (int r = 0; r < 4; ++r)
             set(24 + r, projection.m[0][r], projection.m[1][r], projection.m[2][r], projection.m[3][r]);
@@ -180,7 +211,7 @@ class Scene
         set(58, 0.0f, 1.0f, 0.0f, 1.0f);
         d_.SetVertexShaderConstantF(0, &c[0][0], 59);
         // A calm sea 3 m below the camera, from 1 m ahead to the far plane.
-        const float y = -3.0f;
+        const float y = gpu_surface ? 0.0f : -3.0f;
         const SeaVertex sea[6] = {{-400, y, 1, 0, 1, 0, 0, 0},   {400, y, 1, 0, 1, 0, 1, 0},
                                   {-400, y, 450, 0, 1, 0, 0, 1}, {-400, y, 450, 0, 1, 0, 0, 1},
                                   {400, y, 1, 0, 1, 0, 1, 0},    {400, y, 450, 0, 1, 0, 1, 1}};
@@ -190,6 +221,7 @@ class Scene
         d_.SetPixelShader(nullptr);
         d_.SetTexture(0, nullptr);
         d_.SetTexture(3, nullptr);
+        d_.SetTexture(D3DVERTEXTEXTURESAMPLER0, nullptr);
         render::EffectsSceneComplete();
         check(d_.EndScene(), "EndScene");
         check(d_.GetRenderTargetData(back_, readback_), "GetRenderTargetData");
@@ -209,6 +241,7 @@ class Scene
     shim::VertexShader *vs_ = nullptr;
     shim::PixelShader *ps_ = nullptr;
     shim::VolumeTexture *bump_ = nullptr;
+    shim::Texture2D *field_ = nullptr;
     shim::CubeTexture *env_ = nullptr;
 };
 
@@ -219,15 +252,31 @@ bool expect(bool ok, const char *what)
 }
 
 // Settles a settings change, then renders a few frames (the programs and the self-test come first).
-Picture settled(Scene &scene, const std::vector<render::EffectsOption> &options)
+Picture settled(Scene &scene, const std::vector<render::EffectsOption> &options, bool gpu_surface = false)
 {
     render::ConfigureEffects(2, options);
     for (int i = 0; i < kMaxSwitchFrames && render::CurrentEffects().pending; ++i)
-        scene.render();
+        scene.render(gpu_surface);
     Picture picture;
     for (int i = 0; i < 3; ++i)
-        picture = scene.render();
+        picture = scene.render(gpu_surface);
     return picture;
+}
+
+// Pixels whose colour differs by more than 2, and the largest difference.
+uint32_t differing_pixels(const Picture &a, const Picture &b, uint32_t &worst)
+{
+    uint32_t differing = 0;
+    worst = 0;
+    for (size_t i = 0; i < a.size(); i += 4)
+    {
+        uint32_t d = 0;
+        for (int ch = 0; ch < 3; ++ch)
+            d = std::max<uint32_t>(d, std::abs(int(a[i + ch]) - int(b[i + ch])));
+        worst = std::max(worst, d);
+        differing += d > 2;
+    }
+    return differing;
 }
 
 } // namespace
@@ -275,6 +324,13 @@ int main()
                         worst, sea);
             ok &= expect(sea > kWidth * kHeight / 4, "the sea is drawn below the horizon");
             ok &= expect(differing == 0, "soft edges fade no water next to an object in front of the sea");
+            // The GPU surface with the soft edges on (their capture comes right before the first sea draw).
+            const Picture gpu = settled(scene, {{"fx_sea_soft_edges", 1}}, true);
+            uint32_t gpu_worst = 0;
+            const uint32_t gpu_differing = differing_pixels(gpu, soft, gpu_worst);
+            std::printf("     GPU surface / CPU surface with soft edges: %u pixels differ by more than 2 (worst %u)\n",
+                        gpu_differing, gpu_worst);
+            ok &= expect(gpu_differing == 0, "the sea displaced on the GPU draws the CPU's sea behind the depth capture");
         }
         device->Release();
     }
