@@ -1886,6 +1886,13 @@ Executor::Executor(BgfxBackendImpl &backend, const Executor &plan, uint16_t firs
     }
     if (last_layer_slot >= 0)
         discard[size_t(last_layer_slot)] |= BGFX_CLEAR_DISCARD_DEPTH | BGFX_CLEAR_DISCARD_STENCIL;
+    // The views before the first one into the final target draw only into the UI's own layers and posts: on the
+    // surface they run before the frame owner's composite, which then shares one pass with the UI's final views.
+    size_t offscreen = 0;
+    while (offscreen < slots.size() && slots[offscreen].target.kind != TargetKind::Final)
+        ++offscreen;
+    if (b_->options_.owner && !bgfx::isValid(b_->target_) && offscreen > 0)
+        b_->options_.owner->RunBeforeComposite(first_view_, uint16_t(offscreen));
     for (size_t s = 0; s < slots.size(); ++s)
     {
         const Schedule::Slot &slot = slots[s];
@@ -2491,6 +2498,15 @@ void Executor::Main(const Commands &commands, bool clear_final, bool degraded)
     projection_.reset();
     layers_ = 1;
     post_ = {0, 1, 2};
+    // Nothing to draw (no document shown): no layer and no composite over the game picture. Only the frame's clear of
+    // the UI's own target (SetTarget) still runs. The jobs run before Main (Submit).
+    if (commands.empty())
+    {
+        const Target final_target{TargetKind::Final};
+        if (clear_final && bgfx::isValid(b_->target_))
+            Begin(final_target, Full(), {{final_target, Whole()}}, {}, BGFX_CLEAR_COLOR);
+        return;
+    }
     // Depth too: it shares the stencil's attachment (D24S8), and a tile GPU loads a combined buffer that is not
     // cleared whole from memory.
     Begin(Layer(0), Full(), {{Layer(0), Whole()}, {Stencil(), Whole()}}, {}, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH | BGFX_CLEAR_STENCIL);

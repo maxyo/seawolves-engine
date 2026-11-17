@@ -32,7 +32,7 @@
 namespace storm::render
 {
 
-inline constexpr uint32_t kFrameOwnerApiVersion = 7;
+inline constexpr uint32_t kFrameOwnerApiVersion = 8;
 
 // bgfx::ViewId values. Compile-time constants so clients can size tables.
 inline constexpr uint16_t kPreGameViewBegin = 0; // passes that must run before the scene (e.g. a shadow map)
@@ -208,6 +208,12 @@ class FrameOwner
     virtual void RegisterPipelineProgram(const char *vertex_shader, const char *fragment_shader, uint16_t program) {}
     virtual void UnregisterPipelineProgram(uint16_t program) {}
 
+    // From OnUiRender: client views [view_begin, view_begin + view_count) of this frame draw only into the client's
+    // own offscreen targets and read neither the surface nor what the composite or the client's later views draw.
+    // They run before the composite (bgfx::setViewOrder), so the surface is drawn in one pass instead of being
+    // stored and loaded again around them. Optional: an owner without a composite ignores it.
+    virtual void RunBeforeComposite(uint16_t view_begin, uint16_t view_count) {}
+
   protected:
     virtual ~FrameOwner() = default;
 };
@@ -302,6 +308,7 @@ bool GamePictureHeld();
 } // namespace storm::render
 
 // Version history
+//   8  RunBeforeComposite(): a client's offscreen views run before the composite.
 //   7  Optional client program registration for pipeline prewarming through FrameOwner.
 //   6  HoldGamePicture() / GamePictureHeld(): the last game picture presented again under a pause menu.
 //   1  initial: view range, hooks, surface metrics, texture helpers, game pictures.

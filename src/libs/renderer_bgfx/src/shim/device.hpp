@@ -184,6 +184,7 @@ class Context final : public render::FrameOwner
     GameTarget CurrentGameTarget() const override { return game_target_; }
     void set_game_target(const GameTarget &target) { game_target_ = target; }
     bool DeviceReady() const override { return ready(); }
+    void RunBeforeComposite(uint16_t view_begin, uint16_t view_count) override;
     render::TextureId CreateTexture(const render::TextureDesc &desc, std::span<const std::byte> pixels) override;
     bool UpdateTexture(render::TextureId id, uint16_t x, uint16_t y, uint16_t width, uint16_t height,
                        std::span<const std::byte> pixels) override;
@@ -196,6 +197,8 @@ class Context final : public render::FrameOwner
     void set_picture_provider(render::GamePictureProvider *provider);
 
   private:
+    // RunBeforeComposite of the frame being built: client views [begin, begin + count).
+    uint16_t before_composite_begin_ = 0, before_composite_count_ = 0;
     struct Client
     {
         render::FrameClient *client;

@@ -238,6 +238,8 @@ that is not highp, in either blob.
   depth into the display-size picture, in one pass with its colour and nothing loaded; that depth is invalidated after
   its last view of the frame and cleared before it is used again. The multisampled depth of a scene drawn at the
   display size is a write-only attachment, never resolved: nothing samples it.
+- The UI's offscreen views run before the game composite (`FrameOwner::RunBeforeComposite`), so the surface is drawn
+  in one pass; a UI frame without commands draws no layer and no composite.
 
 ## Known limits
 

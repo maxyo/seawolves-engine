@@ -15,6 +15,7 @@
 #include <GLES2/gl2.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -1271,6 +1272,18 @@ void log_frame_work()
 }
 } // namespace
 
+void Context::RunBeforeComposite(uint16_t view_begin, uint16_t view_count)
+{
+    if (view_begin < render::kUiViewBegin || view_begin + view_count > render::kUiViewBegin + render::kUiViewCount)
+    {
+        logf("ERROR: RunBeforeComposite: views %u..%u are not client views: left in their place", view_begin,
+             view_begin + view_count);
+        return;
+    }
+    before_composite_begin_ = view_begin;
+    before_composite_count_ = view_count;
+}
+
 void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint32_t game_height)
 {
     STORM_PROFILE_ZONE("present");
@@ -1316,6 +1329,25 @@ void Context::present(bgfx::TextureHandle game_color, uint32_t game_width, uint3
             const storm::platform::frame_work::Scope phase(storm::platform::frame_work::Phase::Ui);
             for (auto &entry : clients_)
                 entry.client->OnUiRender(frame_);
+        }
+        {
+            // The clients' offscreen views (RunBeforeComposite), then the composite, then their views into the
+            // surface: the surface is one pass. setViewOrder swaps from the current order: identity first, for these
+            // positions every frame.
+            constexpr uint16_t kFirst = render::kCompositeView, kEnd = render::kUiViewBegin + render::kUiViewCount;
+            bgfx::setViewOrder(kFirst, kEnd - kFirst, nullptr);
+            if (before_composite_count_ > 0)
+            {
+                std::array<bgfx::ViewId, kEnd - kFirst> order;
+                size_t n = 0;
+                for (uint16_t id = before_composite_begin_; id < before_composite_begin_ + before_composite_count_; ++id)
+                    order[n++] = id;
+                for (uint16_t id = kFirst; id < kEnd; ++id)
+                    if (id < before_composite_begin_ || id >= before_composite_begin_ + before_composite_count_)
+                        order[n++] = id;
+                bgfx::setViewOrder(kFirst, static_cast<uint16_t>(n), order.data());
+            }
+            before_composite_count_ = 0;
         }
         const auto frame_call = std::chrono::steady_clock::now();
         bool presented = false;
