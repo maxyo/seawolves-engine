@@ -94,6 +94,7 @@ inline StoragePaths storagePaths()
     env->DeleteLocalRef(activity);
     if (env->ExceptionCheck() || !value)
     {
+        if (env->ExceptionCheck()) env->ExceptionDescribe(); // the Java cause, to logcat
         env->ExceptionClear();
         if (value) env->DeleteLocalRef(value);
         throw std::runtime_error("Game folder unavailable. Check file access in the launcher or import a ZIP.");
@@ -130,6 +131,7 @@ inline std::filesystem::path cacheDirectory()
     env->DeleteLocalRef(activity);
     if (env->ExceptionCheck() || !value)
     {
+        if (env->ExceptionCheck()) env->ExceptionDescribe(); // the Java cause, to logcat
         env->ExceptionClear();
         if (value) env->DeleteLocalRef(value);
         throw std::runtime_error("Android cache root (GameActivity.getCacheRoot) is unavailable");
