@@ -269,10 +269,13 @@ struct Settings
     // How many of those slots are kept for lights that move (carried lanterns and torches): the nearest to the
     // camera cast shadows, their still faces redrawn whenever they move. 0, 1 or 2.
     uint8_t lamp_moving = 0;
-    float lamp_gain = 1.0f;  // the lamps' strength on baked surfaces, 1 = the chosen look (0..3)
+    // The lamps' strength on baked surfaces (0..3): half of the full strength, so lamp-lit walls stay near the game's
+    // own look («Низкая») instead of a bright orange (the owner chose step D of the lamp tone sheet, 2026-11-17).
+    float lamp_gain = 0.5f;
     // The share of a lamp's own colour in the light it adds to baked surfaces (0..1); the rest takes the tone of the
-    // baked colours, which hold the game's own, much less saturated lamp light.
-    float lamp_tint = 0.25f;
+    // baked colours, which hold the game's own, much less saturated lamp light. None of it (step D, 2026-11-17):
+    // the walls keep the bake's tone.
+    float lamp_tint = 0.0f;
     float lamp_baked = 0.25f; // the part of that light the baked colours are taken to hold already (0..1): 1 = lamps
                              // only take light away where they are hidden, less = they also brighten what they reach
     // Indoors the lit models stand this much above the room light around them (0 = at its level): the owner wants

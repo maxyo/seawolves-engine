@@ -487,7 +487,8 @@ int main()
             const Streak walled = streak(pictures[1][0], pictures[1][1], 12.0f);
             std::printf("open street: the rain adds up to %.0f, over %d rows x %d columns; behind the wall up to %.0f\n",
                         open.peak, open.rows, open.columns, walled.peak);
-            expect(open.peak > 40.0f, "the wet street shows the lamp's highlight");
+            // The lamps' highlight on baked surfaces rides at their strength there (lamp_gain 0.5 since 2026-11-17: ~31).
+            expect(open.peak > 20.0f, "the wet street shows the lamp's highlight");
             expect(walled.peak < 0.5f * open.peak, "no reflection where the wall shadows the lamp (its own shadow)");
             render::SetEffectsLamps({});
             render::SetEffectsLocationGeometry({});

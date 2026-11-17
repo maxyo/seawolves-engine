@@ -213,7 +213,7 @@ class LampShadows
     float shadow_level_ = fx::kLampNegligible; // under it no shadow taps (Settings::lamp_shadow_light), likewise
     int face_size_ = 0, dynamic_face_size_ = 0;
     int columns_ = 0, rows_ = 0;
-    float gain_ = 1.0f, baked_ = 0.5f;
+    float gain_ = 0.5f, baked_ = 0.5f;
     bool soft_ = false;
     int debug_ = 0;
     int moving_slots_ = 0;         // the last slots of the atlas
@@ -282,7 +282,7 @@ class LampShadows
     void place_lamps(std::vector<fx::Lamp> merged, std::vector<fx::Lamp> raw, std::vector<int> membership);
     void find_fixtures();
     float model_lift_ = 0.0f;
-    float tint_ = 0.25f; // Settings::lamp_tint
+    float tint_ = 0.0f; // Settings::lamp_tint
     float soft_light_ = 0.0f; // Settings::lamp_soft_light
     fx::Vec3 geometry_lo_{}, geometry_hi_{};
     fx::Vec3 room_lo_{}, room_hi_{};
