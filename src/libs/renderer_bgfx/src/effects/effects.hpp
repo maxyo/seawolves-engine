@@ -252,6 +252,7 @@ class Host
     std::vector<std::string> sea_backdrop_logged_;
     uint64_t sea_backdrop_draws_ = 0; // over the profile line's frames (fx_gpu_profile)
     void release_sea_backdrop();
+    bool sea_backdrop_target(const shim::Device &device) const;
     bool sea_backdrop_armed(const shim::Device &device) const;
     bool open_sea_backdrop_view(shim::Device &device, const std::array<float, 32> &transform);
     // Waves from objects: the sea's frame (set_sea_frame) and the simulation.

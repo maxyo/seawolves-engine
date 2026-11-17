@@ -46,6 +46,9 @@ struct Host {
  // The backdrop (sea_backdrop): drawn this frame when `armed` and a draw (or the sea's first draw) opened its view.
  bool armed=false,drawn=false;uint32_t sea_backdrop_frame_=UINT32_MAX;bgfx::TextureHandle sea_backdrop_depth_{40};
  uint16_t sea_backdrop_width_=1000,sea_backdrop_height_=500;int sea_backdrop_view_=90,opened=0;uint64_t sea_drawn_frame_=0;bool sea_drawn_=false;
+ // As production: the picture before the boundary, after it while its depth is write-only (picture_write_only).
+ bool picture_write_only=false;
+ bool sea_backdrop_target(const shim::Device&d) const{return d.rt==d.back_color&&(!d.scene_done||picture_write_only);}
  bool sea_backdrop_armed(const shim::Device&) const{return armed;}
  bool open_sea_backdrop_view(shim::Device&,const std::array<float,32>&){++opened;sea_backdrop_frame_=shim::Context::instance().submitted_frames();return true;}
  void advance_sea_waves(shim::Device&){}void set_sea_waves_uniforms(){}bool has_weather(){return false;}
@@ -89,6 +92,8 @@ int main(){
  check(host.opened==1&&bgfx::touches==1&&host.sea_depth_.captures==captures+2&&bgfx::submitted[15]>0,"armed frame without draws before the sea: the cleared backdrop");
  d.scene_done=true;++shim::Context::instance().frame;captures=host.sea_depth_.captures;host.prepare_sea(d);
  check(host.sea_depth_.captures==captures+1&&host.sea_depth_.last_source==7,"after the scene boundary the picture is another target: captured in place");
+ host.picture_write_only=true;++shim::Context::instance().frame;captures=host.sea_depth_.captures;host.prepare_sea(d);
+ check(host.sea_depth_.captures==captures+1&&host.sea_depth_.last_source==40&&bgfx::submitted[15]>0,"after the boundary over the write-only scene depth (the title's sea): the backdrop");
  if(!fails)std::cout<<"PASS actual prepare_sea target/frame/failure/Medium/backdrop controls\n";
  return fails?1:0;
 }

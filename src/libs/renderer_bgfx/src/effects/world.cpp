@@ -121,7 +121,7 @@ void Host::prepare_sea(shim::Device &device)
     bool turbidity = device_ready_ && settings_.sea_turbidity;
     bool depth_ready = false;
     const uint32_t frame = shim::Context::instance().submitted_frames();
-    const bool into_scene = device.rt == device.back_color && !device.scene_done;
+    const bool into_scene = sea_backdrop_target(device);
     if ((soft_edges || turbidity) && into_scene)
     {
         // The scene distance behind the sea: the backdrop of this frame (sea_backdrop), captured at the sea's first
@@ -384,8 +384,18 @@ void Host::release_sea_backdrop()
 
 void Host::sea_backdrop_clear(const shim::Device &device, float z)
 {
-    if (device.rt == device.back_color && !device.scene_done)
+    if (sea_backdrop_target(device))
         sea_backdrop_clear_z_ = z;
+}
+
+bool Host::sea_backdrop_target(const shim::Device &device) const
+{
+    // The game picture before the scene boundary, and after it while the picture's depth is the multisampled scene
+    // depth, which is write-only (a scene at the display size, Device::create_scene_stores; the title's sea is drawn
+    // after its interface ended the scene). At a render scale the picture after the boundary has a single-sample depth
+    // of its own, captured in place.
+    return device.rt == device.back_color &&
+           (!device.scene_done || (device.back_depth->store->target_flags & BGFX_TEXTURE_RT_WRITE_ONLY));
 }
 
 bool Host::sea_backdrop_armed(const shim::Device &device) const
@@ -394,7 +404,7 @@ bool Host::sea_backdrop_armed(const shim::Device &device) const
     return device_ready_ && (settings_.sea_soft_edges || settings_.sea_turbidity) && sea_drawn_ &&
            context.frame_index() <= sea_drawn_frame_ + kSeaBackdropFrames &&
            !(sea_depth_frame_ == context.submitted_frames() && sea_depth_source_ == &sea_backdrop_depth_) &&
-           device.rt == device.back_color && !device.scene_done;
+           sea_backdrop_target(device);
 }
 
 bool Host::open_sea_backdrop_view(shim::Device &device, const std::array<float, 32> &transform)
