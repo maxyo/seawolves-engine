@@ -1,4 +1,4 @@
-// The sea's surface in its vertex ports (vs_port_sea2, vs_port_sea2foam, vs_port_sea2sunroad, vs_port_sea3) and in
+// The sea's surface in its vertex ports (vs_port_sea2, vs_port_sea3) and in
 // the sea's self-check (vs_sea_check.sc): the position, normal and bump texture coordinates the CPU computed for every
 // vertex of every frame, from the flat grid the sea uploads when its blocks change (src/libs/sea/src/sea.cpp) and its
 // height field (src/libs/sea/include/sea_surface_gpu.hpp: the layout of the texels and registers). Every step is

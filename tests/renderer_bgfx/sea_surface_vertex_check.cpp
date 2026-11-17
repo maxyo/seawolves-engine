@@ -1,4 +1,4 @@
-// Raster check of the sea's vertex shader (shaders/include/sea_surface.sh, here through vs_port_sea2sunroad): a grid
+// Raster check of the sea's vertex shader (shaders/include/sea_surface.sh, here through vs_port_sea3): a grid
 // quad displaced on the GPU from the packed height field (src/libs/sea/include/sea_surface_gpu.hpp) must land where
 // SEA's CPU formulas put it: the height of SEA::WaveXZ and the shift of the vertex along the normal, from the
 // normals SEA::BuildVolumeTexture makes of the same frames. The projection maps x to the screen's x and z plus the
@@ -136,7 +136,7 @@ int main()
         check(d->CreateOffscreenPlainSurface(size, size, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, &readback, nullptr));
         check(d->GetRenderTarget(0, &back));
         auto *vs = new shim::VertexShader;
-        vs->port = shim::find_port("sea_sea2sunroad_vertex_shader", true);
+        vs->port = shim::find_port("sea_sea3_vertex_shader", true);
         auto *ps = new shim::PixelShader;
         ps->port = shim::find_port("coastfoam_foam_pixel_shader", false);
         if (!vs->port || !ps->port || !vs->port->vertex_texture)

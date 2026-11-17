@@ -98,10 +98,9 @@ float seaFresnel(float c, float eta)
     return min(0.5 * (s * s + p * p), 1.0);
 }
 
-// The world normal `n` of the Sea2 pixel with the ripples at the field uv t4.xy on it, as a tilt of the sea's own
-// (bumped) normal; `foam`: crest foam there (0..1). `pixel`: metres per pixel (the ripples fade out where a field
-// texel gets smaller than a pixel).
-vec3 seaWavesNormal(vec3 n, vec4 t4, float pixel, out float foam, out vec3 debug)
+// The ripples at the field uv t4.xy of the Sea2 pixel: their slope in the sea's tangent plane; `foam`: crest foam there
+// (0..1). `pixel`: metres per pixel (the ripples fade out where a field texel gets smaller than a pixel).
+vec2 seaWavesSlope(vec4 t4, float pixel, out float foam, out vec3 debug)
 {
     vec2 slope = vec2_splat(0.0);
     foam = 0.0;
@@ -116,6 +115,12 @@ vec3 seaWavesNormal(vec3 n, vec4 t4, float pixel, out float foam, out vec3 debug
         }
     }
     debug = vec3(length(slope) * 4.0, 0.0, foam);
+    return slope;
+}
+
+// The world normal `n` (the sea's own, bumped) tilted by the ripples' `slope` (seaWavesSlope).
+vec3 seaWavesTilt(vec3 n, vec2 slope)
+{
     n = normalize(n);
     // The height field's normal (-sx, 1, -sz) on the sea's own: its slope added in the sea's tangent plane.
     return normalize(n + vec3(-slope.x, 0.0, -slope.y) * n.y);

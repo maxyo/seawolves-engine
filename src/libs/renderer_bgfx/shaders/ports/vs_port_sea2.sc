@@ -1,5 +1,5 @@
 $input a_position, a_normal, a_texcoord0
-$output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v_texcoord4, v_fog
+$output v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v_texcoord4, v_fog, v_foam
 // Port of the technique shader sea_sea2_vertex_shader (vs_1_1) of src/techniques/weather/sea.fx, one D3D9 instruction per line.
 #define PORT_VSC_COUNT 59 // registers c0..c58 (the GL program uploads exactly these)
 #include "port_vs.sh"
@@ -114,6 +114,11 @@ void main()
     oT0.xy = v2.xy;                        // mov oT0.xy, v2
 
     oT4 = vec4(seaWavesUv(v0.xz), v0.xz); // the ripples and wakes of the pixel shader
+    // The game's foam layer (technique Sea2_Foam, folded into this draw: fs_port_sea2.sc), as
+    // sea_sea2foam_vertex_shader computed its oT3:
+    v_foam.xy = v2.xy * u_vsc[3].zz;                                        // mul oT3.xy, v2, c3.zzzz
+    v_foam.z = max((v0.y + -u_vsc[3].x) * u_vsc[3].y, u_vsc[0].x);          // add, mul, max oT3.z
+    v_foam.w = 0.0;
 
     PORT_VS_OUTPUT(oPos, oD0, oD1, oT0, oT1, oT2, oT3, oT4, oFog);
 }

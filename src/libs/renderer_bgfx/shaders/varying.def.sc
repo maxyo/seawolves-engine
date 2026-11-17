@@ -8,6 +8,9 @@ vec4 v_texcoord4 : TEXCOORD4 = vec4(0.0, 0.0, 0.0, 1.0);
 vec4 v_fog       : TEXCOORD7 = vec4(0.0, 0.0, 0.0, 0.0);
 // The ground variant only (vs_ff[_unlit]_dyn / fs_ff_dyn): the sun map's uv and depth, w: facing the sun.
 vec4 v_shadow    : TEXCOORD6 = vec4(0.0, 0.0, 0.0, 0.0);
+// The Sea2 ports only (vs_port_sea2 / fs_port_sea2): the game's foam layer, folded into the sea's draw: the foam
+// texture's uv and the layer's alpha (sea_sea2foam_vertex_shader's oT3).
+vec4 v_foam      : TEXCOORD6 = vec4(0.0, 0.0, 0.0, 0.0);
 // Per-pixel lighting variants only (vs_ff_lit / fs_ff_lit*, fs_ff_baked*): view-space normal and position,
 // material diffuse and ambient colour of the vertex.
 vec4 v_normal     : NORMAL    = vec4(0.0, 0.0, -1.0, 0.0);

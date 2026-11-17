@@ -1,4 +1,4 @@
-$input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v_texcoord4, v_fog
+$input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v_texcoord4, v_fog, v_foam
 // Port of the technique shader sea_sea2_pixel_shader (ps_1_1) of src/techniques/weather/sea.fx.
 // Stage 0: animated bump volume texture, stage 1: the game's foam texture (weather\\sea\\pena\\pena.tga; read only by
 // the waves from objects), stage 3: environment cube map.
@@ -55,7 +55,8 @@ void main()
     // The foam texture in world metres (the sea's vertex origin moves with the camera; u_seaWaves[3] holds its uv).
     vec2 foam_uv = v_texcoord4.zw * u_seaWaves[3].z + u_seaWaves[3].xy;
     vec3 n0 = normalize(vec3(m1, m2, m3));
-    vec3 N = seaWavesNormal(n0, v_texcoord4, length(fwidth(v_texcoord4.zw)), foam, debug);
+    vec2 slope = seaWavesSlope(v_texcoord4, length(fwidth(v_texcoord4.zw)), foam, debug);
+    vec3 N = seaWavesTilt(n0, slope);
     vec3 R = portReflect(N, eye);
     // The waves' tilt changes how much sky the water mirrors: the vertex shader's Fresnel split, per pixel, for the
     // tilted normal over that for the sea's own.
@@ -121,5 +122,27 @@ void main()
         float edge = gap < 0.0 ? 1.0 : clamp(gap * u_seaFx[2].w, 0.0, 1.0);
         gl_FragColor.rgb *= edge;
         gl_FragColor.a = 1.0 - edge * (1.0 - gl_FragColor.a);
+    }
+
+    // The game's two layers over the sea, drawn by its technique as two more passes over the whole sea and folded in
+    // here: both add to what this draw leaves (Sea2_Foam: source * source alpha + destination; Sea2_SunRoad:
+    // source + destination), so their colours add to this draw's source, which the destination * alpha keeps. Each is
+    // saturated as its own pass's output was; the sum saturates in the target as the passes' blends did. Not faded by
+    // the soft edges (they never were). The target's alpha is no longer their sum: nothing reads the scene's alpha.
+    if (u_psc[0].x > 0.5)
+    {
+        // Sea2_Foam (sea_sea2foam_pixel_shader): the foam texture (stage 1 here) at the vertex shader's uv, the
+        // layer's alpha from the height (v_foam), fogged as this draw (both techniques leave the fog to the state).
+        vec4 lace = ffFinish(clamp(vec4(texture2D(s_tex1, v_foam.xy).rgb, v_foam.z), 0.0, 1.0));
+        gl_FragColor.rgb += lace.rgb * lace.a;
+    }
+    if (u_seaWaves[2].x < 0.5)
+    {
+        // Sea2_SunRoad (sea_sea2sunroad_pixel_shader, no fog): the sun road cube (stage 2 here) in the ray reflected
+        // about the unfiltered bump normal (no band limit) with the ripples.
+        vec3 bump = PS_BX2(t0.rgb);
+        vec3 road = seaWavesTilt(vec3(dot(v_texcoord1.xyz, bump), dot(v_texcoord2.xyz, bump), dot(v_texcoord3.xyz, bump)),
+                                 slope);
+        gl_FragColor.rgb += clamp(textureCube(s_cube2, portReflect(road, eye)).rgb, 0.0, 1.0);
     }
 }

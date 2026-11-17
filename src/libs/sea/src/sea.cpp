@@ -1531,27 +1531,15 @@ void SEA::Realize(uint32_t dwDeltaTime)
             // The sun road's cube: the renderer's Sea2 pixel shader takes the colour of the sun's glint from the sun
             // as the game draws it there (the original shader leaves stage 2 unread).
             rs->TextureSet(2, sunRoadMap);
+            // The technique's foam and sun road passes are drawn by this one (fs_port_sea2.sc folds them in); c0.x:
+            // whether the foam's is.
+            const bool foam = fFoamK > 0.0f && bFoamEnable && bIniFoamEnable;
+            const auto layers = glm::vec4(foam ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+            rs->SetPixelShaderConstantF(0, (const float *)&layers, 1);
             rs->DrawIndexedPrimitiveNoVShader(D3DPT_TRIANGLELIST, iVSeaBuffer, sizeof(SeaVertex), iISeaBuffer, 0,
                                               iVStart, 0, iTStart, "Sea2");
             rs->TextureSet(1, -1);
             rs->TextureSet(2, -1);
-
-            if (fFoamK > 0.0f && bFoamEnable && bIniFoamEnable)
-            {
-                // Render sea foam
-                const auto vec2 = glm::vec4(fFoamTextureDisturb, 0.0f, 0.0f, 0.0f);
-                rs->SetPixelShaderConstantF(0, (const float *)&vec2, 1);
-
-                rs->TextureSet(0, iFoamTexture);
-                rs->TextureSet(4, volumeTexture);
-                rs->DrawIndexedPrimitiveNoVShader(D3DPT_TRIANGLELIST, iVSeaBuffer, sizeof(SeaVertex), iISeaBuffer, 0,
-                                                  iVStart, 0, iTStart, "Sea2_Foam");
-            }
-
-            rs->TextureSet(0, volumeTexture);
-            rs->TextureSet(3, sunRoadMap);
-            rs->DrawIndexedPrimitiveNoVShader(D3DPT_TRIANGLELIST, iVSeaBuffer, sizeof(SeaVertex), iISeaBuffer, 0,
-                                              iVStart, 0, iTStart, "Sea2_SunRoad");
         }
         rs->TextureSet(D3DVERTEXTEXTURESAMPLER0, -1); // a skinned draw's bone palette goes there
     }
