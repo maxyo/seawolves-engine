@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <set>
 
 namespace storm::ui::hud
@@ -763,6 +764,17 @@ class LandScene final : public Scene
         return "actions";
     }
 
+    static size_t TravelRank(const LandCommands::Item &item)
+    {
+        static const char *const kOrder[] = {"store",  "shipyard",   "tavern", "residence", "usurer", "church",
+                                             "lantern", "portoffice", "prison", "fort",      "port"};
+        const char *icon = item.kind == "travel" ? LandPlaceIcon(item.picture) : nullptr;
+        for (size_t rank = 0; icon && rank < std::size(kOrder); ++rank)
+            if (std::strcmp(icon, kOrder[rank]) == 0)
+                return rank;
+        return std::size(kOrder);
+    }
+
     void BuildSheet(const LandCommands &commands, View &view, Input &input)
     {
         const bool root = commands.stage == "commands";
@@ -770,8 +782,19 @@ class LandScene final : public Scene
         Json rows = Json::array();
         std::string group;
         int headings = 0;
+        std::vector<const LandCommands::Item *> items;
         for (const LandCommands::Item &item : commands.items)
+            items.push_back(&item);
+        // Each town's table lists its places in its own order and the game puts the port first
+        // whenever the ship is in reach: the travel tiles go in one order of place kinds instead,
+        // so a kind keeps its slot from town to town (the port, which comes and goes, last).
+        if (travel)
+            std::stable_sort(items.begin(), items.end(), [](const LandCommands::Item *a, const LandCommands::Item *b) {
+                return TravelRank(*a) < TravelRank(*b);
+            });
+        for (const LandCommands::Item *entry : items)
         {
+            const LandCommands::Item &item = *entry;
             if (item.kind == "cancel" || (root && item.kind == "command" && IsTransition(item.source)))
                 continue; // transitions have their own button
             const std::string element = "item-" + item.id;

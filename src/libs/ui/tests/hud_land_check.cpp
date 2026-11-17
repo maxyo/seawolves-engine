@@ -679,8 +679,24 @@ static void CheckSheet()
         for (const Json &tile : tiles)
             icons += tile["icon"].get<std::string>() + " ";
         Expect(mount.shown.sheet_props["layout"] == "tiles" && mount.shown.sheet_props["back"] == false && mount.shown.sheet_props["title"] == "Переход" &&
-                   icons == "port store shipyard tavern residence usurer church lantern portoffice prison " && tiles[0]["pressed"] == false,
-               "travel: tiles, ✕ (it opens from its own button), place icons by the game's picture of the place, not by the slot: " + icons);
+                   icons == "store shipyard tavern residence usurer church lantern portoffice prison port " && tiles[0]["pressed"] == false,
+               "travel: tiles, ✕ (it opens from its own button), place icons by the game's picture of the place, not by the slot, "
+               "in one order of kinds with the port last: " + icons);
+    }
+    {
+        // another town lists its places in another order and offers no port (NEW-PRE-LAND2-NOTES 5): the kinds keep their order
+        Json other = State("land-commands-travel");
+        Json reversed = Json::array();
+        for (auto item = other["items"].rbegin(); item != other["items"].rend(); ++item)
+            if ((*item)["source"] != "port")
+                reversed.push_back(*item);
+        other["items"] = reversed;
+        bench.Set("landCommands", other);
+        std::string icons;
+        for (const Json &tile : mount.shown.sheet_props["rows"])
+            icons += tile["icon"].get<std::string>() + " ";
+        ExpectEqual(icons, std::string("store shipyard tavern residence usurer church lantern portoffice prison "), "the travel tiles in the same order in every town");
+        bench.Feed("landCommands", "land-commands-travel");
     }
     bench.Frame();
     Expect(bench.hud.Back() && mount.Last() == "landcommands:1\t4\t13\t2\tclose\t", "the back key closes the transitions: nothing to go back to");
@@ -816,6 +832,7 @@ static void CheckTouches(const std::string &pack)
     host.Touch(TouchPhase::Up, 1, 280, 360);
     Expect(run.commands.size() == moves + 1 && run.Last() == "landcommands:1\t4\t10\t2\topen\tBI_FastReload", "a button inside the zone wins over the stick: " + run.Last());
     // the transitions open over where the finger was: the first tap on a tile acts, on every tile
+    // (the port, t1, goes last: the tiles from the top are t2…)
     run.Feed("landCommands", "land-commands-travel");
     run.Frame();
     run.Frame();
@@ -825,7 +842,7 @@ static void CheckTouches(const std::string &pack)
         host.Touch(TouchPhase::Down, 1, 700, y);
         host.Touch(TouchPhase::Up, 1, 700, y);
         run.Frame();
-        Expect(run.Last() == "landcommands:1\t4\t13\t2\tselectItem\tt" + std::to_string(tile + 1),
+        Expect(run.Last() == "landcommands:1\t4\t13\t2\tselectItem\tt" + std::to_string(tile + 2),
                "a single tap on tile " + std::to_string(tile + 1) + " of a freshly opened panel acts: " + run.Last());
     }
     Expect(host.SetState("landCommands", "null"), "the transitions closed");
