@@ -41,6 +41,10 @@ class WorldMap : public Entity
     // Execution
     void Execute(uint32_t delta_time);
     void Realize(uint32_t delta_time);
+    // The loading transaction (core PrepareLoadingScene): the map is drawn as it was created, nothing moves and no
+    // event is raised, so its textures and pipelines are ready before the first frame that advances its clock.
+    void RealizeLoading();
+    void RenderObjects();
     // Messages
     uint64_t ProcessMessage(MESSAGE &message) override;
     // Changing an attribute
@@ -55,6 +59,9 @@ class WorldMap : public Entity
             break;
         case Stage::realize:
             Realize(delta);
+            break;
+        case Stage::loading_realize:
+            RealizeLoading();
             break;
         }
     }

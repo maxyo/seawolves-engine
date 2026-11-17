@@ -97,9 +97,9 @@ void BeginSceneResources(const char *scene, uint64_t owner)
     load.textures.clear(); load.failed_textures.clear(); load.fallback_textures.clear(); load.detail.clear();
     load.scene = scene ? scene : "";
     load.owner = owner;
-    // Stock completion covers both on-land loading and SEA_AI's explicit sea scene.
-    // Other scene names are not silently admitted to this resource contract.
-    load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea";
+    // Stock completion (ReloadProgressEnd) covers on-land loading, SEA_AI's explicit sea scene and the world map
+    // (wdmCreateWorldMap). Other scene names are not silently admitted to this resource contract.
+    load.sealed = load.scene.rfind("location/", 0) != 0 && load.scene != "sea" && load.scene != "worldmap";
     load.logged_error = load.logged_ready = load.logged_slow = false;
     load.failures = {}; load.pipelines_pending = false;
     load.phase_polled_at = 0; load.cooling = false;

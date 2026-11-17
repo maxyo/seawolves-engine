@@ -474,23 +474,7 @@ void WorldMap::Realize(uint32_t delta_time)
 #endif
         encTime = 0.0f;
     }
-    rs->SetRenderState(D3DRS_FOGENABLE, FALSE);
-    rs->SetRenderState(D3DRS_LIGHTING, FALSE);
-    for (auto i = firstPrObject; i >= 0; i = object[i].next)
-    {
-        if (!object[i].ro->killMe)
-            object[i].ro->PRender(rs);
-    }
-    for (auto i = firstMrObject; i >= 0; i = object[i].next)
-    {
-        if (!object[i].ro->killMe)
-            object[i].ro->MRender(rs);
-    }
-    for (auto i = firstLrObject; i >= 0; i = object[i].next)
-    {
-        if (!object[i].ro->killMe)
-            object[i].ro->LRender(rs);
-    }
+    RenderObjects();
     // renew the wind
     wdmObjects->UpdateWind(dltTime);
     wdmObjects->isNextDayUpdate = false;
@@ -512,6 +496,34 @@ void WorldMap::Realize(uint32_t delta_time)
         {
             core.Event("WorldMap_AddQuestEncounters");
         }
+    }
+}
+
+void WorldMap::RealizeLoading()
+{
+    if (camera && wdmObjects->playerShip)
+        camera->ApplyLoadingView(rs);
+    RenderObjects();
+}
+
+void WorldMap::RenderObjects()
+{
+    rs->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    rs->SetRenderState(D3DRS_LIGHTING, FALSE);
+    for (auto i = firstPrObject; i >= 0; i = object[i].next)
+    {
+        if (!object[i].ro->killMe)
+            object[i].ro->PRender(rs);
+    }
+    for (auto i = firstMrObject; i >= 0; i = object[i].next)
+    {
+        if (!object[i].ro->killMe)
+            object[i].ro->MRender(rs);
+    }
+    for (auto i = firstLrObject; i >= 0; i = object[i].next)
+    {
+        if (!object[i].ro->killMe)
+            object[i].ro->LRender(rs);
     }
 }
 

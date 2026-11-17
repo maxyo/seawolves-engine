@@ -224,6 +224,18 @@ void WdmCamera::Move(float dltTime, VRenderer *rs)
     rs->SetCamera(glm::vec3(ps.x + r * sn, realHeight, ps.z + r * cs), ang);
 }
 
+void WdmCamera::ApplyLoadingView(VRenderer *rs) const
+{
+    auto view = ang;
+    if (!lock)
+        view.y += static_cast<WdmPlayerShip *>(wdmObjects->playerShip)->GetAy();
+    else
+        view.y = 0.0f;
+    const auto ship = storm::math::pos(wdmObjects->playerShip->mtx);
+    const auto r = realHeight * cosf(view.x) / sinf(view.x);
+    rs->SetCamera(glm::vec3(ship.x - r * sinf(view.y), realHeight, ship.z - r * cosf(view.y)), view);
+}
+
 void WdmCamera::CheckRange()
 {
     const auto cs = cosf(ang.y);
