@@ -29,7 +29,8 @@ for contract in contracts:
     sources = [test_dir/(contract+'.cpp')]
     contract_flags = list(flags)
     if contract == 'entity_manager':
-        sources += [r/'src/libs/core/src/entity_manager.cpp', r/'src/libs/core/src/entity_container_cache.cpp']
+        sources += [r/'src/libs/core/src/entity_manager.cpp', r/'src/libs/core/src/entity_container_cache.cpp',
+                    r/'src/libs/core/src/attributes.cpp']
     else:
         if not a.glm_source:
             p.error('event contracts require --glm-source')

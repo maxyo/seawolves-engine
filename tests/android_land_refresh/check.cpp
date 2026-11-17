@@ -28,6 +28,7 @@ struct DATA {
     S_TOKEN_TYPE Data_type=VAR_PTR;DATA *pReference=nullptr;bool bArray=false;
     uintptr_t pValue=0;int32_t lValue=0;float fValue=0;std::string sValue;ATTRIBUTES *AttributesClass=nullptr;
     void Error(const char *){++storm::android::scriptErrorEpoch;}
+    ATTRIBUTES *AReferenceTarget(){return AttributesClass;} // the fixture deletes no aref target
     void Set(const std::string &text){Data_type=VAR_STRING;sValue=text;}
     bool Convert(S_TOKEN_TYPE type);
 };

@@ -45,6 +45,10 @@ class Entity
     };
 
     ATTRIBUTES *AttributesPointer = nullptr; // TODO: CHANGE!
+    // AttributesPointer as it was given (core Entity_GetAttributePointer): the script object can be gone before the
+    // entity, e.g. a local `object` of the function that created it (AIAbordage.c's boarding fader).
+    ATTRIBUTES::Handle attributesHandle{};
+    bool attributesGoneReported = false;
 
     [[nodiscard]] auto GetId() const
     {

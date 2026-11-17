@@ -308,7 +308,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
                     TempLong1 = 0;
                 break;
             case VAR_AREFERENCE:
-                if (pV->AttributesClass)
+                if (pV->AttributesClass && !pV->AReferenceDangling())
                     TempLong1 = 1;
                 else
                     TempLong1 = 0;
@@ -1463,7 +1463,7 @@ DATA *COMPILER::BC_CallIntFunction(uint32_t func_code, DATA *&pVResult, uint32_t
         if (arguments < 4 || pMS != nullptr)
         {
             pEM = new S_EVENTMSG(pChar, pMS, TempLong1);
-            EventMsg.Add(pEM);
+            AddPostEvent(pEM);
         }
         for (n = 0; n < arguments; n++)
         {

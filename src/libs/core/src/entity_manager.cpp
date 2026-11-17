@@ -134,6 +134,8 @@ entid_t EntityManager::CreateEntity(const char *name, ATTRIBUTES *attr)
     const auto id = InsertEntity(ptr, hash);
     ptr->data_.id = id;
     ptr->AttributesPointer = attr;
+    if (attr)
+        ptr->attributesHandle = attr->GetHandle();
 
     cache_.UpdateAdd(hash, id);
 

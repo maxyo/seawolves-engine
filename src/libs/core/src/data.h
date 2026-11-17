@@ -40,9 +40,23 @@ class DATA final : public VDATA
 
     std::vector<DATA> ArrayPTR;
     uint32_t nGlobalVarTableIndex;
+    ATTRIBUTES::Handle arefHandle_{}; // an aref's AttributesClass, which it does not own
+
+    void CopyAReference(const DATA &from)
+    {
+        AttributesClass = from.AttributesClass;
+        arefHandle_ = from.arefHandle_;
+    }
 
   public:
     ATTRIBUTES *AttributesClass;
+    // An aref's attribute; nullptr, reported as a script error, when the aref is unset or names an attribute that
+    // was deleted since (DeleteAttribute, a branch replaced by a copy, a destroyed object).
+    ATTRIBUTES *AReferenceTarget();
+    [[nodiscard]] bool AReferenceDangling() const
+    {
+        return Data_type == VAR_AREFERENCE && AttributesClass != nullptr && !ATTRIBUTES::IsAlive(arefHandle_);
+    }
     DATA *GetReference() override
     {
         return pReference;

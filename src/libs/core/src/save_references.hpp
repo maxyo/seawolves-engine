@@ -126,7 +126,7 @@ class ReferenceIndex
     void Add(DATA *value, VariablePlace place)
     {
         variables_.try_emplace(value, place);
-        if (value->GetType() == VAR_AREFERENCE && value->AttributesClass != nullptr)
+        if (value->GetType() == VAR_AREFERENCE && value->AttributesClass != nullptr && !value->AReferenceDangling())
             attributes_.try_emplace(value->AttributesClass, std::nullopt);
     }
 

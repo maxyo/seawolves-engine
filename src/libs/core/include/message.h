@@ -61,6 +61,9 @@ class MESSAGE final
     float Float();
     uintptr_t Pointer();
     ATTRIBUTES *AttributePointer();
+    // The 'a' parameter at `position` of the format, the read position untouched.
+    [[nodiscard]] ATTRIBUTES *AttributeAt(size_t position) const;
+    void SetAttributeAt(size_t position, ATTRIBUTES *value);
     entid_t EntityID();
     VDATA *ScriptVariablePointer();
     const std::string &String();

@@ -1,6 +1,9 @@
 #pragma once
 
 #include "message.h"
+
+#include <utility>
+#include <vector>
 #include "platform/platform.hpp"
 
 class S_EVENTMSG
@@ -14,6 +17,8 @@ class S_EVENTMSG
     char *pEventName;
     bool bProcess;
     bool bInvalide;
+    // The attribute parameters of the message: the position in the format, the attribute as it was posted.
+    std::vector<std::pair<size_t, ATTRIBUTES::Handle>> attributes;
 
     S_EVENTMSG()
     {

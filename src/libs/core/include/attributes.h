@@ -42,6 +42,16 @@ class ATTRIBUTES final
     ATTRIBUTES &operator=(ATTRIBUTES &&other) noexcept;
     ~ATTRIBUTES();
 
+    // Names an attribute without owning it (a script aref): it can tell, without touching the attribute's memory,
+    // whether that attribute still exists. Every attribute holds a slot whose generation changes when it is destroyed.
+    struct Handle
+    {
+        uint32_t slot{};
+        uint32_t generation{};
+    };
+    [[nodiscard]] Handle GetHandle() const noexcept;
+    [[nodiscard]] static bool IsAlive(Handle handle) noexcept;
+
     [[nodiscard]] ATTRIBUTES* GetParent() const;
     bool operator==(const char *str) const;
     [[nodiscard]] const char* GetThisName() const;
@@ -100,6 +110,7 @@ private:
 
     VSTRING_CODEC &stringCodec_;
     uint32_t nameCode_{};
+    uint32_t slot_; // see Handle
     std::optional<std::string> value_;
     std::vector<std::unique_ptr<ATTRIBUTES>> attributes_;
     // The name codes of attributes_, in their order: a lookup scans these, not the children themselves.

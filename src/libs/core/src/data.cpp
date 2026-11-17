@@ -54,6 +54,7 @@ DATA::DATA(DATA &&data) noexcept(false)
     Segment_id = data.Segment_id;
     pReference = data.pReference;
     AttributesClass = data.AttributesClass;
+    arefHandle_ = data.arefHandle_;
     nGlobalVarTableIndex = data.nGlobalVarTableIndex;
     object_id = data.object_id;
     ArrayPTR = std::move(data.ArrayPTR);
@@ -78,10 +79,16 @@ DATA & DATA::operator=(const DATA &data)
     pVCompiler = data.pVCompiler;
     Segment_id = data.Segment_id;
     pReference = data.pReference;
-    if (data.AttributesClass)
+    if (data.AReferenceDangling())
+    {
+        CopyAReference(data);
+    }
+    else if (data.AttributesClass)
     {
         Assert(&data.AttributesClass->GetStringCodec() == pVCompiler->GetVSC());
         AttributesClass = new ATTRIBUTES(data.AttributesClass->Copy());
+        if (Data_type == VAR_AREFERENCE)
+            arefHandle_ = AttributesClass->GetHandle();
     }
     else
     {
@@ -179,6 +186,23 @@ void DATA::SetAReference(ATTRIBUTES *pARef)
         return;
     }
     AttributesClass = pARef;
+    if (pARef)
+        arefHandle_ = pARef->GetHandle();
+}
+
+ATTRIBUTES *DATA::AReferenceTarget()
+{
+    if (AttributesClass == nullptr)
+    {
+        Error("uninitialized aref");
+        return nullptr;
+    }
+    if (!ATTRIBUTES::IsAlive(arefHandle_))
+    {
+        Error("aref names a deleted attribute (deleted after the aref was set)");
+        return nullptr;
+    }
+    return AttributesClass;
 }
 
 
@@ -339,16 +363,14 @@ void DATA::Set(const char *attribute_name, const char *attribute_value)
         Error(NO_INDEX);
         return;
     }
-    if (AttributesClass == nullptr)
+    if (Data_type == VAR_AREFERENCE)
     {
-        if (Data_type == VAR_AREFERENCE)
-        {
-            Error("uninitialized AReference");
-            return;
-        }
-
-        AttributesClass = new ATTRIBUTES(pVCompiler->GetVSC());
+        if (ATTRIBUTES *target = AReferenceTarget())
+            target->SetAttribute(attribute_name, attribute_value);
+        return;
     }
+    if (AttributesClass == nullptr)
+        AttributesClass = new ATTRIBUTES(pVCompiler->GetVSC());
     AttributesClass->SetAttribute(attribute_name, attribute_value);
 }
 
@@ -519,7 +541,10 @@ bool DATA::Get(const char *attribute_name, const char *&value)
     }
     if (AttributesClass == nullptr)
         return false;
-    const char *pAValue = AttributesClass->GetAttribute(attribute_name);
+    const ATTRIBUTES *target = Data_type == VAR_AREFERENCE ? AReferenceTarget() : AttributesClass;
+    if (target == nullptr)
+        return false;
+    const char *pAValue = target->GetAttribute(attribute_name);
     if (pAValue == nullptr)
         return false;
     value = pAValue;
@@ -919,7 +944,7 @@ bool DATA::Convert(S_TOKEN_TYPE type)
         case VAR_STRING:
             if (!AttributesClass)
                 break;
-            if (!AttributesClass->GetThisAttr())
+            if (!AReferenceTarget() || !AttributesClass->GetThisAttr())
                 break;
             Set(to_string(AttributesClass->GetThisAttr()));
             AttributesClass = nullptr;
@@ -928,7 +953,7 @@ bool DATA::Convert(S_TOKEN_TYPE type)
         case VAR_INTEGER:
             if (!AttributesClass)
                 break;
-            if (!AttributesClass->GetThisAttr())
+            if (!AReferenceTarget() || !AttributesClass->GetThisAttr())
                 break;
             Set(to_string(AttributesClass->GetThisAttr()));
             AttributesClass = nullptr;
@@ -940,7 +965,7 @@ bool DATA::Convert(S_TOKEN_TYPE type)
         case VAR_FLOAT:
             if (!AttributesClass)
                 break;
-            if (!AttributesClass->GetThisAttr())
+            if (!AReferenceTarget() || !AttributesClass->GetThisAttr())
                 break;
             Set(to_string(AttributesClass->GetThisAttr()));
             AttributesClass = nullptr;
@@ -1455,7 +1480,7 @@ bool DATA::Plus(DATA *pV)
         switch (pV->GetType())
         {
         case VAR_AREFERENCE:
-            if (!pV->AttributesClass || !pV->AttributesClass->GetThisAttr())
+            if (!pV->AttributesClass || !pV->AReferenceTarget() || !pV->AttributesClass->GetThisAttr())
                 break;
             Set(sValue + to_string(pV->AttributesClass->GetThisAttr()));
             break;
@@ -1884,6 +1909,8 @@ bool DATA::CopyAny(DATA *pV)
             if (Data_type == VAR_AREFERENCE)
             {
                 AttributesClass = pV->AttributesClass;
+                if (AttributesClass)
+                    arefHandle_ = AttributesClass->GetHandle();
             }
             else
             {
@@ -1907,7 +1934,7 @@ bool DATA::CopyAny(DATA *pV)
         if (Data_type == UNKNOWN)
         {
             SetType(VAR_AREFERENCE);
-            AttributesClass = pV->AttributesClass;
+            CopyAReference(*pV);
             object_id = pV->object_id;
             break;
         }
@@ -1916,7 +1943,7 @@ bool DATA::CopyAny(DATA *pV)
             Error("invalid aref usage");
             return false;
         }
-        AttributesClass = pV->AttributesClass;
+        CopyAReference(*pV);
         object_id = pV->object_id;
         break;
 
@@ -2057,16 +2084,10 @@ ATTRIBUTES *DATA::GetAClass()
         Error(UNINIT_REF);
         return nullptr;
     }
+    if (Data_type == VAR_AREFERENCE)
+        return AReferenceTarget();
     if (AttributesClass == nullptr)
-    {
-        if (Data_type == VAR_AREFERENCE)
-        {
-            Error("uninitialized aref");
-            return nullptr;
-        }
-
         AttributesClass = new ATTRIBUTES(pVCompiler->GetVSC());
-    }
     return AttributesClass;
 }
 

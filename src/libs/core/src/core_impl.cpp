@@ -1110,6 +1110,9 @@ void CoreImpl::Entity_SetAttributePointer(entid_t id_PTR, ATTRIBUTES *pA)
     if (pE == nullptr)
         return;
     pE->AttributesPointer = pA;
+    if (pA)
+        pE->attributesHandle = pA->GetHandle();
+    pE->attributesGoneReported = false;
 }
 
 uint32_t CoreImpl::Entity_AttributeChanged(entid_t id_PTR, ATTRIBUTES *pA)
@@ -1125,6 +1128,14 @@ ATTRIBUTES *CoreImpl::Entity_GetAttributePointer(entid_t id_PTR)
     Entity *pE = GetEntityPointer(id_PTR);
     if (pE == nullptr)
         return nullptr;
+    if (pE->AttributesPointer != nullptr && !ATTRIBUTES::IsAlive(pE->attributesHandle))
+    {
+        if (!pE->attributesGoneReported)
+            spdlog::warn("entity {:x}: the script object it was created with is gone: its arefs are empty",
+                         static_cast<uint64_t>(id_PTR));
+        pE->attributesGoneReported = true;
+        return nullptr;
+    }
     return pE->AttributesPointer;
 }
 

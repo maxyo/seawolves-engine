@@ -904,6 +904,7 @@ void COMPILER::ProcessFrame(uint32_t DeltaTime)
         if (pMsg->ProcessTime(DeltaTime))
         {
             pMsg->Invalidate();
+            ForgetDeletedAttributes(pMsg);
             ProcessEvent(pMsg->pEventName, pMsg->pMessageClass);
         }
     }
@@ -5058,6 +5059,14 @@ void COMPILER::SaveVariable(DATA *pV, bool bdim)
         break;
     }
     case VAR_AREFERENCE: {
+        if (pV->AReferenceDangling())
+        {
+            // The game leaves such arefs behind (reload.c reload_locator_ref names the quest reload's fake locator,
+            // deleted once the location loaded); no script may read them. Cleared: the next save is silent, and the
+            // variable holds what loading this save gives it.
+            SetWarning("aref '%s' names a deleted attribute: saved empty and cleared", save_variable_name_);
+            pV->AttributesClass = nullptr;
+        }
         if (pV->AttributesClass == nullptr)
         {
             WriteVDword(0xffffffff);
@@ -5066,7 +5075,7 @@ void COMPILER::SaveVariable(DATA *pV, bool bdim)
         const storm::save::AttributePlace *place = save_references_->Attribute(pV->AttributesClass);
         if (place == nullptr)
         {
-            // A deleted attribute, or one of a local object or an entity.
+            // An attribute of a local object or of an entity.
             SetError("Ghost A reference: '%s' names no attribute of a global object and is saved empty",
                      save_variable_name_);
             WriteVDword(0xffffffff);
@@ -5263,7 +5272,27 @@ void COMPILER::SaveAttributesData(ATTRIBUTES *pRoot)
 
 void COMPILER::AddPostEvent(S_EVENTMSG *pEM)
 {
+    if (pEM->pMessageClass)
+    {
+        const std::string_view format = pEM->pMessageClass->GetFormat();
+        for (size_t n = 0; n < format.size(); n++)
+            if (ATTRIBUTES *attribute = format[n] == 'a' ? pEM->pMessageClass->AttributeAt(n) : nullptr)
+                pEM->attributes.emplace_back(n, attribute->GetHandle());
+    }
     EventMsg.Add(pEM);
+}
+
+// An attribute posted with the event and deleted before its time: the handler gets an empty aref.
+void COMPILER::ForgetDeletedAttributes(S_EVENTMSG *pEM)
+{
+    for (const auto &[position, handle] : pEM->attributes)
+    {
+        if (ATTRIBUTES::IsAlive(handle))
+            continue;
+        SetError("PostEvent(\"%s\"): its argument %zu names a deleted attribute (deleted before the event's time): "
+                 "the handler gets an empty aref", pEM->pEventName, position + 1);
+        pEM->pMessageClass->SetAttributeAt(position, nullptr);
+    }
 }
 
 bool COMPILER::SetSaveData(const char *file_name, void *save_data, int32_t data_size)

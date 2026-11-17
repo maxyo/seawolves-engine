@@ -9,7 +9,10 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <unordered_set>
 
 namespace storm
@@ -131,6 +134,58 @@ void ScriptStateForget()
 
 namespace
 {
+// The generation of every attribute slot (ATTRIBUTES::Handle). A destroyed attribute's slot gets the next generation
+// and is reused by a later attribute. Script attributes live on the script thread; another thread would race the
+// tables, so it stops the engine.
+class Lifetimes
+{
+  public:
+    uint32_t Acquire()
+    {
+        CheckThread("created");
+        if (free_.empty())
+        {
+            generations_.push_back(0);
+            return static_cast<uint32_t>(generations_.size() - 1);
+        }
+        const uint32_t slot = free_.back();
+        free_.pop_back();
+        return slot;
+    }
+
+    void Release(uint32_t slot)
+    {
+        CheckThread("destroyed");
+        generations_[slot]++;
+        free_.push_back(slot);
+    }
+
+    [[nodiscard]] uint32_t Generation(uint32_t slot) const noexcept
+    {
+        return generations_[slot];
+    }
+
+  private:
+    void CheckThread(const char *what) const
+    {
+        if (std::this_thread::get_id() == owner_)
+            return;
+        std::fprintf(stderr, "script attributes: an attribute %s on another thread than the script thread\n", what);
+        std::abort();
+    }
+
+    std::thread::id owner_ = std::this_thread::get_id();
+    std::vector<uint32_t> generations_;
+    std::vector<uint32_t> free_;
+};
+
+// Never destroyed: attributes of static objects are destroyed after every other static.
+Lifetimes &lifetimes()
+{
+    static auto *instance = new Lifetimes;
+    return *instance;
+}
+
 constexpr size_t kNoIndex = static_cast<size_t>(-1);
 // An object with this many attributes is worth a hash index (a scan of fewer codes is as fast)...
 constexpr size_t kIndexedChildren = 32;
@@ -170,7 +225,8 @@ ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC *p): ATTRIBUTES(*p)
 }
 
 ATTRIBUTES::ATTRIBUTES(ATTRIBUTES &&other) noexcept
-    : stringCodec_(other.stringCodec_), nameCode_(other.stringCodec_.Convert("root")), value_(std::move(other.value_)),
+    : stringCodec_(other.stringCodec_), nameCode_(other.stringCodec_.Convert("root")), slot_(lifetimes().Acquire()),
+      value_(std::move(other.value_)),
       attributes_(std::move(other.attributes_)), codes_(std::move(other.codes_)), break_(other.break_)
 {
     AdoptChildren();
@@ -211,6 +267,17 @@ ATTRIBUTES::~ATTRIBUTES()
             storm::ScriptStateChanged();
     }
     Release();
+    lifetimes().Release(slot_);
+}
+
+ATTRIBUTES::Handle ATTRIBUTES::GetHandle() const noexcept
+{
+    return {slot_, lifetimes().Generation(slot_)};
+}
+
+bool ATTRIBUTES::IsAlive(Handle handle) noexcept
+{
+    return lifetimes().Generation(handle.slot) == handle.generation;
 }
 
 ATTRIBUTES *ATTRIBUTES::GetParent() const
@@ -749,7 +816,7 @@ ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const st
 }
 
 ATTRIBUTES::ATTRIBUTES(VSTRING_CODEC &string_codec, ATTRIBUTES *parent, const uint32_t name_code)
-    : stringCodec_(string_codec), nameCode_(name_code), parent_(parent)
+    : stringCodec_(string_codec), nameCode_(name_code), slot_(lifetimes().Acquire()), parent_(parent)
 {
 }
 

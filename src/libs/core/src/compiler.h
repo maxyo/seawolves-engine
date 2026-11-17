@@ -235,6 +235,7 @@ class COMPILER : public VIRTUAL_COMPILER
     void WriteVDword(uint32_t v);
 
     void AddPostEvent(S_EVENTMSG *pEM);
+    void ForgetDeletedAttributes(S_EVENTMSG *pEM);
 
     void LoadPreprocess();
 

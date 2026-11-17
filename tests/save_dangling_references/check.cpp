@@ -69,6 +69,7 @@ class COMPILER final : public VIRTUAL_COMPILER
     char *pBuffer{};
     uint32_t dwCurPointer{}, dwMaxSize{};
     std::vector<std::string> errors;
+    std::vector<std::string> warnings;
 #ifndef STORM_SAVE_BASELINE
     const storm::save::ReferenceIndex *save_references_{};
     const char *save_variable_name_ = "";
@@ -88,6 +89,15 @@ class COMPILER final : public VIRTUAL_COMPILER
         vsnprintf(text, sizeof(text), format, args);
         va_end(args);
         errors.emplace_back(text);
+    }
+    void SetWarning(const char *format, ...) override
+    {
+        char text[512];
+        va_list args;
+        va_start(args, format);
+        vsnprintf(text, sizeof(text), format, args);
+        va_end(args);
+        warnings.emplace_back(text);
     }
     void SaveData(const void *, uint32_t);
     void SaveString(const char *);
@@ -233,11 +243,33 @@ void danglingReferences()
             return line.rfind(kind, 0) == 0 && line.find(std::string("'") + name + "'") != std::string::npos;
         });
     };
+#ifdef STORM_SAVE_BASELINE
     require(reported("Ghost A reference", "reload_locator_ref") == 1, "the deleted reload locator was not reported");
     require(reported("Ghost A reference", "locators") == 1, "the deleted array aref target was not reported");
     require(reported("Ghost A reference", "local_attribute") == 1, "an aref to a local object was not reported");
     require(reported("Ghost reference", "freed") == 1, "the freed ref target was not reported");
     require(game.compiler.errors.size() == 4, "a valid reference was reported as a ghost");
+#else
+    // An aref of a deleted attribute is what the game leaves behind after every quest reload: a warning, once,
+    // and the aref is cleared (the next save is silent).
+    const auto warned = [&](const char *name) {
+        return std::count_if(game.compiler.warnings.begin(), game.compiler.warnings.end(), [&](const std::string &line) {
+            return line.find(std::string("aref '") + name + "' names a deleted attribute") != std::string::npos;
+        });
+    };
+    require(warned("reload_locator_ref") == 1 && warned("locators") == 1 && game.compiler.warnings.size() == 2,
+            "the arefs of deleted attributes were not warned about once each");
+    require(game.reloadLocator.AttributesClass == nullptr && game.arefs.GetArrayElement(0)->AttributesClass == nullptr,
+            "the saved-empty dangling arefs were not cleared");
+    require(reported("Ghost A reference", "local_attribute") == 1, "an aref to a local object was not reported");
+    require(reported("Ghost reference", "freed") == 1, "the freed ref target was not reported");
+    require(game.compiler.errors.size() == 2, "a valid reference was reported as a ghost");
+    game.compiler.warnings.clear();
+    game.compiler.errors.clear();
+    game.compiler.dwCurPointer = 0;
+    require(game.compiler.save() == image, "the second save differs");
+    require(game.compiler.warnings.empty(), "the second save warned about the cleared arefs again");
+#endif
 
     Game loaded;
     loaded.compiler.SCodec = game.compiler.SCodec; // SaveState stores the name table in front of the variables

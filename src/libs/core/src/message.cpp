@@ -35,6 +35,16 @@ ATTRIBUTES * MESSAGE::AttributePointer()
     return get<ATTRIBUTES *>(params_[index - 1]);
 }
 
+ATTRIBUTES *MESSAGE::AttributeAt(size_t position) const
+{
+    return get<ATTRIBUTES *>(params_.at(position));
+}
+
+void MESSAGE::SetAttributeAt(size_t position, ATTRIBUTES *value)
+{
+    get<ATTRIBUTES *>(params_.at(position)) = value;
+}
+
 entid_t MESSAGE::EntityID()
 {
     ValidateFormat('i');
