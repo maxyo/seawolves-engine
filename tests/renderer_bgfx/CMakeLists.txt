@@ -162,7 +162,8 @@ target_link_libraries(shadow_casters_check PRIVATE storm_bgfx storm_check_sdl)
 # lamp_shadow_check: the lamps' shadow faces as the frame uses them: a caster's faces reach the draws before it (frame
 # uniform), the characters' atlas only in frames with casters, a lamp's reach, a moving light's whole shape.
 add_executable(lamp_shadow_check lamp_shadow_check.cpp)
-target_include_directories(lamp_shadow_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_include_directories(lamp_shadow_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim"
+                                                    "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src")
 target_compile_definitions(lamp_shadow_check PRIVATE NOMINMAX)
 target_compile_options(lamp_shadow_check PRIVATE -fsigned-char)
 target_link_libraries(lamp_shadow_check PRIVATE storm_bgfx storm_check_sdl)

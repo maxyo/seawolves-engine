@@ -15,6 +15,7 @@
 //     another range draws its still faces again.
 #include "device.hpp"
 #include "check_backend.hpp"
+#include "effects/effects.hpp"
 
 #include <SDL2/SDL.h>
 #include "storm/fx/lamp_shadows.hpp"
@@ -178,15 +179,22 @@ void expect(bool pass, const char *what, const char *detail)
     ok &= pass;
 }
 
-// Frames until the preset is active and the lamps' still faces are drawn (render(false) each frame); `lamps`
-// reports this frame's lights first.
+// A lamp slot fades in and out over kFadeSeconds of the steady clock, not over frames: how many frames that takes
+// depends on the machine's load, so the checks wait for the fade's end, never for a frame count.
+bool lamps_fading()
+{
+    return effects::Host::instance().lighting().lamp_shadows().fading();
+}
+
+// Frames until the preset is active, the lamps' still faces are drawn and their fades are over (render(false) each
+// frame); `lamps` reports this frame's lights first.
 template <typename Lights> void settle(Harness &harness, Lights lamps, bool lit_floor = false)
 {
     for (int frame = 0, active = 0;; ++frame) // on the preparation's progress, no frame budget
     {
         lamps();
         harness.render(false, 0.0f, 0.0f, lit_floor);
-        active = render::CurrentEffects().pending ? 0 : active + 1;
+        active = render::CurrentEffects().pending || lamps_fading() ? 0 : active + 1;
         if (active > 20 && frame > 40)
             break;
         SDL_Delay(5);
@@ -312,8 +320,11 @@ int main()
             const float steep = floor_at(harness.render(false, 0.0f, 0.0f, true), 2.4f, 2.4f);
             // The same light from the start.
             render::SetEffectsDynamicLights({});
-            for (int i = 0; i < 30; ++i)
-                harness.render(false, 0.0f, 0.0f, true); // the slot fades out and is freed
+            do // the slot fades out and is freed
+            {
+                harness.render(false, 0.0f, 0.0f, true);
+                SDL_Delay(5);
+            } while (lamps_fading());
             settle(harness, carry, true);
             carry();
             const float fresh = floor_at(harness.render(false, 0.0f, 0.0f, true), 2.4f, 2.4f);

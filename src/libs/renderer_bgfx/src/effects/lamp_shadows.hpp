@@ -149,6 +149,8 @@ class LampShadows
     // Lamps with a slot and static faces drawn in the last frame (effects profile). Face draws and atlas clears are
     // renderer counters (render::PerfCounters).
     int last_slots() const { return last_slots_; }
+    // A slot is fading in or out (kFadeSeconds of the steady clock): what it lights is not yet its final light.
+    bool fading() const;
     int last_static_faces() const { return last_static_faces_; }
 
     void shutdown();

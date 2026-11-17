@@ -1279,6 +1279,14 @@ void LampShadows::end_frame()
     active_ = false;
 }
 
+bool LampShadows::fading() const
+{
+    for (const Slot &slot : slot_)
+        if (slot.lamp != -1 && (slot.leaving || (slot.ready && slot.weight < 1.0f)))
+            return true;
+    return false;
+}
+
 void LampShadows::shutdown()
 {
     for (bgfx::FrameBufferHandle *fb : {&static_fb_, &dynamic_fb_})
