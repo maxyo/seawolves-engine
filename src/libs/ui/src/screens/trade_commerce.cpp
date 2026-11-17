@@ -346,6 +346,26 @@ class CommerceScreen final : public Screen
             if (!still)
                 hold_row_.clear();
         }
+        // A shop opens, and switches ship or character, with a row selected and its amount window
+        // closed (on a PC Enter or a double click opens it): that row's deal is opened as a tap
+        // would, so the selected row comes with its deal. The free windows (storage, loot, chests)
+        // open on their take-all instead.
+        std::string owner;
+        for (const Widget *one : admitted.All(columns.owners))
+            if (one->value == "1")
+                owner = one->row_id;
+        if (opened_for_ != owner)
+        {
+            opened_for_ = owner;
+            if (money && selected && !deal && selected->Offers("activate"))
+            {
+                hold_row_ = selected->row_id;
+                hold_at_ = bindings.Now();
+                hold_revision_ = admitted.model->revision;
+                bindings.Send(*selected, "activate", selected->row_id);
+                bindings.RebuildAfter(kSelectHold);
+            }
+        }
         const Widget *first = goods.empty() ? nullptr : goods.front();
         const auto header = [first](int column) {
             return first && column >= 0 && static_cast<size_t>(column) < first->column_headers.size()
@@ -954,6 +974,7 @@ class CommerceScreen final : public Screen
     std::string hold_row_;     // the tapped row whose window has not come yet
     double hold_at_ = 0.0;
     uint64_t hold_revision_ = 0; // the model revision the row was tapped in
+    std::optional<std::string> opened_for_; // the ship / character whose list was opened (its selected row's deal asked for)
     int filter_ = 0; // 0 all, 1 on our side, 2 profitable (export goods) / on the other side
     int sort_ = -1;  // the column the rows are ordered by (own, other, buy, sell); -1 = the game's order
     bool sort_descending_ = true;

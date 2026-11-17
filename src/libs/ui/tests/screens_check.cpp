@@ -395,6 +395,11 @@ static void Store(const std::string &models)
     ExpectEqual(surface.props["extras"]["note"], "Членам купеческой гильдии — скидка 5 % до 1 декабря", "unknown text → parchment note");
     Expect(surface.props["extras"]["rows"].size() == 1 && surface.props["extras"]["rows"][0]["title"] == "Гильдейский счёт", "unknown button → «Прочее» row");
     Expect(surface.logs.size() == 1 && surface.logs[0] == "screen store extras=B_GUILD,GUILD_NOTE", "extras logged once");
+    ExpectEqual(surface.Last(), "widget:store\tTABLE_LIST\t0\tactivate@7:goods:0:ship:0", "a shop opens the deal of the row the game selected");
+    surface.now += 0.6;
+    router.Tick();
+    Expect(surface.errors.size() == 1, "no window for it within the hold: said");
+    surface.errors.clear();
     InterfaceModel one_line = Load(models, "store.json");
     for (Widget &widget : one_line.widgets)
         if (widget.node == "CAPACITY")
@@ -921,6 +926,32 @@ static void Commerce(const std::string &models)
         rich_router.OnEvent({"goods", "change", "6"});
         Expect(rich_surface.props["primary"]["label"] == "<trade.buy> 6" && rich_surface.props["primary"]["sub"] == "1 740 \xC2\xB7 36 <transfer.cwt>",
                "six cannons: 1 740 and 36 cwt as cannons.c says («Деньги 1740, вес 36 ц»): " + rich_surface.props["primary"].dump());
+    }
+    {
+        // cannons.c opens, and switches ships, with a row selected and its amount window closed.
+        const auto closed = [&models](uint64_t revision, int ship) {
+            InterfaceModel model = Load(models, "cannons-deal.json");
+            std::erase_if(model.widgets, [](const Widget &widget) { return widget.node.rfind("QTY_", 0) == 0; });
+            for (Widget &widget : model.widgets)
+                if (widget.node == "SHIPS_SCROLL")
+                    widget.value = widget.index == ship ? "1" : "0";
+            model.revision = revision;
+            return model;
+        };
+        FakeSurface open_surface;
+        Router open_router(open_surface);
+        open_router.SetInterface(closed(1, 0));
+        ExpectEqual(open_surface.Last(), "widget:cannons\tTABLE_LIST\t1\tactivate@7:row:1", "cannons: the selected row's deal is asked for on opening");
+        InterfaceModel opened = Load(models, "cannons-deal.json");
+        opened.revision = 2;
+        open_router.SetInterface(opened);
+        Expect(open_surface.props["list"]["rows"][1]["selected"] == true && !open_surface.props["deal"].is_null() && open_surface.errors.empty(),
+               "cannons: the selected row comes with its deal");
+        open_surface.commands.clear();
+        open_router.SetInterface(closed(3, 0));
+        Expect(open_surface.commands.empty(), "cannons: a deal closed by the player stays closed");
+        open_router.SetInterface(closed(4, 1));
+        ExpectEqual(open_surface.Last(), "widget:cannons\tTABLE_LIST\t1\tactivate@7:row:1", "cannons: another ship's list opens its selected row's deal");
     }
     // contraband.c: a good without a buy price can only be sold: the pivot is the scale's right end.
     router.SetInterface(Load(models, "contraband-deal.json"));
