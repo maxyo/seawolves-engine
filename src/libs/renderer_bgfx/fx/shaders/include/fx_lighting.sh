@@ -121,14 +121,40 @@ vec2 fxGlossSpec(float gloss)
     return vec2(power, 0.0625 * gloss * gloss * sqrt(gloss) * (power + 8.0));
 }
 
+// A highlight's lobe for spec = (power, strength), towards the light L (N, V, L unit, view space). power >= 0: Blinn-Phong
+// (fxMaterialSpec, fxGlossSpec). power < 0, only in the rain's programs (FX_FF_WET; ff_wet.sh ffWetSpec): the water
+// film's GGX lobe (Walter et al. 2007, "Microfacet Models for Refraction through Rough Surfaces"; Hammon's
+// approximation of the height-correlated Smith visibility; Schlick's Fresnel, F0 0.02) with alpha = -power, its weight
+// `strength`: its long tail and the visibility's 1 / N.V stretch a light's reflection towards the viewer at grazing views,
+// the streak of a lamp on a wet street. Times pi: the lights' colours are irradiance (a Lambert surface is
+// albedo * light * N.L). D is (alpha / d)^2 / pi, not alpha^2 / (pi d^2): d^2 of a sharp lobe (alpha 0.02) is below
+// what a mediump float holds.
+float fxSpecLobe(vec3 N, vec3 V, vec3 L, vec2 spec)
+{
+    vec3 H = normalize(L + V);
+    float nh = max(dot(N, H), 0.0);
+#ifdef FX_FF_WET
+    if (spec.x < 0.0)
+    {
+        float a = -spec.x;
+        float nl = max(dot(N, L), 0.0);
+        float nv = max(dot(N, V), 1e-3);
+        float r = a / (nh * nh * (a * a - 1.0) + 1.0);
+        float vis = 0.5 / (nl * (nv * (1.0 - a) + a) + nv * (nl * (1.0 - a) + a) + 1e-5);
+        float F = 0.02 + 0.98 * pow(1.0 - max(dot(V, H), 0.0), 5.0);
+        return r * r * vis * F * nl * spec.y;
+    }
+#endif
+    return pow(nh, spec.x) * spec.y;
+}
+
 // The sun's highlight (the baked variants use it too: their bake holds the sun's light, not its highlight).
 // N: unit view-space normal, V: unit vector to the eye, spec: fxMaterialSpec() or fxGlossSpec().
 vec3 fxSunSpecular(vec3 N, vec3 V, vec2 spec)
 {
 #ifdef FX_LIGHT_SPECULAR
-    vec3 H = normalize(u_fxLight[0].xyz + V);
     float ndl = clamp(dot(N, u_fxLight[0].xyz) * 4.0, 0.0, 1.0);
-    return fxLightColor(u_fxLight[1].rgb) * (pow(max(dot(N, H), 0.0), spec.x) * spec.y * ndl);
+    return fxLightColor(u_fxLight[1].rgb) * (fxSpecLobe(N, V, u_fxLight[0].xyz, spec) * ndl);
 #else
     return vec3_splat(0.0);
 #endif
@@ -458,8 +484,7 @@ vec3 fxPointSpecular(vec3 N, vec3 P, vec3 V, vec2 spec)
             break;
         vec4 light = fxPointLight(i, P);
         float ndl = clamp(dot(N, light.xyz) * 4.0, 0.0, 1.0);
-        vec3 H = normalize(light.xyz + V);
-        sum += fxLightColor(u_fxPoint[4 * i + 1].rgb) * (pow(max(dot(N, H), 0.0), spec.x) * spec.y * ndl * light.w);
+        sum += fxLightColor(u_fxPoint[4 * i + 1].rgb) * (fxSpecLobe(N, V, light.xyz, spec) * ndl * light.w);
     }
 #endif
     return sum;

@@ -434,8 +434,7 @@ void ffLampAdd(float id, vec3 Pw, vec3 Ng, vec3 N, vec3 specV, vec2 spec, float 
 #ifdef FX_LIGHT_SPECULAR
     if (spec.y > 0.0)
     {
-        vec3 H = normalize(toLamp + specV);
-        lampSpec += rgb * (pow(max(dot(N, H), 0.0), spec.x) * spec.y * clamp(ndl * 4.0, 0.0, 1.0) * falloff * seen);
+        lampSpec += rgb * (fxSpecLobe(N, specV, toLamp, spec) * clamp(ndl * 4.0, 0.0, 1.0) * falloff * seen);
     }
 #endif
 }
@@ -785,7 +784,7 @@ void main()
     if (ffWet.x > 0.0)
     {
         N = ffWetNormal(N, Ng, ffWet);
-        ffSpec = ffWetSpec(ffSpec, N, V, ffWet);
+        ffSpec = ffWetSpec(ffSpec, ffWet, ffMetal);
     }
 #else
     vec4 ffWet = vec4(0.0, 0.0, 0.0, 1.0); // dry (ffWetPrepare's)

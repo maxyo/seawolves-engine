@@ -63,16 +63,20 @@ vec3 ffWetNormal(vec3 N, vec3 Ng, vec4 wet)
     return normalize(mix(N, Ng, max(0.5 * wet.x, wet.y)));
 }
 
-// The highlight of the wet surface (the sun's, the lamps', the dynamic lights'; fxGlossSpec's power and strength): the
-// water's lobe from the wet gloss, its strength the water's Fresnel (Schlick, F0 0.02) at the view (a highlight is seen
-// where H is near N, so V.H is about N.V) times the normalised Blinn-Phong peak (power + 8) / 8, over the dry surface's
-// by the wetness. At a grazing view the water mirrors several times what it does from above: the streak of a lamp on a
-// wet street. dry: the dry surface's highlight; N, V: view space; wet: ffWetPrepare's.
-vec2 ffWetSpec(vec2 dry, vec3 N, vec3 V, vec4 wet)
+// The highlight of the wet surface (the sun's, the lamps', the dynamic lights'; drawn where FX_LIGHT_SPECULAR is, by
+// default «Высокая»): the water film's GGX lobe (fxSpecLobe, power < 0) in place of the dry highlight (the water covers
+// the surface): a lamp's reflection stretches towards the viewer, the streak on a wet street. The lobe is kept broad and
+// dim, a lamp's soft reflection on a wet street rather than a mirror's spot (the owner's sheet of 2026-11-17: the sharp
+// lobe was a blown-out white spot): the film's roughness goes from 0.6 (damp) to 0.4 (soaked), a puddle's no smoother
+// (alpha at least 0.15), and its weight is 0.35 of the wetness (the peak about that of the old round reflection).
+// Metal keeps its own highlight (dry): its reflection (F0 far above water's 0.02) outshines the film's.
+// wet: ffWetPrepare's; metal: 0..1.
+vec2 ffWetSpec(vec2 dry, vec4 wet, float metal)
 {
-    float power = exp2(3.0 + 4.5 * wet.z);
-    float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 5.0);
-    return mix(dry, vec2(power, fresnel * (power + 8.0) * 0.125), wet.x);
+    if (metal >= 0.5)
+        return dry;
+    float roughness = min(1.0 - wet.z, mix(0.6, 0.4, wet.x));
+    return vec2(-max(roughness * roughness, 0.15), 0.35 * wet.x);
 }
 
 // The overcast sky the wet surface reflects (Schlick's Fresnel of water, F0 0.02, with Lagarde's roughness term: a

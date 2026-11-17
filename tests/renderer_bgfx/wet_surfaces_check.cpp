@@ -8,8 +8,8 @@
 //   a roof over half of the floor (in the location's geometry, so in its visibility volume): the floor under it stays
 //   dry once the volume is baked, the open half is wet;
 //   a street lamp seen over the wet floor at night («Высокая», camera-relative, perspective, the lamp relight on): its
-//   highlight in the wet gloss shows on the street below it, absent when dry, and is gone where a wall shadows the lamp
-//   from the floor (the highlight takes the lamp's own light and shadow, ffLampAdd).
+//   reflection in the water film (a GGX lobe) is a streak below it, longer towards the viewer than wide, absent when dry,
+//   and gone on the street a wall shadows from the lamp (the highlight takes the lamp's own light and shadow, ffLampAdd).
 #include "check_backend.hpp"
 #include "device.hpp"
 #include <SDL2/SDL.h>
@@ -263,11 +263,11 @@ struct Streak
     float peak = 0.0f;
     int rows = 0, columns = 0;
 };
-Streak streak(const std::vector<uint8_t> &dry, const std::vector<uint8_t> &wet, float threshold)
+Streak streak(const std::vector<uint8_t> &dry, const std::vector<uint8_t> &wet, float threshold, uint32_t first_row = 0)
 {
     Streak s;
     int top = kSize, bottom = -1, left = kSize, right = -1;
-    for (uint32_t y = 0; y < kSize; ++y)
+    for (uint32_t y = first_row; y < kSize; ++y)
         for (uint32_t x = 0; x < kSize; ++x)
         {
             const size_t i = (static_cast<size_t>(y) * kSize + x) * 4 + 1;
@@ -459,10 +459,10 @@ int main()
                             indices.push_back(base + t);
                 };
                 box({kX - 8.0f, -0.2f, kZ - 4.0f}, {kX + 8.0f, 0.0f, kZ + 20.0f});
-                // A low wall across the street 1 m in front of the lamp: it hides the lamp from the floor where its
+                // A wall across the street 1.2 m in front of the lamp, a little higher than the lamp: it hides the lamp from the floor where its
                 // reflection would be seen (the street before the wall), not from the camera.
                 if (wall)
-                    box({kX - 8.0f, 0.0f, kZ + 7.6f}, {kX + 8.0f, 2.6f, kZ + 7.8f});
+                    box({kX - 8.0f, 0.0f, kZ + 7.6f}, {kX + 8.0f, 3.2f, kZ + 7.8f});
                 const std::vector<uint32_t> colors(positions.size(), 0xFF303030u);
                 render::SetEffectsLocationGeometry({"wet_surfaces_check street", positions, colors, {}, indices, {}, false, {}, {}});
                 for (const bool wet : {false, true})
@@ -484,12 +484,20 @@ int main()
                 }
             }
             const Streak open = streak(pictures[0][0], pictures[0][1], 12.0f);
-            const Streak walled = streak(pictures[1][0], pictures[1][1], 12.0f);
+            // The wall is in the shadows' geometry only, not drawn: the street between it and the lamp, which the lamp
+            // lights, stays in view above the wall's foot. Its foot: the street 13.6 m ahead of the eye (1.7 m up, the view
+            // 12 degrees down, 57 degrees high).
+            const float below = std::atan(Street::kEyeY / (kZ + 7.6f - Street::kEyeZ)) * 180.0f / 3.14159265f;
+            const auto foot = static_cast<uint32_t>(0.5f * kSize * (1.0f - std::tan((12.0f - below) * 3.14159265f / 180.0f) /
+                                                                       std::tan(0.5f)) + 1.5f);
+            const Streak walled = streak(pictures[1][0], pictures[1][1], 12.0f, foot);
             std::printf("open street: the rain adds up to %.0f, over %d rows x %d columns; behind the wall up to %.0f\n",
                         open.peak, open.rows, open.columns, walled.peak);
-            // The lamps' highlight on baked surfaces rides at their strength there (lamp_gain 0.5 since 2026-11-17: ~31).
+            // The lamps' highlight on baked surfaces rides at their strength there (lamp_gain 0.5 since 2026-11-17).
             expect(open.peak > 20.0f, "the wet street shows the lamp's highlight");
-            expect(walled.peak < 0.5f * open.peak, "no reflection where the wall shadows the lamp (its own shadow)");
+            expect(open.rows > 2 * open.columns, "the lamp's reflection is a streak towards the viewer (water's GGX lobe)");
+            expect(open.peak < 120.0f, "a soft reflection, not a blown-out spot (the owner's sheet: the old round one rose by 82)");
+            expect(walled.peak < 0.25f * open.peak, "no reflection on the street the wall shadows from the lamp (its own shadow)");
             render::SetEffectsLamps({});
             render::SetEffectsLocationGeometry({});
             render::ConfigureEffects(0, {});
