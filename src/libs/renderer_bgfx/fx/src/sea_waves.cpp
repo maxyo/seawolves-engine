@@ -208,14 +208,4 @@ void SeaWaves::Shutdown()
     surface_ready_ = false;
 }
 
-void SeaWaves::OnDeviceLost()
-{
-    state_[0] = state_[1] = BGFX_INVALID_HANDLE;
-    surface_ = BGFX_INVALID_HANDLE;
-    step_ = derive_ = BGFX_INVALID_HANDLE;
-    s_state_ = u_step_ = u_sources_ = BGFX_INVALID_HANDLE;
-    reset_ = true;
-    surface_ready_ = false;
-}
-
 } // namespace storm::fx

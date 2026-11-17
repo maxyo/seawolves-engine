@@ -27,7 +27,6 @@ class Visibility
     // The volume to bind, or null.
     const Bound *bound() const { return bgfx::isValid(bound_.texture) ? &bound_ : nullptr; }
     void reset();
-    void on_device_lost() { bound_ = {}; } // the texture went with the device
 
   private:
     Bound bound_{};

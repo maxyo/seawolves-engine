@@ -92,7 +92,6 @@ class SunShadows
     void end_frame();
 
     void shutdown();
-    void on_device_lost();
 
     // Since the last take (the effects profile line, every 30 frames).
     struct Counters

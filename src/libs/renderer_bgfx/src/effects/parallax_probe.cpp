@@ -41,14 +41,6 @@ void ParallaxProbe::shutdown()
     release();
 }
 
-void ParallaxProbe::on_device_lost()
-{
-    queries_.clear(); // the handles went with the device
-    for (Batch &batch : batches_)
-        batch = Batch{};
-    placed_ = view_set_ = false;
-}
-
 bgfx::OcclusionQueryHandle ParallaxProbe::candidate(const NormalMapEntry *entry, const float view[16], const float proj[16],
                                                     const float center[3], float radius, const Target &target)
 {

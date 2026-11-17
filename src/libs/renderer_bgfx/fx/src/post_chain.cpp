@@ -101,32 +101,6 @@ void PostChain::Shutdown()
     pending_slice_ = -1;
 }
 
-void PostChain::OnDeviceLost()
-{
-    // The device is gone with every handle: forgotten, not destroyed (by every chain that shares them).
-    programs_->handles.fill(BGFX_INVALID_HANDLE);
-    programs_ = std::make_shared<Programs>();
-    uniforms_loaded_ = false;
-    for (Target &target : bloom_)
-        target = {};
-    graded_ = {};
-    smaa_edges_ = {};
-    smaa_weights_ = {};
-    antialiased_ = {};
-    upscaled_ = {};
-    smaa_area_ = smaa_search_ = BGFX_INVALID_HANDLE;
-    wobbled_ = {};
-    lut_ = BGFX_INVALID_HANDLE;
-    u_dither_ = BGFX_INVALID_HANDLE;
-    u_wobble_ = BGFX_INVALID_HANDLE;
-    for (bgfx::UniformHandle *uniform :
-         {&s_scene_, &s_bloom_, &s_lut_, &u_bloom_, &u_shafts_, &u_tone_, &u_lut_,
-          &u_smaa_, &s_smaa_edges_, &s_smaa_area_, &s_smaa_search_, &s_smaa_weights_, &u_fsr_, &u_fsr_out_, &s_scene_depth_})
-        *uniform = BGFX_INVALID_HANDLE;
-    lut_strength_ = -1.0f;
-    pending_slice_ = -1;
-}
-
 void PostChain::EnsureUniforms()
 {
     if (!uniforms_loaded_)

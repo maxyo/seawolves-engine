@@ -117,7 +117,6 @@ class TownLight
     bool preparing() const;
 
     void shutdown();
-    void on_device_lost();
 
   private:
     struct Map

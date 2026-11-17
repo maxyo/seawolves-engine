@@ -80,7 +80,6 @@ class SeaWaves
     std::array<double, 2> Centre() const { return centre_; }
     bool Ready() const { return surface_ready_; }
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     void Create(bool float_state, bool float_surface);

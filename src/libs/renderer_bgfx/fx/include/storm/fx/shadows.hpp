@@ -82,7 +82,6 @@ class Shadows
     bool BindUnshadowed(const Settings &settings);
 
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     void EnsureResources(int map_size);

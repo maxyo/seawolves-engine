@@ -73,7 +73,6 @@ class ParallaxProbe
 
     const render::ParallaxProbeState &state() const { return state_; }
     void shutdown();
-    void on_device_lost();
 
   private:
     struct Draw

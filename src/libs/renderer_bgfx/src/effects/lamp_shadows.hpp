@@ -154,9 +154,10 @@ class LampShadows
     int last_static_faces() const { return last_static_faces_; }
 
     void shutdown();
-    void on_device_lost();
 
   private:
+    // Every handle invalid and every slot, grid and room to be built again (shutdown, after the destroys).
+    void forget_gpu_objects();
     // Index lists of a slot's still faces (fx::LampFaceLists): one buffer, list k = face * 2 + near the holder.
     struct FaceBuffer
     {

@@ -1524,26 +1524,4 @@ void Lighting::shutdown()
     }
 }
 
-void Lighting::on_device_lost()
-{
-    for (auto &upload : aggregate_cache_) upload->texture = BGFX_INVALID_HANDLE;
-    aggregate_cache_.clear();
-    aggregate_open_ = BGFX_INVALID_HANDLE;
-    s_aggregate_ = BGFX_INVALID_HANDLE;
-    aggregate_failed_ = false;
-    aggregate_reported_ = 0;
-    probe_.on_device_lost();
-    fx_.OnDeviceLost();
-    shadows_.on_device_lost();
-    town_light_.on_device_lost();
-    lamps_.on_device_lost();
-    casters_.on_device_lost();
-    shadow_casters_.on_device_lost();
-    shadow_volumes_prepared_ = false;
-    u_coverage_ = u_ff_ = u_wet_ = u_gloss_ = u_skin_tone_ = u_aerial_up_ = s_ao_volume_ = u_ao_matrix_ = u_ao_params_ = BGFX_INVALID_HANDLE;
-    s_visibility_ = u_visibility_matrix_ = u_visibility_params_ = u_town_wall_ = BGFX_INVALID_HANDLE;
-    ao_view_ = {};
-    ao_open_ = visibility_open_ = BGFX_INVALID_HANDLE;
-}
-
 } // namespace storm::effects

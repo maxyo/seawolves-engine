@@ -37,19 +37,6 @@ void Shadows::Shutdown()
     dynamic_dirty_ = true;
 }
 
-void Shadows::OnDeviceLost()
-{
-    static_target_ = dynamic_target_ = BGFX_INVALID_HANDLE;
-    map_ = BGFX_INVALID_HANDLE;
-    caster_ = BGFX_INVALID_HANDLE;
-    s_map_ = BGFX_INVALID_HANDLE;
-    u_matrix_ = BGFX_INVALID_HANDLE;
-    u_params_ = BGFX_INVALID_HANDLE;
-    map_size_ = 0;
-    static_valid_ = false;
-    dynamic_dirty_ = true;
-}
-
 void Shadows::EnsureResources(int map_size)
 {
     if (!bgfx::isValid(s_map_))

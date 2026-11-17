@@ -62,7 +62,6 @@ class Casters
     bgfx::UniformHandle sampler();
 
     void shutdown();
-    void on_device_lost();
 
   private:
     void find_shaders();

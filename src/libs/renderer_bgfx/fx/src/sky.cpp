@@ -22,13 +22,6 @@ void Sky::Shutdown()
     resources_ = false;
 }
 
-void Sky::OnDeviceLost()
-{
-    u_aerial_ = BGFX_INVALID_HANDLE;
-    u_wind_ = BGFX_INVALID_HANDLE;
-    resources_ = false;
-}
-
 void Sky::Update(const WeatherInput &weather, float time_seconds, float camera_height)
 {
     time_ = time_seconds;

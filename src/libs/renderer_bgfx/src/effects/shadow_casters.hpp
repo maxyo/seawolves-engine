@@ -139,7 +139,6 @@ class ShadowCasters
     // of submits.
     uint32_t submit(shim::Device &device, Casters &programs, const ShadowCaster &caster);
     void end_frame();
-    void on_device_lost();
 
     // The scopes of storm/render/shadow_casters.hpp.
     uint64_t still() const { return still_; }

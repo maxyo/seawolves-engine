@@ -40,7 +40,6 @@ Stand-alone preview of every effect: [tools/fx-preview](../../../../tools/fx-pre
 - No silent fallbacks: `ConstrainSettings()` is the only place a request is lowered, before rendering, and every
   change comes back as a line of text. A call that still cannot be honoured is refused and reported once through
   `fx/log.hpp` at `LogLevel::Error`; `tools/fx-preview` fails on any such report.
-- After a lost context call `OnDeviceLost()` on each object; resources are re-created on the next use.
 - Stage 15 belongs to the shadow map, stage 14 to the derived normal map (and `SeaDepth::Texture()` in the sea
   shader), stage 7 to the gloss / relief material.
 - Normal, height and gloss maps are made on the device from the player's own textures (src/libs/relief); never ship

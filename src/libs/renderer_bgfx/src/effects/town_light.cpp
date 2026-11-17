@@ -723,16 +723,4 @@ void TownLight::shutdown()
     want_place_ = !lightmapped_->indices.empty();
 }
 
-void TownLight::on_device_lost()
-{
-    relight_.OnDeviceLost();
-    for (Map &map : maps_)
-    {
-        map.relight = fx::SunRelight::kNoMap; // went with the device: render() uploads and composes them again
-        map.compose_due = true;
-    }
-    place_sun_ = {0.0f, 0.0f, 0.0f};
-    ready_ = false; // the game's lightmaps until ours are composed again
-}
-
 } // namespace storm::effects

@@ -116,7 +116,6 @@ class SunRelight
     bool Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bool sun_up, float footprint, bool debug);
 
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     struct MapData

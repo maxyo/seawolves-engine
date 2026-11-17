@@ -1307,10 +1307,10 @@ void LampShadows::shutdown()
     for (bgfx::UniformHandle *u : {&s_static_, &s_dynamic_, &s_grid_, &s_room_, &u_view_, &u_lamps_, &u_grid_, &u_caster_, &u_faces_})
         if (bgfx::isValid(*u))
             bgfx::destroy(*u);
-    on_device_lost();
+    forget_gpu_objects();
 }
 
-void LampShadows::on_device_lost()
+void LampShadows::forget_gpu_objects()
 {
     static_fb_ = dynamic_fb_ = BGFX_INVALID_HANDLE;
     static_map_ = dynamic_map_ = open_map_ = grid_map_ = room_map_ = open_grid_ = BGFX_INVALID_HANDLE;

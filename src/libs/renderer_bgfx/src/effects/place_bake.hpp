@@ -52,7 +52,6 @@ class PlaceBake
     const std::shared_ptr<const PlaceReady> &ready() const { return ready_; }
 
     void shutdown();
-    void on_device_lost();
 
   private:
     struct Job

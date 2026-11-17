@@ -26,7 +26,6 @@ class AoVolumes
     bool set(const fx::AoVolume &volume);
     const Bound *bound() const { return bgfx::isValid(bound_.texture) ? &bound_ : nullptr; }
     void reset();
-    void on_device_lost() { bound_ = {}; }
 
   private:
     Bound bound_{};

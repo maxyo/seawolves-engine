@@ -27,7 +27,6 @@ class SeaDepth
     // The packed distances of the last successful Capture(); its RGB decode to distance / far_plane.
     bgfx::TextureHandle Texture() const;
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     bgfx::FrameBufferHandle target_ = BGFX_INVALID_HANDLE;

@@ -49,7 +49,6 @@ class SelfTest
     bool Running() const { return pending_frame_ != 0; }
 
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     static constexpr uint16_t kSize = 64;

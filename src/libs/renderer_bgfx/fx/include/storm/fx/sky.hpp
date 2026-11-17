@@ -36,7 +36,6 @@ class Sky
     void BindWind();
 
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     void EnsureResources();

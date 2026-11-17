@@ -342,12 +342,4 @@ void PlaceBake::shutdown()
     state_ = place_ && wanted_ ? State::Building : State::None;
 }
 
-void PlaceBake::on_device_lost()
-{
-    // The textures went with the device: the place's file is read again (an interior keeps no copy of its volumes).
-    visibility_.on_device_lost();
-    ao_.on_device_lost();
-    rebuild();
-}
-
 } // namespace storm::effects

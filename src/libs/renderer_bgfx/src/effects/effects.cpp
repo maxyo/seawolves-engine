@@ -534,35 +534,6 @@ void Host::on_device_created()
     renderer_state_changed_ = false; // the scene target is created after this, with the active state
 }
 
-void Host::on_device_lost()
-{
-    render::SetSceneLoadingWindow(0, 0);
-    location_load().opaque.invalidate();
-    fx::SharedCpuAdmission().suspend();
-    location_load().scene_work.invalidate();
-    location_load().timing_at = 0;
-    if (!location_load().sealed) location_load().gate.invalidate();
-    post_.OnDeviceLost();
-    self_test_.OnDeviceLost();
-    lighting_.on_device_lost();
-    sky_.OnDeviceLost();
-    sea_depth_.OnDeviceLost();
-    u_sea_fx_ = s_sea_depth_ = s_sea_sun_road_ = BGFX_INVALID_HANDLE;
-    sea_no_sun_road_ = BGFX_INVALID_HANDLE;
-    sea_depth_frame_ = UINT32_MAX;
-    sea_backdrop_fb_ = BGFX_INVALID_HANDLE; // gone with the device
-    release_sea_backdrop();
-    sea_waves_.OnDeviceLost();
-    sea_waves_idle_ = {};
-    u_sea_waves_ = s_sea_waves_ = BGFX_INVALID_HANDLE;
-    sea_waves_frame_ = UINT32_MAX;
-    place_.on_device_lost();
-    ao_bound_ = nullptr;
-    lighting_.set_ao_volume(nullptr);
-    lighting_.set_visibility(nullptr);
-    device_ready_ = false;
-}
-
 void Host::shutdown()
 {
     post_.Shutdown();

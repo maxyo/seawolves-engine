@@ -247,12 +247,4 @@ void ShadowCasters::end_frame()
     camera_.plane_count = 0;
 }
 
-void ShadowCasters::on_device_lost()
-{
-    // The volumes name views and uniforms of the lost device.
-    volumes_.clear();
-    stats_.clear();
-    boxed_ = false;
-}
-
 } // namespace storm::effects

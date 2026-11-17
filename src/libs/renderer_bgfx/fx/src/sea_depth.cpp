@@ -71,12 +71,4 @@ void SeaDepth::Shutdown()
     width_ = height_ = 0;
 }
 
-void SeaDepth::OnDeviceLost()
-{
-    target_ = BGFX_INVALID_HANDLE;
-    program_ = BGFX_INVALID_HANDLE;
-    s_depth_ = u_capture_ = BGFX_INVALID_HANDLE;
-    width_ = height_ = 0;
-}
-
 } // namespace storm::fx

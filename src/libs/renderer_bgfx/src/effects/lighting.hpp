@@ -405,7 +405,6 @@ class Lighting
     Counts last_frame() const { return last_frame_; }
 
     void shutdown();
-    void on_device_lost();
 
   private:
     enum class Material : uint8_t

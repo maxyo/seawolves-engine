@@ -73,16 +73,6 @@ void SelfTest::Shutdown()
     Release();
 }
 
-void SelfTest::OnDeviceLost()
-{
-    post_.OnDeviceLost();
-    pattern_ = BGFX_INVALID_HANDLE;
-    scene_ = output_ = BGFX_INVALID_HANDLE;
-    readback_scene_ = readback_output_ = BGFX_INVALID_HANDLE;
-    s_scene_ = BGFX_INVALID_HANDLE;
-    pending_frame_ = 0;
-}
-
 bool SelfTest::Submit(const Settings &settings, bgfx::ViewId first_view, const PostChain &chain)
 {
     if (pending_frame_ != 0)

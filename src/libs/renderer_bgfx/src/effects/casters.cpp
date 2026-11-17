@@ -148,11 +148,6 @@ void Casters::shutdown()
     for (bgfx::UniformHandle *u : {&u_cut_, &u_uv_, &s_tex0_})
         if (bgfx::isValid(*u))
             bgfx::destroy(*u);
-    on_device_lost();
-}
-
-void Casters::on_device_lost()
-{
     u_cut_ = u_uv_ = s_tex0_ = BGFX_INVALID_HANDLE;
 }
 

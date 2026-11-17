@@ -393,13 +393,4 @@ void SunShadows::shutdown()
     tracker_.Invalidate();
 }
 
-void SunShadows::on_device_lost()
-{
-    tiles_.clear(); // the handles went with the device
-    tiles_vb_ = BGFX_INVALID_HANDLE;
-    tiles_dirty_ = true;
-    shadows_.OnDeviceLost();
-    tracker_.Invalidate();
-}
-
 } // namespace storm::effects

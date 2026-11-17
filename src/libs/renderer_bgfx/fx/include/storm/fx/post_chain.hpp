@@ -97,8 +97,6 @@ class PostChain
     // Releases every GPU object (they are re-created by the next Submit); shared programs go with the last chain
     // that uses them.
     void Shutdown();
-    // The context is gone: forget the handles without destroying them.
-    void OnDeviceLost();
     // Releases the render targets no Submit() used in its last `idle_submits` calls (0: all of them); the next Submit
     // that needs one makes it again. Returns their bytes. Submit() itself releases those idle for kIdleSubmits (the
     // passes of the previous settings after a switch, the wobble after leaving the water).

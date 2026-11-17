@@ -24,16 +24,6 @@ void Lighting::Shutdown()
     detail::Destroy(u_parallax_);
 }
 
-void Lighting::OnDeviceLost()
-{
-    u_light_ = BGFX_INVALID_HANDLE;
-    u_point_ = BGFX_INVALID_HANDLE;
-    u_point_count_ = BGFX_INVALID_HANDLE;
-    s_normal_map_ = BGFX_INVALID_HANDLE;
-    s_material_ = BGFX_INVALID_HANDLE;
-    u_parallax_ = BGFX_INVALID_HANDLE;
-}
-
 void Lighting::Apply(const LightingUniforms &uniforms)
 {
     if (!bgfx::isValid(u_light_))

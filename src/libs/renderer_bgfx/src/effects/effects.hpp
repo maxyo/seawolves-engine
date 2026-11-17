@@ -48,7 +48,6 @@ class Host
 
     // After bgfx::init: detects what the device supports and constrains the request (logged once).
     void on_device_created();
-    void on_device_lost();
     void shutdown();
 
     render::EffectsReport configure(int preset, const std::vector<render::EffectsOption> &options);

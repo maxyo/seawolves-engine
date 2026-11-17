@@ -340,15 +340,4 @@ void SunRelight::Shutdown()
     place_drawn_ = false;
 }
 
-void SunRelight::OnDeviceLost()
-{
-    maps_.clear(); // the handles went with the device
-    place_target_ = BGFX_INVALID_HANDLE;
-    place_map_ = BGFX_INVALID_HANDLE;
-    compose_ = BGFX_INVALID_HANDLE;
-    for (bgfx::UniformHandle *u : {&s_position_hi_, &s_position_lo_, &s_normal_, &s_baked_, &s_sun_, &u_matrix_, &u_params_})
-        *u = BGFX_INVALID_HANDLE;
-    place_drawn_ = false;
-}
-
 } // namespace storm::fx

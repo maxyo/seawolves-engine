@@ -47,7 +47,6 @@ class Lighting
     int TakeDroppedLights();
 
     void Shutdown();
-    void OnDeviceLost();
 
   private:
     bgfx::UniformHandle u_light_ = BGFX_INVALID_HANDLE;
