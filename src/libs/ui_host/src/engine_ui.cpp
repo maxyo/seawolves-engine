@@ -947,9 +947,4 @@ JNIEXPORT void JNICALL Java_org_stormengine_port_EngineUi_nativeSetCutouts(JNIEn
     EngineUi::Get().Cutouts(std::move(cutouts));
 }
 
-JNIEXPORT jboolean JNICALL Java_org_stormengine_port_EngineUi_nativeHostOwnsHud(JNIEnv *env, jclass, jstring mode)
-{
-    return storm::ui::HostOwnsHud(storm::android::ui::Text(env, mode)) ? JNI_TRUE : JNI_FALSE;
-}
-
 } // extern "C"

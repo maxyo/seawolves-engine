@@ -753,7 +753,6 @@ static void CheckTouches(const std::string &pack)
     run.Feed("seaQuickAction", "sea-quick-moor");
     run.Frame();
     run.Frame();
-    Expect(!HostOwnsHud("sailing") && !HostOwnsHud("naval"), "the sea HUD is drawn here");
 
     // The test layout (800 × 400): helm 20…220 × 309…373, fire 708…784 × 308…384, minimap disc
     // 654…754 × 34…134, sail lever 732…788 × 154…298, context 640…704 × 226…290, the first

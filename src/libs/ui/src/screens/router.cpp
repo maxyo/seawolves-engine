@@ -29,11 +29,6 @@ std::string EngineCommand(const Action &action)
     return "widget:" + action.screen + "\t" + action.node + "\t" + std::to_string(action.index) + "\t" + WidgetWire(action);
 }
 
-bool HostOwnsHud(const std::string &mode)
-{
-    return !hud::Ported(mode);
-}
-
 bool AnsweredAction(const Action &action)
 {
     return !action.screen.empty() && !action.node.empty() && action.screen != "sound" && action.screen != "hud" &&

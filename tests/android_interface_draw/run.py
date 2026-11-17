@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise presentation policy and production GPU/font submission methods."""
+"""Exercise the production GPU/font submission methods inside and outside the interface draw scope."""
 import os
 from pathlib import Path
 import subprocess
@@ -21,7 +21,7 @@ def method(path, signature):
     return source[start:end]
 
 
-with tempfile.TemporaryDirectory(prefix="storm-interface-presentation-") as directory:
+with tempfile.TemporaryDirectory(prefix="storm-interface-draw-") as directory:
     build = Path(directory)
     renderer = root / "src/libs/renderer/src"
     (build / "renderer.inc").write_text(method(renderer / "renderer.cpp", "void Renderer::DrawPrimitiveUP("))
@@ -32,4 +32,4 @@ with tempfile.TemporaryDirectory(prefix="storm-interface-presentation-") as dire
                     "-I" + str(root / "src/libs/util/include"), "-I" + str(build),
                     str(here / "check.cpp"), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-print("PASS immediate suppression, revision/mode guards, legacy compatibility, scoped GPU draw and font metrics")
+print("PASS scoped GPU draw suppression keeps techniques, buffer updates and font metrics")

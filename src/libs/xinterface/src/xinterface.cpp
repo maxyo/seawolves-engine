@@ -754,15 +754,14 @@ void XINTERFACE::MobileCollectNations(std::vector<MobileWidget> &widgets)
 
 void XINTERFACE::Realize(uint32_t)
 {
-#ifdef __ANDROID__
-#endif
     if (!m_bUse || !bActive)
         return;
 
     pRenderService->MakePostProcess();
 
 #ifdef __ANDROID__
-    const storm::android::NativeInterfaceDrawScope mobileDrawScope(storm::android::interfacePresentation.suppressed());
+    // The portable UI draws every open interface: the game's own one only runs its nodes.
+    const storm::android::NativeInterfaceDrawScope mobileDrawScope(!storm::android::mobileScreen.empty());
 #endif
 
     auto Delta_Time = core.GetRDeltaTime();

@@ -1,9 +1,11 @@
 #include <algorithm>
-#include <platform/android_interface_presentation.hpp>
+#include <platform/android_interface_draw.hpp>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <optional>
+#include <string>
 #include <thread>
 
 // Compile actual renderer/font methods against a counting GPU to check that
@@ -62,25 +64,6 @@ struct FONT
 int main()
 {
     using namespace storm::android;
-    InterfacePresentation state;
-    state.begin(1, true, false); // Existing single-argument Java apps keep native UI.
-    assert(!state.suppressed() && !state.offer("1:mobile"));
-    state.begin(2, true, true);
-    assert(state.suppressed()); // No Android ack/snapshot has arrived yet.
-    assert(!state.offer("1:original") && state.suppressed());
-    for (const auto *bad : {"2:", "2:original:extra", "2:original\n", "02:original",
-                            "+2:original", "18446744073709551618:original", "2:unknown"})
-        assert(!state.offer(bad) && state.suppressed());
-    assert(state.offer("2:original") && !state.suppressed());
-    state.begin(3, true, true); // Reopening even the same screen revokes debug mode.
-    assert(state.suppressed() && !state.offer("2:original"));
-    assert(state.offer("3:fallback") && !state.suppressed());
-    assert(state.offer("3:mobile") && state.suppressed());
-    state.begin(4, false, true); // Gameplay never remains suppressed.
-    assert(!state.suppressed() && !state.offer("4:original"));
-    state.begin(5, true, true);
-    assert(state.suppressed());
-
     Device device;
     Renderer renderer{&device};
     FONT font{renderer, device};
@@ -94,7 +77,7 @@ int main()
     frame();
     assert(device.draws == 5 && renderer.dwNumDrawPrimitive == 3 && font.updates == 2);
     {
-        NativeInterfaceDrawScope scope(state.suppressed());
+        NativeInterfaceDrawScope scope(true);
         assert(NativeInterfaceDrawSuppressed());
         frame();
         assert(device.draws == 5 && renderer.dwNumDrawPrimitive == 3 && font.updates == 4);

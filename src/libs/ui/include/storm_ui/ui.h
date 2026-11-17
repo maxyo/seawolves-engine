@@ -20,11 +20,6 @@ class FileSource
 };
 std::unique_ptr<FileSource> DirectoryFiles(std::string root);
 
-// Migration switch for the in-game HUD, by gameplay mode of the "gameplay" state channel
-// ("explore", "melee", "sailing", "naval", "worldmap"): true while the platform host still
-// draws that mode's HUD itself. For every other mode the HUD is drawn here.
-bool HostOwnsHud(const std::string &mode);
-
 struct InterfaceModel; // interface_model.h
 
 // The one path out of the UI. For a game interface: the widget (`node`, `index`) of the

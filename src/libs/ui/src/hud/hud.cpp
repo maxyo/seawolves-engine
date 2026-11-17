@@ -40,8 +40,7 @@ const char *const kLandModes[] = {"explore", "melee"};
 const char *const kSeaModes[] = {"sailing", "naval"};
 const char *const kWorldMapModes[] = {"worldmap"};
 
-// Ported HUD scenes by gameplay mode. Porting a zone = adding its scene here; the
-// platform host stops drawing that mode's HUD because HostOwnsHud turns false for it.
+// The HUD scenes by gameplay mode.
 const SceneEntry kScenes[] = {
     {"land", kLandModes, CreateLandScene, "land"},
     {"sea", kSeaModes, CreateSeaScene, "sea"},
@@ -53,15 +52,6 @@ const SceneEntry kScenes[] = {
 std::span<const SceneEntry> Scenes()
 {
     return kScenes;
-}
-
-bool Ported(std::string_view mode)
-{
-    for (const SceneEntry &entry : kScenes)
-        for (const char *name : entry.modes)
-            if (mode == name)
-                return true;
-    return false;
 }
 
 void BuildTimeScale(Hud &hud, const Gameplay &gameplay, double scale, View &view, Input &input)

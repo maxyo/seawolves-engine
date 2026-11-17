@@ -25,7 +25,7 @@
 #include "android_land_commands.hpp"
 #include "android_land_vitals.hpp"
 #include "android_worldmap.hpp"
-#include "android_interface_presentation.hpp"
+#include "android_interface_draw.hpp"
 #include "android_ui_sink.hpp"
 #include "scene_load_status.hpp"
 
@@ -58,7 +58,6 @@ inline void logChannelDefect(const char *channel, const std::string &reason)
         spdlog::error("UI channel {}: {} (logged once)", channel, reason);
 }
 inline uint64_t mobileScreenRevision = 1;
-inline InterfacePresentation interfacePresentation;
 inline std::deque<std::string> dialogueActions;
 // A widget action of the touch UI for the open interface (XINTERFACE::DoControl applies it). `value`
 // is the wire its node reads ("select@<opening>:<row>", storm::ui::WidgetWire); `request` is the UI's
@@ -469,7 +468,6 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
         spdlog::info("Start at the main menu: interface {} opened", screen);
     }
     ++mobileScreenRevision;
-    interfacePresentation.begin(mobileScreenRevision, !screen.empty(), interfacePresentation.negotiated());
     for (const auto &action : uiWidgetActions) // queued for the interface that went away
         ui::answer(action.request, false, "the interface changed before it was applied");
     uiWidgetActions.clear();
@@ -479,16 +477,15 @@ inline void showMobileScreen(const std::string &name, double release_ms = 0.0, d
     if (!env || !activity) return;
     const auto type = env->GetObjectClass(activity);
     // The activity ships with this engine (tools/android/app_contract.json): a missing method is an error.
-    const auto method = type ? env->GetMethodID(type, "showMobileScreen", "(Ljava/lang/String;J)V") : nullptr;
+    const auto method = type ? env->GetMethodID(type, "showMobileScreen", "(Ljava/lang/String;)V") : nullptr;
     if (!method)
     {
         if (env->ExceptionCheck()) env->ExceptionClear();
-        __android_log_print(ANDROID_LOG_ERROR, "StormUI", "the activity has no showMobileScreen(String, long): interface %s not reported",
+        __android_log_print(ANDROID_LOG_ERROR, "StormUI", "the activity has no showMobileScreen(String): interface %s not reported",
                             screen.c_str());
     }
-    interfacePresentation.begin(mobileScreenRevision, !screen.empty(), method != nullptr);
     const auto value = env->NewStringUTF(screen.c_str());
-    if (method && value) env->CallVoidMethod(activity, method, value, static_cast<jlong>(mobileScreenRevision));
+    if (method && value) env->CallVoidMethod(activity, method, value);
     if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
     if (value) env->DeleteLocalRef(value);
     if (type) env->DeleteLocalRef(type);

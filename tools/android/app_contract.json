@@ -32,7 +32,6 @@
     "hold:": "ui",
     "hudowner:": "ui",
     "hudowner:lost": "ui+app",
-    "interface:": "app",
     "landcommands:": "ui",
     "location-load:": "app",
     "main:": "ui",
@@ -120,7 +119,7 @@
   },
   "jni": {
     "natives": {
-      "EngineUi": ["nativeBack", "nativeCancelInput", "nativeHostOwnsHud", "nativeInterfaceActive", "nativeSetCutouts",
+      "EngineUi": ["nativeBack", "nativeCancelInput", "nativeInterfaceActive", "nativeSetCutouts",
                    "nativeSetSafeArea", "nativeSetState", "nativeSubmitText", "nativeToast", "nativeTouch", "nativeWantsBack",
                    "nativeWantsTouch"],
       "GameActivity": ["nativeCancelInput", "nativeDensityChanged", "nativeLifecycle", "nativeSaveInProgress",
@@ -148,7 +147,7 @@
       ["GameActivity", "showDialogue", "(Z)V"],
       ["GameActivity", "showGameplayState", "([B)V"],
       ["GameActivity", "showLoading", "(Z)V"],
-      ["GameActivity", "showMobileScreen", "(Ljava/lang/String;J)V"],
+      ["GameActivity", "showMobileScreen", "(Ljava/lang/String;)V"],
       ["GameActivity", "startsAtMainMenu", "()Z"],
       ["GameActivity", "uiFailed", "(Ljava/lang/String;)V"],
       ["GamePerformance", "addThread", "(I)V", "static"],

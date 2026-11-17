@@ -679,8 +679,6 @@ static void CheckScenes()
         hud.Tick();
         Expect(!hud.Visible() && !mount.visible, "a refused view leaves the HUD hidden");
     }
-    Expect(!Ported("unknown") && !Ported("flying"), "no scene draws an unknown mode");
-    Expect(HostOwnsHud("unknown"), "the platform host keeps modes without a scene");
 }
 
 int main(int argc, char **argv)

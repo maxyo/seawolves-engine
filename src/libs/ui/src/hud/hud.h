@@ -412,10 +412,8 @@ struct SceneEntry
     // a long gap between UI ticks so the engine knows which presenters are available.
     const char *presents = nullptr;
 };
-// The migration switch of the HUD (scenes.cpp): gameplay modes whose HUD is drawn here.
-// Every other mode still belongs to the platform host.
+// The HUD scenes by gameplay mode (hud.cpp).
 std::span<const SceneEntry> Scenes();
-bool Ported(std::string_view mode);
 
 // Where a part of a mounted HUD element is on the screen, in physical pixels.
 struct Placement

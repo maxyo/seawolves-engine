@@ -67,7 +67,7 @@ for path in sources('src/libs/ui/src/hud'):
     hud_verbs |= set(re.findall(r'\bSend\("([a-z-]+)"', path.read_text(encoding='utf-8')))
 host_input = manifest['hud_host_input']
 router = text('src/libs/ui/src/screens/router.cpp')
-engine_command = router[router.index('std::string EngineCommand('):router.index('bool HostOwnsHud(')]
+engine_command = router[router.index('std::string EngineCommand('):router.index('bool AnsweredAction(')]
 ui_sent = {verb + ':' for verb in hud_verbs - set(host_input)}
 ui_sent |= {v for v in re.findall(r'"([a-z-]+:?)"', engine_command) if v.endswith(':') or v == 'back'}
 for sent in sorted(ui_sent):

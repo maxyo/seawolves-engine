@@ -928,7 +928,7 @@ static void CheckTouches(const std::string &pack)
     // a mode without a scene (every gameplay mode has one now: land, sea, world map)
     run.Feed("gameplay", "gameplay-orders");
     run.Frame();
-    Expect(!host.WantsTouch(90, 320) && HostOwnsHud("unknown") && !HostOwnsHud("worldmap") && !HostOwnsHud("explore") && !HostOwnsHud("melee"),
+    Expect(!host.WantsTouch(90, 320),
            "a mode without a scene takes the land HUD away (a command menu: the game keeps the touches)");
 
     // safe area: the layer moves in, and the claimed places with it

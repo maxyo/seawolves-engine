@@ -906,10 +906,6 @@ int main(int argc, char *argv[])
                 {
                     storm::android::graphicsSettingsChanged = true;
                 }
-                else if (command.starts_with("interface:"))
-                {
-                    storm::android::interfacePresentation.offer(std::string_view(command).substr(10));
-                }
                 else if (command.starts_with("sails:"))
                 {
                     storm::android::shipTelemetry.offerSails(std::string_view(command).substr(6), SDL_GetTicks());
