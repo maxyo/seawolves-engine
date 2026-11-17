@@ -7,6 +7,9 @@
 #include "core.h"
 #include "math_inlines.h"
 #include "sail.h"
+#include "sail_normals.hpp"
+
+#include <array>
 
 extern int32_t g_iBallOwnerIdx;
 
@@ -141,6 +144,8 @@ void SAILONE::goWave(SAILVERTEX *pv, uint32_t Delta_Time)
         }
     }
 
+    UpdateNormals(pv);
+
     // box calculation
     auto pn = 20;
     if (ss.eSailType == SAIL_TREANGLE)
@@ -163,6 +168,51 @@ void SAILONE::goWave(SAILVERTEX *pv, uint32_t Delta_Time)
     }
     ss.boxCenter = (ss.boxCenter + ss.boxSize) * .5f;
     ss.boxSize -= ss.boxCenter;
+}
+
+// The normals from this frame's vertex positions (sail_normals.hpp), over the columns (square, trapezoid) or rows
+// (triangle) the current level of detail computes: the steps of GoVWave / GoTWave.
+void SAILONE::UpdateNormals(SAILVERTEX *pv)
+{
+    std::array<uint16_t, SAIL_ROW_MAX> lines{};
+    size_t count = 0;
+    if (ss.eSailType == SAIL_TREANGLE)
+    {
+        for (uint32_t ix = 0; ix < SAIL_ROW_MAX;)
+        {
+            lines[count++] = static_cast<uint16_t>(ix);
+            switch (m_dwRow)
+            {
+            case 13:
+                if ((++ix & 3) == 2)
+                    ++ix;
+                break;
+            case 9: ix += 2; break;
+            case 5: ix += 4; break;
+            case 3: ix += 8; break;
+            default: ++ix; break;
+            }
+        }
+        normalSide = storm::rigging::TriangleSailNormals(pv, std::span(lines.data(), count), sgeo.cv.normL, normalSide);
+    }
+    else
+    {
+        for (uint32_t ix = 0; ix < SAIL_COL_MAX;)
+        {
+            lines[count++] = static_cast<uint16_t>(ix);
+            switch (m_dwCol)
+            {
+            case 10:
+                if ((++ix & 3) == 2)
+                    ++ix;
+                break;
+            case 7: ix += 2; break;
+            case 4: ix += 4; break;
+            default: ++ix; break;
+            }
+        }
+        normalSide = storm::rigging::SquareSailNormals(pv, std::span(lines.data(), count), SAIL_ROW_MAX, sgeo.cv.normL, normalSide);
+    }
 }
 
 // fill in indices

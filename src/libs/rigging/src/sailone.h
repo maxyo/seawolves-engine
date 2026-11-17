@@ -210,6 +210,8 @@ class SAILONE : public SAILONE_BASE
     void DoTRollSail(SAILVERTEX *pv);
     void DoSFreeSail(SAILVERTEX *pv);
     void DoTFreeSail(SAILVERTEX *pv);
+    void UpdateNormals(SAILVERTEX *pv);
+    float normalSide = 1.0f; // the side the grid's normals were turned to last frame (sail_normals.hpp)
 
     void SetTurnLimits();
 
