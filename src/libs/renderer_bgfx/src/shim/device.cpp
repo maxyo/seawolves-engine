@@ -287,11 +287,10 @@ void Device::create_scene_stores(uint32_t width, uint32_t height)
             logf("effects: the 3D scene at the display size %ux%u%s", width, height,
                  state.render_height ? " (not taller than the internal height: no upscale)" : "");
     }
-    if (!msaa)
+    // The single-sample stand-in for the multisampled back depth is made by the first target that needs it, at that
+    // target's size (stand_in_depth).
+    if (!msaa || (single_depth && (single_depth->width > width || single_depth->height > height)))
         single_depth = nullptr;
-    else if (!fits(single_depth, width, height, 0))
-        single_depth = make_store(this, TexKind::Tex2D, width, height, 1, 1, D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24S8,
-                                  D3DPOOL_DEFAULT);
     world_anisotropy = state.max_anisotropy > 1;
     view_dirty = true;
     if (scaled_next)
@@ -704,6 +703,22 @@ HRESULT Device::GetBackBuffer(UINT, UINT, D3DBACKBUFFER_TYPE, Surface **surface)
     return D3D_OK;
 }
 
+TexStore *Device::stand_in_depth(uint32_t width, uint32_t height)
+{
+    // Grown to the largest target drawn with it so far (a depth larger than its colour target attaches); a game
+    // without such targets never makes it.
+    if (!single_depth || single_depth->width < width || single_depth->height < height)
+    {
+        width = std::max(width, single_depth ? single_depth->width : 0u);
+        height = std::max(height, single_depth ? single_depth->height : 0u);
+        single_depth = make_store(this, TexKind::Tex2D, width, height, 1, 1, D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24S8,
+                                  D3DPOOL_DEFAULT);
+        logf("render targets: a %ux%u single-sample depth for the targets drawn with the multisampled scene depth",
+             width, height);
+    }
+    return single_depth.get();
+}
+
 // D3D9 leaves the contents of a new render target undefined, but the reference (desktop drivers,
 // DXVK) hands them out cleared, and the game relies on it: the sea environment cube map never
 // renders its -Y face above water, and on mobile GPUs that face showed uninitialised memory as
@@ -795,11 +810,11 @@ uint16_t Device::new_view()
     if (depth && (depth->width < color->level_width(rt->level) || depth->height < color->level_height(rt->level)))
         depth = nullptr;
     // Attachments must agree in sample count: other targets drawn with the multisampled scene depth get a
-    // single-sample depth of the same size.
+    // single-sample depth at least their size (stand_in_depth).
     if (depth && (depth->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) != (color->target_flags & BGFX_TEXTURE_RT_MSAA_MASK))
     {
-        if (single_depth && depth == back_depth->store.get() && !color->target_flags)
-            depth = single_depth.get();
+        if (depth == back_depth->store.get() && !color->target_flags)
+            depth = stand_in_depth(color->level_width(rt->level), color->level_height(rt->level));
         else
         {
             logf("ERROR: render target and depth differ in MSAA samples; drawn without depth");

@@ -319,6 +319,10 @@ struct TargetSet
     std::vector<FrameBuffer> layers;
     bgfx::TextureHandle depth_stencil = BGFX_INVALID_HANDLE;
     std::array<FrameBuffer, 4> post{};
+    // The UI frame (BgfxBackendImpl::frame_) that last asked for each target: the idle ones are released
+    // (ReleaseIdleTargets) and made again by their next use.
+    std::vector<uint32_t> layer_used;
+    std::array<uint32_t, 4> post_used{};
 
     void Destroy()
     {
@@ -338,6 +342,11 @@ struct TargetSet
         layers.clear();
         post.fill({});
         depth_stencil = BGFX_INVALID_HANDLE;
+    }
+    bool Empty() const
+    {
+        return layers.empty() && !bgfx::isValid(depth_stencil) &&
+               std::none_of(post.begin(), post.end(), [](const FrameBuffer &target) { return bgfx::isValid(target.fb); });
     }
 };
 
@@ -835,6 +844,12 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
             Submit(shown_main_, shown_clear_, false);
             next_frame_delay_ = delay;
         }
+        ++frame_;
+        ReleaseIdleTargets(kIdleTargetFrames, "idle");
+    }
+    uint64_t OnLowMemory() override
+    {
+        return ReleaseIdleTargets(2, "the system is low on memory"); // none the last frame used
     }
     void OnDeviceLost() override
     {
@@ -1119,6 +1134,15 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
     Uniforms uniforms_{};
     int msaa_ = 0;
     std::array<TargetSet, 2> sets_{}; // 0: frame (surface size), 1: texture jobs
+    // UI frames drawn (OnUiRender). Targets no frame asked for in kIdleTargetFrames are released: the texture jobs'
+    // set once no job is queued (a screen's panel shadows are made in its first frames, then drawn from their
+    // textures), and the frame set's layers above the first and its post buffers (filters, masks) once no element
+    // uses them. Layer 0 and the shared depth/stencil stay: every frame draws into them.
+    static constexpr uint32_t kIdleTargetFrames = 120;
+    uint32_t frame_ = 0;
+    // Releases the targets no frame asked for in `idle_frames` (logged with `why` and the bytes); returns the bytes.
+    uint64_t ReleaseIdleTargets(uint32_t idle_frames, const char *why);
+    uint64_t LayerBytes(const TargetSet &set) const;
 
     struct PictureRef
     {
@@ -1225,6 +1249,9 @@ const FrameBuffer &BgfxBackendImpl::LayerTarget(TargetSet &set, int index)
     if (int(set.layers.size()) <= index)
         set.layers.resize(size_t(index) + 1);
     FrameBuffer &target = set.layers[size_t(index)];
+    if (set.layer_used.size() < set.layers.size())
+        set.layer_used.resize(set.layers.size());
+    set.layer_used[size_t(index)] = frame_;
     if (bgfx::isValid(target.fb))
         return target;
     const uint64_t msaa = msaa_ >= 4 ? BGFX_TEXTURE_RT_MSAA_X4 : msaa_ >= 2 ? BGFX_TEXTURE_RT_MSAA_X2 : BGFX_TEXTURE_RT;
@@ -1242,6 +1269,7 @@ const FrameBuffer &BgfxBackendImpl::LayerTarget(TargetSet &set, int index)
 const FrameBuffer &BgfxBackendImpl::PostTarget(TargetSet &set, int slot)
 {
     FrameBuffer &target = set.post[size_t(slot)];
+    set.post_used[size_t(slot)] = frame_;
     if (!bgfx::isValid(target.fb))
     {
         target.color = bgfx::createTexture2D(uint16_t(set.width), uint16_t(set.height), false, 1, bgfx::TextureFormat::RGBA8,
@@ -1249,6 +1277,70 @@ const FrameBuffer &BgfxBackendImpl::PostTarget(TargetSet &set, int slot)
         target.fb = bgfx::createFrameBuffer(1, &target.color, true);
     }
     return target;
+}
+
+// A layer's bytes: its colour (multisampled, plus the resolved texture bgfx keeps beside it).
+uint64_t BgfxBackendImpl::LayerBytes(const TargetSet &set) const
+{
+    const uint64_t pixels = uint64_t(set.width) * uint64_t(set.height);
+    return msaa_ > 0 ? pixels * 4 * uint64_t(msaa_ + 1) : pixels * 4;
+}
+
+uint64_t BgfxBackendImpl::ReleaseIdleTargets(uint32_t idle_frames, const char *why)
+{
+    if (!device_ready_)
+        return 0;
+    const auto idle = [&](uint32_t used) { return frame_ - used >= idle_frames; };
+    const uint64_t post_bytes = uint64_t(sets_[0].width) * uint64_t(sets_[0].height) * 4;
+    uint64_t released = 0;
+    int layers = 0, posts = 0, depths = 0;
+    // The texture jobs' set, whole: its content is needed only while a job is queued (jobs span frames).
+    TargetSet &jobs = sets_[1];
+    if (jobs_.empty() && !jobs.Empty())
+    {
+        bool unused = true;
+        for (size_t i = 0; i < jobs.layers.size(); ++i)
+            if (bgfx::isValid(jobs.layers[i].fb) && i < jobs.layer_used.size() && !idle(jobs.layer_used[i]))
+                unused = false;
+        for (size_t i = 0; i < jobs.post.size(); ++i)
+            if (bgfx::isValid(jobs.post[i].fb) && !idle(jobs.post_used[i]))
+                unused = false;
+        if (unused)
+        {
+            for (const FrameBuffer &layer : jobs.layers)
+                if (bgfx::isValid(layer.fb))
+                    released += LayerBytes(jobs), ++layers;
+            for (const FrameBuffer &post : jobs.post)
+                if (bgfx::isValid(post.fb))
+                    released += uint64_t(jobs.width) * uint64_t(jobs.height) * 4, ++posts;
+            if (bgfx::isValid(jobs.depth_stencil))
+                released += uint64_t(jobs.width) * uint64_t(jobs.height) * 4 * uint64_t(std::max(msaa_, 1)), ++depths;
+            jobs.Destroy();
+            shelf_ = {};
+        }
+    }
+    // The frame set: the layers above the first and the post buffers no element drew with lately.
+    TargetSet &frame = sets_[0];
+    for (size_t i = 1; i < frame.layers.size(); ++i)
+        if (bgfx::isValid(frame.layers[i].fb) && (i >= frame.layer_used.size() || idle(frame.layer_used[i])))
+        {
+            DestroyIfCurrent(frame.layers[i].fb, g_epoch);
+            DestroyIfCurrent(frame.layers[i].color, g_epoch);
+            released += LayerBytes(frame);
+            ++layers;
+        }
+    for (size_t i = 0; i < frame.post.size(); ++i)
+        if (bgfx::isValid(frame.post[i].fb) && idle(frame.post_used[i]))
+        {
+            DestroyIfCurrent(frame.post[i].fb, g_epoch); // owns its texture
+            frame.post[i] = {};
+            released += post_bytes;
+            ++posts;
+        }
+    if (released)
+        Rml::Log::Message(Rml::Log::LT_INFO, "UI layers: released %d layers, %d post buffers and %d depth/stencil (%.1f MB, %dx MSAA): %s",
+                          layers, posts, depths, double(released) / (1024.0 * 1024.0), msaa_, why);
+    return released;
 }
 
 // ---- game pictures ----------------------------------------------------------------

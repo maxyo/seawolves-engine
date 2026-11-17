@@ -112,6 +112,9 @@ class Host
     // Bookkeeping after bgfx::frame(): `scene_frame` = this presented frame had a 3D scene. A frame without one
     // (loading screen) makes the next scene a cut: its grade is applied at once, not blended in.
     void end_frame(bool scene_frame, uint32_t frame);
+    // The system is low on memory: the post chain's targets the last frame did not use (all of them when it did not
+    // run); their bytes.
+    uint64_t release_post_targets();
     // Before bgfx::frame(), while a settings change is pending: prepares the programs of the new settings
     // (kProgramsPerFrame per frame), then runs their GPU self-test (fx::SelfTest, once per settings set), then
     // makes them the active ones. Until then the current settings keep drawing: a change never shows a frame
@@ -211,6 +214,11 @@ class Host
     bool wet_unsheltered_logged_ = false;
     bool scene_cut_pending_ = true;
     fx::PostChain post_;
+    // Presented frames since the post chain last ran: its targets go after kPostIdleFrames without a scene (a menu
+    // over a held picture, an interface screen), made again by the next scene frame.
+    static constexpr uint32_t kPostIdleFrames = 120;
+    uint32_t frames_without_post_ = 0;
+    bool post_submitted_ = false;
     Lighting lighting_;
     fx::Sky sky_;
     fx::SeaDepth sea_depth_;

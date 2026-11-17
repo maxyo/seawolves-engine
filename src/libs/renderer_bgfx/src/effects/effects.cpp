@@ -831,6 +831,7 @@ fx::WeatherInput Host::weather_input() const
 
 uint16_t Host::submit_post(const PostTargets &targets)
 {
+    post_submitted_ = true;
     fx::PostChain::Frame frame;
     frame.scene_color = targets.scene_color;
     frame.scene_width = targets.width;
@@ -923,8 +924,20 @@ void Host::advance_switch()
                switch_programs_);
 }
 
+uint64_t Host::release_post_targets()
+{
+    // Between frames: frames_without_post_ is 0 when the last presented frame ran the chain.
+    return post_.ReleaseTargets(post_submitted_ || frames_without_post_ == 0 ? 1 : 0);
+}
+
 void Host::end_frame(bool scene_frame, uint32_t frame)
 {
+    frames_without_post_ = post_submitted_ ? 0 : frames_without_post_ + 1;
+    post_submitted_ = false;
+    if (frames_without_post_ == kPostIdleFrames)
+        if (const uint64_t released = post_.ReleaseTargets(0))
+            shim::logf("effects: post chain: released %.1f MB of targets, no scene for %u frames",
+                       static_cast<double>(released) / (1024.0 * 1024.0), kPostIdleFrames);
     // The renderer sees every perspective scene draw, including unlit/low-preset geometry and the sea.
     ReliefGenerator::instance().frame(scene_frame);
     // The background work's share while the game is played follows the device's heat (thermal.hpp); a place that
@@ -1717,6 +1730,16 @@ void ConfigureRelief(const ReliefConfig &config)
 void TrimRelief()
 {
     effects::ReliefGenerator::instance().trim();
+}
+
+uint64_t ReleaseIdleRenderTargets()
+{
+    const uint64_t post = effects::Host::instance().release_post_targets();
+    const uint64_t clients = shim::Context::instance().release_client_memory();
+    shim::logf("render targets: released %.1f MB (post chain %.1f MB, interface %.1f MB): the system is low on memory",
+               static_cast<double>(post + clients) / (1024.0 * 1024.0), static_cast<double>(post) / (1024.0 * 1024.0),
+               static_cast<double>(clients) / (1024.0 * 1024.0));
+    return post + clients;
 }
 
 void ConfigureParallaxExclusions(const std::filesystem::path &user_file)

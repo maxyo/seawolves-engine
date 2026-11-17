@@ -95,6 +95,11 @@ class PostChain
     void Shutdown();
     // The context is gone: forget the handles without destroying them.
     void OnDeviceLost();
+    // Releases the render targets no Submit() used in its last `idle_submits` calls (0: all of them); the next Submit
+    // that needs one makes it again. Returns their bytes. Submit() itself releases those idle for kIdleSubmits (the
+    // passes of the previous settings after a switch, the wobble after leaving the water).
+    uint64_t ReleaseTargets(uint32_t idle_submits);
+    static constexpr uint32_t kIdleSubmits = 120;
 
   private:
     struct Target
@@ -102,7 +107,10 @@ class PostChain
         bgfx::FrameBufferHandle fb = BGFX_INVALID_HANDLE;
         uint16_t width = 0;
         uint16_t height = 0;
+        uint8_t bytes_per_pixel = 4;
+        uint32_t used = 0; // submits_ when a Submit last used it
     };
+    uint32_t submits_ = 0;
     void EnsureTarget(Target &target, uint16_t width, uint16_t height,
                       bgfx::TextureFormat::Enum format = bgfx::TextureFormat::RGBA8);
     void EnsureSmaaTables();

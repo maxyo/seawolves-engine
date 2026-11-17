@@ -1396,6 +1396,14 @@ void Context::RemoveClient(render::FrameClient *client)
     std::erase_if(clients_, [client](const Client &entry) { return entry.client == client; });
 }
 
+uint64_t Context::release_client_memory()
+{
+    uint64_t released = 0;
+    for (auto &entry : clients_)
+        released += entry.client->OnLowMemory();
+    return released;
+}
+
 namespace
 {
 bgfx::TextureFormat::Enum to_bgfx(render::PixelFormat format)

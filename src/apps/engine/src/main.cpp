@@ -376,6 +376,7 @@ void SubscribeEngineToAppEvents()
                 if (auto *animationService = static_cast<AnimationService *>(core.GetService("AnimationServiceImp")))
                     spdlog::warn("Low memory: released {} unused animations", animationService->TrimCaches());
                 storm::render::TrimRelief();
+                storm::render::ReleaseIdleRenderTargets();
                 if (scripts) core_private->Event("AppLowMemory");
             }
             break;

@@ -92,6 +92,10 @@ class FrameClient
     // bgfx is initialised again: re-create GPU objects.
     virtual void OnDeviceRestored() {}
 
+    // Main thread, the system low on memory: release the GPU objects that are made again on demand and that nothing
+    // draws with now; return their bytes (the client logs what it released).
+    virtual uint64_t OnLowMemory() { return 0; }
+
     // Return true while the client animates and needs frames presented at
     // display rate even if the game is paused or produces no new image.
     virtual bool WantsContinuousFrames() { return false; }

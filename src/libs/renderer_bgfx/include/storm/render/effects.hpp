@@ -376,6 +376,10 @@ void ShutdownRelief();
 // Any thread, the system low on memory (Android onTrimMemory / onLowMemory): the relief's models are released after
 // the texture in progress and the GPU's Vulkan instance closed (logged); they load again when work comes.
 void TrimRelief();
+// Game thread, the system low on memory: releases the render targets nothing draws into now (post-chain passes not
+// in use, the interface's idle layers and texture-job targets); they are made again by their next use. Logged with
+// the bytes, which it returns.
+uint64_t ReleaseIdleRenderTargets();
 // Main thread: holds the background work, the relief generation and the ray bakes, while `why` is not null (the
 // automatic graphics preset measures the GPU); null releases it. Work already started finishes its piece: a relief
 // map in progress is made to its end (BackgroundWorkBusy), a bake stops at its next piece. Logged on change.

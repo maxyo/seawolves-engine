@@ -216,12 +216,31 @@ void PostChain::EnsureTarget(Target &target, uint16_t width, uint16_t height, bg
 {
     width = std::max<uint16_t>(width, 1);
     height = std::max<uint16_t>(height, 1);
+    target.used = submits_;
     if (bgfx::isValid(target.fb) && target.width == width && target.height == height)
         return;
     Destroy(target.fb);
     target.fb = bgfx::createFrameBuffer(width, height, format, BGFX_TEXTURE_RT | kClampLinear);
     target.width = width;
     target.height = height;
+    target.bytes_per_pixel = format == bgfx::TextureFormat::RG8 ? 2 : format == bgfx::TextureFormat::R8 ? 1 : 4;
+}
+
+uint64_t PostChain::ReleaseTargets(uint32_t idle_submits)
+{
+    uint64_t released = 0;
+    const auto release = [&](Target &target) {
+        if (!bgfx::isValid(target.fb) || (idle_submits && submits_ - target.used < idle_submits))
+            return;
+        released += uint64_t(target.width) * target.height * target.bytes_per_pixel;
+        Destroy(target.fb);
+        target = {};
+    };
+    for (Target &target : bloom_)
+        release(target);
+    for (Target *target : {&graded_, &smaa_edges_, &smaa_weights_, &antialiased_, &upscaled_, &wobbled_})
+        release(*target);
+    return released;
 }
 
 void PostChain::EnsureSmaaTables()
@@ -283,6 +302,10 @@ uint16_t PostChain::Submit(const Settings &settings, const Frame &input)
 {
     if (!bgfx::isValid(input.scene_color) || input.scene_width == 0 || input.scene_height == 0)
         return 0;
+    if (const uint64_t released = ReleaseTargets(kIdleSubmits))
+        Log(LogLevel::Info, "effects: post chain: released %.1f MB of targets unused for %u frames",
+            static_cast<double>(released) / (1024.0 * 1024.0), kIdleSubmits);
+    ++submits_;
     Frame frame = input;
     bgfx::ViewId view = frame.first_view;
     const bool same_size = frame.scene_width == frame.target_width && frame.scene_height == frame.target_height;

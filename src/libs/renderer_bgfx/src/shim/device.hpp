@@ -177,6 +177,8 @@ class Context final : public render::FrameOwner
     uint32_t ApiVersion() const override { return render::kFrameOwnerApiVersion; }
     void AddClient(render::FrameClient *client, int order) override;
     void RemoveClient(render::FrameClient *client) override;
+    // The system is low on memory: every client's FrameClient::OnLowMemory; their bytes.
+    uint64_t release_client_memory();
     render::SurfaceMetrics Surface() const override { return surface_; }
     GameTarget CurrentGameTarget() const override { return game_target_; }
     void set_game_target(const GameTarget &target) { game_target_ = target; }
@@ -466,6 +468,9 @@ struct Device final : Object
     bgfx::FrameBufferHandle framebuffer(TexStore *color, uint32_t face, uint32_t level, TexStore *depth);
     // Clears a render target that has never been written, before its first use.
     void clear_if_new(TexStore *store);
+    // The single-sample depth a `width` x `height` single-sample target is drawn with instead of the multisampled
+    // back depth (single_depth, made or grown here).
+    TexStore *stand_in_depth(uint32_t width, uint32_t height);
     void purge_framebuffers(bgfx::TextureHandle texture);
     void apply_ff_uniforms(const LayoutInfo &layout, bool vs_port, bool ps_port, const effects::FfDraw &fx, bool point_draw);
     uint64_t render_state_bits(D3DPRIMITIVETYPE type, bool *stencil, uint32_t *fstencil);
