@@ -533,31 +533,6 @@ technique iGlow
     }
 }
 
-technique iGlowCursor
-{
-    pass p0
-    {
-        ZEnable = false;
-        Lighting = false;
-        AlphaBlendEnable = true;
-        AlphaTestEnable = false;
-        SrcBlend = srcalpha;
-        DestBlend = one;
-        CullMode = none;
-        ColorVertex = true;
-
-        ColorOp[0] = Modulate2x;
-        ColorArg1[0] = texture;
-        ColorArg2[0] = diffuse;
-
-        AlphaOp[0] = Modulate;
-        AlphaArg1[0] = texture;
-        AlphaArg2[0] = diffuse;
-
-        ColorOp[1] = disable;
-    }
-}
-
 technique iIcon
 {
     pass p0
@@ -604,31 +579,6 @@ technique iShadow
         AlphaOp[0] = modulate;
         AlphaArg1[0] = diffuse;
         AlphaArg2[0] = texture;
-
-        ColorOp[1] = disable;
-    }
-}
-
-technique iSpec1
-{
-    pass p0
-    {
-        CullMode = none;
-        ColorVertex = true;
-        FogEnable = false;
-        ZEnable = false;
-        Lighting = false;
-        AlphaBlendEnable = true;
-        AlphaTestEnable = false;
-        SrcBlend = srcalpha;
-        DestBlend = invsrcalpha;
-
-        ColorOp[0] = SelectArg1;
-        ColorArg1[0] = texture;
-
-        AlphaOp[0] = modulate;
-        AlphaArg1[0] = texture;
-        AlphaArg2[0] = tfactor;
 
         ColorOp[1] = disable;
     }
@@ -711,38 +661,6 @@ technique iHelpChooser
         AlphaArg1[0] = texture;
 
         ColorOp[1] = disable;
-    }
-}
-
-technique iRotate
-{
-    pass p0
-    {
-        CullMode = none;
-        ColorVertex = true;
-        FogEnable = false;
-        ZEnable = false;
-        Lighting = false;
-        AlphaBlendEnable = true;
-        AlphaTestEnable = false;
-        SrcBlend = srcalpha;
-        DestBlend = invsrcalpha;
-
-        ColorOp[0] = modulate2x;
-        ColorArg1[0] = diffuse;
-        ColorArg2[0] = texture;
-
-        AlphaOp[0] = modulate;
-        AlphaArg1[0] = diffuse;
-        AlphaArg2[0] = texture;
-
-        ColorOp[1] = disable;
-        AlphaOp[1] = disable;
-        ColorOp[2] = disable;
-        AlphaOp[2] = disable;
-
-        addressu[0] = clamp;
-        addressv[0] = clamp;
     }
 }
 

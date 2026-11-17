@@ -17,28 +17,6 @@ technique DbgPatchViewZ
     }
 }
 
-technique DbgPatchViewNoZ
-{
-    pass p0
-    {
-        DepthBias = 3;
-        Lighting = false;
-        ZEnable = false;
-        ZWriteEnable = false;
-        AlphaTestEnable = true;
-        AlphaBlendEnable = false;
-        SrcBlend = srcalpha;
-        DestBlend = invsrcalpha;
-        ColorArg1[0] = diffuse;
-        ColorArg2[0] = texture;
-        ColorOp[0] = selectArg1;
-        AlphaArg1[0] = diffuse;
-        AlphaOp[0] = SelectArg1;
-        ColorOp[1] = disable;
-        AlphaOp[1] = disable;
-    }
-}
-
 technique DbgDrawLocators
 {
     pass p0

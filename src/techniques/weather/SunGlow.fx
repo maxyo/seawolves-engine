@@ -68,29 +68,6 @@ technique moon_z
     }
 }
 
-technique SunRoad_Glow
-{
-    pass p0
-    {
-        ZEnable = false;
-        ZWriteEnable = false;
-        FogEnable = false;
-        Lighting = false;
-        CullMode = none;
-        AlphaTestEnable = false;
-        AlphaBlendEnable = true;
-        SrcBlend = one;
-        DestBlend = one;
-
-        ColorOp[0] = selectarg1;
-        ColorArg1[0] = texture;
-
-        AlphaOp[0] = disable;
-
-        ColorOp[1] = disable;
-    }
-}
-
 technique sunoverflow
 {
     pass p0

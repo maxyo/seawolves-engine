@@ -27,7 +27,7 @@
     "deckwalk:": "ui",
     "dialogue-lost:": "ui",
     "dialogue:": "ui",
-    "gameplay:": "ui+app",
+    "gameplay:": "ui",
     "graphics:reload": "app",
     "hold:": "ui",
     "hudowner:": "ui",
