@@ -584,6 +584,28 @@ int main()
             expect(std::fabs(lit_after - hour_shade) < 0.15f * lit_before, "the caster's shadow is as dark as the houses' shade");
 
             scene.plates = false;
+            // The game frees a location's lightmap textures before it reports the lightmaps gone: the town light reads
+            // none after it is freed (a sun step composes again; the ASan build of this check, run.py, reports a use
+            // after free; nothing here may hold the store, or its memory would stay allocated) and takes no texture
+            // made later for the freed one (matched by serial, not address).
+            {
+                std::printf("step: the game's lightmap is freed while the town light is on\n");
+                std::fflush(stdout);
+                const uint32_t composes = town.sun_counters().composes;
+                scene.lightmap = nullptr;
+                texture->Release();
+                texture = nullptr;
+                set_sun(sun_of(30.0f, 60.0f));
+                for (int f = 0; f < 5; ++f)
+                    frame();
+                expect(town.sun_counters().composes == composes, "a freed lightmap is not composed");
+                check(device->CreateTexture(kPaint, kPaint, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture, nullptr), "CreateTexture");
+                scene.lightmap = texture;
+                frame();
+                expect(!town.relit(shim::store_of(texture)) && !bgfx::isValid(town.replacement(shim::store_of(texture))),
+                       "a texture made after the lightmap is freed is not taken for it");
+                scene.lightmap = nullptr;
+            }
             render::SetEffectsLightmaps({}, {}, {}, {}, {}, {});
             render::SetEffectsLocationGeometry({});
             render::ConfigureEffects(0, {});

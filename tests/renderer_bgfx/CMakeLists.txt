@@ -301,3 +301,17 @@ target_include_directories(wet_surfaces_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}
 target_compile_definitions(wet_surfaces_check PRIVATE NOMINMAX)
 target_compile_options(wet_surfaces_check PRIVATE -fsigned-char)
 target_link_libraries(wet_surfaces_check PRIVATE storm_bgfx storm_check_sdl)
+
+# STORM_CHECK_ASAN (run.py's second tree, build/asan): the texture-lifetime checks with the renderer's own code under
+# AddressSanitizer, so a read of a texture the game has freed fails them. bgfx, ncnn and the other third-party libraries
+# stay uninstrumented: their compiles are cache hits of the first tree.
+option(STORM_CHECK_ASAN "the renderer's code and the lifetime checks with AddressSanitizer" OFF)
+set(STORM_ASAN_CHECKS cutout_caster_check lamp_lifetime_check sun_relight_check)
+if(STORM_CHECK_ASAN)
+    foreach(target storm_bgfx storm_bgfx_fx storm_bgfx_fx_core storm_texture_core ${STORM_ASAN_CHECKS})
+        target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    endforeach()
+    foreach(target ${STORM_ASAN_CHECKS})
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endforeach()
+endif()

@@ -113,7 +113,10 @@ class TownLight
   private:
     struct Map
     {
-        const shim::TexStore *store = nullptr; // the game's lightmap (its texture) this one replaces
+        // The game's lightmap (its texture) this one replaces: not owned (the game frees it with the location), read
+        // only through a lock; the draws are matched by its serial, which no later texture at the same address has.
+        std::weak_ptr<const shim::TexStore> store;
+        uint64_t serial = 0;
         std::shared_ptr<const fx::LightmapTexels> texels; // shared with the sun jobs on the bake thread
         std::vector<uint8_t> game;   // its RGBA8 texels at texels' size
         std::vector<uint8_t> sky;    // per texel
@@ -152,7 +155,8 @@ class TownLight
     void fade_walls();
     static float TexelMetres(const fx::LightmapTexels &texels);
     // The game's lightmap texture of `map` as the draws sample it (invalid while it has none on the GPU: logged once).
-    fx::RelightPaint paint_of(Map &map);
+    // *interim (when given): the paint is the game's interim copy of its lightmap (its transcode has not landed).
+    fx::RelightPaint paint_of(Map &map, bool *interim = nullptr);
     static void RetireLightmap(bgfx::TextureHandle texture);
 
     bool enabled_ = false;

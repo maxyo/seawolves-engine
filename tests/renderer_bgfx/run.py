@@ -3,7 +3,8 @@
 the draw/state counter check of a fixed synthetic frame (perf_check.cpp, bgfx Noop backend) and the
 GPU skinning parity check against the CPU kernel (skinning_check.cpp), the texture formats on the GPU
 (texture_format_check.cpp) and the other checks that draw, in an SDL window (needs an X display, e.g. xvfb-run):
-on OpenGL ES, then again on Vulkan where the host has a Vulkan device.
+on OpenGL ES, then again on Vulkan where the host has a Vulkan device; the texture-lifetime checks also under
+AddressSanitizer (a second tree, <build-dir>/asan).
 
 Uses the pinned bgfx (src/libs/renderer_bgfx/cmake/bgfx_pin.cmake), the shared host shaderc
 of that pin (STORM_SHADERC overrides it) and the Storm ccache launcher (tools/ccache/README.md); the kept
@@ -53,6 +54,14 @@ subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm
                 'storm_relief_check', 'storm_relief_device_retry_check', 'storm_relief_finalizer_check', 'storm_relief_tx_check', 'grass_vertex_check', 'coast_foam_vertex_check', 'cutout_caster_check', 'lamp_shadow_check', 'shadow_casters_check', 'sun_layers_check', 'sun_relight_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'scene_texture_failure_check', 'texture_format_check', 'upscale_swap_check', 'texture_fade_check', 'backend_select_check',
                 'buffer_pool_check', 'thumbnail_check', 'pipeline_prewarm_check', 'wet_surfaces_check'], check=True)
 subprocess.run([str(warmth), 'end', str(build)], check=True)
+# The texture-lifetime checks again with the renderer's code under AddressSanitizer (CMakeLists.txt STORM_CHECK_ASAN):
+# a texture the game frees while the effects still know it (lamp caches, cut-out casters, the town light's lightmaps)
+# must not be read. On OpenGL ES only: the lifetimes do not depend on the backend.
+asan_build = build / 'asan'
+ASAN_CHECKS = ['cutout_caster_check', 'lamp_lifetime_check', 'sun_relight_check']
+subprocess.run(configure[:4] + [str(asan_build)] + configure[5:] + ['-DSTORM_CHECK_ASAN=ON'], check=True, stdout=subprocess.DEVNULL)
+subprocess.run(['cmake', '--build', str(asan_build), '--target', *ASAN_CHECKS], check=True)
+asan_env = dict(os.environ, ASAN_OPTIONS='detect_leaks=0:halt_on_error=1')
 # Every check is its own process: they run in parallel (STORM_CHECK_JOBS, default 6), the draws on OpenGL ES
 # and on Vulkan at once, longest first. A failing check's output is printed.
 import concurrent.futures
@@ -109,9 +118,13 @@ with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
     vk = {name: pool.submit(run_check, [str(build / name)], vulkan_env) for name in order if name in vulkan_checks}
     gl = {name: pool.submit(run_check, [str(build / name)]) for name in order}
     other = [(command, pool.submit(run_check, command)) for command in plain]
+    asan = {name: pool.submit(run_check, [str(asan_build / name)], asan_env) for name in ASAN_CHECKS}
     for command, future in other:
         if future.result().returncode != 0:
             failures.append((Path(command[0]).name, future.result()))
+    for name, future in asan.items():
+        if future.result().returncode != 0:
+            failures.append((f'{name} under ASan', future.result()))
     for name in gpu_checks:
         if gl[name].result().returncode != 0:
             failures.append((name, gl[name].result()))
@@ -133,4 +146,4 @@ for name, done in failures:
 if failures:
     raise SystemExit('FAIL: ' + ', '.join(name for name, _ in failures))
 print('PASS: storm_bgfx builds; storm_texture_tests; perf_check; program_family_check; backend_select_check; fx core_check; relief_switch_check; relief_check; relief_device_retry_check; relief_finalizer_check; relief_tx_check; '
-      f'on OpenGL ES: {" ".join(gpu_checks)}; on Vulkan ({vulkan}): {" ".join(vulkan_checks)}', flush=True)
+      f'on OpenGL ES: {" ".join(gpu_checks)}; under ASan: {" ".join(ASAN_CHECKS)}; on Vulkan ({vulkan}): {" ".join(vulkan_checks)}', flush=True)
