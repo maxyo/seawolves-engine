@@ -254,7 +254,7 @@ look). It is answered from the layout of the last frame and is thread-safe. The 
 `hud-layout.json`, drawn under every other element), the stick rests at `restLeft` /
 `restBottom` and appears under the thumb that lands anywhere in the zone where no other
 control is hit; plates that only show are `pointer-events: none`, so they do not shield
-it. A layout element may add a behaviour: `"behavior": "hold"` (reports `down` /
+it. A top status the toasts must not cover (the cabin captain, the boarding bars) is marked `"toastsBelow": true` in `hud-layout.json`; the pack gives it `toastClear` (its bottom below the safe top) and, while it is shown, the host starts its toast stack below it. A layout element may add a behaviour: `"behavior": "hold"` (reports `down` /
 `up`) or `"swipe"` (a drag picks a move; `data` → `data-swipe-*`).
 
 Remaining fallbacks, each logged and tested: a context action name the land table lacks

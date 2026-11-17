@@ -739,6 +739,9 @@ struct LayoutElement
     Json props_mirrored = Json::object();
     Json props = Json::object();
     Json data = Json::object(); // data-* attributes: configuration of the behaviour
+    // A top status the toasts must not cover (pack "toastClear": its bottom below the safe top, dp);
+    // 0 = none. While it is shown the host's toast stack starts below it.
+    float toast_clear = 0.0f;
     std::vector<LayoutElement> children;
 };
 using Layout = std::unordered_map<std::string, std::vector<LayoutElement>>;

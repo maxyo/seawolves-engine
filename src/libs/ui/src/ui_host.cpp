@@ -497,14 +497,34 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             for (int i = 0; i < element->GetNumChildren(); ++i)
                 pending.push_back(element->GetChild(i));
         }
-        // The host's toast stack keeps clear of the cutout too (8 dp: its offset in base.rcss).
+        PlaceToasts();
+    }
+
+    // The host's toast stack: at the top edge, clear of the cutout (8 dp: its offset in base.rcss)
+    // and of a top status of the HUD that is shown (LayoutElement::toast_clear: the cabin captain,
+    // the boarding bars), whose layout dp grow by the player's UI scale.
+    void PlaceToasts()
+    {
+        const auto [left, top, right, bottom] = display_safe_;
+        const float scale = ui_scale_ > 0.0f ? ui_scale_ : 1.0f;
         if (overlay_)
             if (Rml::Element *stack = overlay_->GetElementById("toasts"))
             {
                 stack->SetProperty(Rml::PropertyId::Left, Rml::Property(left, Rml::Unit::DP));
                 stack->SetProperty(Rml::PropertyId::Right, Rml::Property(right, Rml::Unit::DP));
-                stack->SetProperty(Rml::PropertyId::Top, Rml::Property(8.0f + top, Rml::Unit::DP));
+                const float clear = hud_toast_clear_ > 0.0f ? (hud_toast_clear_ + kToastStatusGap) * scale : 0.0f;
+                stack->SetProperty(Rml::PropertyId::Top, Rml::Property(top + std::max(8.0f, clear), Rml::Unit::DP));
             }
+    }
+    static constexpr float kToastStatusGap = 6.0f; // dp between a top status and the toasts under it
+
+    void SetToastClear(float clear)
+    {
+        if (clear == hud_toast_clear_)
+            return;
+        hud_toast_clear_ = clear;
+        changed_ = true;
+        PlaceToasts();
     }
 
     void SetGameRoot(const std::string &game_root) override
@@ -1416,6 +1436,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 complete = false;
             }
         }
+        float clear = 0.0f;
+        for (const hud::LayoutElement &element : elements)
+            if (element.toast_clear > 0.0f && view.elements.contains(element.id))
+                clear = std::max(clear, element.toast_clear);
+        SetToastClear(clear);
         return complete;
     }
 
@@ -1450,6 +1475,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             while (layer->GetNumChildren() > 0)
                 RemoveHudElement(layer, layer->GetLastChild());
         hud_document_->Hide();
+        SetToastClear(0.0f);
     }
 
     // --- screens::Surface ---------------------------------------------------------
@@ -2304,6 +2330,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // HUD
     std::unique_ptr<hud::Hud> hud_;
     hud::Layout layout_;
+    float hud_toast_clear_ = 0.0f; // the shown HUD's top status bottom (layout dp), 0 = none
     std::string hud_path_;
     Rml::ElementDocument *hud_document_ = nullptr;
     std::unordered_map<std::string, Json> hud_props_;       // props last given to each mounted element

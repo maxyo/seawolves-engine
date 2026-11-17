@@ -812,6 +812,15 @@ bool ParseElement(const Json &source, LayoutElement &out, const std::string &whe
     out.rcss = text("rcss");
     out.rcss_mirrored = text("rcssMirrored");
     out.behavior = text("behavior");
+    if (const auto clear = source.find("toastClear"); clear != source.end())
+    {
+        if (!clear->is_number() || clear->get<double>() <= 0.0)
+        {
+            *error = where + ": 'toastClear' must be a positive number of dp";
+            return false;
+        }
+        out.toast_clear = clear->get<float>();
+    }
     if (out.id.empty() || out.component.empty())
     {
         *error = where + ": an element needs 'id' and 'component'";
