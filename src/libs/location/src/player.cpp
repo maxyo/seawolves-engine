@@ -562,11 +562,16 @@ void Player::Rotate(float dltTime)
 #endif
     if (!isSpecialMode)
     {
+#ifdef __ANDROID__
+        // The drag turns the fighter as it turns the camera out of a fight: half a turn across the screen.
+        const auto a = storm::android::dragYaw(GetRotateH(), static_cast<float>(core.GetWindow()->GetWindowSize().width));
+#else
         auto a = GetRotateH() * 0.01f;
         if (a > 0.3f)
             a = 0.3f;
         if (a < -0.3f)
             a = -0.3f;
+#endif
         Turn(GetAY() + a);
     }
     else

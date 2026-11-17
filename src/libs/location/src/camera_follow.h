@@ -6,6 +6,9 @@
 
 #include "storm_glm.h"
 #include "model.h"
+#ifdef __ANDROID__
+#include <platform/android_camera.hpp>
+#endif
 
 class LocationCamera;
 
@@ -35,7 +38,7 @@ class CameraFollow
     // Calculate camera position for a given angle
     void CalcPosition(float ang, float radius, float dax, glm::vec3 &pos) const;
     // Estimate the radius in the desired direction for 1 sec
-    float FindRadius(float curAng) const;
+    float FindRadius(float curAng, float pitch) const;
     // Consider polygon in radius search
     static bool ApplyPoly(const glm::vec3 *v, int32_t n);
     static void ApplyPolyFindNearest(EdgeInfo *e, int32_t ne, const glm::vec3 &pos);
@@ -56,7 +59,8 @@ class CameraFollow
         float ang = 0.0f, ax = 0.0f, radius = 0.0f, found = 0.0f;
         uint64_t geometry = 0;
     };
-    mutable StillRadius stillRadius_;
+    mutable StillRadius stillRadius_[8];
+    mutable size_t stillNext_ = 0;
 
     glm::vec3 camPos, lookTo;
     // Camera following the character
@@ -67,6 +71,11 @@ class CameraFollow
     float rotAcc;       // Stop acceleration
     float kRadInert;    // Dependence of the inertia of the radius change on the turning speed
     float kRadInertCur; // Current dependence of inertia
+#ifdef __ANDROID__
+    storm::android::AutoFollow autoFollow;
+    float tightRaise = 0.0f; // how much higher than the player's pitch a tight space has raised the camera
+    glm::vec3 heroPos{0.0f};  // where the hero was in the last frame (AutoFollow: does he move)
+#endif
 
     static float fndRadius;     // Current radius when searching
     static float fndMaxRadius;  // Maximum search radius

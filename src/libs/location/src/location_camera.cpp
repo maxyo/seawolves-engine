@@ -8,6 +8,7 @@
 #ifdef __ANDROID__
 #include <platform/android_camera.hpp>
 #include <platform/android_camera_zoom.hpp>
+#include <algorithm>
 #endif
 
 #include "core.h"
@@ -188,7 +189,7 @@ void LocationCamera::Realize(uint32_t delta_time)
         dAy = 0.0f;
 #ifdef __ANDROID__
     core.Controls->GetControlState("ChrTurnH", cs);
-    dragAy = character->IsDead() ? 0.0f : storm::android::mobileCameraYawStep(cs.fValue);
+    dragAy = character->IsDead() ? 0.0f : storm::android::dragYaw(cs.fValue, static_cast<float>(core.GetWindow()->GetWindowSize().width));
 #endif
 
     if (location->IsPaused())
@@ -305,6 +306,10 @@ void LocationCamera::Realize(uint32_t delta_time)
             break;
         case cwm_topos: // Locator view
             ExecuteTopos(dltTime);
+#ifdef __ANDROID__
+            if (!forcedPos && character->IsDialog())
+                FrameDialogue();
+#endif
             ax = oldAx;
             vAx = 0.0f;
             break;
@@ -415,6 +420,9 @@ uint64_t LocationCamera::ProcessMessage(MESSAGE &message)
         return 1;
     case MSG_CAMERA_TOPOS:
         forcedPos = false;
+#ifdef __ANDROID__
+        dialogueFrom.reset();
+#endif
         fromLook.x = message.Float();
         fromLook.y = message.Float();
         fromLook.z = message.Float();
@@ -539,43 +547,105 @@ bool LocationCamera::Set()
 void LocationCamera::ExecuteLook(float dltTime)
 {
     // Determine the camera placement point
-    auto *mdl = character->Model();
-    if (!mdl)
+    if (!character->Model() || !character->Model()->GetNode(0) || !character->Model()->GetNode(0)->geo)
         return;
-    auto *node = mdl->GetNode(0);
-    if (!node || !node->geo)
-        return;
-    auto *ani = mdl->GetAnimation();
-    int32_t strIndex = -1;
-    auto idCamera = node->geo->FindName("camera");
-    if (ani && (strIndex = node->geo->FindLabelN(strIndex + 1, idCamera)) > -1)
-    {
-        GEOS::LABEL lb;
-        // Locator matrix
-        node->geo->GetLabel(strIndex, lb);
-        glm::mat4 mtl;
-        storm::math::vx(mtl) = glm::vec3(lb.m[0][0], lb.m[0][1], lb.m[0][2]);
-        storm::math::vy(mtl) = glm::vec3(lb.m[1][0], lb.m[1][1], lb.m[1][2]);
-        storm::math::vz(mtl) = glm::vec3(lb.m[2][0], lb.m[2][1], lb.m[2][2]);
-        storm::math::pos(mtl) = glm::vec3(lb.m[3][0], lb.m[3][1], lb.m[3][2]);
-        // Bone matrix
-        auto ml = ani->GetAnimationMatrix(lb.bones[0]) * mtl;
-        storm::math::pos(ml).x *= -1.0f;
-        storm::math::vx(ml).x *= -1.0f;
-        storm::math::vy(ml).x *= -1.0f;
-        storm::math::vz(ml).x *= -1.0f;
-        glm::mat4 m = mdl->mtx * ml;
+    glm::mat4 m;
+    if (EyeLocator(*character, m))
         camPos = storm::math::pos(m) - storm::math::vz(m) * 0.3f;
-    }
     else
-    {
         camPos = pos + glm::vec3(0.0f, height, 0.0f);
-    }
     // Determine where we are looking at
     lookTo.x = camPos.x + cosf(ax) * sinf(chay);
     lookTo.y = camPos.y - sinf(ax);
     lookTo.z = camPos.z + cosf(ax) * cosf(chay);
 }
+
+// The world matrix of a character's eye locator ("camera" in his model, on his animated head).
+bool LocationCamera::EyeLocator(Character &chr, glm::mat4 &m)
+{
+    auto *mdl = chr.Model();
+    auto *node = mdl ? mdl->GetNode(0) : nullptr;
+    auto *ani = mdl ? mdl->GetAnimation() : nullptr;
+    if (!node || !node->geo || !ani)
+        return false;
+    const int32_t strIndex = node->geo->FindLabelN(0, node->geo->FindName("camera"));
+    if (strIndex < 0)
+        return false;
+    GEOS::LABEL lb;
+    // Locator matrix
+    node->geo->GetLabel(strIndex, lb);
+    glm::mat4 mtl;
+    storm::math::vx(mtl) = glm::vec3(lb.m[0][0], lb.m[0][1], lb.m[0][2]);
+    storm::math::vy(mtl) = glm::vec3(lb.m[1][0], lb.m[1][1], lb.m[1][2]);
+    storm::math::vz(mtl) = glm::vec3(lb.m[2][0], lb.m[2][1], lb.m[2][2]);
+    storm::math::pos(mtl) = glm::vec3(lb.m[3][0], lb.m[3][1], lb.m[3][2]);
+    // Bone matrix
+    auto ml = ani->GetAnimationMatrix(lb.bones[0]) * mtl;
+    storm::math::pos(ml).x *= -1.0f;
+    storm::math::vx(ml).x *= -1.0f;
+    storm::math::vy(ml).x *= -1.0f;
+    storm::math::vz(ml).x *= -1.0f;
+    m = mdl->mtx * ml;
+    return true;
+}
+
+#ifdef __ANDROID__
+// The dialogue close-up (the game's SetCameraDialogMode: a point beside the hero, the speaker's look
+// point as the target). The speaker's face, from his eye locator (seated or standing), is put above
+// the dialogue sheet (dialogueLookElevation). The camera is kept out of the geometry: of the game's
+// point and its mirror across the line from the hero to the speaker, the first the face sees is
+// taken (once per placement); a wall or pillar still in the camera's half of the view pulls the
+// camera in front of it (bars or a counter near the speaker stay in the shot, as in the game).
+void LocationCamera::FrameDialogue()
+{
+    glm::mat4 eye;
+    glm::vec3 face;
+    if (EyeLocator(*character, eye))
+        face = storm::math::pos(eye);
+    else
+    {
+        if (!eyeless)
+            core.Trace("LocationCamera: dialogue speaker without an eye locator, framed at 0.93 of his height");
+        eyeless = true;
+        face = pos + glm::vec3(0.0f, height * 0.93f, 0.0f);
+    }
+    const auto clearance = [&](const glm::vec3 &from) { return std::min(1.0f, location->Trace(face, from)); };
+    if (!dialogueFrom)
+    {
+        dialogueFrom = fromLook;
+        auto *hero = static_cast<Character *>(core.GetEntityPointer(core.GetEntityId("Player")));
+        glm::vec3 heroPos;
+        if (hero && hero != character && clearance(fromLook) < 1.0f)
+        {
+            hero->GetPosition(heroPos);
+            glm::vec2 axis(pos.x - heroPos.x, pos.z - heroPos.z);
+            if (const float l = glm::length(axis); l > 0.01f)
+            {
+                axis /= l;
+                const glm::vec2 rel(fromLook.x - heroPos.x, fromLook.z - heroPos.z);
+                const glm::vec2 mirrored = axis * (2.0f * glm::dot(rel, axis)) - rel;
+                const glm::vec3 other(heroPos.x + mirrored.x, fromLook.y, heroPos.z + mirrored.y);
+                if (clearance(other) > clearance(fromLook))
+                    dialogueFrom = other;
+            }
+        }
+    }
+    const glm::vec3 view = *dialogueFrom - face;
+    const float length = glm::length(view);
+    camPos = *dialogueFrom;
+    if (const float k = clearance(*dialogueFrom); k < 1.0f && k >= 0.5f && length > 0.01f)
+        camPos = face + view * std::max(0.15f, k - LOCATIONCAMERA_RADIUS * 0.5f / length);
+    glm::mat4 projection;
+    rs->GetTransform(D3DTS_PROJECTION, storm::math::d3dMatrix(projection));
+    const glm::vec3 toFace = face - camPos;
+    const float flat = std::hypot(toFace.x, toFace.z);
+    if (flat < 0.01f)
+        return;
+    const float elevation = storm::android::dialogueLookElevation(std::atan2(toFace.y, flat), projection[1][1]);
+    const float distance = glm::length(toFace);
+    lookTo = camPos + glm::vec3(toFace.x / flat * std::cos(elevation), std::sin(elevation), toFace.z / flat * std::cos(elevation)) * distance;
+}
+#endif
 
 // Execution of a camera observing from a point
 void LocationCamera::ExecuteTopos(float dltTime)

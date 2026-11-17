@@ -8,6 +8,7 @@
 #include "path_tracks.h"
 #include "renderer.h"
 #include "vma.hpp"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -76,7 +77,9 @@ class LocationCamera : public Entity
   private:
 #ifdef __ANDROID__
     void UpdateMovementHeading();
+    void FrameDialogue();
 #endif
+    static bool EyeLocator(Character &chr, glm::mat4 &m);
     // Prepare data
     bool Set();
     // Execute the camera following the character
@@ -125,6 +128,8 @@ class LocationCamera : public Entity
     glm::vec3 movementForward{0.0f, 0.0f, 1.0f};
     float dragAy = 0.0f; // this frame's camera drag as a yaw angle (mobile camera mode)
     float gameRadius = 3.0f; // the game's radius (MSG_CAMERA_SET_RADIUS); radius is it scaled by the pinch
+    std::optional<glm::vec3> dialogueFrom; // the dialogue close-up's camera point (FrameDialogue), chosen once per placement
+    bool eyeless = false;                  // a speaker without an eye locator was reported
 #endif
 
     glm::vec3 camPos, lookTo;    // Current camera parameters

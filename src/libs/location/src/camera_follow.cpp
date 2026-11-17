@@ -118,20 +118,42 @@ void CameraFollow::MoveCamera(float dltTime)
     if (dltTime <= 0.0f)
         return;
 #ifdef __ANDROID__
-    // Mobile camera mode. The native follow camera swings behind the hero (likeCamay = chay below)
-    // and eases towards that heading with rotInertia; easing towards camay + the frame's drag would
-    // apply only dltTime * rotInertia of each drag (about 1/24 at 60 fps), so the camera would barely
-    // respond. On mobile, out of a fight, the camera turns only from the player's drag, by all of it,
-    // and never re-centres behind the hero; the radius still follows obstacles (FindRadius). The hero
-    // turns only with the stick (Player::Rotate ignores the drag here), so the camera and the travel
-    // vector never fight each other.
+    // Mobile camera mode, out of a fight (the native camera above swings behind the hero's heading at
+    // once and turns him with the drag, which fights a stick that steers relative to the camera). The
+    // drag turns the camera by all of it (the hero only turns with the stick, Player::Rotate); while
+    // the hero moves without a drag the camera is pulled round behind him after a short delay
+    // (storm::android::AutoFollow). In tight spaces it rises over his shoulders (tightPitch) and, with no
+    // room above either, turns calmly towards a side that has some (corneredTurn).
     if (lc->character->MobileCameraOrbit() && !lc->isSpecialMode)
     {
+        using namespace storm::android;
         camay += lc->dragAy;
+        const glm::vec3 walked = lc->pos - heroPos;
+        heroPos = lc->pos;
+        const float moved = AutoFollow::kMoving * dltTime;
+        camay += autoFollow.step(dltTime, lc->dragAy != 0.0f, walked.x * walked.x + walked.z * walked.z > moved * moved, lc->chay - camay);
         lookTo = lc->pos;
         lookTo.y += lc->lheight;
-        ChangeRadius(dltTime, FindRadius(camay));
-        CalcPosition(camay, camradius, 0.0f, camPos);
+        float room[3] = {FindRadius(camay, lc->ax), 0.0f, 0.0f};
+        float target = lc->ax;
+        if (room[0] < kTightRoom * lc->radius)
+        {
+            room[1] = FindRadius(camay, tightPitchAt(lc->ax, 1));
+            room[2] = FindRadius(camay, tightPitchAt(lc->ax, 2));
+            target = tightPitch(lc->ax, room);
+            if (const float best = std::max({room[0], room[1], room[2]}); best < kCorneredRoom)
+            {
+                float side[4];
+                for (int i = 0; i < 4; ++i)
+                    side[i] = FindRadius(camay + kCorneredTurns[i], target);
+                camay += corneredTurn(best, side, dltTime);
+            }
+        }
+        tightRaise += (target - lc->ax - tightRaise) * std::min(1.0f, dltTime * 4.0f);
+        if (std::fabs(target - lc->ax - tightRaise) < 1e-3f)
+            tightRaise = target - lc->ax;
+        ChangeRadius(dltTime, tightRaise > 0.0f ? FindRadius(camay, lc->ax + tightRaise) : room[0]);
+        CalcPosition(camay, camradius, -tightRaise, camPos);
         return;
     }
 #endif
@@ -166,7 +188,7 @@ void CameraFollow::MoveCamera(float dltTime)
         camay = cay + dAng * k;
         lc->character->LockRotate(true);
     }
-    ChangeRadius(dltTime, FindRadius(camay));
+    ChangeRadius(dltTime, FindRadius(camay, lc->ax));
     CalcPosition(camay, camradius, 0.0f, camPos);
 }
 
@@ -176,6 +198,10 @@ void CameraFollow::BornCamera()
     // New camera options
     camay = lc->chay;
     camradius = lc->radius;
+#ifdef __ANDROID__
+    tightRaise = 0.0f;
+    heroPos = lc->pos;
+#endif
     // Where are we looking
     lookTo = lc->pos;
     lookTo.y += lc->lheight;
@@ -247,7 +273,7 @@ void CameraFollow::DrawDebug()
 #endif
 }
 
-float CameraFollow::FindRadius(float curAng) const
+float CameraFollow::FindRadius(float curAng, float pitch) const
 {
     static const auto pi = 3.14159265359f;
     static const auto day = pi * 0.25f; // Vertical deviation
@@ -313,7 +339,7 @@ float CameraFollow::FindRadius(float curAng) const
 
     // The point we are looking at
     glm::vec3 pos(lc->pos.x, lc->pos.y + lc->lheight, lc->pos.z);
-    const auto ax = -lc->ax;
+    const auto ax = -pitch;
     // Search initial values
     fndRadius = lc->radius + LCF_RADIUS;
     fndMaxRadius = lc->radius + LCF_RADIUS;
@@ -385,14 +411,19 @@ float CameraFollow::FindRadius(float curAng) const
     if (lc->location)
     {
         const uint64_t geometry = lc->location->StillSignature();
-        StillRadius &still = stillRadius_;
-        if (still.valid && still.location == lc->location && still.geometry == geometry && still.pos == pos &&
-            still.ang == curAng && still.ax == lc->ax && still.radius == lc->radius)
-            fndRadius = still.found;
+        // One answer per direction asked: the camera's own, and a tight space's probes (tightPitch, corneredTurn).
+        StillRadius *still = nullptr;
+        for (StillRadius &entry : stillRadius_)
+            if (entry.valid && entry.location == lc->location && entry.geometry == geometry && entry.pos == pos &&
+                entry.ang == curAng && entry.ax == pitch && entry.radius == lc->radius)
+                still = &entry;
+        if (still)
+            fndRadius = still->found;
         else
         {
             lc->location->Clip(p, 5, pos, lc->radius, ApplyPoly, ModelArray::ClipModels::still);
-            still = {true, lc->location, pos, curAng, lc->ax, lc->radius, fndRadius, geometry};
+            stillRadius_[stillNext_] = {true, lc->location, pos, curAng, pitch, lc->radius, fndRadius, geometry};
+            stillNext_ = (stillNext_ + 1) % std::size(stillRadius_);
         }
         lc->location->Clip(p, 5, pos, lc->radius, ApplyPoly, ModelArray::ClipModels::moving);
     }

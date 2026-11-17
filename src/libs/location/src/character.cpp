@@ -2466,7 +2466,11 @@ void Character::Update(float dltTime)
     glm::vec3 camPos, camAng;
     float perspective;
     location->GetRS()->GetCamera(camPos, camAng, perspective);
-    const float dxz = (curPos.x - camPos.x) * (curPos.x - camPos.x) + (curPos.z - camPos.z) * (curPos.z - camPos.z);
+    // The camera within CHARACTER_HIDE_DIST of the body (the vertical from the feet to the top of the head) fades
+    // the character out; above his head (a camera looking down over him) it does not.
+    const float bodyY = std::clamp(camPos.y, curPos.y, curPos.y + height);
+    const float dxz = (curPos.x - camPos.x) * (curPos.x - camPos.x) + (bodyY - camPos.y) * (bodyY - camPos.y) +
+                      (curPos.z - camPos.z) * (curPos.z - camPos.z);
     if (dxz < CHARACTER_HIDE_DIST * CHARACTER_HIDE_DIST)
     {
         tuner.chrAlpha -= dltTime * 3.0f;
