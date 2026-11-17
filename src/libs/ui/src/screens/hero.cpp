@@ -71,17 +71,6 @@ int FieldAmount(Bindings &bindings, const Widget *fact, const char *key)
     return text.empty() ? 0 : Amount(bindings, text, key);
 }
 
-std::string Decimal(const std::string &text, const std::string &language)
-{
-    if (language == "english")
-        return text;
-    std::string out = text;
-    for (size_t i = 1; i + 1 < out.size(); ++i)
-        if (out[i] == '.' && out[i - 1] >= '0' && out[i - 1] <= '9' && out[i + 1] >= '0' && out[i + 1] <= '9')
-            out[i] = ',';
-    return out;
-}
-
 Json Portrait(const std::string &face)
 {
     return face.empty() ? Json(nullptr) : Json{{"kind", "portrait"}, {"texture", "INTERFACES/PORTRAITS/128/face_" + face}};

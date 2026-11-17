@@ -160,6 +160,13 @@ std::string KeepTogether(std::string text)
     return text;
 }
 
+// Our ship's class as the offers write theirs ("класс 5"): the game names it "Класс 5" in the fleet list.
+std::string ClassLine(const Bindings &bindings, const std::string &text)
+{
+    const size_t digit = text.find_first_of("0123456789");
+    return digit == std::string::npos ? text : bindings.Text("yard.class") + " " + text.substr(digit);
+}
+
 // "Тартана\n\nПальмье" → {type, proper name}.
 std::pair<std::string, std::string> TypeAndName(const std::string &cell)
 {
@@ -277,7 +284,7 @@ class ShipyardScreen final : public Screen
             const std::string id = "fleet-" + std::to_string(i);
             ours.push_back(Json{{"id", id},
                                 {"title", free || type.empty() ? name : type + " «" + name + "»"},
-                                {"meta", Context(slot, "class")},
+                                {"meta", ClassLine(bindings, Context(slot, "class"))},
                                 {"value", KeepTogether(Context(slot, "saleQuote"))},
                                 {"image", free ? Json() : PictureOf(slot->FirstImage())},
                                 {"icon", free ? "plus" : "ship"},
@@ -372,13 +379,13 @@ class ShipyardScreen final : public Screen
                     if (row->row_id == known.row)
                         figure = &known;
                 const std::string value = row->CellText(2);
-                Json fact{{"k", row->CellText(1)}, {"v", value}, {"icon", figure ? figure->icon : "ship"}};
+                Json fact{{"k", row->CellText(1)}, {"v", Decimal(value, admitted.model->language)}, {"icon", figure ? figure->icon : "ship"}};
                 if (!yard_preview)
                     own_figures_[slot_key][row->row_id] = value;
                 else if (const auto kept = own_figures_.find(slot_key); has_owned_ship && kept != own_figures_.end() && kept->second.count(row->row_id))
                 {
                     const std::string &ours_value = kept->second[row->row_id];
-                    fact["own"] = ours_value;
+                    fact["own"] = Decimal(ours_value, admitted.model->language);
                     const double theirs = last_number(value), mine = last_number(ours_value);
                     if (figure && figure->larger_is_better && theirs >= 0 && mine >= 0 && theirs != mine)
                         fact["tone"] = theirs > mine ? "ok" : "danger";

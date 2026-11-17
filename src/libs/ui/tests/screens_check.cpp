@@ -816,7 +816,7 @@ static void Commerce(const std::string &models)
         for (const Json &row : surface.props["list"]["rows"])
             if (row["selected"] == true)
                 facts = row["facts"];
-        Expect(facts.size() == 1 && facts[0]["icon"] == "weight" && facts[0]["v"] == "0.1", "itemsbox: the weight of one piece by its icon: " + facts.dump());
+        Expect(facts.size() == 1 && facts[0]["icon"] == "weight" && facts[0]["v"] == "0,1", "itemsbox: the weight of one piece by its icon: " + facts.dump());
     }
     // A chest, a body, an officer's pockets: the owner's bug was a pick of the amount moving the items at once.
     {
@@ -894,7 +894,7 @@ static void Commerce(const std::string &models)
                "items trade opens at the pivot too");
         surface.commands.clear();
         router.OnEvent({"goods", "change", "8"});
-        Expect(surface.commands.empty() && surface.props["primary"]["label"] == "<trade.buy> 5" && surface.props["primary"]["sub"] == "750 \xC2\xB7 2.5" &&
+        Expect(surface.commands.empty() && surface.props["primary"]["label"] == "<trade.buy> 5" && surface.props["primary"]["sub"] == "750 \xC2\xB7 2,5" &&
                    surface.props["stats"][1]["label"] == "<trade.doubloons>" && !surface.props["stats"][1].contains("icon") &&
                    surface.props["stats"][1]["preview"] == "750",
                "five pieces: 750 and 2.5 of weight as itemstrade.c says («Деньги 750, вес 2.5»), the named balance 1 500 → 750: " +
@@ -1396,7 +1396,7 @@ static void Shipyard(const std::string &models)
     Expect(surface.props["offers"].size() == 3 && surface.props["offers"][2]["value"] == "23 824" &&
                surface.props["offers"][0]["title"] == "Шлюпка «Чайка»" && surface.props["offers"][0]["meta"] == "<yard.class> 6",
            "the yard's offers: type «name», class, grouped price: " + surface.props["offers"][0].dump());
-    Expect(surface.props["fleet"].size() == 2 && surface.props["fleet"][0]["title"] == "Кеч «Марта»" && surface.props["fleet"][0]["meta"] == "Класс 5" &&
+    Expect(surface.props["fleet"].size() == 2 && surface.props["fleet"][0]["title"] == "Кеч «Марта»" && surface.props["fleet"][0]["meta"] == "<yard.class> 5" &&
                surface.props["fleet"][0]["value"] == "11\u00a0575" && surface.props["fleet"][0]["selected"] == true &&
                surface.props["fleet"][1]["title"] == "<yard.empty_slot>" && surface.props["subject"].is_null(),
            "our ships in the list: each slot with a ship and its trade-in value, one free place of the four");

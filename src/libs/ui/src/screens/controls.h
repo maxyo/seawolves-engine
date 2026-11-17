@@ -19,6 +19,9 @@ size_t Length(const std::string &text);            // code points
 std::string Fill(std::string text, std::initializer_list<std::string> args);
 // One decimal with the decimal mark of the language ("2,3").
 std::string Decimal(const Bindings &bindings, double value);
+// A game number with a decimal point in the interface's language ("2.4" → "2,4" except in
+// English): every point between two digits.
+std::string Decimal(const std::string &text, const std::string &language);
 // A size in GB from a tenth of a GB, else in MB; `scale` (when given) picks the unit, so that "done of total" share one.
 std::string Size(const Bindings &bindings, double bytes, double scale = -1);
 

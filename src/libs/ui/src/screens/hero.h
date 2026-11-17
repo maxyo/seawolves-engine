@@ -19,9 +19,6 @@ int FieldAmount(Bindings &bindings, const Widget *fact, const char *key);
 std::string Trim(std::string text);
 // Lower case for the game's upper-case words ("ОТЛИЧНОЕ"): ASCII, Latin-1 and Cyrillic.
 std::string LowerText(const std::string &text);
-// A game number with a decimal point in the interface's language ("2.4" → "2,4" except in
-// English): every point between two digits.
-std::string Decimal(const std::string &text, const std::string &language);
 // 41440 → "41 440" (no-break space).
 std::string Thousands(int value);
 // A description from the game's text files (AbilityDescribe, RPGDescribe): carriage returns dropped and a

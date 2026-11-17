@@ -263,6 +263,17 @@ std::string Decimal(const Bindings &bindings, double value)
     return text;
 }
 
+std::string Decimal(const std::string &text, const std::string &language)
+{
+    if (language == "english")
+        return text;
+    std::string out = text;
+    for (size_t i = 1; i + 1 < out.size(); ++i)
+        if (out[i] == '.' && out[i - 1] >= '0' && out[i - 1] <= '9' && out[i + 1] >= '0' && out[i + 1] <= '9')
+            out[i] = ',';
+    return out;
+}
+
 // A size in GB from a tenth of a GB, else in MB; `scale` (when given) picks the unit, so
 // that "done of total" share one.
 std::string Size(const Bindings &bindings, double bytes, double scale)

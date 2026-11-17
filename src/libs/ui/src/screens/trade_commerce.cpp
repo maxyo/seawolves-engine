@@ -313,6 +313,7 @@ class CommerceScreen final : public Screen
     Json Build(const Admission &admitted, Bindings &bindings) override
     {
         const Layout &columns = layout_;
+        language_ = admitted.model->language;
         const bool money = columns.buy >= 0;
         const std::vector<const Widget *> goods = admitted.Rows("TABLE_LIST");
         const Widget *ok = admitted.One("QTY_OK_BUTTON");
@@ -455,7 +456,7 @@ class CommerceScreen final : public Screen
         const auto weight_text = [&](double value) {
             char buffer[32];
             std::snprintf(buffer, sizeof(buffer), columns.pieces ? "%.1f" : "%.0f", value);
-            return std::string(buffer);
+            return Decimal(buffer, language_);
         };
 
         // The quick take waits for the game to open the row's amount window, then takes all of it.
@@ -724,6 +725,7 @@ class CommerceScreen final : public Screen
             Json figure = Figure(admitted.Label(node));
             if (figure.is_null() || stats.size() == 2)
                 continue;
+            figure["value"] = Decimal(figure["value"].get<std::string>(), language_);
             // What we carry is its icon (the hold, a character's weight) beside the figure, without the game's word.
             if (std::string(node) == "CAPACITY")
             {
@@ -733,8 +735,7 @@ class CommerceScreen final : public Screen
             // (the preview is there from the moment the deal opens, so the header does not reflow at the first step)
             if (std::string(node) == "CAPACITY" && deal && money && math.capacity >= 0.0 && math.weight > 0.0)
             {
-                const std::string now = figure["value"];
-                figure["value"] = now.substr(0, now.find(" /"));
+                figure["value"] = weight_text(math.load); // as the preview writes it ("34" and "34,0" would differ)
                 figure["preview"] = weight_text(math.load + (amount > 0 ? weight : -weight));
                 figure["previewTone"] = "neutral";
             }
@@ -949,7 +950,7 @@ class CommerceScreen final : public Screen
         if (columns.weight >= 0)
         {
             if (const std::string weight = OneLine(row.CellText(columns.weight)); !weight.empty())
-                facts.push_back(Json{{"icon", "weight"}, {"v", columns.pieces ? weight : weight + " " + bindings.Text("transfer.cwt")}});
+                facts.push_back(Json{{"icon", "weight"}, {"v", Decimal(columns.pieces ? weight : weight + " " + bindings.Text("transfer.cwt"), language_)}});
         }
         else if (columns.own_total_weight >= 0 && columns.other_total_weight >= 0)
         {
@@ -960,7 +961,7 @@ class CommerceScreen final : public Screen
             {
                 char weight[32];
                 std::snprintf(weight, sizeof(weight), "%.2g", total / count);
-                facts.push_back(Json{{"icon", "weight"}, {"v", std::string(weight)}});
+                facts.push_back(Json{{"icon", "weight"}, {"v", Decimal(weight, language_)}});
             }
         }
         if (!facts.empty() && !pack.empty() && pack != "1")
@@ -970,6 +971,7 @@ class CommerceScreen final : public Screen
 
     static constexpr double kSelectHold = 0.5; // s: how long a tapped row may wait for its window
     const Layout &layout_;
+    std::string language_; // the game's, for its decimal points (Decimal)
     Json last_view_;           // what the screen shows (kept while a tapped row waits for its window)
     std::string hold_row_;     // the tapped row whose window has not come yet
     double hold_at_ = 0.0;
