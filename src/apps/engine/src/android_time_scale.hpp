@@ -8,9 +8,10 @@
 //
 // The engine's time scale is the truth, not the counter: the HUD's button shows the scale and
 // asks for the step after it, and the scripts do not keep the counter in step with the scale.
-// Leaving any interface (Start_InterfaceDoExit) sets x2 (GetSeaTimeScale) whenever the
-// TimeSpeed perk is active and leaves the counter at x4 or x8; a dialogue sets the scale
-// without the counter. Deciding by the counter, x4 → ship screen → x2 then asked for x4 found
+// Stock Start_InterfaceDoExit sets x2 (GetSeaTimeScale) on leaving any interface whenever the
+// TimeSpeed perk is active and leaves the counter at x4 or x8 (the app's script patch
+// interface-exit-time-reset resets scale, counter and perk to x1 instead, for the game version
+// it is made for); a dialogue sets the scale without the counter. Deciding by the counter, x4 → ship screen → x2 then asked for x4 found
 // the counter at x4 already and did nothing, at every tap.
 #include <array>
 #include <cmath>

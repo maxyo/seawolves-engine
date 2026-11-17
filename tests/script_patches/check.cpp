@@ -135,6 +135,8 @@ void checkWhitelist()
     // program/interface/ is shared with the UI overlay: applyLayer refuses an overlaid target
     // (checkOverlaidTarget).
     CHECK(isPatchTargetPath("PROGRAM/interface/ship.c"));
+    // The app's set patches interface.c (autosave-rotation, interface-exit-time-reset).
+    CHECK(isPatchTargetPath("PROGRAM/interface/interface.c"));
     CHECK(isPatchTargetPath("PROGRAM/characters/RPGUtilite.c"));
     CHECK(isPatchTargetPath("PROGRAM/Encounters/encounters_map.c"));
     CHECK(isPatchTargetPath("program/encounters/ENCOUNTERS_MAP.C"));

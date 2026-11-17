@@ -1,6 +1,7 @@
 // The HUD's time acceleration (android_time_scale.hpp) against the game's own rules, ported from
 // the stock scripts: the TimeScaleFaster / TimeScaleSlower handler (seadogs.c ProcessControls),
-// procInterfacePrepare and Start_InterfaceDoExit (interface.c) and GetSeaTimeScale (x2).
+// procInterfacePrepare and Start_InterfaceDoExit (interface.c) and GetSeaTimeScale (x2), the latter
+// also as the app's script patch interface-exit-time-reset changes it (x1, counter 0, perk off).
 #include "android_time_scale.hpp"
 
 #include <cassert>
@@ -21,6 +22,7 @@ struct Game
     bool disableMapEnter = false; // a fight near: x6 at sea
     bool noFast = false;          // pchar.questTemp.NoFast
     bool interfaceOpen = false;
+    bool exitResetPatch = false;  // the app's script fix interface-exit-time-reset is applied
     int activations = 0;
 
     bool counter(int32_t &value) const
@@ -73,11 +75,21 @@ struct Game
         interfaceOpen = true;
         if (timeSpeedPerk) timeScale = 1.f;
     }
-    // interface.c Start_InterfaceDoExit: x2 (GetSeaTimeScale) whatever the counter says.
+    // interface.c Start_InterfaceDoExit. Stock: x2 (GetSeaTimeScale) whatever the counter says.
+    // Patched (interface-exit-time-reset, owner decision): x1 with the counter and the perk, as the
+    // stock x1 resets (EndAboveForm).
     void closeInterface()
     {
         interfaceOpen = false;
-        if (timeSpeedPerk) timeScale = 2.f;
+        if (!timeSpeedPerk) return;
+        if (!exitResetPatch)
+        {
+            timeScale = 2.f;
+            return;
+        }
+        timeScale = 1.f;
+        timeScaleCounter = 0;
+        timeSpeedPerk = false;
     }
 };
 
@@ -111,8 +123,26 @@ int main()
         tap(game), assert(near(game.timeScale, 1.f) && game.timeScaleCounter == 0 && !game.timeSpeedPerk);
     }
 
-    // x4 / x8 → ship screen → closed: the scripts leave x2 with the counter at x4 / x8. Every tap
-    // still changes the scale: the regression was a button that did nothing at x2 after x4.
+    // The shipped game: x2 / x4 / x8 → ship screen → closed resets to x1 (the app's script patch);
+    // the HUD shows x1 and its next tap gives x2, at sea and on the world map (x2 and its x2.5 limit).
+    for (const bool worldMap : {false, true})
+        for (int taps = 1; taps <= (worldMap ? 2 : 3); ++taps)
+        {
+            Game game;
+            game.exitResetPatch = true;
+            game.worldMap = worldMap;
+            for (int i = 0; i < taps; ++i) tap(game);
+            assert(game.timeSpeedPerk);
+            game.openInterface();
+            game.closeInterface();
+            assert(near(game.timeScale, 1.f) && game.timeScaleCounter == 0 && !game.timeSpeedPerk);
+            assert(nextStep(game.timeScale) == 1);
+            tap(game), assert(near(game.timeScale, 2.f) && game.timeScaleCounter == 4 && game.timeSpeedPerk);
+        }
+
+    // Without the patch (a game version it is not made for): x4 / x8 → ship screen → closed leaves
+    // x2 with the counter at x4 / x8. Every tap still changes the scale: the regression was a button
+    // that did nothing at x2 after x4.
     for (const int taps : {2, 3})
     {
         Game game;
@@ -127,7 +157,7 @@ int main()
         tap(game), assert(near(game.timeScale, 2.f));
     }
 
-    { // The world map holds x2.5: x2 → x2.5 → x1, also after the ship screen.
+    { // The world map holds x2.5: x2 → x2.5 → x1, also after the ship screen without the patch.
         Game game;
         game.worldMap = true;
         tap(game), assert(near(game.timeScale, 2.f));
@@ -162,5 +192,5 @@ int main()
         assert(game.activations == activations && near(game.timeScale, 2.f));
     }
 
-    std::puts("PASS: time acceleration steps, after an interface, world-map and fight limits, quest lock");
+    std::puts("PASS: time acceleration steps, interface exit with and without the x1 reset patch, world-map and fight limits, quest lock");
 }

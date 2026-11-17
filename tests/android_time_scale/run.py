@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The HUD's time acceleration steps against the stock scripts' counter ladder, limits and interface exit."""
+"""The HUD's time acceleration steps against the stock scripts' counter ladder, limits and interface exit
+(stock and as the app's script patch interface-exit-time-reset changes it)."""
 import os
 from pathlib import Path
 import subprocess
