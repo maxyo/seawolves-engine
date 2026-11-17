@@ -36,6 +36,15 @@ namespace
 {
 FILE_SERVICE file_service;
 
+#ifdef __ANDROID__
+// The directory of the derived (patched) scripts, with a trailing separator; set by ScanResourcePaths.
+std::string &scriptPatchRoot()
+{
+    static std::string root;
+    return root;
+}
+#endif
+
 // True for the save data root and everything below it: the engine's own save
 // folder, or a game-relative "save" folder on installations that use one.
 bool underSaveRoot(const std::filesystem::path &path)
@@ -549,9 +558,12 @@ void FILE_SERVICE::ScanResourcePaths()
         ResourcePaths[key] = std::move(path);
     }
     storm::android::indexUiOverlay(internal / "engine-shaders/current", ResourcePaths, true);
-    // Fixes to the player's own scripts; throws LayerError if the layer is damaged.
+    // Fixes to the player's own scripts; throws LayerError if the layer is damaged. The patched files are
+    // derived data: they live under the cache root, which «Очистить кэш» empties (ConvertPathResource
+    // makes a file again when it went missing while the game runs).
+    scriptPatchRoot() = (fs::GetCachePath() / "script-patches").string() + PATH_SEP;
     storm::script_patches::lastReport() = storm::script_patches::applyLayer(
-        internal / "script-patches/current", internal / "script-patches/derived", ResourcePaths, overlaid);
+        internal / "script-patches/current", fs::GetCachePath() / "script-patches", ResourcePaths, overlaid);
 #endif
     ResourcePathsFirstScan = false;
 }
@@ -618,6 +630,11 @@ std::string FILE_SERVICE::ConvertPathResource(const char *path)
     }
     else
     {
+#ifdef __ANDROID__
+        if (result.starts_with(scriptPatchRoot()) && !std::filesystem::exists(std::filesystem::u8path(result)) &&
+            storm::script_patches::rederive(result))
+            spdlog::warn("Script patch: {} was missing (the cache was cleared while the game ran), derived again", result);
+#endif
         return result;
     }
 }

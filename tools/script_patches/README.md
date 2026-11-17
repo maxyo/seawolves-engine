@@ -64,9 +64,13 @@ and patched, so a target the overlay replaces is a damaged layer (`applyLayer` t
   bug, caught by the host checks before release.
 - **Derived files, not memory.** The engine opens scripts by path through the
   resource index, so applied targets are written to
-  `<filesDir>/script-patches/derived/<sha256(base ":" patch)>/<target>` and the
-  index points there. A file is written only when missing or damaged, keeping
-  its mtime stable; directories of other bases or patch versions are removed.
+  `<cache root>/script-patches/<sha256(base ":" patch)>/<target>` (Android:
+  `fs::GetCachePath()`, which «Очистить кэш» empties) and the index points there.
+  A file is written only when missing or damaged, keeping its mtime stable;
+  directories of other bases or patch versions are removed. A file that went
+  missing while the game runs is derived again when it is next opened
+  (`rederive`, logged); if that cannot be done the game stops (`LayerError`).
+  The app removes the old `<filesDir>/script-patches/derived` (GameCache.stale).
 - **Script cache.** The compiled script cache key covers the program tree and
   the patch layer (`programLayers`, `FILE_SERVICE::GetPathFingerprint`): a new
   patch, a new set or a changed player file recompiles.

@@ -360,6 +360,28 @@ void checkOverlaidTarget(const fs::path &root)
 }
 } // namespace
 
+// The cache root holding the derived files is emptied while the game runs («Очистить кэш», low storage):
+// a redirected file opened after that is derived again from the same original and diff.
+void checkClearedCache(const fs::path &root)
+{
+    Fixture f(root / "cleared");
+    f.apply();
+    const auto dialog = f.paths.at("program/dialog.c");
+    fs::remove_all(f.derived);
+    CHECK(!fs::exists(dialog));
+    CHECK(rederive(dialog));
+    CHECK(read(dialog) == kDialogFixed);
+    CHECK(!rederive((f.game / "PROGRAM/dialog.c").string())); // not a derived file
+    // The original changed under a running game: no silent use of the unpatched file.
+    fs::remove_all(f.derived);
+    write(f.game / "PROGRAM/dialog.c", kDialog + "// edited\r\n");
+    CHECK(throwsLayerError([&] { rederive(dialog); }, "game's file changed"));
+    // A new scan forgets the files of the previous one.
+    f.reindex();
+    f.apply();
+    CHECK(!rederive(dialog));
+}
+
 int main(int argc, char **argv)
 {
     CHECK(argc == 2);
@@ -374,5 +396,6 @@ int main(int argc, char **argv)
     checkDamagedLayer(root);
     checkCacheInvalidation(root);
     checkOverlaidTarget(root);
+    checkClearedCache(root);
     std::puts("script patches: all checks passed");
 }

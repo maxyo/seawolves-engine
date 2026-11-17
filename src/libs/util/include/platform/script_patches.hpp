@@ -52,6 +52,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -495,6 +496,20 @@ inline Report &lastReport()
     return report;
 }
 
+// What a derived file is made from, kept by applyLayer for every redirected file: the cache root that
+// holds the derived files may be emptied while the game runs (Android «Очистить кэш», low storage), and
+// a script opened after that is derived again (rederive) instead of reading a missing file.
+struct DerivedSource
+{
+    fs::path original, patch; // the player's file, the diff
+    std::string path, base, result; // game-relative path, sha256 of the original and of the derived file
+};
+inline std::map<std::string, DerivedSource> &derivedSources()
+{
+    static std::map<std::string, DerivedSource> sources; // derived file (string) -> source
+    return sources;
+}
+
 // ---------------------------------------------------------- application ----
 
 namespace detail
@@ -572,6 +587,7 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
                          const std::set<std::string> &overlaid = {})
 {
     Report report;
+    derivedSources().clear();
     std::error_code ec;
     if (!fs::is_directory(layer, ec))
     {
@@ -681,6 +697,7 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
             }
         }
         derived[target.key] = file;
+        derivedSources()[file.string()] = {original->second, target.patch, target.path, target.base, target.result};
     }
 
     // 2. All-or-nothing per fix, and fixes sharing a withheld target are withheld too.
@@ -740,6 +757,32 @@ inline Report applyLayer(const fs::path &layer, const fs::path &derivedRoot,
                           std::to_string(report.applied.size()) + " fix(es) applied, " +
                           std::to_string(report.unapplied.size()) + " not applied");
     return report;
+}
+
+// A derived file applyLayer redirected to is gone (its cache root was emptied while the game runs): make it
+// again from the same original and diff. Returns false for a path that is not a derived file. Throws
+// LayerError when it cannot be made again (the original changed, the cache cannot be written): the redirect
+// stays, so reading the unpatched original instead would be a silent fallback.
+inline bool rederive(const std::string &file)
+{
+    static std::mutex mutex;
+    const std::lock_guard lock(mutex);
+    const auto source = derivedSources().find(file);
+    if (source == derivedSources().end())
+        return false;
+    const auto &from = source->second;
+    std::string base, patch;
+    if (!detail::readFile(from.original, base) || sha256(base) != from.base)
+        throw LayerError("cannot derive " + from.path + " again: the game's file changed or cannot be read");
+    if (!detail::readFile(from.patch, patch))
+        throw LayerError("cannot read patch " + from.patch.string());
+    const auto patched = applyUnifiedDiff(base, patch, from.path);
+    if (sha256(patched) != from.result)
+        throw LayerError("patch for " + from.path + " gives sha256 " + sha256(patched) + ", expected " + from.result);
+    std::string error;
+    if (!detail::writeAtomically(fs::path(file), patched, error))
+        throw LayerError("cannot derive " + from.path + " again: " + error);
+    return true;
 }
 
 // Text of the one-time notice. `russian` selects the language.
