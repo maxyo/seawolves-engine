@@ -834,6 +834,8 @@ void XINTERFACE::Realize(uint32_t)
         {
             if (auto game = storm::mobile::GameIdentityWidget(storm::android::mobileScreenRevision))
                 widgets.push_back(std::move(*game));
+            if (auto quick = storm::mobile::QuickLoadWidget())
+                widgets.push_back(std::move(*quick));
             // The menu's cancel (game_menu.c ProcessCancelExit on exitCancel, the route of MB_RESUME's
             // own ini command "deactivate,event:exitCancel") resumes while the script's
             // InterfaceStates.Buttons.Resume.enable is 1 (sti), even where the game greys out the

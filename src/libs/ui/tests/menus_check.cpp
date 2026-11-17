@@ -123,8 +123,18 @@ static void GameMenu(const std::string &models)
     ExpectEqual(surface.tag, "s-game-menu", "pause menu mounted");
     Expect(surface.errors.empty() && surface.props["extras"]["rows"].empty(), "every node of the pause menu is known");
     ExpectEqual(surface.props["resume"]["label"], "Продолжить", "resume is the game's button");
-    Expect(surface.props["buttons"].size() == 4 && surface.props["buttons"][3]["id"] == "exit", "grid: save, load, settings, exit (no disabled updates)");
-    ExpectEqual(surface.props["buttons"][3]["label"], "<menu.exit>", "the exit tile reads «Выйти», not the game's program exit");
+    Expect(surface.props["buttons"].size() == 6 && surface.props["buttons"][2]["id"] == "quick-save" && surface.props["buttons"][3]["id"] == "quick-load" &&
+               surface.props["buttons"][5]["id"] == "exit",
+           "grid: save, load, quick save, quick load, settings, exit (no disabled updates)");
+    ExpectEqual(surface.props["buttons"][5]["label"], "<menu.exit>", "the exit tile reads «Выйти», not the game's program exit");
+    Expect(surface.props["buttons"][2]["disabled"] == false && surface.props["buttons"][2]["label"] == "<menu.quick_save>",
+           "quick save offered where the game lets the player save");
+    Expect(surface.props["buttons"][3]["disabled"] == true && surface.props["buttons"][3]["reason"] == "<menu.no_quick_save>" &&
+               surface.props["buttons"][3]["hold"] == true,
+           "quick load without its record: disabled with the reason, held when offered");
+    router.OnEvent({"quick-save", "click", ""});
+    Expect(surface.commands.size() >= 2 && surface.commands[surface.commands.size() - 2] == "back" && surface.Last() == "quick:save",
+           "quick save: the menu resumes, then the engine presses the game's key");
     Expect(surface.props["confirm"].is_null(), "no question yet");
     router.OnEvent({"resume", "click", ""});
     ExpectEqual(surface.Last(), "back", "«Продолжить» resumes through the menu's cancel (exitCancel)");
@@ -135,6 +145,15 @@ static void GameMenu(const std::string &models)
         ExpectEqual(surface.Last(), std::string("widget:game_menu\t") + node + "\t-1\tpress", std::string(id) + " presses its button");
     }
     Expect(!FromTitle(), "the pause menu means a game is in progress");
+    {
+        InterfaceModel quick = Load(models, "game-menu.json");
+        quick.opening = 95;
+        quick.widgets.push_back(Widget{"ANDROID_QUICK_LOAD", "text", "Герой QuickSave 1"});
+        router.SetInterface(quick);
+        Expect(surface.props["buttons"][3]["disabled"] == false && surface.props["buttons"][3]["hold"] == true, "quick load offered while its record exists");
+        router.OnEvent({"quick-load", "click", ""});
+        Expect(surface.commands[surface.commands.size() - 2] == "back" && surface.Last() == "quick:load", "quick load: resume, then the game's key");
+    }
 
     router.SetInterface(Load(models, "game-menu-exit.json"));
     const Json confirm = surface.props["confirm"];
@@ -165,7 +184,7 @@ static void GameMenu(const std::string &models)
             break;
         }
     router.SetInterface(cl);
-    Expect(surface.errors.empty() && surface.props["buttons"].size() == 4 && surface.props["buttons"][3]["label"] == "Главное меню",
+    Expect(surface.errors.empty() && surface.props["buttons"].size() == 6 && surface.props["buttons"][5]["label"] == "Главное меню",
            "CL: the exit tile is the game's exit to the main menu");
     router.OnEvent({"exit", "click", ""});
     ExpectEqual(surface.Last(), "widget:game_menu\tMB_EXITMENU\t-1\tpress", "CL: exit presses MB_EXITMENU");
@@ -203,8 +222,9 @@ static void GameMenu(const std::string &models)
         for (const Json &button : surface.props["buttons"])
             if (button["id"] == "save")
                 save = button;
-        Expect(surface.props["buttons"].size() == 4 && save["disabled"] == true && save["reason"] == "Сейчас нельзя сохраниться",
-               "no-save zone: the same four actions, «Сохранить» disabled with the game's reason");
+        Expect(surface.props["buttons"].size() == 6 && save["disabled"] == true && save["reason"] == "Сейчас нельзя сохраниться" &&
+                   surface.props["buttons"][2]["disabled"] == true && surface.props["buttons"][2]["reason"] == "Сейчас нельзя сохраниться",
+               "no-save zone: the same actions, «Сохранить» and the quick save disabled with the game's reason");
     }
 
     InterfaceModel broken = Load(models, "game-menu.json");

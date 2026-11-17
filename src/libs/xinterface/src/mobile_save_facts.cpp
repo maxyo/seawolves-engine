@@ -50,6 +50,18 @@ std::optional<MobileWidget> GameIdentityWidget(uint64_t opening)
     return widget;
 }
 
+std::optional<MobileWidget> QuickLoadWidget()
+{
+    auto *profile = static_cast<VDATA *>(core.GetScriptVariable("PlayerProfile"));
+    auto *attributes = profile ? profile->GetAClass() : nullptr;
+    auto *name = attributes ? attributes->FindAClass(attributes, "name") : nullptr;
+    if (!name || !name->HasValue() || name->GetValue().empty()) return {};
+    auto *index = attributes->FindAClass(attributes, "QuickSaveIndex");
+    const std::string file = std::string(name->GetValue()) + " QuickSave " + (index && index->HasValue() ? std::string(index->GetValue()) : "1");
+    if (!fio->_FileOrDirectoryExists(("SAVE\\" + std::string(name->GetValue()) + "\\" + file).c_str())) return {};
+    return MobileWidget{"ANDROID_QUICK_LOAD", "text", file, "", -1, -1, true};
+}
+
 // The description of a record file, read once per file time.
 namespace
 {

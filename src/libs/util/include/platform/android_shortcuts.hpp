@@ -88,4 +88,42 @@ class GameplayShortcuts
 
     void clear() { pending_.reset(); }
 };
+
+// The pause menu's quick save / quick load (engine command quick:<save|load>, Bindings::QuickGame): the
+// game's keys F6 / F9 (controls QuickSave, QuickLoad), pressed once the menu has closed (the game's
+// MakeQuickSave refuses while an interface is open) and the game runs again. A press the game could not
+// take within lifetimeMs (the menu stayed open) is dropped and reported by the caller (take: expired).
+class QuickGame
+{
+    struct Pending { const char *control; uint32_t queuedAt; };
+    std::optional<Pending> pending_;
+
+  public:
+    static constexpr uint32_t lifetimeMs = 3000;
+
+    bool offer(std::string_view name, uint32_t now)
+    {
+        if (name == "save") pending_ = Pending{"QuickSave", now};
+        else if (name == "load") pending_ = Pending{"QuickLoad", now};
+        else return false;
+        return true;
+    }
+
+    // The control to press now, if any; `expired` names one dropped because its time ran out.
+    const char *take(uint32_t now, bool ready, const char *&expired)
+    {
+        expired = nullptr;
+        if (pending_ && static_cast<uint32_t>(now - pending_->queuedAt) >= lifetimeMs)
+        {
+            expired = pending_->control;
+            pending_.reset();
+        }
+        if (!ready || !pending_) return nullptr;
+        const char *control = pending_->control;
+        pending_.reset();
+        return control;
+    }
+
+    void clear() { pending_.reset(); }
+};
 } // namespace storm::android

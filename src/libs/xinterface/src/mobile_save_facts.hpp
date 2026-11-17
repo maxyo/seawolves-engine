@@ -27,6 +27,11 @@ std::map<std::string, std::string> SaveRowContext(const SaveListSnapshot &state,
 // once per opening of the menu.
 std::optional<MobileWidget> GameIdentityWidget(uint64_t opening);
 
+// The pause menu's quick load (the game's F9, interface.c MakeQuickLoad): the ANDROID_QUICK_LOAD text naming
+// the record it loads, "SAVE\\<PlayerProfile.name>\\<name> QuickSave <PlayerProfile.QuickSaveIndex>"; nothing
+// while that record does not exist (no quick save yet) or the script has no profile.
+std::optional<MobileWidget> QuickLoadWidget();
+
 // Every profile's records (SAVE\\<profile>\\<file>, the game's profile folders without
 // "netsave"), newest first: the rows of the save list when loading.
 std::vector<SaveRecord> SaveRecordsOfAllProfiles();

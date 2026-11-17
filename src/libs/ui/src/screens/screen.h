@@ -127,6 +127,9 @@ class Bindings
     void SendHost(const std::string &node, const std::string &value);
     // The player's way out: the screen's exit button when it has one, else the global back.
     void Back(const Widget *exit_button);
+    // The game's quick save or quick load key ("save" / "load": controls QuickSave, QuickLoad), pressed by the
+    // engine once no interface is open any more (engine command quick:<which>); the game's checks decide.
+    void QuickGame(const std::string &which);
     // Opens the native text editor over the field; the accepted text is sent as `edit`.
     void EditText(const Event &event, const Widget &widget, const std::string &title, bool numeric, bool secret = false);
     // The same editor, but the accepted text goes to `accepted` (the screen checks it, keeps

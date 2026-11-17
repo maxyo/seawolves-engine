@@ -38,6 +38,7 @@
     "move:": "ui",
     "navigator:": "ui",
     "orders:": "ui",
+    "quick:": "ui",
     "sails:": "ui",
     "seaquick:": "ui",
     "shiphud:": "ui",

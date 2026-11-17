@@ -599,6 +599,7 @@ int main(int argc, char *argv[])
 #ifdef __ANDROID__
     storm::android::Lifecycle androidLifecycle;
     storm::android::GameplayShortcuts gameplayShortcuts;
+    storm::android::QuickGame quickGame;
     storm::android::GameplayState gameplayState;
     // Why the game is not ready for gameplay this loop (GameplaySnapshot::blocked).
     const auto notReady = [&]() -> const char * {
@@ -732,6 +733,7 @@ int main(int argc, char *argv[])
 #ifdef __ANDROID__
             storm::android::cancelAndroidCombatInput();
             gameplayShortcuts.clear();
+            quickGame.clear();
 #endif
         }
         SDL_PumpEvents();
@@ -933,6 +935,11 @@ int main(int argc, char *argv[])
                     else
                         spdlog::warn("death screen: end of the death picture asked while none is shown");
                 }
+                else if (command.starts_with("quick:"))
+                {
+                    if (!quickGame.offer(std::string_view(command).substr(6), SDL_GetTicks()))
+                        spdlog::error("pause menu: unknown quick command {}", command);
+                }
                 else if (command.starts_with("shortcut:"))
                 {
                     if (storm::android::mobileScreen.empty())
@@ -1031,6 +1038,8 @@ int main(int argc, char *argv[])
             // Audio pause/resume for the lifecycle goes through AppEvents and audioGate.
             if (!androidLifecycle.canRun() || !storm::android::mobileScreen.empty())
                 gameplayShortcuts.clear();
+            if (!androidLifecycle.canRun())
+                quickGame.clear(); // the menu's quick save waits for the menu to close, not across a pause
             if (!androidLifecycle.canRun() || !storm::android::mobileScreen.empty() || storm::android::loadingState != 0)
             {
                 storm::android::closeSeaOrders();
@@ -1121,6 +1130,16 @@ int main(int argc, char *argv[])
                 const bool shortcutReady = isRunning && bActive && androidLifecycle.canRun() &&
                     core_private->initialized() && core.Controls && storm::android::loadingState == 0 &&
                     storm::android::mobileScreen.empty();
+                const char *quickExpired = nullptr;
+                if (const char *quick = quickGame.take(SDL_GetTicks(), shortcutReady, quickExpired))
+                {
+                    // The game's own key handler (seadogs.c ProcessControls): its checks decide.
+                    spdlog::info("pause menu: {} pressed after the menu closed", quick);
+                    core_private->Event("Control Activation", "s", quick);
+                }
+                if (quickExpired)
+                    spdlog::warn("pause menu: {} dropped, the game did not resume within {} ms", quickExpired,
+                                 storm::android::QuickGame::lifetimeMs);
                 if (const auto shortcut = gameplayShortcuts.take(SDL_GetTicks(), shortcutReady))
                 {
                     STORM_PROFILE_ZONE("HUD command: shortcut");

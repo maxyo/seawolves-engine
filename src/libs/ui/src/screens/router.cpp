@@ -24,6 +24,8 @@ std::string EngineCommand(const Action &action)
                                      : "dialogue:" + action.value;
     if (action.screen == "mainmenu") // the title screen's commands: "main:New", "main:Load", …
         return action.verb == "back" ? "back" : "main:" + action.node;
+    if (action.verb == "quick" && action.node.empty()) // Bindings::QuickGame
+        return "quick:" + action.value;
     if (action.node.empty())
         return action.verb == "back" ? "back" : std::string();
     return "widget:" + action.screen + "\t" + action.node + "\t" + std::to_string(action.index) + "\t" + WidgetWire(action);
@@ -321,6 +323,16 @@ void Bindings::Back(const Widget *exit_button)
     action.screen = router_.model_.screen;
     action.opening = router_.model_.opening;
     action.verb = "back";
+    router_.Emit(std::move(action));
+}
+
+void Bindings::QuickGame(const std::string &which)
+{
+    Action action;
+    action.screen = router_.model_.screen;
+    action.opening = router_.model_.opening;
+    action.verb = "quick";
+    action.value = which;
     router_.Emit(std::move(action));
 }
 

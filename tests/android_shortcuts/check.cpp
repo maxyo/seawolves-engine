@@ -45,4 +45,19 @@ int main()
     assert(queue.take(100, true)); // Tick rollover is not expiry.
     queue.offer("character", wrap - 100);
     assert(!queue.take(GameplayShortcuts::lifetimeMs, true));
+    // The pause menu's quick save / load: waits while the menu is open, pressed once the game runs, dropped (and
+    // named) when the menu stays open past its lifetime.
+    QuickGame quick;
+    const char *expired = nullptr;
+    assert(!quick.offer("other", 0));
+    assert(quick.offer("save", 0));
+    assert(!quick.take(10, false, expired) && !expired); // the menu is still open
+    const char *control = quick.take(20, true, expired);
+    assert(control && std::strcmp(control, "QuickSave") == 0 && !expired);
+    assert(!quick.take(30, true, expired)); // pressed once
+    assert(quick.offer("load", 100));
+    assert(!quick.take(100 + QuickGame::lifetimeMs, true, expired) && expired && std::strcmp(expired, "QuickLoad") == 0);
+    assert(quick.offer("load", 0));
+    quick.clear();
+    assert(!quick.take(1, true, expired) && !expired);
 }

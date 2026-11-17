@@ -1,6 +1,6 @@
 // Pause menu (interface "game_menu", mockups V2-Menu-Game and V2-Menu-ExitConfirm): the
-// primary «Продолжить» over a 2 × 2 grid of save, load, settings and exit, centred over
-// the paused scene. The game's exit question (CONFIRM_EXIT_*, or CONFIRM_WINDOW_* in some
+// primary «Продолжить» over a 2 × 3 grid of save, load, quick save, quick load, settings and
+// exit, centred over the paused scene. The game's exit question (CONFIRM_EXIT_*, or CONFIRM_WINDOW_* in some
 // versions) becomes the danger C-Dialog. The one exit leads to the game's main menu:
 // the game's own exit to the main menu where it has one (CL: MB_EXITMENU), else
 // its exit from the program (TEHO: MB_EXITGAME/MB_QUIT, ExitProgram), after which the host
@@ -13,6 +13,7 @@
 #include "menu.h"
 
 #include <cstdlib>
+#include <tuple>
 
 namespace storm::ui::screens
 {
@@ -23,6 +24,7 @@ namespace
 constexpr NodeRule kNodes[] = {
     {"MB_RESUME", "button", true},
     {"ANDROID_GAME", "text"},
+    {"ANDROID_QUICK_LOAD", "text"},
     {"MB_SAVE", "button"},
     {"MB_LOAD", "button"},
     {"MB_OPTIONS", "button"},
@@ -97,6 +99,40 @@ Json ResumeView(Bindings &bindings, const Widget &resume)
                 {"busy", bindings.Pending("resume")}};
 }
 
+// Quick save and quick load, the game's F6 / F9 (seadogs.c ProcessControls → interface.c MakeQuickSave,
+// MakeQuickLoad): the menu resumes and the engine presses the key once it has closed (Bindings::QuickGame;
+// MakeQuickSave refuses while an interface is open). The game's own checks still decide (no save in a dialogue,
+// under a fader, where saving is off; on hardcore only in a church, which the game says itself). Offered while
+// the menu can resume; quick save where the game lets the player save at all (MB_SAVE), quick load while its
+// record exists (ANDROID_QUICK_LOAD), held like every action that drops the game in progress.
+void QuickViews(Bindings &bindings, const Admission &admitted, bool resumes, Json &buttons)
+{
+    const Widget *save = admitted.One("MB_SAVE");
+    const bool saves = resumes && save && save->Offers("press");
+    const bool loads = resumes && admitted.One("ANDROID_QUICK_LOAD") != nullptr;
+    for (const auto &[id, which, can] : {std::tuple{"quick-save", "save", saves}, std::tuple{"quick-load", "load", loads}})
+    {
+        const std::string key = which;
+        if (can)
+            bindings.On(id, "click", [&bindings, key](const Event &) {
+                bindings.Back(nullptr);
+                bindings.QuickGame(key);
+            });
+        else
+            bindings.Ignore(id, "");
+        const std::string reason = can || !resumes ? std::string()
+                                   : key == "save"  ? (save ? save->unavailable_reason : std::string())
+                                                    : bindings.Text("menu.no_quick_save");
+        buttons.push_back(Json{{"id", id},
+                               {"label", bindings.Text(key == "save" ? StringKey("menu.quick_save") : StringKey("menu.quick_load"))},
+                               {"variant", "secondary"},
+                               {"disabled", !can},
+                               {"reason", reason},
+                               {"hold", key == "load"},
+                               {"busy", bindings.Pending(id)}});
+    }
+}
+
 class GameMenuScreen final : public Screen
 {
   public:
@@ -115,15 +151,18 @@ class GameMenuScreen final : public Screen
         Json view = Json::object();
         view["line"] = GameLine(bindings, admitted.One("ANDROID_GAME"));
         view["resume"] = ResumeView(bindings, *admitted.One("MB_RESUME"));
+        const bool resumes = !view["resume"]["disabled"].get<bool>();
 
         Json buttons = Json::array();
         // The game's exit to its main menu when it has one; its exit from the program is then
         // not offered (the main menu has its own).
         const Widget *toMenu = admitted.One("MB_EXITMENU");
         const Widget *exit = toMenu ? toMenu : admitted.One("MB_EXITGAME") ? admitted.One("MB_EXITGAME") : admitted.One("MB_QUIT");
-        const std::pair<const char *, const Widget *> grid[] = {
-            {"save", admitted.One("MB_SAVE")}, {"load", admitted.One("MB_LOAD")}, {"options", admitted.One("MB_OPTIONS")}, {"exit", exit}};
-        for (const auto &[id, button] : grid)
+        for (const auto &[id, button] : {std::pair{"save", admitted.One("MB_SAVE")}, std::pair{"load", admitted.One("MB_LOAD")}})
+            if (button)
+                buttons.push_back(ButtonView(bindings, *button, id, "secondary"));
+        QuickViews(bindings, admitted, resumes, buttons);
+        for (const auto &[id, button] : {std::pair{"options", admitted.One("MB_OPTIONS")}, std::pair{"exit", exit}})
             if (button)
                 buttons.push_back(ButtonView(bindings, *button, id, "secondary"));
         // The game's label of its program exit («Выход») would promise leaving the game: «Выйти».

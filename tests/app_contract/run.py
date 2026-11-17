@@ -85,7 +85,9 @@ handed = re.search(r'if \(action\.screen == "hud" && \(([^)]*)\)\)', engine_ui)
 same('HUD input handed to the activity (engine_ui.cpp)', re.findall(r'action\.verb == "(\w+)"', handed[1]) if handed else [],
      host_input)
 shortcuts = text('src/libs/util/include/platform/android_shortcuts.hpp')
-same('shortcut the native queue takes (android_shortcuts.hpp)', re.findall(r'name == "(\w+)"', shortcuts), host_input['shortcut'])
+gameplay_shortcuts = shortcuts[shortcuts.index('class GameplayShortcuts'):shortcuts.index('class QuickGame')]
+same('shortcut the native queue takes (android_shortcuts.hpp GameplayShortcuts)', re.findall(r'name == "(\w+)"', gameplay_shortcuts),
+     host_input['shortcut'])
 sent_shortcuts = set()
 presence = set()
 for path in sources('src/libs/ui/src'):
