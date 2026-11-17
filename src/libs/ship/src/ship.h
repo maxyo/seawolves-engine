@@ -133,6 +133,7 @@ class SHIP : public SHIP_BASE
     storm::render::EffectsWaveSource waveSource_;
     float fWaterlineAge = 0.0f;
     bool bWaterlineValid = false;
+    bool bWaterlineNonFiniteLogged = false;
     float fWaveSpeed = 0.0f, fWaveHeave = 0.0f;
     std::shared_ptr<const storm::ship::HullProfile> hullProfile_; // the hull's waterline (shared per model)
     void AddWaveSource(float fDeltaTime);

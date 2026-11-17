@@ -96,9 +96,14 @@ float WaterHeight(const glm::mat4 &world, SEA_BASE &sea, float x, float z, float
 }
 } // namespace
 
-bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm::vec3 &origin,
-                   const glm::vec2 &forward, SEA_BASE &sea, render::EffectsWaveSource &source)
+Waterline HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm::vec3 &origin,
+                        const glm::vec2 &forward, SEA_BASE &sea, render::EffectsWaveSource &source)
 {
+    // A non-finite height would index the profile out of its tables (HalfBeam).
+    for (int c = 0; c < 4; ++c)
+        for (int r = 0; r < 4; ++r)
+            if (!std::isfinite(world[c][r]))
+                return Waterline::NonFinite;
     constexpr int kStations = render::EffectsWaveSource::kHullStations;
     constexpr int kScan = 48;
     // The water along the centre line, then the waterline's ends: where the hull there has any beam at that height.
@@ -109,6 +114,8 @@ bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm
     {
         const float z = z_at((static_cast<float>(i) + 0.5f) / kScan);
         y = WaterHeight(world, sea, 0.0f, z, y);
+        if (!std::isfinite(y))
+            return Waterline::NonFinite;
         water[i] = y;
     }
     int first = -1, last = -1;
@@ -123,7 +130,7 @@ bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm
         }
     }
     if (first < 0)
-        return false;
+        return Waterline::Dry;
     // The ends half a scan step beyond the last sections with beam.
     const float za = z_at(static_cast<float>(first) / kScan), zb = z_at(static_cast<float>(last + 1) / kScan);
     const glm::vec2 right(-forward.y, forward.x);
@@ -157,6 +164,8 @@ bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm
             {
                 x = sign * profile.HalfBeam(side, z, yy);
                 yy = WaterHeight(world, sea, x, z, yy);
+                if (!std::isfinite(yy))
+                    return Waterline::NonFinite;
             }
             x = sign * profile.HalfBeam(side, z, yy);
             edge[side] = flat(storm::math::transformPoint(world, glm::vec3(x, yy, z)));
@@ -168,7 +177,7 @@ bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm
     }
     source.half_length = 0.5f * (source.stem - source.stern);
     source.half_width = widest;
-    return true;
+    return Waterline::Found;
 }
 
 } // namespace storm::ship

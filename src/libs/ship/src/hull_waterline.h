@@ -36,11 +36,17 @@ class HullProfile
     std::vector<float> beam_[2]; // [along][up]
 };
 
+enum class Waterline
+{
+    Found,
+    Dry,      // the hull is out of the water: no waterline
+    NonFinite // the hull's matrix or the sea's height under it is not a finite number: no waterline
+};
+
 // The waterline of `profile` this frame for the hull whose geometry has the world matrix `world` (absolute world,
 // including the ship's rocking), as seen from `origin` with the heading `forward` (`source` gets stern, stem, the
-// stations, half_length and half_width). The sea's height comes from `sea`. False when the hull is out of the water
-// (no waterline found).
-bool HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm::vec3 &origin,
-                   const glm::vec2 &forward, SEA_BASE &sea, render::EffectsWaveSource &source);
+// stations, half_length and half_width only when Found). The sea's height comes from `sea`.
+Waterline HullWaterline(const HullProfile &profile, const glm::mat4 &world, const glm::vec3 &origin,
+                        const glm::vec2 &forward, SEA_BASE &sea, render::EffectsWaveSource &source);
 
 } // namespace storm::ship

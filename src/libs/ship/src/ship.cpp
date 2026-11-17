@@ -1065,7 +1065,18 @@ void SHIP::AddWaveSource(float fDeltaTime)
     if (hullProfile_ && pNode && (fWaterlineAge >= 0.1f || !bWaterlineValid))
     {
         fWaterlineAge = 0.0f;
-        bWaterlineValid = storm::ship::HullWaterline(*hullProfile_, pNode->glob_mtx, vWorld, vForward, *pSea, source);
+        const auto waterline = storm::ship::HullWaterline(*hullProfile_, pNode->glob_mtx, vWorld, vForward, *pSea, source);
+        bWaterlineValid = waterline == storm::ship::Waterline::Found;
+        if (waterline == storm::ship::Waterline::NonFinite && !bWaterlineNonFiniteLogged)
+        {
+            bWaterlineNonFiniteLogged = true;
+            const glm::vec3 at = storm::math::pos(pNode->glob_mtx);
+            core.Trace("ERROR: waves from objects: ship %s: its hull matrix or the sea under it is not finite (hull at "
+                       "%g %g %g, ship at %g %g %g, angles %g %g %g, dead %d): it makes no waves while that lasts "
+                       "(logged once per ship)",
+                       cShipIniName, at.x, at.y, at.z, State.vPos.x, State.vPos.y, State.vPos.z, State.vAng.x,
+                       State.vAng.y, State.vAng.z, bDead ? 1 : 0);
+        }
     }
     if (hullProfile_ && pNode)
     {
