@@ -77,7 +77,7 @@ int main() {
  {
   using storm::effects::SceneProduct; using storm::effects::SceneProducts; using storm::effects::SceneProductWait;
   using storm::effects::kSceneProductBudgetMs;
-  static_assert(kSceneProductBudgetMs==10000);
+  static_assert(kSceneProductBudgetMs==5000);
   SceneProducts relief; relief.add(SceneProduct::Relief,3);
   SceneProducts bake; bake.add(SceneProduct::Place);
   // Drives a gate and a wait like SampleSceneResources: mandatory textures until `mandatory_at`, then the products.
@@ -108,17 +108,17 @@ int main() {
    assert(l.sample(4000+kSceneProductBudgetMs-1,false,bake)); // one millisecond short: still held
    l.sample(4000+kSceneProductBudgetMs,false,bake); // the budget: released
    assert(l.wait.expired()&&l.wait.waited_ms()==kSceneProductBudgetMs);
-   l.sample(14001,false,bake); assert(!l.sample(14002,false,bake)); // revealed with the bake still running
+   l.sample(4001+kSceneProductBudgetMs,false,bake); assert(!l.sample(4002+kSceneProductBudgetMs,false,bake)); // revealed with the bake still running
    assert(l.gate.state()==SceneReadiness::State::Ready&&l.wait.last()[SceneProduct::Place]==1);
    l.wait.revealed(); SceneProducts more=bake; more.add(SceneProduct::Upscale);
-   assert(!l.sample(20000,false,more)); // after the reveal nothing holds it again
+   assert(!l.sample(10000+kSceneProductBudgetMs,false,more)); // after the reveal nothing holds it again
   }
   // One budget per load: mandatory work found after mandatory-ready (a texture first used late) does not restart it.
   {
    Load l;
    assert(l.sample(1000,false,relief)&&l.wait.ready_at()==1000);
-   assert(l.sample(6000,true,relief)); // a late texture holds as mandatory, the budget runs on
-   assert(l.sample(10999,false,relief)); l.sample(11000,false,relief); assert(l.wait.expired());
+   assert(l.sample(1000+kSceneProductBudgetMs/2,true,relief)); // a late texture holds as mandatory, the budget runs on
+   assert(l.sample(999+kSceneProductBudgetMs,false,relief)); l.sample(1000+kSceneProductBudgetMs,false,relief); assert(l.wait.expired());
   }
   // An off product (the preset does not want it: its owner reports nothing in progress) never holds: the location
   // reveals after the mandatory resources' stable frames, with nothing waited.

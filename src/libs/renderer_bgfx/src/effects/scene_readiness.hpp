@@ -25,13 +25,12 @@ struct SceneResources {
     bool mandatory_pending() const { return textures || shadows || switching; }
     bool pending() const { return mandatory_pending() || products; }
 };
-// Owner decision 2026-11-16 («если есть что готовить на сцене то ждём макс 10 секунд»): when a location loads, the
-// reveal waits for the quality products the active preset wants for the scene and that are still being made, for at
-// most this long, counted from the moment its mandatory resources (SceneResources::mandatory_pending) are ready.
-// What finishes within it is there at the reveal; what does not continues in the background and comes in after it
-// (the relief maps fade in over kReliefFade, the AO and visibility volumes over lighting.cpp kVolumeFade). One budget per load, never extended.
-// Before 662cc596 the reveal waited for the relief generation without a bound (40-150 s per map on slow devices).
-inline constexpr uint64_t kSceneProductBudgetMs = 10000;
+// When a location loads, the reveal waits for the quality products the active preset wants for the scene and that
+// are still being made, for at most this long, counted from the moment its mandatory resources
+// (SceneResources::mandatory_pending) are ready. What finishes within it is there at the reveal; the rest continues in
+// the background and fades in after it (relief maps over kReliefFade, the AO and visibility volumes over lighting.cpp
+// kVolumeFade). One budget per load, never extended.
+inline constexpr uint64_t kSceneProductBudgetMs = 5000;
 // The quality products a load waits for. A product the preset does not want is never counted (its owner makes
 // nothing: «Низкая» has none of them), so it adds no wait.
 enum class SceneProduct : uint8_t {
