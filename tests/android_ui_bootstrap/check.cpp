@@ -2,6 +2,8 @@
 #include <cassert>
 #include <iostream>
 #include <set>
+#include <stdexcept>
+#include <string>
 #include <vector>
 #define __ANDROID__ 1
 namespace storm::android { inline void traceLandAdapter(unsigned,const std::string&) {} }
@@ -59,12 +61,16 @@ int main(){
     for(int i=0;i<3;++i){c.releasedTables();c.restoreBase();c.OnLoad();assert(c.handler);}assert(c.compiles==5); // same/another/repeated save
     c.releasedTables();c.Run();assert(c.handler&&c.compiles==6); // whole-program new game/reset
 
-    COMPILER absent;files.exists=false;int before=files.probes;absent.Run();assert(!absent.handler&&absent.compiles==0&&files.probes==before+1);
+    // A missing or uncompiled bootstrap stops the start (fatal dialog): it throws once, never retries silently.
+    const auto throws=[](auto &&call){try{call();}catch(const std::runtime_error &error){
+        return std::string(error.what()).find("android_ui_bootstrap.c")!=std::string::npos;}return false;};
+    COMPILER absent;files.exists=false;int before=files.probes;assert(throws([&]{absent.Run();}));
+    assert(!absent.handler&&absent.compiles==0&&files.probes==before+1);
     files.exists=true;for(int i=0;i<1000;++i)absent.LoadAndroidUiAdapter();assert(absent.compiles==0&&files.probes==before+1);
-    absent.releasedTables();absent.restoreBase();absent.OnLoad();assert(absent.handler&&absent.compiles==1);
-    COMPILER malformed;malformed.compileSucceeds=false;malformed.Run();for(int i=0;i<1000;++i)malformed.LoadAndroidUiAdapter();assert(malformed.compiles==1&&!malformed.handler);
-    malformed.compileSucceeds=true;malformed.releasedTables();malformed.restoreBase();malformed.OnLoad();assert(malformed.compiles==2&&malformed.handler);
+    COMPILER absentOnLoad;files.exists=false;absentOnLoad.restoreBase();assert(throws([&]{absentOnLoad.OnLoad();}));files.exists=true;
+    COMPILER malformed;malformed.compileSucceeds=false;assert(throws([&]{malformed.Run();}));
+    for(int i=0;i<1000;++i)malformed.LoadAndroidUiAdapter();assert(malformed.compiles==1&&!malformed.handler);
     COMPILER already;already.loaded=already.handler=true;before=files.probes;already.Run();assert(already.compiles==0&&files.probes==before);
     COMPILER failed;failed.executeSucceeds=false;failed.Run();assert(failed.compiles==0&&!failed.androidUiAdapterAttempted_);
-    std::cout<<"PASS production compiler hooks: startup/new game, static ClearEvents, base-only save restore/repeat, fresh owner tokens, missing/failed helper once-per-program, reset recovery, no duplicate load\n";
+    std::cout<<"PASS production compiler hooks: startup/new game, static ClearEvents, base-only save restore/repeat, fresh owner tokens, missing/uncompiled bootstrap throws once (fatal dialog), no duplicate load\n";
 }

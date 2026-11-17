@@ -8,6 +8,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <stdexcept>
 
 #include <zlib.h>
 
@@ -504,7 +505,9 @@ void COMPILER::ResetAndroidUiAdapter()
 void COMPILER::LoadAndroidUiAdapter()
 {
     // Called after Main/OnLoad return, never inside a frame or an event handler.
-    // Optional app-owned entry point: no shipped game script is copied here.
+    // The app ships the entry point (mobile-ui/PROGRAM/interface/android_ui_bootstrap.c): without it the
+    // portable UI has no script side, so a missing or uncompiled bootstrap stops the start with the fatal
+    // dialog (the frame loop's ReportFatalError) instead of a game without its interface.
     if (androidUiAdapterAttempted_) return;
     androidUiAdapterAttempted_ = true;
     constexpr const char *segment = "interface/android_ui_bootstrap.c";
@@ -513,10 +516,16 @@ void COMPILER::LoadAndroidUiAdapter()
     }
     const std::string path = std::string(ProgramDirectory ? ProgramDirectory : "") + segment;
     if (!fio->_FileOrDirectoryExists(path.c_str())) {
-        storm::android::traceLandAdapter(0, "missing-entrypoint"); return;
+        storm::android::traceLandAdapter(0, "missing-entrypoint");
+        throw std::runtime_error("The game's interface scripts are incomplete: " + path +
+                                 " is missing. Reinstall the game.");
     }
-    const bool loaded = BC_LoadSegment(segment);
-    storm::android::traceLandAdapter(0, loaded ? "loaded" : "compile-failed");
+    if (!BC_LoadSegment(segment)) {
+        storm::android::traceLandAdapter(0, "compile-failed");
+        throw std::runtime_error("The game's interface scripts do not compile: " + path +
+                                 " (see the compile log). Reinstall the game.");
+    }
+    storm::android::traceLandAdapter(0, "loaded");
 }
 #endif
 
