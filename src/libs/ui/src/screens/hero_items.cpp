@@ -9,6 +9,7 @@
 // item, what the button does with it, an artefact's days) and what each slot holds come from
 // the interface adapter android_hero.c
 // (ANDROID_ITEMS, ANDROID_SLOTS; ANDROID_POSTS for the officer switch).
+#include "amount.h"
 #include "hero.h"
 
 #include <algorithm>
@@ -229,7 +230,7 @@ class ItemsScreen final : public Screen
                 name["badge"] = "check";
             else if (Field(fact, "quest") == "1")
                 name["badge"] = "seal";
-            const int count = Number(row->CellText(2));
+            const int count = Amount(bindings, row->CellText(2), "TABLE_ITEMS count (column 2)");
             rows.push_back(Json{{"id", row->row_id}, {"cells", Json::array({name, count > 1 ? "\xC3\x97" + std::to_string(count) : std::string(), Decimal(Trim(row->CellText(3)), admitted.model->language)})},
                                 {"selected", row->value == "1"}});
             shown.push_back(row);

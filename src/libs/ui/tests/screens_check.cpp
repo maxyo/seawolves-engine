@@ -3,6 +3,7 @@
 // models only (tests/models); no GL context, no game data.
 #include "../src/hud/hud.h"
 #include "../src/picture_atlas.h"
+#include "../src/screens/amount.h"
 #include "../src/screens/controls.h"
 
 #include <algorithm>
@@ -3483,6 +3484,36 @@ static void SailEmblem(const std::string &models)
     Expect(surface.commands.size() == sent, "a disabled primary sends nothing");
 }
 
+// The one reading of a number in a game caption (screens/amount.h) and the error line when a caption that always
+// carries one comes without it.
+static void Amounts(const std::string &models)
+{
+    const auto read = [](const char *text) { return ParseAmount(text); };
+    Expect(read("23 824") == 23824 && read("11\u00a0575") == 11575 && read("1 240 pesos") == 1240,
+           "thousands grouped by a space or a no-break space");
+    Expect(read("Наши деньги 1 500 песо") == 1500 && read("Стоимость найма одного матроса 23 песо") == 23,
+           "the number inside a caption");
+    Expect(read("4.6 / 140") == 4 && read("317 / 700") == 317 && read("40 : 9 / 40") == 40 && read("100%") == 100,
+           "the first number ends at any other character");
+    Expect(read("5 10") == 5 && read("1 2345") == 1 && read("12 345 678") == 12345678, "a thousands group is exactly three digits");
+    Expect(read("-3") == -3 && read("Бонус -12") == -12 && read("- 3") == 3 && read("x-1 000") == -1000,
+           "a minus sign right before the first digit");
+    Expect(!read("") && !read("-") && !read("\xE2\x80\x94") && !read("песо"), "no digit: no number");
+    Expect(read("2147483647") == 2147483647 && !read("2147483648") && !read("99 999 999 999"), "a number past int is no number");
+
+    FakeSurface surface;
+    Router router(surface);
+    InterfaceModel model = Load(models, "hirecrew.json");
+    for (Widget &widget : model.widgets)
+        if (widget.node == "TAVERN_PRICE")
+            widget.label = "\xE2\x80\x94";
+    router.SetInterface(model);
+    model.revision += 1;
+    router.SetInterface(model);
+    Expect(surface.errors.size() == 1 && surface.errors[0].find("TAVERN_PRICE") != std::string::npos,
+           "a price caption without its number is an error line, once: " + Json(surface.errors).dump());
+}
+
 int main(int argc, char **argv)
 {
     const std::string models = argc > 1 ? argv[1] : "tests/models";
@@ -3492,6 +3523,7 @@ int main(int argc, char **argv)
         ItemCategories(models);
         return failures ? 1 : 0;
     }
+    Amounts(models);
     Admission_();
     Roles();
     Commands();

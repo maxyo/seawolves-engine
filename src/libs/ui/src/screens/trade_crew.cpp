@@ -9,6 +9,7 @@
 // room for crew and the room of its hold (facts of the adapter android_hero.c, ANDROID_CREWHIRE), the purse
 // (makeint(money / price)); the cost is makeint(price * men). «Нанять / Уволить N» sends the signed amount
 // and the game's OK in one flush.
+#include "amount.h"
 #include "controls.h"
 #include "hero.h"
 
@@ -57,19 +58,6 @@ constexpr NodeRule kNodes[] = {
     {"OTHER_PICTURE", "image"},
 };
 
-int Number(const std::string &text)
-{
-    std::string digits;
-    for (const char c : text)
-    {
-        if (c >= '0' && c <= '9')
-            digits += c;
-        else if (!digits.empty() && c != ' ')
-            break;
-    }
-    return digits.empty() ? 0 : std::atoi(digits.c_str());
-}
-
 class CrewScreen final : public Screen
 {
   public:
@@ -94,8 +82,8 @@ class CrewScreen final : public Screen
         const std::string owner = ships[current]->row_id; // the ship every quantity action is bound to
 
         // The crews as the game has them (it holds no deal of its own: the amount is ours until confirmed).
-        const int crew = Number(admitted.Label("CREW_QTY"));
-        const int tavern = Number(admitted.Label("CREW_QTY2"));
+        const int crew = Amount(bindings, admitted.Label("CREW_QTY"), "CREW_QTY");
+        const int tavern = Amount(bindings, admitted.Label("CREW_QTY2"), "CREW_QTY2");
         if (owner != deal_owner_ || crew != deal_crew_ || tavern != deal_tavern_)
         {
             deal_owner_ = owner;
@@ -104,9 +92,9 @@ class CrewScreen final : public Screen
             target_ = crew; // a new ship, or a deal went through: the knob is on the pivot
         }
         // hirecrew.c ChangeQTY_EDIT, hiring: the tavern's men, the ship's room for crew, the purse, the hold's room.
-        const int price = Number(admitted.Label("TAVERN_PRICE"));
+        const int price = Amount(bindings, admitted.Label("TAVERN_PRICE"), "TAVERN_PRICE");
         const std::string gold = admitted.Label("OUR_GOLD");
-        const int money = gold.find_first_of("0123456789") == std::string::npos ? -1 : Number(gold.substr(gold.find_first_of("0123456789")));
+        const int money = Amount(bindings, gold, "OUR_GOLD", -1); // -1: the purse sets no limit
         const Widget *limits = admitted.One("ANDROID_CREWHIRE");
         if (!limits && reported_opening_ != admitted.model->opening)
         {
@@ -140,7 +128,7 @@ class CrewScreen final : public Screen
                  {"image", {{"kind", "icon"}, {"icon", "crew"}}},
                  {"meta", OneLine(admitted.Label("INFO_SHIP"))},
                  {"cells", Json::array({std::to_string(crew), std::to_string(tavern),
-                                        Json{{"text", std::to_string(Number(admitted.Label("TAVERN_PRICE")))}, {"bold", true}}})},
+                                        Json{{"text", std::to_string(price)}, {"bold", true}}})},
                  {"selected", true},
                  // One slider for both directions, as the store: the crew on the ship is the
                  // origin, firing to its left, hiring to its right; the cost is on the button.

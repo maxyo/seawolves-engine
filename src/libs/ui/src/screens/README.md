@@ -17,6 +17,7 @@ engine ◀──────Action {screen, opening, node, index, verb, value}�
 | `screen.h` | the contracts: `Screen`, `NodeRule`, `Admission`, `Bindings`, `Router`, `StateConsumer`, `Surface` |
 | `registry.cpp` | ported screens by interface id (every other interface gets the generic layout), state consumers |
 | `router.cpp` | admission, shared extras («Прочее» sheet, note, reading sheet), event dispatch, busy marks, throttled sends, `EngineCommand` |
+| `amount.*` | the one reading of a whole number in a game caption or cell (`ParseAmount`: first number, thousands groups, a leading minus; none → `nullopt`); `Amount`: a caption that always carries a number logs an error line once per screen and caption when it does not |
 | `controls.*` | shared view builders: buttons and their roles, action rows, control rows (toggle, segment, slider, stepper, field); `AmountDraft`: the amount of a quantity control that moves something is a draft until its «Взять / Отдать N» (or «Купить / Продать N») is pressed; a transfer has no «Отмена» (another row, or the amount set back, drops it), a setting kept as a draft (the treasurer's order) has one |
 | `generic.cpp` | the generic auto-layout for interfaces without a ported screen |
 | `trade_crew.cpp` | crew hire: the trade layout with one always-open row; both crews' experience and morale as the ship screen draws them (`hero::CrewQuality`, numbers from the adapter's `ANDROID_CREWHIRE`) |

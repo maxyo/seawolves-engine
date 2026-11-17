@@ -1,29 +1,14 @@
 // Shared parts of the hero section screens, see hero.h.
 #include "hero.h"
 
+#include "amount.h"
+
 #include <algorithm>
 #include <cstdlib>
 #include <map>
 
 namespace storm::ui::screens::hero
 {
-
-int Number(const std::string &text)
-{
-    std::string digits;
-    bool minus = false;
-    for (const char c : text)
-    {
-        if (c >= '0' && c <= '9')
-            digits += c;
-        else if (digits.empty() && c == '-')
-            minus = true;
-        else if (!digits.empty() && c != ' ')
-            break;
-    }
-    const int value = digits.empty() ? 0 : std::atoi(digits.c_str());
-    return minus ? -value : value;
-}
 
 std::string Trim(std::string text)
 {
@@ -80,6 +65,12 @@ std::string Field(const Widget *fact, const char *key)
     return {};
 }
 
+int FieldAmount(Bindings &bindings, const Widget *fact, const char *key)
+{
+    const std::string text = Field(fact, key);
+    return text.empty() ? 0 : Amount(bindings, text, key);
+}
+
 std::string Decimal(const std::string &text, const std::string &language)
 {
     if (language == "english")
@@ -96,9 +87,8 @@ Json Portrait(const std::string &face)
     return face.empty() ? Json(nullptr) : Json{{"kind", "portrait"}, {"texture", "INTERFACES/PORTRAITS/128/face_" + face}};
 }
 
-std::string Thousands(const std::string &digits)
+std::string Thousands(int value)
 {
-    const int value = Number(digits);
     std::string raw = std::to_string(std::abs(value)), out;
     for (size_t i = 0; i < raw.size(); ++i)
     {
@@ -169,7 +159,7 @@ std::string AfterColon(const std::string &text)
 Json CrewQuality(const Admission &admitted, Bindings &bindings, const char *table, const char *morale_text, const Widget *fact,
                  const std::string &prefix)
 {
-    const auto value = [&](const char *field) { return std::clamp(Number(Field(fact, (prefix + field).c_str())), 0, 100); };
+    const auto value = [&](const char *field) { return std::clamp(FieldAmount(bindings, fact, (prefix + field).c_str()), 0, 100); };
     Json groups = Json::array();
     const std::pair<const char *, const char *> fields[] = {{"Sailors", "sailors"}, {"Cannoners", "cannoners"}, {"Soldiers", "soldiers"}};
     for (const Widget *row : admitted.All(table))

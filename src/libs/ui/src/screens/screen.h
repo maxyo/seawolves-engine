@@ -146,6 +146,8 @@ class Bindings
     void Log(const std::string &text);
     // Something the screen cannot do as designed: an error line (a toast in debug hosts).
     void Error(const std::string &text);
+    // The same error line, once per screen and `key` (a defect the screen meets on every build).
+    void ErrorOnce(const std::string &key, const std::string &text);
     // Local state of the screen changed: build the view again from the same model.
     void Rebuild();
     // The subject a HUD tap asked this screen to open on (hud::Hud::RequestSubject), taken once.
@@ -399,7 +401,7 @@ class Router
     uint64_t next_request_ = 0;
     std::map<uint64_t, Request> outstanding_;
     std::map<uint64_t, Answered> answers_; // the latest answers, for the amount drafts (AnsweredSince)
-    std::set<std::string> logged_; // once per (screen, node set): extras, generic use, rejection lines
+    std::set<std::string> logged_; // once per (screen, node set): extras, generic use, rejection lines; ErrorOnce keys
     // The notices (Bindings::Notice) of the view on the screen and of the one being built: a notice is logged when
     // it appears, not again at every build while it stays.
     std::set<std::string> notices_shown_, notices_building_;

@@ -114,6 +114,7 @@ add_library(storm_ui STATIC
     src/interface_model.cpp
     src/screens/router.cpp
     src/screens/controls.cpp
+    src/screens/amount.cpp
     src/screens/registry.cpp
     src/screens/generic.cpp
     src/screens/trade_commerce.cpp

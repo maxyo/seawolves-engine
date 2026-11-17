@@ -398,6 +398,12 @@ void Bindings::Error(const std::string &text)
     router_.surface_.Error("screen " + router_.using_ + ": " + text);
 }
 
+void Bindings::ErrorOnce(const std::string &key, const std::string &text)
+{
+    if (router_.logged_.insert("error:" + router_.using_ + ":" + key).second)
+        Error(text);
+}
+
 std::optional<SubjectRequest> Bindings::TakeSubject(const std::string &screen)
 {
     return router_.hud_ ? router_.hud_->TakeSubject(screen) : std::nullopt;

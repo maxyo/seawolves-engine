@@ -13,16 +13,17 @@ namespace storm::ui::screens::hero
 // A field of an adapter fact row ("" when absent). Script attribute names are case-insensitive and keep
 // whichever spelling was interned first (itemId may arrive as itemid), so the lookup ignores case.
 std::string Field(const Widget *fact, const char *key);
-// The first number in a game text ("Вес: 4.6 / 140" → 4, "-3" → -3), 0 without one.
-int Number(const std::string &text);
+// A whole-number field of an adapter fact (ParseAmount): 0 when the fact omits it (the adapter leaves out the fields
+// that do not apply, such as the captain's salary), an error line (Amount) when it holds no number.
+int FieldAmount(Bindings &bindings, const Widget *fact, const char *key);
 std::string Trim(std::string text);
 // Lower case for the game's upper-case words ("ОТЛИЧНОЕ"): ASCII, Latin-1 and Cyrillic.
 std::string LowerText(const std::string &text);
 // A game number with a decimal point in the interface's language ("2.4" → "2,4" except in
 // English): every point between two digits.
 std::string Decimal(const std::string &text, const std::string &language);
-// "41440" → "41 440" (no-break space).
-std::string Thousands(const std::string &digits);
+// 41440 → "41 440" (no-break space).
+std::string Thousands(int value);
 // A description from the game's text files (AbilityDescribe, RPGDescribe): carriage returns dropped and a
 // line holding only "~", the stock paragraph separator, an empty line; trimmed. Shown with white-space: pre-line.
 std::string StockText(const std::string &raw);

@@ -19,6 +19,7 @@
 //
 // All six interfaces share the game's nodes (TABLE_LIST, QTY_*); they differ in the
 // columns of the table, described per interface below.
+#include "amount.h"
 #include "controls.h"
 
 #include <algorithm>
@@ -179,23 +180,27 @@ constexpr NodeRule kNodes[] = {
     {"OTHER_PICTURE", "image"},
 };
 
-int Number(const std::string &text)
+// What our side and the other side hold of a row: the game writes a number in both columns.
+int Ours(Bindings &bindings, const Widget &row, const Layout &columns)
 {
-    std::string digits;
-    for (const char c : text)
-        if ((c >= '0' && c <= '9') || (c == '-' && digits.empty()))
-            digits += c;
-    return digits.empty() || digits == "-" ? 0 : std::atoi(digits.c_str());
+    return Amount(bindings, row.CellText(columns.own), "the own amount column");
 }
 
-// The first whole number in a text ("Деньги 500, вес 10 ц" → 500); 0 when there is none.
-int FirstNumber(const std::string &text)
+int Theirs(Bindings &bindings, const Widget &row, const Layout &columns)
 {
-    const size_t first = text.find_first_of("0123456789");
-    if (first == std::string::npos)
-        return 0;
-    const size_t end = text.find_first_not_of("0123456789", first);
-    return std::atoi(text.substr(first, end == std::string::npos ? std::string::npos : end - first).c_str());
+    return Amount(bindings, row.CellText(columns.other), "the other amount column");
+}
+
+// The pack of a row (Goods[].Units), at least 1.
+int Units(Bindings &bindings, const Widget &row, const Layout &columns)
+{
+    return std::max(1, Amount(bindings, row.CellText(columns.pack), "the pack column", 1));
+}
+
+// A price cell: "-" where the game does not trade the row this way (contraband is not sold back), read as 0.
+int Price(const Widget &row, int column)
+{
+    return ParseAmount(row.CellText(column)).value_or(0);
 }
 
 // The trade type, which the game tells only by the colour of the goods name: the tone of
@@ -373,15 +378,15 @@ class CommerceScreen final : public Screen
         // The open deal is the player's draft until it is confirmed: what we hold and what the other side has
         // are taken when the game opens the row's amount window (the pivot of the control and its two ends),
         // and the amount starts at the pivot; nothing goes to the game while it is chosen.
-        const int ours = selected ? Number(selected->CellText(columns.own)) : 0;
-        const int theirs = selected ? Number(selected->CellText(columns.other)) : 0;
+        const int ours = selected ? Ours(bindings, *selected, columns) : 0;
+        const int theirs = selected ? Theirs(bindings, *selected, columns) : 0;
         if (!deal)
             draft_.Close();
         else
             draft_.Follow(selected->row_id, ours, theirs, bindings);
         const int deal_ours = draft_.Origin(), deal_theirs = draft_.Other();
-        const int buy_price = selected && money ? Number(selected->CellText(columns.buy)) : 0;
-        const int sell_price = selected && money ? Number(selected->CellText(columns.sell)) : 0;
+        const int buy_price = selected && money ? Price(*selected, columns.buy) : 0;
+        const int sell_price = selected && money ? Price(*selected, columns.sell) : 0;
         const bool can_take = !selected || !money || selected->CellText(columns.buy) != "-";
         const bool can_give = !selected || !money || selected->CellText(columns.sell) != "-";
         // The scale's left end: everything we hold given away; what we hold is the pivot.
@@ -394,7 +399,7 @@ class CommerceScreen final : public Screen
         if (selected)
         {
             if (columns.pack >= 0)
-                math.units = std::max(1, Number(selected->CellText(columns.pack)));
+                math.units = Units(bindings, *selected, columns);
             if (columns.weight >= 0)
                 math.weight = std::atof(selected->CellText(columns.weight).c_str());
         }
@@ -408,8 +413,8 @@ class CommerceScreen final : public Screen
             }
         }
         const Widget *balance = admitted.One("OUR_GOLD");
-        if (balance && balance->label.find_first_of("0123456789") != std::string::npos)
-            math.money = Number(balance->label);
+        if (balance)
+            math.money = Amount(bindings, balance->label, "OUR_GOLD", -1);
         const int most = money ? std::min(high, deal_ours + math.BuyLimit(deal_theirs, buy_price)) : high;
         // Why the amount cannot go further up although the other side has more: the purse or the room. A tap or
         // a drag past the end says it; with nothing at all to do the deal shows as disabled.
@@ -479,7 +484,7 @@ class CommerceScreen final : public Screen
             for (const Widget *row : goods)
             {
                 const double pack_weight = std::atof(row->CellText(columns.weight).c_str());
-                if (Number(row->CellText(columns.other)) > 0 && pack_weight > 0.0 && worth.count(row->index))
+                if (Theirs(bindings, *row, columns) > 0 && pack_weight > 0.0 && worth.count(row->index))
                 {
                     worth[row->index] /= pack_weight;
                     ranked.push_back(row);
@@ -490,8 +495,8 @@ class CommerceScreen final : public Screen
             for (const Widget *row : ranked)
             {
                 const double pack_weight = std::atof(row->CellText(columns.weight).c_str());
-                const int units = std::max(1, Number(row->CellText(columns.pack)));
-                const int there = Number(row->CellText(columns.other));
+                const int units = Units(bindings, *row, columns);
+                const int there = Theirs(bindings, *row, columns);
                 const int amount = std::min(there, static_cast<int>(left / pack_weight) * units);
                 if (amount <= 0)
                     continue; // no room for a pack of it: a lighter good further down may still fit
@@ -508,7 +513,7 @@ class CommerceScreen final : public Screen
         if (take_all_revision_ && admitted.model->revision > take_all_revision_ && !(take_all && bindings.Waiting(*take_all, "press")))
         {
             take_all_revision_ = 0;
-            if (std::any_of(goods.begin(), goods.end(), [&columns](const Widget *row) { return Number(row->CellText(columns.other)) > 0; }))
+            if (std::any_of(goods.begin(), goods.end(), [&](const Widget *row) { return Theirs(bindings, *row, columns) > 0; }))
                 bindings.Toast(bindings.Text("trade.too_heavy"));
         }
 
@@ -519,7 +524,12 @@ class CommerceScreen final : public Screen
         const int sort_columns[4] = {columns.own, columns.other, columns.buy, columns.sell};
         if (sort_ >= 0 && sort_ < 4 && sort_columns[sort_] >= 0)
             std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-                const int left = Number(goods[a]->CellText(sort_columns[sort_])), right = Number(goods[b]->CellText(sort_columns[sort_]));
+                const int column = sort_columns[sort_];
+                const bool price = column == columns.buy || column == columns.sell;
+                const auto key = [&](const Widget &row) {
+                    return price ? Price(row, column) : column == columns.own ? Ours(bindings, row, columns) : Theirs(bindings, row, columns);
+                };
+                const int left = key(*goods[a]), right = key(*goods[b]);
                 return sort_descending_ ? left > right : left < right;
             });
 
@@ -528,7 +538,7 @@ class CommerceScreen final : public Screen
         for (const size_t i : order)
         {
             const Widget *row = goods[i];
-            const int own = Number(row->CellText(columns.own));
+            const int own = Ours(bindings, *row, columns);
             if (filter_ == 1 && own == 0)
                 continue;
             const Cell *name = nullptr;
@@ -539,7 +549,7 @@ class CommerceScreen final : public Screen
             const char *tone = type.tone;
             // «Выгодно»: what this place sells cheap (export) and buys dear (import, high demand), the game's own
             // trade types of its goods (refStore.Goods.<good>.TradeType, told by the colour of the name).
-            if (filter_ == 2 && (money ? !Profitable(type) : Number(row->CellText(columns.other)) == 0))
+            if (filter_ == 2 && (money ? !Profitable(type) : Theirs(bindings, *row, columns) == 0))
                 continue;
             // Beside the name: the trade type only (a 44 dp row keeps the name whole); the dock's second line
             // adds the details (cannons: range, damage, reload); prices, weight and the pack are the dock's facts.
@@ -560,7 +570,7 @@ class CommerceScreen final : public Screen
                       {"image", PictureOf(name && !name->images.empty() ? &name->images.front() : row->FirstImage())},
                       {"meta", meta},
                       {"sub", sub},
-                      {"quick", columns.quick && Number(row->CellText(columns.other)) > 0 && row->Offers("activate")},
+                      {"quick", columns.quick && Theirs(bindings, *row, columns) > 0 && row->Offers("activate")},
                       {"metaTone", tone},
                       {"cells", cells},
                       {"selected", row == selected},
@@ -731,8 +741,8 @@ class CommerceScreen final : public Screen
             Json figure = currency != balance->context.end() && currency->second == "doubloons"
                               ? Json{{"label", bindings.Text("trade.doubloons")}, {"value", purse}, {"tone", "gold"}}
                               : Json{{"icon", "money"}, {"value", purse}, {"tone", "gold"}};
-            if (deal && money)
-                figure["preview"] = Spaced(Number(gold) + (amount > 0 ? -total : total));
+            if (deal && money && math.money >= 0)
+                figure["preview"] = Spaced(math.money + (amount > 0 ? -total : total));
             if (stats.size() == 2)
                 stats.erase(1);
             stats.push_back(std::move(figure));
@@ -873,7 +883,7 @@ class CommerceScreen final : public Screen
                 bindings.Forward("primary", *all, "press");
             }
             else if (const Widget *take = take_all;
-                     take && std::any_of(goods.begin(), goods.end(), [&columns](const Widget *row) { return Number(row->CellText(columns.other)) > 0; }))
+                     take && std::any_of(goods.begin(), goods.end(), [&](const Widget *row) { return Theirs(bindings, *row, columns) > 0; }))
             {
                 // A chest or a barrel: the game keeps its take-all hidden there; the engine runs it
                 // for us in one script call (ANDROID_TAKE_ALL), with its weight cap and one refresh.
@@ -911,11 +921,10 @@ class CommerceScreen final : public Screen
         if (columns.buy >= 0)
             for (const auto &[column, icon] : {std::pair{columns.buy, "price-buy"}, std::pair{columns.sell, "price-sell"}})
             {
-                const std::string price = row.CellText(column);
                 // "-": the game does not trade it this way here (contraband is not sold back)
-                facts.push_back(price.find_first_of("0123456789") == std::string::npos
-                                    ? Json{{"icon", icon}, {"iconTone", IconTone(icon)}, {"v", "\xE2\x80\x94"}, {"tone", "dim"}}
-                                    : Json{{"icon", icon}, {"iconTone", IconTone(icon)}, {"v", Spaced(Number(price))}, {"tone", "gold"}});
+                const std::optional<int> price = ParseAmount(row.CellText(column));
+                facts.push_back(!price ? Json{{"icon", icon}, {"iconTone", IconTone(icon)}, {"v", "\xE2\x80\x94"}, {"tone", "dim"}}
+                                       : Json{{"icon", icon}, {"iconTone", IconTone(icon)}, {"v", Spaced(*price)}, {"tone", "gold"}});
             }
         if (columns.weight >= 0)
         {
@@ -924,7 +933,7 @@ class CommerceScreen final : public Screen
         }
         else if (columns.own_total_weight >= 0 && columns.other_total_weight >= 0)
         {
-            const int own = Number(row.CellText(columns.own)), other = Number(row.CellText(columns.other));
+            const int own = Ours(bindings, row, columns), other = Theirs(bindings, row, columns);
             const int count = std::max(own, other);
             const double total = std::atof(row.CellText(own >= other ? columns.own_total_weight : columns.other_total_weight).c_str());
             if (count > 0 && total > 0.0)

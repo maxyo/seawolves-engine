@@ -16,6 +16,7 @@
 // rule lives here; the game decides and answers with the next model. The repair window's
 // sliders are kept within the purse by the game's own prices (the adapter's ANDROID_YARDREPAIR,
 // GetHullRepairCost / GetSailRepairCost of each amount).
+#include "amount.h"
 #include "controls.h"
 #include "hero.h"
 
@@ -157,22 +158,6 @@ std::string KeepTogether(std::string text)
     for (size_t at = text.find(' '); at != std::string::npos; at = text.find(' ', at))
         text.replace(at, 1, "\u00a0");
     return text;
-}
-
-int FirstNumber(const std::string &text)
-{
-    const size_t first = text.find_first_of("0123456789");
-    return first == std::string::npos ? -1 : std::atoi(text.c_str() + first);
-}
-
-// A price as the game writes it ("23 824", "11\u00a0575") → 23824.
-int Number(const std::string &text)
-{
-    long value = 0;
-    for (const char c : text)
-        if (c >= '0' && c <= '9')
-            value = value * 10 + (c - '0');
-    return static_cast<int>(value);
 }
 
 // "Тартана\n\nПальмье" → {type, proper name}.
@@ -447,11 +432,11 @@ class ShipyardScreen final : public Screen
             else if (const Widget *buy = Typed(admitted, "BUTTON_BUY", "button"))
             {
                 // shipyard.c ShowMessageInfo: a ship in the chosen slot is traded in for the difference.
-                const int price = Number(chosen ? chosen->CellText(4) : std::string());
-                const int quote = Number(Context(owned, "saleQuote"));
                 std::string label = buy->label, sub = chosen ? Grouped(chosen->CellText(4)) : std::string();
                 if (has_owned_ship && chosen)
                 {
+                    const int price = Amount(bindings, chosen->CellText(4), "the offer's price (TABLE_SHIPYARD column 4)");
+                    const int quote = Amount(bindings, Context(owned, "saleQuote"), "saleQuote");
                     label = bindings.Text(price >= quote ? StringKey("yard.trade_pay") : StringKey("yard.trade_get"));
                     sub = Grouped(std::to_string(std::abs(price - quote)));
                 }
@@ -533,7 +518,8 @@ class ShipyardScreen final : public Screen
             for (int k = 0; k < 2; ++k)
             {
                 const char kind = k == 0 ? 'H' : 'S';
-                const int value = FirstNumber(admitted.Label(std::string("REPAIR_QTY_") + kind));
+                const std::string caption = std::string("REPAIR_QTY_") + kind;
+                const int value = Amount(bindings, admitted.Label(caption), caption.c_str(), -1); // "55%"; -1: unknown
                 Repair &part = k == 0 ? hull_ : sails_;
                 if (last_mode_ != "repair")
                 {
@@ -612,7 +598,7 @@ class ShipyardScreen final : public Screen
             // The order's price: the adapter's costs of the amounts set (the game's text lags behind the steps).
             std::string price = Trim(admitted.Label("REPAIR_WINDOW_TEXT"));
             if (facts)
-                price = hero::Thousands(std::to_string(plan.Cost(shown[0], shown[1])));
+                price = hero::Thousands(plan.Cost(shown[0], shown[1]));
             Json actions = Json::array();
             if (all)
             {

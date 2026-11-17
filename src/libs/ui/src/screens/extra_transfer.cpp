@@ -10,6 +10,7 @@
 //
 // Which window is open shows by its nodes (a hidden window exports none); the question
 // window's meaning comes from the script mode the engine exports (ANDROID_TRANSFER).
+#include "amount.h"
 #include "controls.h"
 
 #include <algorithm>
@@ -132,19 +133,8 @@ std::string Trim(const std::string &text)
     return out;
 }
 
-int Number(const std::string &text)
-{
-    std::string digits;
-    for (const char c : text)
-        if (c >= '0' && c <= '9')
-            digits += c;
-        else if (!digits.empty() && c != ' ')
-            break;
-    return digits.empty() ? 0 : std::atoi(digits.c_str());
-}
-
-// "317 / 700" in the ship table row `stat` → 700 − 317; -1 when the row is missing.
-int FreeSpace(const Admission &admitted, const char *table)
+// "317 / 700" in the Capacity row of the ship table `table` → 700 − 317; -1 when the row is missing or unreadable.
+int FreeSpace(const Admission &admitted, Bindings &bindings, const char *table)
 {
     for (const Widget *row : admitted.All(table))
         if (row->row_id == "Capacity")
@@ -152,7 +142,12 @@ int FreeSpace(const Admission &admitted, const char *table)
             const std::string text = row->CellText(2);
             const size_t slash = text.find('/');
             if (slash != std::string::npos)
-                return Number(text.substr(slash + 1)) - Number(text.substr(0, slash));
+            {
+                const std::string what = std::string(table) + " Capacity";
+                const int load = Amount(bindings, text.substr(0, slash), what.c_str(), -1);
+                const int most = Amount(bindings, text.substr(slash + 1), what.c_str(), -1);
+                return load < 0 || most < 0 ? -1 : most - load;
+            }
         }
     return -1;
 }
@@ -205,7 +200,7 @@ class TransferScreen final : public Screen
 
         // Header: the two ships, their free space (or the vacant captain), the next ship.
         Json stats = Json::array();
-        const int free_ours = FreeSpace(admitted, "TABLE_OTHER"), free_theirs = FreeSpace(admitted, "TABLE_OTHER2");
+        const int free_ours = FreeSpace(admitted, bindings, "TABLE_OTHER"), free_theirs = FreeSpace(admitted, bindings, "TABLE_OTHER2");
         if (free_ours >= 0)
             stats.push_back(Json{{"label", ours}, {"value", std::to_string(free_ours) + " " + bindings.Text("transfer.free")}});
         if (!captain_alive && marker && Context(marker, "exchange") == "0")
@@ -263,7 +258,7 @@ class TransferScreen final : public Screen
         {
             int weight = 0;
             for (const Widget *row : admitted.Rows("TABLE_LIST"))
-                weight += Number(row->CellText(4));
+                weight += Amount(bindings, row->CellText(4), "TABLE_LIST weight (column 4)");
             view["primary"] = Json{{"label", bindings.Text("transfer.take_all")},
                                    {"sub", weight > 0 ? std::to_string(weight) + " " + bindings.Text("transfer.cwt") : std::string()},
                                    {"disabled", !take->Offers("press") || weight == 0},
@@ -517,10 +512,11 @@ class TransferScreen final : public Screen
         if (!view["list"].contains("rows"))
             return;
         Json &rows = view["list"]["rows"];
-        const int own = selected ? Number(selected->CellText(0)) : 0, other = selected ? Number(selected->CellText(3)) : 0;
+        const int own = selected ? Amount(bindings, selected->CellText(0), "TABLE_LIST ours (column 0)") : 0;
+        const int other = selected ? Amount(bindings, selected->CellText(3), "TABLE_LIST theirs (column 3)") : 0;
         // "20 / 2": the pack and what it weighs
         const std::string pack_cell = selected ? selected->CellText(5) : std::string();
-        const int pack = std::max(1, Number(pack_cell));
+        const int pack = selected ? std::max(1, Amount(bindings, pack_cell, "TABLE_LIST pack (column 5)", 1)) : 1;
         const size_t slash = pack_cell.find('/');
         const double pack_weight = slash == std::string::npos ? 0.0 : std::atof(pack_cell.c_str() + slash + 1);
         if (selected)
@@ -528,8 +524,8 @@ class TransferScreen final : public Screen
         else
             cargo_.Close();
         const bool can_take = take && take->Offers("press"), can_give = give && give->Offers("press");
-        const int low = own - (can_give ? Reach(other, own, FreeSpace(admitted, "TABLE_OTHER2"), pack, pack_weight) : 0);
-        const int high = own + (can_take ? Reach(own, other, FreeSpace(admitted, "TABLE_OTHER"), pack, pack_weight) : 0);
+        const int low = own - (can_give ? Reach(other, own, FreeSpace(admitted, bindings, "TABLE_OTHER2"), pack, pack_weight) : 0);
+        const int high = own + (can_take ? Reach(own, other, FreeSpace(admitted, bindings, "TABLE_OTHER"), pack, pack_weight) : 0);
         // The game moves whole packs: |delta| rounded up to packs, by its arrows.
         const auto move = [&bindings, take, give, pack](int delta) {
             const Widget *arrow = delta > 0 ? take : give;
@@ -557,7 +553,7 @@ class TransferScreen final : public Screen
             const size_t index = static_cast<size_t>(std::atoi(row["id"].get<std::string>().c_str()));
             const bool open = index < goods.size() && goods[index] == selected;
             row["selected"] = open;
-            row["quick"] = index < goods.size() && Number(goods[index]->CellText(3)) > 0 && (open ? can_take : goods[index]->Offers("select"));
+            row["quick"] = index < goods.size() && Amount(bindings, goods[index]->CellText(3), "TABLE_LIST theirs (column 3)") > 0 && (open ? can_take : goods[index]->Offers("select"));
             row.erase("q");
             if (!open)
                 continue;
@@ -636,7 +632,8 @@ class TransferScreen final : public Screen
     Json CrewView(const Admission &admitted, Bindings &bindings, const std::string &ours, const std::string &theirs)
     {
         const Widget *take = admitted.One("CREW_LEFT"), *give = admitted.One("CREW_RIGHT");
-        const int our = Number(admitted.Label("CREW_QTY")), their = Number(admitted.Label("CREW_QTY2"));
+        const int our = Amount(bindings, admitted.Label("CREW_QTY"), "CREW_QTY");
+        const int their = Amount(bindings, admitted.Label("CREW_QTY2"), "CREW_QTY2");
         crew_limits_ = CrewLimits(admitted, bindings, our, their);
         const Limits &limits = crew_limits_;
         crew_.Follow("crew", our, their, bindings);
@@ -705,9 +702,9 @@ class TransferScreen final : public Screen
             give = std::min(give, std::max(0, std::atoi(max_theirs.c_str()) - their));
         }
         // TakeCrew / GiveCrew also stop at the receiving hold's free space (GetCargoFreeSpace)
-        if (const int free = FreeSpace(admitted, "TABLE_OTHER"); free >= 0)
+        if (const int free = FreeSpace(admitted, bindings, "TABLE_OTHER"); free >= 0)
             take = std::min(take, free);
-        if (const int free = FreeSpace(admitted, "TABLE_OTHER2"); free >= 0)
+        if (const int free = FreeSpace(admitted, bindings, "TABLE_OTHER2"); free >= 0)
             give = std::min(give, free);
         limits.low = our - give;
         limits.high = our + take;
@@ -758,7 +755,7 @@ class TransferScreen final : public Screen
     {
         hire_seen_ = true;
         const Widget *more = admitted.One("HIRE_QTY_ADD_BUTTON"), *less = admitted.One("HIRE_QTY_REMOVE_BUTTON");
-        const int hired = Number(admitted.Label("HIRED_CREW"));
+        const int hired = Amount(bindings, admitted.Label("HIRED_CREW"), "HIRED_CREW");
         hire_max_ = std::max(hire_max_, hired);
         const bool recent = hire_.target >= 0 && (hire_.send >= 0 || bindings.Now() - hire_.send_at < 1.0);
         if (recent && hire_.send < 0)
@@ -781,7 +778,7 @@ class TransferScreen final : public Screen
         bindings.On("hire", "change", set);
         bindings.On("hire", "commit", set);
         const int value = recent ? hire_.target : hired;
-        const int crew = Number(admitted.Label("HIRE_CREW_QTY"));
+        const int crew = Amount(bindings, admitted.Label("HIRE_CREW_QTY"), "HIRE_CREW_QTY");
         Json acts = Json::array();
         const Widget *refuse = admitted.One("HIRE_QTY_CANCEL_BUTTON");
         if (refuse)
@@ -837,7 +834,7 @@ class TransferScreen final : public Screen
         return close;
     }
 
-    struct Amount
+    struct HireCount
     {
         int target = -1;  // shown for a second after sending, until the game's number catches up
         int send = -1;    // waiting to be sent when the drag or the steps settle
@@ -861,7 +858,7 @@ class TransferScreen final : public Screen
     AmountDraft crew_, cargo_; // the numbers the player sets for the crew and the cargo row, until confirmed
     Limits crew_limits_;       // the crew slider's ends and marks, of the last build
     uint64_t limits_reported_ = 0; // the opening whose missing crew limits were reported
-    Amount hire_;              // the defectors' number: the game's own window holds it until its OK
+    HireCount hire_;           // the defectors' number: the game's own window holds it until its OK
     bool ships_open_ = false; // the «Корабли» tab of ours
     int reselected_ = -1;   // the cargo row selected again to bring the game's arrows back (once while they are hidden)
     int quick_row_ = -1;    // the cargo row (the game's index: its rows carry no identity) whose whole stock is taken once the game selects it

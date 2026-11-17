@@ -18,6 +18,7 @@
 // Facts the stock interface does not draw come from the interface adapter android_hero.c
 // (ANDROID_SUBJECT, ANDROID_POSTS, ANDROID_PASSENGERS, ANDROID_CANDIDATES, ANDROID_PERKS);
 // the hidden PIRATES table is exported read-only by the engine (xinterface mobile_facts.inc).
+#include "amount.h"
 #include "hero.h"
 #include "perk_tree.hpp"
 
@@ -160,11 +161,11 @@ std::string Lowercase(const std::string &text)
 }
 
 // "45 / 140" → {value: percent, text: "45"}.
-Json BarOf(const std::string &text)
+Json BarOf(Bindings &bindings, const std::string &text, const char *what)
 {
     const size_t slash = text.find('/');
-    const int current = Number(text);
-    const int maximum = slash == std::string::npos ? 0 : Number(text.substr(slash + 1));
+    const int current = Amount(bindings, text, what);
+    const int maximum = slash == std::string::npos ? 0 : Amount(bindings, text.substr(slash + 1), what);
     return Json{{"value", maximum > 0 ? std::clamp(current * 100 / maximum, 0, 100) : 100}, {"text", std::to_string(current)}};
 }
 
@@ -223,9 +224,9 @@ class HeroScreen final : public Screen
             OpenOnSubject(bindings);
 
         // Header: tabs, the officer switch, the sections.
-        const int free_self = Number(Field(subject, "freeself"));
-        const int free_ship = Number(Field(subject, "freeship"));
-        const int free_skill = Number(admitted.Label("FREE_SKILL"));
+        const int free_self = FieldAmount(bindings, subject, "freeself");
+        const int free_ship = FieldAmount(bindings, subject, "freeship");
+        const int free_skill = Amount(bindings, admitted.Label("FREE_SKILL"), "FREE_SKILL");
         Json tabs = Json::array();
         tabs.push_back(Json{{"id", "skills"}, {"label", bindings.Text("hero.tab_skills")}, {"selected", tab_ == Tab::Skills},
                             {"badge", free_skill > 0 ? Json(free_skill) : Json("")}});
@@ -613,8 +614,8 @@ class HeroScreen final : public Screen
             face = picture->FirstImage();
         const Json portrait = PictureOf(face);
         card["portrait"] = portrait.is_object() ? portrait.value("texture", "") : std::string();
-        card["health"] = BarOf(value("Life"));
-        card["energy"] = BarOf(value("Energy"));
+        card["health"] = BarOf(bindings, value("Life"), "Life");
+        card["energy"] = BarOf(bindings, value("Energy"), "Energy");
         card["free"] = tab_ == Tab::Skills && free_skill > 0 ? std::to_string(free_skill) : "";
         Json lines = Json::array();
         if (!value("Health").empty())
@@ -629,8 +630,8 @@ class HeroScreen final : public Screen
             lines.push_back(Json{{"k", Trim(a_->Label("LOYALITY_STR"))}, {"v", Field(subject, "authority") + " / 100"}});
         else if (!Field(subject, "loyalty").empty())
             lines.push_back(Json{{"k", Trim(a_->Label("LOYALITY_STR"))}, {"v", LowerText(Field(subject, "loyalty"))}});
-        if (Field(subject, "hero") != "1" && Number(Field(subject, "salary")) > 0)
-            lines.push_back(Json{{"k", bindings.Text("hero.salary")}, {"v", Thousands(Field(subject, "salary"))}, {"tone", "gold"},
+        if (const int salary = FieldAmount(bindings, subject, "salary"); Field(subject, "hero") != "1" && salary > 0)
+            lines.push_back(Json{{"k", bindings.Text("hero.salary")}, {"v", Thousands(salary)}, {"tone", "gold"},
                                  {"after", " " + bindings.Text("hero.per_month")}});
         card["lines"] = lines;
         // The portrait opens the rest of the game's facts (TABLE_OTHER: rank, title, money,
@@ -697,7 +698,7 @@ class HeroScreen final : public Screen
             else
             {
                 if (!special)
-                    cells.push_back(Json{{"bar", std::clamp(Number(row->CellText(2)), 0, 100)}, {"barKind", "xp"}, {"text", ""}});
+                    cells.push_back(Json{{"bar", std::clamp(Amount(bindings, row->CellText(2), "the skill table's experience (column 2)"), 0, 100)}, {"barKind", "xp"}, {"text", ""}});
                 Json last{{"text", value}, {"bold", true}};
                 if (!tone.empty())
                     last["tone"] = tone;
@@ -739,7 +740,9 @@ class HeroScreen final : public Screen
     void SkillsView(Json &view, Bindings &bindings, int free_skill)
     {
         const bool points = free_skill > 0 || !added_.empty();
-        const int free_special = Number(a_->Label("FREE_SPECIAL"));
+        // Without FREE_SPECIAL (an officer's sheet) there are no points to spend.
+        const Widget *special_caption = a_->One("FREE_SPECIAL");
+        const int free_special = special_caption ? Amount(bindings, special_caption->label, "FREE_SPECIAL") : 0;
         const bool special_points = (free_special > 0 || a_->One("GAME_ACCEPT")) && !a_->All("TABLE_SPECIAL").empty() &&
                                     a_->All("TABLE_SPECIAL").front()->Offers("select");
         view["special"] = SkillTable(bindings, "TABLE_SPECIAL", "special", bindings.Text("hero.special"), special_points, true);
@@ -795,7 +798,7 @@ class HeroScreen final : public Screen
         {
             const Widget *fact = graph.facts.count(id) ? graph.facts.at(id) : nullptr;
             graph.complete &= fact && Field(fact, "rule") == "stock-all-v1" && !Field(fact, "requirements").empty() &&
-                              Number(Field(fact, "requirements")) == static_cast<int>(graph.incoming[id].size());
+                              ParseAmount(Field(fact, "requirements")) == static_cast<int>(graph.incoming[id].size());
             for (const Widget *edge : graph.incoming[id])
                 graph.complete &= Field(edge, "rule") == "stock-all-v1";
         }
@@ -877,10 +880,9 @@ class HeroScreen final : public Screen
 
     void PerksView(Json &view, Bindings &bindings, const Widget *subject, bool full, bool ship, int free)
     {
-        const std::string exp = Field(subject, ship ? "expship" : "expself");
-        const std::string rate = Field(subject, ship ? "rateship" : "rateself");
-        const std::string progress =
-            full && Number(rate) > 0 ? bindings.Text("hero.next_point") + " " + Thousands(exp.empty() ? "0" : exp) + " / " + Thousands(rate) : "";
+        const int exp = FieldAmount(bindings, subject, ship ? "expship" : "expself");
+        const int rate = FieldAmount(bindings, subject, ship ? "rateship" : "rateself");
+        const std::string progress = full && rate > 0 ? bindings.Text("hero.next_point") + " " + Thousands(exp) + " / " + Thousands(rate) : "";
         view["perksEmpty"] = bindings.Text("hero.no_perks");
         view["perkInfoNudge"] = false;
         view["perkInfo"] = full ? bindings.Text("hero.free_points") + " " + std::to_string(std::max(free, 0)) + (progress.empty() ? "" : " · " + progress) : "";
@@ -1131,8 +1133,8 @@ class HeroScreen final : public Screen
                 facts.push_back(Json{{"k", Field(post, "skill")}, {"v", Field(post, "skillvalue")}});
             if (!Field(post, "loyalty").empty())
                 facts.push_back(Json{{"k", bindings.Text("hero.loyalty")}, {"v", LowerText(Field(post, "loyalty"))}});
-            if (Number(Field(post, "salary")) > 0)
-                facts.push_back(Json{{"k", bindings.Text("hero.salary")}, {"v", Thousands(Field(post, "salary")) + " " + bindings.Text("hero.per_month")}});
+            if (const int salary = FieldAmount(bindings, post, "salary"); salary > 0)
+                facts.push_back(Json{{"k", bindings.Text("hero.salary")}, {"v", Thousands(salary) + " " + bindings.Text("hero.per_month")}});
             const Widget *remove = a_->One("REMOVE_ACCEPT_OFFICER");
             Json actions = Json::array();
             if (remove)
@@ -1158,8 +1160,8 @@ class HeroScreen final : public Screen
             for (const Widget *candidate : a_->All("ANDROID_CANDIDATES"))
             {
                 std::string meta = bindings.Text("hero.rank_short") + " " + Field(candidate, "rank");
-                if (Number(Field(candidate, "salary")) > 0)
-                    meta += " · " + Thousands(Field(candidate, "salary")) + " " + bindings.Text("hero.per_month");
+                if (const int salary = FieldAmount(bindings, candidate, "salary"); salary > 0)
+                    meta += " · " + Thousands(salary) + " " + bindings.Text("hero.per_month");
                 rows.push_back(Json{{"id", Field(candidate, "index")},
                                     {"name", candidate->label},
                                     {"meta", meta},

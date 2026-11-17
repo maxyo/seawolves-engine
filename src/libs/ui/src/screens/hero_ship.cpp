@@ -13,6 +13,7 @@
 // come from the interface adapter android_hero.c (ANDROID_SHIP, ANDROID_SHARES). Actions that
 // take several engine steps (the exchange question, guns moved one arrow press at a time) are
 // intents walked one step per model revision, as in hero_character.cpp.
+#include "amount.h"
 #include "hero.h"
 
 #include <algorithm>
@@ -84,11 +85,14 @@ constexpr Side kSides[] = {
     {"stern", 'B', StringKey("yard.stern")},
 };
 
-// "13.07 / 15.20" → {13, 15}; the second is -1 without a slash.
-std::pair<int, int> Pair(const std::string &text)
+// A TABLE_OTHER figure "13.07 / 15.20" → {13, 15}; the second is -1 without a slash. An empty text (the row is
+// missing: no ship) is {0, -1}.
+std::pair<int, int> Pair(Bindings &bindings, const std::string &text, const char *what)
 {
+    if (text.empty())
+        return {0, -1};
     const size_t slash = text.find('/');
-    return {Number(text), slash == std::string::npos ? -1 : Number(text.substr(slash + 1))};
+    return {Amount(bindings, text, what), slash == std::string::npos ? -1 : Amount(bindings, text.substr(slash + 1), what, -1)};
 }
 
 int Percent(int value, int maximum)
@@ -381,7 +385,8 @@ class ShipScreen final : public Screen
                     side = &s;
             if (!side)
                 return Drop(bindings, "no cannon side " + intent_.row);
-            const int now = Number(a_->Label(std::string("CANNONS_QTY_") + side->letter));
+            const std::string caption = std::string("CANNONS_QTY_") + side->letter;
+            const int now = Amount(bindings, a_->Label(caption), caption.c_str());
             if (now == intent_.target || now == intent_.last)
                 return Drop(bindings, {}); // there, or the game took no more (limit, no guns in the hold)
             const std::string arrow = std::string(now < intent_.target ? "CANNONS_RIGHT_" : "CANNONS_LEFT_") + side->letter;
@@ -482,11 +487,11 @@ class ShipScreen final : public Screen
         card["image"] = has_ship ? PictureOf(picture ? picture->FirstImage() : nullptr) : Json(nullptr);
         if (has_ship)
         {
-            const auto [hull, hull_max] = Pair(OtherValue("Hull"));
-            const auto [sails, sails_max] = Pair(OtherValue("Sails"));
+            const auto [hull, hull_max] = Pair(bindings, OtherValue("Hull"), "Hull");
+            const auto [sails, sails_max] = Pair(bindings, OtherValue("Sails"), "Sails");
             card["hull"] = Json{{"value", Percent(hull, hull_max)}, {"text", std::to_string(Percent(hull, hull_max)) + "%"}};
             card["sails"] = Json{{"value", Percent(sails, sails_max)}, {"text", std::to_string(Percent(sails, sails_max)) + "%"}};
-            const Crew crew = CrewOf();
+            const Crew crew = CrewOf(bindings);
             card["crew"] = Json{{"value", Percent(crew.count, crew.full)}, {"text", std::to_string(crew.count)}, {"mark", Percent(crew.least, crew.full)}};
         }
         // The quill takes the new name where the game lets the field take focus (CheckForRename).
@@ -531,15 +536,15 @@ class ShipScreen final : public Screen
         };
         if (has_ship)
         {
-            const auto speed = Pair(OtherValue("Speed"));
+            const auto speed = Pair(bindings, OtherValue("Speed"), "Speed");
             const std::string knots = " " + bindings.Text("common.knots_short");
             left.push_back(row("speed", OtherLabel("Speed"), std::to_string(speed.first) + knots + (speed.second < 0 ? "" : of + std::to_string(speed.second))));
-            const auto turn = Pair(OtherValue("Maneuver"));
+            const auto turn = Pair(bindings, OtherValue("Maneuver"), "Maneuver");
             left.push_back(row("maneuver", OtherLabel("Maneuver"), std::to_string(turn.first) + (turn.second < 0 ? "" : of + std::to_string(turn.second))));
-            left.push_back(row("upwind", OtherLabel("AgainstWind"), std::to_string(Number(OtherValue("AgainstWind"))) + "\xC2\xB0"));
-            const auto load = Pair(OtherValue("Capacity"));
+            left.push_back(row("upwind", OtherLabel("AgainstWind"), std::to_string(Amount(bindings, OtherValue("AgainstWind"), "AgainstWind")) + "\xC2\xB0"));
+            const auto load = Pair(bindings, OtherValue("Capacity"), "Capacity");
             left.push_back(row("capacity", OtherLabel("Capacity"), std::to_string(load.first) + of + std::to_string(load.second) + " " + bindings.Text("transfer.cwt")));
-            const Crew crew = CrewOf();
+            const Crew crew = CrewOf(bindings);
             left.push_back(row("crew", bindings.Text("ship.min_crew"), std::to_string(crew.least) + " \xC2\xB7 " + bindings.Text("ship.full_crew") + " " + std::to_string(crew.full)));
             // Guns: "6 фунт / 12" (calibre / count) of the fitted type; the row opens the window.
             const std::string guns = OtherValue("CannonType");
@@ -552,7 +557,7 @@ class ShipScreen final : public Screen
             right.push_back(row("caliber", bindings.Text("ship.caliber"), bindings.Text("ship.up_to") + " " + Trim(calibre.substr(0, calibre.find('/')))));
             const std::string upkeep = AfterColon(OneLine(a_->Label("MONEY_SHIP")));
             if (!upkeep.empty())
-                right.push_back(row("money", bindings.Text("ship.upkeep"), Thousands(upkeep), bindings.Text("hero.per_month")));
+                right.push_back(row("money", bindings.Text("ship.upkeep"), Thousands(Amount(bindings, upkeep, "MONEY_SHIP")), bindings.Text("hero.per_month")));
         }
         view["left"] = left;
         view["right"] = right;
@@ -575,16 +580,18 @@ class ShipScreen final : public Screen
     {
         int count = 0, least = 0, full = 0;
     };
-    // TABLE_OTHER's crew row: "40 : 9 / 40" (crew : least / full).
-    Crew CrewOf() const
+    // TABLE_OTHER's crew row: "40 : 9 / 40" (crew : least / full); zeros without the row (no ship).
+    Crew CrewOf(Bindings &bindings) const
     {
         const std::string text = OtherValue("Crew");
         Crew crew;
-        crew.count = Number(text);
+        if (text.empty())
+            return crew;
+        crew.count = Amount(bindings, text, "Crew");
         const size_t colon = text.find(':');
         if (colon != std::string::npos)
         {
-            const auto [least, full] = Pair(text.substr(colon + 1));
+            const auto [least, full] = Pair(bindings, text.substr(colon + 1), "Crew");
             crew.least = least;
             crew.full = std::max(full, 0);
         }
@@ -596,7 +603,7 @@ class ShipScreen final : public Screen
     void CrewView(Json &view, Bindings &bindings)
     {
         const bool has_ship = !Field(ship_, "type").empty();
-        const Crew crew = CrewOf();
+        const Crew crew = CrewOf(bindings);
         Json c = Json::object();
         c["count"] = has_ship ? std::to_string(crew.count) : "";
         c["limits"] = bindings.Text("common.of") + " " + std::to_string(crew.full) + " \xC2\xB7 " + bindings.Text("ship.min_short") + " " + std::to_string(crew.least);
@@ -631,11 +638,11 @@ class ShipScreen final : public Screen
         if (const Widget *morale = a_->One("CREW_MORALE_BUTTON"); morale && has_ship)
         {
             const bool ready = morale->Offers("press");
-            const std::string reason = ready                                    ? std::string()
-                                       : Number(Field(ship_, "morale")) >= 100 ? bindings.Text("ship.morale_full")
-                                                                               : bindings.Text("ship.no_crew");
+            const std::string reason = ready                                           ? std::string()
+                                       : FieldAmount(bindings, ship_, "morale") >= 100 ? bindings.Text("ship.morale_full")
+                                                                                       : bindings.Text("ship.no_crew");
             actions.push_back(Json{{"id", "crew-morale"}, {"label", bindings.Text("ship.raise_morale")}, {"variant", "primary"},
-                                   {"sub", ready ? Thousands(Field(ship_, "moraleprice")) + " " + bindings.Text("ship.money") : std::string()},
+                                   {"sub", ready ? Thousands(FieldAmount(bindings, ship_, "moraleprice")) + " " + bindings.Text("ship.money") : std::string()},
                                    {"disabled", !ready}, {"reason", reason}, {"busy", bindings.Pending("crew-morale")}});
             const Widget *button = morale;
             bindings.On("crew-morale", "", [this, &bindings, button](const Event &) {
@@ -660,8 +667,9 @@ class ShipScreen final : public Screen
         const bool quantity = window_ == Window::Quantity;
         const std::string caption = quantity ? OneLine(a_->Label("QTY_CAPTION")) : std::string();
         const Widget *edit = a_->One("QTY_EDIT");
-        const int dropping = quantity ? std::max(Number(edit ? edit->value : std::string()), 0) : 0;
-        const int left = quantity ? Number(a_->Label("QTY_INFO_SHIP_QTY")) : 0;
+        // An empty field (the player cleared it) drops nothing.
+        const int dropping = quantity ? std::max(ParseAmount(edit ? edit->value : std::string()).value_or(0), 0) : 0;
+        const int left = quantity ? Amount(bindings, a_->Label("QTY_INFO_SHIP_QTY"), "QTY_INFO_SHIP_QTY") : 0;
         const int total = left + dropping;
 
         // Rows; TABLE_LIST: name, quantity, weight, pack, pack weight.
@@ -755,12 +763,12 @@ class ShipScreen final : public Screen
 
         // The deadweight with what the drop takes off, and «За борт N».
         const std::string now = OtherValue("Capacity");
-        const auto load = Pair(now);
+        const auto load = Pair(bindings, now, "Capacity");
         Json footer{{"value", Percent(load.first, load.second)}};
         std::string text = std::to_string(load.first) + " " + bindings.Text("common.of") + " " + std::to_string(load.second) + " " + bindings.Text("transfer.cwt");
         if (quantity && dropping > 0 && !open_.capacity.empty())
         {
-            const auto before = Pair(open_.capacity);
+            const auto before = Pair(bindings, open_.capacity, "Capacity");
             footer["value"] = Percent(before.first, before.second);
             footer["after"] = Percent(load.first, load.second);
             text = std::to_string(before.first) + " \xE2\x80\xBA " + text;
@@ -841,7 +849,7 @@ class ShipScreen final : public Screen
         }
         // The morale question in the mockup's words: «Поднять мораль за 340 песо?».
         const std::string title = question_ == Question::Morale
-                                      ? bindings.Text("ship.raise_morale_for") + " " + Thousands(Field(ship_, "moraleprice")) + " " + bindings.Text("ship.money") + "?"
+                                      ? bindings.Text("ship.raise_morale_for") + " " + Thousands(FieldAmount(bindings, ship_, "moraleprice")) + " " + bindings.Text("ship.money") + "?"
                                       : OneLine(a_->Label("REMOVE_WINDOW_CAPTION"));
         return Json{{"kind", "question"},
                     {"title", title},
@@ -853,25 +861,25 @@ class ShipScreen final : public Screen
     {
         const Widget *shares = a_->One("ANDROID_SHARES");
         const auto amount = [&](const char *field) {
-            const int value = Number(Field(shares, field));
-            return value > 0 ? Thousands(std::to_string(value)) : std::string("\xE2\x80\x94");
+            const int value = FieldAmount(bindings, shares, field);
+            return value > 0 ? Thousands(value) : std::string("\xE2\x80\x94");
         };
         Json part = Json::array({Json{{"k", bindings.Text("ship.share_captain")}, {"v", amount("captain")}},
                                  Json{{"k", bindings.Text("ship.share_officers")}, {"v", amount("officers")}},
                                  Json{{"k", bindings.Text("ship.share_crew")}, {"v", amount("crew")}}});
         Json debts = Json::array({Json{{"k", bindings.Text("ship.debt_crew")}, {"v", amount("month")}},
                                   Json{{"k", bindings.Text("ship.debt_state")}, {"v", amount("state")}}});
-        if (Number(Field(shares, "last")) > 0)
+        if (FieldAmount(bindings, shares, "last") > 0)
             debts.push_back(Json{{"k", bindings.Text("ship.debt_last")}, {"v", amount("last")}});
         const Widget *pay = a_->One("PARTITION_OK");
         Json actions = Json::array();
         if (pay)
         {
-            const int sum = Number(Field(shares, "pay"));
-            const bool owed = Number(Field(shares, "month")) > 0 || Number(Field(shares, "last")) > 0;
+            const int sum = FieldAmount(bindings, shares, "pay");
+            const bool owed = FieldAmount(bindings, shares, "month") > 0 || FieldAmount(bindings, shares, "last") > 0;
             const std::string reason = pay->Offers("press") ? std::string() : owed ? bindings.Text("ship.no_money") : bindings.Text("ship.nothing_owed");
             actions.push_back(Json{{"id", "shares-pay"},
-                                   {"label", bindings.Text("ship.pay") + (sum > 0 ? " " + Thousands(std::to_string(sum)) : std::string())},
+                                   {"label", bindings.Text("ship.pay") + (sum > 0 ? " " + Thousands(sum) : std::string())},
                                    {"variant", "primary"},
                                    {"disabled", !pay->Offers("press")},
                                    {"reason", reason},
@@ -906,7 +914,7 @@ class ShipScreen final : public Screen
         {
             const std::string name = Trim(row->CellText(0));
             if (name == fitted)
-                spare = Number(row->CellText(1));
+                spare = Amount(bindings, row->CellText(1), "CANNONS_TABLE count (column 1)");
             stock.push_back(Json{{"cells", Json::array({Json{{"text", name}, {"image", PictureOf(row->cells.empty() || row->cells[0].images.empty() ? row->FirstImage() : &row->cells[0].images[0])}},
                                                         Trim(row->CellText(1))})},
                                  {"selected", row->value == "1"}});
@@ -922,8 +930,9 @@ class ShipScreen final : public Screen
         Json sides = Json::array();
         for (const Side &side : kSides)
         {
-            const int now = Number(a_->Label(std::string("CANNONS_QTY_") + side.letter));
-            const int most = Number(Field(ship_, side.id));
+            const std::string caption = std::string("CANNONS_QTY_") + side.letter;
+            const int now = Amount(bindings, a_->Label(caption), caption.c_str());
+            const int most = FieldAmount(bindings, ship_, side.id);
             const bool walking = intent_.kind == Intent::Guns && intent_.row == side.id;
             const bool arrows = Pressable((std::string("CANNONS_LEFT_") + side.letter).c_str()) || Pressable((std::string("CANNONS_RIGHT_") + side.letter).c_str());
             sides.push_back(Json{{"id", std::string("guns-") + side.id},
