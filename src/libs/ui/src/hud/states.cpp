@@ -357,6 +357,19 @@ class VitalsConsumer final : public HudConsumer
             next.opponent = (*opponent)["name"].get<std::string>();
             next.opponent_health = Ratio(*opponent, "health");
         }
+        if (const auto boarding = state.find("boarding"); boarding != state.end())
+        {
+            const auto count = [&](const char *key) {
+                const auto found = boarding->find(key);
+                return found != boarding->end() && found->is_number_integer() && found->get<int64_t>() >= 0 ? found->get<int>() : -1;
+            };
+            if (!boarding->is_object())
+                return "boarding: expected {ours, theirs, oursStart, theirsStart}";
+            Vitals::Boarding read{count("ours"), count("theirs"), count("oursStart"), count("theirsStart")};
+            if (read.ours < 0 || read.theirs < 0 || read.ours_start <= 0 || read.theirs_start <= 0)
+                return "boarding: expected {ours, theirs, oursStart, theirsStart} as counts of men, the starts above 0";
+            next.boarding = read;
+        }
         return {};
     }
 };

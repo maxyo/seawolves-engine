@@ -4,6 +4,8 @@
 // only when that state changed.
 #pragma once
 #include "android_gameplay.hpp"
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string>
 #include <vector>
@@ -30,6 +32,29 @@ struct LandOpponent
     float health = 0.f;
     bool operator==(const LandOpponent &) const = default;
 };
+// The boarding deck fight (not the cabin, where the captain is the opponent): our men and theirs,
+// now and at the fight's start (real men, as the game counts them after the fight).
+struct LandBoarding
+{
+    int ours = 0, theirs = 0, oursStart = 0, theirsStart = 0;
+    bool operator==(const LandBoarding &) const = default;
+};
+// The boarding script's counters (TEHO Loc_ai/LAi_boarding.c) as men: a fighter on the deck is a body
+// standing for crew_per_chr real men, and each side counts its reserve (boarding_*_crew, not yet on
+// the deck) and its living fighters on the deck; the start is boarding_*_crew_start bodies. A reserve
+// below 0 is an empty one (the script takes its musketeers from the enemy reserve without a check, so
+// it runs to -2 and less). Nothing when there is no start or a body stands for no men (the script
+// divides the crew by the bodies).
+inline std::optional<LandBoarding> landBoardingMen(int oursReserve, int oursAlive, float oursPerBody, int oursStart,
+                                                   int theirsReserve, int theirsAlive, float theirsPerBody, int theirsStart)
+{
+    if (std::min(oursAlive, theirsAlive) < 0 || oursStart <= 0 || theirsStart <= 0 ||
+        !std::isfinite(oursPerBody) || !std::isfinite(theirsPerBody) || oursPerBody <= 0.f || theirsPerBody <= 0.f)
+        return std::nullopt;
+    const auto men = [](int bodies, float perBody) { return static_cast<int>(std::lround(bodies * perBody)); };
+    return LandBoarding{men(std::max(0, oursReserve) + oursAlive, oursPerBody), men(std::max(0, theirsReserve) + theirsAlive, theirsPerBody),
+                        men(oursStart, oursPerBody), men(theirsStart, theirsPerBody)};
+}
 struct LandVitals
 {
     float health = 0.f, energy = 0.f, reload = 0.f;
@@ -39,6 +64,7 @@ struct LandVitals
     int potions = 0;
     std::vector<LandOfficer> officers;
     std::optional<LandOpponent> opponent;
+    std::optional<LandBoarding> boarding;
     std::optional<float> dash;
     bool operator==(const LandVitals &) const = default;
 };
@@ -66,6 +92,10 @@ template <class Picture> std::string landVitalsJson(const LandVitals &v, Picture
     if (v.opponent)
         json += ",\"opponent\":{\"name\":" + gameplayJsonString(v.opponent->name) +
                 ",\"health\":" + std::to_string(v.opponent->health) + "}";
+    if (v.boarding)
+        json += ",\"boarding\":{\"ours\":" + std::to_string(v.boarding->ours) + ",\"theirs\":" + std::to_string(v.boarding->theirs) +
+                ",\"oursStart\":" + std::to_string(v.boarding->oursStart) +
+                ",\"theirsStart\":" + std::to_string(v.boarding->theirsStart) + "}";
     if (v.dash) json += ",\"dash\":" + std::to_string(*v.dash);
     return json + "}";
 }

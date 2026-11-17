@@ -567,6 +567,20 @@ class LandScene final : public Scene
             // opponent replaces the location; they never overlap).
             view.elements.erase("location");
         }
+        // The boarding deck fight (owner 2026-11-17, variant B): our men and theirs as two bars facing
+        // each other, each full at the fight's start, with the men left; the deck (the location line)
+        // as its title. It takes the location line's place like the cabin's captain, who replaces it.
+        else if (states.vitals.known && states.vitals.boarding)
+        {
+            const Vitals::Boarding &b = *states.vitals.boarding;
+            const auto share = [](int men, int start) { return std::clamp<long>(std::lround(100.0 * men / start), 0, 100); };
+            Json boarding = {{"ours", share(b.ours, b.ours_start)}, {"theirs", share(b.theirs, b.theirs_start)},
+                             {"oursCount", b.ours}, {"theirsCount", b.theirs}};
+            if (const auto location = view.elements.find("location"); location != view.elements.end())
+                boarding["title"] = (*location)["text"];
+            view.elements["boarding"] = std::move(boarding);
+            view.elements.erase("location");
+        }
         // Elements of a dimmed cluster that are not shown now cannot be dimmed.
         view.dimmed.erase(std::remove_if(view.dimmed.begin(), view.dimmed.end(), [&view](const std::string &id) { return !view.elements.contains(id); }),
                           view.dimmed.end());

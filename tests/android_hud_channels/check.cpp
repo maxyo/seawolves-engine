@@ -455,6 +455,9 @@ std::string oldVitalsJson(const LandVitals &v)
     }
     json += "]";
     if (v.opponent) json += ",\"opponent\":{\"name\":" + gameplayJsonString(v.opponent->name) + ",\"health\":" + std::to_string(v.opponent->health) + "}";
+    if (v.boarding)
+        json += ",\"boarding\":{\"ours\":" + std::to_string(v.boarding->ours) + ",\"theirs\":" + std::to_string(v.boarding->theirs) +
+                ",\"oursStart\":" + std::to_string(v.boarding->oursStart) + ",\"theirsStart\":" + std::to_string(v.boarding->theirsStart) + "}";
     if (v.dash) json += ",\"dash\":" + std::to_string(*v.dash);
     return "{\"health\":" + std::to_string(v.health) + ",\"energy\":" + std::to_string(v.energy) + ",\"loaded\":" +
            std::to_string(v.loaded) + ",\"capacity\":" + std::to_string(v.capacity) + ",\"reload\":" + std::to_string(v.reload) + json + "}";
@@ -473,8 +476,24 @@ LandVitals landVitals(std::mt19937 &random)
     v.potions = random() % 3;
     if (random() % 2) v.officers.push_back({{12, "Tichingitu", "", "battle_interface\\two", ""}, .5f, 1.f});
     if (random() % 3 == 0) v.opponent = LandOpponent{"Captain \"Bones\"", (random() % 4) * .25f};
+    else if (random() % 2) v.boarding = LandBoarding{int(random() % 90), int(random() % 130), 90, 130};
     if (random() % 2) v.dash = (random() % 3) * .5f;
     return v;
+}
+
+// The boarding script's bodies and reserve as men (land_status.hpp readLandBoarding).
+void boardingMen()
+{
+    // 12 bodies of 7 men each at the start; 5 in reserve and 4 alive on the deck: 63 of 84 men.
+    const auto men = landBoardingMen(5, 4, 7.f, 12, 3, 2, 10.f, 12);
+    assert(men && men->ours == 63 && men->oursStart == 84 && men->theirs == 50 && men->theirsStart == 120);
+    assert(landBoardingMen(0, 0, 7.f, 12, 0, 0, 10.f, 12)->ours == 0);
+    assert(landBoardingMen(1, 1, 2.5f, 3, 1, 1, 1.f, 3)->ours == 5);
+    // The script's musketeers overdraw the enemy reserve (-2 seen in a real boarding): an empty reserve.
+    assert(landBoardingMen(0, 1, 10.f, 1, -2, 16, 12.928572f, 14)->theirs == 207);
+    assert(!landBoardingMen(0, -1, 7.f, 12, 0, 0, 10.f, 12) && !landBoardingMen(1, 0, 0.f, 12, 0, 0, 10.f, 12) &&
+           !landBoardingMen(1, 0, 7.f, 0, 0, 0, 10.f, 12) && !landBoardingMen(1, 0, 7.f, 12, 0, 0, std::nanf(""), 12));
+    std::printf("  %-14s men from bodies x crew_per_chr, refused without a start or a crew per body\n", "boarding");
 }
 
 // publishVitals (android_ui.hpp): the old text compare with its 100 ms throttle beside the typed one.
@@ -631,5 +650,6 @@ int main(int argc, char **argv)
     spyglassChannel();
     reloadPlaceChannel();
     vitalsChannel();
+    boardingMen();
     std::puts("android_hud_channels: ok");
 }

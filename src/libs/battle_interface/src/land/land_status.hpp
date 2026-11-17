@@ -21,6 +21,13 @@
 //                                                 gives the captain's attributes and CaptanId
 //                                                 (Loc_ai/LAi_boarding.c LAi_SetBoardingActors),
 //                                                 health = chr_ai.hp / chr_ai.hp_max
+//   "boarding": {"ours", "theirs", "oursStart", "theirsStart"}  the boarding deck fight (TEHO
+//                                                 LAi_boarding.c, boarding_location >= 0, not the
+//                                                 cabin): each side's men = (boarding_*_crew reserve +
+//                                                 its living fighters on the deck: group "player"
+//                                                 without the hero and officers, group "brdenemy")
+//                                                 x boarding_*_crew_per_chr; the start =
+//                                                 boarding_*_crew_start x the same
 #pragma once
 #ifdef __ANDROID__
 #include "core.h"
@@ -112,6 +119,58 @@ inline LandPortrait landPortrait(int index, ATTRIBUTES *character, ATTRIBUTES *i
             landText(icon, "uv")};
 }
 
+// A script global of the boarding (LAi_boarding.c) by its declared type; a game without it (not TEHO) or of
+// another type: false, said once per name.
+template <class T> bool boardingGlobal(const char *name, T &value)
+{
+    auto *data = static_cast<VDATA *>(core.GetScriptVariable(name));
+    if (data && data->Get(value)) return true;
+    static std::set<std::string> told;
+    if (told.insert(name).second)
+        core.Trace("HUD boarding: no script variable %s of the expected type; the boarding bars are not shown", name);
+    return false;
+}
+
+// The deck fight's men (see "boarding" above); nothing outside a boarding, in the cabin (the captain is the
+// opponent) or without the script's counters. `officers` are the land interface's officers (not crew).
+inline std::optional<LandBoarding> readLandBoarding(const std::vector<LandOfficer> &officers, bool cabin)
+{
+    int32_t location = -1;
+    if (cabin || !boardingGlobal("boarding_location", location) || location < 0) return std::nullopt;
+    int32_t oursReserve = 0, oursStart = 0, theirsReserve = 0, theirsStart = 0;
+    float oursPerBody = 0.f, theirsPerBody = 0.f;
+    if (!boardingGlobal("boarding_player_crew", oursReserve) || !boardingGlobal("boarding_player_crew_start", oursStart) ||
+        !boardingGlobal("boarding_player_crew_per_chr", oursPerBody) || !boardingGlobal("boarding_enemy_crew", theirsReserve) ||
+        !boardingGlobal("boarding_enemy_crew_start", theirsStart) || !boardingGlobal("boarding_enemy_crew_per_chr", theirsPerBody))
+        return std::nullopt;
+    int oursAlive = 0, theirsAlive = 0;
+    for (const auto id : core.GetEntityIds("NPCharacter"))
+    {
+        auto *entity = core.GetEntityPointer(id);
+        ATTRIBUTES *character = entity ? entity->AttributesPointer : nullptr;
+        if (!character || landNumber(character, "chr_ai.hp") <= 0.f) continue;
+        const std::string group = landText(character, "chr_ai.group");
+        if (group == "brdenemy")
+            ++theirsAlive;
+        else if (group == "player")
+        {
+            const int index = static_cast<int>(landNumber(character, "index"));
+            if (std::none_of(officers.begin(), officers.end(), [&](const LandOfficer &o) { return o.who.id == index; }))
+                ++oursAlive;
+        }
+    }
+    auto men = landBoardingMen(oursReserve, oursAlive, oursPerBody, oursStart, theirsReserve, theirsAlive, theirsPerBody, theirsStart);
+    if (!men)
+    {
+        static bool told = false;
+        if (!told)
+            core.Trace("HUD boarding: the script's counters make no crew (player %d+%d x %f of %d, enemy %d+%d x %f of %d); the bars are not shown",
+                       oursReserve, oursAlive, oursPerBody, oursStart, theirsReserve, theirsAlive, theirsPerBody, theirsStart);
+        told = true;
+    }
+    return men;
+}
+
 // `icons` is data.icons of the land interface; id0 is the hero.
 inline void readLandStatus(ATTRIBUTES *icons, LandVitals &v)
 {
@@ -144,6 +203,7 @@ inline void readLandStatus(ATTRIBUTES *icons, LandVitals &v)
         v.opponent = LandOpponent{last.empty() ? name : name + " " + last, std::clamp(hp / max, 0.f, 1.f)};
         break;
     }
+    v.boarding = readLandBoarding(v.officers, v.opponent.has_value());
     const auto player = core.GetEntityId("Player");
     if (player != invalid_entity && core.Send_Message(player, "ls", MSG_CHARACTER_EX_MSG, "IsFightMode"))
     {

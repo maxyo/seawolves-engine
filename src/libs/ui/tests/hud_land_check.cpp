@@ -580,6 +580,22 @@ static void CheckStatus()
     Expect(mount.shown.elements["opponent"]["title"] == "hud.captain Клод Дюран" && mount.shown.elements["opponent-hp"]["value"] == 62,
            "cabin fight: the enemy captain's name and health on top");
     Expect(!mount.Has("location"), "the cabin captain takes the place of the location line");
+    Expect(!mount.Has("boarding"), "no deck fight: no boarding bars");
+    Json deck = State("vitals-status");
+    deck["boarding"] = Json{{"ours", 63}, {"theirs", 30}, {"oursStart", 84}, {"theirsStart", 120}};
+    bench.Set("vitals", deck);
+    Expect(mount.Has("boarding") && mount.shown.elements["boarding"]["ours"] == 75 && mount.shown.elements["boarding"]["theirs"] == 25 &&
+               mount.shown.elements["boarding"]["oursCount"] == 63 && mount.shown.elements["boarding"]["theirsCount"] == 30,
+           "deck fight: both sides' men as shares of the fight's start, with the men left");
+    Expect(!mount.Has("location") && mount.shown.elements["boarding"].contains("title"), "the deck (the location line) is the bars' title");
+    deck["opponent"] = Json{{"name", "Клод Дюран"}, {"health", 0.62}};
+    bench.Set("vitals", deck);
+    Expect(mount.Has("opponent") && !mount.Has("boarding"), "the cabin captain, not the deck bars");
+    deck.erase("opponent");
+    deck["boarding"]["oursStart"] = 0;
+    bench.Set("vitals", deck);
+    Expect(!mount.errors.empty(), "a boarding without a start is rejected aloud");
+    mount.errors.clear();
     cabin["opponent"] = Json{{"name", ""}, {"health", 0.5}};
     bench.Set("vitals", cabin);
     Expect(!mount.errors.empty(), "an opponent without a name is rejected aloud");

@@ -122,6 +122,12 @@ struct Vitals
     // The enemy captain of a boarding cabin fight while alive (V2-Land-Boarding-Cabin).
     std::string opponent;             // name; empty = none
     double opponent_health = 0.0;     // 0…1
+    // The boarding deck fight (not the cabin): each side's men now and at the fight's start.
+    struct Boarding
+    {
+        int ours = 0, theirs = 0, ours_start = 0, theirs_start = 0;
+    };
+    std::optional<Boarding> boarding;
 };
 
 // Channel "landCommands": the engine's land action menu.
