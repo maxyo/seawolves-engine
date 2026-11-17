@@ -25,6 +25,7 @@ import collections
 import datetime
 import fnmatch
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -50,6 +51,8 @@ except ImportError:
 
 HERE = Path(__file__).resolve().parent
 REPOSITORY = HERE.parents[1]
+# The application repository when this engine is its submodule (<application>/engine).
+APPLICATION = REPOSITORY.parent
 
 # Log lines that fail the scene they were written in. (log file pattern, line pattern, reason)
 LOG_RULES = [
@@ -154,7 +157,20 @@ def parse_arguments():
     parser.add_argument('--save', type=Path,
                         help='a save file of this game: every engine loads it from the main menu (scene save:boot) '
                              'instead of starting a new game; the hero must be on land (the sea scenes return there)')
+    patches = parser.add_mutually_exclusive_group()
+    patches.add_argument('--script-patches', type=Path, metavar='DIR',
+                         help="the application's script-patches folder (sets/<set>/set.json): the engines run the game's "
+                              'scripts with the fixes the APK ships, as the players do; default: the application this '
+                              'engine is the submodule of')
+    patches.add_argument('--no-script-patches', action='store_true',
+                         help="sweep the game's scripts without the application's fixes (not what the players run)")
     arguments = parser.parse_args()
+    if not arguments.list and not arguments.no_script_patches and arguments.script_patches is None:
+        if not (APPLICATION / 'script-patches').is_dir():
+            parser.error('the scripts the players run carry the application\'s script patches: pass --script-patches '
+                         '<application>/script-patches (this engine is not the submodule of the application), or '
+                         '--no-script-patches to sweep the game\'s scripts as they are')
+        arguments.script_patches = APPLICATION / 'script-patches'
     if arguments.single_session and arguments.jobs not in (None, 1):
         parser.error('--single-session requires --jobs 1')
     if arguments.single_session:
@@ -279,6 +295,51 @@ def check_game_unchanged(game, snapshot, when):
     if changed:
         raise RuntimeError(f'the game directory {game} changed {when} ({len(changed)} files: '
                            f'{", ".join(changed[:5])}): a write through the hard link of a copy, or another program')
+
+
+def derive_script_patches(arguments):
+    """The game's scripts the players run: the application's patch layer, packaged by its own APK packager
+    (tools/android/script_patch_assets.py) and applied by the engine's applier (tools/script_patches). Returns
+    {game-relative path: derived file} for the per-engine copies and a digest of the layer. Fails loudly when the
+    layer is damaged or a fix does not apply to this game."""
+    if arguments.no_script_patches:
+        print("script patches: none (--no-script-patches): the game's scripts as they are, not what the players run")
+        return {}, None
+    source = arguments.script_patches.resolve()
+    packager = source.parent / 'tools/android/script_patch_assets.py'
+    if not packager.is_file():
+        sys.exit(f'--script-patches {source}: no APK packager {packager} (the application repository\'s script-patches)')
+    spec = importlib.util.spec_from_file_location('script_patch_assets', packager)
+    assets = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(assets)
+    files, _ = assets.collect(source)
+    work = arguments.out / 'script-patches'
+    layer, derived = work / 'layer', work / 'derived'
+    shutil.rmtree(layer, ignore_errors=True)
+    for name, data in files.items():
+        (layer / name).parent.mkdir(parents=True, exist_ok=True)
+        (layer / name).write_bytes(data)
+    tool = work / 'script_patch_tool'
+    subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++20', '-O1', '-I', str(REPOSITORY / 'src/libs/util/include'),
+                    str(REPOSITORY / 'tools/script_patches/script_patch_tool.cpp'), '-o', str(tool)], check=True)
+    # Derived files are written only when missing or damaged (their times stay: --script-cache holds).
+    applied = subprocess.run([str(tool), 'apply', str(layer), str(arguments.game), str(derived)],
+                             capture_output=True, text=True)
+    if applied.returncode:
+        sys.exit(f'script patches from {source} do not apply to {arguments.game} (exit {applied.returncode}):\n'
+                 f'{applied.stdout}{applied.stderr}')
+    patched = {}
+    for directory in derived.iterdir():
+        for path in directory.rglob('*'):
+            if path.is_file():
+                relative = path.relative_to(directory)
+                actual = inventory.find_case_insensitive(arguments.game, str(relative))
+                if actual is None:
+                    sys.exit(f'script patches: {relative} has no file in {arguments.game}')
+                patched[str(actual.relative_to(arguments.game))] = path
+    digest = hashlib.sha256(files['manifest.json']).hexdigest()
+    print(f'script patches: {len(patched)} scripts from {source} (layer {digest[:12]})')
+    return patched, digest
 
 
 def select(scenes, arguments, previous, build):
@@ -523,8 +584,11 @@ class Shard(threading.Thread):
         shutil.copytree(self.arguments.techniques, techniques)
         # copy2: its modification time stays, so the scripts' cache key (path, size, time of every file) holds.
         shutil.copy2(HERE / 'scene_sweep.c', own('PROGRAM/scene_sweep.c'))
+        patched = self.context.get('script_patches', {})
+        for relative, derived in patched.items():
+            shutil.copy2(derived, own(relative))
         os.link(self.context['engine'], own('engine'))  # resources are looked up next to the executable
-        for written in ('engine.ini', 'options', 'PROGRAM/scene_sweep.c'):
+        for written in ('engine.ini', 'options', 'PROGRAM/scene_sweep.c', *patched):
             if (game / written).exists():
                 check_own_file(game / written)
         control = run / 'control'
@@ -910,7 +974,9 @@ def main():
     report_path = arguments.out / 'report.json'
     previous = json.loads(report_path.read_text()) if report_path.exists() else None
     # Pictures and frame times of the two renderers differ: a report of one is no previous report for the other.
+    script_patches, patch_digest = derive_script_patches(arguments)
     build = {'engine': file_digest(arguments.engine), 'script': file_digest(HERE / 'scene_sweep.c'),
+             'script_patches': patch_digest,
              'renderer': arguments.render, **({'save': file_digest(arguments.save)} if arguments.save else {})}
     chosen = select(scenes, arguments, previous, build)
     if not chosen:
@@ -929,7 +995,7 @@ def main():
     lock = threading.Lock()
     context = {'stop': threading.Event(), 'failed': threading.Event(), 'errors': [], 'table_mismatch': None,
                'tables': inventory.tables(arguments.game), 'engine': engine, 'game': game_snapshot(arguments.game),
-               'lock': lock, 'render': set()}
+               'lock': lock, 'render': set(), 'script_patches': script_patches}
 
     def progress(scene, entry):
         with lock:
@@ -996,6 +1062,7 @@ def main():
                  'cores': os.cpu_count(), 'load_average': round(os.getloadavg()[0], 1),
                  'engine': str(arguments.engine), 'game': str(arguments.game),
                  'save': str(arguments.save) if arguments.save else None,
+                 'script_patches': str(arguments.script_patches) if arguments.script_patches else None,
                  'render': ' / '.join(sorted(context['render']))},
         'build': build,
         'scenes': dict(sorted(results.items())),

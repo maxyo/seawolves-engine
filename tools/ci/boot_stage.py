@@ -122,6 +122,8 @@ def main():
                '--out', args.out, '--save', args.save, '--only', *SCENES, '--jobs', '1', '--single-session',
                '--render', 'gles-gpu',
                '--virtualgl', vgl, '--timeout', str(min(240, args.budget)),
+               # The engine's gate: the application's script patches are checked with the application.
+               '--no-script-patches',
                # Compiled scripts kept between runs (rebuilt when the game's scripts change): 20 s of the ASan boot.
                '--script-cache', args.build.resolve() / 'script-cache']
     report = args.out / 'report.json'

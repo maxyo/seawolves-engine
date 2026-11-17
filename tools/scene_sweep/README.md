@@ -36,6 +36,11 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
 - `--variants 'fx_preset=0;fx_preset=2,fx_bloom=0'` captures every scene once per option set (see below).
 - `--render gles-gpu|vulkan|llvmpipe` (default `gles-gpu`); `--virtualgl DIR` (or `STORM_VIRTUALGL`) for
   `gles-gpu`; `--gl-threads` llvmpipe rasteriser threads.
+- `--script-patches DIR` the application's `script-patches` folder: its sets are packaged by the application's
+  own APK packager (`tools/android/script_patch_assets.py`) and applied to the game's scripts by the engine's
+  applier (`tools/script_patches`), so the engines run the scripts the players run. Default: the application this
+  engine is the submodule of; otherwise pass it, or `--no-script-patches` for the game's scripts as they are. A
+  fix that does not apply to the game stops the sweep.
 - `--save FILE` boots every engine into this save (hero on land) instead of a new game; used by
   `tools/ci/boot_stage.py`.
 - `--program-cache DIR`, `--script-cache DIR` keep the program/pipeline and compiled-script caches between runs
