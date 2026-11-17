@@ -30,6 +30,7 @@ static native methods (operations can throw `IOException`):
 String inspect(String localTorrentPath);
 long open(String localTorrentPathOrMagnet, String stagingDirectory);
 String poll(long session);
+String metadata(long session);
 void start(long session, int[] selectedFileIndices);
 void pause(long session);
 void close(long session);
@@ -47,8 +48,13 @@ payload`). `poll` returns JSON:
 {"state":"downloading","downloadedBytes":0,"wantedBytes":123,"bytesPerSecond":0,
  "peers":0,"seeds":0,"stalledSeconds":95,"networkError":"Tracker udp://…: timed out",
  "checkpointPending":false,"error":"","errorKind":"",
- "payloadDirectory":"/private/library/set-id/payload","metadata":{…}}
+ "payloadDirectory":"/private/library/set-id/payload","metadataReady":true}
 ```
+
+`poll` never carries the file list: a game torrent lists tens of thousands of files
+(megabytes of JSON), too much to copy and parse every second. Once `metadataReady`
+is true, `metadata` returns the immutable metadata JSON below; fetch it once per set
+and keep it (it throws before the metadata has arrived).
 
 States are `metadata`, `awaiting-selection`, `downloading`, `paused`, `complete`,
 and `error`. Nothing fails silently:

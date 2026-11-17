@@ -90,6 +90,10 @@ extern "C" JNIEXPORT jstring JNICALL Java_org_stormengine_port_NativeTorrents_po
     std::lock_guard<std::mutex> guard(lock);
     try{return result(env,get(id).poll());}catch(std::exception const& e){fail(env,e);return nullptr;}
 }
+extern "C" JNIEXPORT jstring JNICALL Java_org_stormengine_port_NativeTorrents_metadata(JNIEnv* env,jclass,jlong id) {
+    std::lock_guard<std::mutex> guard(lock);
+    try{return result(env,get(id).metadata());}catch(std::exception const& e){fail(env,e);return nullptr;}
+}
 extern "C" JNIEXPORT void JNICALL Java_org_stormengine_port_NativeTorrents_start(JNIEnv* env,jclass,jlong id,jintArray files) {
     std::lock_guard<std::mutex> guard(lock);
     try {

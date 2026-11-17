@@ -14,7 +14,8 @@ public:
     // dedicated directory. Opening a magnet retrieves metadata only, never payload.
     Session(std::string source, std::string staging, bool local_test_only = false);
     ~Session();
-    std::string poll(); // JSON; call periodically from a foreground service worker
+    std::string poll(); // JSON status without the file list; call periodically from a foreground service worker
+    std::string metadata(); // the immutable metadata JSON, once poll() reports metadataReady
     void start(std::vector<int> const& selected_files);
     void pause(); // pauses and requests an atomic resume checkpoint
 private:

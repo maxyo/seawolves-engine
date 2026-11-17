@@ -26,8 +26,16 @@ with tempfile.TemporaryDirectory(prefix='storm-json-faults-') as temporary:
     lines = run.stdout.splitlines()
     expected = json.loads(lines[0])
     assert len(lines) >= 2
+    polls = metadata = 0
     for line in lines[1:]:
-        poll = json.loads(line)
-        assert poll['metadata'] == expected, 'Partial or altered metadata was cached'
-        assert poll['state'] in ('awaiting-selection', 'error')
-    print(f'PASS {len(lines) - 1} complete poll documents and unchanged metadata cache')
+        document = json.loads(line)
+        if 'state' in document:
+            assert 'metadata' not in document, 'Polls must not carry the file list'
+            assert document['metadataReady'] is True or document['state'] == 'error'
+            assert document['state'] in ('awaiting-selection', 'error')
+            polls += 1
+        else:
+            assert document == expected, 'Partial or altered metadata was cached'
+            metadata += 1
+    assert polls and metadata == 1
+    print(f'PASS {polls} complete poll documents, {metadata} unchanged metadata documents')

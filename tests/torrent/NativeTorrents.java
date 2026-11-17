@@ -7,6 +7,7 @@ public final class NativeTorrents {
     public static native String inspect(String path) throws IOException;
     public static native long open(String source, String staging) throws IOException;
     public static native String poll(long handle) throws IOException;
+    public static native String metadata(long handle) throws IOException;
     public static native void start(long handle, int[] indices) throws IOException;
     public static native void pause(long handle) throws IOException;
     public static native void close(long handle);
@@ -35,6 +36,7 @@ public final class NativeTorrents {
         expectIOException(() -> inspect(args[1] + "-нет-😀"), "нет-😀");
         expectIOException(() -> inspect(args[2]), "Torrent must be a dictionary");
         expectIOException(() -> poll(987654), "Torrent session is closed");
+        expectIOException(() -> metadata(987654), "Torrent session is closed");
         expectIOException(() -> start(987654, new int[] {0}), "Torrent session is closed");
         expectIOException(() -> start(987654, null), "Missing file selection");
         expectIOException(() -> start(987654, new int[0]), "Select between 1 and 100000 files");

@@ -470,7 +470,7 @@ void Session::pause() { impl->selection_pending=false; impl->handle.pause(); imp
 std::string Session::poll() {
     impl->alerts();
     auto status=impl->handle.status(); auto ti=impl->handle.torrent_file();
-    std::string metadata="null",state="metadata";
+    std::string state="metadata";
     if(ti) {
         // Invalid metadata is a permanent error of this set; running out of memory is not.
         if(impl->manifest_cache.empty()) {
@@ -478,7 +478,6 @@ std::string Session::poll() {
             catch(std::bad_alloc const&) { throw; }
             catch(std::exception const& e) { impl->fail("metadata",e.what()); impl->handle.pause(); }
         }
-        if(!impl->manifest_cache.empty()) metadata=impl->manifest_cache;
         state=impl->approved?"downloading":"awaiting-selection";
         if(impl->selection_pending && impl->handle.get_file_priorities()==impl->priorities) {
             impl->selection_pending=false;
@@ -511,6 +510,10 @@ std::string Session::poll() {
         << ",\"checkpointPending\":" << (impl->checkpoint?"true":"false")
         << ",\"error\":" << quote(impl->error) << ",\"errorKind\":" << quote(impl->error_kind)
         << ",\"payloadDirectory\":" << quote((impl->staging/"payload").string())
-        << ",\"metadata\":" << metadata << '}'; return out.str();
+        << ",\"metadataReady\":" << (impl->manifest_cache.empty()?"false":"true") << '}'; return out.str();
+}
+std::string Session::metadata() {
+    if(impl->manifest_cache.empty()) throw std::runtime_error("Torrent metadata is not available yet");
+    return impl->manifest_cache;
 }
 }

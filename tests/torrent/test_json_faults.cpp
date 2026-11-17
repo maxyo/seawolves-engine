@@ -48,7 +48,8 @@ int main(int argc, char** argv) {
         if (argc != 3) throw std::runtime_error("Expected fixture and private staging arguments");
         std::string fixture = argv[1];
         auto expected = storm::torrent::inspect_file(fixture);
-        // The Python runner parses every printed poll and compares its cached metadata with this manifest.
+        // The Python runner parses every printed document: polls must report the cached metadata ready,
+        // every metadata() result must equal this manifest.
         std::puts(expected.c_str());
         sweep("inspect/quote/integer arrays", [&] { return storm::torrent::inspect_file(fixture); },
             [&](std::string const& actual) {
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
         std::puts(session.poll().c_str()); // builds the immutable metadata cache
         sweep("poll with cached metadata", [&] { return session.poll(); },
             [&](std::string const& actual) { std::puts(actual.c_str()); });
+        std::puts(session.metadata().c_str()); // a copy of the cache: the same manifest after every fault above
         return 0;
     } catch (std::exception const& error) {
         fail_after = -1;

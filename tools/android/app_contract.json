@@ -125,7 +125,7 @@
       "GameActivity": ["nativeCancelInput", "nativeDensityChanged", "nativeLifecycle", "nativeSaveInProgress",
                        "nativeSurfaceChanged", "nativeSurfaceDestroying"],
       "NativeArchives": ["discover", "extractRoot"],
-      "NativeTorrents": ["close", "inspect", "open", "pause", "poll", "start"],
+      "NativeTorrents": ["close", "inspect", "metadata", "open", "pause", "poll", "start"],
       "StormUi": ["nativeBack", "nativeCreate", "nativeDestroy", "nativeFrame", "nativeLoadDocument", "nativePrepare",
                   "nativeResize", "nativeSetState", "nativeSubmitText", "nativeTakeActions", "nativeTakeTextRequest",
                   "nativeToast", "nativeTouch"]

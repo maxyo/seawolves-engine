@@ -65,6 +65,8 @@ int main(int argc,char** argv) {
         for(int i=0;i<200;++i){status=download.poll();if(status.find("awaiting-selection")!=std::string::npos)break;std::this_thread::sleep_for(std::chrono::milliseconds(50));}
         require(status.find("awaiting-selection")!=std::string::npos,"Magnet metadata retrieval must finish");
         require(!fs::exists(root/"download/payload/fixture/setup.exe"),"Metadata retrieval must not create payload");
+        require(status.find("\"metadataReady\":true")!=std::string::npos&&status.find("\"files\"")==std::string::npos,"Polls report metadata ready without the file list");
+        require(download.metadata()==manifest,"Magnet metadata must equal the torrent's manifest");
         rejected=false;try{download.start({999});}catch(...){rejected=true;}require(rejected,"Invalid selection must fail");
         download.start({0});
         for(int i=0;i<400;++i){status=download.poll();if(status.find("\"state\":\"complete\"")!=std::string::npos)break;std::this_thread::sleep_for(std::chrono::milliseconds(50));}
@@ -129,6 +131,8 @@ int main(int argc,char** argv) {
         storm::torrent::Session stalled(silent,(root/"stalled").string(),true);
         status=stalled.poll();std::this_thread::sleep_for(std::chrono::milliseconds(2100));status=stalled.poll();
         require(status.find("\"state\":\"metadata\"")!=std::string::npos,"Unreachable peers keep the metadata state");
+        require(status.find("\"metadataReady\":false")!=std::string::npos,"No metadata before it arrives");
+        rejected=false;try{stalled.metadata();}catch(...){rejected=true;}require(rejected,"metadata() before it arrives must fail");
         auto at=status.find("\"stalledSeconds\":");require(at!=std::string::npos&&std::stoi(status.substr(at+17))>=2,"Stall time must grow while nothing arrives");
         }
         {

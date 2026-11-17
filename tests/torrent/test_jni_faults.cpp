@@ -21,6 +21,7 @@ struct Session::Impl {};
 Session::Session(std::string,std::string,bool):impl(std::make_unique<Impl>()){++opens;}
 Session::~Session()=default;
 std::string Session::poll(){return "{}";}
+std::string Session::metadata(){return "{}";}
 void Session::start(std::vector<int> const&){++starts;}
 void Session::pause(){}
 std::string inspect_file(std::string const&){return "{}";}
