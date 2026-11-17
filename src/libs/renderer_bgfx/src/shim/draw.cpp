@@ -1353,8 +1353,9 @@ bool Device::draw(const DrawCall &call, const LayoutInfo &draw_layout, uint32_t 
     uint32_t fs_id = ps_port ? s.ps->port->shader_id()
                              : fx_draw.active ? fx_draw.fs_id : fx_draw.ground ? fx_lighting.ground_fs() : id_fs_ff[fs_variant];
     // Nothing of this draw can be discarded (no user clip plane, no alpha test): its shader's opaque twin, which
-    // keeps early depth and the tile GPUs' hidden-surface removal (ff_finish.sh FF_OPAQUE).
-    if (!ps_port && !(s.rs[D3DRS_CLIPPLANEENABLE] & 1) &&
+    // keeps early depth and the tile GPUs' hidden-surface removal (ff_finish.sh FF_OPAQUE; the ports' twins:
+    // CMakeLists.txt).
+    if (!(s.rs[D3DRS_CLIPPLANEENABLE] & 1) &&
         !(s.rs[D3DRS_ALPHATESTENABLE] && s.rs[D3DRS_ALPHAFUNC] != D3DCMP_ALWAYS))
         if (const uint32_t twin = opaque_twin(fs_id); twin != UINT32_MAX)
             fs_id = twin;

@@ -129,7 +129,7 @@ foreach(family ${ff_families})
     endforeach()
 endforeach()
 # Opaque twins (FF_OPAQUE, ff_finish.sh without its discards) of every fixed-function fragment shader the shim
-# chooses: draw.cpp uses "<name>_opaque" when the draw has no clip plane and no alpha test, so early depth stays on.
+# chooses (and of the ports below): draw.cpp uses "<name>_opaque" when the draw has no clip plane and no alpha test, so early depth stays on.
 set(ff_opaque_variants)
 foreach(base fs_ff fs_ff_dyn fs_ff_cube0 fs_ff_cube1 fs_ff_cube2)
     list(APPEND ff_opaque_variants "${base}_opaque|${CMAKE_CURRENT_SOURCE_DIR}/shaders/${base}.sc|FF_OPAQUE")
@@ -140,6 +140,11 @@ foreach(variant ${ff_fx_variants})
     list(GET fields 1 source)
     list(GET fields 2 defines)
     list(APPEND ff_opaque_variants "${name}_opaque|${source}|${defines},FF_OPAQUE")
+endforeach()
+# The ps_1_x ports' twins too (shaders/ports, draw.cpp picks them the same way), but not the slope-biased caustic port:
+# its depth write turns early depth off anyway.
+foreach(base fs_port_coastfoam fs_port_particles fs_port_postprocess fs_port_sea2 fs_port_sea3)
+    list(APPEND ff_opaque_variants "${base}_opaque|${CMAKE_CURRENT_SOURCE_DIR}/shaders/ports/${base}.sc|FF_OPAQUE")
 endforeach()
 list(APPEND ff_fx_variants ${ff_opaque_variants})
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/shaders/ports/vs_port_grass.sc" PROPERTIES
