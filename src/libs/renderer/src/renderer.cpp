@@ -38,6 +38,7 @@
 #include "storm/render/perf_stats.hpp"
 #include "storm/render/program_cache.hpp"
 #include "storm/render/texture_cache.hpp"
+#include "texture/core/tx_header.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -2095,14 +2096,33 @@ bool Renderer::TextureLoad(int32_t t)
         Textures[t].name = nullptr;
         return false;
     }
-    // Reading the header
-    TX_FILE_HEADER head;
+    // Reading the header, checked against the dimensions and the file's size before anything is created for it
+    // (texture/core/tx_header.hpp, the relief's reader too).
+    TX_FILE_HEADER head{};
+    static_assert(sizeof(head) == sizeof(storm::texture::TxHeader));
+    const char *damaged = nullptr;
     if (!fio->_ReadFile(fileS, &head, sizeof(head)))
+        damaged = "short header";
+    else
     {
-        if (bTrace)
+        storm::texture::TxHeader checked;
+        std::memcpy(&checked, &head, sizeof(checked));
+        damaged = storm::texture::tx_header_problem(checked);
+        if (!damaged)
         {
-            core.Trace("Can't load texture %s", fn);
+            fileS.seekg(0, std::ios::end);
+            const std::streamoff size = fileS.tellg();
+            if (size < 0 || static_cast<uint64_t>(size) < storm::texture::kTxHeaderBytes + storm::texture::tx_payload_bytes(checked))
+                damaged = size < 0 ? "file size unavailable" : "truncated levels";
+            fileS.clear();
+            fileS.seekg(static_cast<std::streamoff>(storm::texture::kTxHeaderBytes));
         }
+    }
+    if (damaged)
+    {
+        spdlog::error("texture {}: {} (flags {}, {}x{}, {} levels, format {}, level 0 {} bytes), not loading it", fn,
+                      damaged, head.flags, head.width, head.height, head.nmips, static_cast<int32_t>(head.format),
+                      head.mip_size);
         delete[] Textures[t].name;
         Textures[t].name = nullptr;
         fio->_CloseFile(fileS);

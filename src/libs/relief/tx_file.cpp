@@ -1,28 +1,14 @@
 #include "tx_file.hpp"
 
 #include "formats.hpp"
+#include "tx_header.hpp"
 #include "storm/fx/relief_store.hpp"
 
 #include <algorithm>
-#include <array>
 #include <fstream>
 
 namespace storm::relief
 {
-namespace
-{
-constexpr uint32_t kTxFlagPalette = 1, kTxFlagCubemap = 2;
-constexpr uint64_t kHeaderBytes = 24;
-
-// Level `level`'s offset after the header: each level a quarter of the one above (the renderer's layout).
-uint64_t Offset(uint32_t top_bytes, int level)
-{
-    uint64_t offset = 0;
-    for (int l = 0; l < level; ++l)
-        offset += uint64_t(top_bytes) >> (2 * l);
-    return offset;
-}
-} // namespace
 
 bool TxFile::Fail(const char *reason, bool unreadable_level)
 {
@@ -42,46 +28,37 @@ bool TxFile::Load(const std::filesystem::path &path, const Choose &choose)
     flags = width = height = levels = format = top_bytes = 0;
     first = 0;
     std::ifstream in(path, std::ios::binary);
-    std::array<uint32_t, 6> header{};
-    if (!in.read(reinterpret_cast<char *>(header.data()), sizeof(header)))
+    texture::TxHeader header;
+    if (!in.read(reinterpret_cast<char *>(&header), sizeof(header)))
         return Fail("short header");
-    flags = header[0];
-    width = header[1];
-    height = header[2];
-    levels = header[3];
-    format = header[4];
-    top_bytes = header[5];
-    if (!texture::tx_format_known(format) || width == 0 || height == 0 || width > 8192 || height > 8192 || levels == 0 ||
-        top_bytes != texture::d3d_level_bytes(format, width, height))
-        return Fail("invalid header");
-    uint32_t chain = 1; // the levels down to 1x1
-    for (uint32_t side = std::max(width, height); side > 1; side >>= 1)
-        ++chain;
-    if (levels > chain)
-        return Fail("more levels than the dimensions have");
+    flags = header.flags;
+    width = header.width;
+    height = header.height;
+    levels = header.levels;
+    format = header.format;
+    top_bytes = header.top_bytes;
+    if (const char *problem = texture::tx_header_problem(header))
+        return Fail(problem);
     in.seekg(0, std::ios::end);
     const std::streamoff end = in.tellg();
     if (end < 0)
         return Fail("file size unavailable", true);
     const uint64_t size = static_cast<uint64_t>(end);
-    if (flags == kTxFlagCubemap)
+    if (header.cube())
     {
         // Stock Ammo/EnvAmmo is classified as metal, but its cube layout is intentionally unsupported. Distinguish that
-        // from a damaged file only after validating all six faces' payload extent.
-        if (width != height)
-            return Fail("non-square cube map");
+        // from a damaged file only after validating all six faces' payload extent (whole blocks for the small levels of
+        // a compressed format).
         uint64_t face = 0;
         for (uint32_t level = 0; level < levels; ++level)
             face += texture::d3d_level_bytes(format, std::max(1u, width >> level), std::max(1u, height >> level));
-        unsupported_cube = size >= kHeaderBytes + 6 * face;
+        unsupported_cube = size >= texture::kTxHeaderBytes + 6 * face;
         return Fail(unsupported_cube ? "cube map" : "truncated cube map", !unsupported_cube);
     }
-    if (flags & (kTxFlagPalette | kTxFlagCubemap))
-        return Fail("palette or unknown flags");
     first = std::clamp(choose(*this), 0, static_cast<int>(levels) - 1);
     const int probe = ProbeLevel(*this);
     const auto read = [&](Slice &slice, int level) {
-        const uint64_t count = uint64_t(top_bytes) >> (2 * level), offset = kHeaderBytes + Offset(top_bytes, level);
+        const uint64_t count = uint64_t(top_bytes) >> (2 * level), offset = texture::kTxHeaderBytes + texture::tx_level_offset(top_bytes, static_cast<uint32_t>(level));
         if (count == 0 || offset > size || count > size - offset)
             return false;
         slice.bytes.resize(static_cast<size_t>(count));
