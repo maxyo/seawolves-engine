@@ -377,6 +377,11 @@ class Renderer : public VRenderer
     int32_t progressSafeCounter;
     bool isInPViewProcess;
     uint32_t progressUpdateTime;
+    // DrawProgressView: loading work between two progress presents, at least kProgressPresentGapMs.
+    static constexpr uint32_t kProgressPresentGapMs = 50;
+    uint32_t progressPresentGap = kProgressPresentGapMs;
+    // The progress frames of the loading screen up now: logged when it goes (ReleaseProgressView).
+    uint32_t progressPresents = 0, progressPresentMs = 0, progressShownAt = 0;
     float progressFramesPosX;
     float progressFramesPosY;
     float progressFramesWidth;

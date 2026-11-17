@@ -46,6 +46,7 @@ struct Device { int Present(){assert(!presented);presented=true;bool&prepared_=p
 struct Renderer {
  int progressTexture=-1,back0Texture=-1,backTexture=-1,progressTipsTexture=-1;
  int progressSafeCounter=0,loadFrame=0; uint32_t progressUpdateTime=0;
+ static constexpr uint32_t kProgressPresentGapMs=50; uint32_t progressPresentGap=0,progressPresents=0,progressPresentMs=0,progressShownAt=0;
  bool progressEndRequested=false,isInPViewProcess=false,bInsideScene=true;
  char image[32]="first",back[32]="background",tips[32]="tip";
  char *progressImage=image,*progressBackImage=back,*progressTipsImage=tips;

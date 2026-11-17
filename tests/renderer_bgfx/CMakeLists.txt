@@ -260,7 +260,7 @@ set_tests_properties(scene_nested_progress_check PROPERTIES
 
 # Native stock ownership/cadence, using actual core and host-controller bodies.
 # No renderer window, model inference or GPU completion assumption.
-foreach(check IN ITEMS transaction scheduler progress consumers)
+foreach(check IN ITEMS transaction scheduler progress progress_rate consumers)
     add_test(NAME scene_stock_${check}_check
         COMMAND "${CMAKE_COMMAND}" -E env
             "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}" "CXX=${CMAKE_CXX_COMPILER}"

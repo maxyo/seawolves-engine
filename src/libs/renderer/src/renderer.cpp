@@ -4622,6 +4622,9 @@ void Renderer::StartProgressView()
 #endif
     storm::loading::screen_up = true;
     progressSafeCounter = 0;
+    progressPresents = progressPresentMs = 0;
+    progressPresentGap = kProgressPresentGapMs;
+    progressShownAt = SDL_GetTicks();
     if (progressTexture < 0)
     {
         // Loading the texture
@@ -4711,11 +4714,12 @@ void Renderer::DrawProgressView(bool present)
         return;
     if (isInPViewProcess)
         return;
-    // Analyzing time
-    const uint32_t time = SDL_GetTicks();
-    if (present && abs(static_cast<int32_t>(progressUpdateTime - time)) < 50)
+    // The loading picture is presented between pieces of loading work, never instead of them: the next one waits
+    // until the load has worked four times as long as the last present took (at least the stock 50 ms). A display
+    // that takes 66 ms a frame then costs a fifth of the load; with the stock 50 ms from one present's start to the
+    // next, every resource the load created presented a frame and the load ran at the display's frame rate.
+    if (present && SDL_GetTicks() - progressUpdateTime < progressPresentGap)
         return;
-    progressUpdateTime = time;
     isInPViewProcess = true;
     progressSafeCounter = 0;
     // During asynchronous preparation this overlays the existing world frame.
@@ -4855,9 +4859,15 @@ void Renderer::DrawProgressView(bool present)
     }
     if (present)
     {
+        const uint32_t started = SDL_GetTicks();
         EndScene();
         d3d9->Present();
         BeginScene();
+        progressUpdateTime = SDL_GetTicks();
+        const uint32_t took = progressUpdateTime - started;
+        progressPresentGap = std::max(kProgressPresentGapMs, took * 4);
+        ++progressPresents;
+        progressPresentMs += took;
     }
     // Next frame
     loadFrame++;
@@ -4878,6 +4888,10 @@ void Renderer::ReleaseProgressView()
     storm::android::publishLoading(false);
 #endif
     storm::loading::screen_up = false;
+    if (progressPresents)
+        core.Trace("Loading screen: %u progress frames presented in %u ms of loading, %u ms of it presenting them",
+                   progressPresents, SDL_GetTicks() - progressShownAt, progressPresentMs);
+    progressPresents = 0;
     if (progressTexture >= 0)
         TextureRelease(progressTexture);
     progressTexture = -1;
