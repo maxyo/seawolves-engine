@@ -5,12 +5,14 @@ $input v_uv
 // texel's footprint. The bake's sun on it was read the same way once, from the place map drawn along the bake's
 // direction (u_fxRelight[5].z = 1: this pass writes that visibility), so a caster the map cannot resolve (a railing,
 // a pole) is missed by both and its painted shadow stays. Alpha: the game's.
+// The game's paint is read from its own lightmap at the target's resolution (u_fxRelight[7].x: its level): only the
+// lighting's inputs (position, normal, sky, the bake's sun) are interpolated between the texels it was fitted at.
 #include "fx_common.sh"
 
 SAMPLER2D(s_fxRelightPosition, 0); // xyz world, w 1 = a texel of the lightmap's triangles (or their gutter)
 SAMPLER2D(s_fxRelightNormal, 1);   // xyz the surface normal * 0.5 + 0.5, w the sky's visibility
 SAMPLER2D(s_fxRelightBaked, 2);    // r the bake's sun on the texel (this pass with u_fxRelight[5].z = 1)
-SAMPLER2D(s_fxRelightGame, 4);     // the game's lightmap
+SAMPLER2D(s_fxRelightGame, 4);     // the game's lightmap texture, as the draws sample it
 SAMPLER2DSHADOW(s_fxRelightSun, 5);
 uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [0] the tone a, b, c; w: 1 = debug view (the sun's visibility as grey)
@@ -18,8 +20,9 @@ uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [2], [3] the game's sky per bin of ours
 // [4] x: the footprint's radius, y: the offset off the surface, z: depth bias
 // [5] xy: 1 / the target's size, z: 1 = write the sun's visibility (the bake's) instead of the relit paint
-// [6] xy: the game lightmap's size, zw: 1 / it
-uniform vec4 u_fxRelight[7];
+// [6] xy: the size of the inputs (the game lightmap's level the lighting was fitted at), zw: 1 / it
+// [7] x: the level of the game's lightmap texture with the target's texels
+uniform vec4 u_fxRelight[8];
 
 float gameSky(float k)
 {
@@ -40,8 +43,8 @@ float sunTap(vec3 world)
 void main()
 {
     // The target's texel: no dependence on how the backend orients a render target. The target has `scale` times
-    // the game lightmap's texels per side; the inputs are the game's texels, interpolated here (bilinear, over the
-    // texels the lightmap's triangles cover: a texel outside them does not pull a position off the surface).
+    // the inputs' texels per side; the inputs are interpolated here (bilinear, over the texels the lightmap's
+    // triangles cover: a texel outside them does not pull a position off the surface).
     vec2 uv = gl_FragCoord.xy * u_fxRelight[5].xy;
     vec2 at = uv * u_fxRelight[6].xy - vec2_splat(0.5);
     vec2 base = floor(at);
@@ -58,13 +61,12 @@ void main()
     bilinear[1] = f.x * (1.0 - f.y);
     bilinear[2] = (1.0 - f.x) * f.y;
     bilinear[3] = f.x * f.y;
-    vec4 game = vec4_splat(0.0);
+    vec4 game = texture2DLod(s_fxRelightGame, uv, u_fxRelight[7].x);
     vec4 position = vec4_splat(0.0);
     vec4 normalSky = vec4_splat(0.0);
     float covered = 0.0;
     for (int i = 0; i < 4; ++i)
     {
-        game += texture2DLod(s_fxRelightGame, uvs[i], 0.0) * bilinear[i];
         vec4 p = texture2DLod(s_fxRelightPosition, uvs[i], 0.0);
         float w = bilinear[i] * p.w;
         position += vec4(p.xyz * w, w);

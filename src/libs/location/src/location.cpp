@@ -216,7 +216,8 @@ namespace
 {
 
 // One mip level of a .tx lightmap, the first not wider than kMaxWidth (a texel of a 2048² town lightmap is a few
-// centimetres; the ground lookup averages over 0.3 m anyway).
+// centimetres; the ground lookup averages over 0.3 m anyway, and the town light fits its sun and tone on it). Not the
+// paint the town light relights: that is the lightmap's own texture at full resolution (src/effects/town_light.hpp).
 std::optional<storm::render::EffectsLightmap> ReadLightmap(const std::string &file)
 {
     constexpr uint32_t kMaxWidth = 512;

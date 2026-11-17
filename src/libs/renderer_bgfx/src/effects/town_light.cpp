@@ -459,6 +459,7 @@ void TownLight::upload_map(Map &map)
 {
     // The texels' static inputs as full grids (the gutter takes its covered texel's): what the compose pass reads.
     const fx::LightmapTexels &texels = *map.texels;
+    map.painted_from = BGFX_INVALID_HANDLE;
     const size_t count = static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height);
     std::vector<float> position(count * 4, 0.0f);
     std::vector<uint8_t> normal_sky(count * 4, 0);
@@ -489,7 +490,7 @@ void TownLight::upload_map(Map &map)
         shim::logf("effects: town light of %s: a %dx%d lightmap at x%d exceeds the device's %d texels: x%d", name_.c_str(),
                    texels.width, texels.height, scale_, largest, scale);
     map.scale = scale;
-    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, map.game}, scale);
+    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky}, scale);
     if (map.relight != fx::SunRelight::kNoMap)
         shim::logf("effects: town light of %s: a %dx%d lightmap relit at x%d (%dx%d), %.1f MB of GPU memory for the town's relight",
                    name_.c_str(), texels.width, texels.height, scale, texels.width * scale, texels.height * scale,
@@ -581,8 +582,9 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
             place_is_bake_ = true;
             ++sun_counters_.bake_draws;
         }
-        relight_.BakeVisibility(kComposeView, bake_due->relight, 0.5f * bake_due->texel_metres / static_cast<float>(bake_due->scale));
-        compose_all();
+        if (relight_.BakeVisibility(kComposeView, bake_due->relight, paint_of(*bake_due),
+                                    0.5f * bake_due->texel_metres / static_cast<float>(bake_due->scale)))
+            compose_all();
         return;
     }
     // The place's sun map: when the sun moved a step, or what it was drawn with changed.
@@ -599,6 +601,12 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
         night_ = !up;
         compose_all();
     }
+    // A lightmap composed from a texture of the game's that has since been replaced (its transcode landed) is composed
+    // again from the one the draws now sample.
+    for (Map &map : maps_)
+        if (!map.compose_due && map.relight != fx::SunRelight::kNoMap && map.store && bgfx::isValid(map.painted_from) &&
+            (map.store->handle.idx != map.painted_from.idx || (map.painted_interim && map.store->fallback_bytes == 0)))
+            map.compose_due = true;
     // One lightmap a frame (one view): a town has one to four. The taps spread over the texel (its sun is the share
     // of it the sun reaches: no stair steps of whole texels along a shadow's edge).
     for (Map &map : maps_)
@@ -606,7 +614,12 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
         {
             fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
             std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
-            relight_.Compose(kComposeView, map.relight, tone, up, 0.5f * map.texel_metres / static_cast<float>(map.scale), debug_);
+            const fx::RelightPaint paint = paint_of(map);
+            if (!relight_.Compose(kComposeView, map.relight, paint, tone, up,
+                                  0.5f * map.texel_metres / static_cast<float>(map.scale), debug_))
+                break; // the game's lightmap has no texture yet (paint_of logged it): the next frame
+            map.painted_from = paint.texture;
+            map.painted_interim = map.store->fallback_bytes > 0;
             map.compose_due = false;
             ++sun_counters_.composes;
             break;
@@ -619,6 +632,27 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
                    maps_.size(), live_sun_[0], live_sun_[1], live_sun_[2],
                    std::asin(std::clamp(live_sun_[1], -1.0f, 1.0f)) * 57.29578f);
     }
+}
+
+fx::RelightPaint TownLight::paint_of(Map &map)
+{
+    // The game's lightmap texture as the draws sample it: the paint of the compose, at its own resolution (the
+    // lighting is fitted at a coarser level of it, ReadLightmap).
+    fx::RelightPaint paint;
+    if (map.store && bgfx::isValid(map.store->handle))
+    {
+        paint.texture = map.store->handle;
+        paint.width = static_cast<int>(map.store->width);
+        paint.height = static_cast<int>(map.store->height);
+        paint.levels = static_cast<int>(std::max(map.store->levels, 1u));
+    }
+    else if (!map.paint_missing_logged)
+    {
+        map.paint_missing_logged = true;
+        shim::logf("effects: town light of %s: the game's %dx%d lightmap has no texture on the GPU yet: its relight waits for it",
+                   name_.c_str(), map.texels->width, map.texels->height);
+    }
+    return paint;
 }
 
 void TownLight::set_scale(int scale)

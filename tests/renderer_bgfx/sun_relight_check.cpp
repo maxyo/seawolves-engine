@@ -12,7 +12,11 @@
 //   * with the hour's sun at the bake's the relit lightmap is the game's: both suns are read through the same map
 //     and filter, so what it misses (a pole thinner than its texels) keeps its painted shadow;
 //   * a plate drawn lit over open ground (a moving caster) darkens the ground by the sun's share of the lightmap's
-//     tone, and adds nothing where the houses shade the ground already.
+//     tone, and adds nothing where the houses shade the ground already;
+//   * the game's lightmap texture has four times the texels of the level the town light fits on (a town's 2048 over
+//     its 512, location.cpp ReadLightmap), and a patch of open ground is painted with joints finer than a texel of
+//     that level: seen from close by, the relit lightmap keeps them as the game's does (its paint is the game's
+//     texture, not the fitted level interpolated).
 #include "device.hpp"
 #include "check_backend.hpp"
 
@@ -39,7 +43,11 @@ namespace
 {
 
 constexpr uint32_t kSize = 256;
-constexpr int kMap = 256;       // the lightmap's side
+constexpr int kMap = 256;       // the side of the lightmap's level the town light fits on (ReadLightmap's)
+constexpr int kPaintScale = 4;  // the game's lightmap texture: kMap * kPaintScale per side, the fitted level its mip
+constexpr int kPaint = kMap * kPaintScale;
+// The patch of finely painted joints (open ground under both suns) and the close view's eye over its centre.
+constexpr float kPatchLo = -18.0f, kPatchHi = -12.0f, kPatchCentre = -15.0f, kCloseHalf = 2.5f;
 constexpr float kHalf = 20.0f;  // the square's half side
 constexpr float kEye = 30.0f;   // the camera's height
 
@@ -123,6 +131,7 @@ struct Scene
 {
     shim::Texture2D *lightmap = nullptr;
     bool plates = false;
+    bool close = false; // the camera over the joints' patch, kCloseHalf metres to each side of the picture's centre
     D3DLIGHT9 sun{};
 };
 
@@ -141,7 +150,8 @@ class Harness
         back_->Release();
     }
 
-    // The square from kEye above, perspective; returns the picture (BGRA).
+    // The square from kEye above (or the joints' patch from close by: Scene::close), perspective; returns the picture
+    // (BGRA).
     std::vector<uint8_t> render(const Scene &scene)
     {
         check(d_.BeginScene(), "BeginScene");
@@ -152,7 +162,10 @@ class Harness
         view.m[0][0] = 1.0f;
         view.m[1][2] = -1.0f;
         view.m[2][1] = 1.0f;
-        view.m[3][2] = kEye;
+        const float eye = scene.close ? kEye * kCloseHalf / kHalf : kEye;
+        view.m[3][0] = scene.close ? -kPatchCentre : 0.0f;
+        view.m[3][1] = scene.close ? -kPatchCentre : 0.0f;
+        view.m[3][2] = eye;
         view.m[3][3] = 1.0f;
         const float zn = 1.0f, zf = 100.0f, cot = kEye / kHalf;
         D3DMATRIX projection{};
@@ -329,23 +342,55 @@ int main()
             for (size_t i = 0; i < texels.texel.size(); ++i)
                 grey[texels.texel[i]] = static_cast<uint8_t>(
                     std::lround(255.0f * (0.10f + 0.45f * bake_vis[i] / 255.0f + 0.10f * sky[i] / 255.0f)));
+            // The game's lightmap texture, kPaintScale times finer: the light of the fitted level's texels, and in the
+            // patch dark joints one texel wide every kPaintScale texels (painted detail under a texel of that level).
+            std::vector<std::vector<float>> paint(1, std::vector<float>(static_cast<size_t>(kPaint) * kPaint));
+            const auto in_patch = [](float x, float z) { return x > kPatchLo && x < kPatchHi && z > kPatchLo && z < kPatchHi; };
+            for (int y = 0; y < kPaint; ++y)
+                for (int x = 0; x < kPaint; ++x)
+                {
+                    const float wx = -kHalf + (x + 0.5f) * 2.0f * kHalf / kPaint, wz = -kHalf + (y + 0.5f) * 2.0f * kHalf / kPaint;
+                    const bool joint = in_patch(wx, wz) && (x % kPaintScale == 0 || y % kPaintScale == 0);
+                    paint[0][static_cast<size_t>(y) * kPaint + x] =
+                        grey[static_cast<size_t>(y / kPaintScale) * kMap + x / kPaintScale] * (joint ? 0.45f : 1.0f);
+                }
+            // Its mips by box filter; the level of kMap texels is the one the town light is given (as ReadLightmap's).
+            for (int size = kPaint / 2; size >= 1; size /= 2)
+            {
+                const std::vector<float> &up = paint.back();
+                std::vector<float> level(static_cast<size_t>(size) * size);
+                for (int y = 0; y < size; ++y)
+                    for (int x = 0; x < size; ++x)
+                        level[static_cast<size_t>(y) * size + x] =
+                            0.25f * (up[static_cast<size_t>(2 * y) * 2 * size + 2 * x] + up[static_cast<size_t>(2 * y) * 2 * size + 2 * x + 1] +
+                                     up[static_cast<size_t>(2 * y + 1) * 2 * size + 2 * x] +
+                                     up[static_cast<size_t>(2 * y + 1) * 2 * size + 2 * x + 1]);
+                paint.push_back(std::move(level));
+            }
+            std::vector<uint8_t> fitted(static_cast<size_t>(kMap) * kMap);
+            for (size_t i = 0; i < fitted.size(); ++i)
+                fitted[i] = static_cast<uint8_t>(std::lround(paint[2][i]));
+            static_assert(kPaint >> 2 == kMap, "the fitted level is the third of the paint");
             render::EffectsLightmap lightmap;
             lightmap.width = lightmap.height = kMap;
             lightmap.format = {'D', 'X', 'T', '1'};
-            lightmap.data = encode_dxt1(grey, kMap);
+            lightmap.data = encode_dxt1(fitted, kMap);
             shim::Texture2D *texture = nullptr;
-            check(device->CreateTexture(kMap, kMap, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture, nullptr), "CreateTexture");
+            const auto levels = static_cast<UINT>(paint.size());
+            check(device->CreateTexture(kPaint, kPaint, levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture, nullptr), "CreateTexture");
+            for (UINT level = 0; level < levels; ++level)
             {
+                const int size = kPaint >> level;
                 D3DLOCKED_RECT rect;
-                check(texture->LockRect(0, &rect, nullptr, 0), "LockRect");
-                for (int y = 0; y < kMap; ++y)
-                    for (int x = 0; x < kMap; ++x)
+                check(texture->LockRect(level, &rect, nullptr, 0), "LockRect");
+                for (int y = 0; y < size; ++y)
+                    for (int x = 0; x < size; ++x)
                     {
-                        const uint32_t g = grey[static_cast<size_t>(y) * kMap + x];
+                        const auto g = static_cast<uint32_t>(std::lround(paint[level][static_cast<size_t>(y) * size + x]));
                         const uint32_t texel = 0xFF000000u | g << 16 | g << 8 | g;
                         std::memcpy(static_cast<uint8_t *>(rect.pBits) + y * rect.Pitch + x * 4, &texel, 4);
                     }
-                texture->UnlockRect(0);
+                texture->UnlockRect(level);
             }
             render::SetEffectsTextureSource(texture, "lighting\\day1\\sun_relight_check\\shadow.tga", {});
             lightmap.texture = texture;
@@ -385,6 +430,9 @@ int main()
             effects::TownLight &town = effects::Host::instance().lighting().town_light();
             // The game's own lightmap first (the place's bake runs on its thread), then ours.
             std::vector<uint8_t> game = frame(), picture;
+            scene.close = true;
+            const std::vector<uint8_t> close_game = frame();
+            scene.close = false;
             // On the bake's progress, no frame or time budget: a bake that never finishes hangs here and run.py's
             // deadlock guard reports the step.
             std::printf("step: the place's lightmap is relit (its bake finished and its tone explains the game's)\n");
@@ -431,8 +479,8 @@ int main()
                         continue; // a shadow's edge: the two filters differ there
                     const int tx = static_cast<int>(texels.texel[i] % kMap), ty = static_cast<int>(texels.texel[i] / kMap);
                     const float x = -kHalf + (tx + 0.5f) * texel_metres, z = -kHalf + (ty + 0.5f) * texel_metres;
-                    if (sky[i] < 200 || std::fabs(x) > kHalf - 1.0f || std::fabs(z) > kHalf - 1.0f)
-                        continue; // by a wall the sky term differs; the picture's edge
+                    if (sky[i] < 200 || std::fabs(x) > kHalf - 1.0f || std::fabs(z) > kHalf - 1.0f || in_patch(x, z))
+                        continue; // by a wall the sky term differs; the picture's edge; the joints' paint
                     ++compared;
                     const bool lit_picture = ground_at(picture, x, z) > 0.75f * lit_level;
                     agree += lit_picture == (sun_share >= 0.98f) ? 1 : 0;
@@ -480,6 +528,35 @@ int main()
                             sum / static_cast<double>(compared), 100.0 * static_cast<double>(close) / static_cast<double>(compared));
                 expect(sum / static_cast<double>(compared) < 2.0 && close >= compared * 97 / 100,
                        "with the hour's sun at the bake's the relit lightmap is the game's");
+            }
+            // From close by the patch's joints, finer than a texel of the fitted level, are painted as on the game's.
+            {
+                scene.close = true;
+                std::vector<uint8_t> close_relit;
+                for (int f = 0; f < 3; ++f)
+                    close_relit = frame();
+                scene.close = false;
+                dump(close_game, "close_game");
+                dump(close_relit, "close_relit");
+                // The joints' contrast: the spread of the green over the picture (the patch fills it), and the mean
+                // difference to the game's picture.
+                const auto spread = [](const std::vector<uint8_t> &p) {
+                    double sum = 0.0, sum2 = 0.0;
+                    const size_t n = p.size() / 4;
+                    for (size_t i = 0; i < n; ++i)
+                        sum += p[i * 4 + 1], sum2 += static_cast<double>(p[i * 4 + 1]) * p[i * 4 + 1];
+                    const double mean = sum / static_cast<double>(n);
+                    return std::sqrt(std::max(sum2 / static_cast<double>(n) - mean * mean, 0.0));
+                };
+                double difference = 0.0;
+                for (size_t i = 0; i < close_game.size() / 4; ++i)
+                    difference += std::abs(static_cast<int>(close_game[i * 4 + 1]) - static_cast<int>(close_relit[i * 4 + 1]));
+                difference /= static_cast<double>(close_game.size() / 4);
+                std::printf("the joints from close by: spread of the game's %.1f, of the relit %.1f; mean difference %.2f\n",
+                            spread(close_game), spread(close_relit), difference);
+                expect(spread(close_game) > 15.0, "the test's patch shows its joints from close by");
+                expect(spread(close_relit) > 0.85 * spread(close_game) && difference < 4.0,
+                       "the relit lightmap keeps the game's paint finer than the level it is fitted on");
             }
             set_sun(hour_sun);
             for (int f = 0; f < 5; ++f)

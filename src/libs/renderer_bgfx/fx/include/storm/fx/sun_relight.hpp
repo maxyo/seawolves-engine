@@ -9,8 +9,11 @@
 //   * Compose: per lightmap one pass into its own RGBA8 target with mips. Each texel reads the sun on its world
 //     position from the place map (four hardware-filtered taps over its footprint) and writes the game's paint
 //     relit: (a + b sun + c sky) now over the same with the bake's sun then; the alpha stays the game's.
-// What does not depend on the hour (the texels' positions, normals, sky, the game's paint) is uploaded once per
-// lightmap.
+// What does not depend on the hour (the texels' positions, normals, sky) is uploaded once per lightmap, at the
+// resolution the lighting is fitted at (a mip of the game's lightmap, location.cpp ReadLightmap: 512 of a town's 2048).
+// The paint is not: it is read from the game's own lightmap texture as the draws sample it (RelightPaint), at the
+// target's resolution, so its painted shadows, crevices and grain stay as sharp as on «Низкая» (the light's ratio
+// is smooth, the paint is not: interpolating the paint from the fitted mip blurred them away).
 #pragma once
 
 #include "storm/fx/shadow_model.hpp"
@@ -30,7 +33,13 @@ struct RelightTexels
     int width = 0, height = 0;
     std::span<const float> position;     // 4 per texel: world xyz, w 1 = relit (0: the texel keeps the game's)
     std::span<const uint8_t> normal_sky; // 4: the unit normal * 0.5 + 0.5, the sky's visibility
-    std::span<const uint8_t> game;       // 4: the game's lightmap
+};
+
+// The game's lightmap texture as the draws sample it (its own size and mips), the paint a compose relights.
+struct RelightPaint
+{
+    bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
+    int width = 0, height = 0, levels = 1;
 };
 
 struct RelightTone
@@ -74,13 +83,17 @@ class SunRelight
     bool PlaceDrawn() const { return place_drawn_; }
     // Reads the bake's sun on `map`'s texels in `view`: the place map must be drawn along the bake's direction.
     // `footprint`: the radius the four taps spread over (metres), as Compose's.
-    void BakeVisibility(bgfx::ViewId view, Map map, float footprint);
+    // `paint`: the game's lightmap (only bound: the pass writes the visibility, not the paint). False: not read (no
+    // place map, or the paint has no texture yet).
+    bool BakeVisibility(bgfx::ViewId view, Map map, const RelightPaint &paint, float footprint);
     bool BakeReady(Map map) const { return map < maps_.size() && maps_[map].bake_ready; }
     // The place's still geometry changed (a cut-out texture): every bake's sun is read again.
     void InvalidateBakes();
     // Composes `map` in `view` for the sun the place map was drawn with (`sun_up` false: night, no sun term), over
-    // its bake's sun (BakeReady). `footprint`: as BakeVisibility's; `debug`: the sun's visibility as grey.
-    void Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bool sun_up, float footprint, bool debug);
+    // its bake's sun (BakeReady). `paint`: the game's lightmap; `footprint`: as BakeVisibility's; `debug`: the sun's
+    // visibility as grey. False: not composed (no bake's sun yet, or the paint has no texture yet).
+    bool Compose(bgfx::ViewId view, Map map, const RelightPaint &paint, const RelightTone &tone, bool sun_up, float footprint,
+                 bool debug);
 
     void Shutdown();
     void OnDeviceLost();
@@ -90,14 +103,14 @@ class SunRelight
     {
         int width = 0, height = 0;         // the targets'
         int src_width = 0, src_height = 0; // the game's lightmap (the inputs')
-        bgfx::TextureHandle position = BGFX_INVALID_HANDLE, normal_sky = BGFX_INVALID_HANDLE, game = BGFX_INVALID_HANDLE,
-                            target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle position = BGFX_INVALID_HANDLE, normal_sky = BGFX_INVALID_HANDLE, target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE, bake_target = BGFX_INVALID_HANDLE;
         bool composed = false, bake_ready = false;
     };
     void EnsureResources();
     static bgfx::TextureFormat::Enum BakeFormat();
-    void Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bool sun, float footprint, bool debug, bool bake);
+    void Pass(bgfx::ViewId view, MapData &m, const RelightPaint &paint, const RelightTone &tone, bool sun, float footprint,
+              bool debug, bool bake);
 
     Retire retire_ = nullptr;
     std::vector<MapData> maps_;

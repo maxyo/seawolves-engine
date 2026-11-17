@@ -15,7 +15,9 @@
 // bake's direction (each lightmap reads that sun's visibility once, one a frame) and then whenever the hour's sun has
 // moved by fx::kSunStepDegrees; every lightmap is then composed again on the GPU, one a frame, into its own texture
 // (fx/sun_relight.hpp; render(), in two pre-game views). Both suns are read through the same map and filter, over
-// the footprint of a lightmap texel. A draw that samples one of the game's lightmaps samples ours
+// the footprint of a lightmap texel. The fit, the tone and the texels' positions use a level of the game's lightmap of at
+// most 512 texels (location.cpp ReadLightmap); the paint that is relit is the game's lightmap texture itself, at our
+// lightmap's resolution (a town's 2048 at x4 of 512: every painted texel; paint_of). A draw that samples one of the game's lightmaps samples ours
 // instead at the same stage (Lighting::prepare / submit): one texture fetch as before. Until a place's set is there,
 // and on Низкая, the game's lightmaps stay; nothing is made while fx_town_light is off (Низкая), and switching it off
 // cancels the bake still running.
@@ -120,6 +122,11 @@ class TownLight
         int scale = 1;               // our texels per side for each of its (the sun is read over one of ours)
         fx::SunRelight::Map relight = fx::SunRelight::kNoMap; // its inputs and target on the GPU
         bool compose_due = true;
+        bool paint_missing_logged = false;
+        // The game's lightmap texture the last compose read its paint from. The store's texture changes when its
+        // transcode lands (until then an interim copy without its top level, shim.hpp): composed again from it.
+        bgfx::TextureHandle painted_from = BGFX_INVALID_HANDLE;
+        bool painted_interim = false; // that texture was the interim copy
     };
     // The lightmapped ground as the location reported it, shared with the bakes.
     struct Lightmapped
@@ -144,6 +151,8 @@ class TownLight
     void compose_all();
     void fade_walls();
     static float TexelMetres(const fx::LightmapTexels &texels);
+    // The game's lightmap texture of `map` as the draws sample it (invalid while it has none on the GPU: logged once).
+    fx::RelightPaint paint_of(Map &map);
     static void RetireLightmap(bgfx::TextureHandle texture);
 
     bool enabled_ = false;
