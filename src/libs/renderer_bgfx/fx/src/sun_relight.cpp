@@ -57,7 +57,7 @@ bool SunRelight::Supported()
 {
     const bgfx::Caps *caps = bgfx::getCaps();
     const auto sampled = [caps](bgfx::TextureFormat::Enum f) { return (caps->formats[f] & BGFX_CAPS_FORMAT_TEXTURE_2D) != 0; };
-    return SupportsShadowMap() && sampled(bgfx::TextureFormat::RGBA8) && sampled(bgfx::TextureFormat::RG8) &&
+    return SupportsShadowMap() && sampled(bgfx::TextureFormat::RGBA8) &&
            (Renders(bgfx::TextureFormat::R8, true) || Renders(bgfx::TextureFormat::RGBA8, true));
 }
 
@@ -82,7 +82,7 @@ void SunRelight::EnsureResources()
     s_normal_ = bgfx::createUniform("s_fxRelightNormal", bgfx::UniformType::Sampler);
     s_sun_ = bgfx::createUniform("s_fxRelightSun", bgfx::UniformType::Sampler);
     u_matrix_ = bgfx::createUniform("u_fxRelightMtx", bgfx::UniformType::Mat4);
-    u_params_ = bgfx::createUniform("u_fxRelight", bgfx::UniformType::Vec4, 9);
+    u_params_ = bgfx::createUniform("u_fxRelight", bgfx::UniformType::Vec4, 10);
     place_map_ = bgfx::createTexture2D(kPlaceSize, kPlaceSize, false, 1, bgfx::TextureFormat::D16,
                                        BGFX_TEXTURE_RT | BGFX_SAMPLER_COMPARE_LEQUAL | kClampLinear);
     place_target_ = bgfx::createFrameBuffer(1, &place_map_, true);
@@ -101,7 +101,7 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
 {
     const size_t count = static_cast<size_t>(texels.width) * static_cast<size_t>(texels.height);
     if (texels.width <= 0 || texels.height <= 0 || ratio_width <= 0 || ratio_height <= 0 || texels.position.size() != count * 4 ||
-        texels.normal_sky.size() != count * 4)
+        texels.normal_sky.size() != count * 4 || texels.game.size() != count * 4)
         return kNoMap;
     EnsureResources();
     MapData map;
@@ -110,7 +110,8 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
     map.width = ratio_width;
     map.height = ratio_height;
     // The positions to 16 bits within their bounds (a few millimetres over a town), split into a high and a low byte
-    // per axis: two RGBA8 textures with the sky and the coverage in their fourth channels, the normal in an RG8.
+    // per axis: two RGBA8 textures with the sky and the coverage in their fourth channels, the normal and the game's
+    // luminance in a third.
     Vec3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
     for (size_t i = 0; i < count; ++i)
         if (texels.position[i * 4 + 3] > 0.0f)
@@ -129,7 +130,7 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
     std::vector<uint8_t> &position_hi = map.position_hi, &position_lo = map.position_lo, &normal = map.normal;
     position_hi.resize(count * 4);
     position_lo.resize(count * 4);
-    normal.resize(count * 2);
+    normal.resize(count * 4);
     for (size_t i = 0; i < count; ++i)
     {
         const bool covered = texels.position[i * 4 + 3] > 0.0f;
@@ -144,8 +145,11 @@ SunRelight::Map SunRelight::AddMap(const RelightTexels &texels, int ratio_width,
         position_lo[i * 4 + 3] = covered ? 255 : 0;
         const auto unpack = [&](int k) { return texels.normal_sky[i * 4 + k] / 127.5f - 1.0f; };
         const std::array<uint8_t, 2> n = OctEncode(unpack(0), unpack(1), unpack(2));
-        normal[i * 2] = n[0];
-        normal[i * 2 + 1] = n[1];
+        normal[i * 4] = n[0];
+        normal[i * 4 + 1] = n[1];
+        const uint8_t *g = &texels.game[i * 4];
+        normal[i * 4 + 2] = static_cast<uint8_t>(std::lround(0.299f * g[0] + 0.587f * g[1] + 0.114f * g[2])); // as the fit's
+        normal[i * 4 + 3] = 0;
     }
     // The ratio map: the draws sample it with the lightmap's own sampler state (trilinear, anisotropic), so it has
     // mips; the backend makes them when the pass ends.
@@ -266,6 +270,12 @@ void SunRelight::InvalidateBakes()
         m.bake_ready = false;
 }
 
+float RelightLift(float degrees_from_bake)
+{
+    const float t = std::clamp((degrees_from_bake - kLiftStartDegrees) / (kLiftFullDegrees - kLiftStartDegrees), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
 bool SunRelight::Compose(bgfx::ViewId view, Map map, const RelightTone &tone, bool sun_up, float footprint, bool debug)
 {
     if (map >= maps_.size() || !bgfx::isValid(compose_) || !maps_[map].bake_ready)
@@ -287,7 +297,7 @@ void SunRelight::Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bo
     // own depth must not shade it); the depth bias is the map's step over a texel at a 15° sun.
     const float texel = std::max(place_.texel[0], place_.texel[1]);
     const float depth = std::max(place_.far_plane - place_.near_plane, 1.0f);
-    const std::array<std::array<float, 4>, 9> params = {{
+    const std::array<std::array<float, 4>, 10> params = {{
         {tone.a, tone.b, tone.c, debug ? 1.0f : 0.0f},
         {place_.sun[0], place_.sun[1], place_.sun[2], sun ? 1.0f : 0.0f},
         {tone.game_sky[0], tone.game_sky[1], tone.game_sky[2], tone.game_sky[3]},
@@ -298,6 +308,7 @@ void SunRelight::Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bo
          1.0f / static_cast<float>(m.src_height)},
         {m.origin[0], m.origin[1], m.origin[2], 0.0f},
         {m.extent[0], m.extent[1], m.extent[2], 0.0f},
+        {tone.bake_sun[0], tone.bake_sun[1], tone.bake_sun[2], tone.lift},
     }};
     SetupView(view, bake ? "fx town light ratio, the bake's sun" : "fx town light ratio", bake ? m.bake_target : m.target,
               static_cast<uint16_t>(m.width), static_cast<uint16_t>(m.height), true);
@@ -306,7 +317,7 @@ void SunRelight::Pass(bgfx::ViewId view, MapData &m, const RelightTone &tone, bo
     // The inputs for this pass only: bgfx destroys them once the frame that reads them is drawn.
     bgfx::TextureHandle position_hi = Static(m.src_width, m.src_height, bgfx::TextureFormat::RGBA8, m.position_hi);
     bgfx::TextureHandle position_lo = Static(m.src_width, m.src_height, bgfx::TextureFormat::RGBA8, m.position_lo);
-    bgfx::TextureHandle normal = Static(m.src_width, m.src_height, bgfx::TextureFormat::RG8, m.normal);
+    bgfx::TextureHandle normal = Static(m.src_width, m.src_height, bgfx::TextureFormat::RGBA8, m.normal);
     bgfx::setTexture(0, s_position_hi_, position_hi);
     bgfx::setTexture(1, s_position_lo_, position_lo);
     // The pass that writes the bake's visibility does not read it (its own target): the normals stand in.

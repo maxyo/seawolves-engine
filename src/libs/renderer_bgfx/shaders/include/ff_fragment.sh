@@ -138,7 +138,7 @@ float ffSunReach(float open)
 }
 
 // The town walls' relight (src/effects/town_light.hpp, lighting.cpp bind_town_wall): [0] the lightmaps' tone a, b, c and
-// w its share for this draw (0 off; it fades in 0 -> 1 after it came on, TownLight::wall_weight); [1] towards the live sun (view space); [2] towards the sun the game baked with; [3], [4] the
+// w its share for this draw (0 off; it fades in 0 -> 1 after it came on, TownLight::wall_weight); [1] towards the live sun (view space); [2] towards the sun the game baked with, w how far the light may rise above the game's (fx::RelightLift); [3], [4] the
 // game's sky per bin of ours (bin centres (i + 0.5) / 8).
 #ifdef FX_FF_TOWN_WALL
 uniform vec4 u_fxTownWall[5];
@@ -936,19 +936,39 @@ void main()
 #endif
 #endif
 #ifdef FX_FF_BAKED
-#ifdef FX_LIGHT_SPECULAR
     // How lit the bake shows this texel: its stages' result against the texture alone (with a 2x modulate or a
-    // light map alike). The sun's highlight shows where that is the light of the open sun, not in the shade.
+    // light map alike). The sun's highlight shows where that is the light of the open sun, not in the shade; the
+    // relief's sun-side shading and its own shadow likewise: in a shadow the game painted (and in the shade of a
+    // wall) no sun lights the relief, so the painted dark stays as deep as the game's.
     float bakedSun = smoothstep(0.55, 0.9, dot(current.rgb, vec3(0.299, 0.587, 0.114)) / (1.0 - 0.15 * ffMetal) /
                                                max(dot(tex0.rgb, vec3(0.299, 0.587, 0.114)), 0.04));
-#endif
 #ifdef FX_LIGHT_NORMALMAP
-    current.rgb *= fxBakedRelief(Ng, N, V);
+    current.rgb *= mix(1.0, fxBakedRelief(Ng, N, V), bakedSun);
 #ifdef FX_LIGHT_PARALLAX
     // The baked colour holds the sun and the sky: the relief's own shadow takes the sun's part (about half of it).
-    current.rgb *= 1.0 - 0.5 * (1.0 - fxParallaxShadow(ffReliefUv, ffPomFound, ffPomFrame.gu, ffPomFrame.gv,
-                                                     ffPomFrame.normal, u_fxLight[0].xyz));
+    current.rgb *= 1.0 - 0.5 * bakedSun * (1.0 - fxParallaxShadow(ffReliefUv, ffPomFound, ffPomFrame.gu, ffPomFrame.gv,
+                                                                  ffPomFrame.normal, u_fxLight[0].xyz));
 #endif
+#endif
+#ifdef FX_FF_AO
+    if (u_fxAoParams.x > 0.0)
+    {
+        // The interior's occlusion on a baked surface: only what the bake lacks. The volume's occlusion here relative to
+        // the open room before the surface, the brighter of half a metre and a metre and a half out (above a table or
+        // a shelf): an open wall sees what the room before it sees and takes nothing (the bake's level holds the
+        // room's enclosure); a corner, the floor under a table take their own. Over the darkening the bake already
+        // shows against the room's baked light there (ffRoomLight, with the lamps): a corner the game painted dark
+        // keeps its paint and takes nothing more; one it painted as bright as the room takes the volume's.
+        float aoOpen = max(ffAoVolume(P + Ng * 0.5, Ng, Nw), ffAoVolume(P + Ng * 1.5, Ng, Nw));
+        float aoRel = clamp(ffAoVolume(P, Ng, Nw) / max(aoOpen, 1e-3), 0.0, 1.0);
+        float held = 1.0;
+#ifdef FX_FF_LAMPS
+        if (u_fxLampGrid[2].w > 0.5)
+            held = clamp(dot(v_color0.rgb, vec3(0.299, 0.587, 0.114)) /
+                             max(dot(ffRoomLight(Pw, Nw), vec3(0.299, 0.587, 0.114)), 0.03), 0.0, 1.0);
+#endif
+        aoVolume = mix(aoRel / max(held, aoRel), 1.0, skySeen.x);
+    }
 #endif
     // The baked colour holds the sky and the sun together: three quarters of the cavity.
     aoVolume *= mix(1.0, cavity, 0.75);
@@ -970,20 +990,30 @@ void main()
     vec3 lampTone = mix(vec3_splat(dot(lamps.rgb, vec3(0.299, 0.587, 0.114))), lamps.rgb, u_fxLampGrid[4].z);
     // The lamp-free part and the lamps' part add, the latter within the picture's headroom (ffLampRoll).
     vec3 surface = current.rgb * aoVolume;
+    // The bake as it is (without the relight). Where it is darker than the share of the lamps it is taken to hold
+    // (k G unshadowed), the game painted no lamp light there (a painted shadow, dark paint): the relight may darken it
+    // (the lamp's shadow) but not lighten it above the bake.
+    vec3 bakeOnly = surface * movingShade;
+    float holds;
     if (fxLinear())
     {
-        surface *= surface / (baked * baked + u_fxLamps[0].w * gain * gain * lamps.a);
+        float share = u_fxLamps[0].w * gain * gain * lamps.a;
+        holds = smoothstep(0.5, 1.0, baked * baked / max(share, 1e-4));
+        surface *= surface / (baked * baked + share);
         vec3 base = surface * (baked * baked * movingShade * movingShade);
         vec3 lamp = surface * (gain * gain * lampTone);
         current.rgb = sqrt(base + lamp * ffLampRoll(base, lamp));
     }
     else
     {
-        surface /= baked + u_fxLamps[0].w * gain * lamps.a;
+        float share = u_fxLamps[0].w * gain * lamps.a;
+        holds = smoothstep(0.5, 1.0, baked / max(share, 1e-4));
+        surface /= baked + share;
         vec3 base = surface * (baked * movingShade);
         vec3 lamp = surface * (gain * lampTone);
         current.rgb = base + lamp * ffLampRoll(base, lamp);
     }
+    current.rgb = mix(min(current.rgb, bakeOnly), current.rgb, holds);
     // The lamps' highlights on the baked colours, at the lamps' gain on them.
     vec3 ffLampBakedSpec = ffLampSpec * (fxLinear() ? gain * gain : gain);
 #else
@@ -996,10 +1026,13 @@ void main()
     {
         // A town's wall (src/effects/town_light.hpp TownWallTone): its baked colour carries the game's sun along the
         // direction the game baked with and the game's sky, which takes no account of alleys and gaps between
-        // houses. Relit as the lightmaps are (the town light's ratio): a + b sun + c sky with our sun (its shadow, where the sun reaches at
-        // all) and our sky now, over the game's sun and sky then.
-        float sunNow = max(0.0, dot(N, u_fxTownWall[1].xyz)) * fxSunShadow(P, Ng) * sunReach;
+        // houses. Relit as the lightmaps are (the town light's ratio, fx/sun_relight.hpp RelightTone): a + b sun + c sky
+        // with our sun's shadow (where the sun reaches at all) at the bake's cosine and our sky now, over the game's sun
+        // and sky then. A face turned more to the hour's sun than to the bake's gets more light only by the lift.
         float sunThen = max(0.0, dot(N, u_fxTownWall[2].xyz));
+        float facingNow = sunThen + max(dot(N, u_fxTownWall[1].xyz) - sunThen, 0.0) * u_fxTownWall[2].w;
+        // A face turned away from the hour's sun is in its own shadow (the lightmaps' rays: no sun below 0.02 of it).
+        float sunNow = facingNow * fxSunShadow(P, Ng) * sunReach * clamp(dot(Ng, u_fxTownWall[1].xyz) * 50.0, 0.0, 1.0);
         float now = u_fxTownWall[0].x + u_fxTownWall[0].y * sunNow + u_fxTownWall[0].z * skySeen.x;
         float then = u_fxTownWall[0].x + u_fxTownWall[0].y * sunThen + u_fxTownWall[0].z * ffWallSky(skySeen.x);
         current.rgb *= mix(1.0, clamp(now / max(then, 0.02), 0.33, 3.0), u_fxTownWall[0].w);

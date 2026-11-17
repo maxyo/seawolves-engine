@@ -741,7 +741,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     // Lit models of an interior stand in the room's own light (the baked colours around them, ff_fragment.sh
     // ffRoomLight) instead of the weather's ambient.
     draw.hemisphere_ambient = hemisphere && lit;
-    draw.room_light = lit && draw.lamps && lamps_.room_light();
+    // Baked draws read it too: the AO volume takes only the occlusion their bake lacks against it (ff_fragment.sh).
+    draw.room_light = draw.lamps && lamps_.room_light();
     if ((hemisphere || draw.room_light) && lit)
         draw.vertex_ambient_off = true;
     if (lit && draw.room_light && !hemisphere)
@@ -1404,6 +1405,7 @@ void Lighting::bind_town_wall(const FfDraw &draw)
         u[0] = {tone->a, tone->b, tone->c, town_light_.wall_weight()};
         to_view(town_light_.live_sun(), u[1]);
         to_view(town_light_.bake_sun(), u[2]);
+        u[2][3] = town_light_.wall_lift();
         for (int i = 0; i < fx::TownWallTone::kSkyBins; ++i)
             u[3 + i / 4][i % 4] = wall->game_sky[i];
     }

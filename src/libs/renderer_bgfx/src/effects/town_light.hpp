@@ -77,6 +77,8 @@ class TownLight
     const fx::TownWallTone *wall_tone() const { return &wall_; }
     const std::array<float, 3> &live_sun() const { return live_sun_; }
     std::array<float, 3> bake_sun() const { return {bake_dir_[0], bake_dir_[1], bake_dir_[2]}; }
+    // How far the walls' light may rise above the game's now (fx::RelightLift of the hour's sun against the bake's).
+    float wall_lift() const;
     // Once per frame, before the draws: `sun` the hour's direction towards the sun (world), `present` false at night.
     void update(const std::array<float, 3> &sun, bool present);
     // Once per frame after update(): the hour's sun on the lightmaps. Draws the place's sun map when the sun moved

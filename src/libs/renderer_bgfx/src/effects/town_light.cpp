@@ -438,6 +438,11 @@ void TownLight::update(const std::array<float, 3> &sun, bool present)
     fade_ratio();
 }
 
+float TownLight::wall_lift() const
+{
+    return fx::RelightLift(Angle(live_sun_, {bake_dir_[0], bake_dir_[1], bake_dir_[2]}));
+}
+
 void TownLight::fade_walls()
 {
     // The walls' relight fades in as our lightmaps do (shim texture_fade.hpp): it comes with them, possibly after the
@@ -514,7 +519,7 @@ void TownLight::upload_map(Map &map)
                                  }());
     const std::array<int, 2> size = fx::SunRelight::RatioSize(texels.width, texels.height, map.texel_metres, largest);
     map.ratio_metres = map.texel_metres * static_cast<float>(texels.width) / static_cast<float>(size[0]);
-    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky}, size[0], size[1]);
+    map.relight = relight_.AddMap({texels.width, texels.height, position, normal_sky, map.game}, size[0], size[1]);
     if (map.relight != fx::SunRelight::kNoMap)
         shim::logf("effects: town light of %s: a %dx%d lightmap (texels %.2f m apart) takes a %dx%d light ratio map (%.2f m), "
                    "%.1f MB of GPU memory for the town's relight (and %.1f MB "
@@ -633,7 +638,8 @@ void TownLight::render(shim::Device &device, SunShadows &shadows, Casters &caste
     for (Map &map : maps_)
         if (map.compose_due && map.relight != fx::SunRelight::kNoMap && !map.store.expired())
         {
-            fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}};
+            fx::RelightTone tone{map.tone.a, map.tone.b, map.tone.c, {}, {bake_dir_[0], bake_dir_[1], bake_dir_[2]},
+                                 fx::RelightLift(Angle(live_sun_, {bake_dir_[0], bake_dir_[1], bake_dir_[2]}))};
             std::copy_n(map.tone.game_sky, fx::TownLightTone::kSkyBins, tone.game_sky);
             if (!relight_.Compose(kComposeView, map.relight, tone, up, 0.5f * map.ratio_metres, debug_))
                 break; // its bake's sun is not read yet

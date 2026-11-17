@@ -11,7 +11,7 @@ $input v_uv
 SAMPLER2D(s_fxRelightPositionHi, 0); // xyz the position's high bytes within the bounds, w the sky's visibility
 SAMPLER2D(s_fxRelightPositionLo, 1); // xyz its low bytes, w 1 = a texel of the lightmap's triangles (or their gutter)
 SAMPLER2D(s_fxRelightBaked, 2);      // r the bake's sun on the texel (this pass with u_fxRelight[5].z = 1)
-SAMPLER2D(s_fxRelightNormal, 3);     // xy the unit normal on the octahedron
+SAMPLER2D(s_fxRelightNormal, 3);     // xy the unit normal on the octahedron, z the game lightmap's luminance
 SAMPLER2DSHADOW(s_fxRelightSun, 5);
 uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [0] the tone a, b, c; w: 1 = debug view (the hour's sun visibility instead of the ratio)
@@ -21,7 +21,8 @@ uniform mat4 u_fxRelightMtx; // world -> the place map's uv and depth
 // [5] xy: 1 / the target's size, z: 1 = write the sun's visibility (the bake's) instead of the ratio
 // [6] xy: the size of the inputs (the game lightmap's level the lighting was fitted at), zw: 1 / it
 // [7] xyz: the positions' bounds, low corner; [8] xyz: their extent
-uniform vec4 u_fxRelight[9];
+// [9] xyz: towards the sun the game baked with, w: how far the light may rise above the game's (fx::RelightLift)
+uniform vec4 u_fxRelight[10];
 
 float gameSky(float k)
 {
@@ -78,6 +79,7 @@ void main()
     vec3 position = vec3_splat(0.0);
     vec3 normal = vec3_splat(0.0);
     float k = 0.0;
+    float game = 0.0;
     float covered = 0.0;
     for (int i = 0; i < 4; ++i)
     {
@@ -86,7 +88,9 @@ void main()
         float w = bilinear[i] * lo.w;
         vec3 q = floor(hi.xyz * 255.0 + vec3_splat(0.5)) * 256.0 + floor(lo.xyz * 255.0 + vec3_splat(0.5));
         position += (u_fxRelight[7].xyz + u_fxRelight[8].xyz * (q / 65535.0)) * w;
-        normal += octDecode(texture2DLod(s_fxRelightNormal, uvs[i], 0.0).xy) * w;
+        vec4 ng = texture2DLod(s_fxRelightNormal, uvs[i], 0.0);
+        normal += octDecode(ng.xy) * w;
+        game += ng.z * w;
         k += hi.w * w;
         covered += w;
     }
@@ -98,6 +102,7 @@ void main()
     }
     position /= covered;
     k /= covered;
+    game /= covered;
     vec3 n = normalize(normal);
     vec4 baked = texture2DLod(s_fxRelightBaked, uv, 0.0);
     vec3 sun = u_fxRelight[1].xyz;
@@ -112,16 +117,28 @@ void main()
         // The four directions of fx::SunVisibility's rays over the texel.
         visible = sunTap(o + (t * 0.7071 + b * 0.7071) * r) + sunTap(o + (-t * 0.7071 + b * 0.7071) * r) +
                   sunTap(o + (-t * 0.7071 - b * 0.7071) * r) + sunTap(o + (t * 0.7071 - b * 0.7071) * r);
-        visible *= 0.25 * facing;
+        visible *= 0.25;
     }
     if (u_fxRelight[5].z > 0.5 || u_fxRelight[0].w > 0.5)
     {
-        gl_FragColor = vec4_splat(visible); // the bake's visibility, or the debug view's
+        gl_FragColor = vec4_splat(visible * max(facing, 0.0)); // the bake's sun (its cosine with it), or the debug view's
         return;
     }
+    // fx/sun_relight.hpp RelightTone: the sun term keeps the bake's cosine on the texel (the paint's lit level at every
+    // hour), only its shadow follows the hour's sun. Where the hour's sun reaches more than the bake's did (a shadow
+    // that moved away, a face turned to the low sun), the light rises by the lift only, and only as far as the game's
+    // paint is as dark as our bake's shadow says: a painted shadow our shadows do not explain stays.
     float a = u_fxRelight[0].x, bs = u_fxRelight[0].y, c = u_fxRelight[0].z;
-    float now = a + bs * visible + c * k;
-    float then = a + bs * baked.r + c * gameSky(k);
+    float lift = u_fxRelight[9].w;
+    float facingThen = max(dot(n, u_fxRelight[9].xyz), 0.0);
+    float shadowThen = facingThen > 0.02 ? clamp(baked.r / facingThen, 0.0, 1.0) : 0.0;
+    float shade = a + c * gameSky(k);
+    float lit = shade + bs * facingThen;
+    float explained = lit - shade < 0.02 ? 1.0 : clamp((0.5 * (shade + lit) - game) / (0.5 * (lit - shade)), 0.0, 1.0);
+    float shadowNow = visible <= shadowThen ? visible : shadowThen + (visible - shadowThen) * lift * explained;
+    float facingNow = facingThen + max(facing - facingThen, 0.0) * lift;
+    float now = a + bs * shadowNow * facingNow + c * k;
+    float then = shade + bs * baked.r;
     // A texel the game had in a shadow we do not see, or the other way round: at most 3x brighter / darker.
     gl_FragColor = vec4_splat(encodeRatio(clamp(now / max(then, 0.02), 1.0 / 3.0, 3.0)));
 }

@@ -43,13 +43,27 @@ struct RelightTexels
     int width = 0, height = 0;
     std::span<const float> position;     // 4 per texel: world xyz, w 1 = relit (0: the texel keeps the game's)
     std::span<const uint8_t> normal_sky; // 4: the unit normal * 0.5 + 0.5, the sky's visibility
+    std::span<const uint8_t> game;       // 4: the game's lightmap (RGBA8): its luminance tells a texel it painted dark
 };
 
+// The ratio keeps the paint's lit level at every hour: the sun term takes the bake's own cosine on each texel, so only
+// the shadows move (a texel the hour's sun no longer reaches drops to the game's shade, one it newly reaches rises to
+// the game's lit level). The light may rise above the game's only by `lift` (RelightLift: the hour's sun far enough
+// from the bake's), and on a texel only as far as the game's paint shows the darkness our bake's shadow explains
+// (painted shadows of what we do not model are never lit away).
 struct RelightTone
 {
     float a = 0.0f, b = 0.0f, c = 0.0f;
     float game_sky[8] = {};
+    std::array<float, 3> bake_sun{0.0f, 1.0f, 0.0f}; // towards the sun the game baked with (world, unit)
+    float lift = 0.0f;                               // 0..1, RelightLift
 };
+
+// Below kLiftStartDegrees between the hour's sun and the bake's nothing may become lighter than the game painted it
+// (the fit of the bake's direction is that uncertain: r 0.35-0.4 on the towns); the lift is full from kLiftFullDegrees.
+inline constexpr float kLiftStartDegrees = 15.0f;
+inline constexpr float kLiftFullDegrees = 25.0f;
+float RelightLift(float degrees_from_bake);
 
 class SunRelight
 {
@@ -66,7 +80,7 @@ class SunRelight
     SunRelight(const SunRelight &) = delete;
     SunRelight &operator=(const SunRelight &) = delete;
 
-    // The device can do it: D16 compare target, RGBA8 / RG8 textures, a one-channel (or RGBA8) target with mips.
+    // The device can do it: D16 compare target, RGBA8 textures, a one-channel (or RGBA8) target with mips.
     static bool Supported();
 
     // The ratio map's size for a lightmap of `width` x `height` texels `texel_metres` apart: texels about
@@ -110,7 +124,8 @@ class SunRelight
         int width = 0, height = 0;         // the targets'
         int src_width = 0, src_height = 0; // the inputs'
         Vec3 origin{}, extent{};           // the bounds the positions are packed in
-        std::vector<uint8_t> position_hi, position_lo, normal; // the packed inputs (RGBA8, RGBA8, RG8), uploaded per pass
+        std::vector<uint8_t> position_hi, position_lo, normal; // the packed inputs (RGBA8 each; normal: xy the
+                                                               // normal, z the game's luminance), uploaded per pass
         bgfx::TextureHandle target_texture = BGFX_INVALID_HANDLE, bake_texture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE, bake_target = BGFX_INVALID_HANDLE;
         bool composed = false, bake_ready = false;
