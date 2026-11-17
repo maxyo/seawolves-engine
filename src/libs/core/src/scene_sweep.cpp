@@ -60,6 +60,7 @@ struct Variant
 {
     std::string options;                 // graphics options for the renderer
     std::array<bool, kProductCount> waits{}; // wait=<product>
+    float hour = -1.0f;                      // hour=<h>: the script sets the game's time of day (-1: as it is)
 };
 std::vector<Variant> variants; // STORM_SCENE_SWEEP_VARIANTS split at ';'
 int currentVariant = -1;
@@ -219,6 +220,16 @@ uint32_t variantCount(VS_STACK *stack)
     if (!result)
         return IFUNCRESULT_FAILED;
     result->Set(static_cast<int32_t>(variants.size()));
+    return IFUNCRESULT_OK;
+}
+
+// The time of day the current variant sets (hour=<h>), -1 when it keeps the scene's.
+uint32_t variantHour(VS_STACK *stack)
+{
+    auto *result = static_cast<VDATA *>(stack->Push());
+    if (!result)
+        return IFUNCRESULT_FAILED;
+    result->Set(currentVariant >= 0 ? variants[currentVariant].hour : -1.0f);
     return IFUNCRESULT_OK;
 }
 
@@ -422,7 +433,8 @@ void registerFunction(const char *name, const char *returns, uint32_t arguments,
     core.SetScriptFunction(&info);
 }
 
-// One entry of STORM_SCENE_SWEEP_VARIANTS: its wait=<product> items are the sweep's, the rest goes to the renderer.
+// One entry of STORM_SCENE_SWEEP_VARIANTS: its wait=<product> and hour=<h> items are the sweep's, the rest goes to the
+// renderer.
 Variant parseVariant(const std::string &text)
 {
     Variant variant;
@@ -432,6 +444,18 @@ Variant parseVariant(const std::string &text)
         if (end == std::string::npos)
             end = text.size();
         const std::string item = text.substr(start, end - start);
+        if (item.rfind("hour=", 0) == 0)
+        {
+            char *rest = nullptr;
+            variant.hour = std::strtof(item.c_str() + 5, &rest);
+            if (rest == item.c_str() + 5 || *rest || variant.hour < 0.0f || variant.hour >= 24.0f)
+            {
+                spdlog::critical("Scene sweep: variant '{}': hour= wants a time of day 0..24 (e.g. hour=7.5)", text);
+                spdlog::apply_all([](const std::shared_ptr<spdlog::logger> &logger) { logger->flush(); });
+                std::_Exit(EXIT_FAILURE);
+            }
+            continue;
+        }
         if (item.rfind("wait=", 0) != 0)
         {
             variant.options += (variant.options.empty() ? "" : ",") + item;
@@ -512,6 +536,7 @@ class SceneSweepLibrary : public SCRIPT_LIBRIARY
         registerFunction("SceneSweepLoadTimeoutMs", "int", 0, loadTimeoutMs);
         registerFunction("SceneSweepVariants", "int", 0, variantCount);
         registerFunction("SceneSweepVariant", "void", 1, variant);
+        registerFunction("SceneSweepVariantHour", "float", 0, variantHour);
         registerFunction("SceneSweepVariantReady", "int", 0, variantReady);
         registerFunction("SceneSweepVariantProblem", "string", 0, variantProblem);
         registerFunction("SceneSweepWindowComplete", "int", 0, windowComplete);

@@ -37,6 +37,7 @@ native int SceneSweepSettleMs();
 native int SceneSweepLoadTimeoutMs();
 native int SceneSweepVariants();
 native void SceneSweepVariant(int index);
+native float SceneSweepVariantHour();
 native int SceneSweepVariantReady();
 native string SceneSweepVariantProblem();
 native int SceneSweepWindowComplete();
@@ -146,6 +147,19 @@ void SceneSweep_Quit()
 // follow camera, the hero's idle turns, people, sea and sky would move between them), the renderer goes on drawing.
 // While it stands still the sweep's clock counts SS_FROZEN_FRAME_MS a frame (the game's delta time is 0 then).
 #define SS_FROZEN_FRAME_MS	100
+// --variants hour=<h>: the variant shows the scene at that time of day. The weather's sun follows its time counter
+// (WEATHER::SunAt) also while the game's time stands still; the lightmap set the location was loaded with stays, as
+// when the hours pass while the player stays.
+void SceneSweep_ApplyVariant(int index)
+{
+	SceneSweepVariant(index);
+	float hour = SceneSweepVariantHour();
+	if(hour < 0.0) return;
+	SetCurrentTime(makeint(hour), makeint((hour - makeint(hour)) * 60.0));
+	Weather.Time.time = hour;
+	SceneSweepEvent("variant " + index + " hour " + hour);
+}
+
 void SceneSweep_Freeze(bool frozen)
 {
 	if(frozen == ssFrozen) return;
@@ -188,7 +202,7 @@ void SceneSweep_Frame()
 			SceneSweepEvent("loaded " + ssScene);
 			SceneSweep_SetState(SS_SETTLE);
 			ssVariant = 0;
-			if(SceneSweep_HasVariants()) SceneSweepVariant(0);
+			if(SceneSweep_HasVariants()) SceneSweep_ApplyVariant(0);
 			ssSettleTime = 0;
 			ssIncompleteTime = 0;
 			ssSteady = false;
@@ -266,7 +280,7 @@ void SceneSweep_Frame()
 		{
 			// The same scene again with the next graphics settings (they apply from the next frame).
 			ssVariant++;
-			SceneSweepVariant(ssVariant);
+			SceneSweep_ApplyVariant(ssVariant);
 			ssSteady = false;
 			ssFrames = 0;
 			ssTime = 0;

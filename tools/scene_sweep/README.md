@@ -162,6 +162,11 @@ generating at its capture. A variant waits for one only when it names it; the pr
 `wait=` items may be repeated (`fx_preset=2,wait=upscale,wait=bakes`); an unknown name stops the engine. A product
 still generating `--timeout` - 30 s after the settings became active fails the scene with its name.
 
+`hour=<h>` (0..24, e.g. `hour=7.5`) shows the variant at that time of day: the script sets the game's time and the
+weather's sun follows it (`WEATHER::SunAt`); the weather and the location's lightmap set stay those it was entered with,
+as when the hours pass while the player stays. Used for the town light's moving sun shadows at several sun heights
+(`--variants 'fx_preset=1,hour=7.5,wait=bakes;fx_preset=1,hour=14,wait=bakes'`).
+
 A/B comparisons switch one product per variant over the same preset, e.g.
 `--variants 'fx_preset=2,wait=bakes;fx_preset=2,fx_shadows=0,wait=bakes'`. Every `fx_*` option of
 `EffectsOptionNames()` (`src/libs/renderer_bgfx/src/effects/effects.cpp`) can be set in a variant; an unknown name or
