@@ -1,7 +1,3 @@
-if(STORM_ENABLE_CRASH_REPORTS)
-	add_definitions(-DSTORM_ENABLE_CRASH_REPORTS=1)
-endif()
-
 # watermark.hpp includes the generated storm_build_watermark.hpp by name.
 get_filename_component(storm_watermark_dir "${STORM_WATERMARK_FILE}" DIRECTORY)
 include_directories("${storm_watermark_dir}")

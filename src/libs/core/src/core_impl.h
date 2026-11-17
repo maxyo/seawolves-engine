@@ -147,7 +147,6 @@ class CoreImpl final : public CorePrivate
     bool IsLayerFrozen(layer_index_t index) const override;
     void ForEachEntity(const std::function<void(entptr_t)>& f) override;
 
-    void collectCrashInfo() const;
 
     [[nodiscard]] bool initialized() const
     {

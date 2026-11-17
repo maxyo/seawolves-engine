@@ -17,7 +17,6 @@ STORM_SETUP(
 
     # external
     $<$<NOT:$<BOOL:${ANDROID}>>:mimalloc>
-    $<$<BOOL:${STORM_ENABLE_CRASH_REPORTS}>:sentry-native>
     ${SDL2_LIBRARIES}
     zlib
 

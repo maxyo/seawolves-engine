@@ -136,6 +136,6 @@ the file in the same commit.
 
 ## Native crash reports
 
-Android builds keep `STORM_ENABLE_CRASH_REPORTS` (sentry-native) off: debuggerd writes the tombstone and the
+The engine links no crash-reporting SDK: debuggerd writes the tombstone and the
 application's diagnostics export carries the backtrace with build ids; its `tools/android/symbolize.py`
 resolves the frames against the release symbols.

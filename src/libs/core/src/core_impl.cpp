@@ -1413,11 +1413,6 @@ void CoreImpl::ForEachEntity(const std::function<void(entptr_t)> &f)
     entity_manager_.ForEachEntity(f);
 }
 
-void CoreImpl::collectCrashInfo() const
-{
-    Compiler->CollectCallStack();
-}
-
 void CoreImpl::loadCompatibilitySettings(INIFILE &inifile)
 {
     using namespace storm;

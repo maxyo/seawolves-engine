@@ -18,7 +18,6 @@ public:
 
     virtual void AppState(bool state) = 0;
 
-    virtual void collectCrashInfo() const = 0;
 
     virtual void SetWindow(std::shared_ptr<storm::OSWindow> window) = 0;
 

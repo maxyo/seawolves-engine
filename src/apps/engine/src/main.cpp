@@ -529,20 +529,7 @@ int main(int argc, char *argv[])
     SubscribeEngineToAppEvents();
 
     // Init diagnostics
-    const auto lifecycleDiagnosticsGuard =
-#ifdef STORM_ENABLE_CRASH_REPORTS
-        lifecycleDiagnostics.initialize(true);
-#else
-        lifecycleDiagnostics.initialize(false);
-#endif
-    if (!lifecycleDiagnosticsGuard)
-    {
-        ShowEngineDialog(SDL_MESSAGEBOX_WARNING, "Warning", "Unable to initialize lifecycle service!");
-    }
-    else
-    {
-        lifecycleDiagnostics.setCrashInfoCollector([]() { core_private->collectCrashInfo(); });
-    }
+    const auto lifecycleDiagnosticsGuard = lifecycleDiagnostics.initialize();
 
     // Init stash
     create_directories(fs::GetSaveDataPath());
