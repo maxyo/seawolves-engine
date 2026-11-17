@@ -120,6 +120,18 @@ int main(int argc, char **argv)
     check(marker.Clear().empty() && !fs::exists(logs / kRunningMarker), "a clean exit removes it");
     check(marker.Background(1200).empty() && !fs::exists(logs / kRunningMarker), "nothing is marked after a clean exit");
 
+    // Full storage fails every write: reported once per run of failures, again after a write succeeded.
+    write(logs / "blocked", "a file where the marker's folder should be\n");
+    SessionMarker blocked(logs / "blocked", "2026-11-13 18:30:01", 4242);
+    check(!blocked.Start(1000).empty(), "a failed write is reported");
+    check(blocked.Beat(1000 + kHeartbeatSeconds).empty() && blocked.Background(1003).empty(), "the next failures are not");
+    fs::remove(logs / "blocked");
+    check(blocked.Foreground(1100).empty() && fs::exists(logs / "blocked" / kRunningMarker), "writable again");
+    fs::remove_all(logs / "blocked");
+    write(logs / "blocked", "full again\n");
+    check(!blocked.Beat(1100 + kHeartbeatSeconds).empty(), "a new run of failures is reported again");
+    fs::remove(logs / "blocked");
+
     // At the next start: a clean background end is not reported, an unclean one is, with the last log line; both consumed.
     write(logs / kRunningMarker, started + beat(1000) + background(1003));
     check(takeUncleanEnd(logs, problems).empty() && !fs::exists(logs / kRunningMarker) && problems.empty(), "a clean background end");

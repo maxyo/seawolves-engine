@@ -154,7 +154,8 @@ class SessionMarker
     {
     }
 
-    // Each returns "" or what failed.
+    // Each returns "" or what failed; a failure is returned once per run of failed writes (full storage fails every
+    // write until space is freed), the next one after a write succeeds again.
     std::string Start(std::time_t now)
     {
         std::lock_guard lock(mutex_);
@@ -203,7 +204,15 @@ class SessionMarker
     }
 
   private:
-    std::string Write() const
+    std::string Write()
+    {
+        std::string failure = WriteFile();
+        const bool repeated = failing_ && !failure.empty();
+        failing_ = !failure.empty();
+        return repeated ? std::string() : failure;
+    }
+
+    std::string WriteFile() const
     {
         std::error_code error;
         std::filesystem::create_directories(logs_, error);
@@ -225,7 +234,7 @@ class SessionMarker
     const std::filesystem::path logs_;
     const std::string started_;
     const long pid_;
-    bool active_ = false;
+    bool active_ = false, failing_ = false;
     std::time_t heartbeat_ = 0, background_ = 0;
 };
 
