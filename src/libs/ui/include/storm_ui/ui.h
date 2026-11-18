@@ -177,13 +177,6 @@ enum class TouchPhase
     Sample
 };
 
-// A display cutout's bounding rectangle in physical pixels (Host::SetCutouts).
-struct Cutout
-{
-    float x = 0, y = 0, width = 0, height = 0;
-    bool operator==(const Cutout &) const = default;
-};
-
 class Host
 {
   public:
@@ -201,17 +194,9 @@ class Host
     virtual bool LoadDocument(const std::string &path) = 0;
     virtual void Resize(int width, int height, float density) = 0;
     virtual void SetGameRoot(const std::string &game_root) = 0;
-    // Safe-area insets in dp (the system bars; cutouts are SetCutouts). HUD scenes and menu
+    // Safe-area insets in dp (the system bars; a display cutout is ignored: the UI runs under it). HUD scenes and menu
     // screens keep their content inside; templates read them as `safe.left` … `safe.bottom`.
     virtual void SetSafeArea(float left, float top, float right, float bottom) = 0;
-    // The display cutouts (DisplayCutout.getBoundingRects), in physical pixels. Layout runs
-    // edge to edge under them; only what falls under a cutout and must stay readable or
-    // touchable moves out by the minimum (the cutout's depth from its screen edge): text,
-    // icons, pictures and small controls (a component, or a picture drawn as layers, no larger
-    // than a quarter of the screen each way, moved whole). A short row or a narrow column of
-    // several things along a left or right edge cutout is laid out beside it, whole.
-    // Backgrounds, panels, wide rows and lists stay where they are, under it.
-    virtual void SetCutouts(const std::vector<Cutout> &cutouts) = 0;
     // The player's display options («Размер интерфейса», «Прозрачность кнопок», «Под левую руку»): the layout's dp
     // grow by `ui_scale` (1 = the display's density; Resize and SetSafeArea keep taking the display's own density and
     // dp), the HUD's buttons are drawn at `hud_button_opacity` (1 = as designed), and `left_handed` mounts the HUD

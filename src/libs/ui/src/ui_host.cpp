@@ -422,7 +422,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         config_.width = width;
         config_.height = height;
         display_density_ = density;
-        config_.density = density * ui_scale_; // every dp of the layout, the touch slop and the cutouts' conversion
+        config_.density = density * ui_scale_; // every dp of the layout and the touch slop
         backend_->SetViewport(width, height);
         context_->SetDimensions({width, height});
         context_->SetDensityIndependentPixelRatio(config_.density);
@@ -447,23 +447,12 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             ui_scale_ = ui_scale;
             Resize(config_.width, config_.height, display_density_);
             ApplySafeArea(); // the insets came in the display's dp
-            cutouts_changed_ = true;
         }
         if (hud_button_opacity != hud_button_opacity_)
         {
             hud_button_opacity_ = hud_button_opacity;
             ApplyHudButtonOpacity();
         }
-    }
-
-    void SetCutouts(const std::vector<Cutout> &cutouts) override
-    {
-        if (cutouts == cutouts_)
-            return;
-        cutouts_ = cutouts;
-        changed_ = true;
-        cutouts_changed_ = true;
-        PublishTouchMap();
     }
 
     void SetSafeArea(float left, float top, float right, float bottom) override
@@ -513,7 +502,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         PlaceToasts();
     }
 
-    // The host's toast stack: at the top edge, clear of the cutout (8 dp: its offset in base.rcss),
+    // The host's toast stack: at the top edge (8 dp: its offset in base.rcss), clear
     // of a top status of the HUD that is shown (LayoutElement::toast_clear: the cabin captain,
     // the boarding bars), whose layout dp grow by the player's UI scale, and of a shown screen's
     // header (its tabs stay visible and pressable under a toast).
@@ -861,15 +850,13 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         const bool moved = changed_ || counters_.laid_out > 0 || context_->GetNextUpdateDelay() <= 0.0;
         const bool edges = moved && ScrollEdgesChanged(context_->GetRootElement());
         const bool clamps = TextClampsChanged() || edges;
-        // What fell under a cutout with this layout moves out of it (SetCutouts).
-        const bool cutouts = moved && AvoidCutouts();
         const bool header = moved && ScreenHeaderMoved();
         // Components that measure their layout (columns) set styles from it.
         bool measured = SettleLaidOutComponents();
-        if (edges || cutouts)
-            regions_moved_ = true; // a scroll or a cutout moved what is drawn without a layout
-        // clamped text was re-cut for a new width, a scrolling edge changed, content moved off a cutout, the toasts moved under a header
-        if (clamps || cutouts || measured || header)
+        if (edges)
+            regions_moved_ = true; // a scroll moved what is drawn without a layout
+        // clamped text was re-cut for a new width, a scrolling edge changed, the toasts moved under a header
+        if (clamps || measured || header)
             UpdateContext();
         // A measurement is drawn with the layout it makes. Measuring settles in one more pass
         // (a scrollbar it adds: two); one that keeps changing is an error of the component.
@@ -889,7 +876,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         // rebuilds that changed elements (a render equal to the shown one changes nothing),
         // layout, ticking behaviours, animations and transitions, game
         // pictures that arrived, re-cut text.
-        if (images || clamps || cutouts || !ticking_.empty() || delay <= 0.0 || counters_.touched > 0 || counters_.laid_out > 0)
+        if (images || clamps || !ticking_.empty() || delay <= 0.0 || counters_.touched > 0 || counters_.laid_out > 0)
             changed_ = true;
         if (changed_)
             delay = 0.0;
@@ -1717,12 +1704,12 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                     owner = owner->GetParentNode();
                 if (owner != component || size.x <= 0.0f || size.y <= 0.0f || !part->IsVisible(true) || untouchable(part))
                     continue; // a nested component's own part (listed with it); pointer-events: none: it only shows something
-                const Rml::Rectanglef box = Rml::Rectanglef::FromPositionSize(part->GetAbsoluteOffset(Rml::BoxArea::Border) + CutoutShiftOf(part), size);
+                const Rml::Rectanglef box = Rml::Rectanglef::FromPositionSize(part->GetAbsoluteOffset(Rml::BoxArea::Border), size);
                 Rml::Rectanglef shown = box;
                 for (Rml::Element *clip = part->GetParentNode(); clip; clip = clip->GetParentNode())
                     if (clip->GetComputedValues().overflow_x() != Rml::Style::Overflow::Visible ||
                         clip->GetComputedValues().overflow_y() != Rml::Style::Overflow::Visible)
-                        shown = shown.Intersect(Rml::Rectanglef::FromPositionSize(clip->GetAbsoluteOffset(Rml::BoxArea::Padding) + CutoutShiftOf(clip),
+                        shown = shown.Intersect(Rml::Rectanglef::FromPositionSize(clip->GetAbsoluteOffset(Rml::BoxArea::Padding),
                                                                                   clip->GetBox().GetSize(Rml::BoxArea::Padding)));
                 shown = shown.Intersect(Rml::Rectanglef::FromSize({float(config_.width), float(config_.height)}));
                 std::string at = "-";
@@ -1966,266 +1953,6 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         layer->RemoveChild(mounted);
     }
 
-    // --- display cutouts ------------------------------------------------------------------
-    // The layout runs edge to edge. After it, what must stay readable or touchable and falls
-    // under a cutout is moved out by the cutout's depth from its screen edge (plus a hair), with
-    // a translate: text, icons, pictures and small controls (a component, or a picture drawn as
-    // layers, no larger than a quarter of the screen each way, moved whole). Larger components (panels, rows, lists) stay
-    // under the cutout; their content is looked at one by one. A transform the pack set itself is
-    // not overwritten: that element counts as a container. What scrolls is never moved: the content
-    // of a scrolling element passes under the cutout as it goes (a row that stepped aside while it
-    // crossed the cutout read as a dent travelling through the list). True when a shift changed.
-    bool AvoidCutouts()
-    {
-        std::unordered_map<Rml::Element *, Rml::Vector2f> next;
-        std::unordered_map<Rml::Element *, Rml::Vector2f> rows; // row → padding wanted at its left (x) and right (y), px
-        if (!cutouts_.empty())
-            for (Rml::ElementDocument *document : {document_, hud_document_, overlay_})
-                if (document && document->IsVisible())
-                    PlaceOffCutouts(document, next, rows);
-        bool changed = cutouts_changed_;
-        cutouts_changed_ = false;
-        for (auto it = cutout_rows_.begin(); it != cutout_rows_.end();)
-        {
-            Rml::Element *element = it->second.element.get();
-            if (!element || !rows.count(element))
-            {
-                if (element)
-                {
-                    element->RemoveProperty(Rml::PropertyId::PaddingLeft);
-                    element->RemoveProperty(Rml::PropertyId::PaddingRight);
-                    element->RemoveProperty(Rml::PropertyId::BoxSizing);
-                }
-                it = cutout_rows_.erase(it);
-                changed = true;
-                continue;
-            }
-            ++it;
-        }
-        for (const auto &[element, padding] : rows)
-        {
-            auto &entry = cutout_rows_[element];
-            // Set again when a template patch rewrote the element's style and dropped it.
-            const bool kept = entry.element.get() == element && entry.padding == padding && element->GetLocalProperty(Rml::PropertyId::BoxSizing) &&
-                              (padding.x <= 0.0f || element->GetLocalProperty(Rml::PropertyId::PaddingLeft)) &&
-                              (padding.y <= 0.0f || element->GetLocalProperty(Rml::PropertyId::PaddingRight));
-            if (kept)
-                continue;
-            entry = {element->GetObserverPtr(), padding};
-            // The padding comes out of the row's own box: a row sized by the style sheet (c-bar,
-            // width: 100%) keeps its size and its parts share what is left (the flexible track
-            // shrinks), instead of the row growing by the padding past its parent's edge.
-            element->SetProperty(Rml::PropertyId::BoxSizing, Rml::Property(Rml::Style::BoxSizing::BorderBox));
-            if (padding.x > 0.0f)
-                element->SetProperty(Rml::PropertyId::PaddingLeft, Rml::Property(padding.x, Rml::Unit::PX));
-            else
-                element->RemoveProperty(Rml::PropertyId::PaddingLeft);
-            if (padding.y > 0.0f)
-                element->SetProperty(Rml::PropertyId::PaddingRight, Rml::Property(padding.y, Rml::Unit::PX));
-            else
-                element->RemoveProperty(Rml::PropertyId::PaddingRight);
-            changed = true;
-        }
-        for (auto it = cutout_shifts_.begin(); it != cutout_shifts_.end();)
-        {
-            Rml::Element *element = it->second.element.get();
-            const auto found = element ? next.find(element) : next.end();
-            if (!element || found == next.end())
-            {
-                if (element)
-                    element->RemoveProperty(Rml::PropertyId::Transform);
-                it = cutout_shifts_.erase(it);
-                changed = true;
-                continue;
-            }
-            ++it;
-        }
-        for (const auto &[element, shift] : next)
-        {
-            auto &entry = cutout_shifts_[element];
-            if (entry.element.get() == element && entry.shift == shift)
-                continue;
-            entry = {element->GetObserverPtr(), shift};
-            element->SetProperty("transform", "translate(" + std::to_string(shift.x) + "px, " + std::to_string(shift.y) + "px)");
-            changed = true;
-        }
-        return changed;
-    }
-
-    // How far `box` must move to clear every cutout it overlaps: along the axis of the cutout's
-    // nearest screen edge, away from that edge.
-    Rml::Vector2f CutoutShift(const Rml::Rectanglef &box) const
-    {
-        const Rml::Vector2f screen(static_cast<float>(context_->GetDimensions().x), static_cast<float>(context_->GetDimensions().y));
-        const float hair = 4.0f * config_.density;
-        Rml::Vector2f shift(0.0f, 0.0f);
-        for (const Cutout &cut : cutouts_)
-        {
-            const float right = cut.x + cut.width, bottom = cut.y + cut.height;
-            if (box.Right() <= cut.x || box.Left() >= right || box.Bottom() <= cut.y || box.Top() >= bottom)
-                continue;
-            const float to_left = cut.x, to_right = screen.x - right, to_top = cut.y, to_bottom = screen.y - bottom;
-            const float nearest = std::min({to_left, to_right, to_top, to_bottom});
-            if (nearest == to_left)
-                shift.x = std::max(shift.x, right + hair - box.Left());
-            else if (nearest == to_right)
-                shift.x = std::min(shift.x, cut.x - hair - box.Right());
-            else if (nearest == to_top)
-                shift.y = std::max(shift.y, bottom + hair - box.Top());
-            else
-                shift.y = std::min(shift.y, cut.y - hair - box.Bottom());
-        }
-        return shift;
-    }
-
-    // The padding a row needs at its left (x) and right (y) for its content to begin beside the
-    // cutouts of those screen edges that it runs under; `own` is what it has of its own.
-    Rml::Vector2f CutoutPadding(const Rml::Rectanglef &box, Rml::Vector2f border, Rml::Vector2f own) const
-    {
-        const Rml::Vector2f screen(static_cast<float>(context_->GetDimensions().x), static_cast<float>(context_->GetDimensions().y));
-        const float hair = 4.0f * config_.density;
-        Rml::Vector2f padding(0.0f, 0.0f);
-        for (const Cutout &cut : cutouts_)
-        {
-            const float right = cut.x + cut.width, bottom = cut.y + cut.height;
-            if (box.Bottom() <= cut.y || box.Top() >= bottom)
-                continue;
-            const float to_left = cut.x, to_right = screen.x - right;
-            if (std::min(to_left, to_right) > std::min(cut.y, screen.y - bottom))
-                continue; // a cutout of the top or bottom edge: its content moves down or up (CutoutShift)
-            if (to_left <= to_right && box.Left() + border.x + own.x < right + hair && box.Right() > cut.x)
-                padding.x = std::max(padding.x, right + hair - box.Left() - border.x);
-            else if (to_left > to_right && box.Right() - border.y - own.y > cut.x - hair && box.Left() < right)
-                padding.y = std::max(padding.y, box.Right() - border.y - (cut.x - hair));
-        }
-        return padding;
-    }
-
-    void PlaceOffCutouts(Rml::Element *element, std::unordered_map<Rml::Element *, Rml::Vector2f> &out,
-                         std::unordered_map<Rml::Element *, Rml::Vector2f> &rows)
-    {
-        if (!element->IsVisible(true))
-            return;
-        const auto scrolls = [](Rml::Style::Overflow overflow) { return overflow == Rml::Style::Overflow::Auto || overflow == Rml::Style::Overflow::Scroll; };
-        if (scrolls(element->GetComputedValues().overflow_x()) || scrolls(element->GetComputedValues().overflow_y()))
-            return; // scrolled content ignores the cutout
-        const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
-        const Rml::Rectanglef box = Rml::Rectanglef::FromPositionSize(element->GetAbsoluteOffset(Rml::BoxArea::Border), size);
-        // A row of several things (a header bar, a strip of tabs) under a cutout of the left or
-        // right edge is laid out beside it: its content begins after the cutout and the row's own
-        // layout decides who gives way. Moved one by one, its first things landed on the next
-        // ones (the back ribbon over the title, which then took its taps). A narrow column of
-        // several things along that edge (the HUD's fleet and party columns) is laid out beside it
-        // the same way, whole: moved one by one, only the members in the cutout's band stepped
-        // aside and the column went crooked.
-        {
-            const Rml::Style::ComputedValues &values = element->GetComputedValues();
-            const bool flex = values.display() == Rml::Style::Display::Flex;
-            const bool row = flex && (values.flex_direction() == Rml::Style::FlexDirection::Row || values.flex_direction() == Rml::Style::FlexDirection::RowReverse);
-            const bool column = flex && !row;
-            int parts = 0;
-            for (int i = 0; flex && i < element->GetNumChildren(); ++i)
-                parts += dynamic_cast<Rml::ElementText *>(element->GetChild(i)) ? 0 : 1;
-            const Rml::Vector2f screen(static_cast<float>(context_->GetDimensions().x), static_cast<float>(context_->GetDimensions().y));
-            if (parts >= 2 && size.x > 0.0f && size.y > 0.0f && ((row && size.y <= screen.y * 0.25f) || (column && size.x <= screen.x * 0.25f)))
-            {
-                const auto ours = cutout_rows_.find(element);
-                const Rml::Vector2f added = ours != cutout_rows_.end() && ours->second.element.get() == element ? ours->second.padding : Rml::Vector2f(0.0f, 0.0f);
-                const Rml::Box &laid = element->GetBox();
-                // What the row has without ours: where ours is set, ours replaced it.
-                const Rml::Vector2f own(added.x > 0.0f ? 0.0f : laid.GetEdge(Rml::BoxArea::Padding, Rml::BoxEdge::Left),
-                                        added.y > 0.0f ? 0.0f : laid.GetEdge(Rml::BoxArea::Padding, Rml::BoxEdge::Right));
-                const Rml::Vector2f border(laid.GetEdge(Rml::BoxArea::Border, Rml::BoxEdge::Left), laid.GetEdge(Rml::BoxArea::Border, Rml::BoxEdge::Right));
-                const Rml::Vector2f padding = CutoutPadding(box, border, own);
-                if (padding.x > 0.0f || padding.y > 0.0f)
-                {
-                    rows[element] = padding;
-                    return;
-                }
-            }
-        }
-        const auto ours = cutout_shifts_.find(element);
-        const bool own_transform = element->GetLocalProperty(Rml::PropertyId::Transform) && (ours == cutout_shifts_.end());
-        const Rml::Vector2f screen(static_cast<float>(context_->GetDimensions().x), static_cast<float>(context_->GetDimensions().y));
-        bool content = false;
-        if (!own_transform && size.x > 0.0f && size.y > 0.0f)
-        {
-            const bool small = size.x <= screen.x * 0.25f && size.y <= screen.y * 0.25f;
-            if (dynamic_cast<ComponentElement *>(element))
-                content = small; // a control, moved whole
-            else if (small && Layered(element))
-                content = true; // one picture of layers (a fleet member: its picture inside its rings), moved whole
-            else
-            {
-                const Rml::String &tag = element->GetTagName();
-                bool text = false, children = false;
-                for (int i = 0; i < element->GetNumChildren(); ++i)
-                {
-                    auto *child = element->GetChild(i);
-                    if (auto *run = dynamic_cast<Rml::ElementText *>(child))
-                        text = text || !run->GetText().empty();
-                    else
-                        children = true;
-                }
-                content = (text && !children) || tag == "ui-icon" || tag == "img" || tag == "ui-ring";
-            }
-        }
-        if (content)
-        {
-            Rml::Vector2f shift = CutoutShift(box);
-            // It moves inside the box that holds it and no further: past that box it would lie on
-            // the neighbours (a portrait pushed out of its panel onto the next one).
-            if (Rml::Element *parent = element->GetParentNode(); parent && (shift.x != 0.0f || shift.y != 0.0f))
-            {
-                const Rml::Rectanglef room = Rml::Rectanglef::FromPositionSize(parent->GetAbsoluteOffset(Rml::BoxArea::Padding), parent->GetBox().GetSize(Rml::BoxArea::Padding));
-                const Rml::Vector2f wanted = shift;
-                shift.x = shift.x > 0.0f ? std::clamp(shift.x, 0.0f, std::max(0.0f, room.Right() - box.Right())) : std::clamp(shift.x, std::min(0.0f, room.Left() - box.Left()), 0.0f);
-                shift.y = shift.y > 0.0f ? std::clamp(shift.y, 0.0f, std::max(0.0f, room.Bottom() - box.Bottom())) : std::clamp(shift.y, std::min(0.0f, room.Top() - box.Top()), 0.0f);
-                if (shift != wanted && cutout_cramped_.insert(element->GetAddress()).second)
-                    Log("display cutout: " + element->GetAddress() + " cannot leave it inside its box (" + std::to_string(int(wanted.x)) + ", " +
-                        std::to_string(int(wanted.y)) + " px needed, " + std::to_string(int(shift.x)) + ", " + std::to_string(int(shift.y)) + " moved)");
-            }
-            if (shift.x != 0.0f || shift.y != 0.0f)
-                out[element] = shift;
-            return; // a control or a run of text moves as one
-        }
-        for (int i = 0; i < element->GetNumChildren(); ++i)
-            PlaceOffCutouts(element->GetChild(i), out, rows);
-    }
-
-    // True for an element drawn as layers over each other: two or more parts, every one placed
-    // absolutely in it (a fleet or party member: the picture and its rings around one centre).
-    // Moved one by one, each layer stepped aside by what its own box allowed and the rings no
-    // longer went round the picture.
-    static bool Layered(Rml::Element *element)
-    {
-        int layers = 0;
-        for (int i = 0; i < element->GetNumChildren(); ++i)
-        {
-            Rml::Element *child = element->GetChild(i);
-            if (auto *run = dynamic_cast<Rml::ElementText *>(child))
-            {
-                if (!run->GetText().empty())
-                    return false;
-                continue;
-            }
-            const Rml::Style::Position position = child->GetComputedValues().position();
-            if (position != Rml::Style::Position::Absolute && position != Rml::Style::Position::Fixed)
-                return false;
-            ++layers;
-        }
-        return layers >= 2;
-    }
-
-    // The cutout shift applied to `element` or to one of its ancestors (touch regions follow it).
-    Rml::Vector2f CutoutShiftOf(Rml::Element *element) const
-    {
-        for (Rml::Element *at = element; at; at = at->GetParentNode())
-            if (const auto found = cutout_shifts_.find(at); found != cutout_shifts_.end() && found->second.element.get() == at)
-                return found->second.shift;
-        return {0.0f, 0.0f};
-    }
-
     void CollectRegions(Rml::Element *element, std::vector<Rml::Rectanglef> &out) const
     {
         if (!element->IsVisible(true))
@@ -2238,7 +1965,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             {
                 const Rml::Vector2f size = part->GetBox().GetSize(Rml::BoxArea::Border);
                 if (size.x > 0.0f && size.y > 0.0f && part->IsVisible(true))
-                    out.push_back(Rml::Rectanglef::FromPositionSize(part->GetAbsoluteOffset(Rml::BoxArea::Border) + CutoutShiftOf(part), size));
+                    out.push_back(Rml::Rectanglef::FromPositionSize(part->GetAbsoluteOffset(Rml::BoxArea::Border), size));
             }
         }
         for (int i = 0; i < element->GetNumChildren(); ++i)
@@ -2251,7 +1978,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // down on it are held until the next frame (Touch, ReleaseHeld).
     // The HUD's regions (a walk over its whole document) are collected again only when they
     // can have moved since the last collection (regions_moved_): a frame that laid out or
-    // changed elements, a scroll or cutout shift, a host call. Before that, outside a frame,
+    // changed elements, a scroll, a host call. Before that, outside a frame,
     // the last laid-out regions stay; a frame or a pass with nothing new reuses them. With
     // Config::verify_unchanged a reuse is checked against a fresh walk.
     void PublishTouchMap(bool laid_out = false)
@@ -2543,21 +2270,6 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::vector<Rml::Rectanglef> hud_regions_; // the HUD's touch regions as last collected (PublishTouchMap)
     bool regions_current_ = false;             // hud_regions_ belong to the HUD shown now
     bool regions_moved_ = true;                // something since that collection can have moved them
-    std::vector<Cutout> cutouts_; // physical pixels (SetCutouts)
-    bool cutouts_changed_ = false;
-    struct CutoutShift_
-    {
-        Rml::ObserverPtr<Rml::Element> element;
-        Rml::Vector2f shift;
-    };
-    std::unordered_map<Rml::Element *, CutoutShift_> cutout_shifts_; // what AvoidCutouts moved, and by how much
-    struct CutoutRow_
-    {
-        Rml::ObserverPtr<Rml::Element> element;
-        Rml::Vector2f padding; // left, right (px)
-    };
-    std::unordered_map<Rml::Element *, CutoutRow_> cutout_rows_; // rows AvoidCutouts laid out beside a cutout
-    std::set<std::string> cutout_cramped_; // said once each: what could not leave a cutout inside its box
     // An interface the game opened (ExpectInterface): its model is still to come, then its
     // first frame.
     enum class Opening

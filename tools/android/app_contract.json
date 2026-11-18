@@ -121,8 +121,8 @@
   },
   "jni": {
     "natives": {
-      "EngineUi": ["nativeBack", "nativeCancelInput", "nativeInterfaceActive", "nativeSetCutouts",
-                   "nativeSetSafeArea", "nativeSetState", "nativeSubmitText", "nativeToast", "nativeTouch", "nativeWantsBack",
+      "EngineUi": ["nativeBack", "nativeCancelInput", "nativeInterfaceActive", "nativeSetSafeArea",
+                   "nativeSetState", "nativeSubmitText", "nativeToast", "nativeTouch", "nativeWantsBack",
                    "nativeWantsTouch"],
       "GameActivity": ["nativeCancelInput", "nativeDensityChanged", "nativeLifecycle", "nativeSaveInProgress",
                        "nativeSurfaceChanged", "nativeSurfaceDestroying"],

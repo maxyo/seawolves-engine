@@ -1,14 +1,13 @@
 // Headless capture of a UI document for design checks, without a device:
 //
 //   storm_ui_shot --pack DIR --doc gallery/buttons.rml --size 915x412 --density 2 --out shot.png
-//                 [--game-root DIR] [--safe L,T,R,B] [--cutout X,Y,W,H …] [--script "down 1 120 80; wait 0.5; shot held.png; up 1 120 80"]
+//                 [--game-root DIR] [--safe L,T,R,B] [--script "down 1 120 80; wait 0.5; shot held.png; up 1 120 80"]
 //                 [--views N]
 //   script commands: down|move|up <pointer> <x> <y>, wait <s>, shot <png>, toast <text>,
 //   message <target|-> <text> (a game log line, Host::GameMessage), timed (print what
 //                    each later command costs up to its finished frame),
 //                    props <element id> <json>, scroll <element id>,
-//                    bounds <CSS selector> (settled visible border boxes in dp, where they are
-//                    drawn: translations such as the move off a cutout included),
+//                    bounds <CSS selector> (settled visible border boxes in dp),
 //                    device-reset (bgfx: device loss and restore, as after a lost EGL context)
 //
 // Draws through the UI's bgfx backend on bgfx's GLES 3.0 renderer (Mesa llvmpipe, headless),
@@ -94,42 +93,6 @@ bool SavePng(const std::vector<unsigned char> &rgba, int width, int height, cons
     const bool ok = plutovg_surface_write_to_png(surface, path.c_str());
     plutovg_surface_destroy(surface);
     return ok;
-}
-
-// Where `element` is drawn: its laid-out place plus the translations of it and its ancestors
-// (the host's move off a display cutout, a translate of the pack), in px. Only translations in
-// px or dp are summed; `exact` turns false when another one (a percentage, a rotation, a
-// scale) also moves it.
-Rml::Vector2f DrawnOffset(Rml::Element *element, float density, bool &exact)
-{
-    Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
-    exact = true;
-    const auto px = [&](const Rml::NumericValue &value) {
-        if (value.unit == Rml::Unit::PX)
-            return value.number;
-        if (value.unit == Rml::Unit::DP)
-            return value.number * density;
-        exact = exact && value.number == 0.0f;
-        return 0.0f;
-    };
-    for (Rml::Element *at = element; at; at = at->GetParentNode())
-    {
-        const Rml::TransformPtr &transform = at->GetComputedValues().transform();
-        if (!transform)
-            continue;
-        for (const Rml::TransformPrimitive &primitive : transform->GetPrimitives())
-        {
-            if (primitive.type == Rml::TransformPrimitive::TRANSLATEX)
-                offset.x += px(primitive.translate_x.values[0]);
-            else if (primitive.type == Rml::TransformPrimitive::TRANSLATEY)
-                offset.y += px(primitive.translate_y.values[0]);
-            else if (primitive.type == Rml::TransformPrimitive::TRANSLATE2D)
-                offset += Rml::Vector2f(px(primitive.translate_2d.values[0]), px(primitive.translate_2d.values[1]));
-            else
-                exact = false;
-        }
-    }
-    return offset;
 }
 
 std::string ReadFile(const std::string &path)
@@ -590,7 +553,6 @@ int main(int argc, char **argv)
     int width_dp = 915, height_dp = 412;
     float density = 2.0f;
     float safe[4] = {0, 0, 0, 0}; // safe-area insets in dp
-    std::vector<storm::ui::Cutout> cutouts; // --cutout X,Y,W,H in dp, repeatable
     for (int i = 1; i + 1 < argc; i += 2)
     {
         const std::string key = argv[i], value = argv[i + 1];
@@ -612,8 +574,6 @@ int main(int argc, char **argv)
             views = std::atoi(value.c_str());
         else if (key == "--safe" && std::sscanf(value.c_str(), "%f,%f,%f,%f", &safe[0], &safe[1], &safe[2], &safe[3]) == 4)
             continue;
-        else if (storm::ui::Cutout cut; key == "--cutout" && std::sscanf(value.c_str(), "%f,%f,%f,%f", &cut.x, &cut.y, &cut.width, &cut.height) == 4)
-            cutouts.push_back(cut); // dp, like --safe; the host takes pixels
         else if (key == "--density")
             density = std::strtof(value.c_str(), nullptr);
         else if (key == "--size" && std::sscanf(value.c_str(), "%dx%d", &width_dp, &height_dp) == 2)
@@ -626,7 +586,7 @@ int main(int argc, char **argv)
     }
     if (pack.empty() || (doc.empty() && interface.empty() && states.empty()))
     {
-        std::fprintf(stderr, "usage: storm_ui_shot --pack DIR (--doc FILE | --interface JSON | --state CHANNEL=JSON …) [--size WxH] [--density D] [--out PNG] [--game-root DIR] [--safe L,T,R,B] [--cutout X,Y,W,H] [--script S] [--views N]\n");
+        std::fprintf(stderr, "usage: storm_ui_shot --pack DIR (--doc FILE | --interface JSON | --state CHANNEL=JSON …) [--size WxH] [--density D] [--out PNG] [--game-root DIR] [--safe L,T,R,B] [--script S] [--views N]\n");
         return 2;
     }
     const int width = static_cast<int>(static_cast<float>(width_dp) * density), height = static_cast<int>(static_cast<float>(height_dp) * density);
@@ -674,9 +634,6 @@ int main(int argc, char **argv)
     }
     capture->Attach(*host);
     host->SetSafeArea(safe[0], safe[1], safe[2], safe[3]);
-    for (storm::ui::Cutout &cut : cutouts)
-        cut = {cut.x * density, cut.y * density, cut.width * density, cut.height * density};
-    host->SetCutouts(cutouts);
     if (!doc.empty() ? !host->LoadDocument(doc) : !interface.empty() && !host->SetInterface(ReadFile(interface)))
     {
         std::fprintf(stderr, "cannot load %s\n", (doc + interface).c_str());
@@ -788,13 +745,12 @@ int main(int argc, char **argv)
                 {
                     if (!element->IsVisible(true))
                         continue;
-                    bool exact = true;
-                    const auto position = DrawnOffset(element, density, exact);
+                    const auto position = element->GetAbsoluteOffset(Rml::BoxArea::Border);
                     const auto size = element->GetBox().GetSize(Rml::BoxArea::Border);
-                    std::printf("bounds col=%d x=%.2f y=%.2f w=%.2f h=%.2f action=%s tip=%s%s\n",
+                    std::printf("bounds col=%d x=%.2f y=%.2f w=%.2f h=%.2f action=%s tip=%s\n",
                                 element->GetAttribute<int>("data-col", -1), position.x / density, position.y / density,
                                 size.x / density, size.y / density, element->GetAttribute<Rml::String>("data-action", "").c_str(),
-                                element->GetAttribute<Rml::String>("data-tip", "").c_str(), exact ? "" : " transform=unresolved");
+                                element->GetAttribute<Rml::String>("data-tip", "").c_str());
                 }
             }
         }

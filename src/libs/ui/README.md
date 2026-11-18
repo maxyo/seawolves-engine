@@ -35,8 +35,7 @@ in `tests/ui_pack_contract`.
 
 Renders off-screen through the bgfx backend (GLES 3.0 on headless Mesa llvmpipe, simulated clock).
 Options: `--views N` (UI view range), `--game-root` (decodes game pictures itself), `--safe L,T,R,B`
-(safe-area insets in dp, `safe.left` … `safe.bottom` in templates), `--cutout X,Y,W,H` (dp, repeatable
-display cutout), `--interface <model.json>`, `--state <channel>=<file.json>`, `--size`, `--density`.
+(safe-area insets in dp, `safe.left` … `safe.bottom` in templates), `--interface <model.json>`, `--state <channel>=<file.json>`, `--size`, `--density`.
 Component actions are printed as `action <id> <verb> <value>`.
 
 `--script` replays touches and checks frames, e.g.

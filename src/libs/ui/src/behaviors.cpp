@@ -106,8 +106,7 @@ std::string Attr(Rml::Element *element, const char *name, const char *fallback =
 }
 
 // Where the element's border box is on the screen: its layout box moved by the transforms on it
-// and its ancestors (a translate exactly, such as the host's move off a display cutout; others
-// as at the box's corner), so pointers meet what is drawn.
+// and its ancestors (a translate exactly, others as at the box's corner), so pointers meet what is drawn.
 Rml::Rectanglef BorderBox(Rml::Element *element)
 {
     Rml::Vector2f origin = element->GetAbsoluteOffset(Rml::BoxArea::Border);
