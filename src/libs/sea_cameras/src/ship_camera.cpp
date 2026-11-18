@@ -238,6 +238,9 @@ uint32_t SHIP_CAMERA::AttributeChanged(ATTRIBUTES *pAttr)
         fMinDistance = pAttr->GetAttributeAsFloat();
     if (*pAttr == "Distance")
         fDistance = pAttr->GetAttributeAsFloat();
+    // The camera's azimuth around the ship, radians (the player turns it from there).
+    if (*pAttr == "AngleY")
+        vAng.y = pAttr->GetAttributeAsFloat();
     if (*pAttr == "InvertMouseX")
         fInvertMouseX = pAttr->GetAttributeAsFloat();
     if (*pAttr == "InvertMouseY")

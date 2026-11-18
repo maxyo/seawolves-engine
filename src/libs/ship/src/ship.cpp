@@ -1028,7 +1028,7 @@ void SHIP::RestoreLightAndFog()
     }
 }
 
-// The hull on the water for the waves from objects (SEA_BASE::AddWaveSource): its speed and heave from its motion.
+// The hull on the water for the waves from objects (SEA_BASE::AddWaveSource): its speed from its motion.
 void SHIP::AddWaveSource(float fDeltaTime)
 {
     if (!pSea || !bVisible || fDeltaTime <= 0.0f)
@@ -1049,7 +1049,6 @@ void SHIP::AddWaveSource(float fDeltaTime)
     // Smoothed over about half a second: frame times jitter.
     const float k = Min(1.0f, fDeltaTime * 2.0f);
     fWaveSpeed += k * ((vDelta.x * vForward.x + vDelta.z * vForward.y) / fDeltaTime - fWaveSpeed);
-    fWaveHeave += k * (vDelta.y / fDeltaTime - fWaveHeave);
     storm::render::EffectsWaveSource &source = waveSource_;
     source.identity = GetId();
     source.kind = storm::render::EffectsWaveSource::Kind::Hull;
@@ -1105,7 +1104,6 @@ void SHIP::AddWaveSource(float fDeltaTime)
                    State.vBoxSize.z, State.vBoxSize.x);
     }
     source.speed = fWaveSpeed;
-    source.heave = fWaveHeave;
     pSea->AddWaveSource(source);
 }
 

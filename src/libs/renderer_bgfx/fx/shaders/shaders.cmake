@@ -42,6 +42,8 @@ storm_fx_add_shader(fx_shaders fs_fx_rcas_depth "${fx_sc}/fs_fx_rcas.sc" DEFINES
 storm_fx_add_shader(fx_shaders fs_fx_sea_depth "${fx_sc}/fs_fx_sea_depth.sc")
 storm_fx_add_shader(fx_shaders fs_fx_waves_step "${fx_sc}/fs_fx_waves_step.sc")
 storm_fx_add_shader(fx_shaders fs_fx_waves_surface "${fx_sc}/fs_fx_waves_surface.sc")
+storm_fx_add_shader(fx_shaders vs_fx_wake "${fx_sc}/vs_fx_wake.sc")
+storm_fx_add_shader(fx_shaders fs_fx_wake "${fx_sc}/fs_fx_wake.sc")
 
 storm_fx_add_shader(fx_shaders vs_fx_sprite "${fx_sc}/vs_fx_sprite.sc")
 storm_fx_add_shader(fx_shaders fs_fx_sprite "${fx_sc}/fs_fx_sprite.sc")

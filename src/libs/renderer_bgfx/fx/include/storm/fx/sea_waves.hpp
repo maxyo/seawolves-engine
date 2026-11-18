@@ -1,15 +1,18 @@
 // Waves from objects on the legacy sea (Settings::sea_waves): a wave-equation height field on the GPU around the
-// camera, stirred every step by swimmers, waders, boats and ship hulls, and read by the Sea2 shaders
-// (shaders/include/sea_waves.sh) for their normals, crest foam and (Settings::sea_waves_lift) a vertex lift.
+// camera, stirred every step by swimmers and waders, and read by the Sea2 shaders (shaders/include/sea_waves.sh)
+// for their normals, crest foam and (Settings::sea_waves_lift) a vertex lift. The hulls' own waves are their wakes
+// (sea_wakes.hpp).
 //
 // The field: kSize x kSize texels over kExtent metres, centred on the camera in whole texels (the content is shifted
 // by whole texels as the centre moves, so the water does not swim under the camera), stepped in game time
 // (WaveClock: 60 Hz steps, longer ones up to kMaxStep when a frame holds more game time, at most kMaxSteps a frame).
 // Each step is one screen pass that reads the previous state and writes the next one:
 // the discrete 2D wave equation (Hugo Elias' ripple scheme, the explicit leapfrog integration, its second
-// difference in time taken over unequal steps), with velocity damping per second, a sponge at the border and every source applied in the same pass. A hull
-// holds the water still inside its waterline (waves reflect off it) and pushes it around the waterline with its
-// speed (most at the bow) and its heave. Then a surface pass derives, per texel, the height, its gradient and a
+// difference in time taken over unequal steps), with velocity damping per second, a sponge at the border and every
+// source applied in the same pass. The waves travel at kWaveSpeed, about what deep water gives the shortest waves
+// the field holds (1-2 m): a wader's ripples die out within some metres. A body pushes the water up ahead of it and
+// draws it down behind, and strokes when it swims; a hull holds the water still inside its waterline (ripples
+// reflect off it). Then a surface pass derives, per texel, the height, its gradient and a
 // crest-foam amount into the surface texture, which the sea samples with linear filtering in its vertex shaders and
 // as a cubic B-spline (four linear taps) in its pixel shaders: the normals are smooth across the 0.5 m texels.
 //
@@ -44,6 +47,7 @@ class SeaWaves
     static constexpr int kSourceVectors = 8; // vec4 per source in u_wavesSrc (fs_fx_waves_step.sc)
     static constexpr int kMaxSteps = WaveClock::kMaxSteps;
     static constexpr float kStep = WaveClock::kStep;
+    static constexpr float kWaveSpeed = 1.2f; // m/s
     // The RGBA8 surface (no Support::sea_waves_surface_float): heights +-kSurfaceHeight metres, slopes +-kSurfaceSlope.
     static constexpr float kSurfaceHeight = 0.5f;
     static constexpr float kSurfaceSlope = 1.0f;
@@ -63,13 +67,8 @@ class SeaWaves
     // Consecutive poses with the same identity are sampled at each hull substep midpoint.
     // `float_state`: Support::sea_waves_float; `float_surface`: Support::sea_waves_surface_float.
     // `retention`: source-free idle fade applied to both stored components over this frame (normally 1).
-    // `wave_speed` (m/s, clamped to kMinWaveSpeed..kMaxWaveSpeed): how fast the waves travel. A ship's side waves
-    // leave it at asin(wave_speed / its speed); the caller keeps that at the Kelvin wedge (19.5 degrees: a third of
-    // the speed of the ship the camera follows), so they do not fan out wider the slower the ship.
-    static constexpr float kMinWaveSpeed = 0.8f;
-    static constexpr float kMaxWaveSpeed = 2.5f;
     void Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera, std::span<const WaveSource> sources,
-                 float wave_speed, bool float_state, bool float_surface, float retention = 1.0f);
+                 bool float_state, bool float_surface, float retention = 1.0f);
     // Drops the water's state (a new scene, a teleport): the next Advance starts from still water.
     void Reset();
     // The surface of the last Advance (R height, GB gradient in x / z, A crest foam; RGBA16F as they are, or RGBA8

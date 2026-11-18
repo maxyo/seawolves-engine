@@ -11,7 +11,7 @@ void main()
     // dcl_position0 v0, dcl_normal0 v1, dcl_texcoord0 v2: the sea's surface (sea_surface.sh)
     vec4 v0, v1, v2;
     seaVertex(a_position, a_normal, a_texcoord0, v0, v1, v2);
-    v0.y += seaWavesLift(v0.xz); // waves from objects (sea_waves.sh)
+    v0.y += seaWavesLift(v0.xz) + seaWakeLift(v0.xz); // waves from objects (sea_waves.sh)
     vec4 r0 = vec4_splat(0.0);
     vec4 r1 = vec4_splat(0.0);
     vec4 r2 = vec4_splat(0.0);

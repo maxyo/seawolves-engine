@@ -38,11 +38,11 @@ struct CaptureRecorder {
  bool Capture(int,bgfx::TextureHandle source,uint16_t,uint16_t,float,float){++captures;last_source=source.idx;if(fail||!bgfx::isValid(source))return false;texture={20+captures};return true;}
  bgfx::TextureHandle Texture(){return texture;}
 };
-struct Waves{bgfx::TextureHandle Surface(){return {};}};
+struct Waves{bgfx::TextureHandle Surface(){return {};}};struct Wakes{bgfx::TextureHandle Target(){return {};}};
 struct Host {
  bgfx::UniformHandle u_sea_fx_,s_sea_depth_;bool device_ready_=true,sea_depth_logged_=false;
  fx::Settings settings_;fx::Support support_;uint32_t sea_depth_frame_=UINT32_MAX;const void* sea_depth_target_=nullptr;const void* sea_depth_source_=nullptr;
- CaptureRecorder sea_depth_;Waves sea_waves_;struct Weather{std::array<float,3> sun_dir{},sun_color{};}weather_;
+ CaptureRecorder sea_depth_;Waves sea_waves_;Wakes sea_wakes_;struct Weather{std::array<float,3> sun_dir{},sun_color{};}weather_;
  // The backdrop (sea_backdrop): drawn this frame when `armed` and a draw (or the sea's first draw) opened its view.
  bool armed=false,drawn=false;uint32_t sea_backdrop_frame_=UINT32_MAX;bgfx::TextureHandle sea_backdrop_depth_{40};
  uint16_t sea_backdrop_width_=1000,sea_backdrop_height_=500;int sea_backdrop_view_=90,opened=0;uint64_t sea_drawn_frame_=0;bool sea_drawn_=false;

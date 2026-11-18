@@ -125,7 +125,7 @@ class SHIP : public SHIP_BASE
     bool bMounted;
     bool bKeelContour;
     glm::vec3 vOldAng, vOldPos;
-    // Waves from objects: the last position and the smoothed speed / heave (AddWaveSource).
+    // Waves from objects: the last position and the smoothed speed (AddWaveSource).
     glm::vec3 vWaveLastPos{};
     bool bWaveLastPos = false;
     bool bWaterlineLogged = false; // the first waterline of this ship went to the log
@@ -134,7 +134,7 @@ class SHIP : public SHIP_BASE
     float fWaterlineAge = 0.0f;
     bool bWaterlineValid = false;
     bool bWaterlineNonFiniteLogged = false;
-    float fWaveSpeed = 0.0f, fWaveHeave = 0.0f;
+    float fWaveSpeed = 0.0f;
     std::shared_ptr<const storm::ship::HullProfile> hullProfile_; // the hull's waterline (shared per model)
     void AddWaveSource(float fDeltaTime);
     bool bSetFixed;

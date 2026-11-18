@@ -15,7 +15,6 @@ using std::log2;
 using std::sqrt;
 float sign(float x) { return x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f; }
 #include "../shaders/include/fx_waves_storage.sh"
-#include "../shaders/include/fx_waves_flux.sh"
 #include "../shaders/include/fx_waves_surface_storage.sh"
 }
 
@@ -34,7 +33,7 @@ float QuantizeVelocity(float v)
 {
     return storage::fxWavesDecodeVelocity(storage::fxWavesEncodeVelocity(v));
 }
-std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source = true, bool flux = false)
+std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source = true)
 {
     std::vector<float> height(size * size, mode == Mode::OldPacked ? 2.0f / 65535.0f : 0.0f);
     std::vector<float> history = height, next(height.size()), next_history(height.size()), rate(height.size());
@@ -67,10 +66,9 @@ std::vector<float> Run(Mode mode, int scale, bool changing = false, bool source 
                                   (y ? height[i-size] : 0) + (y+1<size ? height[i+size] : 0) - 4*h;
                 const float displacement = mode == Mode::Packed ? history[i] * keep * dt / reference :
                                             (h - history[i]) * keep * dt / last;
-                const float input = flux ? storage::fxWavesSourceDisplacement(rate[i], dt) :
-                                           rate[i] * storm::fx::WaveClock::ForcingStep(dt, last);
+                const float input = rate[i] * storm::fx::WaveClock::ForcingStep(dt, last);
                 const float value = std::clamp(h + displacement + lap_factor * lap + input, -1.9f, 1.9f);
-                const float base = flux ? storage::fxWavesHistoryBase(h, input, 1.0f) : h;
+                const float base = h;
                 if (mode == Mode::Packed)
                 {
                     next[i] = QuantizeHeight(value);
@@ -98,38 +96,6 @@ float Error(const std::vector<float> &a, const std::vector<float> &b)
 
 int main()
 {
-    // Analytic source-on/off control, without spatial acceleration: a 0.02 m/s source for 4 s supplies
-    // exactly 0.08 m, then leaves zero velocity. The old recurrence keeps accelerating after each input.
-    // Test production source/history arithmetic, both storage paths, and unequal game-time steps.
-    for (bool packed : {false, true}) for (int scale : {1, 2, 4})
-    {
-        storm::fx::WaveClock clock;
-        float h = 0, history = 0, last = reference, old_h = 0, old_history = 0;
-        for (int frame = 0; frame < 240 / scale; ++frame)
-        {
-            float dt = 0; bool dropped = false;
-            const int steps = clock.Due(scale / 30.0f, dt, dropped);
-            CHECK(!dropped);
-            for (int j = 0; j < steps; ++j)
-            {
-                const float rate = frame < 120 / scale ? 0.02f : 0.0f;
-                const float source = storage::fxWavesSourceDisplacement(rate, dt);
-                const float keep = std::pow(0.9985f, dt / reference);
-                const float next = h + (packed ? history * dt / reference : (h-history) * dt / last) * keep + source;
-                const float base = storage::fxWavesHistoryBase(h, source, 1.0f);
-                history = packed ? QuantizeVelocity((next-base) * reference / dt) : base;
-                h = packed ? QuantizeHeight(next) : next;
-                const float old_next = old_h + (old_h-old_history) * dt / last * keep + rate * dt * (dt+last) / (2*reference);
-                old_history = old_h; old_h = old_next; last = dt;
-            }
-        }
-        // The accumulated packed result must stay within one millimetre of the supplied displacement.
-        const float tolerance = packed ? 0.001f : 1e-5f;
-        CHECK(std::abs(h - 0.08f) <= tolerance);
-        CHECK(std::abs(packed ? history : h-history) < 1e-6f);
-        CHECK(old_h > 10.0f * h);
-        std::printf("source flux %s x%d height=%.6f expected=.08 old=%.6f\n", packed ? "packed" : "float", scale, h, old_h);
-    }
     const auto surface = [](float h) {
         const float code = std::floor(storage::fxWavesEncodeSurfaceHeight(h) * 255.0f + .5f);
         return storage::fxWavesDecodeSurfaceHeight(code / 255.0f);
@@ -177,17 +143,5 @@ int main()
     const float switching = Error(Run(Mode::Float, 1, true), Run(Mode::Packed, 1, true));
     std::printf("changing-step packed versus float L2=%.6f\n", switching);
     CHECK(switching < 0.03f);
-    const auto flux_base = Run(Mode::Packed, 1, false, true, true);
-    for (int scale : {1, 2, 4})
-    {
-        const auto packed = Run(Mode::Packed, scale, false, true, true);
-        const auto full = Run(Mode::Float, scale, false, true, true);
-        const float scale_error = Error(flux_base, packed), storage_error = Error(full, packed);
-        std::printf("flux packed x%d scale L2=%.6f versus float L2=%.6f\n", scale, scale_error, storage_error);
-        CHECK(scale_error < 0.03f && storage_error < 0.03f);
-    }
-    const float flux_switching = Error(Run(Mode::Float, 1, true, true, true), Run(Mode::Packed, 1, true, true, true));
-    std::printf("flux changing-step packed versus float L2=%.6f\n", flux_switching);
-    CHECK(flux_switching < 0.03f);
     return failures ? 1 : 0;
 }

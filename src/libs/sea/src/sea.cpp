@@ -1363,7 +1363,7 @@ void SEA::Realize(uint32_t dwDeltaTime)
 
     if (iVStart && iTStart)
     {
-        // Waves from objects (renderer: fx::SeaWaves): this frame's sources and the sea's vertex origin.
+        // Waves from objects (renderer: fx::SeaWaves, fx::SeaWakes): this frame's sources and the sea's vertex origin.
         storm::render::EffectsSeaFrame waves;
         waves.vertex_origin = {vWorldOffset.x, vWorldOffset.y, vWorldOffset.z};
         waves.camera = {vCamPos.x, vCamPos.y, vCamPos.z};
@@ -1482,8 +1482,8 @@ void SEA::Realize(uint32_t dwDeltaTime)
             rs->SetVertexShaderConstantF(GC_FREE + 8, (const float *)&vec1, 4); // Matrix!!
 
             rs->TextureSet(0, volumeTexture);
-            // The foam texture for the waves from objects (the renderer's Sea2 pixel shader reads it only on their
-            // crests and wakes; the original shader leaves stage 1 unread).
+            // The foam texture for the waves from objects (the renderer's Sea2 pixel shader reads it only on the
+            // ripples' crests; the original shader leaves stage 1 unread).
             rs->TextureSet(1, iFoamTexture);
             rs->TextureSet(3, envMap);
             // The sun road's cube: the renderer's Sea2 pixel shader takes the colour of the sun's glint from the sun

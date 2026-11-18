@@ -53,7 +53,7 @@ target_link_libraries(storm_bgfx_fx_core PUBLIC Threads::Threads) # the bake poo
 set_target_properties(storm_bgfx_fx_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 add_library(storm_bgfx_fx STATIC
-    src/gpu_util.cpp src/post_chain.cpp src/sea_depth.cpp src/sea_waves.cpp src/sky.cpp src/lighting.cpp src/shadows.cpp src/sun_relight.cpp src/capabilities.cpp
+    src/gpu_util.cpp src/post_chain.cpp src/sea_depth.cpp src/sea_wakes.cpp src/sea_waves.cpp src/sky.cpp src/lighting.cpp src/shadows.cpp src/sun_relight.cpp src/capabilities.cpp
     src/self_test.cpp)
 target_link_libraries(storm_bgfx_fx PUBLIC storm_bgfx_fx_core storm_bgfx_runtime PRIVATE storm_fx_shaders)
 target_include_directories(storm_bgfx_fx SYSTEM PRIVATE "${storm_smaa_SOURCE_DIR}/Textures" "${storm_fidelityfx_fsr_SOURCE_DIR}/ffx-fsr")
@@ -78,6 +78,10 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_compile_features(storm_fx_wave_idle_check PRIVATE cxx_std_20)
     target_include_directories(storm_fx_wave_idle_check PRIVATE include)
     add_test(NAME fx_wave_idle COMMAND storm_fx_wave_idle_check)
+    add_executable(storm_fx_wake_check tests/wake_check.cpp)
+    target_compile_features(storm_fx_wake_check PRIVATE cxx_std_20)
+    target_include_directories(storm_fx_wake_check PRIVATE include)
+    add_test(NAME fx_wake COMMAND storm_fx_wake_check)
 endif()
 
 if(NOT CMAKE_CROSSCOMPILING)

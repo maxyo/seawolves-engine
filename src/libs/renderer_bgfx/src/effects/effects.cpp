@@ -344,8 +344,8 @@ const Option kOptions[] = {
     {"fx_sea_band_limit", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_band_limit = on(v); }},
     {"fx_sea_soft_edges", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_soft_edges = on(v); }},
     {"fx_sea_specular", "0 off, 1 on", [](fx::Settings &s, int v) { s.sea_specular = on(v); }},
-    {"fx_sea_waves", "0 off, 1 on: ripples from swimmers, boats and hulls", [](fx::Settings &s, int v) { s.sea_waves = on(v); }},
-    {"fx_sea_waves_lift", "0 off, 1 on: the ripples also raise the sea surface",
+    {"fx_sea_waves", "0 off, 1 on: ripples from swimmers and waders, the wakes of hulls", [](fx::Settings &s, int v) { s.sea_waves = on(v); }},
+    {"fx_sea_waves_lift", "0 off, 1 on: the ripples and wakes also raise the sea surface",
      [](fx::Settings &s, int v) { s.sea_waves_lift = on(v); }},
     {"fx_sea_waves_debug", "0 off, 1 ripple slope red, crest foam blue, 2 the tilt of the sea's normal",
      [](fx::Settings &s, int v) { s.sea_waves_debug = static_cast<uint8_t>(std::clamp(v, 0, 2)); }},
@@ -541,9 +541,12 @@ void Host::shutdown()
     sky_.Shutdown();
     sea_depth_.Shutdown();
     sea_waves_.Shutdown();
+    sea_wakes_.Shutdown();
+    sea_wakes_ready_ = false;
     sea_waves_idle_ = {};
     sea_waves_frame_ = UINT32_MAX;
-    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &s_sea_sun_road_, &u_sea_waves_, &s_sea_waves_})
+    for (bgfx::UniformHandle *uniform : {&u_sea_fx_, &s_sea_depth_, &s_sea_sun_road_, &u_sea_waves_, &s_sea_waves_,
+                                         &u_sea_wake_, &s_sea_wake_})
         if (bgfx::isValid(*uniform))
         {
             bgfx::destroy(*uniform);
@@ -871,7 +874,7 @@ void Host::advance_switch()
     const bool ready = post_.Prepare(target_, budget) &&
                        (!sea_depth || (sea_depth_.Prepare(budget) &&
                                        lighting_.casters().prepare_programs(*device, Casters::Pass::Sun, budget))) &&
-                       (!target_.sea_waves || sea_waves_.Prepare(budget)) &&
+                       (!target_.sea_waves || (sea_waves_.Prepare(budget) && sea_wakes_.Prepare(budget))) &&
                        lighting_.prepare_programs(*device, target_, budget);
     switch_programs_ += per_frame - budget;
     report_.prepared_programs = switch_programs_;

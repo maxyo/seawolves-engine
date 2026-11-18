@@ -4,7 +4,6 @@
 #define FX_WAVES_SH
 #include "fx_common.sh"
 #include "fx_waves_storage.sh"
-#include "fx_waves_flux.sh"
 
 #define kWavesRange 2.0
 

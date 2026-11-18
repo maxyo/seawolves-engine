@@ -18,7 +18,7 @@ Single options are `fx_*` keys of engine.ini or `STORM_FX_OPTIONS` (parsed in `s
 development. Useful ones:
 
 - `fx_gpu_profile=1`: per-view GPU timings (costs CPU on GL; off by default);
-- `fx_sea_waves_debug=1|2`: ripple slope and foam / normal tilt;
+- `fx_sea_waves_debug=1|2`: ripple and wake slope (red) and foam (blue) / the normal tilt they add;
 - `fx_wet_force`: forces a rain wetness for review;
 - `fx_gloss_debug`, `fx_character_relief` (0/1/2), `fx_character_relief_strength`,
   `fx_character_parallax_depth`, `fx_character_skin_colour`: relief and gloss review (debuggable builds);

@@ -15,7 +15,7 @@ $input v_color0, v_color1, v_texcoord0, v_texcoord1, v_texcoord2, v_texcoord3, v
 //   hull, partly covering a multisampled pixel) and the water is not faded: fading it there showed what lies under
 //   the sea as bright fringes along every edge over the water;
 // - specular: the sun's glint from the bumped normal: the same reflected ray as the game's sun road, so it lies on it;
-// - waves from objects (sea_waves.sh): ripples around swimmers, boats and hulls (and the wakes they leave) tilt the
+// - waves from objects (sea_waves.sh): ripples around swimmers and waders and the Kelvin wakes of the hulls tilt the
 //   normal; the reflection follows it, and so does the Fresnel split between the mirrored sky (v0) and the water's
 //   own colour and transparency (v1, alpha), recomputed per pixel with the vertex shader's formula for the tilted and
 //   the untilted normal: where nothing stirs the water the original look stays exactly. Foam on the ripples' crests
@@ -55,7 +55,9 @@ void main()
     // The foam texture in world metres (the sea's vertex origin moves with the camera; u_seaWaves[3] holds its uv).
     vec2 foam_uv = v_texcoord4.zw * u_seaWaves[3].z + u_seaWaves[3].xy;
     vec3 n0 = normalize(vec3(m1, m2, m3));
-    vec2 slope = seaWavesSlope(v_texcoord4, length(fwidth(v_texcoord4.zw)), foam, debug);
+    vec2 wake = seaWakeSlope(v_texcoord4.zw, length(fwidth(v_texcoord4.zw)));
+    vec2 slope = seaWavesSlope(v_texcoord4, length(fwidth(v_texcoord4.zw)), foam, debug) + wake;
+    debug.r += length(wake) * 4.0;
     vec3 N = seaWavesTilt(n0, slope);
     vec3 R = portReflect(N, eye);
     // The waves' tilt changes how much sky the water mirrors: the vertex shader's Fresnel split, per pixel, for the

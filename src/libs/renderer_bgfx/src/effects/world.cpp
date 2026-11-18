@@ -19,6 +19,10 @@ namespace
 // (with the physical per-pixel Fresnel of fs_port_sea2 they need more tilt than a facing term gives).
 // The reflection uses the derivative of the same metre-height field that lifts the vertices.
 constexpr float kRippleSlopeGain = 1.0f;
+// The wakes' slope in the normal (fx::SeaWakes, sea_waves.sh), and the Sea2 unit their target is bound to (free on
+// the Sea2 draws: fs_port_sea2.sc).
+constexpr float kWakeSlopeGain = 2.5f;
+constexpr uint8_t kWakeStage = 12;
 // Metres one repeat of the game's foam texture (pena.tga, a photograph of churned water) covers.
 constexpr double kFoamTile = 10.0;
 
@@ -198,6 +202,8 @@ void Host::prepare_sea(shim::Device &device)
     set_sea_waves_uniforms();
     if (bgfx::isValid(sea_waves_.Surface()))
         device.note_read(sea_waves_.Surface()); // bound when the ripples are on
+    if (bgfx::isValid(sea_wakes_.Target()))
+        device.note_read(sea_wakes_.Target()); // bound when there are wakes
     const bool specular = device_ready_ && settings_.sea_specular && has_weather();
     const auto &sun = weather_.sun_dir;
     const float strength = settings_.sea_specular_strength;
@@ -254,32 +260,20 @@ void Host::set_sea_frame(const render::EffectsSeaFrame &frame)
 void Host::advance_sea_waves(shim::Device &device)
 {
     const uint32_t frame = shim::Context::instance().submitted_frames();
-    if (!device_ready_ || !settings_.sea_waves || sea_frame_set_ != frame || sea_waves_frame_ == frame)
-        return;
-    sea_waves_frame_ = frame;
-    // A stopped hull remains a source. Only after ALL sources leave: natural decay, then a smooth state fade
-    // during the final four seconds of the existing idle budget. Never keep rendering a frozen residual field.
-    sea_waves_idle_.Tick(sea_frame_.dt, !sea_sources_.empty());
-    if (sea_waves_idle_.Sleeping())
+    if (!settings_.sea_waves)
     {
-        sea_waves_.Reset();
+        sea_wakes_.Reset();
+        sea_wakes_ready_ = false;
         return;
     }
-    const int steps = sea_waves_.StepsDue(sea_frame_.dt);
-    if (steps == 0)
+    if (!device_ready_ || sea_frame_set_ != frame || sea_waves_frame_ == frame)
         return;
-    // The sources nearest the field's centre first: the simulation takes the first fx::SeaWaves::kMaxSources.
-    const auto &camera = sea_frame_.focus;
-    const auto distance = [&](const render::EffectsWaveSource &s) {
-        const float dx = s.position[0] - camera[0], dz = s.position[2] - camera[2];
-        return std::sqrt(dx * dx + dz * dz) - s.half_length;
-    };
+    sea_waves_frame_ = frame;
+    sea_wake_time_ += sea_frame_.dt;
+    const auto &focus = sea_frame_.focus;
     sea_wave_sources_.clear();
     for (const render::EffectsWaveSource &s : sea_sources_)
     {
-        // Only what can reach the field: its half size plus the source's length.
-        if (distance(s) > 0.5f * fx::SeaWaves::kExtent)
-            continue;
         fx::WaveSource w;
         w.identity = s.identity;
         w.kind = s.kind == render::EffectsWaveSource::Kind::Hull ? fx::WaveSource::Kind::Hull : fx::WaveSource::Kind::Body;
@@ -292,36 +286,47 @@ void Host::advance_sea_waves(shim::Device &device)
         w.station_side = s.station_side;
         w.station_half = s.station_half;
         w.speed = s.speed;
-        w.heave = s.heave;
         w.stroke = s.stroke;
         sea_wave_sources_.push_back(w);
     }
-    std::sort(sea_wave_sources_.begin(), sea_wave_sources_.end(), [&](const fx::WaveSource &a, const fx::WaveSource &b) {
-        const auto d = [&](const fx::WaveSource &s) {
-            const double dx = s.position[0] - camera[0], dz = s.position[1] - camera[2];
-            return dx * dx + dz * dz;
-        };
-        return d(a) < d(b);
-    });
+
+    // The wakes of every hull under way, redrawn every frame into a target of their own that only these draws and
+    // the sea's (Device::note_read) touch: it runs ahead of the scene (ViewSchedule).
+    sea_wakes_.Update(sea_wave_sources_, sea_wake_time_);
+    const uint16_t wake_view = device.effects_target_view("fx sea waves wake", {}, {});
+    sea_wakes_ready_ = sea_wakes_.Render(wake_view, {focus[0], focus[2]}, sea_wake_time_);
+    if (bgfx::isValid(sea_wakes_.Target()))
+        device.schedule.write(wake_view, sea_wakes_.Target().idx);
+
+    // The ripple field: what can reach it (its half size plus the source's length), nearest its centre first (the
+    // simulation takes the first fx::SeaWaves::kMaxSources). Only bodies make ripples; a hull holds the water.
+    const auto distance = [&](const fx::WaveSource &s) {
+        const double dx = s.position[0] - focus[0], dz = s.position[1] - focus[2];
+        return std::sqrt(dx * dx + dz * dz) - s.half_length;
+    };
+    std::erase_if(sea_wave_sources_, [&](const fx::WaveSource &s) { return distance(s) > 0.5 * fx::SeaWaves::kExtent; });
+    const bool bodies = std::any_of(sea_wave_sources_.begin(), sea_wave_sources_.end(),
+                                    [](const fx::WaveSource &s) { return s.kind == fx::WaveSource::Kind::Body; });
+    // A stopped body remains a source. Only after every body has left: natural decay, then a smooth state fade
+    // during the final four seconds of the idle budget. Never keep rendering a frozen residual field.
+    sea_waves_idle_.Tick(sea_frame_.dt, bodies);
+    if (sea_waves_idle_.Sleeping())
+    {
+        sea_waves_.Reset();
+        return;
+    }
+    const int steps = sea_waves_.StepsDue(sea_frame_.dt);
+    if (steps == 0)
+        return;
+    std::sort(sea_wave_sources_.begin(), sea_wave_sources_.end(),
+              [&](const fx::WaveSource &a, const fx::WaveSource &b) { return distance(a) < distance(b); });
     // Views into the ripple field's own targets, which only these passes and the sea's draws (Device::note_read)
     // touch: they run ahead of the scene (ViewSchedule).
     std::array<bgfx::ViewId, fx::SeaWaves::kMaxSteps + 1> views{};
     for (int i = 0; i <= steps; ++i)
         views[i] = device.effects_target_view("fx sea waves", {}, {});
-    const auto &focus = sea_frame_.focus;
-    // The waves travel at a third of the speed of the hull nearest the field's centre (the ship the camera follows):
-    // its side waves then leave it at the Kelvin wedge's 19.5 degrees, whatever its speed. Eased over about 2 s.
-    float wave_speed = fx::SeaWaves::kMaxWaveSpeed;
-    for (const fx::WaveSource &s : sea_wave_sources_)
-        if (s.kind == fx::WaveSource::Kind::Hull)
-        {
-            wave_speed = std::clamp(std::fabs(s.speed) / 3.0f, fx::SeaWaves::kMinWaveSpeed, fx::SeaWaves::kMaxWaveSpeed);
-            break;
-        }
-    sea_wave_speed_ += (wave_speed - sea_wave_speed_) * std::min(sea_frame_.dt * 0.5f, 1.0f);
     sea_waves_.Advance(std::span(views.data(), static_cast<size_t>(steps) + 1), {focus[0], focus[2]}, sea_wave_sources_,
-                       sea_wave_speed_, support_.sea_waves_float, support_.sea_waves_surface_float,
-                       sea_waves_idle_.TakeRetention());
+                       support_.sea_waves_float, support_.sea_waves_surface_float, sea_waves_idle_.TakeRetention());
     // The steps and the surface pass all count as writing the surface: they keep their order, and the sea's draws
     // that sample it (set_sea_waves_uniforms) run after them.
     if (bgfx::isValid(sea_waves_.Surface()))
@@ -335,6 +340,11 @@ void Host::set_sea_waves_uniforms()
     {
         u_sea_waves_ = bgfx::createUniform("u_seaWaves", bgfx::UniformType::Vec4, 4);
         s_sea_waves_ = bgfx::createUniform("s_seaWaves", bgfx::UniformType::Sampler);
+    }
+    if (!bgfx::isValid(u_sea_wake_))
+    {
+        u_sea_wake_ = bgfx::createUniform("u_seaWake", bgfx::UniformType::Vec4, 2);
+        s_sea_wake_ = bgfx::createUniform("s_seaWake", bgfx::UniformType::Sampler);
     }
     const bool frame = sea_frame_set_ == shim::Context::instance().submitted_frames();
     const auto &origin = sea_frame_.vertex_origin;
@@ -367,6 +377,25 @@ void Host::set_sea_waves_uniforms()
     bgfx::setUniform(u_sea_waves_, w.data(), 4);
     if (ripples)
         bgfx::setTexture(fx::kShadowMapStage, s_sea_waves_, sea_waves_.Surface(), BGFX_SAMPLER_UVW_CLAMP);
+
+    // The wakes (fx::SeaWakes): [0] xy target uv at the sea's vertex origin, z 1 / metres it covers, w 1 = on;
+    // [1] x lift (0 off), y slope gain, z 0, w texels per side.
+    std::array<float, 8> wake{};
+    const bool wakes = device_ready_ && frame && settings_.sea_waves && sea_wakes_ready_;
+    if (wakes)
+    {
+        const auto centre = sea_wakes_.Centre();
+        wake[0] = static_cast<float>((static_cast<double>(origin[0]) - centre[0]) / fx::SeaWakes::kExtent + 0.5);
+        wake[1] = static_cast<float>((static_cast<double>(origin[2]) - centre[1]) / fx::SeaWakes::kExtent + 0.5);
+        wake[2] = 1.0f / fx::SeaWakes::kExtent;
+        wake[3] = 1.0f;
+        wake[4] = settings_.sea_waves_lift ? 1.0f : 0.0f;
+        wake[5] = kWakeSlopeGain;
+        wake[7] = fx::SeaWakes::kSize;
+    }
+    bgfx::setUniform(u_sea_wake_, wake.data(), 2);
+    if (wakes)
+        bgfx::setTexture(kWakeStage, s_sea_wake_, sea_wakes_.Target(), BGFX_SAMPLER_UVW_CLAMP);
 }
 
 void Host::release_sea_backdrop()

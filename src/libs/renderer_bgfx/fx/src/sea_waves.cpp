@@ -12,8 +12,7 @@ using namespace detail;
 
 namespace
 {
-// The water: waves of 2 m and more (4 texels) travel at about the speed deep water gives them, and lose half
-// their energy in a few seconds; a hull or a swimmer is felt some tens of metres away.
+// The water loses half its waves' energy in about 3 s.
 constexpr float kVelocityKeep = 0.996f; // per 1/60 s: half the energy in about 3 s
 } // namespace
 
@@ -78,8 +77,7 @@ void SeaWaves::Reset()
 }
 
 void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2> camera,
-                       std::span<const WaveSource> sources, float wave_speed, bool float_state, bool float_surface,
-                       float retention)
+                       std::span<const WaveSource> sources, bool float_state, bool float_surface, float retention)
 {
     if (views.size() < 2)
         return;
@@ -116,7 +114,7 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
     source_discontinuous_ = false;
 
     // Unequal steps: (u+ - u) / h - (u - u-) / h_last = (h + h_last) / 2 * c^2 lap / dx^2.
-    const float courant = std::clamp(wave_speed, kMinWaveSpeed, kMaxWaveSpeed) * step_seconds_ / kCell;
+    const float courant = kWaveSpeed * step_seconds_ / kCell;
     const float keep = std::pow(kVelocityKeep, step_seconds_ / kStep);
     const size_t steps = views.size() - 1;
     const float step_retention = std::pow(std::clamp(retention, 0.0f, 1.0f), 1.0f / static_cast<float>(steps));
@@ -136,7 +134,7 @@ void SeaWaves::Advance(std::span<const bgfx::ViewId> views, std::array<double, 2
             a[4] = std::max(s.half_length, kCell);
             a[5] = std::max(s.half_width, kCell);
             a[6] = s.speed;
-            a[7] = s.heave;
+            a[7] = 0.0f;
             a[8] = s.kind == WaveSource::Kind::Hull ? 1.0f : 0.0f;
             a[9] = s.stroke;
             // A phase of its own from its position, so that two swimmers side by side do not stroke in step.

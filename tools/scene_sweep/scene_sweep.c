@@ -27,6 +27,12 @@
 //                  ship: rigging against the water, the bow wave and the hull at the waterline
 //   battle:<island> sea around <island> with an attacking enemy ship, captured once it has fired
 //   boarding:<island> boarding of that enemy ship (deck fight)
+//   wake:<view>-<sails>  the open sea at noon in a fresh breeze, the hero's ship on a broad reach under <sails> ("full",
+//                  "half"), its wake seen from <view>: "stern" (close behind, looking down along the wake), "beam"
+//                  (abeam, the whole V and the bow wave), "high" (high above the quarter). Pass a long --settle
+//                  (40000) for the ship to gather speed and lay its wake.
+//   wade:<id>      shore location <id> at noon: the hero wades out of the water, from 9 m beyond the boat locator
+//                  towards the first door, a fixed camera beside him; he starts once the scene is steady
 //   map:world      world map
 //   storm:world    storm entered from the world map
 
@@ -253,6 +259,7 @@ void SceneSweep_Frame()
 			// Restarts the runner's frame and renderer counters: the capture reports the scene alone.
 			SceneSweepEvent("steady " + ssScene);
 			ssSteady = true;
+			if(ssKind == "wade") SceneSweep_WadeWalk();
 			ssFrames = 0;
 			ssTime = 0;
 			break;
@@ -344,6 +351,14 @@ void SceneSweep_Finish()
 		break;
 	case "save":
 		SceneSweep_PrepareSavedPlayer();
+		break;
+	case "wade":
+		LAi_SetPlayerType(pchar);
+		locCameraFollow();
+		break;
+	case "wake":
+		// The next scenes get the game's own wind again.
+		DeleteAttribute(pchar, "wind");
 		break;
 	}
 	SceneSweep_Next();
@@ -439,7 +454,7 @@ bool SceneSweep_InLocation(string id)
 // between land scenes; anywhere else the hero first returns to where the game began.
 bool SceneSweep_NeedsLand()
 {
-	if(ssKind == "loc" || ssKind == "night" || ssKind == "combat" || ssKind == "surface") return false;
+	if(ssKind == "loc" || ssKind == "night" || ssKind == "combat" || ssKind == "surface" || ssKind == "wade") return false;
 	if(ssKind == "map" || ssKind == "storm")
 	{
 		if(SceneSweep_OnMap()) return false;
@@ -469,6 +484,8 @@ void SceneSweep_Start()
 	case "combat":	SceneSweep_StartLocation(12);	break;
 	case "night":	SceneSweep_StartLocation(0);	break;
 	case "surface":	SceneSweep_StartLocation(12);	break;
+	case "wade":	SceneSweep_StartLocation(12);	break;
+	case "wake":	SceneSweep_StartSea(false);		break;
 	case "sea":		SceneSweep_StartSea(false);		break;
 	case "dusk":	SceneSweep_StartSea(false);		break;
 	case "dawn":	SceneSweep_StartSea(false);		break;
@@ -504,7 +521,7 @@ void SceneSweep_Start()
 		break;
 	}
 	if(ssKind != "loc" && ssKind != "combat" && ssKind != "night" && ssKind != "surface" && ssKind != "sea" && ssKind != "dusk" && ssKind != "dawn" && ssKind != "skynight" && ssKind != "skyday" && ssKind != "moon" && ssKind != "ship" &&
-		ssKind != "battle" && ssKind != "boarding" && ssKind != "map" && ssKind != "storm")
+		ssKind != "wake" && ssKind != "wade" && ssKind != "battle" && ssKind != "boarding" && ssKind != "map" && ssKind != "storm")
 	{
 		SceneSweep_Fail("unknown scene kind");
 	}
@@ -597,6 +614,8 @@ bool SceneSweep_Loaded()
 		}
 		return true;
 		break;
+	case "wake":	return SceneSweep_WakeLoaded();	break;
+	case "wade":	return SceneSweep_WadeLoaded();	break;
 	case "battle":
 		if(!SceneSweep_AtSea()) return false;
 		// The enemy attacks the hero: its cannons must fire (sea AI relations, cannons, balls).
@@ -774,6 +793,12 @@ void SceneSweep_StartSea(bool withEnemy)
 		SetCurrentTime(0, 0);
 		SetNextWeather("0 Hours");
 	}
+	if(ssKind == "wake")
+	{
+		// A fresh breeze from the north, the ship on a broad reach: near its best speed.
+		pchar.wind.angle = 0.0;
+		pchar.wind.speed = 14.0;
+	}
 	// The moon of the 14th (WhrSun.c: Moon03, nearly full; the 1st has the new moon, a black disc), a quarter of an
 	// hour after it rises (23:30): about 11 degrees up, in view.
 	if(ssKind == "moon")
@@ -801,7 +826,7 @@ void SceneSweep_StartSea(bool withEnemy)
 		SetNextWeather("12 Hour");
 	}
 	string island = ssId;
-	if(ssKind == "map" || ssKind == "storm" || ssKind == "dusk" || ssKind == "dawn" || ssKind == "moon" || ssKind == "skynight" || ssKind == "skyday" || ssKind == "ship") island = "";
+	if(ssKind == "map" || ssKind == "storm" || ssKind == "dusk" || ssKind == "dawn" || ssKind == "moon" || ssKind == "skynight" || ssKind == "skyday" || ssKind == "ship" || ssKind == "wake") island = "";
 	DeleteAttribute(&questToSeaLoginer, "");
 	QuestToSeaLogin_Prepare(0.0, 0.0, island);
 	// The open sea, the ship (and its camera) heading into the sun: sun glare, shafts, the sun road.
@@ -812,6 +837,8 @@ void SceneSweep_StartSea(bool withEnemy)
 	if(ssKind == "moon") questToSeaLoginer.PlayerGroup.ay = SceneSweep_SunHeading(13.1, 0.3);
 	if(ssKind == "skynight") questToSeaLoginer.PlayerGroup.ay = SceneSweep_HeadingAt(0.3 * PI, 0.35);
 	if(ssKind == "skyday") questToSeaLoginer.PlayerGroup.ay = SceneSweep_SunHeading(12.0, 0.35);
+	// Sea_ApplyMaxSpeedZ: the fastest heading is a little off the beam of the wind.
+	if(ssKind == "wake") questToSeaLoginer.PlayerGroup.ay = PI * 0.42;
 	if(island != "")
 	{
 		if(FindIsland(island) < 0)
@@ -866,4 +893,92 @@ void SceneSweep_StartCombat()
 	LAi_group_SetRelation("EnemyFight", LAI_GROUP_PLAYER, LAI_GROUP_ENEMY);
 	LAi_group_FightGroups("EnemyFight", LAI_GROUP_PLAYER, true);
 	LAi_SetFightMode(pchar, true);
+}
+
+// wake:<view>-<sails>: the hero's ship under the given sails, the camera set for <view>.
+bool SceneSweep_WakeLoaded()
+{
+	if(!SceneSweep_AtSea()) return false;
+	int split = findSubStr(ssId, "-", 0);
+	string view = strcut(ssId, 0, split - 1);
+	string sails = strcut(ssId, split + 1, strlen(ssId) - 1);
+	if(ssStep == 0)
+	{
+		ssStep = 1;
+		if(sails == "full") Ship_SetSailState(nMainCharacterIndex, 1.0);
+		else
+		{
+			if(sails == "half") Ship_SetSailState(nMainCharacterIndex, 0.5);
+			else SceneSweep_Fail("unknown sails " + sails);
+		}
+		// SHIP_CAMERA: AngleY the azimuth around the ship (0 ahead, PI astern), AngleX the pitch (negative down),
+		// Distance 0..1 along its ellipsoid.
+		if(view == "stern")
+		{
+			SeaShipCamera.AngleY = PI - 0.15;
+			SeaShipCamera.Distance = 0.25;
+			SeaShipCamera.MinAngleX = -0.45;
+			SeaShipCamera.MaxAngleX = -0.4;
+		}
+		else
+		{
+			if(view == "beam")
+			{
+				SeaShipCamera.AngleY = PI * 0.62;
+				SeaShipCamera.Distance = 0.55;
+				SeaShipCamera.MinAngleX = -0.42;
+				SeaShipCamera.MaxAngleX = -0.38;
+			}
+			else
+			{
+				if(view == "high")
+				{
+					SeaShipCamera.AngleY = PI * 0.8;
+					SeaShipCamera.Distance = 0.8;
+					SeaShipCamera.MinAngleX = -0.95;
+					SeaShipCamera.MaxAngleX = -0.9;
+				}
+				else SceneSweep_Fail("unknown view " + view);
+			}
+		}
+	}
+	return true;
+}
+
+// wade:<id>: the hero stands in the water 9 m from the boat locator towards the location's first door, a fixed camera
+// beside him; SceneSweep_WadeWalk walks him out of the water to that door.
+bool SceneSweep_WadeLoaded()
+{
+	if(!SceneSweep_InLocationAtEntry()) return false;
+	int loaded = FindLoadedLocation();
+	if(ssStep == 0)
+	{
+		if(!CheckAttribute(&Locations[loaded], "locators.reload.boat"))
+		{
+			SceneSweep_Fail("the location has no reload::boat locator");
+			return false;
+		}
+		ssStep = 1;
+		float x, y, z;
+		GetCharacterPos(pchar, &x, &y, &z);
+		float bx = stf(Locations[loaded].locators.reload.boat.x);
+		float by = stf(Locations[loaded].locators.reload.boat.y);
+		float bz = stf(Locations[loaded].locators.reload.boat.z);
+		float dx = x - bx;
+		float dz = z - bz;
+		float d = sqrt(dx * dx + dz * dz);
+		if(d < 1.0) d = 1.0;
+		dx = dx / d;
+		dz = dz / d;
+		TeleportCharacterToPos(pchar, bx + dx * 9.0, by, bz + dz * 9.0);
+		LAi_SetActorType(pchar);
+		// To the side of his way, looking along it towards the beach.
+		locCameraFromToPos(bx + dx * 5.0 - dz * 7.0, by + 2.5, bz + dz * 5.0 + dx * 7.0, true, bx + dx * 12.0, by, bz + dz * 12.0);
+	}
+	return true;
+}
+
+void SceneSweep_WadeWalk()
+{
+	LAi_ActorGoToLocator(pchar, ssGroup, ssLocator, "", -1);
 }

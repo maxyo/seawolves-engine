@@ -10,7 +10,7 @@ struct WaveSource
     enum class Kind : uint8_t
     {
         Body, // a swimmer or wader: a round disturbance that moves and (swimming) strokes
-        Hull, // a boat or ship: its waterline (stern, stem, stations) holds the water inside, pushes it around
+        Hull, // a boat or ship: its waterline (stern, stem, stations) holds the water inside; it lays a wake
     };
     Kind kind = Kind::Body;
     uint64_t identity = 0; // stable entity id; zero is an anonymous source
@@ -26,7 +26,6 @@ struct WaveSource
     std::array<float, kHullStations> station_side{};
     std::array<float, kHullStations> station_half{};
     float speed = 0.0f;  // m/s along `forward`
-    float heave = 0.0f;  // m/s up (a hull bobbing in the swell sends rings out)
     float stroke = 0.0f; // a body: 0 wading .. 1 swimming hard (an oscillating push)
 };
 

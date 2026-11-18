@@ -172,7 +172,8 @@ def first_of_each_category(scenes):
 
 def build(game):
     """Every scene of the game: all locations, the sea around every island, and the
-    special scenes (night, land combat, underwater surface, sea at sunset, sunrise and midnight, sea battle, boarding, world map, storm)."""
+    special scenes (night, land combat, underwater surface, sea at sunset, sunrise and midnight, ship wakes, wading, sea battle,
+    boarding, world map, storm)."""
     land = locations(game)
     scenes = list(land)
     sea = islands(game)
@@ -205,6 +206,13 @@ def build(game):
     scenes.append(Scene('skyday:open', 'sky at noon', weather))
     scenes.append(Scene('moon:open', 'sea at midnight', weather))
     scenes.append(Scene('ship:night', 'ship at night', weather + tree_fingerprint(game, 'PROGRAM/sea_ai')))
+    # Waves from objects: the hero's ship's wake at two speeds and from three sides, and the hero wading in at a shore.
+    ships = weather + tree_fingerprint(game, 'PROGRAM/sea_ai', 'PROGRAM/ships')
+    for view in ('stern-full', 'stern-half', 'beam-full', 'beam-half', 'high-full'):
+        scenes.append(Scene(f'wake:{view}', 'ship wake', ships))
+    scene = next((item for item in land if item.category == 'seashore' and item.attributes['sea']), None)
+    if scene:
+        scenes.append(Scene('wade:' + scene.id.split(':', 1)[1], 'wading', scene.fingerprint + scripts, scene.source))
     scenes.append(Scene('storm:world', 'storm', worldmap + tree_fingerprint(game, 'PROGRAM/weather')))
     return scenes
 

@@ -13,6 +13,7 @@
 #include "storm/fx/sky.hpp"
 #include "storm/fx/sky_model.hpp"
 #include "storm/fx/sea_depth.hpp"
+#include "storm/fx/sea_wakes.hpp"
 #include "storm/fx/sea_waves.hpp"
 #include "storm/fx/wave_idle.hpp"
 #include "storm/fx/wetness.hpp"
@@ -125,7 +126,8 @@ class Host
     // Before each draw with the game's Sea2 pixel shader (shaders/ports/fs_port_sea2.sc): sets its u_seaFx and,
     // for the soft edges, captures the scene distance behind the sea once per frame and target and binds it.
     // Also before each draw with a Sea2 vertex port and the sun road pixel port: the waves from objects
-    // (sea_waves.sh): runs the ripple simulation once per frame (views of its own) and binds its surface.
+    // (sea_waves.sh): runs the ripple simulation and draws the wakes once per frame (views of their own) and binds
+    // their targets.
     void prepare_sea(shim::Device &device);
     void bind_sea_sun_road(shim::Device &device);
     void set_sea_frame(const render::EffectsSeaFrame &frame);
@@ -257,8 +259,10 @@ class Host
     // Waves from objects: the sea's frame (set_sea_frame) and the simulation.
     void advance_sea_waves(shim::Device &device);
     void set_sea_waves_uniforms();
-    float sea_wave_speed_ = fx::SeaWaves::kMaxWaveSpeed; // m/s the ripples travel at (advance_sea_waves)
     fx::SeaWaves sea_waves_;
+    fx::SeaWakes sea_wakes_;
+    double sea_wake_time_ = 0.0;  // game seconds the wakes age by
+    bool sea_wakes_ready_ = false; // this frame's wake target holds wakes
     render::EffectsSeaFrame sea_frame_{};
     std::vector<render::EffectsWaveSource> sea_sources_;
     std::vector<fx::WaveSource> sea_wave_sources_;
@@ -268,6 +272,8 @@ class Host
     std::array<float, 16> sea_waves_uniform_{};
     bgfx::UniformHandle u_sea_waves_ = BGFX_INVALID_HANDLE;
     bgfx::UniformHandle s_sea_waves_ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle u_sea_wake_ = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_sea_wake_ = BGFX_INVALID_HANDLE;
     // The fx view transform last set on a shim view this frame: another camera in the same view needs a new view.
     bgfx::ViewId transform_view_ = UINT16_MAX;
     std::array<float, 32> transform_{};

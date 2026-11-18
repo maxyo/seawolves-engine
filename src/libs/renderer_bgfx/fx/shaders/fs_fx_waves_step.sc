@@ -6,7 +6,7 @@ $input v_uv
 #define kWavesSources 16
 #define kWavesVectors 8 // fx::SeaWaves::kSourceVectors
 // Per source: [0] xy position (metres from the centre), zw forward; [1] x half length, y half width (metres; a hull:
-// half its waterline length, its largest half beam), z speed (m/s), w heave (m/s up); [2] x kind (0 body, 1 hull),
+// half its waterline length, its largest half beam), z speed (m/s); [2] x kind (0 body, 1 hull),
 // y stroke (0..1), z phase (radians); a hull's waterline: [3] x stern, y stem (metres along forward), [4..5] the half
 // beam and [6..7] the centre's offset to the side at 8 stations evenly spaced from stern to stem.
 uniform vec4 u_wavesSrc[kWavesSources * kWavesVectors];
@@ -43,10 +43,11 @@ void main()
     float displacement = u_wavesStep[2].z > 0.5 ? c.y * u_wavesStep[3].z : (c.x - c.y) * u_wavesStep[0].w;
     float h = c.x + displacement + u_wavesStep[0].z * lap;
 
-    // Hulls prescribe displaced water (m/s); bodies retain their calibrated momentum forcing.
-    // Only hull displacement is excluded from the free-wave velocity history.
+    // Bodies push the water (momentum forcing); a hull holds the water inside its waterline still, so that the
+    // ripples reflect off it. A hull's own waves are its wake (fx::SeaWakes): a field of one wave speed cannot make
+    // the dispersive Kelvin pattern, and pushing it with a moving hull made a Mach cone, two straight fronts sliding
+    // apart.
     vec2 p = (v_uv - 0.5) * u_wavesStep[2].w;
-    float rate = 0.0;
     float body_force = 0.0;
     float hold = 1.0;
     float time = u_wavesStep[2].x;
@@ -62,58 +63,33 @@ void main()
         float side = dot(d, vec2(-a.w, a.z));
         if (k.x < 0.5)
         {
-            // A body: pushes down where it moves and, swimming, strokes at about 0.9 Hz.
+            // A body wading or swimming at speed U pushes the water up ahead of it and draws it down behind (a
+            // dipole along its way, as strong as the drag, U^2: no water is added or taken away), and swimming
+            // strokes at about 0.9 Hz. A walk (1.6 m/s) makes ripples of about 2 cm at a metre.
             vec2 q = vec2(along / b.x, side / b.y);
             float e = dot(q, q);
             if (e > 4.0)
                 continue;
             float g = exp(-2.5 * e);
-            body_force -= g * (0.10 * abs(b.z) + 0.30 * k.y * sin(5.65 * time + k.z));
+            body_force += g * (0.0625 * b.z * abs(b.z) * q.x - 0.06 * k.y * sin(5.65 * time + k.z));
         }
         else
         {
-            // A hull: the water inside its waterline stays still (incoming waves reflect off it); along the
-            // waterline, in a band as wide as a quarter of the half beam, it is pushed by the hull's speed, up at
-            // the stem and down along the run aft, and by its heave.
             if (abs(along) > b.x * 1.6 + 8.0 || abs(side) > b.y * 2.0 + 8.0)
                 continue;
-            vec4 ends = u_wavesSrc[i * kWavesVectors + 3];
-            float hull_length = max(ends.y - ends.x, 1.0);
-            // How much wave a hull makes for its speed grows with its Froude number U / sqrt(g L): a heavy ship
-            // under sail (Fr about 0.2) pushes a modest bow wave, a light boat at the same speed (Fr 0.4 and more)
-            // a full one.
-            float speed = abs(b.z);
-            float make = clamp(2.5 * speed * inversesqrt(9.81 * hull_length), 0.25, 1.0);
             float dist = fxWavesHull(i, along, side);
             float skin = max(2.0 * u_wavesStep[1].y, 0.25 * b.y);
-            if (dist < 3.0 * skin)
-            {
-                hold *= smoothstep(-1.2 * skin, -0.2 * skin, dist);
-                float ring = exp(-(dist / skin) * (dist / skin));
-                float bow = clamp((along - ends.x) / hull_length, 0.0, 1.0);
-                // Up at the stem, drawn down along the run aft; the hull's heave beyond the swell's (a storm lifts
-                // every hull metres a second): a small push, clamped, or every hull rings like a bell.
-                rate += ring * (speed * make * (0.09 * bow * bow * bow - 0.035 * (1.0 - bow)) -
-                                0.03 * clamp(b.w, -1.0, 1.0));
-            }
-            // Behind the stern the water closes in on the hole the hull leaves: a trough just aft, as wide as the
-            // stern.
-            vec4 stern_half = u_wavesSrc[i * kWavesVectors + 4];
-            float stern_beam = max(max(stern_half.x, stern_half.y), 0.5);
-            float across = (side - u_wavesSrc[i * kWavesVectors + 6].x) / (1.1 * stern_beam);
-            float back = (ends.x - along - 0.1 * hull_length) / (0.12 * hull_length);
-            rate -= exp(-across * across - back * back) * speed * make * 0.05;
+            hold *= smoothstep(-1.2 * skin, -0.2 * skin, dist);
         }
     }
-    float source = fxWavesSourceDisplacement(rate, dt);
-    h += source + body_force * u_wavesStep[3].x;
+    h += body_force * u_wavesStep[3].x;
     h *= hold;
     // Sponge: the outer 8 % of the field absorbs what reaches it.
     vec2 edge = min(v_uv, 1.0 - v_uv);
     h *= mix(pow(0.94, dt * 60.0), 1.0, smoothstep(0.0, 0.08, min(edge.x, edge.y)));
     h = clamp(h, -0.95 * kWavesRange, 0.95 * kWavesRange);
     // Preserve hold/sponge/clamp effects in the velocity, before height storage rounds it.
-    float base = fxWavesHistoryBase(c.x, source, hold);
+    float base = c.x * hold;
     float history = u_wavesStep[2].z > 0.5 ? (h - base) * u_wavesStep[3].w : base;
     // Idle fade scales position AND velocity/history: no artificial impulse and no hidden state on reentry.
     gl_FragColor = fxWavesOut(vec2(h, history) * u_wavesStep[3].y);

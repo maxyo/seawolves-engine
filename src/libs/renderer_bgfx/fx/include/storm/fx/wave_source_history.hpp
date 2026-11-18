@@ -54,7 +54,6 @@ class WaveSourceHistory
         const float length = std::hypot(result.forward[0], result.forward[1]);
         if (length > 0) for (auto &x : result.forward) x /= length;
         result.speed = std::lerp(previous->speed, result.speed, t);
-        result.heave = std::lerp(previous->heave, result.heave, t);
         result.half_length = std::lerp(previous->half_length, result.half_length, t);
         result.half_width = std::lerp(previous->half_width, result.half_width, t);
         result.stern = std::lerp(previous->stern, result.stern, t);
