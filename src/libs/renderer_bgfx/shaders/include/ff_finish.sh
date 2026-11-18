@@ -26,7 +26,9 @@ vec4 ffFinishWith(vec4 color, vec4 fog, vec2 uv0, vec3 specular)
     // FF_OPAQUE: the twin of a shader for draws without a clip plane and without an alpha test (the shim picks it,
     // draw.cpp opaque_twin): a shader that can discard loses early depth and hidden-surface removal on tile GPUs.
 #ifndef FF_OPAQUE
-    if (fog.y < 0.0) discard;
+    // One discard, at the end, outside every branch: the clip plane and the alpha test only decide it here. With a
+    // discard in each nested branch PowerVR's Vulkan compiler failed the pipeline (VK_ERROR_UNKNOWN, D-Series).
+    bool killed = fog.y < 0.0;
     float func = u_ffFs[3].x;
 #ifdef FX_FF_COVERAGE
     // Only for GREATER / GREATEREQUAL tests against the stage-0 texture's alpha (the CPU checks it).
@@ -48,7 +50,7 @@ vec4 ffFinishWith(vec4 color, vec4 fog, vec2 uv0, vec3 specular)
         else if (func < 5.5) pass = a > ref;
         else if (func < 6.5) pass = a != ref;
         else if (func < 7.5) pass = a >= ref;
-        if (!pass) discard;
+        killed = killed || !pass;
     }
 #endif
     if (u_ffFs[3].y > 0.5) color.rgb += specular;
@@ -65,6 +67,9 @@ vec4 ffFinishWith(vec4 color, vec4 fog, vec2 uv0, vec3 specular)
         else f = d;
         color.rgb = mix(u_ffFs[1].rgb, color.rgb, clamp(f, 0.0, 1.0));
     }
+#ifndef FF_OPAQUE
+    if (killed) discard;
+#endif
     return color;
 }
 #define ffFinish(color) ffFinishWith(color, v_fog, v_texcoord0.xy, v_color1.rgb)
