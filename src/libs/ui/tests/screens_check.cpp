@@ -627,8 +627,81 @@ static void Store(const std::string &models)
     surface.commands.clear();
     router.Back();
     Expect(surface.commands.empty() && surface.props["extras"]["open"] != true, "back closes the «Прочее» sheet before anything else");
-    router.OnEvent({"header", "subject-next", ""});
-    Expect(surface.Last().find("SHIPS_SCROLL") == std::string::npos, "the ship cannot change during a deal");
+    {
+        // The ship switch stays while a deal is open: the deal is closed with the game's cancel (its ProcessFrame
+        // hides the window but leaves bShowChangeWin set), the game's own select switches the ship, and once the game
+        // has bound the new ship (the next model) the same goods' deal opens again, else the row the game selected.
+        const auto deal_on = [&models](int row, int ship, uint64_t revision, bool open) {
+            InterfaceModel model = Load(models, "store-deal.json");
+            if (!open)
+                std::erase_if(model.widgets, [](const Widget &widget) { return widget.node.rfind("QTY_", 0) == 0; });
+            for (Widget &widget : model.widgets)
+            {
+                if (widget.node == "TABLE_LIST")
+                {
+                    widget.value = widget.index == row ? "1" : "0";
+                    widget.row_id = "goods:" + std::to_string(widget.index) + ":ship:" + std::to_string(ship); // the engine's row ids name the owner
+                }
+                if (widget.node == "SHIPS_SCROLL")
+                    widget.value = widget.index == ship ? "1" : "0";
+            }
+            model.revision = revision;
+            return model;
+        };
+        FakeSurface ship_surface;
+        Router ship_router(ship_surface);
+        ship_router.SetInterface(deal_on(2, 0, 20, true));
+        const Json subject = ship_surface.props["subject"];
+        Expect(!ship_surface.props["deal"].is_null() && subject["prev"] == false && subject["next"] == true && subject["sub"] == "1 <common.of> 2",
+               "a deal is open and the ship arrows are there: " + subject.dump());
+        ship_surface.commands.clear();
+        ship_router.OnEvent({"header", "subject-next", ""});
+        Expect(ship_surface.commands.size() == 2 && ship_surface.commands[0] == "widget:store\tQTY_CANCEL_BUTTON\t-1\tguard@7:goods:2:ship:0|press" &&
+                   ship_surface.commands[1] == "widget:store\tSHIPS_SCROLL\t1\tselect@7:ship:1",
+               "› during a deal: the game's cancel of the deal, then the game's select of the next ship: " + Json(ship_surface.commands).dump());
+        // The selector moved; the game binds the ship in its next frame (refCharacter, the table, the first row).
+        ship_surface.commands.clear();
+        ship_router.SetInterface(deal_on(2, 1, 21, false));
+        Expect(ship_surface.commands.empty() && ship_surface.errors.empty(), "nothing is asked for before the game has switched the ship");
+        ship_router.SetInterface(deal_on(0, 1, 22, false));
+        ExpectEqual(ship_surface.Last(), "widget:store\tTABLE_LIST\t2\tactivate@7:goods:2:ship:1", "the same goods' deal opens for the new ship");
+        ship_router.SetInterface(deal_on(2, 1, 23, true));
+        Expect(!ship_surface.props["deal"].is_null() && ship_surface.props["list"]["rows"][2]["selected"] == true &&
+                   ship_surface.props["subject"]["prev"] == true && ship_surface.props["subject"]["next"] == false && ship_surface.errors.empty(),
+               "the deal is the new ship's, with the arrows: " + ship_surface.props["subject"].dump());
+
+        // The new ship's list without those goods: the row the game selected.
+        ship_surface.commands.clear();
+        ship_router.OnEvent({"header", "subject-prev", ""});
+        ExpectEqual(ship_surface.Last(), "widget:store\tSHIPS_SCROLL\t0\tselect@7:ship:0", "‹ switches back");
+        ship_router.SetInterface(deal_on(2, 0, 24, false));
+        InterfaceModel without = deal_on(0, 0, 25, false);
+        std::erase_if(without.widgets, [](const Widget &widget) { return widget.node == "TABLE_LIST" && widget.index == 2; });
+        ship_surface.commands.clear();
+        ship_router.SetInterface(without);
+        ExpectEqual(ship_surface.Last(), "widget:store\tTABLE_LIST\t0\tactivate@7:goods:0:ship:0", "goods the new ship's list lacks: the game's first row");
+
+        // A switch the game answers with no new model (nothing it shows changed): opened after the wait.
+        ship_router.SetInterface(deal_on(0, 0, 26, true));
+        ship_router.OnEvent({"header", "subject-next", ""});
+        ship_router.SetInterface(deal_on(0, 1, 27, false));
+        ship_surface.commands.clear();
+        ship_surface.now += 0.6;
+        ship_router.Tick();
+        ExpectEqual(ship_surface.Last(), "widget:store\tTABLE_LIST\t0\tactivate@7:goods:0:ship:1", "no newer model within the wait: opened on these rows");
+
+        // An arrow tapped while a tapped row's window is on its way: the switch waits for that window, then closes it.
+        ship_router.SetInterface(deal_on(0, 1, 28, true));
+        ship_router.OnEvent({"goods", "row", "1"});
+        ship_surface.commands.clear();
+        ship_router.OnEvent({"header", "subject-prev", ""});
+        Expect(ship_surface.commands.empty(), "the switch waits for the tapped row's window");
+        ship_router.SetInterface(deal_on(1, 1, 29, true));
+        Expect(ship_surface.commands.size() == 2 && ship_surface.commands[0] == "widget:store\tQTY_CANCEL_BUTTON\t-1\tguard@7:goods:1:ship:1|press" &&
+                   ship_surface.commands[1] == "widget:store\tSHIPS_SCROLL\t0\tselect@7:ship:0",
+               "the window came: closed, then the ship switched: " + Json(ship_surface.commands).dump());
+        Expect(ship_surface.errors.empty(), "no errors in the ship switch: " + Json(ship_surface.errors).dump());
+    }
 
     // Without its required table the store falls back to the generic layout.
     InterfaceModel broken = Load(models, "store.json");
@@ -981,6 +1054,8 @@ static void Commerce(const std::string &models)
         open_router.SetInterface(closed(4, 0));
         Expect(open_surface.commands.empty(), "cannons: a deal closed by the player stays closed");
         open_router.SetInterface(closed(5, 1));
+        Expect(open_surface.commands.empty(), "cannons: another ship: nothing before the game has bound it (its next frame)");
+        open_router.SetInterface(closed(6, 1));
         ExpectEqual(open_surface.Last(), "widget:cannons\tTABLE_LIST\t1\tactivate@7:row:1", "cannons: another ship's list opens its selected row's deal");
     }
     // contraband.c: a good without a buy price can only be sold: the pivot is the scale's right end.

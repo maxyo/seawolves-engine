@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <utility>
 
 namespace storm::ui::screens
 {
@@ -356,6 +357,20 @@ class CommerceScreen final : public Screen
         for (const Widget *one : admitted.All(columns.owners))
             if (one->value == "1")
                 owner = one->row_id;
+        // An arrow tapped while a row's window was on its way: the switch goes out once that window has come (or
+        // its wait ended), so it is closed first like any open deal (SwitchOwner).
+        if (switch_to_ && hold_row_.empty() && quick_row_.empty())
+        {
+            const int to = *std::exchange(switch_to_, std::nullopt);
+            const Widget *target = nullptr;
+            for (const Widget *one : admitted.All(columns.owners))
+                if (one->index == to)
+                    target = one;
+            if (!target || !target->Offers("select"))
+                bindings.Error(std::string(columns.title) + ": the owner " + std::to_string(to) + " chosen while a row's window was on its way is gone; not switched");
+            else if (target->value != "1")
+                SwitchOwner(bindings, *target, deal, cancel, selected);
+        }
         // A confirmed deal closes the game's amount window and leaves its row selected: that row's deal is opened
         // again, as on opening, so the dock keeps its amount and button for the next deal of the same row (else it
         // showed the row's name with nothing to do until the row was tapped again). A deal left with ← is not.
@@ -371,17 +386,42 @@ class CommerceScreen final : public Screen
             }
             reopen_row_.clear();
         }
-        if (opened_for_ != owner && selected)
+        // Another ship or character: the selector moved in the model, but the game binds the new owner (refCharacter,
+        // its table refilled, the first row selected) in its ProcessFrame of the next frame, so the model the move
+        // came in still has the old owner's rows. The deal is asked for on the next model (the game's own switch has
+        // run by then) or, when none comes within kSelectHold, on this one: the game's switch changed no widget, so
+        // these rows are the new owner's. The row whose deal was open at the switch is opened again when the new
+        // owner's list has it (by its name), else the row the game selected.
+        if (selected && opened_for_ != owner)
         {
+            const bool switched = opened_for_.has_value();
             opened_for_ = owner;
-            if (money && selected && !deal && selected->Offers("activate"))
+            if (switched)
             {
-                hold_row_ = selected->row_id;
-                hold_at_ = bindings.Now();
-                hold_revision_ = admitted.model->revision;
-                bindings.Send(*selected, "activate", selected->row_id);
-                bindings.RebuildAfter(kSelectHold);
+                settle_revision_ = admitted.model->revision;
+                settle_at_ = bindings.Now();
+                settling_ = true;
             }
+            else if (money && !deal && selected->Offers("activate"))
+                OpenRow(bindings, *selected, admitted.model->revision);
+        }
+        if (settling_ && selected)
+        {
+            if (admitted.model->revision > settle_revision_ || bindings.Now() - settle_at_ >= kSelectHold)
+            {
+                settling_ = false;
+                const Widget *row = selected;
+                if (follow_row_)
+                    for (const Widget *one : goods)
+                        if (one->CellText(columns.name) == *follow_row_)
+                            row = one;
+                const bool open = follow_row_ ? true : money;
+                follow_row_.reset();
+                if (open && !deal && hold_row_.empty() && row->Offers("activate"))
+                    OpenRow(bindings, *row, admitted.model->revision);
+            }
+            else
+                bindings.RebuildAfter(settle_at_ + kSelectHold - bindings.Now());
         }
         const Widget *first = goods.empty() ? nullptr : goods.front();
         const auto header = [first](int column) {
@@ -719,14 +759,22 @@ class CommerceScreen final : public Screen
             for (size_t i = 0; i < owners.size(); ++i)
                 if (owners[i]->value == "1")
                     current = i;
+            // The arrows stay while a deal is open: a switch closes the deal first (SwitchOwner).
+            const bool closable = !deal || (cancel && cancel->Offers("press"));
             view["subject"] = Json{{"label", owners[current]->label},
                                    {"sub", std::to_string(current + 1) + " " + bindings.Text("common.of") + " " + std::to_string(owners.size())},
-                                   {"prev", current > 0 && !deal},
-                                   {"next", current + 1 < owners.size() && !deal},
+                                   {"prev", current > 0 && closable},
+                                   {"next", current + 1 < owners.size() && closable},
                                    {"list", false}};
-            const auto choose = [&bindings, owners, deal](size_t index) {
-                if (!deal && index < owners.size() && owners[index]->Offers("select"))
-                    bindings.Send(*owners[index], "select", owners[index]->row_id);
+            const auto choose = [this, &bindings, owners, deal, cancel, selected](size_t index) {
+                if (index >= owners.size() || !owners[index]->Offers("select"))
+                    return;
+                if (!hold_row_.empty() || !quick_row_.empty())
+                {
+                    switch_to_ = owners[index]->index; // a row's window is on its way: switched once it has come
+                    return;
+                }
+                SwitchOwner(bindings, *owners[index], deal, cancel, selected);
             };
             bindings.On("header", "subject-prev", [choose, current](const Event &) { choose(current - 1); });
             bindings.On("header", "subject-next", [choose, current](const Event &) { choose(current + 1); });
@@ -953,6 +1001,40 @@ class CommerceScreen final : public Screen
     }
 
   private:
+    // A tap on a row as the player's: its window comes a loop after its selection (see Build).
+    void OpenRow(Bindings &bindings, const Widget &row, uint64_t revision)
+    {
+        hold_row_ = row.row_id;
+        hold_at_ = bindings.Now();
+        hold_revision_ = revision;
+        bindings.Send(row, "activate", row.row_id);
+        bindings.RebuildAfter(kSelectHold);
+    }
+
+    // Another ship or character, chosen with the header's arrows. The game's own switch runs (the selector's
+    // select: ProcessFrame binds the owner, refills the table and selects its first row). An open deal is closed
+    // first with the game's cancel: the scripts' ProcessFrame hides the amount window on a switch but leaves
+    // bShowChangeWin set (store.c, cannons.c, itemstrade.c, itemsbox.c), and with it set the next opened row would
+    // confirm the old window's amount (ShowItemInfo → TransactionOK) instead of opening. Its row is remembered and
+    // opened again for the new owner (Build).
+    void SwitchOwner(Bindings &bindings, const Widget &owner, bool deal, const Widget *cancel, const Widget *selected)
+    {
+        quick_row_.clear();
+        reopen_row_.clear();
+        follow_row_.reset();
+        if (deal)
+        {
+            if (!cancel || !cancel->Offers("press"))
+            {
+                bindings.Error(std::string(layout_.title) + ": the open deal cannot be closed (no QTY_CANCEL_BUTTON press); the owner is not switched");
+                return;
+            }
+            bindings.Send(*cancel, "press", {}, selected->row_id);
+            follow_row_ = selected->CellText(layout_.name);
+        }
+        bindings.Send(owner, "select", owner.row_id);
+    }
+
     // The facts of the open row, in the dock under its name: the two prices, the weight (an icon, no word) and
     // what they are for («за 20 шт.»: a pack of goods; the game sells it by the piece, see the top).
     Json Facts(Bindings &bindings, const Widget &row, const std::string &pack) const
@@ -999,6 +1081,11 @@ class CommerceScreen final : public Screen
     double hold_at_ = 0.0;
     uint64_t hold_revision_ = 0; // the model revision the row was tapped in
     std::optional<std::string> opened_for_; // the ship / character whose list was opened (its selected row's deal asked for)
+    bool settling_ = false;          // another owner was chosen: its deal waits for the game's own switch (Build)
+    uint64_t settle_revision_ = 0;   // the model the new owner came in
+    double settle_at_ = 0.0;
+    std::optional<std::string> follow_row_; // the name of the row whose deal was open at a switch (opened again)
+    std::optional<int> switch_to_;   // the owner (its index) chosen while a row's window was on its way
     int filter_ = 0; // 0 all, 1 on our side, 2 profitable (export goods) / on the other side
     int sort_ = -1;  // the column the rows are ordered by (own, other, buy, sell); -1 = the game's order
     bool sort_descending_ = true;
