@@ -10,6 +10,7 @@
 //   launcher:  {phase: setup|ready|busy, starting, files, library, hasGame, installed (the game's copy as
 //               the choices describe one, absent until read), problem: ""|no_game|
 //               recovery_required|start_failed, result: {key, args}, exit: {reason, when},
+//               belowMinimum (the phone misses the minimum requirements and the player has not closed the notice),
 //               import: {recovering, cancelling, canCancel, stage, bytes, total, files,
 //               choices: [{id, name, version, languages, defaultLanguage, bytes, files,
 //               patches, place, missing}], password: {for, retry}}}
@@ -491,6 +492,14 @@ class LauncherScreen final : public Screen
         }
         if (!result.is_null())
             view["notices"].push_back(bindings.Notice(result));
+        if (Flag(state, "belowMinimum"))
+        {
+            // The phone misses the game's minimum requirements (the app's MinimumRequirements): said until the player
+            // closes it with its ×; play is never blocked.
+            view["notices"].push_back(bindings.Notice(
+                Json{{"tone", "warn"}, {"text", bindings.Text(StringKey("launcher.below_minimum"))}, {"dismiss", "below-minimum"}}));
+            bindings.On("below-minimum", "", [send](const Event &) { send("below-minimum-dismiss"); });
+        }
 
         if (phase == "ready")
         {

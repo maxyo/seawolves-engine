@@ -1,0 +1,13 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": false,
+  "library": true,
+  "hasGame": false,
+  "problem": "no_game",
+  "belowMinimum": true
+ }
+}

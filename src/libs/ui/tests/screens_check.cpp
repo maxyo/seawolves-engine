@@ -3294,6 +3294,23 @@ static void Launcher()
     Expect(shownCount("warn (notice on screen app:launcher): <launcher.exit_previous>") == 1, "the previous exit's notice is logged");
     ExpectEqual(surface.props["view"].get<std::string>(), "ready", "ready view");
     ExpectEqual(surface.props["notices"][0]["text"].get<std::string>(), "<launcher.exit_previous>", "previous exit noticed");
+    // A phone below the minimum requirements: one warning after the others, on the ready and the setup view, closed
+    // by its × (the app stores that); logged when it appears.
+    router.SetState("launcher", launcher({{"phase", "ready"}, {"library", true}, {"hasGame", true}, {"belowMinimum", true},
+                                          {"exit", {{"reason", "anr"}, {"when", "today"}}}}));
+    Expect(surface.props["notices"].size() == 2 && surface.props["notices"][1]["text"].get<std::string>() == "<launcher.below_minimum>" &&
+               surface.props["notices"][1]["tone"].get<std::string>() == "warn" &&
+               surface.props["notices"][1]["dismiss"].get<std::string>() == "below-minimum",
+           "below the minimum: a closable warning after the previous exit's");
+    Expect(shownCount("warn (notice on screen app:launcher): <launcher.below_minimum>") == 1, "the below-minimum notice is logged");
+    router.OnEvent({"below-minimum", "click", ""});
+    ExpectEqual(verb(), "APP below-minimum-dismiss ", "its × closes it");
+    router.SetState("launcher", launcher({{"phase", "setup"}, {"library", false}, {"hasGame", false}, {"problem", "no_game"}, {"belowMinimum", true}}));
+    Expect(surface.props["notices"].size() == 1 && surface.props["notices"][0]["dismiss"].get<std::string>() == "below-minimum",
+           "the setup view shows it too");
+    router.SetState("launcher", launcher({{"phase", "ready"}, {"library", true}, {"hasGame", true},
+                                          {"exit", {{"reason", "anr"}, {"when", "today"}}}}));
+    Expect(surface.props["notices"].size() == 1, "closed: gone");
     router.OnEvent({"play", "click", ""});
     ExpectEqual(verb(), "APP play ", "play");
     router.OnEvent({"about", "click", ""});
