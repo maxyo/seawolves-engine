@@ -615,6 +615,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     void Touch(TouchPhase phase, int pointer, float x, float y, double time) override
     {
         changed_ = true;
+        if (phase == TouchPhase::Down && settle_.on)
+            EndSettle("a new touch"); // the finger goes down on what is there now: it is shown
         if (config_.trace_actions && phase == TouchPhase::Down)
             Traced(tracer_.Finish(true)); // a new gesture: what the last one did is over
         else if (config_.trace_actions && phase == TouchPhase::Up)
@@ -731,6 +733,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
         if (phase == TouchPhase::Up) // the end of a tap: what a screen switch answers (ReportSwitch)
             last_tap_ = Clock::now() - std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(std::max(0.0, Now() - time)));
+        const PlayerInput input(*this, phase == TouchPhase::Up); // what the tap sends is the player's (settle gate)
         auto found = captures_.find(pointer);
         if (found == captures_.end())
             return;
@@ -900,7 +903,26 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 delay = std::min(delay, std::max(0.0, (toast.leaving >= 0.0 ? toast.leaving + ToastLeaveSeconds() : toast.until) - now));
         TakeGameImageCost(counters_.picture_ms, counters_.pictures);
         if (tracer_.Active())
-            Traced(tracer_.Poll(system_.GetElapsedTime()));
+            Traced(tracer_.Poll(system_.GetElapsedTime(), opening_ != Opening::None || settle_.on || router_->Answering()));
+        // A screen switch the game makes (an interface opens or closes, the HUD comes back after a load) is drawn once its
+        // content stood still for a game frame too: the HUD's states and an interface's first revisions come in steps.
+        if (!settle_.on && drawn_ && ShownPlace() != presented_place_ && ShownPlace() != settled_place_)
+        {
+            BeginSettle("the switch to " + ShownPlace());
+            settle_.heard = true;
+        }
+        settle_held_ = HoldForSettle(now);
+        if (settle_held_)
+        {
+            // The frame on the screen stays (the backend submits it again): nothing is acknowledged as drawn, and
+            // what changed is drawn once the game's answer settled. What is laid out now takes touches (a touch that
+            // goes down ends the hold, Touch): those held for a layout are applied to it.
+            PublishTouchMap(true);
+            ReleaseHeld();
+            counters_.style_ms = style_before;
+            delay = std::min(delay, 1.0 / 60.0);
+            return false;
+        }
         const bool draw = changed_ || !drawn_;
         if (draw)
             counters_.update_ms += Milliseconds(started, std::chrono::steady_clock::now());
@@ -938,6 +960,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     {
         double delay = 0.0;
         const bool predicted = Prepare(delay);
+        if (settle_held_)
+        {
+            backend_->ReplayShown();
+            return delay;
+        }
         const auto updated = std::chrono::steady_clock::now();
         renderer_->BeginFrame();
         backend_->BeginFrame(true);
@@ -968,6 +995,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         drawn_ = true;
         counters_.number = last_frame_.number + 1;
         counters_.shown = Shown();
+        presented_place_ = ShownPlace();
         if (tracer_.Active())
             tracer_.Presented(TraceContent(counters_.shown));
         ReportSwitch(false);
@@ -1130,6 +1158,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void Answer(uint64_t request, bool applied, const std::string &reason) override
     {
+        settle_.heard = true;
         const auto started = std::chrono::steady_clock::now();
         router_->Answer(request, applied, reason);
         counters_.apply_ms += Milliseconds(started, std::chrono::steady_clock::now());
@@ -1150,6 +1179,9 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void SetInterface(const InterfaceModel &model) override
     {
+        // A model sent again unchanged after an action (the engine does so for every action it took) is no reaction yet.
+        if (model.screen != router_->Model().screen || model.opening != router_->Model().opening || model.revision != router_->Model().revision)
+            settle_.heard = true;
         const auto started = std::chrono::steady_clock::now();
         if (model.opening != switch_.opening)
         {
@@ -1170,6 +1202,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void CloseInterface() override
     {
+        settle_.heard = true;
         switch_.open = false;
         game_interface_ = false;
         router_->CloseGameInterface(game_screen_);
@@ -1187,6 +1220,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void ExpectInterface() override
     {
+        settle_.heard = true;
         if (!switch_.open)
             switch_.Begin(std::chrono::steady_clock::now(), true);
         changed_ = true;
@@ -1305,6 +1339,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     void Back() override
     {
         changed_ = true;
+        const PlayerInput input(*this, true);
         if (config_.trace_actions)
         {
             BeginTrace("back");
@@ -1568,6 +1603,13 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
 
     void Send(const Action &action) override
     {
+        // The player's tap on a game screen asks the game for something: its answer may come in steps over several game
+        // frames. HUD input is the game's own controls (the scene follows the game's states every frame), except a
+        // shortcut that opens a game menu over it; the launcher's screens ("app:") are the application's.
+        const bool gated = action.screen == "hud" ? action.verb == "shortcut"
+                                                  : action.screen != "sound" && !action.screen.empty() && action.screen.rfind("app:", 0) != 0;
+        if (player_input_ && gated && (AnsweredAction(action) || !EngineCommand(action).empty()))
+            BeginSettle(action.screen + " " + (action.node.empty() ? action.verb : action.node + " " + action.verb));
         if (config_.on_action)
             config_.on_action(action);
     }
@@ -1827,6 +1869,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         {
             // A game interface: its screen maps the event to engine actions.
             router_->OnEvent({id, verb, value});
+            // What the tap queued for a flush (an amount and its confirmation) goes out from Router::Tick: the game is
+            // asked from now on all the same.
+            if (player_input_ && router_->Answering())
+                BeginSettle(ScreenTag() + " " + id + " " + verb);
             return;
         }
         if (!config_.on_action)
@@ -2064,8 +2110,105 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // A drawn frame whose UI work alone took kSlowFrameMs or more, with its split: what a stutter in the game's
     // "ui" phase was. At most one line
     // every two seconds; a screen switch has its own report.
-    std::vector<ActionTrace> TakeActionTraces() override
+    // --- settle before present ---------------------------------------------------
+    //
+    // A tap that asks the game for something is answered over several game frames at times: the store selects the
+    // row in one loop and opens its amount window in the next, an interface closes and the next opens, a busy mark
+    // comes before the answer. Drawn as they come, each step was a frame of its own (flicker, action_trace.h). From
+    // such a tap the frame on the screen stays until the game's answer settled: the game reacted (a model, a state,
+    // an interface opened or closed), answered every widget action and sent the model after it, and one game frame
+    // passed without a change of what would be drawn. While the frame stays, the control the finger pressed stays drawn
+    // pressed: that is the busy state. At most kSettleCap once the game reacted and answered, kAnswerCap while it has
+    // not (the store's deal closes and reopens over 4 to 8 game frames on a slow device): then what is there is drawn,
+    // the pressed control with its busy mark. Input is never held by it: a touch that goes down ends it.
+
+    static constexpr double kSettleCap = 0.18;
+    static constexpr double kAnswerCap = 0.6;
+
+    // While the player's tap or back key is handled (Send then starts the gate).
+    struct PlayerInput
     {
+        PlayerInput(HostImpl &host, bool on) : host_(host), was_(host.player_input_)
+        {
+            host_.player_input_ = was_ || on;
+        }
+        ~PlayerInput()
+        {
+            host_.player_input_ = was_;
+        }
+        HostImpl &host_;
+        bool was_;
+    };
+
+    uint64_t ContentHash()
+    {
+        Rml::ElementDocument *const documents[] = {document_, hud_document_};
+        return CaptureContent(documents, float(config_.width), float(config_.height), {}, 0.0).hash;
+    }
+
+    void BeginSettle(const std::string &what)
+    {
+        // Only the engine's host waits for a game; the application's own screens (launcher, downloads) answer at once.
+        if (!drawn_ || !config_.game_hud)
+            return;
+        if (!settle_.on)
+        {
+            settle_.on = true;
+            settle_.since = settle_.checked = system_.GetElapsedTime();
+            settle_.hash = ContentHash();
+        }
+        settle_.heard = false; // what is awaited is the game's reaction to this one
+        settle_.local = 0;
+        settle_.what = what;
+    }
+
+    // True while the frame on the screen stays. The content is compared once per game frame (the engine prepares once
+    // in its frame; twice when the backend cannot replay the frame shown).
+    bool HoldForSettle(double now)
+    {
+        if (!settle_.on)
+            return false;
+        if (now - settle_.checked < 0.004)
+            return true;
+        settle_.checked = now;
+        const uint64_t hash = ContentHash();
+        const bool quiet = hash == settle_.hash;
+        settle_.hash = hash;
+        // The first game frame after the tap shows what the screen did itself (a busy mark, a sheet that closed); a
+        // change after it is the game's reaction (state channels flow every frame, so their arrival is none).
+        if (!settle_.local)
+            settle_.local = hash | 1;
+        else if ((hash | 1) != settle_.local)
+            settle_.heard = true;
+        const bool answering = router_->Answering();
+        if (settle_.heard && quiet && !answering)
+            return EndSettle(nullptr);
+        if (now - settle_.since >= (answering || !settle_.heard ? kAnswerCap : kSettleCap))
+            return EndSettle(answering ? "the game has not answered" : !settle_.heard ? "the game did nothing yet" : "it still changes");
+        return true;
+    }
+
+    // Returns false (nothing held any more).
+    bool EndSettle(const char *cut)
+    {
+        const double held = (system_.GetElapsedTime() - settle_.since) * 1000.0;
+        if (cut)
+        {
+            Log("UI settle: " + settle_.what + ": drawn after " + std::to_string(int(held)) + " ms although " + cut);
+            tracer_.Capped();
+        }
+        else if (config_.log_taps)
+            Log("UI settle: " + settle_.what + ": settled in " + std::to_string(int(held)) + " ms");
+        settle_.on = false;
+        settle_held_ = false;
+        settled_place_ = ShownPlace(); // drawn now (or redrawn while the backend holds the frame): not a switch again
+        return false;
+    }
+
+    std::vector<ActionTrace> TakeActionTraces(bool finish_open) override
+    {
+        if (finish_open)
+            Traced(tracer_.Finish(true));
         return std::exchange(traces_, {});
     }
 
@@ -2097,9 +2240,9 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         if (!trace)
             return;
         const std::string line = DescribeTrace(*trace);
-        if (trace->transient)
+        if (trace->transient && !trace->capped)
             Rml::Log::Message(Rml::Log::LT_WARNING, "%s", line.c_str());
-        else if (config_.log_taps)
+        else if (config_.log_taps || trace->transient)
             Log(line);
         traces_.push_back(std::move(*trace));
         if (traces_.size() > 512)
@@ -2172,6 +2315,16 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     }
 
     // FrameStats::shown.
+    // What is shown without the model's revision: the screen and its opening, the HUD, nothing.
+    std::string ShownPlace() const
+    {
+        if (video_)
+            return "video";
+        if (Rml::Element *screen = screen_root_ && document_ ? document_->GetElementById("screen") : nullptr)
+            return screen->GetTagName() + " " + router_->Model().screen + "#" + std::to_string(router_->Model().opening);
+        return document_ ? "document" : hud_document_ && hud_document_->IsVisible() ? "hud" : "nothing";
+    }
+
     std::string Shown() const
     {
         std::string shown = "nothing";
@@ -2398,6 +2551,20 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     int scroll_pointer_ = -1; // the pointer that drags lists (one at a time)
     TouchScroll scroll_;
     ActionTracer tracer_;              // Config::trace_actions
+    struct Settle_
+    {
+        bool on = false;
+        bool heard = false;   // the game reacted since the tap: a new model, an answer, an interface opened or closed, a change
+        uint64_t local = 0;   // the content in the first game frame after the tap (what the screen did itself), 0 before
+        double since = 0.0;   // host clock
+        double checked = 0.0; // the last game frame the content was compared in
+        uint64_t hash = 0;    // the content then (ContentHash)
+        std::string what;     // the action, for the log
+    } settle_;
+    bool settle_held_ = false;  // the last Prepare kept the frame on the screen
+    std::string presented_place_; // ShownPlace() of the frame on the screen
+    std::string settled_place_;   // ShownPlace() when the settle gate last let a frame be drawn
+    bool player_input_ = false; // a tap's end or the back key is being handled (PlayerInput)
     std::vector<ActionTrace> traces_;  // finished, until TakeActionTraces
     bool initialised_ = false;
 };

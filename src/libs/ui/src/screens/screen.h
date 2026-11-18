@@ -323,6 +323,10 @@ class Router
     {
         return screen_ != nullptr;
     }
+    // The game has not finished answering what the screen sent: a widget action it has not answered, a send that
+    // waits for its turn, or an applied answer whose model has not come yet (the host's settle gate holds the frame
+    // on the screen meanwhile, ui_host.cpp).
+    bool Answering() const;
     // The model the mounted screen was built from.
     const InterfaceModel &Model() const
     {

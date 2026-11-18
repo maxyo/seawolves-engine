@@ -71,6 +71,16 @@ Debuggable Android builds log frame costs every 5 s (logcat tag `StormUiFrames`)
   `filter: drop-shadow` on icons.
 - The host draws only when `Host::Prepare` reports the frame out of date; a frame is shown only when its
   textures are ready. `tests/frame_cost_check.cpp` holds the frame-cost rules.
+- Settle before present: after a tap on a game screen that asks the game for something (and after a screen
+  switch the game makes) the frame on the screen stays until the game's answer settled: it reacted, answered
+  every widget action, and one game frame passed without a change. The pressed control stays drawn pressed
+  meanwhile; at most 180 ms once the game answered, 600 ms while it has not (then what is there is drawn, with
+  its busy mark, and logged "UI settle: … drawn after N ms although …"). A touch that goes down ends it.
+- Flicker check (`src/action_trace.h`, `Config::trace_actions`, on in debug builds and device crawls): every
+  action's presented frames are recorded until they settle; a frame that differs from both the start and the
+  settled state is logged "UI flicker: …" (after the settle gate's cap: "UI slow answer: …"). The pack contract
+  fails on one in a tap that needs no game and in `flows` (`tests/pack-contract.json`: taps with the game's real
+  answers frame by frame); `tools/ui_crawl` reports each tap's and ranks a crawl's (`ui_crawl.py flicker DIR`).
 
 ## Licence boundary
 

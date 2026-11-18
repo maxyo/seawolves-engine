@@ -963,6 +963,13 @@ void Router::SubmitText(const std::string &token, const std::string &text, bool 
     Emit(std::move(action));
 }
 
+bool Router::Answering() const
+{
+    if (!outstanding_.empty() || !waiting_.empty())
+        return true;
+    return std::any_of(answers_.begin(), answers_.end(), [](const auto &entry) { return entry.second.applied && !entry.second.model_after; });
+}
+
 bool Router::WantsBack() const
 {
     return screen_ && (!modals_.empty() || screen_->OwnsBack());

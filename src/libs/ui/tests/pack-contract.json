@@ -1,5 +1,5 @@
 {
-  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`, then `answer` (the model the game answers a request of the opened screen with: a shop asks for its selected row's deal); `covers` names the screens it draws that its interface does not (channel screens). `taps` = element ids tapped (a real touch on the drawn element, in order) after all that: a HUD state that a tap opens (the abilities list, the raised spyglass). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason.",
+  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`, then `answer` (the model the game answers a request of the opened screen with: a shop asks for its selected row's deal); `covers` names the screens it draws that its interface does not (channel screens). `taps` = element ids tapped (a real touch on the drawn element, in order) after all that: a HUD state that a tap opens (the abilities list, the raised spyglass). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason. `flows`: taps the game answers in steps, replayed with its real answers one game frame at a time (tools/pack_check.cpp RunFlow): what the last tap shows must have no transient frame (the flicker check, src/action_trace.h). `flicker`: exemptions [{case, tap, reason}] for a transient frame the crawl finds in a tap that needs no game; each needs its reason.",
   "cases": [
     {"name": "settings", "states": ["appSettings=models/app-settings.json"], "interface": "models/settings.json"},
     {"name": "store", "interface": "models/store.json", "answer": "models/store-deal.json"},
@@ -79,5 +79,16 @@
     {"name": "about-saves-empty", "states": ["launcher=states/about-saves-empty.json"], "covers": ["app:about"]},
     {"name": "about-saves", "states": ["launcher=states/about-saves.json"], "covers": ["app:about"]}
   ],
-  "uncovered": {}
+  "uncovered": {},
+  "flows": [
+    {"name": "store row select", "interface": "models/store-deal.json", "taps": ["c-trade-list#goods row 2"],
+     "frames": [{"answer": true, "model": "flows/store-select-2.json"}, {"model": "flows/store-deal-2.json"}], "after": "s-trade"},
+    {"name": "store buy reopen", "interface": "models/store-deal.json", "taps": ["c-quantity#goods change #6", "c-button#primary click"],
+     "frames": [{"answer": true, "model": "flows/store-bought-0.json"}, {"answer": true, "model": "flows/store-deal-0-bought.json"}], "after": "s-trade"},
+    {"name": "store buy reopen, slow game", "interface": "models/store-deal.json", "taps": ["c-quantity#goods change #6", "c-button#primary click"],
+     "frames": [{"wait": 8, "answer": true, "model": "flows/store-bought-0.json"}, {"wait": 12, "answer": true, "model": "flows/store-deal-0-bought.json"}], "after": "s-trade"},
+    {"name": "title continue", "interface": "models/title.json", "taps": ["c-button#continue click"],
+     "frames": [{"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"close": true}], "after": "nothing"}
+  ],
+  "flicker": []
 }

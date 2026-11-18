@@ -184,6 +184,7 @@ std::optional<ActionTrace> ActionTracer::Begin(std::string what, FrameContent st
 {
     std::optional<ActionTrace> previous = active_ ? Finish(true) : std::nullopt;
     active_ = true;
+    capped_ = false;
     what_ = std::move(what);
     event_.clear();
     width_ = width;
@@ -209,10 +210,12 @@ void ActionTracer::Presented(FrameContent frame)
     frames_.push_back(std::move(frame));
 }
 
-std::optional<ActionTrace> ActionTracer::Poll(double now)
+std::optional<ActionTrace> ActionTracer::Poll(double now, bool waiting)
 {
     if (!active_)
         return std::nullopt;
+    if (waiting && now - begun_ < kMaxSeconds)
+        changed_ = std::max(changed_, now); // it settles kSettleSeconds after the waiting ends at the earliest
     if (now - changed_ < kSettleSeconds && now - begun_ < kMaxSeconds)
         return std::nullopt;
     std::optional<ActionTrace> trace = Finish(false);
@@ -228,6 +231,7 @@ std::optional<ActionTrace> ActionTracer::Finish(bool interrupted)
     active_ = false;
     ActionTrace trace = Analyse(event_.empty() ? what_ : event_, frames_, width_, height_);
     trace.interrupted = interrupted;
+    trace.capped = capped_;
     frames_.clear();
     return trace;
 }
@@ -321,7 +325,11 @@ ActionTrace ActionTracer::Analyse(const std::string &action, const std::vector<F
 std::string DescribeTrace(const ActionTrace &trace)
 {
     char head[1024];
-    if (trace.transient)
+    if (trace.transient && trace.capped)
+        std::snprintf(head, sizeof head, "UI slow answer: %s: %d transient frames, %.0f ms, %.0f%% of the screen, drawn after the settle cap (%s -> %s, settled in %.0f ms, %d frames%s%s)",
+                      trace.action.c_str(), trace.transient, trace.transient_ms, trace.area * 100.0, trace.before.c_str(), trace.after.c_str(),
+                      trace.settle_ms, trace.frames, trace.interrupted ? ", interrupted" : "", trace.unsettled ? ", unsettled" : "");
+    else if (trace.transient)
         std::snprintf(head, sizeof head, "UI flicker: %s: %d transient frames, %.0f ms, %.0f%% of the screen (%s -> %s, settled in %.0f ms, %d frames%s%s)",
                       trace.action.c_str(), trace.transient, trace.transient_ms, trace.area * 100.0, trace.before.c_str(), trace.after.c_str(),
                       trace.settle_ms, trace.frames, trace.interrupted ? ", interrupted" : "", trace.unsettled ? ", unsettled" : "");

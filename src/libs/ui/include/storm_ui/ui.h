@@ -185,6 +185,9 @@ struct ActionTrace
     double settle_ms = 0.0; // from the action to the settled frame
     bool interrupted = false; // another action began before it settled (its last frame is taken as the settled one)
     bool unsettled = false;   // still changing after ActionTracer::kMaxSeconds
+    // The game took longer than the host's settle gate waits (ui_host.cpp kSettleCap): what it showed then was drawn
+    // as it came, the pressed control busy. Its transient frames are a slow answer, not a defect of the UI.
+    bool capped = false;
     // One line per transient frame: when, for how long, how much, what it showed ("+40 ms 33 ms 52%: s-saves save_load#4.1:
     // c-header#header 'Загрузка' …").
     std::vector<std::string> details;
@@ -325,8 +328,9 @@ class Host
     // engine's own back when it has nothing to close.
     virtual void Back() = 0;
 
-    // The actions finished since the last call (Config::trace_actions), oldest first.
-    virtual std::vector<ActionTrace> TakeActionTraces() = 0;
+    // The actions finished since the last call (Config::trace_actions), oldest first. `finish_open`: the action still
+    // open ends now, its last presented frame taken as its settled state (a crawl that moves on).
+    virtual std::vector<ActionTrace> TakeActionTraces(bool finish_open = false) = 0;
 };
 
 } // namespace storm::ui

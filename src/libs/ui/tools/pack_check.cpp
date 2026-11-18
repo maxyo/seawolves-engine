@@ -27,6 +27,8 @@
 //   what was on the screen before the tap and the state the tap settled in (an empty panel before the filled one, a
 //   busy mark that comes and goes, a screen passed through). Exemptions: pack-contract.json "flicker" [{case, tap,
 //   reason}]. --flicker writes every tap's trace (one JSON object a line) for a ranked list.
+// Flows (pack-contract.json "flows") replay taps the game answers in steps, with the game's real answers frame by
+// frame (RunFlow): no transient frame is allowed in them.
 // --actions writes every action the taps sent (one JSON object a line) for the application's check that
 // they end in the game's scripts and the application's Java (tests/ui_pack_contract/game_bindings.py).
 // Exit 0 when every case is clean, 1 otherwise, 2 for bad arguments.
@@ -41,6 +43,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -253,6 +256,26 @@ class Session
         for (; cancelled_ < observed_.texts.size(); ++cancelled_)
             host_->SubmitText(observed_.texts[cancelled_].token, {}, false);
         Frames(0.1);
+    }
+
+    // The game's answer to every widget action not answered yet (applied), without a model: a flow feeds its own.
+    void AnswerRequests()
+    {
+        for (; answered_ < observed_.actions.size(); ++answered_)
+            if (observed_.actions[answered_].request && observed_.actions[answered_].screen == model.screen)
+                host_->Answer(observed_.actions[answered_].request, true, {});
+    }
+    // Reads a model the game answers with in a flow: the session's opening, the next revision.
+    InterfaceModel Next(const fs::path &file)
+    {
+        InterfaceModel parsed;
+        std::string why;
+        if (!ParseInterfaceModel(Read(file), parsed, &why))
+            failures.push_back("interface model " + file.string() + " not accepted: " + why);
+        parsed.opening = model.opening;
+        parsed.revision = model.revision + 1;
+        model = parsed;
+        return parsed;
     }
 
     // Lets what a tap started finish (a drag's delayed send, a step toward an amount, the screen's timed rebuilds)
@@ -672,18 +695,14 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
                 records.push_back(record.dump());
             }
             session->AnswerAll();
-            // The flicker check: the tap's frames until they settle (Config::trace_actions, ActionTracer::kSettleSeconds).
+            // The flicker check: what the tap showed (Config::trace_actions, ActionTrace).
             // There is no game here: what the game answers to a widget action is the same model again, so a screen that
             // shows the asked-for state at once and then the game's (unchanged) one would count as a transient that the
             // real game does not make. Those taps are recorded, not judged: the device crawl (tools/ui_crawl) and the
-            // flows of tests/flicker_check.cpp with the game's real answers judge them.
-            std::vector<ActionTrace> traces;
-            for (double waited = 0.0; waited < 1.5 && traces.empty(); waited += 1.0 / 60.0)
-            {
-                session->Frames(1.0 / 60.0);
-                traces = (*session)->TakeActionTraces();
-            }
-            for (const ActionTrace &trace : traces)
+            // flows of pack-contract.json "flows" (RunFlow), with the game's real answers, judge them.
+            // The crawl moves on at its own pace (a screen's timed work must not run out between its taps): the tap's
+            // frames so far, past the settle gate's cap, are its trace.
+            for (const ActionTrace &trace : (*session)->TakeActionTraces(true))
             {
                 Json record = {{"case", c.name}, {"tap", tap.key}, {"path", PathText(next)}, {"action", trace.action},
                                {"before", trace.before}, {"after", trace.after}, {"frames", trace.frames}, {"transient", trace.transient},
@@ -788,6 +807,103 @@ bool Run(const fs::path &pack, const Case &c, std::vector<std::string> &records,
         for (const std::string &line : observed.warnings)
             std::printf("  warning: %s\n", line.c_str());
     return ok;
+}
+
+// --- Flows: the game's real answers to a tap ------------------------------------------------------------------
+//
+// The crawl has no game, so a tap the game answers in steps is not judged there. A flow (pack-contract.json "flows")
+// is such a tap with the game's answer as it comes, one game frame at a time: the taps (keys as the crawl names them,
+// the last one is the one judged), then per game frame what the game does in it (`answer`: every widget action not
+// answered yet is applied; `model`: the interface model it publishes; `states`: state channels it publishes, as the
+// game does every frame; `close`: it closes the interface; `wait`: game frames before the step in which the game shows
+// nothing new; nothing: a frame in which the game does nothing visible). The flicker check must find no transient frame in what the last
+// tap showed until it settled, and its settled state must be `after` (a part of FrameStats::shown).
+struct FlowStep
+{
+    bool answer = false, close = false;
+    int wait = 0; // game frames before it in which the game shows nothing new
+    fs::path model;
+    std::vector<std::pair<std::string, fs::path>> states; // channel, file: state channels the game publishes in it
+};
+struct Flow
+{
+    std::string name, after;
+    Case base;
+    std::vector<std::string> taps;
+    std::vector<FlowStep> steps;
+};
+
+bool RunFlow(const fs::path &pack, const Flow &flow)
+{
+    Observed observed;
+    Session session(pack, flow.base, observed);
+    std::vector<std::string> problems = session.failures;
+    std::optional<ActionTrace> judged;
+    if (!session)
+        problems.push_back("the UI host does not start: " + session.error);
+    for (size_t t = 0; session && problems.empty() && t < flow.taps.size(); ++t)
+    {
+        const std::vector<TapAt> taps = Taps();
+        const auto found = std::find_if(taps.begin(), taps.end(), [&](const TapAt &tap) { return tap.key == flow.taps[t]; });
+        Rml::Vector2f at;
+        if (found == taps.end() || !Reach(session, *found, at))
+        {
+            std::string offered;
+            for (const TapAt &tap : taps)
+                offered += "\n      " + tap.key;
+            problems.push_back("no tap " + flow.taps[t] + " here; the screen offers:" + offered);
+            break;
+        }
+        if (t + 1 < flow.taps.size())
+        {
+            Press(session, *found, at); // a step before the judged tap (an amount)
+            session.Frames(0.3);
+            continue;
+        }
+        session->Touch(TouchPhase::Down, 1, at.x, at.y, session.Clock());
+        session->TakeActionTraces(); // the steps before it (the down ended theirs)
+        session.Frames(1.0 / 60.0);
+        session->Touch(TouchPhase::Up, 1, at.x, at.y, session.Clock());
+        // The engine applies what the tap sent in the loop the tap reached it, answers it and publishes its model,
+        // and draws the UI at that loop's end: each step is what one loop did before its frame.
+        for (const FlowStep &step : flow.steps)
+        {
+            session.Frames(step.wait / 60.0);
+            for (const auto &[channel, file] : step.states)
+                if (!session->SetState(channel, Read(file)))
+                    problems.push_back("state " + channel + "=" + file.string() + " not accepted");
+            if (step.answer)
+                session.AnswerRequests();
+            if (!step.model.empty())
+                session->SetInterface(session.Next(step.model));
+            if (step.close)
+                session->CloseInterface();
+            session.Frames(1.0 / 60.0);
+        }
+        std::vector<ActionTrace> traces;
+        for (double waited = 0.0; waited < 2.0 && traces.empty(); waited += 1.0 / 60.0)
+        {
+            session.Frames(1.0 / 60.0);
+            traces = session->TakeActionTraces();
+        }
+        if (traces.empty())
+            problems.push_back("the tap's frames did not settle in 2 s");
+        else
+            judged = traces.back();
+    }
+    for (const std::string &error : observed.errors)
+        problems.push_back("error: " + error);
+    if (judged && judged->transient)
+        problems.push_back("flicker: " + TraceText(*judged));
+    if (judged && !flow.after.empty() && judged->after.find(flow.after) == std::string::npos)
+        problems.push_back("settled in '" + judged->after + "', not in '" + flow.after + "'");
+    std::printf("%s flow %s", problems.empty() ? "PASS" : "FAIL", flow.name.c_str());
+    if (judged)
+        std::printf(" (%s -> %s in %.0f ms, %d frames)", judged->before.c_str(), judged->after.c_str(), judged->settle_ms, judged->frames);
+    std::printf("\n");
+    for (const std::string &line : problems)
+        std::printf("  %s\n", line.c_str());
+    return problems.empty();
 }
 
 } // namespace
@@ -950,6 +1066,48 @@ int main(int argc, char **argv)
             std::printf("UNCOVERED %s: %s\n", entry.id, uncovered[entry.id].get<std::string>().c_str());
     }
 
+    std::vector<Flow> flows;
+    for (const Json &entry : manifest.value("flows", Json::array()))
+    {
+        Flow flow;
+        flow.name = entry.value("name", std::string());
+        flow.after = entry.value("after", std::string());
+        flow.base.name = "flow " + flow.name;
+        if (entry.contains("interface"))
+            flow.base.interface = fixtures / entry["interface"].get<std::string>();
+        if (entry.contains("answer"))
+            flow.base.answer = fixtures / entry["answer"].get<std::string>();
+        for (const Json &tap : entry.value("taps", Json::array()))
+            flow.taps.push_back(tap.get<std::string>());
+        for (const Json &frame : entry.value("frames", Json::array()))
+        {
+            FlowStep step;
+            step.answer = frame.value("answer", false);
+            step.close = frame.value("close", false);
+            step.wait = frame.value("wait", 0);
+            if (frame.contains("model"))
+                step.model = fixtures / frame["model"].get<std::string>();
+            for (const Json &pair : frame.value("states", Json::array()))
+            {
+                const std::string text = pair.get<std::string>();
+                const size_t equals = text.find('=');
+                if (equals == std::string::npos)
+                {
+                    std::fprintf(stderr, "flow %s: state '%s' is not channel=file\n", flow.name.c_str(), text.c_str());
+                    return 2;
+                }
+                step.states.emplace_back(text.substr(0, equals), fixtures / text.substr(equals + 1));
+            }
+            flow.steps.push_back(step);
+        }
+        if (flow.name.empty() || flow.base.interface.empty() || flow.taps.empty())
+        {
+            std::fprintf(stderr, "pack-contract.json: a flow needs name, interface and taps: %s\n", entry.dump().c_str());
+            return 2;
+        }
+        flows.push_back(std::move(flow));
+    }
+
     int failed = 0, ran = 0, index = -1;
     std::vector<std::string> records; // every action the crawl's taps sent, one JSON object a line (--actions)
     for (const Case &c : cases)
@@ -960,6 +1118,16 @@ int main(int argc, char **argv)
             continue;
         ++ran;
         if (!Run(pack, c, records, app_contract["engine_commands"], crawl))
+            ++failed;
+    }
+    for (const Flow &flow : flows)
+    {
+        if (!only.empty() && flow.name != only)
+            continue;
+        if (++index % shards != shard)
+            continue;
+        ++ran;
+        if (!RunFlow(pack, flow))
             ++failed;
     }
     if (!actions_out.empty())

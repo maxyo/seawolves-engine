@@ -63,14 +63,21 @@ class ActionTracer
     std::optional<ActionTrace> Begin(std::string what, FrameContent start, float width, float height);
     // The event the action caused, for its name ("goods row", "header-back click"); the first one names it.
     void Named(const std::string &event);
+    // The host stopped holding the frame for the game's answer before it settled (ActionTrace::capped).
+    void Capped()
+    {
+        capped_ = capped_ || active_;
+    }
     bool Active() const
     {
         return active_;
     }
     // A frame was presented while an action is open.
     void Presented(FrameContent frame);
-    // Called on every host pass: the action that settled (or ran out of time) is finished and returned.
-    std::optional<ActionTrace> Poll(double now);
+    // Called on every host pass: the action that settled (or ran out of time) is finished and returned. `waiting`: the
+    // host still waits for the game (an interface it opened has no frame yet, a widget action is not answered): the
+    // action has not settled however long its content stayed.
+    std::optional<ActionTrace> Poll(double now, bool waiting);
     // The action is over now (a new touch went down, the host closes): its last presented frame is its end.
     std::optional<ActionTrace> Finish(bool interrupted);
 
@@ -79,6 +86,7 @@ class ActionTracer
 
   private:
     bool active_ = false;
+    bool capped_ = false;
     std::string what_;
     std::string event_;
     std::vector<FrameContent> frames_;

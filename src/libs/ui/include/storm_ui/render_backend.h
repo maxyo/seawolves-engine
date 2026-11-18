@@ -25,6 +25,11 @@ class RenderBackend
     // that draws over the game frame ignores it.
     virtual void BeginFrame(bool clear) = 0;
     virtual void EndFrame() = 0;
+    // The host keeps the frame on the screen for this frame (its settle gate, Host::Prepare): a backend that draws
+    // into a frame drawn anew every time submits the commands of the frame it showed last again.
+    virtual void ReplayShown()
+    {
+    }
     // True when the frame just ended was not shown: it would have been drawn without textures the
     // backend is still making (layer textures: box shadows), so the frame before it stays on the
     // screen. The host draws the frame again until it is shown, and tells nobody it was drawn.
