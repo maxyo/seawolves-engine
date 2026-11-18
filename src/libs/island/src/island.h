@@ -7,45 +7,7 @@
 #include "geometry.h"
 #include "model.h"
 #include "vma.hpp"
-
-class MapZipper
-{
-  private:
-    uint32_t dwSizeX;
-    uint32_t dwDX;
-    uint32_t dwBlockSize, dwBlockShift;
-    uint32_t dwShiftNumBlocksX;
-    uint32_t dwNumRealBlocks;
-
-    uint16_t *pWordTable;
-    uint8_t *pRealData;
-
-    bool Read(std::fstream &fileS);
-
-  public:
-    MapZipper();
-    ~MapZipper();
-
-    uint32_t GetSizeX()
-    {
-        return dwSizeX;
-    };
-
-    void UnInit();
-    void DoZip(uint8_t *pSrc, uint32_t dwSizeX);
-    uint8_t Get(uint32_t dwX, uint32_t dwY);
-
-    // Save never touches the game folder: it writes to a path of the cache (ISLAND::ZapCache).
-    bool Save(const std::filesystem::path &file);
-    // A game file (through the file service) or a path of the cache.
-    bool Load(std::string sFileName);
-    bool Load(const std::filesystem::path &file);
-
-    bool isLoaded()
-    {
-        return pRealData != nullptr;
-    }
-};
+#include "map_zipper.h"
 
 class ISLAND : public ISLAND_BASE
 {
