@@ -314,8 +314,9 @@ bool WriteDisplay(const UpscaleOutput &display, uint64_t key, const std::vector<
 //   * on the GPU, a texture whose networks took 1.5 times the CPU's estimate for its texels (the probe's cost per
 //     texel), twice in a row while the game draws its scene, moves the work to the CPU;
 //   * on the CPU, the GPU is tried again for the next texture as soon as the game leaves the GPU free (a loading or an
-//     interface screen, the game in the background: SetGpuFree) or after kGpuRetrySeconds / kGpuRetryTextures; fast enough
-//     and the work goes back to the GPU;
+//     interface screen, the game in the background: SetGpuFree) or after kGpuRetrySeconds / kGpuRetryTextures, doubled
+//     after every retry that was still slow while the game drew (device_retry.hpp RetryScale); fast enough and the
+//     work goes back to the GPU;
 //   * on the CPU, only the textures that cannot wait are made (the ones on screen); the rest of the game waits for the
 //     GPU (WaitsForGpu).
 // Every switch is logged with its reason and numbers. Nothing of it is kept across sessions (the crash record is:
@@ -335,6 +336,7 @@ struct Session::Impl
     int gpu_slow = 0;            // GPU textures in a row slower than the CPU's estimate
     Clock::time_point cpu_since{};
     int cpu_textures = 0;
+    int gpu_retry_failures = 0;  // GPU retries in a row, while the game drew, that were still slow (device_retry.hpp)
     std::atomic<bool> gpu_free{false};
     std::shared_ptr<LoadingRetry> loading_retry;
     uint64_t loading_retry_at = 0;
@@ -575,7 +577,8 @@ void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry)
 bool Session::WaitsForGpu() const
 {
     return WaitForGpuRetry(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
-                           std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(), impl_->cpu_textures);
+                           std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(), impl_->cpu_textures,
+                           impl_->gpu_retry_failures);
 }
 
 void Session::Cancel()
@@ -672,7 +675,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     const bool loading_probe = impl_->TakeLoadingRetry(impl_->cpu_ms_per_texel);
     bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
                                          std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
-                                     impl_->cpu_textures);
+                                     impl_->cpu_textures, impl_->gpu_retry_failures);
     {
         std::string error;
         if (!impl_->EnsureDevice(use_gpu, error))
@@ -809,13 +812,18 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
                     "the CPU)",
                     why, candidate->name.c_str(), infer_ms, cpu_ms);
                 impl_->on_gpu = true;
+                impl_->gpu_retry_failures = 0;
                 impl_->ReleaseCpu();
             }
             else
             {
+                if (!impl_->gpu_free && !loading_probe)
+                    ++impl_->gpu_retry_failures;
+                const int scale = RetryScale(impl_->gpu_retry_failures);
                 Log("relief device: CPU still (tried the GPU, %s: %s's networks took %.0f ms against %.0f ms "
-                    "estimated on the CPU)",
-                    why, candidate->name.c_str(), infer_ms, cpu_ms);
+                    "estimated on the CPU); next GPU try while the game draws after %.0f s or %d textures, at once when "
+                    "it leaves the GPU free",
+                    why, candidate->name.c_str(), infer_ms, cpu_ms, kGpuRetrySeconds * scale, kGpuRetryTextures * scale);
                 impl_->cpu_since = Clock::now();
                 impl_->cpu_textures = 0;
             }
@@ -921,7 +929,7 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
     const bool loading_probe = impl_->TakeLoadingRetry(impl_->upscale_cpu_ms_per_texel);
     bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
                                          std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
-                                     impl_->cpu_textures);
+                                     impl_->cpu_textures, impl_->gpu_retry_failures);
     if (!impl_->EnsureDevice(use_gpu, failure))
         return Outcome::Failed;
     Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
