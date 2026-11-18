@@ -6,7 +6,8 @@
 namespace storm::android
 {
 // Controls a touch HUD holds by name: the helm of the ship at sea and on the world map, the
-// spyglass, the world-map sail lever and its camera button. The engine polls them like keys, so a
+// world-map sail lever and its camera button. (The spyglass is a toggle of taps, not a hold:
+// TelescopeIn / TelescopeOut through GameplayState, android_gameplay.hpp.) The engine polls them like keys, so a
 // hold is a virtual state merged into Controls::GetControlState. Game-thread owned. (Walking on
 // deck is a vector, not keys: android_deck_walk.hpp.)
 //
@@ -19,8 +20,8 @@ namespace storm::android
 // gameplay revision and lasts until its "0" (pointer up or cancel in the UI), a cancelled
 // input (cancelAndroidCombatInput: lifecycle, screen, UI loss) or the guard failing (the
 // gameplay no longer binds the control or the player cannot act): events, never a clock, so a slow UI
-// frame or an unrelated state change does not let go of a held helm or spyglass.
-inline constexpr std::array<std::string_view, 8> HeldControlNames{"Ship_TurnLeft", "Ship_TurnRight", "TelescopeIn", "WMapShipSailUp",
+// frame or an unrelated state change does not let go of a held helm.
+inline constexpr std::array<std::string_view, 7> HeldControlNames{"Ship_TurnLeft", "Ship_TurnRight", "WMapShipSailUp",
                                                                  "WMapShipSailDown", "WMapShipTurnLeft", "WMapShipTurnRight", "WMapCameraSwitch"};
 class HeldControls
 {
@@ -103,22 +104,6 @@ public:
         if (slot < 0 || physical == 1 || physical == 3) return physical;
         const int state = held_[static_cast<size_t>(slot)].state;
         return state == 0 ? physical : state;
-    }
-    // What a control bound INVERSE to the same key as the held `control` sees: the hold is that
-    // key held down. The original bindings end a hold this way (TelescopeOut is VK_CONTROL
-    // inverted beside TelescopeIn on VK_CONTROL), so a released spyglass lowers the telescope.
-    // -1 while the control is not held: the physical state stands.
-    int inverse(std::string_view control) const
-    {
-        const int slot = index(control);
-        if (slot < 0) return -1;
-        switch (held_[static_cast<size_t>(slot)].state)
-        {
-        case 1: return 0; // held: the inverse is inactive
-        case 3: return 2; // pressed: the inverse lets go
-        case 2: return 3; // released: the inverse activates
-        default: return -1;
-        }
     }
     // The analog part of a held control, 0…1 (CONTROL_STATE::fValue); -1 while it is not held.
     float strength(std::string_view control) const

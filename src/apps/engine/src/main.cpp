@@ -1147,6 +1147,10 @@ int main(int argc, char *argv[])
                         storm::android::launchShipAbility(*action);
                     else if (const int step = storm::android::timeScaleStep(*action); step >= 0)
                         storm::android::applyTimeScaleStep(step);
+                    // The spyglass toggle: the request its controls make (ISPYGLASS::Execute), so the
+                    // scripts' Telescope_Request decides (a spyglass equipped, the deck camera).
+                    else if (*action == "TelescopeIn" || *action == "TelescopeOut")
+                        core_private->Event("MSG_TELESCOPE_REQUEST", "l", *action == "TelescopeIn" ? 1 : 0);
                     else
                         core_private->Event("Control Activation", "s", action->c_str());
                 }

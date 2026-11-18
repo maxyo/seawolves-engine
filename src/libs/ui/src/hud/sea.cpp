@@ -3,11 +3,11 @@
 // Layout scenes `sea` (sailing) and `sea-battle` (naval) of hud-layout.json. Input goes back
 // through the engine's entry points:
 //   hold:<gameplayRevision>\t<control>\t<0|1>[\t<strength>]  helm (Ship_TurnLeft / Ship_TurnRight, strength 1…100: how far
-//                                                    the slider is pulled), spyglass (TelescopeIn: held from one tap
-//                                                    of the spyglass button to the next, or Back)
+//                                                    the slider is pulled)
 //   deckwalk:<gameplayRevision>\t<x>\t<y>           the walk stick on deck: x right, y forward, -100…100 (0 0 = stop)
 //   sails:<gameplayRevision>\t<0|1|2>                 the sail lever
-//   gameplay:<gameplayRevision>\t<control>            Ship_Fire, Sea_CameraSwitch, hk_charge1…4
+//   gameplay:<gameplayRevision>\t<control>            Ship_Fire, Sea_CameraSwitch, hk_charge1…4, the ship abilities,
+//                                                    the spyglass toggle (TelescopeIn raises, TelescopeOut lowers)
 //   seaquick:1\t<activity>\t<revision>\t<ack|activate>\t<0|1|action>
 //   orders:1\t<sceneEpoch>\t<revision>\t<activityGeneration>\t<verb>\t<id>
 //   shiphud:<gameplayRevision>\t<mask>\t<hudRevision>   which of the engine's indicators our elements replace
@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <optional>
 
 namespace storm::ui::hud
 {
@@ -30,7 +31,7 @@ constexpr double kIdle = 3600.0;
 constexpr double kChoiceSeconds = 1.5;   // a tapped order waits this long for the engine to select it
 constexpr double kSailSeconds = 1.5;     // the lever shows the position asked for until the sails follow
 constexpr double kFanSeconds = 6.0;      // an untouched ammunition fan folds by itself
-constexpr double kRaiseSeconds = 3.0;    // a held spyglass the game has not raised by then is let go
+constexpr double kRaiseSeconds = 3.0;    // a spyglass the game has not raised / lowered by then is reported
 
 using screens::StringKey;
 
@@ -223,7 +224,10 @@ class SeaScene final : public Scene
         // sideways (turning is the look drag). Its zone lies under the helm and the fleet: they
         // keep their own touches.
         // The raised spyglass has no walk zone: a drag anywhere looks around (BuildSpyglass).
-        if (CanWalk(gameplay) && !spyglass_)
+        if (asked_ && *asked_ == Raised(states))
+            asked_.reset(); // the game did as asked
+        spyglass_up_ = asked_ ? *asked_ : Raised(states);
+        if (CanWalk(gameplay) && !spyglass_up_)
         {
             view.elements["walk"] = Json::object();
             input.On("walk", "change", [this](const Event &event) { Walk(event.value); });
@@ -238,7 +242,7 @@ class SeaScene final : public Scene
             abilities_.Close();
             return; // the fan takes the place of the buttons around the ammunition, the abilities too (hud-layout.json "replaces")
         }
-        if (spyglass_)
+        if (spyglass_up_)
         {
             abilities_.Close();
             return; // the raised spyglass keeps the steering and the guns; the rest gives the look room
@@ -257,7 +261,6 @@ class SeaScene final : public Scene
     {
         fan_open_ = false;
         abilities_.Close();
-        LowerSpyglass("the HUD is hidden");
         Uncover(states);
     }
 
@@ -281,15 +284,11 @@ class SeaScene final : public Scene
         expire(!choice_.empty(), choice_until_, [this] { choice_.clear(); });
         expire(sail_target_ >= 0, sail_until_, [this] { sail_target_ = -1; });
         expire(fan_open_, fan_until_, [this] { fan_open_ = false; });
-        expire(spyglass_ && !spyglass_seen_, spyglass_until_, [this] {
-            hud_.Error("sea HUD: the spyglass was held " + std::to_string(kRaiseSeconds) + " s and the game did not raise it; let go");
-            LowerSpyglass({});
+        expire(asked_.has_value(), asked_until_, [this] {
+            hud_.Error(std::string("sea HUD: the spyglass was asked ") + (*asked_ ? "up" : "down") + " and the game did not follow in " +
+                       std::to_string(int(kRaiseSeconds)) + " s");
+            asked_.reset();
         });
-        if (spyglass_ && !states.gameplay.Has("TelescopeIn"))
-        {
-            LowerSpyglass({}); // the engine let go with the binding (HoldSet::Forget)
-            hud_.Rebuild();
-        }
         return next;
     }
 
@@ -304,14 +303,13 @@ class SeaScene final : public Scene
         // The ammunition fan takes the quick action's place for a few seconds (the raised spyglass while it is up): the offer stays
         // the HUD's, so the engine's own icon does not flash up over the top buttons meanwhile.
         // Under the orders panel the offer waits for the panel to close; it stays the HUD's too.
-        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || fan_open_ || spyglass_ || shown.sheet == "s-hud-orders"));
+        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || fan_open_ || spyglass_up_ || shown.sheet == "s-hud-orders"));
         CoverOrders(states.sea_orders, live && shown.modal);
     }
 
     void Released(const States &states) override
     {
         holds_.Release(states.gameplay);
-        spyglass_ = spyglass_seen_ = false; // the hold of the raised spyglass went with every other
         if (walk_.x || walk_.y)
         {
             walk_ = {};
@@ -328,7 +326,6 @@ class SeaScene final : public Scene
         choice_.clear();
         fan_open_ = false;
         abilities_.Close();
-        LowerSpyglass({});
     }
 
     bool Holds(const States &states) const override
@@ -340,10 +337,9 @@ class SeaScene final : public Scene
     {
         if (abilities_.Back())
             return true;
-        if (spyglass_)
+        if (spyglass_up_ && states.gameplay.Has("TelescopeOut"))
         {
-            LowerSpyglass({});
-            hud_.Rebuild();
+            Spyglass(false);
             return true;
         }
         const SeaOrders &orders = states.sea_orders;
@@ -599,57 +595,47 @@ class SeaScene final : public Scene
         });
     }
 
-    // The spyglass, on the left where the land fight has its block (hud-layout.json): a tap raises
-    // it, the game's own telescope (TelescopeIn held: Telescope_Request), and it stays up with the
-    // hands free: a drag anywhere looks around, a pinch zooms (android_camera_zoom.hpp); the next
-    // tap or Back lowers it (TelescopeIn let go: its inverse TelescopeOut). The button shows it
-    // raised. The game lowering it by itself (the channel "spyglass" goes off) lets go too.
+    // The spyglass, on the left where the land fight has its block (hud-layout.json): a toggle of
+    // the game's own telescope. A tap raises it (TelescopeIn: the request its key makes, so the
+    // scripts' Telescope_Request decides) and it stays up with the hands free: a drag anywhere
+    // looks around, a pinch zooms (android_camera_zoom.hpp); the next tap or Back lowers it
+    // (TelescopeOut). Up or down is the game's (the channel "spyglass"), shown on the button.
+    static bool Raised(const States &states)
+    {
+        return states.spyglass.known && states.spyglass.on;
+    }
+
     void BuildSpyglass(const States &states, View &view, Input &input)
     {
         const Gameplay &gameplay = states.gameplay;
-        const bool raised = states.spyglass.known && states.spyglass.on;
-        if (spyglass_ && raised)
-            spyglass_seen_ = true;
-        else if (spyglass_ && spyglass_seen_ && !raised)
-            LowerSpyglass("the game lowered the spyglass");
-        if (!gameplay.Has("TelescopeIn"))
+        if (!gameplay.Has("TelescopeIn") || !gameplay.Has("TelescopeOut"))
         {
-            spyglass_ = spyglass_seen_ = false; // the engine let go with the binding (HoldSet::Forget)
-            return;
+            asked_.reset();
+            return; // off the deck or without a spyglass: the scripts would not raise it
         }
-        view.elements["spyglass"] = Json{{"variant", spyglass_ ? "active" : "normal"},
-                                         {"label", hud_.Text(spyglass_ ? StringKey("hud.sea.spyglass.lower") : StringKey("hud.sea.spyglass.raise"))}};
-        view.back = spyglass_; // Back lowers it
-        input.On("spyglass", "click", [this](const Event &) {
-            if (spyglass_)
-                LowerSpyglass({});
-            else
-            {
-                fan_open_ = false;
-                abilities_.Close();
-                if (walk_.x || walk_.y)
-                {
-                    walk_ = {}; // the walk zone goes while the spyglass is up
-                    SendWalk(hud_.Current().gameplay);
-                }
-                holds_.Hold("TelescopeIn", true);
-                spyglass_ = true;
-                spyglass_seen_ = false;
-                spyglass_until_ = hud_.Now() + kRaiseSeconds;
-            }
-            hud_.Rebuild();
-        });
+        view.elements["spyglass"] = Json{{"variant", spyglass_up_ ? "active" : "normal"},
+                                         {"label", hud_.Text(spyglass_up_ ? StringKey("hud.sea.spyglass.lower") : StringKey("hud.sea.spyglass.raise"))}};
+        view.back = spyglass_up_; // Back lowers it
+        input.On("spyglass", "click", [this](const Event &) { Spyglass(!spyglass_up_); });
     }
 
-    // Lets go of the spyglass the HUD holds; `why` is logged when it is not the player's tap.
-    void LowerSpyglass(const std::string &why)
+    void Spyglass(bool up)
     {
-        if (!spyglass_)
-            return;
-        if (!why.empty())
-            hud_.Log("sea HUD: spyglass let go: " + why);
-        spyglass_ = spyglass_seen_ = false;
-        holds_.Hold("TelescopeIn", false);
+        if (up)
+        {
+            fan_open_ = false;
+            abilities_.Close();
+            if (walk_.x || walk_.y)
+            {
+                walk_ = {}; // the walk zone goes while the spyglass is up
+                SendWalk(hud_.Current().gameplay);
+            }
+        }
+        asked_ = up; // shown at once; the game's channel follows
+        asked_until_ = hud_.Now() + kRaiseSeconds;
+        spyglass_up_ = up;
+        Control(up ? "TelescopeIn" : "TelescopeOut");
+        hud_.Rebuild();
     }
 
     // A tap control: the engine runs it once, in the gameplay revision it was drawn for.
@@ -1088,10 +1074,10 @@ class SeaScene final : public Scene
     bool fan_open_ = false;
     double fan_until_ = 0.0;
     AbilityControls abilities_{hud_, "sea"};
-    // the spyglass the HUD holds raised (BuildSpyglass)
-    bool spyglass_ = false;
-    bool spyglass_seen_ = false;    // the game reported it raised since the tap
-    double spyglass_until_ = 0.0;   // the game must have raised it by then
+    // the spyglass (BuildSpyglass)
+    bool spyglass_up_ = false;      // shown raised: as asked, else as the game says
+    std::optional<bool> asked_;     // asked up / down, the game has not followed yet
+    double asked_until_ = 0.0;      // the game must have followed by then
     // quick action
     bool quick_covered_ = false;
     std::string quick_covered_owner_, quick_tapped_;

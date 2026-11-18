@@ -114,6 +114,15 @@ int main()
         assert(state.take(14) == ability);
     }
     assert(!state.offer(request("BI_InstantBoarding"), 14)); // the beta-mode cheat is not carried
+    // the spyglass toggle: raise and lower are taps of this entry point while the deck binds them
+    assert(!state.offer(request("TelescopeIn"), 14));
+    sea.capabilities = {"TelescopeIn", "TelescopeOut"};
+    state.update(sea);
+    for (const char *control : {"TelescopeIn", "TelescopeOut"})
+    {
+        assert(state.offer(request(control), 15));
+        assert(state.take(15) == control);
+    }
     sea.capabilities = {"Sea_CameraSwitch"};
     state.update(sea);
     assert(state.json().find("\"schemaVersion\":1") != std::string::npos);

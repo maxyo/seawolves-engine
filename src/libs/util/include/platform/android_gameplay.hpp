@@ -192,7 +192,8 @@ public:
             control != "hk_charge3" && control != "hk_charge4" &&
             control != "TimeScaleX1" && control != "TimeScaleX2" && control != "TimeScaleX4" && control != "TimeScaleX8" &&
             control != "BI_ImmediateReload" && control != "BI_LightRepair" && control != "BI_InstantRepair" &&
-            control != "BI_Turn180") return false; // the ship abilities (android_ship_abilities.hpp ShipAbilityNames)
+            control != "BI_Turn180" && // the ship abilities (android_ship_abilities.hpp ShipAbilityNames)
+            control != "TelescopeIn" && control != "TelescopeOut") return false; // the spyglass: raise, lower (main.cpp)
         if (!allows(control)) return false;
         pending_.push_back({revision, std::string(control), tick});
         return true;

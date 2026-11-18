@@ -527,35 +527,39 @@ static void CheckBattle()
     restored["sequence"] = 101;
     bench.Set("ship", restored);
 
-    // The spyglass is a toggle on the left: a tap raises it (TelescopeIn held), the next tap or Back lowers it.
+    // The spyglass is a toggle on the left, of the game's own telescope: a tap raises it (TelescopeIn), the next tap or
+    // Back lowers it (TelescopeOut); up or down is the game's channel "spyglass".
     Expect(mount.Has("spyglass") && shown["spyglass"]["variant"] == "normal" && !mount.shown.back, "the spyglass, down: " + shown["spyglass"].dump());
     bench.Press("spyglass");
-    Expect(mount.Last() == "hold:10\tTelescopeIn\t1" && shown["spyglass"]["variant"] == "active" && mount.shown.back,
-           "a tap raises the spyglass and keeps it up; Back is the HUD's: " + mount.Last());
+    Expect(mount.Last() == "gameplay:10\tTelescopeIn" && shown["spyglass"]["variant"] == "active" && mount.shown.back,
+           "a tap raises the spyglass, shown at once; Back is the HUD's: " + mount.Last());
     Expect(!mount.Has("abilities") && !mount.Has("context") && !mount.Has("camera") && mount.Has("helm") && mount.Has("fire") && mount.Has("sail"),
            "the raised spyglass keeps the steering and the guns, the rest gives the look room");
     bench.Feed("spyglass", "spyglass-ship");
     bench.Frame(kRaiseWait);
-    Expect(shown["spyglass"]["variant"] == "active" && Count(mount, "hold:10\tTelescopeIn\t0") == 0, "raised by the game: it stays up");
+    Expect(shown["spyglass"]["variant"] == "active" && !Sent(mount, "gameplay:10\tTelescopeOut"), "raised by the game: it stays up, nothing held");
     bench.Press("spyglass");
-    Expect(Count(mount, "hold:10\tTelescopeIn\t0") == 1 && shown["spyglass"]["variant"] == "normal" && !mount.shown.back && mount.Has("abilities"),
-           "the next tap lowers it");
+    Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "normal" && !mount.shown.back,
+           "the next tap lowers it: " + mount.Last());
     bench.Feed("spyglass", "spyglass-down");
-    bench.Press("spyglass");
+    Expect(shown["spyglass"]["variant"] == "normal" && mount.Has("abilities"), "lowered by the game: the HUD is back");
+    bench.Feed("spyglass", "spyglass-ship");
+    Expect(shown["spyglass"]["variant"] == "active", "raised another way (the game's own key): the button follows the game");
     Expect(bench.hud.Back(), "Back is the raised spyglass's");
     bench.Frame();
-    Expect(Count(mount, "hold:10\tTelescopeIn\t0") == 2 && shown["spyglass"]["variant"] == "normal", "Back lowers it");
-    bench.Press("spyglass");
-    size_t lowered = Count(mount, "hold:10\tTelescopeIn\t0");
-    bench.Feed("spyglass", "spyglass-ship");
+    Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "normal", "Back lowers it: " + mount.Last());
     bench.Feed("spyglass", "spyglass-down");
-    Expect(Count(mount, "hold:10\tTelescopeIn\t0") == lowered + 1 && shown["spyglass"]["variant"] == "normal", "the game lowering it lets go too");
     const size_t errors = mount.errors.size();
-    lowered = Count(mount, "hold:10\tTelescopeIn\t0");
     bench.Press("spyglass");
     bench.Frame(kRaiseWait);
-    Expect(Count(mount, "hold:10\tTelescopeIn\t0") == lowered + 1 && mount.errors.size() == errors + 1 && shown["spyglass"]["variant"] == "normal",
-           "a spyglass the game never raises is let go, loudly");
+    Expect(mount.errors.size() == errors + 1 && shown["spyglass"]["variant"] == "normal", "a spyglass the game never raises is reported, and shown down");
+    Json deckless = State("gameplay-naval");
+    deckless["revision"] = 10;
+    auto &deck = deckless["capabilities"];
+    deck.erase(std::remove(deck.begin(), deck.end(), Json("TelescopeIn")), deck.end());
+    bench.Set("gameplay", deckless);
+    Expect(!mount.Has("spyglass"), "off the deck (the game binds no telescope): no spyglass button");
+    bench.Set("gameplay", State("gameplay-naval"));
 
     // a helm held through sailing ↔ battle keeps turning in the new gameplay revision
     bench.Press("helm", "change", "-100");

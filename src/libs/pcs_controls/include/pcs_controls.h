@@ -49,7 +49,6 @@ class PCS_CONTROLS : public CONTROLS
     bool GetPhysicalControlState(int32_t control_code, CONTROL_STATE &state);
 #ifdef __ANDROID__
     bool AndroidControlAllowed(int32_t code) const;
-    int AndroidHeldInverse(int32_t code) const;
 #endif
 
   public:
