@@ -43,6 +43,9 @@ python3 tools/scene_sweep/run.py --game <game dir> --engine <build>/engine --out
   fix that does not apply to the game stops the sweep.
 - `--save FILE` boots every engine into this save (hero on land) instead of a new game; used by
   `tools/ci/boot_stage.py`.
+- `--scenario NAME` (with `--save`) applies the test scenario `scenarios/NAME.c` while the save loads; the scene
+  `scenario:NAME` waits until it has saved its game, copied to `<out>/saves/` ([scenarios/README.md](scenarios/README.md),
+  `scenarios.py sweep` runs several).
 - `--program-cache DIR`, `--script-cache DIR` keep the program/pipeline and compiled-script caches between runs
   (`--jobs 1`).
 - `--relief-models DIR` relief networks (default: `relief_models_path.txt` beside `--engine`, made by

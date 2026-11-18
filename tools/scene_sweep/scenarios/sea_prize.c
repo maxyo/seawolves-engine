@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Scenario sea_prize: at sea off Martinique, opening quest finished, corvette with a companion brig and full crews, a weak pirate tartane and lugger attacking (boarding, plunder, prize, cargo/crew transfer).
+#include "scenarios/scenario.c"
+
+void Scenario_Setup()
+{
+	Scenario_Unlock();
+	Scenario_Money(50000);
+	Scenario_Flagship(SHIP_CORVETTE, "Scenario");
+	SetCharacterGoods(pchar, GOOD_FOOD, 300);
+	SetCharacterGoods(pchar, GOOD_BALLS, 500);
+	SetCharacterGoods(pchar, GOOD_GRAPES, 300);
+	Scenario_Officer("ScenarioFighter", 12, "fighter");
+	Scenario_Companion("ScenarioBrigCap", SHIP_BRIG, "Faucon");
+	Scenario_Enemy("ScenarioPirate1", SHIP_WAR_TARTANE, 3);
+	Scenario_Enemy("ScenarioPirate2", SHIP_LUGGER, 4);
+	Scenario_PlaceSea("Martinique");
+}
+
+void Scenario_Arrived()
+{
+}
+
+void Scenario_Trigger()
+{
+}

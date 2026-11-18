@@ -19,6 +19,7 @@ llvmpipe on the CPU (--render llvmpipe).
   --list              print the scene inventory and exit
   --render MODE       gles-gpu (default; needs --virtualgl or $STORM_VIRTUALGL), vulkan or llvmpipe
   --save FILE         boot into this save (loaded from the main menu) instead of a new game
+  --scenario NAME     test scenario scenarios/NAME.c applied while --save loads (scenarios/README.md)
 """
 import argparse
 import collections
@@ -43,6 +44,7 @@ import time
 sys.dont_write_bytecode = True  # no __pycache__ in the source tree
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import inventory  # noqa: E402
+import scenarios  # noqa: E402
 
 try:
     from PIL import Image, ImageDraw
@@ -157,6 +159,9 @@ def parse_arguments():
     parser.add_argument('--save', type=Path,
                         help='a save file of this game: every engine loads it from the main menu (scene save:boot) '
                              'instead of starting a new game; the hero must be on land (the sea scenes return there)')
+    parser.add_argument('--scenario', metavar='NAME',
+                        help='test scenario scenarios/<NAME>.c (scenarios/README.md): applied while --save loads, the '
+                             'scene scenario:NAME waits for its save; the save is copied to <out>/saves/')
     patches = parser.add_mutually_exclusive_group()
     patches.add_argument('--script-patches', type=Path, metavar='DIR',
                          help="the application's script-patches folder (sets/<set>/set.json): the engines run the game's "
@@ -181,6 +186,12 @@ def parse_arguments():
         parser.error(f'--save {arguments.save}: no such file')
     if arguments.save:
         arguments.save = arguments.save.resolve()
+    if arguments.scenario and not arguments.save:
+        parser.error('--scenario needs --save: the scenario is applied while the start save loads')
+    if arguments.scenario and arguments.jobs not in (None, 1):
+        parser.error('--scenario runs one engine (--jobs 1)')
+    if arguments.scenario:
+        arguments.jobs = 1
     if not arguments.list and arguments.render == 'gles-gpu':
         library = arguments.virtualgl and arguments.virtualgl.resolve() / 'usr/lib'
         if not library or not all((library / name).is_file() for name in ('libdlfaker.so', 'libvglfaker.so')):
@@ -586,6 +597,16 @@ class Shard(threading.Thread):
         shutil.copytree(self.arguments.techniques, techniques)
         # copy2: its modification time stays, so the scripts' cache key (path, size, time of every file) holds.
         shutil.copy2(HERE / 'scene_sweep.c', own('PROGRAM/scene_sweep.c'))
+        if self.arguments.scenario:
+            # The game's migration hook runs it while the save loads (scenarios.py): files of the copy only.
+            existing = os.listdir(inside(game, inventory.find_case_insensitive(game, 'PROGRAM/migrations')))
+            program = inventory.find_case_insensitive(game, 'PROGRAM')
+            for relative, text in scenarios.install(self.arguments.scenario, existing).items():
+                target = inside(game, program / relative)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(text.encode('cp1251', errors='replace'))
+            # The save record's hero and place come from the application's script (scenarios/scenario.c Scenario_Save).
+            shutil.copyfile(self.context['save_identity'], own(f'{program.relative_to(game)}/interface/android_save_identity.c'))
         patched = self.context.get('script_patches', {})
         for relative, derived in patched.items():
             shutil.copy2(derived, own(relative))
@@ -646,6 +667,10 @@ class Shard(threading.Thread):
             if self.arguments.script_cache and (stash / 'Cache/state').is_file():
                 shutil.rmtree(self.arguments.script_cache, ignore_errors=True)
                 shutil.copytree(stash / 'Cache', self.arguments.script_cache)
+            if self.arguments.scenario:
+                for record in (game / 'save').glob(f'*/scenario-{self.arguments.scenario}'):
+                    (self.arguments.out / 'saves').mkdir(exist_ok=True)
+                    shutil.copyfile(record, self.arguments.out / 'saves' / record.name)
             if not self.arguments.keep_work:
                 shutil.rmtree(inside(run, game))
         check_game_unchanged(self.arguments.game, self.context['game'], f'during engine run {run}')
@@ -980,7 +1005,19 @@ def main():
     build = {'engine': file_digest(arguments.engine), 'script': file_digest(HERE / 'scene_sweep.c'),
              'script_patches': patch_digest,
              'renderer': arguments.render, **({'save': file_digest(arguments.save)} if arguments.save else {})}
-    chosen = select(scenes, arguments, previous, build)
+    if arguments.scenario:
+        scenarios.check_name(arguments.scenario)
+        application = arguments.script_patches.parent if arguments.script_patches else APPLICATION
+        save_identity = application / 'mobile-ui/PROGRAM/interface/android_save_identity.c'
+        if not save_identity.is_file():
+            sys.exit(f'--scenario: the application\'s {save_identity} is missing (the save records name the '
+                     f'hero and place with it); pass --script-patches <application>/script-patches')
+        scene = inventory.Scene(f'scenario:{arguments.scenario}', 'scenario',
+                                file_digest(scenarios.SCENARIOS / f'{arguments.scenario}.c'))
+        scenes, chosen = [scene], [scene]
+        build['scenario'] = file_digest(scenarios.SCENARIOS / 'scenario.c')
+    else:
+        chosen = select(scenes, arguments, previous, build)
     if not chosen:
         print('no scenes selected')
         return 0
@@ -998,6 +1035,8 @@ def main():
     context = {'stop': threading.Event(), 'failed': threading.Event(), 'errors': [], 'table_mismatch': None,
                'tables': inventory.tables(arguments.game), 'engine': engine, 'game': game_snapshot(arguments.game),
                'lock': lock, 'render': set(), 'script_patches': script_patches}
+    if arguments.scenario:
+        context['save_identity'] = save_identity
 
     def progress(scene, entry):
         with lock:

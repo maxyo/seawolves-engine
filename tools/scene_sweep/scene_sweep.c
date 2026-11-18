@@ -35,6 +35,8 @@
 //                  towards the first door, a fixed camera beside him; he starts once the scene is steady
 //   map:world      world map
 //   storm:world    storm entered from the world map
+//   scenario:<name> the test scenario run.py --scenario put into the game (scenarios/README.md): it ran while the save
+//                  of save:boot loaded; the scene waits until it has saved its game (pchar.ScenarioTest.done)
 
 native string SceneSweepNext();
 native void SceneSweepEvent(string text);
@@ -389,6 +391,7 @@ void SceneSweep_PrepareSavedPlayer()
 	ssHome = pchar.location;
 	ssHomeGroup = pchar.location.group;
 	ssHomeLocator = pchar.location.locator;
+	if (CheckAttribute(pchar, "ScenarioTest")) return;	// a scenario's hero is left as the game has him: its save shows him
 	chrDisableReloadToLocation = false;
 	LAi_SetImmortal(pchar, true);
 }
@@ -454,6 +457,7 @@ bool SceneSweep_InLocation(string id)
 // between land scenes; anywhere else the hero first returns to where the game began.
 bool SceneSweep_NeedsLand()
 {
+	if(ssKind == "scenario") return false;
 	if(ssKind == "loc" || ssKind == "night" || ssKind == "combat" || ssKind == "surface" || ssKind == "wade") return false;
 	if(ssKind == "map" || ssKind == "storm")
 	{
@@ -505,6 +509,9 @@ void SceneSweep_Start()
 		}
 		else Sea_MapLoad();
 		break;
+	case "scenario":
+		if(!CheckAttribute(pchar, "ScenarioTest")) SceneSweep_Fail("the scenario did not run while the save loaded (system.log)");
+		break;
 	case "storm":
 		if(ssStep == 0)
 		{
@@ -521,7 +528,7 @@ void SceneSweep_Start()
 		break;
 	}
 	if(ssKind != "loc" && ssKind != "combat" && ssKind != "night" && ssKind != "surface" && ssKind != "sea" && ssKind != "dusk" && ssKind != "dawn" && ssKind != "skynight" && ssKind != "skyday" && ssKind != "moon" && ssKind != "ship" &&
-		ssKind != "wake" && ssKind != "wade" && ssKind != "battle" && ssKind != "boarding" && ssKind != "map" && ssKind != "storm")
+		ssKind != "wake" && ssKind != "wade" && ssKind != "battle" && ssKind != "boarding" && ssKind != "map" && ssKind != "storm" && ssKind != "scenario")
 	{
 		SceneSweep_Fail("unknown scene kind");
 	}
@@ -570,9 +577,15 @@ bool SceneSweep_Loaded()
 		break;
 	case "save":
 		if(SceneSweepLoads() < 2) return false;	// the game refused the save: the load timeout fails the boot
-		return FindLoadedLocation() >= 0;
+		if(FindLoadedLocation() >= 0) return true;
+		// A scenario (run.py --scenario) may take the hero to sea as soon as the loaded town is on screen.
+		return CheckAttribute(pchar, "ScenarioTest") && SceneSweep_AtSea();
 		break;
 	case "loc":		return SceneSweep_InLocationAtEntry();	break;
+	case "scenario":
+		if(CheckAttribute(pchar, "ScenarioTest.failed")) SceneSweep_Fail("scenario failed: " + pchar.ScenarioTest.failed);
+		return CheckAttribute(pchar, "ScenarioTest.done");
+		break;
 	case "night":	return SceneSweep_InLocationAtEntry();	break;
 	case "surface":
 		if(!SceneSweep_InLocationAtEntry()) return false;
