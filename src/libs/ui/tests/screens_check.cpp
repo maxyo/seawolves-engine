@@ -2077,11 +2077,11 @@ static void DialogueText(const std::string &models)
 
     router.OnEvent({"edit-field", "click", ""});
     const size_t sent = surface.commands.size();
-    router.SubmitText(surface.text.token, std::string("a\x01b"), true);
+    router.SubmitText(surface.text.token, std::string("a\x01" "b"), true);
     Expect(surface.commands.size() == sent && surface.props["edit"]["error"] == "<dialogue.invalid>", "a control character is refused before sending");
     router.OnEvent({"edit-field", "click", ""});
     router.SubmitText(surface.text.token, "ignored", false);
-    Expect(surface.props["edit"]["value"] == "a\x01b", "a cancelled keyboard keeps the draft");
+    Expect(surface.props["edit"]["value"] == "a\x01" "b", "a cancelled keyboard keeps the draft");
     router.OnEvent({"edit-cancel", "click", ""});
     Expect(surface.props["edit"].is_null() && !router.WantsBack(), "«Cancel» closes the editor");
     router.OnEvent({"reply-0", "click", ""});
@@ -2111,7 +2111,7 @@ static void DialogueText(const std::string &models)
     ExpectEqual(DialogueAnswerError("abcd", 3), "too_long", "the reply's own limit");
     ExpectEqual(DialogueAnswerError("\xE2\x80\xA8", 256), "invalid_text", "a line separator is refused");
     ExpectEqual(DialogueAnswerError("\xC2\x85", 256), "invalid_text", "a C1 control is refused");
-    ExpectEqual(DialogueAnswerError("a\xED\xA0\x80b", 256), "invalid_text", "a lone surrogate is refused");
+    ExpectEqual(DialogueAnswerError("a\xED\xA0\x80" "b", 256), "invalid_text", "a lone surrogate is refused");
     ExpectEqual(DialogueAnswerError(" \xC2\xA0", 256), "", "spaces pass");
 }
 
