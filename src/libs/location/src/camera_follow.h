@@ -33,6 +33,10 @@ class CameraFollow
 
     // Find current camera position
     void MoveCamera(float dltTime);
+#ifdef __ANDROID__
+    // The mobile camera mode of MoveCamera (out of a fight).
+    void MoveMobile(float dltTime);
+#endif
     // Reinitialize camera position
     void BornCamera();
     // Calculate camera position for a given angle
@@ -50,7 +54,8 @@ class CameraFollow
     // private:
   public:
     LocationCamera *lc;
-    // FindRadius's clip of the location's still models in the last frame: a pure function of these inputs.
+    // FindRadius's clip of the location's still models in the last frames, one per direction asked (the camera's own
+    // and a tight space's probes, tightView): a pure function of these inputs.
     struct StillRadius
     {
         bool valid = false;
@@ -59,7 +64,7 @@ class CameraFollow
         float ang = 0.0f, ax = 0.0f, radius = 0.0f, found = 0.0f;
         uint64_t geometry = 0;
     };
-    mutable StillRadius stillRadius_[8];
+    mutable StillRadius stillRadius_[48];
     mutable size_t stillNext_ = 0;
 
     glm::vec3 camPos, lookTo;
@@ -73,7 +78,12 @@ class CameraFollow
     float kRadInertCur; // Current dependence of inertia
 #ifdef __ANDROID__
     storm::android::AutoFollow autoFollow;
-    float tightRaise = 0.0f; // how much higher than the player's pitch a tight space has raised the camera
+    float tightRaise = 0.0f; // how much higher (lower: below 0) than the player's pitch a tight space has put the camera
+    float tightPitch = 0.0f; // the pitch a tight space has chosen (the player's when there is room)
+    float swingLeft = 0.0f;  // the yaw still to swing out of a tight space
+    float tightAge = 0.0f;   // seconds until a chosen tight view is looked for again
+    float dragHold = 0.0f;   // seconds until a tight space may swing the camera again after a drag
+    bool settle_ = false;    // set on (re)birth: the next frame takes the view at once
     glm::vec3 heroPos{0.0f};  // where the hero was in the last frame (AutoFollow: does he move)
 #endif
 

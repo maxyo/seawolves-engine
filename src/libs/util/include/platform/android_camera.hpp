@@ -62,43 +62,70 @@ class AutoFollow
     }
 };
 
-// Tight spaces: the follow camera keeps out of walls by pulling in towards the hero
-// (CameraFollow::FindRadius). When the walls leave it less than kTightRoom of its radius at the
-// player's pitch, it may rise and look down over the hero instead, up to kTightPitch. Of the
-// player's pitch, halfway and kTightPitch (`radius`: the room at each) the lowest with kTightGood
-// metres is taken; with none that good, the one with the most room, a higher one only when it
-// gains kTightGain metres.
-constexpr float kTightRoom = 0.6f, kTightPitch = 1.35f, kTightGood = 1.6f, kTightGain = 0.3f;
-inline float tightPitchAt(float pitch, int step)
-{
-    return pitch >= kTightPitch ? pitch : pitch + (kTightPitch - pitch) * 0.5f * static_cast<float>(step);
-}
-inline float tightPitch(float pitch, const float (&radius)[3])
-{
-    for (int step = 0; step < 3; ++step)
-        if (radius[step] >= kTightGood)
-            return tightPitchAt(pitch, step);
-    int best = 0;
-    for (int step = 1; step < 3; ++step)
-        if (radius[step] >= radius[best] + kTightGain)
-            best = step;
-    return tightPitchAt(pitch, best);
-}
+// Tight spaces. The follow camera keeps out of walls by pulling in towards the hero
+// (CameraFollow::FindRadius: the room, in metres, behind him in a direction). While the room at
+// the camera's heading and the player's pitch is at least `want` (kTightClose, or less of a short
+// zoomed radius) the camera only comes closer. With less, it looks for a view that frames the hero
+// from at least `want`, in this order: swung sideways at the player's pitch, lower (a low ceiling
+// leaves more room nearer the floor), raised halfway, raised to kTightPitch, and only then from in
+// front of him. It never rises above kTightPitch (about 49 degrees, an over-the-shoulder look,
+// never top-down) unless the player's own pitch is higher. With no view that good, the one with the
+// most room (a later one in that order only for kTightGain metres more). Without `swing` (just
+// after a drag) only the camera's own heading is tried.
+constexpr float kTightClose = 1.2f, kTightPitch = 0.85f, kTightLower = 0.35f, kTightGain = 0.2f;
+// The camera swings to the chosen side at kSwingRate rad/s (at once on arriving in a location); a
+// chosen view is looked for again after kTightRecheck seconds or when it closes; a drag stops the
+// swing and holds it off for kDragHold seconds. A swing pauses AutoFollow as a drag does.
+constexpr float kSwingRate = 1.6f, kTightRecheck = 0.25f, kDragHold = 1.0f;
 
-// Cornered (less than kCorneredRoom metres at every pitch, e.g. backed into a corner under a low
-// ceiling): the camera turns towards the side with the most room of kCorneredTurns (FindRadius at
-// each, `side`), at most kCorneredRate radians per second, when that side has kTightGain more.
-constexpr float kCorneredRoom = 1.0f, kCorneredRate = 0.9f;
-constexpr float kCorneredTurns[4] = {0.6f, -0.6f, 1.2f, -1.2f};
-inline float corneredTurn(float best, const float (&side)[4], float dt)
+struct TightView
 {
-    int pick = 0;
-    for (int i = 1; i < 4; ++i)
-        if (side[i] > side[pick])
-            pick = i;
-    if (side[pick] < best + kTightGain)
-        return 0.0f;
-    return std::clamp(kCorneredTurns[pick], -kCorneredRate * dt, kCorneredRate * dt);
+    float yaw = 0.0f;   // to turn the camera by (radians)
+    float pitch = 0.0f; // the camera's pitch
+    float room = 0.0f;  // the room there (metres)
+};
+
+// `probe(yawOffset, pitch)`: the room with the camera turned by yawOffset at that pitch.
+template <class Probe> TightView tightView(float pitch, float want, bool swing, Probe &&probe)
+{
+    constexpr float kHalf = 3.14159265f;
+    const float cap = std::max(pitch, kTightPitch);
+    const float low = std::max(0.0f, pitch - kTightLower);
+    const bool lower = low < pitch - 0.05f; // a player's pitch near level has no lower one to try
+    struct Stage
+    {
+        float pitch;
+        float yaws[3];
+        int count;
+        bool low;
+    };
+    const Stage stages[] = {
+        {pitch, {0.0f, 0.0f, 0.0f}, 1, false}, {pitch, {0.5f, 1.0f, 1.5f}, 3, false},
+        {low, {0.0f, 0.5f, 1.0f}, 3, true},    {pitch + (cap - pitch) * 0.5f, {0.0f, 0.5f, 1.0f}, 3, false},
+        {cap, {0.0f, 0.5f, 1.0f}, 3, false},   {pitch, {2.1f, kHalf, 0.0f}, 2, false},
+        {low, {2.1f, kHalf, 0.0f}, 2, true},
+    };
+    TightView best{0.0f, pitch, -1.0f};
+    for (const Stage &stage : stages)
+    {
+        if (stage.low && !lower)
+            continue;
+        for (int i = 0; i < stage.count; ++i)
+        {
+            const float yaw = stage.yaws[i];
+            if (yaw != 0.0f && !swing)
+                continue;
+            TightView pick{yaw, stage.pitch, probe(yaw, stage.pitch)};
+            if (yaw != 0.0f && yaw != kHalf) // the mirrored side too: the one with more room
+                if (const float other = probe(-yaw, stage.pitch); other > pick.room)
+                    pick = {-yaw, stage.pitch, other};
+            if (pick.room >= want)
+                return pick;
+            if (pick.room > best.room + (best.room < 0.0f ? 0.0f : kTightGain))
+                best = pick;
+        }
+    }
+    return best;
 }
 
 // The dialogue close-up: the dialogue sheet covers the lower part of the screen (mobile-ui
