@@ -356,6 +356,21 @@ class CommerceScreen final : public Screen
         for (const Widget *one : admitted.All(columns.owners))
             if (one->value == "1")
                 owner = one->row_id;
+        // A confirmed deal closes the game's amount window and leaves its row selected: that row's deal is opened
+        // again, as on opening, so the dock keeps its amount and button for the next deal of the same row (else it
+        // showed the row's name with nothing to do until the row was tapped again). A deal left with ← is not.
+        if (!reopen_row_.empty() && !deal && admitted.model->revision > reopen_revision_)
+        {
+            if (money && selected && selected->row_id == reopen_row_ && hold_row_.empty() && selected->Offers("activate"))
+            {
+                hold_row_ = selected->row_id;
+                hold_at_ = bindings.Now();
+                hold_revision_ = admitted.model->revision;
+                bindings.Send(*selected, "activate", selected->row_id);
+                bindings.RebuildAfter(kSelectHold);
+            }
+            reopen_row_.clear();
+        }
         if (opened_for_ != owner && selected)
         {
             opened_for_ = owner;
@@ -676,6 +691,7 @@ class CommerceScreen final : public Screen
             if (deal && cancel && cancel->Offers("press"))
                 bindings.Send(*cancel, "press", {}, selected->row_id);
             quick_row_.clear();
+            reopen_row_.clear();
             if (deal && row == selected)
                 return; // a tap on the open row closes it
             if (row->Offers("activate"))
@@ -859,12 +875,14 @@ class CommerceScreen final : public Screen
             const AmountDraft::Labels labels = money ? AmountDraft::Labels{StringKey("trade.buy"), StringKey("trade.sell")}
                                                      : AmountDraft::Labels{StringKey("trade.take"), StringKey("trade.give")};
             view["primary"] = draft_.Buttons(bindings, low, most, labels, sub, !ok->Offers("press") || !edit->Offers("edit"), ok->unavailable_reason,
-                                             [&bindings, edit, ok, row = selected->row_id](int delta) {
+                                             [this, &bindings, edit, ok, row = selected->row_id, revision = admitted.model->revision](int delta) {
                                                  // The game's edit box holds the amount to take, a negative one the amount to give;
                                                  // once it has turned to giving it reads every later number so, and zero leaves it:
                                                  // zero goes first, same flush.
                                                  bindings.SendAfter(0.0, *edit, "edit", std::to_string(delta), row, std::string("0"));
                                                  bindings.SendAfter(0.0, *ok, "press", {}, row);
+                                                 reopen_row_ = row; // its deal again once the game has closed this one (Build)
+                                                 reopen_revision_ = revision;
                                              });
         }
         else if (!deal && columns.best)
@@ -922,6 +940,7 @@ class CommerceScreen final : public Screen
         const Widget *exit = admitted.One("EXIT_BTN");
         bindings.On("header-back", "", [this, &bindings, exit, cancel, deal, selected](const Event &) {
             quick_row_.clear();
+            reopen_row_.clear();
             if (deal && cancel && cancel->Offers("press"))
                 bindings.Send(*cancel, "press", {}, selected->row_id);
             else
@@ -975,6 +994,8 @@ class CommerceScreen final : public Screen
     std::string language_; // the game's, for its decimal points (Decimal)
     Json last_view_;           // what the screen shows (kept while a tapped row waits for its window)
     std::string hold_row_;     // the tapped row whose window has not come yet
+    std::string reopen_row_;   // the row of a confirmed deal: its deal is opened again once the game closed it
+    uint64_t reopen_revision_ = 0; // the model revision the deal was confirmed in
     double hold_at_ = 0.0;
     uint64_t hold_revision_ = 0; // the model revision the row was tapped in
     std::optional<std::string> opened_for_; // the ship / character whose list was opened (its selected row's deal asked for)

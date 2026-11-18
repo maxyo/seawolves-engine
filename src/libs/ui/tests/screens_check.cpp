@@ -576,6 +576,29 @@ static void Store(const std::string &models)
         Expect(surface.commands.size() == 3 && surface.commands[0] == edit + "0" && surface.commands[1] == edit + "100" &&
                    surface.commands[2] == "widget:store\tQTY_OK_BUTTON\t-1\tguard@7:goods:0:ship:0|press",
                "«Купить 100»: the amount and the game's OK in one flush: " + Json(surface.commands).dump());
+        // The game closes its window and keeps the row selected: the row's deal is opened again, so the dock keeps
+        // its amount and button for the next deal (before: the row's name with nothing to do until a new tap).
+        InterfaceModel closed = Load(models, "store.json");
+        closed.revision = open_deal.revision + 10;
+        surface.commands.clear();
+        router.SetInterface(closed);
+        router.Tick();
+        ExpectEqual(surface.Last(), "widget:store\tTABLE_LIST\t0\tactivate@7:goods:0:ship:0", "a confirmed deal's row opens its deal again");
+        InterfaceModel reopened = open_deal;
+        reopened.revision = closed.revision + 1;
+        router.SetInterface(reopened);
+        router.OnEvent({"goods", "change", "300"});
+        router.OnEvent({"primary", "click", ""}); // confirmed, then left with ← before the game answered
+        router.Tick();
+        surface.commands.clear();
+        closed.revision = reopened.revision + 1;
+        router.OnEvent({"header-back", "click", ""});
+        router.SetInterface(closed);
+        router.Tick();
+        Expect(std::none_of(surface.commands.begin(), surface.commands.end(), [](const std::string &c) { return c.find("activate@") != std::string::npos; }),
+               "a deal closed with ← is not opened again: " + Json(surface.commands).dump());
+        reopened.revision = closed.revision + 1;
+        router.SetInterface(reopened);
     }
     {
         // The store's «Купить / Продать N» is the same shared flow.
