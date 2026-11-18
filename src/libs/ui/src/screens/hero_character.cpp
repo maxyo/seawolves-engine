@@ -713,8 +713,12 @@ class HeroScreen final : public Screen
             }
             else
             {
+                // A skill at its maximum has no experience left to gain: the game writes no number (character.c and
+                // character_all.c set td3 to ""); its bar is full.
+                const std::string experience = Trim(row->CellText(2));
                 if (!special)
-                    cells.push_back(Json{{"bar", std::clamp(Amount(bindings, row->CellText(2), "the skill table's experience (column 2)"), 0, 100)}, {"barKind", "xp"}, {"text", ""}});
+                    cells.push_back(Json{{"bar", experience.empty() ? 100 : std::clamp(Amount(bindings, experience, "the skill table's experience (column 2)"), 0, 100)},
+                                         {"barKind", "xp"}, {"text", ""}});
                 Json last{{"text", value}, {"bold", true}};
                 if (!tone.empty())
                     last["tone"] = tone;

@@ -1345,7 +1345,7 @@
   {
    "node": "TABLE_SKILL_2",
    "type": "choice",
-   "label": "\tПочинка\t97\t\t100",
+   "label": "\tПочинка\t\t\t100",
    "value": "0",
    "index": 5,
    "enabled": true,
@@ -1382,7 +1382,7 @@
     },
     {
      "column": 2,
-     "text": "97",
+     "text": "",
      "colorArgb": 4294967295,
      "images": []
     },
