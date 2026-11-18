@@ -801,36 +801,57 @@ class TransferScreen final : public Screen
         return refuse;
     }
 
-    // The captain of the other ship: the passengers who can take it.
+    // The captain of the other ship (transfer_main.c OFFICERS_WINDOW, CAPTAN_BUTTON on a ship without one): as the
+    // stock window, a tap selects a passenger in PASSENGERSLIST (SetOfficersSkills shows his name and his mini tables
+    // and enables «Назначить»), ACCEPT_ADD_OFFICER (AcceptAddOfficer) appoints him; ✕, the scrim and back are the
+    // game's «Отмена» (ExitOfficerMenu). The shipyard's captain sheet (kind "captain"): one picker in the pack.
     const Widget *Captains(const Admission &admitted, Bindings &bindings, Json &view)
     {
-        Json people = Json::array();
+        Json candidates = Json::array();
         size_t i = 0;
         for (const Widget *person : admitted.All("PASSENGERSLIST"))
         {
-            const std::string id = "captain-" + std::to_string(i++);
-            people.push_back(Json{{"id", id},
-                                  {"title", person->label},
-                                  {"image", PictureOf(person->FirstImage())},
-                                  {"selected", person->value == "1"},
-                                  {"disabled", !person->Offers("select")},
-                                  {"reason", person->unavailable_reason}});
+            const std::string id = "candidate-" + std::to_string(i++);
+            candidates.push_back(Json{{"id", id},
+                                      {"title", person->label},
+                                      {"image", PictureOf(person->FirstImage())},
+                                      {"selected", person->value == "1"},
+                                      {"disabled", !person->Offers("select")},
+                                      {"reason", person->unavailable_reason}});
             bindings.On(id, "", [&bindings, person](const Event &) {
                 if (person->value != "1")
                     TapChoice(bindings, *person);
             });
         }
+        // SetOfficersSkills clears the name and the tables when the selected slot holds nobody.
+        const std::string name = Trim(admitted.Label("OFFICER_NAME"));
+        Json facts = Json::array();
+        Json skills = Json::array();
+        if (!name.empty())
+        {
+            for (const Widget *row : admitted.All("TABLE_SMALLOTHER"))
+                if (!row->CellText(1).empty())
+                    facts.push_back(Json{{"k", row->CellText(1)}, {"v", row->CellText(2)}});
+            skills = ShipSkills(admitted.All("TABLE_SMALLSKILL"), bindings, "transfer_main", reported_skills_);
+        }
         Json acts = Json::array();
         if (const Widget *accept = admitted.One("ACCEPT_ADD_OFFICER"))
             acts.push_back(Action(bindings, *accept, "sheet-ok", accept->label, "primary"));
-        view["sheet"] = Json{{"title", Trim(admitted.Label("OFFICERS_WINDOW_CAPTION"))},
-                             {"subtitle", Trim(admitted.Label("OFFICER_NAME"))},
-                             {"people", people},
-                             {"empty", people.empty() ? bindings.Text("yard.no_captains") : std::string()},
-                             {"actions", acts}};
+        view["sheet"] = Json{{"kind", "captain"},
+                             {"title", Trim(admitted.Label("OFFICERS_WINDOW_CAPTION"))},
+                             {"closable", true},
+                             {"candidates", candidates},
+                             {"empty", candidates.empty() ? bindings.Text("yard.no_captains") : std::string()},
+                             {"name", name},
+                             {"facts", facts},
+                             {"skills", skills},
+                             {"actions", acts},
+                             {"width", 640}}; // c-captain-picker: the candidates beside the facts
         const Widget *close = admitted.One("CANCEL_ADD_OFFICER") ? admitted.One("CANCEL_ADD_OFFICER") : admitted.One("OFFICER_EXIT_BTN");
         if (close)
             bindings.Forward("sheet-close", *close, "press");
+        else
+            bindings.Error("transfer_main: the captain window has neither CANCEL_ADD_OFFICER nor OFFICER_EXIT_BTN: ✕ cannot close it");
         return close;
     }
 
@@ -864,6 +885,7 @@ class TransferScreen final : public Screen
     int quick_row_ = -1;    // the cargo row (the game's index: its rows carry no identity) whose whole stock is taken once the game selects it
     int hire_max_ = 0;
     bool hire_seen_ = false;
+    bool reported_skills_ = false; // the captain's skill table came without its ship skills (said once)
 };
 
 } // namespace

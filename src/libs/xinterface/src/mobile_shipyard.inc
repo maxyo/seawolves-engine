@@ -94,7 +94,7 @@ void XINTERFACE::MobileCollectShipyard(std::vector<MobileWidget> &widgets)
         if(!empty||!*empty||ctx["pendingOffer"].empty())reject("captain-purchase-context-missing");
         for(auto &w:widgets)if(YardName(w.node,"PASSENGERSLIST")&&w.type=="choice"){
             auto *candidate=list->GetAttributeClass("pic"+std::to_string(w.index+1));
-            w.context["character"]=YardAttribute(candidate,"character");auto ref=slotImage(list,candidate);if(ref.handle)w.images.push_back(ref);
+            w.context["character"]=YardAttribute(candidate,"character"); // the portrait: CXI_SCROLLIMAGE::MobileRowImage
         }
     }
     const auto addControl=[&](const char *name,const char *label,const char *verb,int index=-1){

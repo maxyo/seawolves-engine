@@ -46,6 +46,11 @@ Json PictureOf(const ImageRef *image);
 // the rectangle shown ("interfaces/maps/kayman", "0,0,1,1") or an atlas picture ("atlas:GROUP/
 // Picture", ""); null for any other picture.
 Json TextureOf(const ImageRef *image);
+// The ship skills of a captain's mini table (interface_utils.c SetSPECIALMiniTable: the captain windows of shipyard.c
+// and transfer_main.c, the hero's sheet): {icon, k, v, tone} named from row tr5's pictures with row tr6's values, tone
+// "ok" / "danger" where the game colours a raised / lowered skill. A table without those rows, or naming an unknown
+// skill, is an error of `screen`, said once (`reported`).
+Json ShipSkills(const std::vector<const Widget *> &table, Bindings &bindings, const std::string &screen, bool &reported);
 // The props of c-map-view for a "map" widget (a scrolled picture) and its "map_marker" rows;
 // "base" is empty when the engine's context lacks it (the screen reports that).
 Json MapViewOf(const Widget &map, std::span<const Widget *const> markers);

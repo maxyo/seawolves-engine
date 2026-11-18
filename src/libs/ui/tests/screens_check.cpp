@@ -1136,6 +1136,55 @@ static void Repair(const std::string &models)
     ExpectEqual(surface.Last(), prefix + "REPAIR_CANCEL\t-1\tpress", "back cancels");
 }
 
+// The captain choice of a prize without a captain (transfer-captain.json, recorded on a device after a boarding:
+// transfer_main.c OFFICERS_WINDOW over a lugger whose captain fell, three passengers). Every candidate carries the
+// game's portrait (PASSENGERSLIST pic<N>.img1 of its FACE128_<FaceId> group, CXI_SCROLLIMAGE::MobileRowImage); the
+// selected one's ship skills (TABLE_SMALLSKILL) and facts (TABLE_SMALLOTHER) as SetOfficersSkills shows them; a tap
+// selects, «Назначить» is the game's ACCEPT_ADD_OFFICER (AcceptAddOfficer), ✕ / the scrim / back its «Отмена».
+static void TransferCaptain(const std::string &models)
+{
+    FakeSurface surface;
+    Router router(surface);
+    const std::string prefix = "widget:transfer_main\t";
+    router.SetInterface(Load(models, "transfer-captain.json"));
+    const Json &sheet = surface.props["sheet"];
+    Expect(router.Using() == "transfer_main" && surface.errors.empty() && sheet.is_object() && sheet["kind"] == "captain" &&
+               sheet["closable"] == true && sheet["title"] == "Назначение капитана корабля",
+           "the captain window is the shipyard's captain sheet, every widget known: " + sheet.dump().substr(0, 300));
+    const Json &candidates = sheet["candidates"];
+    Expect(candidates.size() == 3 && candidates[0]["id"] == "candidate-0" && candidates[0]["title"] == "Флоран Габриель" &&
+               candidates[0]["selected"] == true && candidates[1]["selected"] == false && candidates[2]["disabled"] == false,
+           "the three passengers, the first selected: " + candidates.dump().substr(0, 300));
+    bool portraits = candidates.size() == 3;
+    for (const Json &candidate : candidates)
+        portraits = portraits && candidate["image"].is_object() && candidate["image"]["kind"] == "item" &&
+                    candidate["image"]["texture"].get<std::string>().rfind("atlas:FACE128_", 0) == 0;
+    Expect(portraits && candidates[1]["image"]["texture"] == "atlas:FACE128_18/face", "each row shows the officer's own portrait: " + candidates[1].dump());
+    Expect(sheet["name"] == "Флоран Габриель" && !sheet.contains("subtitle"), "the selected one's name above his facts, not as the subtitle");
+    Expect(sheet["skills"].size() == 7 && sheet["skills"][0] == Json({{"icon", "wheel"}, {"k", "<skill.sailing>"}, {"v", "14"}, {"tone", ""}}) &&
+               sheet["skills"][6]["k"] == "<skill.commerce>" && sheet["skills"][6]["v"] == "13",
+           "his ship skills from the game's mini table: " + sheet["skills"].dump());
+    Expect(sheet["facts"].size() == 5 && sheet["facts"][0] == Json({{"k", "Ранг"}, {"v", "7"}}) && sheet["facts"][1]["v"] == "93 / 93",
+           "his facts as the game's table lists them: " + sheet["facts"].dump());
+    Expect(sheet["actions"].size() == 1 && sheet["actions"][0]["id"] == "sheet-ok" && sheet["actions"][0]["label"] == "Назначить" &&
+               sheet["actions"][0]["disabled"] == false,
+           "«Назначить», the game's own button: " + sheet["actions"].dump());
+
+    router.OnEvent({"candidate-2", "click", ""});
+    ExpectEqual(surface.Last(), prefix + "PASSENGERSLIST\t2\tselect@4:1:2", "a tap selects that passenger in the game's list (guarded by his row of this revision)");
+    surface.commands.clear();
+    router.OnEvent({"candidate-0", "click", ""});
+    Expect(surface.commands.empty(), "a tap on the selected one sends nothing");
+    router.OnEvent({"sheet-ok", "click", ""});
+    ExpectEqual(surface.Last(), prefix + "ACCEPT_ADD_OFFICER\t-1\tpress", "«Назначить» appoints him (AcceptAddOfficer)");
+    router.OnEvent({"sheet-close", "click", ""});
+    ExpectEqual(surface.Last(), prefix + "CANCEL_ADD_OFFICER\t-1\tpress", "✕ is the game's «Отмена» (ExitOfficerMenu)");
+    router.OnEvent({"sheet", "dismiss", ""});
+    ExpectEqual(surface.Last(), prefix + "CANCEL_ADD_OFFICER\t-1\tpress", "so is a tap beside it");
+    router.OnEvent({"header-back", "click", ""});
+    ExpectEqual(surface.Last(), prefix + "CANCEL_ADD_OFFICER\t-1\tpress", "and back");
+}
+
 static void Transfer(const std::string &models)
 {
     FakeSurface surface;
@@ -3756,6 +3805,7 @@ int main(int argc, char **argv)
     Games(models);
     Repair(models);
     Transfer(models);
+    TransferCaptain(models);
     Alchemy(models);
     GoodsOrder(models);
     SailEmblem(models);

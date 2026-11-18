@@ -1543,6 +1543,7 @@ int32_t CXI_SCROLLIMAGE::GetMousePointedPictureNum() const
 #include "../mobile_owner_bridge.hpp"
 #include "shared/interface/messages.h"
 #include "../mobile_sails_gerald.hpp"
+#include "../mobile_image_bridge.hpp"
 bool CXI_SCROLLIMAGE::MobileOwnerRows(storm::mobile::OfficerListIdentity &state,
                                      std::vector<MobileWidget> &rows) const
 {
@@ -1581,11 +1582,26 @@ void CXI_SCROLLIMAGE::MobileCollect(std::vector<MobileWidget> &widgets) const
     storm::mobile::OfficerListIdentity state; std::vector<MobileWidget> rows;
     if (!MobileOwnerRows(state, rows)) return;
     m_mobileOwners.publish(state);
+    auto *list = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
     for (auto &row : rows) {
         row.rowId = m_mobileOwners.rowId(row.index);
         if (row.enabled) row.actions.push_back("select");
+        if (auto image = MobileRowImage(list, row.index); image.handle) row.images.push_back(std::move(image));
         widgets.push_back(std::move(row));
     }
+}
+// The row's own picture as the stock scroll draws it: pic<N>.img1 of the pictures.ini group that tex1 indexes in the
+// list's ImagesGroup (FillPassengerScroll: the officer's FACE128_<FaceId> portrait; FillShipsScroll: the ship).
+storm::mobile::ImageRef CXI_SCROLLIMAGE::MobileRowImage(ATTRIBUTES *list, int index) const
+{
+    auto *entry = list ? list->GetAttributeClass(("pic" + std::to_string(index + 1)).c_str()) : nullptr;
+    const char *tex = entry ? entry->GetAttribute("tex1") : nullptr;
+    const char *picture = entry ? entry->GetAttribute("img1") : nullptr;
+    auto *groups = list ? list->GetAttributeClass("ImagesGroup") : nullptr;
+    const auto slot = storm::mobile::InventoryNumber(tex);
+    const char *group = slot && groups && *slot < groups->GetAttributesNum() ? groups->GetAttribute(*slot) : nullptr;
+    if (!group || !picture) return {};
+    return storm::mobile::AtlasReference(pPictureService, group, picture);
 }
 std::optional<std::string> CXI_SCROLLIMAGE::MobileHireCrewQuantity(const std::string &node, const std::string &value) const
 {

@@ -1,4 +1,5 @@
 #include "controls.h"
+#include "hero.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -173,6 +174,64 @@ Json TextureOf(const ImageRef *image)
     if (image && image->kind == "atlas" && !image->group.empty() && !image->image.empty())
         return Json{{"texture", "atlas:" + image->group + "/" + image->image}, {"uv", ""}};
     return Json();
+}
+
+// The ship skills of the captain's mini table (interface_utils.c SetSPECIALMiniTable), the ones that decide a
+// captain: row tr5 names them only by picture (ICONS_SPEC "<skill> skill icon", no text), row tr6 holds the
+// values, green where items or officers raise the skill and red where they lower it. {icon, k, v, tone}.
+Json ShipSkills(const std::vector<const Widget *> &table, Bindings &bindings, const std::string &screen, bool &reported)
+{
+    static const char *const names[][2] = {{"Sailing", StringKey("skill.sailing")},     {"Accuracy", StringKey("skill.accuracy")},
+                                           {"Cannons", StringKey("skill.cannons")},     {"Grappling", StringKey("skill.grappling")},
+                                           {"Defence", StringKey("skill.defence")},     {"Repair", StringKey("skill.repair")},
+                                           {"Commerce", StringKey("skill.commerce")}};
+    const auto row = [&table](int index) -> const Widget * {
+        for (const Widget *widget : table)
+            if (widget->index == index)
+                return widget;
+        return nullptr;
+    };
+    const Widget *pictures = row(4);
+    const Widget *values = row(5);
+    Json skills = Json::array();
+    if (!pictures || !values)
+    {
+        if (!table.empty() && !reported)
+        {
+            reported = true;
+            bindings.Error(screen + ": the captain's skill table has no ship skill rows (tr5 pictures, tr6 values)");
+        }
+        return skills;
+    }
+    constexpr std::string_view suffix = " skill icon";
+    for (const Cell &cell : pictures->cells)
+    {
+        const ImageRef *picture = cell.images.empty() ? nullptr : &cell.images.front();
+        std::string id = picture ? picture->image : std::string();
+        if (id.size() > suffix.size() && id.compare(id.size() - suffix.size(), suffix.size(), suffix) == 0)
+            id.resize(id.size() - suffix.size());
+        const char *key = nullptr;
+        for (const auto &name : names)
+            if (id == name[0])
+                key = name[1];
+        if (!key)
+        {
+            if (!reported)
+            {
+                reported = true;
+                bindings.Error(screen + ": the captain's skill table names an unknown ship skill by its picture '" +
+                               (picture ? picture->group + "/" + picture->image : std::string()) + "' (column " +
+                               std::to_string(cell.column) + ")");
+            }
+            continue;
+        }
+        std::string tone;
+        for (const Cell &value : values->cells)
+            if (value.column == cell.column)
+                tone = value.color_argb == 0xffc4ffc4u ? "ok" : value.color_argb == 0xffffc4c4u ? "danger" : "";
+        skills.push_back(Json{{"icon", hero::SkillIcon(id)}, {"k", bindings.Text(key)}, {"v", values->CellText(cell.column)}, {"tone", tone}});
+    }
+    return skills;
 }
 
 namespace
