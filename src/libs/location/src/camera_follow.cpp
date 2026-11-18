@@ -171,46 +171,65 @@ void CameraFollow::MoveMobile(float dltTime)
     using namespace storm::android;
     const bool settle = settle_; // the first frame in a location: the view is taken at once
     settle_ = false;
+    // The finger always wins: the drag turns the view by all of it, stops a swing under way and holds
+    // the automatic turns off until the hero has stood and walks again (AutoFollow).
+    const bool dragged = lc->dragAy != 0.0f || lc->dragAx != 0.0f;
     camay += lc->dragAy;
-    if (lc->dragAy != 0.0f)
-    {
-        swingLeft = 0.0f;
-        dragHold = kDragHold;
-    }
-    dragHold = std::max(0.0f, dragHold - dltTime);
+    if (dragged)
+        swing.reset();
     const glm::vec3 walked = lc->pos - heroPos;
     heroPos = lc->pos;
-    const float moved = AutoFollow::kMoving * dltTime;
-    // A swing out of a tight spot pauses following as a drag does (no tug back into the wall).
-    camay += autoFollow.step(dltTime, lc->dragAy != 0.0f || swingLeft != 0.0f, walked.x * walked.x + walked.z * walked.z > moved * moved, lc->chay - camay);
+    camay += autoFollow.step(dltTime, dragged, std::sqrt(walked.x * walked.x + walked.z * walked.z) / dltTime, lc->chay - camay);
     lookTo = lc->pos;
     lookTo.y += lc->lheight;
     // The room wanted: kTightClose, or most of a radius zoomed in shorter.
     const float want = std::min(kTightClose, lc->radius * 0.9f);
     const float room = FindRadius(camay, lc->ax);
+    const bool tight = tightRaise != 0.0f || swing.value != 0.0f;
     tightAge -= dltTime;
-    if (swingLeft == 0.0f && room >= want)
-        tightPitch = lc->ax; // closer behind him is enough (ChangeRadius pulls in)
-    else if (settle || (swingLeft == 0.0f && tightAge <= 0.0f) || FindRadius(camay + swingLeft, tightPitch) < want)
+    if (!tight && room >= want)
+        ; // closer behind him is enough (ChangeRadius pulls in)
+    else if (tight && swing.value == 0.0f && room >= want + kTightGain)
+        tightRaise = 0.0f; // room again at the player's own view (with a margin: no back and forth)
+    else if (settle || (tightAge <= 0.0f && FindRadius(camay + swing.value, lc->ax + tightRaise) < (tight ? want * kTightKeep : want)))
     {
-        // A swing under way is completed unless its view closes; a chosen view is looked for again now and then.
-        const TightView view = tightView(lc->ax, want, dragHold <= 0.0f, [&](float yaw, float pitch) { return FindRadius(camay + yaw, pitch); });
-        swingLeft = view.yaw;
-        tightPitch = view.pitch;
-        tightAge = kTightRecheck;
+        // Sideways only while the player has not dragged and no swing was made since the hero last stood.
+        const TightView view = tightView(lc->ax, want, settle || (!dragged && !autoFollow.held()),
+                                         [&](float yaw, float pitch) { return FindRadius(camay + yaw, pitch); });
+        swing.reset(view.yaw); // from here (a swing whose view closed ends)
+        if (view.yaw != 0.0f)
+            autoFollow.hold();
+        tightRaise = view.pitch - lc->ax;
+        tightAge = view.room >= want ? 0.0f : 0.5f; // none good: not every frame (the probes, a restless choice)
     }
-    const float turn = settle ? swingLeft : std::clamp(swingLeft, -kSwingRate * dltTime, kSwingRate * dltTime);
+    float turn = 0.0f;
+    if (settle)
+    {
+        turn = swing.value;
+        swing.reset();
+        raise.reset(tightRaise);
+    }
+    else if (swing.value != 0.0f)
+    {
+        const float before = swing.value;
+        swing.step(0.0f, dltTime, kSwingTime);
+        turn = std::clamp(before - swing.value, -kSwingMax * dltTime, kSwingMax * dltTime);
+        swing.value = before - turn;
+        if (std::fabs(swing.value) < 1e-3f)
+        {
+            turn = before;
+            swing.reset();
+        }
+    }
     camay += turn;
-    swingLeft -= turn;
-    const float raise = tightPitch - lc->ax;
-    tightRaise = settle ? raise : tightRaise + (raise - tightRaise) * std::min(1.0f, dltTime * 4.0f);
-    if (std::fabs(raise - tightRaise) < 1e-3f)
-        tightRaise = raise;
-    const float radius = tightRaise != 0.0f || turn != 0.0f ? FindRadius(camay, lc->ax + tightRaise) : room;
+    raise.step(tightRaise, dltTime, kRaiseTime);
+    if (std::fabs(raise.value - tightRaise) < 1e-3f && std::fabs(raise.velocity) < 1e-2f)
+        raise.reset(tightRaise);
+    const float radius = raise.value != 0.0f || turn != 0.0f ? FindRadius(camay, lc->ax + raise.value) : room;
     if (settle)
         camradius = std::min(radius, lc->radius);
     ChangeRadius(dltTime, radius);
-    CalcPosition(camay, camradius, -tightRaise, camPos);
+    CalcPosition(camay, camradius, -raise.value, camPos);
 }
 #endif
 
@@ -221,9 +240,9 @@ void CameraFollow::BornCamera()
     camay = lc->chay;
     camradius = lc->radius;
 #ifdef __ANDROID__
+    raise.reset();
+    swing.reset();
     tightRaise = 0.0f;
-    tightPitch = lc->ax;
-    swingLeft = 0.0f;
     tightAge = 0.0f;
     settle_ = true;
     heroPos = lc->pos;
@@ -654,15 +673,8 @@ void CameraFollow::ChangeRadius(float dltTime, float radius)
         radius = 0.0f;
     if (radius > lc->radius)
         radius = lc->radius;
-    auto k = dltTime * 10.0f;
-    if (k > 0.99f)
-        k = 0.99f;
-    if (radius > camradius)
-        k *= 0.7f;
-    if (k < 0.0f)
-        k = 0.0f;
-    if (k > 1.0f)
-        k = 1.0f;
+    // In quickly (out of a wall), out a little slower; the same at any frame rate.
+    const auto k = dltTime > 0.0f ? 1.0f - expf(-dltTime * (radius > camradius ? 7.0f : 10.0f)) : 0.0f;
     camradius += (radius - camradius) * k;
 }
 

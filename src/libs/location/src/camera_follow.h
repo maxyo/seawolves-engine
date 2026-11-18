@@ -78,12 +78,11 @@ class CameraFollow
     float kRadInertCur; // Current dependence of inertia
 #ifdef __ANDROID__
     storm::android::AutoFollow autoFollow;
-    float tightRaise = 0.0f; // how much higher (lower: below 0) than the player's pitch a tight space has put the camera
-    float tightPitch = 0.0f; // the pitch a tight space has chosen (the player's when there is room)
-    float swingLeft = 0.0f;  // the yaw still to swing out of a tight space
-    float tightAge = 0.0f;   // seconds until a chosen tight view is looked for again
-    float dragHold = 0.0f;   // seconds until a tight space may swing the camera again after a drag
-    bool settle_ = false;    // set on (re)birth: the next frame takes the view at once
+    storm::android::Damped raise; // how much higher (lower: below 0) than the player's pitch the camera is now
+    storm::android::Damped swing; // the yaw still to swing out of a tight space (value), easing to 0
+    float tightRaise = 0.0f;      // the raise a tight space has chosen (0: the player's pitch)
+    float tightAge = 0.0f;        // seconds until a tight view with too little room is looked for again
+    bool settle_ = false;         // set on (re)birth: the next frame takes the view at once
     glm::vec3 heroPos{0.0f};  // where the hero was in the last frame (AutoFollow: does he move)
 #endif
 

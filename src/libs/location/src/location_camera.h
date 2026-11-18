@@ -127,6 +127,7 @@ class LocationCamera : public Entity
 #ifdef __ANDROID__
     glm::vec3 movementForward{0.0f, 0.0f, 1.0f};
     float dragAy = 0.0f; // this frame's camera drag as a yaw angle (mobile camera mode)
+    float dragAx = 0.0f; // this frame's vertical drag as a pitch angle (mobile)
     float gameRadius = 3.0f; // the game's radius (MSG_CAMERA_SET_RADIUS); radius is it scaled by the pinch
     std::optional<glm::vec3> dialogueFrom; // the dialogue close-up's camera point (FrameDialogue), chosen once per placement
     bool eyeless = false;                  // a speaker without an eye locator was reported

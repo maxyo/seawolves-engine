@@ -51,7 +51,12 @@ joystick turns and remains stable after UP; right swipes orbit it. Cancellation,
 scripted ownership and physical forward/back requests restore native ownership.
 First-person keeps actor-relative forward/back/strafe and native look rotation;
 independent camera yaw and automatic travel-facing apply only to third-person.
-The camera regression executes the real CameraFollow::MoveCamera method;
+The camera regression executes the real CameraFollow::MoveCamera method. It holds the
+owner-reported calm contract: a drag turns the view by the same angle per screen width
+before, while and after auto-follow and at 20/30/60 fps; automatic turns change their rate
+smoothly (no jump, no reversal) under steady input and an uneven hero; nothing automatic
+turns the view back after a drag until the hero has stood and walks again; a tight room's
+pitch does not go back and forth when its room flickers around what is wanted.
 `python3 tests/android_movement/camera.py --source-root PATH` can check an older
 checkout against the same no-feedback camera contract.
 

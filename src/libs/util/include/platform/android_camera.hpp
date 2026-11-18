@@ -16,49 +16,106 @@ inline float dragYaw(float counts, float width)
     return counts * 3.14159265f / width;
 }
 
-// The camera follows the hero while he moves (as mobile third-person games do): after he has
-// moved for kDelay seconds without a drag, the camera is pulled round towards his heading,
-// easing in over kEaseIn seconds, at kRate * sin(offset) radians per second, `offset` being
-// his heading minus the camera's. The stick steers relative to the camera, so a sideways
-// stick curves him round while the camera swings in behind; straight towards the camera
-// (offset pi) does not swing it. A drag sets the view and pauses following until the hero
-// stands and moves again.
+// Critically damped motion of `value` towards `target`, settling in about `time` seconds: no overshoot,
+// no oscillation, a continuous velocity. Each step is the exact solution for a target held over the
+// step, so the path is the same at any frame rate.
+struct Damped
+{
+    float value = 0.0f, velocity = 0.0f;
+
+    void step(float target, float dt, float time)
+    {
+        if (!(dt > 0.0f) || !(time > 0.0f))
+            return;
+        const float w = 4.0f / time; // within 10 % of the way after `time`
+        const float e = value - target, a = velocity + w * e, k = std::exp(-w * dt);
+        value = target + (e + a * dt) * k;
+        velocity = (velocity - w * a * dt) * k;
+    }
+    void reset(float to = 0.0f)
+    {
+        value = to;
+        velocity = 0.0f;
+    }
+};
+
+// The camera follows the hero while he walks (as mobile third-person games do), gently and rarely:
+// once he has walked kDelay seconds, the camera's turn rate eases (Damped, kRateTime) towards
+// kRate * shape(sin(offset)), `offset` being his heading minus the camera's. The stick steers
+// relative to the camera, so a sideways stick curves him round while the camera comes in behind;
+// within kDead of his heading, or straight towards the camera (offset pi), it does not turn.
+// The player always wins: a drag (or a swing out of a tight spot) stops the turn at once and holds
+// following off until the hero has stood for kStand seconds without a drag and walks again.
+// "Walking" is his displacement speed, smoothed over kSpeedTime, with hysteresis (kWalk/kStop):
+// Character::IsMove stays set while he walks into a wall, and a single short frame is no stop.
 class AutoFollow
 {
-    float moving_ = 0.0f; // seconds the hero has moved since following may start
-    bool paused_ = false;
+    float speed_ = 0.0f;    // smoothed displacement speed (m/s)
+    float walked_ = 0.0f;   // seconds he has walked since following may start
+    float stood_ = 0.0f;    // seconds he has stood (without a drag) before walking
+    bool walking_ = false;
+    bool held_ = false;     // a drag or swing holds following off until he stands and walks again
+    Damped rate_;           // the camera's turn rate (rad/s)
 
   public:
-    // kMoving: the speed (m/s) from which the hero counts as moving.
-    static constexpr float kDelay = 0.6f, kEaseIn = 0.8f, kRate = 0.75f, kMoving = 0.3f;
+    static constexpr float kDelay = 0.8f, kRate = 0.5f, kDead = 0.35f, kRateTime = 0.8f;
+    static constexpr float kWalk = 0.5f, kStop = 0.2f, kSpeedTime = 0.15f, kStand = 0.4f;
 
-    // The yaw (radians) the camera turns by this frame.
-    float step(float dt, bool dragged, bool heroMoving, float offset)
+    // `speed`: the hero's displacement speed this frame (m/s). The yaw (radians) the camera turns by.
+    float step(float dt, bool hold, float speed, float offset)
     {
-        if (dragged)
-            paused_ = true;
-        if (dragged || !heroMoving)
+        if (!(dt > 0.0f))
+            return 0.0f;
+        speed_ += (speed - speed_) * (1.0f - std::exp(-dt / kSpeedTime));
+        walking_ = speed_ > (walking_ ? kStop : kWalk);
+        if (hold)
         {
-            moving_ = 0.0f;
-            if (!heroMoving)
-                paused_ = false;
+            held_ = true;
+            stood_ = walked_ = 0.0f;
+            rate_.reset();
             return 0.0f;
         }
-        if (paused_ || !(dt > 0.0f))
-            return 0.0f;
-        moving_ += dt;
-        const float in = std::clamp((moving_ - kDelay) / kEaseIn, 0.0f, 1.0f);
-        if (in <= 0.0f)
-            return 0.0f;
-        const float ease = in * in * (3.0f - 2.0f * in);
-        const float turn = ease * kRate * std::sin(offset) * dt;
-        // Never past the heading in one frame (a long frame near it).
+        if (!walking_)
+        {
+            walked_ = 0.0f;
+            stood_ += dt;
+        }
+        else
+        {
+            if (stood_ >= kStand)
+                held_ = false; // he stood, and walks again
+            stood_ = 0.0f;
+            if (!held_)
+                walked_ += dt;
+        }
+        float target = 0.0f;
+        if (walking_ && !held_ && walked_ >= kDelay)
+        {
+            const float s = std::sin(offset), m = std::max(0.0f, std::fabs(s) - kDead) / (1.0f - kDead);
+            target = std::copysign(kRate * m, s);
+        }
+        const float before = rate_.value;
+        rate_.step(target, dt, kRateTime);
+        const float turn = 0.5f * (before + rate_.value) * dt; // the rate's mean over the step
+        // Never past his heading (a long frame near it).
         const float wrapped = std::remainder(offset, 6.28318531f);
-        return std::fabs(turn) > std::fabs(wrapped) ? wrapped : turn;
+        if (turn * wrapped > 0.0f && std::fabs(turn) > std::fabs(wrapped))
+        {
+            rate_.reset();
+            return wrapped;
+        }
+        return turn;
     }
-    bool paused() const
+    // A swing out of a tight spot holds following off as a drag does.
+    void hold()
     {
-        return paused_;
+        held_ = true;
+        stood_ = walked_ = 0.0f;
+        rate_.reset();
+    }
+    bool held() const
+    {
+        return held_;
     }
 };
 
@@ -70,13 +127,16 @@ class AutoFollow
 // leaves more room nearer the floor), raised halfway, raised to kTightPitch, and only then from in
 // front of him. It never rises above kTightPitch (about 49 degrees, an over-the-shoulder look,
 // never top-down) unless the player's own pitch is higher. With no view that good, the one with the
-// most room (a later one in that order only for kTightGain metres more). Without `swing` (just
-// after a drag) only the camera's own heading is tried.
+// most room (a later one in that order only for kTightGain metres more). Without `swing` (the player
+// has dragged, or a swing was already made, since the hero last stood) only the camera's own heading
+// is tried.
 constexpr float kTightClose = 1.2f, kTightPitch = 0.85f, kTightLower = 0.35f, kTightGain = 0.2f;
-// The camera swings to the chosen side at kSwingRate rad/s (at once on arriving in a location); a
-// chosen view is looked for again after kTightRecheck seconds or when it closes; a drag stops the
-// swing and holds it off for kDragHold seconds. A swing pauses AutoFollow as a drag does.
-constexpr float kSwingRate = 1.6f, kTightRecheck = 0.25f, kDragHold = 1.0f;
+// The camera swings to the chosen side critically damped over kSwingTime seconds, never faster than
+// kSwingMax rad/s (at once on arriving in a location); it rises or lowers over kRaiseTime seconds. A
+// chosen view is kept while it has at least kTightKeep of the room wanted; the player's own pitch
+// comes back once it has kTightGain metres more than wanted. A drag stops a swing at once; a swing
+// holds AutoFollow off as a drag does, and neither swings again until the hero has stood and walks on.
+constexpr float kSwingTime = 2.0f, kSwingMax = 1.0f, kRaiseTime = 0.6f, kTightKeep = 0.85f;
 
 struct TightView
 {
