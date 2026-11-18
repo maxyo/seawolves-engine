@@ -24,6 +24,9 @@ std::string Thousands(int value);
 // A description from the game's text files (AbilityDescribe, RPGDescribe): carriage returns dropped and a
 // line holding only "~", the stock paragraph separator, an empty line; trimmed. Shown with white-space: pre-line.
 std::string StockText(const std::string &raw);
+// Our bare icon of a skill by its id ("Sailing" → "wheel"; pictures.ini ICONS_SPEC names its pictures
+// "<id> skill icon"), "" for an id that has none.
+const char *SkillIcon(const std::string &id);
 // The text after "Caption:" of a game line ("Мораль команды: Повышенная" → "Повышенная").
 std::string AfterColon(const std::string &text);
 // A crew's quality as the ship screen draws it (a c-stat-row each): the experience of the three

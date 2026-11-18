@@ -1562,6 +1562,27 @@ static void Shipyard(const std::string &models)
     ExpectEqual(surface.Last(), Yard(help, "ANDROID_SHIPYARD_CLOSE", -1, "shipyard_control", "close"), "the scrim closes help through the engine's close control");
 
     {
+        // The hero's sheet over a hero-only ship (shipyard-rpg.json, RPG_WINDOW): SetSPECIALMiniTable names the ship
+        // skills only by their pictures (row tr5, ICONS_SPEC "<skill> skill icon") and puts the values in tr6, green
+        // where the skill is raised and red where it is lowered.
+        FakeSurface rpg_surface;
+        Router rpg_router(rpg_surface);
+        const InterfaceModel rpg = Load(models, "shipyard-rpg.json");
+        rpg_router.SetInterface(rpg);
+        const Json &sheet = rpg_surface.props["sheet"];
+        Expect(rpg_surface.errors.empty() && rpg_surface.props["extras"]["rows"].empty() && sheet["kind"] == "rpg" &&
+                   sheet["name"] == "Жан Тестов" && sheet["facts"].size() == 5 && sheet["facts"][0] == Json({{"k", "Ранг"}, {"v", "1"}}),
+               "the hero's sheet: name and the game's facts, every widget known");
+        Expect(sheet["skills"].size() == 7 &&
+                   sheet["skills"][0] == Json({{"icon", "wheel"}, {"k", "<skill.sailing>"}, {"v", "41"}, {"tone", "ok"}}) &&
+                   sheet["skills"][5] == Json({{"icon", "repair"}, {"k", "<skill.repair>"}, {"v", "11"}, {"tone", "danger"}}) &&
+                   sheet["skills"][6] == Json({{"icon", "commerce"}, {"k", "<skill.commerce>"}, {"v", "8"}, {"tone", ""}}),
+               "the ship skills: named from the game's pictures, with tr6's values and their raised / lowered colours");
+        rpg_router.OnEvent({"sheet-close", "click", ""});
+        ExpectEqual(rpg_surface.Last(), Yard(rpg, "ANDROID_SHIPYARD_CLOSE", -1, "shipyard_control", "close"), "the sheet closes through the engine's close control");
+    }
+
+    {
         // Repair with the game's prices (shipyard-repair.json, the adapter's ANDROID_YARDREPAIR): the hull at 50 %, the
         // sails at 70 %, 2 500 in the purse; n % more hull cost makeint((4630 n + 99) / 100), sails makeint((1500 n + 99) / 100).
         FakeSurface yard_surface;

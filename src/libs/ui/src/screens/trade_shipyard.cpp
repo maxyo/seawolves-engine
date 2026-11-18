@@ -679,17 +679,13 @@ class ShipyardScreen final : public Screen
             }
             const bool vacant = !rpg && Context(state, "captain").empty();
             Json facts = Json::array();
+            Json skills = Json::array();
             if (!vacant)
             {
                 for (const Widget *row : admitted.All(prefix + "TABLE_SMALLOTHER"))
                     if (!row->CellText(1).empty())
                         facts.push_back(Json{{"k", row->CellText(1)}, {"v", row->CellText(2)}});
-                // The ship skills (the third pair of rows: names, then values) decide a captain.
-                const std::vector<const Widget *> skills = admitted.All(prefix + "TABLE_SMALLSKILL");
-                if (skills.size() >= 6)
-                    for (int column = 0; column < 7; ++column)
-                        if (!skills[4]->CellText(column).empty())
-                            facts.push_back(Json{{"k", skills[4]->CellText(column)}, {"v", skills[5]->CellText(column)}});
+                skills = ShipSkills(admitted.All(prefix + "TABLE_SMALLSKILL"), bindings);
             }
             Json actions = Json::array();
             const Widget *accept = rpg ? nullptr : Typed(admitted, "ACCEPT_ADD_OFFICER", "button");
@@ -702,6 +698,7 @@ class ShipyardScreen final : public Screen
                                  {"empty", !rpg && candidates.empty() ? bindings.Text("yard.no_captains") : std::string()},
                                  {"name", vacant ? std::string() : Trim(admitted.Label(prefix + "OFFICER_NAME"))},
                                  {"facts", facts},
+                                 {"skills", skills},
                                  {"actions", actions},
                                  {"width", 440}};
             if (accept)
@@ -783,6 +780,64 @@ class ShipyardScreen final : public Screen
     }
 
   private:
+    // The ship skills of the captain's mini table (interface_utils.c SetSPECIALMiniTable), the ones that decide a
+    // captain: row tr5 names them only by picture (ICONS_SPEC "<skill> skill icon", no text), row tr6 holds the
+    // values, green where items or officers raise the skill and red where they lower it. {icon, k, v, tone}.
+    Json ShipSkills(const std::vector<const Widget *> &table, Bindings &bindings)
+    {
+        static const char *const names[][2] = {{"Sailing", StringKey("skill.sailing")},     {"Accuracy", StringKey("skill.accuracy")},
+                                               {"Cannons", StringKey("skill.cannons")},     {"Grappling", StringKey("skill.grappling")},
+                                               {"Defence", StringKey("skill.defence")},     {"Repair", StringKey("skill.repair")},
+                                               {"Commerce", StringKey("skill.commerce")}};
+        const auto row = [&table](int index) -> const Widget * {
+            for (const Widget *widget : table)
+                if (widget->index == index)
+                    return widget;
+            return nullptr;
+        };
+        const Widget *pictures = row(4);
+        const Widget *values = row(5);
+        Json skills = Json::array();
+        if (!pictures || !values)
+        {
+            if (!table.empty() && !reported_skills_)
+            {
+                reported_skills_ = true;
+                bindings.Error("shipyard: the captain's skill table has no ship skill rows (tr5 pictures, tr6 values)");
+            }
+            return skills;
+        }
+        constexpr std::string_view suffix = " skill icon";
+        for (const Cell &cell : pictures->cells)
+        {
+            const ImageRef *picture = cell.images.empty() ? nullptr : &cell.images.front();
+            std::string id = picture ? picture->image : std::string();
+            if (id.size() > suffix.size() && id.compare(id.size() - suffix.size(), suffix.size(), suffix) == 0)
+                id.resize(id.size() - suffix.size());
+            const char *key = nullptr;
+            for (const auto &name : names)
+                if (id == name[0])
+                    key = name[1];
+            if (!key)
+            {
+                if (!reported_skills_)
+                {
+                    reported_skills_ = true;
+                    bindings.Error("shipyard: the captain's skill table names an unknown ship skill by its picture '" +
+                                   (picture ? picture->group + "/" + picture->image : std::string()) + "' (column " +
+                                   std::to_string(cell.column) + ")");
+                }
+                continue;
+            }
+            std::string tone;
+            for (const Cell &value : values->cells)
+                if (value.column == cell.column)
+                    tone = value.color_argb == 0xffc4ffc4u ? "ok" : value.color_argb == 0xffffc4c4u ? "danger" : "";
+            skills.push_back(Json{{"icon", hero::SkillIcon(id)}, {"k", bindings.Text(key)}, {"v", values->CellText(cell.column)}, {"tone", tone}});
+        }
+        return skills;
+    }
+
     // The repair window's prices (android_hero.c AndroidYardRepair): the purse and what n % more of the hull or
     // the sails cost at this yard, cost[0] = 0 … cost[100 - now]. Amounts are the window's percentages (now … 100).
     struct YardPart
@@ -855,6 +910,7 @@ class ShipyardScreen final : public Screen
     bool reported_ = false;
     std::string last_mode_;
     Repair hull_, sails_;
+    bool reported_skills_ = false;     // the captain's skill table came without its ship skills (said once)
     bool reported_plan_ = false;       // the cannons window came without its deck plan (said once)
     bool confirm_after_steps_ = false; // OK was pressed while steps toward the amounts were on their way
     double reason_at_ = -10.0;         // when "no money" was last said for a slider push

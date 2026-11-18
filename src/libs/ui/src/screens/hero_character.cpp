@@ -110,20 +110,6 @@ std::pair<std::string, int> GroupCaption(const std::string &label)
     return {Trim(text.substr(0, space)), std::atoi(text.c_str() + space + 1)};
 }
 
-// Our bare icon of a skill (pictures.ini ICONS_SPEC rows carry the skill id as row id).
-const char *SkillIcon(const std::string &id)
-{
-    static const char *const icons[][2] = {
-        {"Leadership", "leadership"}, {"FencingL", "rapier"},     {"FencingS", "sabre"},    {"FencingH", "axe"},
-        {"Pistol", "pistol"},         {"Fortune", "fortune"},     {"Sneak", "sneak"},       {"Sailing", "wheel"},
-        {"Accuracy", "accuracy"},     {"Cannons", "cannon"},      {"Grappling", "grapple"}, {"Defence", "shield"},
-        {"Repair", "repair"},         {"Commerce", "commerce"}};
-    for (const auto &pair : icons)
-        if (id == pair[0])
-            return pair[1];
-    return "";
-}
-
 // The icon of a free post (GetOfficerTypeByNum).
 const char *PostIcon(const std::string &post, int slot)
 {
@@ -702,8 +688,8 @@ class HeroScreen final : public Screen
                                                                             : "gold";
             // A name that does not fit wraps to two lines and steps down (ui-clamp min-size).
             Json first{{"text", name}, {"lines", 2}};
-            if (!special && !points && *SkillIcon(row->row_id))
-                first["icon"] = SkillIcon(row->row_id), first["iconSize"] = 24;
+            if (!special && !points && *hero::SkillIcon(row->row_id))
+                first["icon"] = hero::SkillIcon(row->row_id), first["iconSize"] = 24;
             Json cells = Json::array({first});
             if (points)
             {

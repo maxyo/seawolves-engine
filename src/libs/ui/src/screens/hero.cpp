@@ -139,6 +139,19 @@ std::string StockText(const std::string &raw)
     return Trim(out);
 }
 
+const char *SkillIcon(const std::string &id)
+{
+    static const char *const icons[][2] = {
+        {"Leadership", "leadership"}, {"FencingL", "rapier"},     {"FencingS", "sabre"},    {"FencingH", "axe"},
+        {"Pistol", "pistol"},         {"Fortune", "fortune"},     {"Sneak", "sneak"},       {"Sailing", "wheel"},
+        {"Accuracy", "accuracy"},     {"Cannons", "cannon"},      {"Grappling", "grapple"}, {"Defence", "shield"},
+        {"Repair", "repair"},         {"Commerce", "commerce"}};
+    for (const auto &pair : icons)
+        if (id == pair[0])
+            return pair[1];
+    return "";
+}
+
 std::string AfterColon(const std::string &text)
 {
     const size_t colon = text.find(':');

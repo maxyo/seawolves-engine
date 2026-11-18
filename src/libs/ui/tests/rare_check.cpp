@@ -242,6 +242,12 @@ static void Maps(const std::string &models)
     router.OnEvent({"header-back", "click", ""});
     ExpectEqual(surface.Last(), "widget:mapview\tEXIT_BTN\t-1\tpress", "← is the exit button");
 
+    // PaperMap.ini closes with its OK (exitCancel, as the cross): our ←, not a «Прочее» row.
+    router.SetInterface(Load(models, "papermap.json"));
+    Expect(router.Using() == "papermap" && surface.errors.empty() && surface.props["extras"]["rows"].empty(), "every node of the paper map is known");
+    router.OnEvent({"header-back", "click", ""});
+    ExpectEqual(surface.Last(), "widget:papermap\tOK\t-1\tpress", "← is the paper map's OK");
+
     router.SetInterface(Load(models, "map-best.json"));
     const Json &markers = surface.props["map"]["markers"];
     Expect(surface.props["map"]["texture"] == "interfaces/maps/map_good" && surface.errors.empty(),

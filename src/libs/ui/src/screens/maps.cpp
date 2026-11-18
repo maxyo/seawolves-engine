@@ -29,6 +29,7 @@ constexpr NodeRule kNodes[] = {
     {"MAP", "map|map_marker", true},
     {"TITLE", "heading|text"},
     {"EXIT_BTN", "button"},
+    {"OK", "button"}, // PaperMap.ini: the same exitCancel as its exit cross, so our ← (not drawn as a button of its own)
     {"TABLE_MAPS", "choice"},
     {"STR_1", "text"},
     {"MAPS_LIST", "text"},
@@ -182,7 +183,10 @@ class MapScreen final : public Screen
             info_title_.clear();
         bindings.On("info-close", "", [this, &bindings](const Event &) { Back(bindings); });
 
+        // PaperMap.ini closes with its OK as well as with the cross: both run exitCancel (papermap.c ProcessCancelExit).
         const Widget *exit = admitted.One("EXIT_BTN");
+        if (!exit)
+            exit = admitted.One("OK");
         bindings.On("header-back", "", [&bindings, exit](const Event &) { bindings.Back(exit); });
         return view;
     }
