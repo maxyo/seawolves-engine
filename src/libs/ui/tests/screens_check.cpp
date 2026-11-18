@@ -2042,6 +2042,8 @@ static void Hero(const std::string &models)
         FakeSurface help_surface;
         Router help(help_surface);
         InterfaceModel with_help = model;
+        // The recorded model's own descriptions are replaced by one fact per table, on its first row only.
+        std::erase_if(with_help.widgets, [](const Widget &widget) { return widget.node == "ANDROID_SKILLHELP"; });
         const char *tables[] = {"TABLE_SPECIAL", "TABLE_SKILL_1", "TABLE_SKILL_2"};
         const char *ids[] = {"special", "personal", "ship"};
         for (const char *table : tables)
@@ -2065,8 +2067,9 @@ static void Hero(const std::string &models)
             Expect(help_surface.props["dialog"].is_null(), "Back closes skill help and retains the character screen");
         }
         help.OnEvent({"personal", "row", "1"}); // no game-provided text for this fixture's second row
-        Expect(help_surface.props["dialog"].is_null() && help_surface.commands.empty() && help_surface.errors.empty(),
-               "missing skill text is not invented and row taps never send gameplay commands");
+        Expect(help_surface.props["dialog"].is_null() && help_surface.commands.empty() && help_surface.errors.size() == 1 &&
+                   help_surface.errors[0].find("no description of TABLE_SKILL_1") != std::string::npos,
+               "missing skill text is not invented, is reported, and row taps never send gameplay commands");
         help.OnEvent({"personal", "row", "0"});
         help.OnEvent({"skill-help-close", "click", ""});
         Expect(help_surface.props["dialog"].is_null(), "the explicit close action closes skill help");
@@ -3643,6 +3646,48 @@ static void Amounts(const std::string &models)
            "a price caption without its number is an error line, once: " + Json(surface.errors).dump());
 }
 
+// A disabled control's tap reports "refused": a handler bound to every verb of its id (its action) does not run
+// (the boal dice's «Ещё раз» sent its press while disabled), a handler bound to "refused" does, unbound it is no error.
+struct RefusedScreen final : Screen
+{
+    static inline int actions = 0, refusals = 0;
+    const char *Component() const override
+    {
+        return "s-generic";
+    }
+    std::span<const NodeRule> Nodes() const override
+    {
+        return {};
+    }
+    Json Build(const Admission &, Bindings &bindings) override
+    {
+        bindings.On("again", "", [](const Event &) { ++actions; });
+        bindings.On("learn", "", [](const Event &) { ++actions; });
+        bindings.On("learn", "refused", [](const Event &) { ++refusals; });
+        return Json::object();
+    }
+};
+
+static void Refused()
+{
+    static const ScreenEntry entries[] = {{"refused_test", [] { return std::unique_ptr<Screen>(new RefusedScreen); }}};
+    FakeSurface surface;
+    Router router(surface, entries);
+    InterfaceModel model;
+    model.screen = "refused_test";
+    model.opening = 1;
+    model.revision = 1;
+    router.SetInterface(model);
+    Expect(router.Maps("again", "click") && !router.Maps("again", "refused") && router.Maps("learn", "refused"),
+           "an every-verb handler maps taps, not a disabled control's refusal");
+    router.OnEvent({"again", "refused", ""});
+    Expect(RefusedScreen::actions == 0 && surface.errors.empty(), "a disabled control's refusal does not run its action and is no error");
+    router.OnEvent({"learn", "refused", ""});
+    Expect(RefusedScreen::refusals == 1 && RefusedScreen::actions == 0, "a handler bound to refused gets it");
+    router.OnEvent({"again", "click", ""});
+    Expect(RefusedScreen::actions == 1, "the enabled tap runs the action");
+}
+
 int main(int argc, char **argv)
 {
     const std::string models = argc > 1 ? argv[1] : "tests/models";
@@ -3653,6 +3698,7 @@ int main(int argc, char **argv)
         return failures ? 1 : 0;
     }
     Amounts(models);
+    Refused();
     Admission_();
     Roles();
     Commands();

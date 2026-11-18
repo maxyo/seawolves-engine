@@ -525,7 +525,6 @@ class LauncherScreen final : public Screen
                                      {"meta", installed.is_object() ? RootDetail(bindings, installed) : std::string()},
                                      {"delete", bindings.Text("launcher.delete_game")}};
             bindings.On("delete-game", "", [send](const Event &) { send("delete-game"); });
-            bindings.Ignore("installed", "click");
         }
         view["setup"] = Json{{"prompt", bindings.Text(Flag(state, "files") ? "launcher.replace" : "launcher.need")},
                              {"folder", bindings.Text("launcher.folder")},
@@ -866,16 +865,13 @@ class DownloadsScreen final : public Screen
             row["button"] = Json{{"id", "btn-" + id}, {"label", bindings.Text(verb->label)}, {"variant", verb->variant}};
             bindings.On("btn-" + id, "", [this, &bindings, main, id](const Event &) { bindings.Send(command_, main, id); });
         }
-        // The row reports its glyph as "action", its «⋯» as "menu"; a tap elsewhere does nothing.
-        bindings.On("set-" + id, "", [this, &bindings, main, id](const Event &event) {
-            if (event.verb == "menu")
-            {
-                menu_ = id;
-                bindings.Rebuild();
-            }
-            else if (event.verb == "action" && !main.empty())
-                bindings.Send(command_, main, id);
+        // The row reports its glyph as "action", its «⋯» as "menu"; the rest of it only shows the set (inert).
+        bindings.On("set-" + id, "menu", [this, &bindings, id](const Event &) {
+            menu_ = id;
+            bindings.Rebuild();
         });
+        if (!main.empty())
+            bindings.On("set-" + id, "action", [this, &bindings, main, id](const Event &) { bindings.Send(command_, main, id); });
         return row;
     }
 

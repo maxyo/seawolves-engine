@@ -307,10 +307,12 @@ class NationsScreen final : public Screen
                     out.push_back(button);
             return out;
         }();
-        bindings.On("header", "section", [send, sections](const Event &event) {
+        bindings.On("header", "section", [&bindings, send, sections](const Event &event) {
             for (const Widget *button : sections)
                 if (SectionOf(*button) == event.value)
-                    send(button, "press");
+                    return send(button, "press");
+            if (event.value != "nations") // the section shown
+                bindings.Error("nationrelation: section " + event.value + " cannot be opened (no section button)");
         });
         const Widget *exit = admitted.One("EXIT_BTN");
         bindings.On("header-back", "", [&bindings, send, exit, close, this](const Event &) {

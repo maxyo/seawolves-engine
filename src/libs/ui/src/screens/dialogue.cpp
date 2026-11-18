@@ -202,6 +202,7 @@ class DialogueScreen final : public Screen
         return Json{{"kind", "text"},
                     {"title", bindings.Text("dialogue.input")},
                     {"value", draft_},
+                    {"sent", sent_}, // the reply is on its way: the field takes no more taps
                     {"error", error_.empty() ? std::string() : bindings.Text(*key ? key : "dialogue.unavailable")},
                     {"actions", Actions(bindings, {})}};
     }

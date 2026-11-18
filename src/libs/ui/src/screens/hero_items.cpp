@@ -285,6 +285,7 @@ class ItemsScreen final : public Screen
             for (const Widget *widget : a_->known)
                 if (widget->type == "button" && SectionOf(*widget) == event.value && widget->Offers("press"))
                     return (void)Step(bindings, widget, "press");
+            bindings.Error("items: section " + event.value + " cannot be opened (no section button offers a press)");
         });
         bindings.On("header-back", "", [this, &bindings](const Event &) {
             sent_revision_ = 0;

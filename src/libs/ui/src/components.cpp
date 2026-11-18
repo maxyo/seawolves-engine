@@ -1477,10 +1477,10 @@ void ComponentElement::TouchRegions(std::vector<Rml::Element *> &out)
         behavior->Regions(*this, out);
 }
 
-void ComponentElement::Taps(std::vector<std::string> &verbs)
+void ComponentElement::Taps(std::vector<Tap> &taps)
 {
     for (const auto &behavior : behaviors_)
-        behavior->Taps(*this, verbs);
+        behavior->Taps(*this, taps);
 }
 
 bool ComponentElement::Refuse()

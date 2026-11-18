@@ -94,6 +94,16 @@ struct Pointer
     double time = 0.0;              // when the newest sample (position) happened, host clock
 };
 
+// A tap a component offers (Behavior::Taps): the part a pointer goes down on, the verb and value it reports, and
+// whether it acts only when held (hold-to-confirm).
+struct Tap
+{
+    Rml::Element *part = nullptr;
+    std::string verb;
+    std::string value;
+    bool hold = false;
+};
+
 class Behavior
 {
   public:
@@ -133,9 +143,9 @@ class Behavior
     virtual void Regions(ComponentElement &, std::vector<Rml::Element *> &) const
     {
     }
-    // The verbs a tap on the component sends now (press: each enabled part's data-action, "click"
-    // for the component itself). The host checks a game interface's screen maps every one of them.
-    virtual void Taps(ComponentElement &, std::vector<std::string> &) const
+    // The taps the component offers now (press: each enabled part with its data-action, the component itself
+    // with "click"). The host checks a game interface's screen maps every one of them; the pack check taps them.
+    virtual void Taps(ComponentElement &, std::vector<Tap> &) const
     {
     }
     // What the player asked of the component was refused (a scrim tap on a modal that must be
@@ -190,8 +200,8 @@ class ComponentElement final : public Rml::Element
     }
     // Elements of this component that take a pointer (see Behavior::Regions).
     void TouchRegions(std::vector<Rml::Element *> &out);
-    // The verbs a tap on it sends now (Behavior::Taps).
-    void Taps(std::vector<std::string> &verbs);
+    // The taps it offers now (Behavior::Taps).
+    void Taps(std::vector<Tap> &taps);
     // Shows that what the player asked was refused (Behavior::Refused); false when nothing of it can.
     bool Refuse();
 

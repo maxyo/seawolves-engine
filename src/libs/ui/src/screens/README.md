@@ -52,7 +52,14 @@ its buttons as `header-back`, `header-close`. A subject switch with a list is `S
 Debug and contract hosts (`Config::show_errors`, `strict_templates`) check every tap the drawn
 screen offers (`Behavior::Taps`: each press part's `data-action`, `click` for the component) against
 the bindings when it is drawn: one that maps to nothing is an error then, not first when tapped
-(`tests/taps_check.cpp`; the pack contract reports it for every recorded model).
+(`tests/taps_check.cpp`; the pack contract reports it for every recorded model). The pack contract also crawls:
+it makes every tap with a real touch in every state taps reach without the game and fails on a tap that does
+nothing at all, a widget action to a node or verb the model does not offer, and a disabled control that still sends
+or opens something (`tools/pack_check.cpp`); the application follows the actions into the game's scripts
+(its `tests/ui_pack_contract`). A row that only shows something is drawn `inert` (c-list-row, its action and menu
+parts still take taps), `rowTap="0"` (c-trade-list) or with `pointer-events: none`, never bound to `Ignore`.
+A disabled control's tap reports `refused`; only a handler bound to that verb gets it (one bound to every verb of
+the id is its action and does not run), and unbound it needs nothing: the control shook.
 
 Verbs and what the engine receives (`EngineCommand`, queue line
 `widget:<screen>\t<node>\t<index>\t<wire>`):

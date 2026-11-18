@@ -249,10 +249,12 @@ class HeroScreen final : public Screen
         if (full)
             tabs.push_back(Json{{"id", "officers"}, {"label", bindings.Text("hero.tab_officers")}, {"selected", tab_ == Tab::Officers}});
         view["tabs"] = tabs;
-        bindings.On("header-tabs", "select", [this, &bindings, group1, group2, ship](const Event &event) {
-            const bool perks = event.value == "perks1" || event.value == "perks2";
-            const Tab next = perks ? Tab::Perks : event.value == "officers" ? Tab::Officers : Tab::Skills;
-            const bool want_ship = event.value == "perks2";
+        // The tabs sit in the bar under a sectioned header (header-tabs select <id>) and in the header itself on the
+        // officer's sheet, which has no sections (header tab <index>; components/screen template).
+        const auto select = [this, &bindings, group1, group2, ship](const std::string &id) {
+            const bool perks = id == "perks1" || id == "perks2";
+            const Tab next = perks ? Tab::Perks : id == "officers" ? Tab::Officers : Tab::Skills;
+            const bool want_ship = id == "perks2";
             if (next == tab_ && (!perks || want_ship == (wanted_ship_ >= 0 ? wanted_ship_ == 1 : ship)))
                 return;
             tab_ = next;
@@ -268,6 +270,14 @@ class HeroScreen final : public Screen
                 Step(bindings, want_ship ? group2 : group1, "press");
             }
             bindings.Rebuild();
+        };
+        bindings.On("header-tabs", "select", [select](const Event &event) { select(event.value); });
+        bindings.On("header", "tab", [&bindings, select, tabs](const Event &event) {
+            const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
+            if (index < tabs.size())
+                select(tabs[index].value("id", std::string()));
+            else
+                bindings.Error("character: header tab " + event.value + " is not one of the " + std::to_string(tabs.size()) + " tabs");
         });
         view["tab"] = tab_ == Tab::Skills ? "skills" : tab_ == Tab::Perks ? "perks" : "officers";
         view["subject"] = full ? hero::Subject(admitted, bindings, subjects_, [this, &bindings](const Widget &row) {
@@ -435,6 +445,10 @@ class HeroScreen final : public Screen
     // The next engine step of the intent, from the state of this model.
     void Walk(Bindings &bindings)
     {
+        // The game's perk window is a step of learning a perk and is never drawn by itself: one left open after its
+        // learning was dropped would leave the sheet drawn live and every tap on it doing nothing. It is closed.
+        if (intent_.kind == Intent::None && window_ == Window::Perk)
+            return CloseWindow(bindings);
         if (intent_.kind == Intent::None)
             return;
         if (bindings.Now() - intent_.since > kStepTimeout)
@@ -730,11 +744,14 @@ class HeroScreen final : public Screen
                 {
                     const std::string text = StockText(Field(fact, "text"));
                     if (text.empty())
-                        return;
+                        break;
                     skill_help_ = Json{{"title", Trim(source[index]->CellText(1))}, {"text", text}};
                     bindings.Rebuild();
                     return;
                 }
+            // The app's hero script exports the stock description of every skill row (android_hero.c AndroidHeroSkillHelp).
+            bindings.ErrorOnce(std::string("skillhelp ") + node + " " + source[index]->row_id, std::string(a_->model->screen) + ": no description of " + node +
+                                                                                      " row " + source[index]->row_id + " (ANDROID_SKILLHELP): its tap shows nothing");
         });
         return Json{{"columns", columns}, {"rows", rows}};
     }

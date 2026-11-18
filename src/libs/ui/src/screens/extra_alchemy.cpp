@@ -158,7 +158,6 @@ class AlchemyScreen final : public Screen
         view["parts"] = Json{{"label", bindings.Text("alchemy.component")},
                              {"cols", Json::array({Json{{"label", bindings.Text("alchemy.have")}, {"icon", "chest"}}, Json{{"label", bindings.Text("alchemy.per_batch")}, {"icon", "potion"}}})},
                              {"rows", parts}};
-        bindings.Ignore("parts", "row");
 
         // How many batches, and the craft.
         view["q"] = Json{{"value", batches},

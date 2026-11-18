@@ -146,6 +146,8 @@ class TradeBookScreen final : public Screen
                     bindings.Send(*button, "press");
                     return;
                 }
+            if (event.value != "tradebook") // the section shown
+                bindings.Error("tradebook: section " + event.value + " cannot be opened (no section button offers a press)");
         });
         const Widget *exit = admitted.One("EXIT_BTN");
         bindings.On("header-back", "", [&bindings, exit](const Event &) { bindings.Back(exit); });

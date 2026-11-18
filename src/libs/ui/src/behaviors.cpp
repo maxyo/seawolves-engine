@@ -5,7 +5,8 @@
 //           [data-step="±n" | data-set="n" | data-toggle="prop" | data-select="arrayProp"
 //            data-index="i"] [data-prop="value"]
 //           Without a marked part the whole component is the button (verb "click") unless
-//           the spec sets constants.pressRoot to false. On a game interface a press start asks
+//           the spec sets constants.pressRoot to false, or the prop `inert` is set (a row that only shows
+//           something: its marked parts and slotted controls still take taps). On a game interface a press start asks
 //           for the interface's click unless constants.pressSound is false.
 //           A hold (prop hold / data-hold) fills a <ui-ring> or the width of a [data-hold-fill] part; a
 //           release before it is full, and a tap on a disabled control without a reason, put the class
@@ -157,6 +158,12 @@ std::vector<std::string> Split(const std::string &text)
     return parts;
 }
 
+// The whole component is a button too (no marked part under the finger): constants.pressRoot, not prop `inert`.
+bool PressesRoot(const ComponentElement &self)
+{
+    return Truthy(self.Spec().constants.value("pressRoot", Json(true))) && !self.Flag("inert");
+}
+
 class PressBehavior final : public Behavior
 {
   public:
@@ -167,7 +174,7 @@ class PressBehavior final : public Behavior
         Rml::Element *part = ClosestWith(pointer.target, &self, "data-action");
         if (!part)
         {
-            if (!Truthy(self.Spec().constants.value("pressRoot", Json(true))))
+            if (!PressesRoot(self))
                 return false;
             part = &self;
         }
@@ -298,11 +305,11 @@ class PressBehavior final : public Behavior
     {
         const size_t before = out.size();
         AllWith(&self, "data-action", out);
-        if (out.size() == before && Truthy(self.Spec().constants.value("pressRoot", Json(true))))
+        if (out.size() == before && PressesRoot(self))
             out.push_back(&self);
     }
 
-    void Taps(ComponentElement &self, std::vector<std::string> &verbs) const override
+    void Taps(ComponentElement &self, std::vector<Tap> &taps) const override
     {
         const auto untouchable = [](Rml::Element *element) { return element->GetComputedValues().pointer_events() == Rml::Style::PointerEvents::None; };
         if (self.Flag("busy") || untouchable(&self))
@@ -317,10 +324,10 @@ class PressBehavior final : public Behavior
             if (owner != &self || part->HasAttribute("data-disabled") || untouchable(part))
                 continue; // a nested component's own part, or one that only says why not
             if (const std::string verb = Attr(part, "data-action", "click"); !verb.empty())
-                verbs.push_back(verb);
+                taps.push_back({part, verb, Attr(part, "data-value"), part->HasAttribute("data-hold")});
         }
-        if (Truthy(self.Spec().constants.value("pressRoot", Json(true))) && !self.Flag("disabled"))
-            verbs.push_back("click");
+        if (PressesRoot(self) && !self.Flag("disabled"))
+            taps.push_back({&self, "click", {}, self.Flag("hold") && self.Spec().constants.value("holdMode", std::string("confirm")) != "tooltip"});
     }
 
     void Rebuilt(ComponentElement &self) override

@@ -867,9 +867,12 @@ Json Router::ExtrasView(const Admission &admitted, Json rows)
     return view;
 }
 
+// A disabled control's tap reports "refused" (it shook already; a screen may bind it to point at what is missing).
+// Only a handler bound to that verb takes it: a handler of every verb of the element is its action, which a
+// disabled control must not run; unbound, the shake was the whole answer.
 bool Router::Maps(const std::string &id, const std::string &verb) const
 {
-    return screen_ && (bindings_.handlers_.count(id + '\x1f' + verb) || bindings_.handlers_.count(id + '\x1f'));
+    return screen_ && (bindings_.handlers_.count(id + '\x1f' + verb) || (verb != "refused" && bindings_.handlers_.count(id + '\x1f')));
 }
 
 bool Router::OnEvent(const Event &event)
@@ -877,6 +880,8 @@ bool Router::OnEvent(const Event &event)
     if (!screen_)
         return false;
     auto found = bindings_.handlers_.find(event.id + '\x1f' + event.verb);
+    if (found == bindings_.handlers_.end() && event.verb == "refused")
+        return true; // the control's shake answered it (Maps)
     if (found == bindings_.handlers_.end())
         found = bindings_.handlers_.find(event.id + '\x1f');
     if (found == bindings_.handlers_.end())

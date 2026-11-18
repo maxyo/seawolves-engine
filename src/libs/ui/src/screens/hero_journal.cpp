@@ -306,6 +306,7 @@ class JournalScreen final : public Screen
             for (const Widget *widget : a_->known)
                 if (widget->type == "button" && SectionOf(*widget) == event.value && widget->Offers("press"))
                     return bindings.Send(*widget, "press");
+            bindings.Error("questbook: section " + event.value + " cannot be opened (no section button offers a press)");
         });
         bindings.On("header-back", "", [this, &bindings](const Event &) {
             if (text_open_)

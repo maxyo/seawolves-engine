@@ -1649,14 +1649,14 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     {
         if (auto *component = dynamic_cast<ComponentElement *>(element); component && component->HasBehaviors())
         {
-            std::vector<std::string> verbs;
-            component->Taps(verbs);
+            std::vector<Tap> taps;
+            component->Taps(taps);
             std::string id;
             for (Rml::Element *at = component; at && id.empty(); at = at->GetParentNode())
                 id = at->GetId();
-            for (const std::string &verb : verbs)
-                if (!router_->Maps(id, verb) && unmapped_taps_.insert(router_->Using() + ' ' + id + ' ' + verb).second)
-                    Error("screen " + router_->Using() + ": " + component->GetTagName() + " " + (id.empty() ? "(no id)" : id) + " " + verb +
+            for (const Tap &tap : taps)
+                if (!router_->Maps(id, tap.verb) && unmapped_taps_.insert(router_->Using() + ' ' + id + ' ' + tap.verb).second)
+                    Error("screen " + router_->Using() + ": " + component->GetTagName() + " " + (id.empty() ? "(no id)" : id) + " " + tap.verb +
                           " is drawn with no mapping: a tap on it does nothing");
         }
         for (int i = 0; i < element->GetNumChildren(); ++i)
