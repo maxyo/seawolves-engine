@@ -68,6 +68,7 @@ class Player : public NPCharacter
     void TraceAndroidMovement(float dltTime);
     void StopAndroidMovement();
     float androidTraceMagnitude = 0.0f;
+    bool androidTraceRunAllowed = false; // the touch path's run permission (ChrRun live in the key group)
     float androidTraceSimulationTime = 0.0f;
     uint32_t androidTraceTick = 0;
     unsigned androidTraceTail = 0;

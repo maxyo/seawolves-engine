@@ -107,6 +107,7 @@ void Player::Move(float dltTime)
         androidCameraRelative = true;
     androidMovementHeld = androidAxes.has_value();
     androidTraceMagnitude = androidAxes ? androidAxes->magnitude : 0.0f;
+    androidTraceRunAllowed = androidAxes && androidAxes->runAllowed;
 #endif
     kSMReload += dltTime * 0.7f;
     if (kSMReload > 1.0f)
@@ -513,14 +514,15 @@ void Player::TraceAndroidMovement(float dltTime)
     __android_log_print(ANDROID_LOG_DEBUG, "StormInput",
         "move-observe phase=%s player=%llu tick=%u wallMs=%u simSec=%.4f held=%d applied=%d mag=%.4f "
         "target=%.4f run=%d vector=(%.4f,%.4f) pos=(%.4f,%.4f,%.4f) delta=(%.4f,%.4f) "
-        "distance=%.4f velocity=%.4f collision=%d locked=%d task=%d fight=%d yaw=%.4f cameraYaw=%.4f touchCamera=%d",
+        "distance=%.4f velocity=%.4f collision=%d locked=%d task=%d fight=%d yaw=%.4f cameraYaw=%.4f touchCamera=%d "
+        "runAllowed=%d runDisable=%d runAction=%s walkAction=%s",
         phase, static_cast<unsigned long long>(GetId()), now, elapsed, androidTraceSimulationTime,
         androidMovementHeld, androidMotionApplied, androidTraceMagnitude, androidMotion ? androidMotionSpeed : 0.0f,
         IsRun(), androidMotion ? androidMotionDirection.x : 0.0f, androidMotion ? androidMotionDirection.z : 0.0f,
         curPos.x, curPos.y, curPos.z, dx, dz, distance, velocity, isCollision, lockMove,
         static_cast<int>(task.task), IsFight(), ay,
         locCam ? atan2f(locCam->MovementViewDirection().x, locCam->MovementViewDirection().z) : ay,
-        UsesTouchCamera());
+        UsesTouchCamera(), androidTraceRunAllowed, isRunDisable, run.name ? run.name : "-", walk.name ? walk.name : "-");
     --budget;
     androidTracePosition = curPos;
     androidTraceTick = now;
