@@ -98,15 +98,15 @@ void SHIP_CAMERA::Move(float fDeltaTime)
 
     // Rotate
 #ifdef __ANDROID__
-    // The touch drag turns and pitches the view as on land (platform/android_camera.hpp dragYaw: the same angle
-    // per screen width, scaled by the camera sensitivity), directly at any frame rate: the native turn eased
-    // towards counts per frame and moved by them times the frame time, so a drag turned less at a higher
-    // frame rate and went on after the finger stopped.
+    // The touch drag turns and pitches the view as the native turn did at 60 fps on the owner's phone
+    // (platform/android_camera.hpp dragTurn: the same share of any screen, scaled by the camera sensitivity),
+    // directly at any frame rate: the native turn eased towards counts per frame and moved by them times the
+    // frame time, so a drag turned less at a higher frame rate and went on after the finger stopped.
     const auto width = static_cast<float>(core.GetWindow()->GetWindowSize().width);
     core.Controls->GetControlState("ShipCamera_Turn_H", cs);
-    vAng.y += fInvertMouseX * storm::android::dragYaw(cs.fValue, width);
+    vAng.y += fInvertMouseX * storm::android::dragTurn(cs.fValue, width, storm::android::kNativeShipYaw * fSensivityAzimuthAngle);
     core.Controls->GetControlState("ShipCamera_Turn_V", cs);
-    vAng.x += fInvertMouseY * storm::android::dragYaw(cs.fValue, width);
+    vAng.x += fInvertMouseY * storm::android::dragTurn(cs.fValue, width, storm::android::kNativeShipPitch * fSensivityHeightAngle);
     fAngleXDlt = fAngleYDlt = 0.0f;
 #else
     core.Controls->GetControlState("ShipCamera_Turn_H", cs);

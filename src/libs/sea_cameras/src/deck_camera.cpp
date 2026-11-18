@@ -89,11 +89,11 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
     pModel->Update();
     CONTROL_STATE cs;
 #ifdef __ANDROID__
-    // The touch drag turns and pitches the deck view as on land (platform/android_camera.hpp dragYaw: the same
-    // angle per screen width, scaled by the camera sensitivity); natively it was a fixed angle per pixel.
+    // The touch drag turns and pitches the deck view as the native fixed angle per pixel did on the owner's phone
+    // (platform/android_camera.hpp dragTurn: the same share of any screen, scaled by the camera sensitivity).
     const auto width = static_cast<float>(core.GetWindow()->GetWindowSize().width);
     core.Controls->GetControlState("DeckCamera_Turn_H", cs);
-    camera_ang.y += storm::android::dragYaw(cs.fValue, width);
+    camera_ang.y += storm::android::dragTurn(cs.fValue, width, storm::android::kNativeDeckTurn * fSensivityAzimuthAngle);
 #else
     core.Controls->GetControlState("DeckCamera_Turn_H", cs);
     camera_ang.y += fSensivityAzimuthAngle * 3.0f * static_cast<float>(cs.fValue);
@@ -109,7 +109,7 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
 
     core.Controls->GetControlState("DeckCamera_Turn_V", cs);
 #ifdef __ANDROID__
-    camera_ang.x -= storm::android::dragYaw(cs.fValue, width);
+    camera_ang.x -= storm::android::dragTurn(cs.fValue, width, storm::android::kNativeDeckTurn * fSensivityHeightAngle);
 #else
     camera_ang.x -= fSensivityHeightAngle * 3.0f * static_cast<float>(cs.fValue);
 #endif

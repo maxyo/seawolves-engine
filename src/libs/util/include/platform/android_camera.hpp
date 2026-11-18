@@ -6,21 +6,44 @@ namespace storm::android
 {
 // The mobile land camera (location CameraFollow::MoveCamera, LocationCamera): pure parts.
 
-// The touch camera drag, on land (LocationCamera, Player) and at sea (SHIP_CAMERA, DECK_CAMERA): a drag
-// across the whole surface width turns the view by kDragTurnPerWidth radians (a full turn) at the default
-// camera sensitivity, on any screen size and density, directly (no inertia), at any frame rate.
-// The sensitivity is the game's mouse sensitivity («Чувствительность камеры» in the settings, option_screen
-// VMOUSE/HMOUSE_SENSITIVITY_SLIDE, persisted in the options file), applied live by PCS_CONTROLS to the drag's
-// counts: 0.5..2 of the default (controls.c SetRealMouseSensitivity), so 180..720 degrees per width.
-constexpr float kDragTurnPerWidth = 6.28318531f;
+// The touch camera drag (land: LocationCamera, Player; sea: SHIP_CAMERA, DECK_CAMERA) turns the view
+// directly by the finger's travel, 1:1 in the frame the travel arrives (no inertia, no easing), at any
+// frame rate, and by the same angle per share of the screen width on every phone: what each camera's
+// native per-pixel turn gave on the owner's phone (owner, build 1666: the drag before the per-width
+// change, land-camera 402fd5e2a, felt right; 180 and 360 degrees per width were far too slow).
+// Its counts are the finger's touch pixels times the camera sensitivity: the game's mouse sensitivity
+// («Чувствительность» in the settings, option_screen VMOUSE/HMOUSE_SENSITIVITY_SLIDE, persisted in the
+// options file), applied live by PCS_CONTROLS, 0.5..2 (controls.c SetRealMouseSensitivity), 1 in the middle.
+constexpr float kOwnerWidth = 3200.0f;   // px: the owner's phone (3200 x 1440), where the native turns were felt
+constexpr float kNativeFrame = 1.0f / 60; // s: a native turn per frame scaled by the frame time, as felt at 60 fps
 
-// The turn (radians) of a drag of `counts` (ChrTurnH, ShipCamera_Turn_H, ...: touch pixels times the
-// sensitivity) on a surface `width` pixels wide; vertical drags pitch by the same angle per pixel.
-inline float dragYaw(float counts, float width)
+// The native turns per touch pixel (radians), at the sensitivity's default:
+// on land the yaw of Player::Rotate (0.01 per count; mobile land camera before 402fd5e2a);
+constexpr float kNativeLandYaw = 0.01f;
+// on land the pitch of LocationCamera (ChrCamTurnV: dAx 0.05 per count into a velocity 10 dAx dt that decays
+// by 8 dt per frame: 0.05 * 10 / 8 dt in all).
+constexpr float kNativeLandPitch = 0.05f * 10.0f / 8.0f * kNativeFrame;
+// At sea the cameras' own script sensitivities (AICameras.c SensivityAzimuthAngle and so on) times their
+// factors (SHIP_CAMERA: 2 and 3 per count scaled by the frame time; DECK_CAMERA: 3 per count).
+constexpr float kNativeShipYaw = 2.0f * kNativeFrame, kNativeShipPitch = 3.0f * kNativeFrame, kNativeDeckTurn = 3.0f;
+
+// The turn (radians) of a drag of `counts` on a surface `width` pixels wide, for a camera whose native turn
+// was `native` radians per count: as far as that turn went for the same share of the owner's screen.
+inline float dragTurn(float counts, float width, float native)
 {
     if (!(width > 0.0f) || !std::isfinite(counts))
         return 0.0f;
-    return counts * kDragTurnPerWidth / width;
+    return counts * native * kOwnerWidth / width;
+}
+// The land yaw: about 1833 degrees across the whole width at the default sensitivity (916..3667 with the slider).
+inline float dragYaw(float counts, float width)
+{
+    return dragTurn(counts, width, kNativeLandYaw);
+}
+// The land pitch: about 191 degrees across a whole width.
+inline float dragPitch(float counts, float width)
+{
+    return dragTurn(counts, width, kNativeLandPitch);
 }
 
 // Critically damped motion of `value` towards `target`, settling in about `time` seconds: no overshoot,

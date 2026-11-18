@@ -153,10 +153,10 @@ void LocationCamera::Realize(uint32_t delta_time)
     if (character->IsDead())
         dAx = 0.0f;
 #ifdef __ANDROID__
-    // A vertical drag pitches the camera by the same angle per pixel as a horizontal one turns it (dragYaw):
+    // A vertical drag pitches the camera as the native pitch did at 60 fps on the owner's phone (dragPitch), but
     // directly, at any frame rate (the native pitch has inertia per frame, twice the turn at half the frame
     // rate, and a speed limit that ate fast drags).
-    dragAx = character->IsDead() ? 0.0f : -storm::android::dragYaw(cs.fValue, static_cast<float>(core.GetWindow()->GetWindowSize().width));
+    dragAx = character->IsDead() ? 0.0f : -storm::android::dragPitch(cs.fValue, static_cast<float>(core.GetWindow()->GetWindowSize().width));
 #endif
     auto kvax = 8.0f * dltTime;
     if (isLookMode && !character->IsFight())
