@@ -809,7 +809,7 @@ class LandScene final : public Scene
             if (entry == &here)
             {
                 rows.push_back(Json{{"id", "item-here"}, {"title", item.label}, {"icon", RowIcon(item)}, {"disabled", true}, {"pressed", false},
-                                    {"chevron", false}, {"cooldown", 0}, {"here", true}, {"sub", hud_.Text("hud.travel.here")}});
+                                    {"chevron", false}, {"cooldown", 0}, {"here", true}});
                 // A tap on it shakes the tile (the disabled button's answer, behaviors.cpp) and asks the game nothing.
                 input.On("item-here", "refused", [](const Event &) {});
                 continue;

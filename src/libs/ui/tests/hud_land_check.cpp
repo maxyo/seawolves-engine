@@ -711,7 +711,7 @@ static void CheckSheet()
             icons += tile["icon"].get<std::string>() + " ";
         ExpectEqual(icons, std::string("store shipyard tavern residence usurer church lantern portoffice prison port "), "the hero's place keeps its slot");
         Expect(marked[1]["id"] == "item-here" && marked[1]["title"] == "Верфь" && marked[1]["here"] == true && marked[1]["disabled"] == true &&
-                   marked[1]["sub"] == "hud.travel.here" && marked[0].value("here", false) == false,
+                   !marked[1].contains("sub") && marked[0].value("here", false) == false,
                "the hero's place is marked and not tappable: " + marked[1].dump());
         const size_t before = mount.commands.size();
         const size_t errors = mount.errors.size();
