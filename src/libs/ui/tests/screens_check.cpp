@@ -3627,9 +3627,17 @@ static void Games(const std::string &models)
     router.OnEvent({"throw", "click", ""});
     ExpectEqual(surface.Last(), "widget:boal_dice\tB_ICON_1\t-1\tpress", "keeping is the script's pass");
 
+    // The script pays the winner before it opens the table: the money rises while the round is still closed.
+    InterfaceModel paid = reroll;
+    for (Widget &widget : paid.widgets)
+        if (widget.node == "ANDROID_TABLE_GAME")
+            widget.context["moneyHero"] = "10000";
+    paid.revision = 3;
+    router.SetInterface(paid);
+
     // The round ends with our win: the bank is ours, another round or leave.
     InterfaceModel result = Load(models, "boal_dice-result.json");
-    result.revision = 3;
+    result.revision = 4;
     router.SetInterface(result);
     Expect(surface.props["locked"] == false && surface.props["table"]["bankLabel"] == "<games.won>" &&
                surface.props["table"]["bank"] == "+2 400" && surface.props["table"]["bankTone"] == "win",

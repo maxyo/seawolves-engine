@@ -10,6 +10,7 @@
 // stands, EXIT_BTN leaves (the script lets it only between rounds).
 #include "controls.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdlib>
@@ -178,8 +179,10 @@ class TableGameScreen final : public Screen
                                      {{"label", bindings.Text("games.money")}, {"value", Spaced(money)}}});
         view["locked"] = !open;
 
-        // The bank, and after a round what it came to: we remember the money and the bank of
-        // the round (the dice script empties the bank when the round ends).
+        // The bank, and after a round what it came to: we remember our money after the round's stakes went out (the
+        // lowest of the round: rerolls and cards cost more stakes) and its bank (the dice script empties the bank when
+        // the round ends). The script pays the winner (EndGameCount) frames before it opens the table (openExit), so the
+        // money may rise while the round is still closed: that rise is the win, not a new round's money.
         const std::string opponent = Str(marker, "opponent");
         Json table = {{"opponent", opponent}, {"line", admitted.Label("INFO_TEXT")}, {"bankLabel", ""}, {"bankTone", "gold"}};
         if (const std::string face = Str(marker, "opponentFace"); !face.empty())
@@ -193,7 +196,12 @@ class TableGameScreen final : public Screen
             }
         if (!open)
         {
-            round_money_ = money;
+            if (round_open_ || round_money_ < 0)
+            {
+                round_money_ = money;
+                round_bank_ = 0;
+            }
+            round_money_ = std::min(round_money_, money);
             if (bank > 0)
                 round_bank_ = bank;
             table["bank"] = bank > 0 ? Spaced(bank) : "";
@@ -212,6 +220,7 @@ class TableGameScreen final : public Screen
         }
         else
             table["bank"] = "";
+        round_open_ = open;
         view["table"] = table;
 
         const std::string wait = bindings.Text("games.wait");
@@ -399,8 +408,9 @@ class TableGameScreen final : public Screen
 
   private:
     bool dice_;
-    int round_money_ = -1; // our money and the bank while the last round was played
+    int round_money_ = -1; // our money after the stakes and the bank of the last round
     int round_bank_ = 0;
+    bool round_open_ = false; // the table was open (between rounds) at the last build
     std::string reported_;
 };
 
