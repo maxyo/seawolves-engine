@@ -32,15 +32,30 @@ Common to every target:
 --disable-avdevice --disable-avfilter --disable-debug
 --enable-shared --disable-static --enable-pic
 --enable-avcodec --enable-avformat --enable-swscale --enable-swresample --enable-pthreads
---enable-demuxer=asf,matroska
---enable-decoder=wmv3,vc1,wmav2,vp8,vp9,vorbis,opus
+--enable-demuxer=asf,avi,matroska
+--enable-decoder=wmv3,vc1,wmv2,wmav2,wmapro,mp3float,vp8,vp9,vorbis,opus
+--enable-parser=mpegaudio
 ```
 
-- `asf` + `wmv3`/`vc1` + `wmav2`: TEHO (`RESOURCE/VIDEOS/*.wmv`, WMV3 640x480, WMA2).
-- `matroska` (includes WebM) + `vp9` + `vorbis`: Caribbean Legend 2.0 (`Resource/Videos/*.webm`,
-  VP9 1920x1080, Vorbis 48 kHz). `vp8` and `opus` are the other WebM codecs.
-- Required parsers and bitstream filters (e.g. `vp9_superframe_split`) are pulled in by the
-  decoders' own dependencies. No protocols: the player reads through its own I/O callbacks.
+Each component is there because a game video needs it (ffprobe over the game files;
+`tests/video/run.py --game-videos` decodes every one of them):
+
+| component | game files |
+| --- | --- |
+| demuxer `asf`, decoder `wmav2` | TEHO `RESOURCE/VIDEOS/*.wmv` except `Pirate.wmv` and `court.wmv` |
+| decoder `wmv3` (pulls in `vc1`) | TEHO AkellaLogo, Blackmark, Title, Credits_ru, intro_Sharle, Door, England, France, Holland, Spain, Jessika, Reef, Outro_home, Outro_stay, Pirate, court (640x480 / 640x384, VC-1 Main) |
+| decoder `wmv2` | TEHO Artefact, BlackPearl, Idol, Temple (640x384), Ending, Siege, VDDrepair (720x480) |
+| decoder `wmapro` | TEHO Jessika (ASF), court (AVI, WMA Pro 48 kHz without its codec header: repaired by the player, `src/libs/video/README.md`) |
+| demuxer `avi` | TEHO Pirate, court (`.wmv` name, RIFF AVI inside) |
+| decoder `mp3float`, parser `mpegaudio` | TEHO Pirate (MP3 24 kHz stereo in AVI; the AVI demuxer splits the chunks into MP3 frames with the parser) |
+| demuxer `matroska` (WebM), decoders `vp9`, `vorbis` | Caribbean Legend 2.0 `Resource/Videos/*.webm` (VP9 1920x1080, Vorbis 48 kHz) |
+| decoder `vp8` | Caribbean Legend 2.0: 6 videos (VP8 + Vorbis) |
+| decoder `opus` | Caribbean Legend 2.0 `Resource/Videos/tutorial/*.webm` (VP9 + Opus) |
+
+`vc1` costs nothing extra: FFmpeg's `wmv3` decoder is the VC-1 decoder. Other bitstream filters and
+parsers the decoders need (e.g. `vp9_superframe_split`) come with the decoders' own dependencies. No
+protocols: the player reads through its own I/O callbacks. `tests/video/run.py` checks that every
+software decoder of the player's policy (`kPolicy`, `src/libs/video/src/player.cpp`) is in `build.py`'s decoder list.
 
 `android-arm64` adds:
 

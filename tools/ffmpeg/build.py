@@ -31,9 +31,11 @@ COMMON = [
     '--enable-shared', '--disable-static', '--enable-pic',
     '--enable-avcodec', '--enable-avformat', '--enable-swscale', '--enable-swresample',
     '--enable-pthreads',
-    # TEHO: ASF + WMV3 (VC-1 Simple/Main) + WMA2. Caribbean Legend: WebM (matroska) + VP9 + Vorbis.
-    '--enable-demuxer=asf,matroska',
-    '--enable-decoder=wmv3,vc1,wmav2,vp8,vp9,vorbis,opus',
+    # TEHO: ASF and AVI; WMV3 (VC-1 Main), WMV2; WMA2, WMA Pro, MP3. Caribbean Legend: WebM (matroska);
+    # VP9, VP8; Vorbis, Opus. Which game file needs what: tools/ffmpeg/README.md.
+    '--enable-demuxer=asf,avi,matroska',
+    '--enable-decoder=wmv3,vc1,wmv2,wmav2,wmapro,mp3float,vp8,vp9,vorbis,opus',
+    '--enable-parser=mpegaudio',
 ]
 TARGETS = {
     # No nasm on the development hosts: x86 SIMD is off; the host build only serves tests.

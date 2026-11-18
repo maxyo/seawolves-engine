@@ -5,8 +5,12 @@
 //       count, audio length and level, pause and the end of playback.
 //   video-check smoke <file> <seconds>
 //       plays in real time for <seconds> (or to the end) and reports what was shown.
+//   video-check probe <file> <seconds>
+//       plays the first <seconds> on a fast simulated audio clock: a picture must be shown, an audio stream
+//       must give sound, and nothing may be logged as an error or a rejected packet.
 #include "storm/video/player.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -85,9 +89,13 @@ bool isBlue(Rgb c)
     return c.b > 180 && c.r < 70 && c.g < 70;
 }
 
+std::atomic<int> problems{0}; // errors and rejected packets logged by the player
+
 void log(LogLevel level, const std::string &message)
 {
     static const char *names[] = {"info", "warning", "error"};
+    if (level == LogLevel::Error || message.find("rejected") != std::string::npos)
+        ++problems;
     std::fprintf(stderr, "[video %s] %s\n", names[static_cast<int>(level)], message.c_str());
 }
 
@@ -201,6 +209,48 @@ int smoke(const char *path, double seconds)
                 sinkPointer ? double(sinkPointer->written) / kAudioRate : 0.0);
     return 0;
 }
+int probe(const char *path, double wanted)
+{
+    auto *sinkPointer = new TestSink;
+    auto player = Player::open(openFile(path), path, std::unique_ptr<AudioSink>(sinkPointer));
+    require(player != nullptr, "open failed");
+    const StreamInfo &info = player->info();
+    const bool audio = !info.audioCodec.empty();
+    if (!audio)
+        sinkPointer = nullptr; // the player released the unused sink
+    const double seconds = info.duration > 0 ? std::min(wanted, info.duration * 0.8) : wanted;
+    int shown = 0;
+    const auto start = std::chrono::steady_clock::now();
+    // Ten times real time on the audio clock; without sound the wall clock runs.
+    while (!player->finished() && player->clock() < seconds)
+    {
+        if (sinkPointer)
+            sinkPointer->advance(kAudioRate / 100);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        bool changed = false;
+        const Frame *frame = player->update(&changed);
+        if (frame && changed)
+        {
+            require(frame->width == info.outputWidth && frame->height == info.outputHeight, "frame size");
+            ++shown;
+        }
+    }
+    require(!player->failed(), "decode error");
+    require(shown > 0, "no frame shown");
+    double rms = 0;
+    if (audio)
+    {
+        require(sinkPointer->written >= static_cast<uint64_t>(seconds * 0.9 * kAudioRate), "sound decoded");
+        rms = std::sqrt(sinkPointer->energy / (sinkPointer->written * kAudioChannels));
+        require(rms < 0.7, "audio level " + std::to_string(rms)); // the first seconds may be silent
+    }
+    require(problems == 0, std::to_string(problems.load()) + " errors or rejected packets logged");
+    std::printf("PROBE %s: %dx%d %s%s%s %d Hz %d ch, %d frames in %.1f s (rms %.3f, %.1f s real time)\n", path,
+                info.width, info.height, info.videoCodec.c_str(), audio ? " + " : "", info.audioCodec.c_str(),
+                info.audioRate, info.audioChannels, shown, seconds, rms,
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+    return 0;
+}
 } // namespace
 
 int main(int argc, char **argv)
@@ -211,7 +261,9 @@ try
         return clip(argv[2], std::atoi(argv[3]), std::atoi(argv[4]), std::atof(argv[5]), std::atoi(argv[6]) != 0);
     if (argc == 4 && !std::strcmp(argv[1], "smoke"))
         return smoke(argv[2], std::atof(argv[3]));
-    std::fprintf(stderr, "usage: video-check clip <file> <w> <h> <seconds> <audio> | smoke <file> <seconds>\n");
+    if (argc == 4 && !std::strcmp(argv[1], "probe"))
+        return probe(argv[2], std::atof(argv[3]));
+    std::fprintf(stderr, "usage: video-check clip <file> <w> <h> <seconds> <audio> | smoke|probe <file> <seconds>\n");
     return 2;
 }
 catch (const std::exception &error)

@@ -104,9 +104,12 @@ struct CodecPolicy
 constexpr CodecPolicy kPolicy[] = {
     {AV_CODEC_ID_WMV3, "wmv3", nullptr},
     {AV_CODEC_ID_VC1, "vc1", nullptr},
+    {AV_CODEC_ID_WMV2, "wmv2", nullptr},
     {AV_CODEC_ID_VP9, "vp9", "vp9_mediacodec"},
     {AV_CODEC_ID_VP8, "vp8", "vp8_mediacodec"},
     {AV_CODEC_ID_WMAV2, "wmav2", nullptr},
+    {AV_CODEC_ID_WMAPRO, "wmapro", nullptr},
+    {AV_CODEC_ID_MP3, "mp3float", nullptr},
     {AV_CODEC_ID_VORBIS, "vorbis", nullptr},
     {AV_CODEC_ID_OPUS, "opus", nullptr},
 };
@@ -117,6 +120,65 @@ const CodecPolicy *policyFor(AVCodecID id)
         if (row.id == id)
             return &row;
     return nullptr;
+}
+
+// WMA Pro without its codec private data: TEHO's court.wmv is an AVI whose WMA Pro WAVEFORMATEX has
+// cbSize 0 and nBlockAlign 1, which FFmpeg's wmapro decoder refuses ("Unknown extradata size"). The
+// repair is explicit and logged (README.md, "Repaired streams"): the 18 bytes the Windows Media
+// encoder writes (TEHO's Jessika.wmv carries them in ASF: bits per sample, channel mask, decode
+// flags 0x00E0) are installed before the stream is probed, and the packet size is read from the
+// first audio packet (wmaProPacketSize, PlayerImpl::repairPacketSize).
+bool needsWmaProHeader(const AVCodecParameters *codec)
+{
+    return codec->codec_id == AV_CODEC_ID_WMAPRO && codec->extradata_size == 0;
+}
+
+bool installWmaProHeader(AVCodecParameters *codec, std::string *error)
+{
+    const int channels = codec->ch_layout.nb_channels;
+    if (channels < 1 || channels > 2 || codec->bits_per_coded_sample < 1 || codec->bits_per_coded_sample > 32)
+    {
+        *error = format("%d channels, %d bits per sample (only mono/stereo headers can be rebuilt)", channels,
+                        codec->bits_per_coded_sample);
+        return false;
+    }
+    constexpr int kSize = 18;
+    auto *data = static_cast<uint8_t *>(av_mallocz(kSize + AV_INPUT_BUFFER_PADDING_SIZE));
+    if (!data)
+    {
+        *error = "out of memory";
+        return false;
+    }
+    const uint32_t mask = channels == 2 ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
+    data[0] = static_cast<uint8_t>(codec->bits_per_coded_sample);
+    for (int i = 0; i < 4; ++i)
+        data[2 + i] = static_cast<uint8_t>(mask >> (8 * i));
+    data[14] = 0xE0; // decode flags: the encoder's default (16 subframes, length prefix, DRC)
+    codec->extradata = data;
+    codec->extradata_size = kSize;
+    return true;
+}
+
+// The WMA Pro packet size, from an audio packet holding several packets: each starts with a 4-bit
+// sequence number that counts up by one. 0 when no size or more than one size fits.
+int wmaProPacketSize(const AVPacket *packet)
+{
+    int found = 0;
+    for (int size = 128; size <= packet->size / 3; ++size)
+    {
+        if (packet->size % size)
+            continue;
+        bool counts = true;
+        for (int i = 1; counts && i < packet->size / size; ++i)
+            counts = (packet->data[i * size] >> 4) == ((packet->data[0] >> 4) + i) % 16;
+        if (counts)
+        {
+            if (found)
+                return 0;
+            found = size;
+        }
+    }
+    return found;
 }
 
 struct CodecDeleter
@@ -267,6 +329,8 @@ class PlayerImpl final : public Player
         audioCodec_.reset();
         videoCodec_.reset();
         avformat_close_input(&format_);
+        for (AVPacket *packet : pending_)
+            av_packet_free(&packet);
         if (io_)
             av_freep(&io_->buffer);
         avio_context_free(&io_);
@@ -283,6 +347,18 @@ class PlayerImpl final : public Player
         int result = avformat_open_input(&format_, nullptr, nullptr, nullptr);
         if (result < 0)
             return fail("unrecognised or unsupported container: " + averror(result));
+        for (unsigned i = 0; i < format_->nb_streams; ++i)
+        {
+            AVCodecParameters *codec = format_->streams[i]->codecpar;
+            if (!needsWmaProHeader(codec))
+                continue;
+            std::string error;
+            if (!installWmaProHeader(codec, &error))
+                return fail("WMA Pro stream without its codec header cannot be repaired: " + error);
+            log(LogLevel::Warning, format("%s: WMA Pro stream %u has no codec header (%s); repaired with the "
+                                          "encoder's default header (README.md, repaired streams)",
+                                          name_.c_str(), i, format_->iformat->name));
+        }
         if ((result = avformat_find_stream_info(format_, nullptr)) < 0)
             return fail("cannot read stream parameters: " + averror(result));
         startTime_ = format_->start_time != AV_NOPTS_VALUE ? static_cast<double>(format_->start_time) / AV_TIME_BASE : 0.0;
@@ -294,6 +370,8 @@ class PlayerImpl final : public Player
         if (!openVideo(format_->streams[videoIndex_], options))
             return false;
         audioIndex_ = av_find_best_stream(format_, AVMEDIA_TYPE_AUDIO, -1, videoIndex_, nullptr, 0);
+        if (audioIndex_ >= 0 && !repairPacketSize(format_->streams[audioIndex_]))
+            return false;
         if (audioIndex_ >= 0 && !openAudio(format_->streams[audioIndex_]))
             return false;
         for (unsigned i = 0; i < format_->nb_streams; ++i)
@@ -478,6 +556,41 @@ class PlayerImpl final : public Player
         return true;
     }
 
+    // A WMA Pro stream repaired in open() still lacks its packet size (nBlockAlign 1): it is read from the
+    // first audio packet. The packets read on the way are kept for demuxLoop.
+    bool repairPacketSize(AVStream *stream)
+    {
+        AVCodecParameters *codec = stream->codecpar;
+        if (codec->codec_id != AV_CODEC_ID_WMAPRO || codec->block_align > 1)
+            return true;
+        constexpr int kMaxPackets = 1024;
+        while (static_cast<int>(pending_.size()) < kMaxPackets)
+        {
+            AVPacket *packet = av_packet_alloc();
+            const int result = av_read_frame(format_, packet);
+            if (result < 0)
+            {
+                av_packet_free(&packet);
+                return fail("WMA Pro stream without a packet size and no audio packet to read it from: " +
+                            averror(result));
+            }
+            pending_.push_back(packet);
+            if (packet->stream_index != stream->index)
+                continue;
+            const int size = wmaProPacketSize(packet);
+            if (!size)
+                return fail(format("WMA Pro stream without a packet size: the first audio packet (%d bytes) does "
+                                   "not show one",
+                                   packet->size));
+            log(LogLevel::Warning, format("%s: WMA Pro packet size %d read from the first audio packet (the "
+                                          "header says %d; README.md, repaired streams)",
+                                          name_.c_str(), size, codec->block_align));
+            codec->block_align = size;
+            return true;
+        }
+        return fail(format("WMA Pro stream without a packet size: no audio packet in the first %d", kMaxPackets));
+    }
+
     bool openAudio(const AVStream *stream)
     {
         const CodecPolicy *policy = policyFor(stream->codecpar->codec_id);
@@ -510,7 +623,15 @@ class PlayerImpl final : public Player
         bool ok = true;
         while (!stop_ && ok)
         {
-            const int result = av_read_frame(format_, packet);
+            int result = 0;
+            if (!pending_.empty())
+            {
+                av_packet_move_ref(packet, pending_.front());
+                av_packet_free(&pending_.front());
+                pending_.pop_front();
+            }
+            else
+                result = av_read_frame(format_, packet);
             if (result == AVERROR_EOF)
                 break;
             if (result < 0)
@@ -780,6 +901,7 @@ class PlayerImpl final : public Player
     AVRational videoBase_{}, audioBase_{};
     double startTime_ = 0.0, frameDuration_ = 1.0 / 25;
     std::vector<float> pcm_;
+    std::deque<AVPacket *> pending_; // read in open() (repairPacketSize), sent first by demuxLoop
     PacketQueue packets_;
     std::thread demuxThread_, videoThread_;
     std::atomic<bool> stop_{false}, failed_{false}, audioEnded_{false}, audioStarted_{false};
