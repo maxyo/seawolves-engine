@@ -6,7 +6,8 @@
 // The pack (the application's mobile-ui/design, built by its build.py) and the adapters (this
 // library) live in two repositories; this is where they meet before a device does. --fixtures is
 // tests/ of this library: every models/*.json interface model is a case, and pack-contract.json
-// adds the cases that need state channels (dialogue, the HUD scenes) and lists the ported screens
+// adds the cases that need state channels (dialogue, the HUD scenes) or the game's answer to what a
+// screen asks for on opening (`answer`), and lists the ported screens
 // without a fixture, each with its reason. A case fails on any error line of the host (an
 // unknown element, prop or icon, a missing string, an unbound event, a rejected admission, a
 // screen that threw) and on any element the runtime marked `ui-error`. Every ported screen must
@@ -37,6 +38,7 @@ struct Case
     std::string name;
     std::vector<std::pair<std::string, fs::path>> states; // channel, file
     fs::path interface;                                    // empty = none
+    fs::path answer;                                       // the game's next model of it, empty = none
     std::vector<std::string> covers;                       // screens drawn besides the interface's own
 };
 
@@ -117,6 +119,17 @@ bool Run(const fs::path &pack, const Case &c)
             std::printf("FAIL %s: interface model %s not accepted\n", c.name.c_str(), c.interface.string().c_str());
             fed = false;
         }
+        // A screen that asks the game for something on opening (a shop's selected row asks for its
+        // deal) gets the model the game answers with, within the screen's hold.
+        if (!c.answer.empty())
+        {
+            frames(0.05);
+            if (!host->SetInterface(Read(c.answer)))
+            {
+                std::printf("FAIL %s: answer model %s not accepted\n", c.name.c_str(), c.answer.string().c_str());
+                fed = false;
+            }
+        }
     }
     // Past the router's settle time (a model its screen rejects closes the interface, reported,
     // one second after the opening) and the toasts' first frames.
@@ -194,6 +207,11 @@ int main(int argc, char **argv)
         {
             c.interface = fixtures / entry["interface"].get<std::string>();
             used.insert(c.interface);
+        }
+        if (entry.contains("answer"))
+        {
+            c.answer = fixtures / entry["answer"].get<std::string>();
+            used.insert(c.answer);
         }
         for (const Json &screen : entry.value("covers", Json::array()))
             c.covers.push_back(screen.get<std::string>());

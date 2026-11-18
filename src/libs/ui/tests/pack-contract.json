@@ -1,7 +1,8 @@
 {
-  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`; `covers` names the screens it draws that its interface does not (channel screens). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason.",
+  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`, then `answer` (the model the game answers a request of the opened screen with: a shop asks for its selected row's deal); `covers` names the screens it draws that its interface does not (channel screens). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason.",
   "cases": [
     {"name": "settings", "states": ["appSettings=models/app-settings.json"], "interface": "models/settings.json"},
+    {"name": "store", "interface": "models/store.json", "answer": "models/store-deal.json"},
     {"name": "dialogue", "states": ["dialogue=models/dialogue.json"], "covers": ["dialogue"]},
     {"name": "dialogue-bet", "states": ["dialogue=models/dialogue-bet.json"], "covers": ["dialogue"]},
     {"name": "dialogue-edit", "states": ["dialogue=models/dialogue-edit.json"], "covers": ["dialogue"]},
