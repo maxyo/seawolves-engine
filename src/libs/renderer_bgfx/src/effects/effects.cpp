@@ -617,8 +617,13 @@ void Host::apply()
         lighting_.probe().toggle(lighting_.normal_maps());
     if (device_ready_ && profile != profile_)
     {
-        bgfx::setDebug(profile ? BGFX_DEBUG_PROFILER : BGFX_DEBUG_NONE);
-        shim::logf("effects profile: GPU timer queries per view %s (fx_gpu_profile)", profile ? "on" : "off");
+        // The per-view queries are sampled (end of frame below); switched off, the next frame has none.
+        if (!profile && profile_views_frame_)
+            bgfx::setDebug(BGFX_DEBUG_NONE);
+        profile_views_frame_ = false;
+        shim::logf("effects profile: GPU timer queries %s (fx_gpu_profile): the whole frame in every frame, per view in one "
+                   "frame of %d",
+                   profile ? "on" : "off", kProfileFrames);
     }
     profile_ = device_ready_ && profile;
 
@@ -1067,6 +1072,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
     // from frame to frame, the waits for the render thread and the display's slot included; not CPU work), the game thread's work
     // per phase and entity class (platform/frame_work.hpp) and draw calls. Timer
     // results lag a few frames; a backend without timer queries reports none (logged as n/a).
+    // The per-view queries (BGFX_DEBUG_PROFILER) are on in one frame of each line only: per view the backend ends
+    // the render pass (bgfx's Vulkan backend resets and copies its queries outside one), so on a tile GPU every view
+    // stored and loaded its targets again (the 4x scene, the UI layers) and the measuring cost the frame rate it
+    // measured. The frame's own query runs in every frame. A view's time is its latest result: the sampled frame's
+    // arrives a few frames later and is read in the next sampled frame.
+    const bool views_next = profile_count_ == kProfileFrames / 2 - 1;
+    if (views_next != profile_views_frame_)
+        bgfx::setDebug(views_next ? BGFX_DEBUG_PROFILER : BGFX_DEBUG_NONE);
+    profile_views_frame_ = views_next;
     const bgfx::Stats *stats = bgfx::getStats();
     if (stats)
     {
@@ -1075,6 +1089,7 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
             const double to_ms = 1000.0 / static_cast<double>(stats->gpuTimerFreq);
             times_.frame_ms = static_cast<double>(stats->gpuTimeEnd - stats->gpuTimeBegin) * to_ms;
             profile_in_scene_ = false;
+            profile_view_frames_ += stats->numViews > 0;
             for (uint16_t i = 0; i < stats->numViews; ++i)
             {
                 const bgfx::ViewStats &view = stats->viewStats[i];
@@ -1116,11 +1131,14 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         {
             char gpu[256] = "gpu_frame_ms=n/a gpu_post_ms=n/a (no timer queries)";
             if (profile_gpu_frames_ > 0)
+            {
+                // The frame over every frame of the line; the passes over the frames that had per-view results.
+                const double views = std::max(profile_view_frames_, 1);
                 snprintf(gpu, sizeof(gpu), "gpu_frame_ms=%.2f gpu_post_ms=%.2f gpu_smaa_ms=%.2f gpu_easu_ms=%.2f gpu_rcas_ms=%.2f "
-                         "gpu_sea_waves_ms=%.3f",
-                         profile_sum_frame_ / profile_gpu_frames_, profile_sum_post_ / profile_gpu_frames_,
-                         profile_sum_smaa_ / profile_gpu_frames_, profile_sum_easu_ / profile_gpu_frames_,
-                         profile_sum_rcas_ / profile_gpu_frames_, profile_sum_sea_waves_ / profile_gpu_frames_);
+                         "gpu_sea_waves_ms=%.3f gpu_view_frames=%d",
+                         profile_sum_frame_ / profile_gpu_frames_, profile_sum_post_ / views, profile_sum_smaa_ / views,
+                         profile_sum_easu_ / views, profile_sum_rcas_ / views, profile_sum_sea_waves_ / views, profile_view_frames_);
+            }
             // The GPU time per view name over the line's frames, the eight largest: "name:ms,..." per frame.
             std::string views;
             {
@@ -1128,12 +1146,12 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                 for (const auto &[name, ms] : profile_views_)
                     order.emplace_back(ms, name.empty() ? "unnamed" : name);
                 std::sort(order.begin(), order.end(), [](const auto &a, const auto &b) { return a.first > b.first; });
-                for (size_t i = 0; i < std::min<size_t>(order.size(), 8) && profile_gpu_frames_ > 0; ++i)
+                for (size_t i = 0; i < std::min<size_t>(order.size(), 8) && profile_view_frames_ > 0; ++i)
                 {
                     std::replace(order[i].second.begin(), order[i].second.end(), ' ', '_');
                     std::replace(order[i].second.begin(), order[i].second.end(), ',', ';');
                     char ms[24];
-                    snprintf(ms, sizeof(ms), ":%.2f", order[i].first / profile_gpu_frames_);
+                    snprintf(ms, sizeof(ms), ":%.2f", order[i].first / profile_view_frames_);
                     views += (i ? "," : "") + order[i].second + ms;
                 }
                 profile_views_.clear();
@@ -1153,15 +1171,15 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
                        storm::platform::frame_work::Describe(storm::platform::frame_work::Take(storm::platform::frame_work::Reader::Profile)).c_str(),
                        thermal_text(), fx::SharedCpuAdmission().stats().reserved, fx::SharedCpuAdmission().stats().phase_cap,
                        renderer_state_.render_height,
-                       profile_gpu_frames_ ? static_cast<double>(profile_scene_views_) / profile_gpu_frames_ : 0.0,
-                       profile_gpu_frames_ ? static_cast<double>(profile_scene_passes_) / profile_gpu_frames_ : 0.0,
+                       profile_view_frames_ ? static_cast<double>(profile_scene_views_) / profile_view_frames_ : 0.0,
+                       profile_view_frames_ ? static_cast<double>(profile_scene_passes_) / profile_view_frames_ : 0.0,
                        static_cast<double>(sea_backdrop_draws_) / kProfileFrames, views.c_str(),
                        last_post_views_, counts.lit, counts.baked, counts.coverage, counts.relief, counts.parallax, counts.glossy, counts.aerial, counts.shadowed, counts.ground, counts.ao, counts.lamp_lit,
                        lighting_.lamp_shadows().last_slots(), lighting_.lamp_shadows().last_static_faces(),
                        sun.static_redraws, sun.static_tiles, sun.static_triangles, sun.dynamic_frames, sun.dynamic_casters, lighting_.town_light().last_counts()[0], lighting_.town_light().last_counts()[1], lighting_.town_light().last_counts()[2], town.place_draws, town.composes, counts.town_walls, counts.wet, counts.aggregate_uploads, counts.aggregate_bytes, counts.aggregate_members, counts.aggregate_fallbacks,
                        lighting_.take_flash_events(), counts.flashes, counts.flashed,
                        caster_counts(lighting_.shadow_casters().last()).c_str(), render::far_lod::Take(kProfileFrames).c_str());
-            profile_count_ = profile_gpu_frames_ = 0;
+            profile_count_ = profile_gpu_frames_ = profile_view_frames_ = 0;
             sea_backdrop_draws_ = 0;
             profile_scene_views_ = profile_scene_passes_ = 0;
             profile_sum_frame_ = profile_sum_post_ = profile_sum_cpu_ = 0.0;

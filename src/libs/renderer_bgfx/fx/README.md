@@ -17,7 +17,7 @@ Where MSAA is unavailable `ConstrainSettings` replaces it with SMAA 1x (logged).
 Single options are `fx_*` keys of engine.ini or `STORM_FX_OPTIONS` (parsed in `src/effects/effects.cpp`), for
 development. Useful ones:
 
-- `fx_gpu_profile=1`: per-view GPU timings (costs CPU on GL; off by default);
+- `fx_gpu_profile=1`: GPU time of every frame, per view in one frame of 30 (the per-view queries end bgfx's render pass at every view, which on a tile GPU stores and reloads the targets: sampled so that the measuring does not slow the frames it measures; costs CPU on GL; off by default);
 - `fx_sea_waves_debug=1|2`: ripple and wake slope (red) and foam (blue) / the normal tilt they add;
 - `fx_wet_force`: forces a rain wetness for review;
 - `fx_gloss_debug`, `fx_character_relief` (0/1/2), `fx_character_relief_strength`,

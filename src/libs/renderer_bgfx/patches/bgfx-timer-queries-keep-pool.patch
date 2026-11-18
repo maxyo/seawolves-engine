@@ -1,0 +1,22 @@
+Timer queries: the pool keeps its size when the per-view profiler is off for a frame (the engine samples it on one frame of many).
+
+diff --git a/src/renderer.h b/src/renderer.h
+index a556daf..8b82ab2 100644
+--- a/src/renderer.h
++++ b/src/renderer.h
+@@ -72,10 +72,11 @@ namespace bgfx
+ 		const uint32_t spare    = profiler ? kTimerQueryBlock : 0;
+ 		const uint32_t num      = bx::min<uint32_t>(bx::alignUp( (numViews+1)*4, kTimerQueryBlock) + spare, kMaxTimerQueries);
+ 
+-		return profiler
+-			? bx::max(num, _num)
+-			: num
+-			;
++		// Storm: the pool never shrinks. The engine samples the per-view queries on one frame of many
++		// (BGFX_DEBUG_PROFILER toggled per frame); a shrink at the next frame destroyed the pool with that
++		// frame's queries still pending, so no per-view result ever arrived.
++		BX_UNUSED(profiler);
++		return bx::max(num, _num);
+ 	}
+ 
+ 	inline void resize(bx::RingBufferControl& _control, uint32_t _size)

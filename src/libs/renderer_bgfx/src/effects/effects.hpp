@@ -284,6 +284,8 @@ class Host
     bool profile_ = false;
     int profile_count_ = 0;
     int profile_gpu_frames_ = 0;
+    int profile_view_frames_ = 0;      // frames of the line with per-view results (one of kProfileFrames is sampled)
+    bool profile_views_frame_ = false; // BGFX_DEBUG_PROFILER is set for the frame being recorded
     double profile_sum_frame_ = 0.0, profile_sum_post_ = 0.0, profile_sum_cpu_ = 0.0;
     double profile_sum_smaa_ = 0.0, profile_sum_easu_ = 0.0, profile_sum_rcas_ = 0.0, profile_sum_sea_waves_ = 0.0;
     std::array<uint16_t, 4> last_post_size_{}; // scene width, height, target width, height of the last post chain
