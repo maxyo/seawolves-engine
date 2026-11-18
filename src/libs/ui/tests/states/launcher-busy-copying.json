@@ -1,0 +1,22 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "busy",
+  "starting": false,
+  "files": false,
+  "library": true,
+  "hasGame": false,
+  "problem": "",
+  "import": {
+   "recovering": false,
+   "cancelling": false,
+   "canCancel": true,
+   "stage": "copying",
+   "bytes": 3328599654,
+   "total": 13636426547,
+   "files": 0,
+   "choices": []
+  }
+ }
+}

@@ -42,6 +42,102 @@
    "cells": []
   },
   {
+   "node": "I_QUESTBOOK",
+   "type": "button",
+   "label": "Questbook",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_QUESTBOOK_2",
+   "type": "button",
+   "label": "Questbook",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_NATIONS",
+   "type": "button",
+   "label": "Nations",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_NATIONS_2",
+   "type": "button",
+   "label": "Nations",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_TRADEBOOK",
+   "type": "button",
+   "label": "Tradebook",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_TRADEBOOK_2",
+   "type": "button",
+   "label": "Tradebook",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_ITEMS",
+   "type": "button",
+   "label": "Items",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "I_ITEMS_2",
+   "type": "button",
+   "label": "Items",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
    "node": "STR_BUTTONS",
    "type": "text",
    "label": "Ships",
@@ -1080,6 +1176,108 @@
     "target": "criticalhit",
     "rule": "stock-all-v1",
     "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Strength",
+    "text": "Strength: how hard you hit and how much you carry.\r\n~\r\nGoverns heavy blades."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 1,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Agility",
+    "text": "Agility: how quick you are in a fight."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 2,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "Leadership",
+    "text": "Charisma: persuasion and the crew's respect.\r\n~\r\nDepends on leadership and learning."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 3,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "FencingL",
+    "text": "Light weapons: rapiers and swords."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 4,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Sailing",
+    "text": "Sailing: handling the ship and the squadron."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 5,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Commerce",
+    "text": "Commerce: prices in the shops."
    }
   }
  ]

@@ -1,0 +1,3210 @@
+{
+ "schemaVersion": 2,
+ "language": "russian",
+ "revision": 3,
+ "screenRevision": 2,
+ "screen": "character",
+ "widgets": [
+  {
+   "node": "MAIN_BACK",
+   "type": "image",
+   "label": "",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [
+    {
+     "handle": 31,
+     "imageRevision": 31,
+     "width": 0,
+     "height": 0,
+     "tintArgb": 4286611584,
+     "source": {
+      "kind": "texture",
+      "image": "interfaces/card_desk",
+      "uv": [
+       0,
+       0,
+       1,
+       1
+      ]
+     }
+    }
+   ],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "TITLE",
+   "type": "heading",
+   "label": "  Персонаж  ",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "CHARACTER_BIG_PICTURE",
+   "type": "image",
+   "label": "",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [
+    {
+     "handle": 32,
+     "imageRevision": 32,
+     "width": 0,
+     "height": 0,
+     "tintArgb": 4286611584,
+     "source": {
+      "kind": "portrait",
+      "image": "1"
+     }
+    }
+   ],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "LOYALITY_STR",
+   "type": "text",
+   "label": "Авторитет",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "REPUTATION_STR",
+   "type": "text",
+   "label": "Неизвестный авантюрист",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "P\tСила\t\t5",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "Strength",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "P",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Сила",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "I\tВосприятие\t\t5",
+   "value": "0",
+   "index": 1,
+   "enabled": false,
+   "rowId": "Perception",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "I",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Восприятие",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "R\tРеакция\t\t5",
+   "value": "0",
+   "index": 2,
+   "enabled": false,
+   "rowId": "Agility",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "R",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Реакция",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "A\tЛидерство\t\t5",
+   "value": "0",
+   "index": 3,
+   "enabled": false,
+   "rowId": "Charisma",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "A",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Лидерство",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "T\tОбучаемость\t\t5",
+   "value": "0",
+   "index": 4,
+   "enabled": false,
+   "rowId": "Intellect",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "T",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Обучаемость",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "E\tВыносливость\t\t5",
+   "value": "0",
+   "index": 5,
+   "enabled": false,
+   "rowId": "Endurance",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "E",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Выносливость",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SPECIAL",
+   "type": "choice",
+   "label": "S\tУдача\t\t5",
+   "value": "0",
+   "index": 6,
+   "enabled": false,
+   "rowId": "Luck",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "S",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 1,
+     "text": "Удача",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "5",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tХаризма\t0%\t\t10",
+   "value": "0",
+   "index": 0,
+   "enabled": false,
+   "rowId": "Leadership",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 33,
+       "imageRevision": 33,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Leadership skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Харизма",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tРапиры/Шпаги\t0%\t\t10",
+   "value": "0",
+   "index": 1,
+   "enabled": false,
+   "rowId": "FencingL",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 34,
+       "imageRevision": 34,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "FencingL skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Рапиры/Шпаги",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tСабли/Тесаки\t0%\t\t10",
+   "value": "0",
+   "index": 2,
+   "enabled": false,
+   "rowId": "FencingS",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 35,
+       "imageRevision": 35,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "FencingS skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Сабли/Тесаки",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tПалаши/Топоры\t0%\t\t10",
+   "value": "0",
+   "index": 3,
+   "enabled": false,
+   "rowId": "FencingH",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 36,
+       "imageRevision": 36,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "FencingH skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Палаши/Топоры",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tПистоли/Мушкеты\t0%\t\t10",
+   "value": "0",
+   "index": 4,
+   "enabled": false,
+   "rowId": "Pistol",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 37,
+       "imageRevision": 37,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Pistol skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Пистоли/Мушкеты",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tВезение\t0%\t\t10",
+   "value": "0",
+   "index": 5,
+   "enabled": false,
+   "rowId": "Fortune",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 38,
+       "imageRevision": 38,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Fortune skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Везение",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_1",
+   "type": "choice",
+   "label": "\tСкрытность\t0%\t\t10",
+   "value": "0",
+   "index": 6,
+   "enabled": false,
+   "rowId": "Sneak",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 39,
+       "imageRevision": 39,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Sneak skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Скрытность",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tНавигация\t0%\t\t10",
+   "value": "0",
+   "index": 0,
+   "enabled": false,
+   "rowId": "Sailing",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 40,
+       "imageRevision": 40,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Sailing skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Навигация",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tМеткость\t0%\t\t10",
+   "value": "0",
+   "index": 1,
+   "enabled": false,
+   "rowId": "Accuracy",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 41,
+       "imageRevision": 41,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Accuracy skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Меткость",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tОрудия\t0%\t\t10",
+   "value": "0",
+   "index": 2,
+   "enabled": false,
+   "rowId": "Cannons",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 42,
+       "imageRevision": 42,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Cannons skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Орудия",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tАбордаж\t0%\t\t10",
+   "value": "0",
+   "index": 3,
+   "enabled": false,
+   "rowId": "Grappling",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 43,
+       "imageRevision": 43,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Grappling skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Абордаж",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tЗащита\t0%\t\t10",
+   "value": "0",
+   "index": 4,
+   "enabled": false,
+   "rowId": "Defence",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 44,
+       "imageRevision": 44,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Defence skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Защита",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tПочинка\t0%\t\t10",
+   "value": "0",
+   "index": 5,
+   "enabled": false,
+   "rowId": "Repair",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 45,
+       "imageRevision": 45,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Repair skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Починка",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_SKILL_2",
+   "type": "choice",
+   "label": "\tТорговля\t0%\t\t10",
+   "value": "0",
+   "index": 6,
+   "enabled": false,
+   "rowId": "Commerce",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 46,
+       "imageRevision": 46,
+       "width": 30,
+       "height": 30,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_SPEC",
+        "image": "Commerce skill icon"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Торговля",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "0%",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 4,
+     "text": "10",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tНавык основной защиты",
+   "value": "0",
+   "index": 0,
+   "enabled": false,
+   "rowId": "basicdefense",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 47,
+       "imageRevision": 47,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "BasicDefense"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Навык основной защиты",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tНавык продвинутой защиты",
+   "value": "0",
+   "index": 1,
+   "enabled": false,
+   "rowId": "advanceddefense",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 48,
+       "imageRevision": 48,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "AdvancedDefense"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Навык продвинутой защиты",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tКритический удар",
+   "value": "0",
+   "index": 2,
+   "enabled": false,
+   "rowId": "criticalhit",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 49,
+       "imageRevision": 49,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "CriticalHit"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Критический удар",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tНеутомимость",
+   "value": "0",
+   "index": 3,
+   "enabled": false,
+   "rowId": "tireless",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 50,
+       "imageRevision": 50,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "Tireless"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Неутомимость",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tПрофессиональный фехтовальщик",
+   "value": "0",
+   "index": 4,
+   "enabled": false,
+   "rowId": "swordplayprofessional",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 51,
+       "imageRevision": 51,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "SwordplayProfessional"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Профессиональный фехтовальщик",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tЖелезная воля",
+   "value": "0",
+   "index": 5,
+   "enabled": false,
+   "rowId": "ironwill",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 52,
+       "imageRevision": 52,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "IronWill"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Железная воля",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_PERKS",
+   "type": "choice",
+   "label": "\tВызывающий доверие",
+   "value": "0",
+   "index": 6,
+   "enabled": false,
+   "rowId": "trustworthy",
+   "images": [],
+   "actions": [
+    "select",
+    "activate"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 53,
+       "imageRevision": 53,
+       "width": 32,
+       "height": 32,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "PERK_DISABLE",
+        "image": "Trustworthy"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Вызывающий доверие",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tРанг\t1\t",
+   "value": "0",
+   "index": 0,
+   "enabled": false,
+   "rowId": "Rank",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 54,
+       "imageRevision": 54,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "Rank"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Ранг",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "1",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tЖизнь\t100 / 100\t",
+   "value": "0",
+   "index": 1,
+   "enabled": false,
+   "rowId": "Life",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 55,
+       "imageRevision": 55,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "Life"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Жизнь",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "100 / 100",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tЗдоровье\tОТЛИЧНОЕ\t",
+   "value": "0",
+   "index": 2,
+   "enabled": false,
+   "rowId": "Health",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 56,
+       "imageRevision": 56,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "Health"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Здоровье",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "ОТЛИЧНОЕ",
+     "colorArgb": 4294956800,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tЭнергия\t50 / 50\t",
+   "value": "0",
+   "index": 3,
+   "enabled": false,
+   "rowId": "Energy",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 57,
+       "imageRevision": 57,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "Energy"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Энергия",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "50 / 50",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tДеньги\t1 000\t",
+   "value": "0",
+   "index": 4,
+   "enabled": false,
+   "rowId": "Money",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 58,
+       "imageRevision": 58,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "Money"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Деньги",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "1 000",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "TABLE_OTHER",
+   "type": "choice",
+   "label": "\tВес\t6.2 / 150\t",
+   "value": "0",
+   "index": 5,
+   "enabled": false,
+   "rowId": "weight",
+   "images": [],
+   "actions": [
+    "select"
+   ],
+   "cells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": [
+      {
+       "handle": 59,
+       "imageRevision": 59,
+       "width": 26,
+       "height": 26,
+       "tintArgb": 4294967295,
+       "source": {
+        "kind": "atlas",
+        "group": "ICONS_CHAR",
+        "image": "weight"
+       }
+      }
+     ]
+    },
+    {
+     "column": 1,
+     "text": "Вес",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 2,
+     "text": "6.2 / 150",
+     "colorArgb": 4294967295,
+     "images": []
+    },
+    {
+     "column": 3,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ],
+   "columnHeaders": [
+    "",
+    "",
+    "",
+    ""
+   ],
+   "headerCells": [
+    {
+     "column": 0,
+     "text": "",
+     "colorArgb": 4294967295,
+     "images": []
+    }
+   ]
+  },
+  {
+   "node": "HERO_NAME",
+   "type": "text",
+   "label": "Шарль де Мор",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "STR_1",
+   "type": "text",
+   "label": "Характеристики",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "STR_2",
+   "type": "text",
+   "label": "Личные умения",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "STR_3",
+   "type": "text",
+   "label": "Корабельные умения",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "STR_4",
+   "type": "text",
+   "label": "Способности",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "TABBTN_1",
+   "type": "image",
+   "label": "",
+   "value": "1",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [
+    {
+     "handle": 60,
+     "imageRevision": 60,
+     "width": 0,
+     "height": 0,
+     "tintArgb": 4294967295,
+     "source": {
+      "kind": "atlas",
+      "group": "TABS",
+      "image": "TabDeSelected"
+     }
+    }
+   ],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "TABSTR_1",
+   "type": "text",
+   "label": "Личные 0",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "TABBTN_2",
+   "type": "image",
+   "label": "",
+   "value": "0",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [
+    {
+     "handle": 61,
+     "imageRevision": 61,
+     "width": 0,
+     "height": 0,
+     "tintArgb": 4294967295,
+     "source": {
+      "kind": "atlas",
+      "group": "TABS",
+      "image": "TabSelected"
+     }
+    }
+   ],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "TABSTR_2",
+   "type": "text",
+   "label": "Корабельные 0",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "B_SKILLUP",
+   "type": "button",
+   "label": "",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "B_SKILLDOWN",
+   "type": "button",
+   "label": "",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "FREE_SPECIAL",
+   "type": "text",
+   "label": "3",
+   "value": "1",
+   "index": 0,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "GAME_ACCEPT",
+   "type": "button",
+   "label": "Принять",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "GAME_CANCEL",
+   "type": "button",
+   "label": "Отмена",
+   "value": "",
+   "index": -1,
+   "enabled": false,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "MSG_WINDOW_CAPTION",
+   "type": "text",
+   "label": "Создать своего героя",
+   "value": "1",
+   "index": 0,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "MSG_WINDOW_TEXT",
+   "type": "text",
+   "label": "Укажите характеристику и стрелками перераспределите очки. Умения пересчитаются от выбранных PIRATES. Закройте форму, когда распределение будет завершено.",
+   "value": "1",
+   "index": 0,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [],
+   "cells": []
+  },
+  {
+   "node": "MSG_OK",
+   "type": "button",
+   "label": "Ок",
+   "value": "",
+   "index": -1,
+   "enabled": true,
+   "rowId": "",
+   "images": [],
+   "actions": [
+    "press"
+   ],
+   "cells": []
+  },
+  {
+   "node": "ANDROID_SUBJECT",
+   "type": "fact",
+   "label": "Шарль де Мор",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "s0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "character": "1",
+    "label": "Шарль де Мор",
+    "face": "1",
+    "rank": "1",
+    "authority": "1",
+    "hero": "1",
+    "freeself": "0",
+    "freeship": "0",
+    "rateself": "1000",
+    "rateship": "1000"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Навык основной защиты",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "basicdefense",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "label": "Навык основной защиты",
+    "text": "Получаемый урон ниже на десятую часть.\r\n~\r\nДействует вместе с бронёй.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Навык продвинутой защиты",
+   "value": "",
+   "index": 1,
+   "enabled": false,
+   "rowId": "advanceddefense",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "1",
+    "label": "Навык продвинутой защиты",
+    "text": "Получаемый урон ниже ещё на десятую часть.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Критический удар",
+   "value": "",
+   "index": 2,
+   "enabled": false,
+   "rowId": "criticalhit",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "label": "Критический удар",
+    "text": "Иногда удар наносит двойной урон.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Неутомимость",
+   "value": "",
+   "index": 3,
+   "enabled": false,
+   "rowId": "tireless",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "label": "Неутомимость",
+    "text": "Энергия восстанавливается быстрее.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Профессиональный фехтовальщик",
+   "value": "",
+   "index": 4,
+   "enabled": false,
+   "rowId": "swordplayprofessional",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "3",
+    "label": "Профессиональный фехтовальщик",
+    "text": "Все приёмы фехтования требуют меньше энергии.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Железная воля",
+   "value": "",
+   "index": 5,
+   "enabled": false,
+   "rowId": "ironwill",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "label": "Железная воля",
+    "text": "Команда реже теряет мораль.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Вызывающий доверие",
+   "value": "",
+   "index": 6,
+   "enabled": false,
+   "rowId": "trustworthy",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "2",
+    "label": "Вызывающий доверие",
+    "text": "Торговцы и чиновники охотнее идут навстречу.",
+    "type": "self",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Развитая торговля",
+   "value": "",
+   "index": 7,
+   "enabled": false,
+   "rowId": "advancedcommerce",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "1",
+    "label": "Развитая торговля",
+    "text": "Цены в магазинах выгоднее.",
+    "type": "ship",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKS",
+   "type": "fact",
+   "label": "Базовая торговля",
+   "value": "",
+   "index": 8,
+   "enabled": false,
+   "rowId": "basiccommerce",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "rule": "stock-all-v1",
+    "requirements": "0",
+    "label": "Базовая торговля",
+    "text": "Цены в магазинах немного выгоднее.",
+    "type": "ship",
+    "learned": "0",
+    "officer": "0",
+    "eligible": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "AdvancedDefense_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "BasicDefense",
+    "target": "AdvancedDefense",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 1,
+   "enabled": false,
+   "rowId": "SwordplayProfessional_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "CriticalHit",
+    "target": "SwordplayProfessional",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 2,
+   "enabled": false,
+   "rowId": "SwordplayProfessional_1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "AdvancedDefense",
+    "target": "SwordplayProfessional",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 3,
+   "enabled": false,
+   "rowId": "SwordplayProfessional_2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "Tireless",
+    "target": "SwordplayProfessional",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 4,
+   "enabled": false,
+   "rowId": "Trustworthy_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "AdvancedCommerce",
+    "target": "Trustworthy",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 5,
+   "enabled": false,
+   "rowId": "AdvancedCommerce_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "BasicCommerce",
+    "target": "AdvancedCommerce",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_PERKEDGES",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 6,
+   "enabled": false,
+   "rowId": "Trustworthy_1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "source": "IronWill",
+    "target": "Trustworthy",
+    "rule": "stock-all-v1",
+    "met": "0"
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Strength",
+    "text": "Сила: насколько крепок удар и сколько можно унести.\r\n~\r\nВлияет на тяжёлые клинки."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 1,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Perception",
+    "text": "Восприятие: внимание к мелочам и меткость."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 2,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr3",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Agility",
+    "text": "Реакция: скорость движений в бою."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 3,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr4",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Charisma",
+    "text": "Лидерство: умение вести людей за собой."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 4,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr5",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Intellect",
+    "text": "Обучаемость: как быстро растут умения."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 5,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr6",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Endurance",
+    "text": "Выносливость: запас здоровья и энергии."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 6,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr7",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Luck",
+    "text": "Удача: благосклонность случая."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 7,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "Leadership",
+    "text": "Харизма: убеждение и авторитет у команды.\r\n~\r\nЗависит от лидерства и обучаемости."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 8,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "FencingL",
+    "text": "Лёгкое оружие: рапиры и шпаги."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 9,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr3",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "FencingS",
+    "text": "Среднее оружие: сабли и тесаки."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 10,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr4",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "FencingH",
+    "text": "Тяжёлое оружие: палаши и топоры."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 11,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr5",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "Pistol",
+    "text": "Стрельба из пистолей и мушкетов."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 12,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr6",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "Fortune",
+    "text": "Везение в бою и в делах."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 13,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_1_tr7",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_1",
+    "skill": "Sneak",
+    "text": "Умение оставаться незамеченным."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 14,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Sailing",
+    "text": "Навигация: управление кораблём и эскадрой."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 15,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr2",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Accuracy",
+    "text": "Меткость корабельных орудий."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 16,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr3",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Cannons",
+    "text": "Скорость перезарядки и обращение с орудиями."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 17,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr4",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Grappling",
+    "text": "Абордаж: сближение и захват."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 18,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr5",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Defence",
+    "text": "Защита команды в бою."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 19,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr6",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Repair",
+    "text": "Починка корабля в море."
+   }
+  },
+  {
+   "node": "ANDROID_SKILLHELP",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 20,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr7",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Commerce",
+    "text": "Торговля: цены в магазинах."
+   }
+  }
+ ]
+}

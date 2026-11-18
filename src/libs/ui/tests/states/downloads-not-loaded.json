@@ -1,0 +1,12 @@
+{
+ "screen": "downloads",
+ "language": "russian",
+ "downloads": {
+  "loaded": false,
+  "sets": [],
+  "error": "",
+  "errorKind": "",
+  "magnetDraft": "",
+  "dialog": null
+ }
+}

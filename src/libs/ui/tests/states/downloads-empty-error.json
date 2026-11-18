@@ -1,0 +1,12 @@
+{
+ "screen": "downloads",
+ "language": "russian",
+ "downloads": {
+  "loaded": true,
+  "sets": [],
+  "error": "Storage unavailable",
+  "errorKind": "storage",
+  "magnetDraft": "",
+  "dialog": null
+ }
+}

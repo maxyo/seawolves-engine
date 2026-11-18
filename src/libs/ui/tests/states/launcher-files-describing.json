@@ -1,0 +1,16 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": true,
+  "library": false,
+  "hasGame": true,
+  "problem": "",
+  "result": {
+   "key": "delete_failed",
+   "args": []
+  }
+ }
+}

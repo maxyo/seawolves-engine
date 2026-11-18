@@ -1,0 +1,16 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": false,
+  "library": true,
+  "hasGame": false,
+  "problem": "start_failed",
+  "exit": {
+   "reason": "native_crash",
+   "when": "18.11.2026, 13:36"
+  }
+ }
+}

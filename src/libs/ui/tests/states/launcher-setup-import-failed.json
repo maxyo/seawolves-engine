@@ -1,0 +1,18 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": false,
+  "library": true,
+  "hasGame": false,
+  "problem": "no_game",
+  "result": {
+   "key": "import_archive_volumes",
+   "args": [
+    "game.part2.rar, game.part3.rar"
+   ]
+  }
+ }
+}

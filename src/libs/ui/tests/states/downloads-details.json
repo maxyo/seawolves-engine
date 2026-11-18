@@ -1,0 +1,47 @@
+{
+ "screen": "downloads",
+ "language": "russian",
+ "downloads": {
+  "loaded": true,
+  "sets": [
+   {
+    "id": "6f1c2a5e-0b1d-4c55-9a7e-3d2f8b9c0a11",
+    "kind": "torrent",
+    "name": "Corsairs Caribbean Legend 1.7.3",
+    "state": "downloading",
+    "downloaded": 4617089843,
+    "wanted": 13636426547,
+    "rate": 3565158,
+    "peers": 14,
+    "stalled": false,
+    "offline": false,
+    "checked": 0.0,
+    "networkError": "",
+    "error": "",
+    "errorKind": "",
+    "discovered": "",
+    "main": "pause",
+    "menu": [
+     "details"
+    ],
+    "busy": false
+   }
+  ],
+  "error": "",
+  "errorKind": "",
+  "magnetDraft": "",
+  "dialog": {
+   "kind": "details",
+   "id": "6f1c2a5e-0b1d-4c55-9a7e-3d2f8b9c0a11",
+   "title": "Corsairs Caribbean Legend 1.7.3",
+   "files": [
+    "Corsairs CL/engine.ini",
+    "Corsairs CL/RESOURCE/INI/texts/russian/common.ini",
+    "Corsairs CL/RESOURCE/Textures/ships/ship1.tx",
+    "Corsairs CL/PROGRAM/seadogs.c"
+   ],
+   "count": 41873,
+   "bytes": 13636426547
+  }
+ }
+}

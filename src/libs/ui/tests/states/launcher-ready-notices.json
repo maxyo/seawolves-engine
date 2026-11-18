@@ -1,0 +1,20 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "ready",
+  "starting": true,
+  "files": false,
+  "library": true,
+  "hasGame": true,
+  "problem": "",
+  "exit": {
+   "reason": "low_memory",
+   "when": "17.11.2026, 22:05"
+  },
+  "result": {
+   "key": "import_finished",
+   "args": []
+  }
+ }
+}

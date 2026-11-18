@@ -1,0 +1,63 @@
+{
+ "screen": "downloads",
+ "language": "russian",
+ "downloads": {
+  "loaded": true,
+  "sets": [
+   {
+    "id": "60718293-a4b5-4c63-d7e8-f9a0b1c2d388",
+    "kind": "magnet",
+    "name": "Corsairs CL (all languages)",
+    "state": "awaiting-selection",
+    "downloaded": 0,
+    "wanted": 0,
+    "rate": 0,
+    "peers": 0,
+    "stalled": false,
+    "offline": false,
+    "checked": 0.0,
+    "networkError": "",
+    "error": "",
+    "errorKind": "",
+    "discovered": "",
+    "main": "choose",
+    "menu": [
+     "details",
+     "delete"
+    ],
+    "busy": false
+   }
+  ],
+  "error": "",
+  "errorKind": "",
+  "magnetDraft": "",
+  "dialog": {
+   "kind": "candidates",
+   "id": "60718293-a4b5-4c63-d7e8-f9a0b1c2d388",
+   "candidates": [
+    {
+     "label": "Corsairs Caribbean Legend",
+     "kind": "loose-game-candidate",
+     "files": 41873,
+     "bytes": 13636426547
+    },
+    {
+     "label": "setup_corsairs_cl.exe",
+     "kind": "installer-candidate",
+     "files": 3,
+     "bytes": 9663676416
+    },
+    {
+     "label": "Corsairs_CL.part1.rar",
+     "kind": "archive-candidate",
+     "files": 4,
+     "bytes": 10737418240
+    }
+   ],
+   "all": {
+    "files": 41880,
+    "bytes": 34037514240
+   }
+  }
+ }
+}

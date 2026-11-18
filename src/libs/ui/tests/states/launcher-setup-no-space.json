@@ -1,0 +1,20 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": false,
+  "library": true,
+  "hasGame": false,
+  "problem": "no_game",
+  "result": {
+   "key": "import_no_space_need",
+   "args": [
+    12.7,
+    4.25,
+    8.45
+   ]
+  }
+ }
+}
