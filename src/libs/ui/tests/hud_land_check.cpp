@@ -1311,7 +1311,7 @@ static void CheckRush()
     mount.commands.clear();
     bench.Press("abilities");
     Expect(shown["abilities"]["fillTone"] == "cooldown" && !shown["abilities"].contains("disabled") && shown["abilities"]["badge"] == "54" &&
-               bench.hud.LogLines().dump().find("Тинктура Ометочтли: hud.ability.recovery 54 hud.ability.seconds") != std::string::npos &&
+               bench.hud.LogLines().dump().find("Тинктура Ометочтли: hud.ability.recovery 54\u00a0hud.ability.seconds") != std::string::npos &&
                mount.commands.empty(),
            "recovering: fill and seconds on the plate, a tap says when it is back, no command: " + shown["abilities"].dump());
     vitals.erase("abilities");

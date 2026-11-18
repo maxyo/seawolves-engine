@@ -477,8 +477,8 @@ static void CheckBattle()
     bench.Press("ability-4");
     Expect(mount.commands.size() == launched, "recovering, blocked and running abilities launch nothing");
     const Json log = bench.hud.LogLines();
-    Expect(log.dump().find("Предварительная перезарядка: hud.ability.recovery 180 hud.ability.seconds") != std::string::npos &&
-               log.dump().find("Манёвренный разворот корабля: hud.ability.active 30 hud.ability.seconds") != std::string::npos,
+    Expect(log.dump().find("Предварительная перезарядка: hud.ability.recovery 180\u00a0hud.ability.seconds") != std::string::npos &&
+               log.dump().find("Манёвренный разворот корабля: hud.ability.active 30\u00a0hud.ability.seconds") != std::string::npos,
            "a tap on a recovering or running ability says when, in the event log: " + log.dump());
     bench.Press("ability-3");
     Expect(mount.Last() == "gameplay:10\tBI_InstantRepair" && !mount.Has("ability-1"), "a ready ability is launched through its command, the fan folds: " + mount.Last());

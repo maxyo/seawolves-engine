@@ -108,7 +108,8 @@ void AbilityControls::Tell(const Ability &ability)
     const std::string name = ability.label.empty() ? hud_.Text("hud.ability.name." + ability.id) : ability.label;
     const std::string seconds = std::to_string(std::max(1, ability.left));
     const char *key = ability.state == "active" ? "hud.ability.active" : "hud.ability.recovery";
-    if (!hud_.Notice(name + ": " + hud_.Text(key) + " " + seconds + " " + hud_.Text("hud.ability.seconds"), "info"))
+    // the number and its unit never part at a line break (U+00A0)
+    if (!hud_.Notice(name + ": " + hud_.Text(key) + " " + seconds + "\u00a0" + hud_.Text("hud.ability.seconds"), "info"))
         hud_.Log("abilities: no event log in this scene to say when " + ability.id + " is back");
 }
 
