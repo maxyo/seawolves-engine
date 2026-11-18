@@ -377,9 +377,9 @@
     {
      "id": "spyglass",
      "component": "c-button",
-     "rcss": "position: absolute; left: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
+     "rcss": "position: absolute; left: 12dp; bottom: 99dp; width: 56dp; height: 56dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; right: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
+     "rcssMirrored": "position: absolute; right: 12dp; bottom: 99dp; width: 56dp; height: 56dp;",
      "propsMirrored": {}
     },
     {
@@ -548,9 +548,9 @@
     {
      "id": "spyglass",
      "component": "c-button",
-     "rcss": "position: absolute; left: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
+     "rcss": "position: absolute; left: 12dp; bottom: 99dp; width: 56dp; height: 56dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; right: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
+     "rcssMirrored": "position: absolute; right: 12dp; bottom: 99dp; width: 56dp; height: 56dp;",
      "propsMirrored": {}
     },
     {

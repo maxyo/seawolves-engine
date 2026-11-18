@@ -1317,7 +1317,7 @@ static void CheckRush()
     vitals["abilities"][0]["fill"] = 0.75;
     vitals["abilities"][0]["left"] = 9;
     bench.Set("vitals", vitals);
-    Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "active" && shown["abilities"]["cue"] == false,
+    Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "reload" && shown["abilities"]["cue"] == false,
            "running: the button's fill, no dot: " + shown["abilities"].dump());
     bench.Press("abilities");
     Expect(props["rows"][0]["meta"] == "hud.ability.active 9\u00a0hud.ability.seconds", "… its seconds in the list: " + props["rows"].dump());

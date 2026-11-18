@@ -66,7 +66,8 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
         open_ = false; // nothing to offer: no button at all
         return;
     }
-    // The button: small and quiet; a dot when one of them can be used now, the fill while one runs.
+    // The button: small and quiet; a green dot when one of them can be used now, the gold fill while one
+    // runs (the list's colours: green ready, gold running).
     bool ready = false;
     double active = 0.0;
     for (const Ability &ability : abilities)
@@ -77,7 +78,7 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
     }
     Json button = {{"icon", "rank"}, {"label", hud_.Text("hud.ability.group")}, {"variant", open_ ? "active" : "normal"}, {"cue", ready}};
     if (active > 0.0)
-        button.update(Json{{"fill", std::lround(active * 100.0)}, {"fillTone", "active"}, {"reloading", true}});
+        button.update(Json{{"fill", std::lround(active * 100.0)}, {"fillTone", "reload"}, {"reloading", true}});
     view.elements["abilities"] = std::move(button);
     input.On("abilities", "click", [this](const Event &) {
         open_ = !open_;

@@ -458,7 +458,7 @@ static void CheckBattle()
     Expect(mount.Last() == "gameplay:10\tTimeScaleX4", "x1.5 counts as x2: the next step is x4: " + mount.Last());
     // The ship abilities: one small button that opens their list (hud.h AbilityControls).
     Expect(shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true && !shown["abilities"].contains("badge") &&
-               shown["abilities"]["fill"] == 50 && shown["abilities"]["fillTone"] == "active" && mount.shown.sheet.empty(),
+               shown["abilities"]["fill"] == 50 && shown["abilities"]["fillTone"] == "reload" && mount.shown.sheet.empty(),
            "the abilities button, collapsed: a dot for the ready one (no number), the fill of the running one: " + shown["abilities"].dump());
     bench.Press("abilities");
     const Json &props = mount.shown.sheet_props; // the list's rows: props["rows"] (a new node with every view)
@@ -533,11 +533,17 @@ static void CheckBattle()
     bench.Press("spyglass");
     Expect(mount.Last() == "gameplay:10\tTelescopeIn" && shown["spyglass"]["variant"] == "active" && mount.shown.back,
            "a tap raises the spyglass, shown at once; Back is the HUD's: " + mount.Last());
-    Expect(!mount.Has("abilities") && !mount.Has("context") && !mount.Has("camera") && mount.Has("helm") && mount.Has("fire") && mount.Has("sail"),
+    Expect(!mount.Has("abilities") && !mount.Has("context") && !mount.Has("camera") && !mount.Has("pause") && !mount.Has("ship") && !mount.Has("fleet") && mount.Has("helm") && mount.Has("fire") && mount.Has("sail"),
            "the raised spyglass keeps the steering and the guns, the rest gives the look room");
     bench.Feed("spyglass", "spyglass-ship");
     bench.Frame(kRaiseWait);
     Expect(shown["spyglass"]["variant"] == "active" && !Sent(mount, "gameplay:10\tTelescopeOut"), "raised by the game: it stays up, nothing held");
+    std::string mask;
+    for (const std::string &command : mount.commands)
+        if (command.rfind("shiphud:", 0) == 0)
+            mask = command;
+    const unsigned covered = mask.empty() ? 0 : std::stoul(mask.substr(mask.find('\t') + 1));
+    Expect((covered & 32) != 0, "the fleet column gives way to the target card, the engine's own stays off: " + mask);
     bench.Press("spyglass");
     Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "normal" && !mount.shown.back,
            "the next tap lowers it: " + mount.Last());

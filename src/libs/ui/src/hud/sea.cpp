@@ -245,6 +245,9 @@ class SeaScene final : public Scene
         if (spyglass_up_)
         {
             abilities_.Close();
+            // the top row and the fleet column too (Back or the button lowers the spyglass first): the target card lies there
+            for (const char *id : {"ship", "pause", "orders", "fleet"}) // the card takes the fleet's place (CoverShip keeps it covered)
+                view.elements.erase(id);
             return; // the raised spyglass keeps the steering and the guns; the rest gives the look room
         }
         if (ship)
@@ -825,7 +828,8 @@ class SeaScene final : public Scene
         unsigned mask = 0;
         if (ship)
         {
-            const auto has = [&shown](const char *id) { return shown.elements.contains(id); };
+            // under the raised spyglass the fleet column gives way to the target card: the engine's own stays off too
+            const auto has = [&shown, this](const char *id) { return shown.elements.contains(id) || (spyglass_up_ && std::string_view(id) == "fleet"); };
             const auto prop = [&shown](const char *id, const char *key) { return shown.elements.contains(id) && shown.elements[id].contains(key); };
             // the flagship's cell of the squadron column carries its hull, crew and sails bars
             mask |= has("fleet") && ship->own.hull >= 0.0 ? kHull : 0;
