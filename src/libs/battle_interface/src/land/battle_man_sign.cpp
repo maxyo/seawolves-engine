@@ -96,7 +96,7 @@ void BIManSign::Draw()
         vitals->capacity=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootMax",0)),0,100000);
         vitals->loaded=std::clamp(static_cast<int>(icons->GetAttributeAsDword("shootCur",0)),0,vitals->capacity);
         vitals->reload=ratio("gunprogress");
-        storm::android::readLandStatus(allIcons, *vitals);
+        storm::android::readLandStatus(m_pARoot, allIcons, *vitals);
         storm::android::publishVitals(vitals, storm::android::landPortraitPicture);
     } else storm::android::publishVitals(std::nullopt);
 #else

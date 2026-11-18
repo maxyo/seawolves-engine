@@ -1275,6 +1275,53 @@ static void CheckTalkRoles()
     std::printf("talk roles against the game's characters: %zu dialog files, %d common roles checked\n", files.size(), roles);
 }
 
+// Rush beside the fight buttons (hud.h AbilityControls): only in a fight, only while the scripts
+// offer it or it runs; launched through the land menu's own command.
+static void CheckRush()
+{
+    Bench bench;
+    FakeMount &mount = bench.mount;
+    bench.Explore();
+    Json vitals = State("vitals");
+    vitals["abilities"] = Json::array({Json{{"id", "Rush"}, {"label", "Тинктура Ометочтли"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
+    bench.Set("vitals", vitals);
+    Expect(!mount.Has("abilities"), "explore: no Rush button (the actions sheet keeps its row)");
+    bench.Feed("gameplay", "gameplay-melee");
+    bench.Feed("combat", "combat-melee");
+    Json commands = State("land-commands-idle");
+    commands["offered"].push_back("BI_ActivateRush");
+    bench.Set("landCommands", commands);
+    const Json &shown = mount.shown.elements;
+    Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "flame" && shown["abilities"]["label"] == "Тинктура Ометочтли" &&
+               !shown["abilities"].contains("disabled"),
+           "fight: the Rush button under the game's name: " + shown["abilities"].dump());
+    mount.commands.clear();
+    bench.Press("abilities");
+    ExpectEqual(mount.Last(), "landcommands:1\t4\t10\t2\topen\tBI_ActivateRush", "a tap opens the land menu straight into its Rush command");
+    vitals["abilities"][0]["state"] = "active";
+    vitals["abilities"][0]["fill"] = 0.75;
+    vitals["abilities"][0]["left"] = 9;
+    bench.Set("vitals", vitals);
+    Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "active" && shown["abilities"]["badge"] == "9",
+           "running: what is left of it and its seconds: " + shown["abilities"].dump());
+    vitals["abilities"][0]["state"] = "recovery";
+    vitals["abilities"][0]["fill"] = 0.25;
+    vitals["abilities"][0]["left"] = 54;
+    bench.Set("vitals", vitals);
+    mount.commands.clear();
+    bench.Press("abilities");
+    Expect(shown["abilities"]["fillTone"] == "cooldown" && shown["abilities"]["disabled"] == true && shown["abilities"]["badge"] == "54" &&
+               shown["abilities"]["reason"] == "Тинктура Ометочтли: hud.ability.recovery 54 hud.ability.seconds" && mount.commands.empty(),
+           "recovering: disabled, when it is back, no command: " + shown["abilities"].dump());
+    vitals.erase("abilities");
+    bench.Set("vitals", vitals);
+    Expect(!mount.Has("abilities"), "nothing offered: no button");
+    vitals["abilities"] = Json::array({Json{{"id", "Turn180"}, {"state", "ready"}}});
+    const size_t errors = mount.errors.size();
+    bench.Set("vitals", vitals);
+    Expect(mount.errors.size() > errors, "a ship ability in the land vitals is rejected aloud");
+}
+
 int main(int argc, char **argv)
 {
     states_directory = argc > 1 ? argv[1] : "tests/states";
@@ -1283,6 +1330,7 @@ int main(int argc, char **argv)
     CheckMovement();
     CheckCombat();
     CheckStatus();
+    CheckRush();
     CheckSheet();
     CheckPlaceIcons();
     CheckTransitionFlash();

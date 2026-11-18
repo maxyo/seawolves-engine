@@ -91,6 +91,17 @@ struct Combat
     }
 };
 
+// An active ability (the engine's android_gameplay.hpp BattleAbility): in `ship` at sea, in
+// `vitals` on land. Everything is the scripts' state; the HUD only shows it and launches it.
+struct Ability
+{
+    std::string id;     // the perk / command name: ImmediateReload, LightRepair, InstantRepair, Turn180, Rush
+    std::string label;  // the game's own name of it ("" = not given: the pack's name for the id)
+    std::string state;  // ready, active, recovery, blocked
+    double fill = 0.0;  // active: what is left of the effect; recovery: how far it recovered
+    int left = 0;       // active / recovery: whole seconds the scripts still count
+};
+
 // Channel "vitals": the land hero's bars and loaded charges, and his status
 // (battle_interface land_status.hpp): effects, potions, officers, dash cooldown.
 // A picture of the player's own game files for c-game-image: a texture-namespace name and the
@@ -119,6 +130,7 @@ struct Vitals
     int potions = 0;                  // health potions carried
     std::vector<Officer> officers;
     double dash = -1.0;               // backstep cooldown left 0…1; -1 outside fight mode
+    std::vector<Ability> abilities;   // Rush, while the scripts offer it or it runs
     // The enemy captain of a boarding cabin fight while alive (V2-Land-Boarding-Cabin).
     std::string opponent;             // name; empty = none
     double opponent_health = 0.0;     // 0…1
@@ -188,13 +200,7 @@ struct Ship
     double speed = -1.0, wind = -1.0, cannon_charge = -1.0;
     double time_scale = -1.0; // the world's time scale the scripts set (x1 = 1)
     // Battle abilities (instant repair, immediate reload) the ship's people can use.
-    struct Ability
-    {
-        std::string id;          // InstantRepair, ImmediateReload
-        std::string state;       // ready, active, recovery, blocked
-        double fill = 0.0;       // active: what is left of the effect; recovery: how far it recovered
-    };
-    std::vector<Ability> abilities;
+    std::vector<Ability> abilities; // ImmediateReload, LightRepair, InstantRepair, Turn180
     std::string date_time, location;
     std::string ammo;        // balls, grapes, knippels, bombs; "" = unknown
     double ammo_count = -1.0;
@@ -366,6 +372,42 @@ class Input
 };
 
 class Hud;
+
+// The active abilities of a scene (sea: the ship abilities, land: Rush), one shared control: the
+// layout element "abilities" is the ability itself while there is one, and with more a button
+// that fans them out as "ability-1"…"ability-4" for kFanSeconds (as the ammunition fan). Each
+// ability shows the scripts' state only: ready (a tap launches it through `launch`, the game's own
+// command), active (the fill is what is left of the effect, the badge its seconds), recovery (the
+// fill is how far it recovered, the badge its seconds; disabled, a tap says when it is back) and
+// blocked (disabled, a tap says when the game allows it: the pack's hud.ability.blocked.<id>).
+// Nothing is drawn without abilities: the scenes hide the control then.
+class AbilityControls
+{
+  public:
+    static constexpr double kFanSeconds = 6.0;
+    static constexpr size_t kFanSlots = 4;
+    explicit AbilityControls(Hud &hud) : hud_(hud)
+    {
+    }
+    void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch);
+    bool Open() const
+    {
+        return open_;
+    }
+    void Close()
+    {
+        open_ = false;
+    }
+    // Folds the fan once its time is up (a rebuild); lowers `next` to the seconds until then.
+    void Expire(double now, double &next);
+    // The props of one ability's button (icon, label, state); shared by the slot and the fan.
+    Json Button(const Ability &ability);
+
+  private:
+    Hud &hud_;
+    bool open_ = false;
+    double until_ = 0.0;
+};
 
 // One ported gameplay zone (land, sea, world map). The instance lives while the gameplay
 // mode stays in its zone, so members hold local state (an open wheel, a held stick).

@@ -75,6 +75,9 @@ const Named kOrders[] = {
     {"bi_reload", "exchange", ""},    {"bi_charge", "ammo", ""},       {"bi_speed", "speed", ""},        {"bi_ccommand", "follow", ""},
     {"bi_ability", "energy", ""},     {"bi_speak", "talk", ""},        {"bi_sneak", "sneak", ""},        {"bi_immediatedeath", "skull", ""},
     {"bi_cabin", "cabin", ""},        {"bi_boat", "boat", ""},         {"bi_brander", "brander", ""},    {"bi_bomb", "bomb", ""},
+    // the ship abilities, as their buttons (abilities.cpp)
+    {"bi_immediatereload", "reload", ""}, {"bi_lightrepair", "repair", ""}, {"bi_instantrepair", "perk-instantrepair", ""},
+    {"bi_turn180", "maneuver", ""},
 };
 
 // Ship tokens by a word of the engine's ship model name (lower case).
@@ -162,6 +165,7 @@ class SeaScene final : public Scene
         if (orders.known && orders.active)
         {
             fan_open_ = false;
+            abilities_.Close();
             if (orders.complete)
             {
                 if (ship)
@@ -226,8 +230,11 @@ class SeaScene final : public Scene
         BuildGuns(states, ship, view, input);
         BuildTimeScale(hud_, gameplay, ship ? ship->time_scale : -1.0, view, input);
         if (fan_open_)
+        {
+            abilities_.Close();
             return; // the fan takes the place of the buttons around the ammunition, the abilities too (hud-layout.json "replaces")
-        if (ship && layout_ == "sea-battle")
+        }
+        if (ship)
             BuildAbilities(gameplay, *ship, view, input);
         BuildQuick(states.sea_quick, view, input);
         if (gameplay.Has("Sea_CameraSwitch"))
@@ -247,6 +254,7 @@ class SeaScene final : public Scene
     void Hidden(const States &states) override
     {
         fan_open_ = false;
+        abilities_.Close();
         Uncover(states);
     }
 
@@ -270,6 +278,7 @@ class SeaScene final : public Scene
         expire(!choice_.empty(), choice_until_, [this] { choice_.clear(); });
         expire(sail_target_ >= 0, sail_until_, [this] { sail_target_ = -1; });
         expire(fan_open_, fan_until_, [this] { fan_open_ = false; });
+        abilities_.Expire(now, next);
         return next;
     }
 
@@ -306,6 +315,7 @@ class SeaScene final : public Scene
             hud_.Send("orders", Owner(orders) + "\tclose\t");
         choice_.clear();
         fan_open_ = false;
+        abilities_.Close();
     }
 
     bool Holds(const States &states) const override
@@ -521,6 +531,7 @@ class SeaScene final : public Scene
         }
         input.On("ammo", "click", [this](const Event &) {
             fan_open_ = !fan_open_;
+            abilities_.Close();
             fan_until_ = hud_.Now() + kFanSeconds;
             hud_.Rebuild();
         });
@@ -551,36 +562,20 @@ class SeaScene final : public Scene
         }
     }
 
-    // The battle abilities beside the guns (V2-Sea-Battle effect-0 / effect-1): a tap launches
-    // the ability through the engine's command list; the fill rises bottom to top: what is left
-    // of an active effect, or how far a used ability has recovered.
+    // The ship abilities above the guns (hud.h AbilityControls), sailing and in battle: those whose
+    // perk the hero or the officer of its post has. A tap launches one through the engine's command
+    // list, as the native menu does (BI_<id>, android_ship_abilities.hpp); an ability whose command
+    // the engine does not bind in this gameplay is shown blocked.
     void BuildAbilities(const Gameplay &gameplay, const Ship &ship, View &view, Input &input)
     {
-        struct Look
-        {
-            const char *id, *element, *icon, *label;
-        };
-        static const Look kLooks[] = {{"InstantRepair", "effect-0", "perk-instantrepair", StringKey("hud.sea.ability.repair")},
-                                      {"ImmediateReload", "effect-1", "reload", StringKey("hud.sea.ability.reload")}};
-        for (const Look &look : kLooks)
-            for (const Ship::Ability &ability : ship.abilities)
-            {
-                if (ability.id != look.id)
-                    continue;
-                const std::string control = std::string("BI_") + look.id;
-                Json button = {{"icon", look.icon}, {"label", hud_.Text(look.label)}};
-                if (ability.state == "active")
-                    button.update(Json{{"fill", std::lround(ability.fill * 100.0)}, {"fillTone", "active"}, {"reloading", true}});
-                else if (ability.state == "recovery")
-                    button.update(Json{{"fill", std::lround(ability.fill * 100.0)}, {"fillTone", "cooldown"}, {"reloading", true}});
-                else if (ability.state == "blocked" || !gameplay.Has(control))
-                    button["disabled"] = true;
-                view.elements[look.element] = std::move(button);
-                if (ability.state == "ready" && gameplay.Has(control))
-                    input.On(look.element, "click", [this, control](const Event &) { Control(control); });
-                else
-                    input.Ignore(look.element, "click"); // the disabled reason is the fill itself
-            }
+        std::vector<Ability> shown = ship.abilities;
+        for (Ability &ability : shown)
+            if (ability.state == "ready" && !gameplay.Has("BI_" + ability.id))
+                ability.state = "blocked";
+        abilities_.Build(shown, view, input, [this](const Ability &ability) {
+            fan_open_ = false;
+            Control("BI_" + ability.id);
+        });
     }
 
     // A tap control: the engine runs it once, in the gameplay revision it was drawn for.
@@ -1017,6 +1012,7 @@ class SeaScene final : public Scene
     double sail_until_ = 0.0;
     // ammunition fan
     bool fan_open_ = false;
+    AbilityControls abilities_{hud_};
     double fan_until_ = 0.0;
     // quick action
     bool quick_covered_ = false;

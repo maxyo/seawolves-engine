@@ -85,6 +85,10 @@ const Named kCommands[] = {
     {"BI_MapAtlas", "map", ""},       {"BI_ActivateRush", "energy", ""}, {"BI_Exit_Deck", "boat", ""},
 };
 
+// The land abilities by the land menu's command that launches each (landinterface.c); `icon` holds
+// the command's event.
+const Named kAbilityCommands[] = {{"Rush", "BI_ActivateRush", ""}};
+
 // Root commands that are transitions: they have their own button (the boot), not rows of the
 // actions sheet.
 const char *const kTransitions[] = {"BI_FastReload", "BI_OutDoor"};
@@ -244,6 +248,18 @@ class LandScene final : public Scene
             input.On("weapon", "click", [this](const Event &) { Strike("weapon", "tap"); });
         }
 
+        if (melee && states.vitals.known)
+        {
+            // Rush beside the fight buttons (hud.h AbilityControls), only while the scripts offer it
+            // or it runs (land_status.hpp): launched through the land menu's own command, as its row.
+            abilities_.Build(states.vitals.abilities, view, input, [this](const Ability &ability) {
+                for (const Named &command : kAbilityCommands)
+                    if (ability.id == command.key)
+                        Commands("open", command.icon);
+            });
+        }
+        else
+            abilities_.Close();
         if (melee)
         {
             BuildCombat(states, ready, view, input);
@@ -258,6 +274,7 @@ class LandScene final : public Scene
     double Tick(const States &states, double now) override
     {
         double next = kIdle;
+        abilities_.Expire(now, next);
         if (moving_ || x_ != 0 || y_ != 0)
             SyncMove(states.gameplay);
         if (!choice_.empty() && now >= choice_until_)
@@ -847,6 +864,7 @@ class LandScene final : public Scene
     }
 
     Hud &hud_;
+    AbilityControls abilities_{hud_};
     // movement
     bool moving_ = false;
     int x_ = 0, y_ = 0;           // the thumb now (0, 0: up)

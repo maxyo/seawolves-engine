@@ -96,6 +96,35 @@ double Ratio(const Json &object, const char *key)
     return std::isfinite(number) ? std::clamp(number, 0.0, 1.0) : 0.0;
 }
 
+// The optional "abilities" list of a channel (ship, vitals): at most 4 of the known ids, each with a
+// known state; label and left are optional. Anything else rejects the channel's state.
+std::string ReadAbilities(const Json &state, std::initializer_list<const char *> ids, std::vector<Ability> &out)
+{
+    out.clear();
+    const auto abilities = state.find("abilities");
+    if (abilities == state.end())
+        return {};
+    if (!abilities->is_array() || abilities->size() > 4)
+        return "abilities is not a short list";
+    for (const Json &source : *abilities)
+    {
+        if (!source.is_object())
+            return "an ability is not an object";
+        Ability ability;
+        ability.id = Text(source, "id").value_or("");
+        ability.label = Text(source, "label").value_or("");
+        ability.state = Text(source, "state").value_or("");
+        ability.fill = Ratio(source, "fill");
+        ability.left = static_cast<int>(std::min<uint64_t>(Whole(source, "left").value_or(0), 86400));
+        if (!OneOf(ability.id, ids) || !OneOf(ability.state, {"ready", "active", "recovery", "blocked"}))
+            return "an unknown ability or ability state";
+        if (!Printable(ability.label, 160, true))
+            return "an ability has a bad label";
+        out.push_back(std::move(ability));
+    }
+    return {};
+}
+
 class HudConsumer : public StateConsumer
 {
   public:
@@ -349,6 +378,8 @@ class VitalsConsumer final : public HudConsumer
                 return "dash: expected a number";
             next.dash = Ratio(state, "dash");
         }
+        if (std::string problem = ReadAbilities(state, {"Rush"}, next.abilities); !problem.empty())
+            return problem;
         if (const auto opponent = state.find("opponent"); opponent != state.end())
         {
             if (!opponent->is_object() || !opponent->contains("name") || !(*opponent)["name"].is_string() ||
@@ -677,22 +708,9 @@ class ShipConsumer final : public HudConsumer
         out.wind = Amount(state, "windSpeed");
         out.cannon_charge = Amount(state, "cannonCharge") < 0.0 ? -1.0 : std::min(1.0, Amount(state, "cannonCharge"));
         out.time_scale = Amount(state, "timeScale");
-        const auto abilities = state.find("abilities");
-        if (abilities != state.end())
-        {
-            if (!abilities->is_array() || abilities->size() > 4)
-                return "abilities is not a short list";
-            for (const Json &source : *abilities)
-            {
-                Ship::Ability ability;
-                ability.id = source.is_object() ? Text(source, "id").value_or("") : "";
-                ability.state = source.is_object() ? Text(source, "state").value_or("") : "";
-                ability.fill = source.is_object() ? Ratio(source, "fill") : 0.0;
-                if (!OneOf(ability.id, {"InstantRepair", "ImmediateReload"}) || !OneOf(ability.state, {"ready", "active", "recovery", "blocked"}))
-                    return "an unknown ability or ability state";
-                out.abilities.push_back(std::move(ability));
-            }
-        }
+        if (std::string problem = ReadAbilities(state, {"ImmediateReload", "LightRepair", "InstantRepair", "Turn180"}, out.abilities);
+            !problem.empty())
+            return problem;
         out.date_time = Text(state, "dateTimeText").value_or("");
         out.location = Text(state, "locationText").value_or("");
         if (!Printable(out.date_time, 160, true) || !Printable(out.location, 160, true))

@@ -258,6 +258,14 @@
      "props": {},
      "rcssMirrored": "position: absolute; left: 14dp; bottom: 4dp; width: 228dp; height: 228dp; pointer-events: none;",
      "propsMirrored": {}
+    },
+    {
+     "id": "abilities",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 16dp; bottom: 150dp; width: 52dp; height: 52dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 16dp; bottom: 150dp; width: 52dp; height: 52dp;",
+     "propsMirrored": {}
     }
    ]
   },
@@ -421,6 +429,46 @@
      "rcss": "position: absolute; right: 366dp; top: 10dp; width: 48dp; height: 48dp;",
      "props": {},
      "rcssMirrored": "position: absolute; left: 366dp; top: 10dp; width: 48dp; height: 48dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "abilities",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 220dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 220dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-1",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 324dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 324dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-2",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 272dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 272dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-3",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 220dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 220dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-4",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 168dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 168dp; bottom: 130dp; width: 44dp; height: 44dp;",
      "propsMirrored": {}
     }
    ]
@@ -588,7 +636,7 @@
      "propsMirrored": {}
     },
     {
-     "id": "effect-0",
+     "id": "abilities",
      "component": "c-button",
      "rcss": "position: absolute; right: 220dp; bottom: 78dp; width: 44dp; height: 44dp;",
      "props": {},
@@ -596,11 +644,35 @@
      "propsMirrored": {}
     },
     {
-     "id": "effect-1",
+     "id": "ability-1",
      "component": "c-button",
-     "rcss": "position: absolute; right: 168dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "rcss": "position: absolute; right: 324dp; bottom: 130dp; width: 44dp; height: 44dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; left: 168dp; bottom: 78dp; width: 44dp; height: 44dp;",
+     "rcssMirrored": "position: absolute; left: 324dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-2",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 272dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 272dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-3",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 220dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 220dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "propsMirrored": {}
+    },
+    {
+     "id": "ability-4",
+     "component": "c-button",
+     "rcss": "position: absolute; right: 168dp; bottom: 130dp; width: 44dp; height: 44dp;",
+     "props": {},
+     "rcssMirrored": "position: absolute; left: 168dp; bottom: 130dp; width: 44dp; height: 44dp;",
      "propsMirrored": {}
     }
    ]

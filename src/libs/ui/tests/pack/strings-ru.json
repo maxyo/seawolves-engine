@@ -26,7 +26,18 @@
  "hud.sea.ammo.knippels": "hud.sea.ammo.knippels",
  "hud.sea.ammo.bombs": "hud.sea.ammo.bombs",
  "hud.captain": "hud.captain",
- "hud.sea.ability.repair": "hud.sea.ability.repair",
- "hud.sea.ability.reload": "hud.sea.ability.reload",
- "hud.travel": "hud.travel"
+ "hud.travel": "hud.travel",
+ "hud.ability.group": "hud.ability.group",
+ "hud.ability.recovery": "hud.ability.recovery",
+ "hud.ability.seconds": "hud.ability.seconds",
+ "hud.ability.blocked.ImmediateReload": "hud.ability.blocked.ImmediateReload",
+ "hud.ability.blocked.LightRepair": "hud.ability.blocked.LightRepair",
+ "hud.ability.blocked.InstantRepair": "hud.ability.blocked.InstantRepair",
+ "hud.ability.blocked.Turn180": "hud.ability.blocked.Turn180",
+ "hud.ability.blocked.Rush": "hud.ability.blocked.Rush",
+ "hud.ability.name.ImmediateReload": "hud.ability.name.ImmediateReload",
+ "hud.ability.name.LightRepair": "hud.ability.name.LightRepair",
+ "hud.ability.name.InstantRepair": "hud.ability.name.InstantRepair",
+ "hud.ability.name.Turn180": "hud.ability.name.Turn180",
+ "hud.ability.name.Rush": "hud.ability.name.Rush"
 }

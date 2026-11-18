@@ -205,14 +205,32 @@
  "timeScale": 1.5,
  "abilities": [
   {
-   "id": "InstantRepair",
-   "state": "ready",
-   "fill": 0
+   "id": "ImmediateReload",
+   "label": "Предварительная перезарядка",
+   "state": "recovery",
+   "fill": 0.4,
+   "left": 180
   },
   {
-   "id": "ImmediateReload",
-   "state": "recovery",
-   "fill": 0.4
+   "id": "LightRepair",
+   "label": "Неотложный ремонт",
+   "state": "blocked",
+   "fill": 0,
+   "left": 0
+  },
+  {
+   "id": "InstantRepair",
+   "label": "Ремонт в бою",
+   "state": "ready",
+   "fill": 0,
+   "left": 0
+  },
+  {
+   "id": "Turn180",
+   "label": "Манёвренный разворот корабля",
+   "state": "active",
+   "fill": 0.5,
+   "left": 30
   }
  ],
  "picture": {

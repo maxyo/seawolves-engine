@@ -1,8 +1,12 @@
 #pragma once
 #ifdef __ANDROID__
-// The ship's battle abilities a touch HUD offers as buttons: instant repair (carpenter) and
-// immediate reload (cannoner). Everything is read from the scripts' own state:
+// The ship's battle abilities a touch HUD offers: the four perk commands of the scripts' battle
+// interface (BattleInterface.c BI_InitializeCommands / procSetUsingAbility): immediate reload
+// (cannoner), light and instant repair (carpenter), the 180° turn (navigator). Everything is read
+// from the scripts' own state:
 //   holder   the main character when it has the perk, otherwise the officer of the perk's
+//            OfficerType (pchar.Fellows.Passengers.<type>) who has it; none = not offered;
+//   label    BattleInterface.Commands.<X>.note, the game's own name (AbilityDescribe.txt);
 //   active   holder.perks.list.<X>.active counts down from ChrPerksList TimeDuration;
 //   recovery holder.perks.list.<X>.delay counts down from TimeDelay while not active;
 //   ready    BattleInterface.Commands.<X>.enable, which the scripts' procSetUsingAbility
@@ -23,7 +27,7 @@
 
 namespace storm::android
 {
-inline constexpr std::array<std::string_view, 2> ShipAbilityNames{"InstantRepair", "ImmediateReload"};
+inline constexpr std::array<std::string_view, 4> ShipAbilityNames{"ImmediateReload", "LightRepair", "InstantRepair", "Turn180"};
 
 namespace abilities
 {
@@ -60,9 +64,9 @@ inline ATTRIBUTES *holder(ATTRIBUTES *main, ATTRIBUTES *perks, std::string_view 
 } // namespace abilities
 
 // The abilities as the HUD shows them; empty outside a sea scene or without the scripts' data.
-inline std::vector<ShipAbility> readShipAbilities()
+inline std::vector<BattleAbility> readShipAbilities()
 {
-    std::vector<ShipAbility> out;
+    std::vector<BattleAbility> out;
     try
     {
         auto *main = shipMainCharacter();
@@ -75,25 +79,15 @@ inline std::vector<ShipAbility> readShipAbilities()
             auto *owner = abilities::holder(main, perks, name);
             if (!owner)
                 continue;
-            const std::string perk = "perks.list." + std::string(name), base = "list." + std::string(name);
-            ShipAbility ability;
+            const std::string perk = "perks.list." + std::string(name), base = "list." + std::string(name),
+                              command = "Commands." + std::string(name);
+            BattleAbility ability;
             ability.id = std::string(name);
-            const auto active = abilities::number(owner, perk + ".active"), delay = abilities::number(owner, perk + ".delay");
-            const auto duration = abilities::number(perks, base + ".TimeDuration"), cooldown = abilities::number(perks, base + ".TimeDelay");
-            if (active && *active > 0 && duration && *duration > 0)
-            {
-                ability.state = ShipAbility::Active;
-                ability.fill = std::clamp(*active / *duration, 0.0, 1.0); // what is left of the effect
-            }
-            else if (delay && *delay > 0 && cooldown && *cooldown > 0)
-            {
-                ability.state = ShipAbility::Recovery;
-                ability.fill = std::clamp(1.0 - *delay / *cooldown, 0.0, 1.0); // how far it has recovered
-            }
-            else
-                ability.state = abilities::number(battle, "Commands." + std::string(name) + ".enable").value_or(0) != 0 ? ShipAbility::Ready
-                                                                                                                    : ShipAbility::Blocked;
-            ability.fill = std::round(ability.fill * 100.0) / 100.0;
+            auto *note = battle->FindAClass(battle, (command + ".note").c_str());
+            ability.label = note && note->HasValue() ? note->GetValue() : std::string();
+            battleAbilityTiming(ability, abilities::number(owner, perk + ".active"), abilities::number(owner, perk + ".delay"),
+                                abilities::number(perks, base + ".TimeDuration"), abilities::number(perks, base + ".TimeDelay"),
+                                abilities::number(battle, command + ".enable").value_or(0) != 0);
             out.push_back(std::move(ability));
         }
     }
@@ -184,7 +178,7 @@ inline bool launchShipAbility(std::string_view control)
         if (control != "BI_" + std::string(name))
             continue;
         for (const auto &ability : readShipAbilities())
-            if (ability.id == name && ability.state == ShipAbility::Ready)
+            if (ability.id == name && ability.state == BattleAbility::Ready)
             {
                 const auto index = abilities::number(shipMainCharacter(), "index");
                 if (!index)

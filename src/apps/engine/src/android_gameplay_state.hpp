@@ -140,7 +140,7 @@ inline GameplaySnapshot readGameplaySnapshot(bool ready)
         auto *battleData = static_cast<VDATA *>(core.GetScriptVariable("BattleInterface"));
         auto *battle = sea && !context.worldmap && battleData ? battleData->GetAClass() : nullptr;
         if (auto *commands = battle ? battle->FindAClass(battle, "Commands") : nullptr)
-            for (auto name : {"InstantRepair", "ImmediateReload"})
+            for (auto name : {"ImmediateReload", "LightRepair", "InstantRepair", "Turn180"}) // android_ship_abilities.hpp ShipAbilityNames
                 if (commands->GetAttributeClass(name)) out.capabilities.emplace_back(std::string("BI_") + name);
         return out;
     }

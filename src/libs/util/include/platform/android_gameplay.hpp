@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <atomic>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -78,6 +79,61 @@ inline std::string gameplayJsonString(std::string_view value)
         else if (c >= 32) out += c;
     }
     return out + '"';
+}
+// An active ability as a touch HUD shows it, at sea (android_ship_abilities.hpp) and on land
+// (battle_interface land_status.hpp): all of it read from the scripts' own state.
+//   id     the perk (ChrPerksList) and BattleInterface / land interface command name
+//   label  the game's own name of it (the command's note: AbilityDescribe.txt)
+//   state  ready (the scripts enable its command now), active (its effect runs), recovery (it
+//          was used and its delay runs), blocked (owned, not usable now)
+//   fill   active: what is left of the effect; recovery: how far it has recovered (0…1)
+//   left   active / recovery: whole seconds the scripts still count (perks.c procChrPerkDelay)
+struct BattleAbility
+{
+    enum State { Ready, Active, Recovery, Blocked };
+    std::string id, label;
+    State state = Blocked;
+    double fill = 0.0;
+    int left = 0;
+    bool operator==(const BattleAbility &) const = default;
+};
+// The state of a perk ability from the scripts' counters (perks.c ActivateCharacterPerk sets
+// perks.list.<X>.active = ChrPerksList TimeDuration and .delay = TimeDelay, procChrPerkDelay counts
+// both down once a second and deletes them at 0): absent counters are std::nullopt. `enabled` is
+// the scripts' own verdict on the command (its .enable), asked only when neither counter runs.
+inline void battleAbilityTiming(BattleAbility &ability, std::optional<double> active, std::optional<double> delay,
+                                std::optional<double> duration, std::optional<double> cooldown, bool enabled)
+{
+    const auto seconds = [](double value) { return static_cast<int>(std::ceil(std::clamp(value, 0.0, 86400.0))); };
+    ability.fill = 0.0;
+    ability.left = 0;
+    if (active && *active > 0 && duration && *duration > 0)
+    {
+        ability.state = BattleAbility::Active;
+        ability.fill = std::clamp(*active / *duration, 0.0, 1.0); // what is left of the effect
+        ability.left = seconds(*active);
+    }
+    else if (delay && *delay > 0 && cooldown && *cooldown > 0)
+    {
+        ability.state = BattleAbility::Recovery;
+        ability.fill = std::clamp(1.0 - *delay / *cooldown, 0.0, 1.0); // how far it has recovered
+        ability.left = seconds(*delay);
+    }
+    else
+        ability.state = enabled ? BattleAbility::Ready : BattleAbility::Blocked;
+    ability.fill = std::round(ability.fill * 100.0) / 100.0;
+}
+inline std::string battleAbilitiesJson(const std::vector<BattleAbility> &abilities)
+{
+    static constexpr const char *states[] = {"ready", "active", "recovery", "blocked"};
+    std::string out = "[";
+    for (size_t i = 0; i < abilities.size(); ++i)
+    {
+        const auto &ability = abilities[i];
+        out += std::string(i ? "," : "") + "{\"id\":" + gameplayJsonString(ability.id) + ",\"label\":" + gameplayJsonString(ability.label) +
+               ",\"state\":\"" + states[ability.state] + "\",\"fill\":" + std::to_string(ability.fill) + ",\"left\":" + std::to_string(ability.left) + "}";
+    }
+    return out + "]";
 }
 class GameplayState
 {

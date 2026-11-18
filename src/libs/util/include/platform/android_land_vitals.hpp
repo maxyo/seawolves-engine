@@ -66,6 +66,7 @@ struct LandVitals
     std::optional<LandOpponent> opponent;
     std::optional<LandBoarding> boarding;
     std::optional<float> dash;
+    std::vector<BattleAbility> abilities; // the land abilities (land_status.hpp readLandAbilities)
     bool operator==(const LandVitals &) const = default;
 };
 // `picture(portrait)`: the JSON of the picture drawn for a portrait ("null" for none).
@@ -97,6 +98,7 @@ template <class Picture> std::string landVitalsJson(const LandVitals &v, Picture
                 ",\"oursStart\":" + std::to_string(v.boarding->oursStart) +
                 ",\"theirsStart\":" + std::to_string(v.boarding->theirsStart) + "}";
     if (v.dash) json += ",\"dash\":" + std::to_string(*v.dash);
+    if (!v.abilities.empty()) json += ",\"abilities\":" + battleAbilitiesJson(v.abilities);
     return json + "}";
 }
 } // namespace storm::android

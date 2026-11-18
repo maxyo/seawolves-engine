@@ -454,18 +454,55 @@ static void CheckBattle()
     Expect(shown["time"]["badge"] == "×1.5" && shown["time"]["variant"] == "active", "an accelerated world: " + shown["time"].dump());
     bench.Press("time");
     Expect(mount.Last() == "gameplay:10\tTimeScaleX4", "x1.5 counts as x2: the next step is x4: " + mount.Last());
-    Expect(shown["effect-0"]["icon"] == "perk-instantrepair" && !shown["effect-0"].contains("fill") && !shown["effect-0"].contains("disabled") &&
-               shown["effect-1"]["fill"] == 40 && shown["effect-1"]["fillTone"] == "cooldown",
-           "the battle abilities: " + shown["effect-0"].dump() + shown["effect-1"].dump());
-    bench.Press("effect-0");
-    Expect(mount.Last() == "gameplay:10\tBI_InstantRepair", "a ready ability is launched: " + mount.Last());
+    // The ship abilities: one button above the guns that fans the four out (hud.h AbilityControls).
+    Expect(shown["abilities"]["icon"] == "energy" && shown["abilities"]["badge"] == "1" && shown["abilities"]["fill"] == 50 &&
+               shown["abilities"]["fillTone"] == "active" && !mount.Has("ability-1"),
+           "the abilities button: one ready, one running: " + shown["abilities"].dump());
+    bench.Press("abilities");
+    Expect(mount.Has("ability-1") && mount.Has("ability-4") && shown["abilities"]["variant"] == "active", "a tap fans the abilities out");
+    Expect(shown["ability-1"]["icon"] == "reload" && shown["ability-1"]["fill"] == 40 && shown["ability-1"]["fillTone"] == "cooldown" &&
+               shown["ability-1"]["badge"] == "180" && shown["ability-1"]["disabled"] == true &&
+               shown["ability-1"]["reason"] == "Предварительная перезарядка: hud.ability.recovery 180 hud.ability.seconds",
+           "a recovering ability: its fill, its seconds, disabled with when it is back: " + shown["ability-1"].dump());
+    Expect(shown["ability-2"]["icon"] == "repair" && shown["ability-2"]["disabled"] == true &&
+               shown["ability-2"]["reason"] == "Неотложный ремонт: hud.ability.blocked.LightRepair",
+           "a blocked ability: disabled with the game's condition: " + shown["ability-2"].dump());
+    Expect(shown["ability-3"]["icon"] == "perk-instantrepair" && shown["ability-3"]["label"] == "Ремонт в бою" && !shown["ability-3"].contains("disabled"),
+           "a ready ability under the game's own name: " + shown["ability-3"].dump());
+    Expect(shown["ability-4"]["icon"] == "maneuver" && shown["ability-4"]["fill"] == 50 && shown["ability-4"]["fillTone"] == "active" &&
+               shown["ability-4"]["badge"] == "30" && !shown["ability-4"].contains("disabled"),
+           "a running ability: what is left of it: " + shown["ability-4"].dump());
     const size_t launched = mount.commands.size();
-    bench.Press("effect-1");
-    Expect(mount.commands.size() == launched, "a recovering ability does nothing");
+    bench.Press("ability-1");
+    bench.Press("ability-2");
+    bench.Press("ability-4");
+    Expect(mount.commands.size() == launched, "recovering, blocked and running abilities launch nothing");
+    bench.Press("ability-3");
+    Expect(mount.Last() == "gameplay:10\tBI_InstantRepair" && !mount.Has("ability-1"), "a ready ability is launched through its command, the fan folds: " + mount.Last());
+    bench.Press("abilities");
     bench.Press("ammo");
-    Expect(mount.Has("ammo-1") && !mount.Has("effect-0") && !mount.Has("effect-1"), "the open fan takes the place of the abilities too");
+    Expect(mount.Has("ammo-1") && !mount.Has("abilities") && !mount.Has("ability-1"), "the ammunition fan takes the place of the abilities and folds theirs");
     bench.Press("ammo");
-    Expect(!mount.Has("ammo-1") && mount.Has("effect-0"), "folded: the abilities are back");
+    Expect(!mount.Has("ammo-1") && mount.Has("abilities") && !mount.Has("ability-1"), "folded: the abilities button is back, folded");
+    bench.Press("abilities");
+    bench.Frame(AbilityControls::kFanSeconds + 0.5);
+    Expect(!mount.Has("ability-1"), "an open abilities fan folds by itself");
+    // one ability: the button is that ability; a command the gameplay does not bind blocks it
+    Json single = State("ship-battle");
+    single["sequence"] = 99;
+    single["abilities"] = Json::array({Json{{"id", "Turn180"}, {"label", "Манёвренный разворот корабля"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
+    bench.Set("ship", single);
+    Expect(shown["abilities"]["icon"] == "maneuver" && !shown["abilities"].contains("disabled"), "one ability: the button is the ability: " + shown["abilities"].dump());
+    bench.Press("abilities");
+    Expect(mount.Last() == "gameplay:10\tBI_Turn180", "… and a tap launches it: " + mount.Last());
+    Json unbound = State("gameplay-naval");
+    unbound["revision"] = 10;
+    auto &caps = unbound["capabilities"];
+    caps.erase(std::remove(caps.begin(), caps.end(), Json("BI_Turn180")), caps.end());
+    bench.Set("gameplay", unbound);
+    Expect(shown["abilities"]["disabled"] == true, "an ability whose command the gameplay does not bind is blocked: " + shown["abilities"].dump());
+    bench.Set("gameplay", State("gameplay-naval"));
+    bench.Set("ship", State("ship-battle"));
     bench.Press("spyglass", "down");
     Expect(mount.Last() == "hold:10\tTelescopeIn\t1", "the spyglass is held: " + mount.Last());
     bench.Press("spyglass", "up");

@@ -638,6 +638,30 @@ void bench()
 }
 } // namespace
 
+// An ability's state from the scripts' perk counters (android_gameplay.hpp battleAbilityTiming) and
+// its JSON in the ship and vitals channels.
+void battleAbilities()
+{
+    BattleAbility a{"Rush", "Tincture \"O\""};
+    battleAbilityTiming(a, 9.0, 72.0, 12.0, 72.0, false); // just used: the effect runs (the delay runs too)
+    assert(a.state == BattleAbility::Active && a.fill == 0.75 && a.left == 9);
+    battleAbilityTiming(a, std::nullopt, 53.5, 12.0, 72.0, false); // the effect over, the delay on
+    assert(a.state == BattleAbility::Recovery && a.fill == 0.26 && a.left == 54);
+    battleAbilityTiming(a, std::nullopt, std::nullopt, 12.0, 72.0, true);
+    assert(a.state == BattleAbility::Ready && a.fill == 0 && a.left == 0);
+    battleAbilityTiming(a, std::nullopt, std::nullopt, 12.0, 72.0, false);
+    assert(a.state == BattleAbility::Blocked);
+    battleAbilityTiming(a, 5.0, std::nullopt, std::nullopt, 72.0, true); // a counter without its timing: the scripts' verdict
+    assert(a.state == BattleAbility::Ready);
+    a.state = BattleAbility::Recovery, a.fill = 0.26, a.left = 54;
+    assert(battleAbilitiesJson({a}) == R"([{"id":"Rush","label":"Tincture \"O\"","state":"recovery","fill":0.260000,"left":54}])");
+    LandVitals v;
+    assert(landVitalsJson(v, [](const LandPortrait &) { return std::string("null"); }).find("abilities") == std::string::npos);
+    v.abilities = {a};
+    assert(landVitalsJson(v, [](const LandPortrait &) { return std::string("null"); }).find(",\"abilities\":[{\"id\":\"Rush\"") != std::string::npos);
+    std::printf("  %-14s active / recovery / ready / blocked from the perk counters, JSON in ship and vitals\n", "abilities");
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) { bench(); return 0; }
@@ -651,5 +675,6 @@ int main(int argc, char **argv)
     reloadPlaceChannel();
     vitalsChannel();
     boardingMen();
+    battleAbilities();
     std::puts("android_hud_channels: ok");
 }
