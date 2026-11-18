@@ -2,6 +2,7 @@
 
 #include "storm_ui/render_backend.h"
 
+#include "action_trace.h"
 #include "components.h"
 #include "touch_motion.h"
 #include "elements.h"
@@ -614,6 +615,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     void Touch(TouchPhase phase, int pointer, float x, float y, double time) override
     {
         changed_ = true;
+        if (config_.trace_actions && phase == TouchPhase::Down)
+            Traced(tracer_.Finish(true)); // a new gesture: what the last one did is over
+        else if (config_.trace_actions && phase == TouchPhase::Up)
+            BeginTrace("tap " + std::to_string(int(x)) + "," + std::to_string(int(y)));
         // A pointer that went down on what is not laid out yet (an interface whose model is
         // still to come, a sheet opened since the last frame) waits for that layout, with the
         // rest of its gesture (ReleaseHeld).
@@ -856,7 +861,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         if (edges)
             regions_moved_ = true; // a scroll moved what is drawn without a layout
         // clamped text was re-cut for a new width, a scrolling edge changed, the toasts moved under a header
-        if (clamps || measured || header)
+        const bool relaid = clamps || measured || header;
+        if (relaid)
             UpdateContext();
         // A measurement is drawn with the layout it makes. Measuring settles in one more pass
         // (a scrollbar it adds: two); one that keeps changing is an error of the component.
@@ -865,6 +871,12 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 UpdateContext();
         if (measured && SettleLaidOutComponents())
             Rml::Log::Message(Rml::Log::LT_ERROR, "UI: a component's measured layout does not settle (it changes on every pass)");
+        // A pass above laid out again (re-cut text, a measurement): a list's height can have changed with
+        // it, so its scroll edge and fade are placed from that layout, in this frame (else the frame showed the fade
+        // where the layout before had it, and the next one moved it).
+        if (relaid)
+            for (int pass = 0; pass < 2 && ScrollEdgesChanged(context_->GetRootElement()); ++pass)
+                UpdateContext();
         // Debug and contract hosts: what a game interface's screen draws for a tap is mapped (else the tap would be
         // reported only when the player makes it, and do nothing).
         if (screen_root_ && counters_.touched > 0 && (config_.show_errors || config_.strict_templates))
@@ -887,6 +899,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
             if (toast.held < 0.0)
                 delay = std::min(delay, std::max(0.0, (toast.leaving >= 0.0 ? toast.leaving + ToastLeaveSeconds() : toast.until) - now));
         TakeGameImageCost(counters_.picture_ms, counters_.pictures);
+        if (tracer_.Active())
+            Traced(tracer_.Poll(system_.GetElapsedTime()));
         const bool draw = changed_ || !drawn_;
         if (draw)
             counters_.update_ms += Milliseconds(started, std::chrono::steady_clock::now());
@@ -954,6 +968,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         drawn_ = true;
         counters_.number = last_frame_.number + 1;
         counters_.shown = Shown();
+        if (tracer_.Active())
+            tracer_.Presented(TraceContent(counters_.shown));
         ReportSwitch(false);
         ReportSlowFrame();
         last_frame_ = counters_;
@@ -1289,6 +1305,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     void Back() override
     {
         changed_ = true;
+        if (config_.trace_actions)
+        {
+            BeginTrace("back");
+            tracer_.Named("back");
+        }
         bool hud_sheet = false;
         {
             const std::lock_guard<std::mutex> lock(touch_mutex_);
@@ -1786,6 +1807,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         std::string id;
         for (Rml::Element *element = &source; element && id.empty(); element = element->GetParentNode())
             id = element->GetId();
+        if (tracer_.Active())
+            tracer_.Named((hud_document_ && source.GetOwnerDocument() == hud_document_ ? std::string("hud")
+                           : screen_root_ && source.GetOwnerDocument() == screen_root_ ? ScreenTag()
+                                                                                          : std::string("document")) +
+                          " " + id + " " + verb);
         if (overlay_ && source.GetOwnerDocument() == overlay_)
         {
             ToastTouched(source, verb); // the overlay holds only the toasts and the tooltip
@@ -2038,6 +2064,48 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // A drawn frame whose UI work alone took kSlowFrameMs or more, with its split: what a stutter in the game's
     // "ui" phase was. At most one line
     // every two seconds; a screen switch has its own report.
+    std::vector<ActionTrace> TakeActionTraces() override
+    {
+        return std::exchange(traces_, {});
+    }
+
+    // --- the flicker check (Config::trace_actions, action_trace.h) ----------------
+
+    std::string ScreenTag() const
+    {
+        const Rml::Element *mounted = document_ ? document_->GetElementById("screen") : nullptr;
+        return mounted ? mounted->GetTagName() : std::string("screen");
+    }
+
+    // The content on the screen: the screen or plain document and the HUD (toasts and the tooltip pass over
+    // everything and are not part of what an action shows).
+    FrameContent TraceContent(std::string shown)
+    {
+        Rml::ElementDocument *const documents[] = {document_, hud_document_};
+        return CaptureContent(documents, float(config_.width), float(config_.height), std::move(shown), system_.GetElapsedTime());
+    }
+
+    // A player's action starts with what the screen shows now: the frame on the screen, unless something changed
+    // since it was drawn (then that change is the first thing the action shows).
+    void BeginTrace(const std::string &what)
+    {
+        Traced(tracer_.Begin(what, TraceContent(last_frame_.shown), float(config_.width), float(config_.height)));
+    }
+
+    void Traced(std::optional<ActionTrace> trace)
+    {
+        if (!trace)
+            return;
+        const std::string line = DescribeTrace(*trace);
+        if (trace->transient)
+            Rml::Log::Message(Rml::Log::LT_WARNING, "%s", line.c_str());
+        else if (config_.log_taps)
+            Log(line);
+        traces_.push_back(std::move(*trace));
+        if (traces_.size() > 512)
+            traces_.erase(traces_.begin());
+    }
+
     void ReportSlowFrame()
     {
         constexpr double kSlowFrameMs = 25.0;
@@ -2329,6 +2397,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::vector<Toast_> toasts_;
     int scroll_pointer_ = -1; // the pointer that drags lists (one at a time)
     TouchScroll scroll_;
+    ActionTracer tracer_;              // Config::trace_actions
+    std::vector<ActionTrace> traces_;  // finished, until TakeActionTraces
     bool initialised_ = false;
 };
 

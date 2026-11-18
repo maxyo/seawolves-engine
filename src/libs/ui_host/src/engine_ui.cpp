@@ -481,6 +481,9 @@ class EngineUi
         config.game_root = std::filesystem::current_path().string(); // prepareGameDirectory
         config.show_errors = storm::android::debugBuild();
         config.log_taps = Loggable("StormUiTaps"); // device crawls: the tap map in the log (Config::log_taps)
+        // The flicker check (Config::trace_actions): debug builds and device crawls report every action that showed a
+        // transient frame ("UI flicker" in logcat and Logs/ui.log).
+        config.trace_actions = config.show_errors || config.log_taps;
         // The UI's lines (what it showed, its errors) in Logs/ui.log, its errors in error.log too; logcat has them
         // from the UI already (tag StormUi).
         config.on_log = [logger = storm::logging::getOrCreateLogger("ui", spdlog::level::trace, false)](

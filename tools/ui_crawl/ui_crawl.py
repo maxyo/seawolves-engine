@@ -18,6 +18,12 @@ errors logged meanwhile (StormUi errors such as "no mapping", missing icons, scr
   ui_crawl.py -s emulator-5906 shot FILE.png
   ui_crawl.py -s emulator-5906 swipe X1,Y1 X2,Y2              drag (scroll), then the map
   ui_crawl.py -s emulator-5906 wait REGEX [--timeout S]   until the screen name matches
+  ui_crawl.py -s emulator-5906 flicker DIR...            every tap of the crawls in DIR/crawl.jsonl that showed a
+        transient frame, ranked by how visible it was (time on the screen x share of the screen)
+
+The flicker check (storm_ui Config::trace_actions, on with the tap map and in debug builds): each tap's report carries
+the host's "UI flicker" lines (frames that showed neither the state before the tap nor the one it settled in) and
+"UI action" lines (the tap settled without one); `tap` and `crawl` print them, crawl.jsonl keeps them.
 
 Set the property before the app starts:  adb shell setprop log.tag.StormUiTaps DEBUG
 Taps change the game: crawl on a throwaway device or emulator overlay (emulator -read-only).
@@ -37,6 +43,10 @@ LINE = re.compile(r'^(?P<where>\S+) (?P<tag>\S+) (?P<id>\S+) (?P<verb>\S+) box=(
 # component); script errors come through the engine log.
 PROBLEM = re.compile(r'no mapping|missing icon|is drawn with no mapping|script error|COMPILE ERROR|Undefined|'
                      r'not found|threw|failed|FATAL|crash', re.I)
+# The flicker check's lines (storm_ui action_trace.cpp DescribeTrace).
+TRACE = re.compile(r'UI (?P<kind>flicker|action): (?P<action>.*?): (?:(?P<transient>\d+) transient frames, (?P<ms>[\d.]+) ms, '
+                   r'(?P<area>[\d.]+)% of the screen|no transient frames) \((?P<before>\S+(?: \S+)?) -> (?P<after>.*?), settled in '
+                   r'(?P<settle>[\d.]+) ms, (?P<frames>\d+) frames(?P<flags>[^)]*)\)(?P<details>.*)$')
 NOISE = re.compile(r'frame pacing: the display stayed|force finish cuj|hid_init threw|Failed to open rendernode|Choreographer|OpenGLRenderer|EGL_emulation|goldfish|gralloc|ashmem|libprocessgroup|BpBinder|'
                    r'chatty|HostConnection|vulkan|AudioTrack|AudioFlinger|ziparchive|nativeloader', re.I)
 
@@ -143,6 +153,25 @@ def problems(lines, pids):
     return out
 
 
+def traces(lines, pids):
+    """The flicker check's reports in `lines` (the host's "UI flicker" / "UI action" lines)."""
+    out = []
+    for raw in lines:
+        parts = raw.split(None, 6)
+        if len(parts) < 7 or (pids and parts[2] not in pids):
+            continue
+        at = parts[6].find('UI flicker: ')
+        at = at if at >= 0 else parts[6].find('UI action: ')
+        match = TRACE.match(parts[6][at:].strip()) if at >= 0 else None
+        if not match:
+            continue
+        out.append({'action': match['action'], 'transient': int(match['transient'] or 0), 'ms': float(match['ms'] or 0),
+                    'area': float(match['area'] or 0) / 100.0, 'before': match['before'], 'after': match['after'],
+                    'settle_ms': float(match['settle']), 'frames': int(match['frames']), 'flags': match['flags'].strip(', '),
+                    'details': [d.strip() for d in match['details'].split(' | ') if d.strip()]})
+    return out
+
+
 def settle(device, last_block_count=0, quiet=1.5, timeout=20.0):
     """Wait until no new taps block arrived for `quiet` s; return (log lines, newest block or None)."""
     start = time.time()
@@ -244,6 +273,7 @@ def act(device, regions, region, back=False, hold=False):
         'text': '' if back else region['text'].strip(), 'before': screen_of(regions), 'after': screen_of(after),
         'changed': block is not None and signature(block) != signature(regions), 'problems': problems(lines, pids | device.pids()),
         'toasts': [r['text'].strip() for r in after if r['where'] == 'layer' and r['text'].strip()],
+        'traces': traces(lines, pids | device.pids()),
     }
     return result, after
 
@@ -255,6 +285,33 @@ def report(result):
         print('       toast: ' + toast)
     for line in result['problems'][:8]:
         print('       ' + line[:220])
+    for trace in result.get('traces', []):
+        if trace['transient']:
+            print('       FLICKER %s: %d frames, %.0f ms, %.0f%% of the screen' % (trace['action'], trace['transient'], trace['ms'], trace['area'] * 100))
+            for detail in trace['details'][:4]:
+                print('         ' + detail[:200])
+
+
+def flicker_list(dirs):
+    """Every tap of the crawls that showed a transient frame, most visible first (ms on the screen x share of it)."""
+    rows = []
+    for folder in dirs:
+        path = Path(folder) / 'crawl.jsonl'
+        if not path.exists():
+            continue
+        for line in path.read_text().splitlines():
+            result = json.loads(line)
+            for trace in result.get('traces', []):
+                rows.append((result, trace))
+    flickering = [(r, t) for r, t in rows if t['transient']]
+    flickering.sort(key=lambda rt: -(rt[1]['ms'] * max(rt[1]['area'], 0.01)))
+    print('%d taps traced, %d with transient frames' % (len(rows), len(flickering)))
+    for result, trace in flickering:
+        print('%5.0f ms %3.0f%% %d fr  %-14s %-28s %s' % (trace['ms'], trace['area'] * 100, trace['transient'], result['before'][:14],
+                                                       result['tapped'][:28], trace['action']))
+        for detail in trace['details'][:3]:
+            print('                         ' + detail[:180])
+    return 1 if flickering else 0
 
 
 def crawl(device, args, each=None):
@@ -358,8 +415,12 @@ def main():
     walk.add_argument('--no-back', action='store_true')
     walk.add_argument('--holds', action='store_true', help='also hold-to-confirm controls (they sell, buy, destroy: held)')
     walk.add_argument('--each', action='append', help='tap each region whose id matches this regex and crawl under it (repeat: nested)')
+    ranked = sub.add_parser('flicker', help='the taps of crawls that showed transient frames, most visible first')
+    ranked.add_argument('dirs', nargs='+')
     args = parser.parse_args()
     device = Device(args.serial, args.package)
+    if args.command == 'flicker':
+        return flicker_list(args.dirs)
     if args.command == 'taps':
         regions = current(device)
         print(screen_of(regions))

@@ -113,6 +113,12 @@ struct Config
     // props, its text), in physical pixels. Off by default; the Android hosts turn it on with
     // `adb shell setprop log.tag.StormUiTaps DEBUG`.
     bool log_taps = false;
+    // The flicker check (src/action_trace.h): from each player's action (a tap, the back key) on, the content of every
+    // presented frame is recorded until it settles; frames that differ from both the start and the settled state are
+    // transient, and each action with one is an error line "UI flicker: …" (every action: "UI action: …" with
+    // log_taps). The traces are kept for Host::TakeActionTraces. Debug and contract hosts turn it on; it walks the
+    // documents once per presented frame while an action is open.
+    bool trace_actions = false;
     // Optional clock in seconds, for deterministic captures.
     std::function<double()> clock;
     // Also gets every line the host logs: its errors, RmlUi's messages and every text it puts on the screen
@@ -164,6 +170,24 @@ struct FrameStats
     // model revision), "document", "hud" or "nothing", and " +opening" while an interface the game
     // announced has no frame yet.
     std::string shown;
+};
+
+// What the screen showed between one player's action and the state it settled in (Config::trace_actions).
+struct ActionTrace
+{
+    std::string action;     // "<where> <element id> <verb>" of the first event the action caused; "tap <x>,<y>" / "back" without one
+    std::string before;     // FrameStats::shown when it started
+    std::string after;      // and of the settled frame
+    int frames = 0;         // frames presented after the action until it settled
+    int transient = 0;      // of them, frames whose content differs from both the start and the settled state
+    double transient_ms = 0.0; // how long those were on the screen
+    double area = 0.0;      // the largest share of the screen (0..1) one transient frame changed
+    double settle_ms = 0.0; // from the action to the settled frame
+    bool interrupted = false; // another action began before it settled (its last frame is taken as the settled one)
+    bool unsettled = false;   // still changing after ActionTracer::kMaxSeconds
+    // One line per transient frame: when, for how long, how much, what it showed ("+40 ms 33 ms 52%: s-saves save_load#4.1:
+    // c-header#header 'Загрузка' …").
+    std::vector<std::string> details;
 };
 
 enum class TouchPhase
@@ -300,6 +324,9 @@ class Host
     // is mounted, its screen closes its sheet or open part first, as its ← does, and sends the
     // engine's own back when it has nothing to close.
     virtual void Back() = 0;
+
+    // The actions finished since the last call (Config::trace_actions), oldest first.
+    virtual std::vector<ActionTrace> TakeActionTraces() = 0;
 };
 
 } // namespace storm::ui

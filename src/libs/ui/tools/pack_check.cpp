@@ -2,7 +2,7 @@
 // on the recorded models and states, without a GL context and without game data.
 //
 //   storm_ui_pack_check --pack DIR --fixtures DIR [--only NAME] [--crawl 0|1] [--shard K/N] [--actions FILE]
-//                       [--app-contract FILE]
+//                       [--app-contract FILE] [--flicker FILE]
 //
 // The pack (the application's mobile-ui/design, built by its build.py) and the adapters (this
 // library) live in two repositories; this is where they meet before a device does. --fixtures is
@@ -22,7 +22,11 @@
 // - an engine command tools/android/app_contract.json does not list (--app-contract, default the engine's);
 // - a tap that does nothing at all: no action, no change of what is drawn (a pressable that is bound to
 //   nothing useful; a row that only shows something is drawn inert or with pointer-events: none);
-// - a disabled control whose tap still sends something or opens something.
+// - a disabled control whose tap still sends something or opens something;
+// - a tap whose frames show a transient state (the flicker check, src/action_trace.h): a frame that differs from both
+//   what was on the screen before the tap and the state the tap settled in (an empty panel before the filled one, a
+//   busy mark that comes and goes, a screen passed through). Exemptions: pack-contract.json "flicker" [{case, tap,
+//   reason}]. --flicker writes every tap's trace (one JSON object a line) for a ranked list.
 // --actions writes every action the taps sent (one JSON object a line) for the application's check that
 // they end in the game's scripts and the application's Java (tests/ui_pack_contract/game_bindings.py).
 // Exit 0 when every case is clean, 1 otherwise, 2 for bad arguments.
@@ -99,6 +103,7 @@ class Session
         files_ = DirectoryFiles(pack.string());
         Config config;
         config.strict_templates = true; // a template path that names nothing, a drawn tap that maps to nothing: errors
+        config.trace_actions = true;    // the flicker check: every tap's frames until they settle (ActionTrace)
         config.files = files_.get();
         config.backend = &backend_;
         config.width = 2400; // a common phone in landscape: 914 x 411 dp
@@ -486,7 +491,28 @@ struct Crawl
     std::vector<std::string> findings; // errors: each with the path of taps that leads to it
     std::vector<std::string> inert;    // taps that did nothing at all
     std::vector<std::string> notes;    // states the crawl could not open again the same way (timed screen state): not crawled further
+    std::vector<std::string> flicker;  // taps whose frames showed a transient state (ActionTrace), not exempted
+    std::vector<std::string> exempted; // the same, exempted in pack-contract.json "flicker" with a reason
 };
+
+// A flicker the manifest exempts ("flicker": [{case, tap, reason}], `tap` a part of the tap's key or path): its reason.
+struct FlickerExemption
+{
+    std::string case_name, tap, reason;
+};
+std::vector<FlickerExemption> g_flicker_exemptions;
+std::vector<std::string> g_flicker_records; // --flicker: every tap's trace, one JSON object a line
+
+std::string TraceText(const ActionTrace &trace)
+{
+    char head[256];
+    std::snprintf(head, sizeof head, "%d transient frame%s, %.0f ms, %.0f%% of the screen", trace.transient, trace.transient == 1 ? "" : "s",
+                  trace.transient_ms, trace.area * 100.0);
+    std::string text = head;
+    for (const std::string &detail : trace.details)
+        text += "\n        " + detail;
+    return text;
+}
 
 std::string PathText(const std::vector<std::string> &path)
 {
@@ -606,16 +632,19 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
                 chosen = at_part->IsClassSet("sel") || at_part->IsClassSet("selected");
             const std::string before = Drawn();
             const size_t errors = observed.errors.size(), actions = observed.actions.size(), texts = observed.texts.size();
+            (*session)->TakeActionTraces(); // the replay's taps: not this one
             Press(*session, tap, at);
             std::vector<std::string> next = path;
             next.push_back(tap.key);
             bool acted = observed.texts.size() > texts;
+            bool asked_game = false; // a widget action the game answers: what the tap shows next is the game's
             for (size_t a = actions; a < observed.actions.size(); ++a)
             {
                 const Action &action = observed.actions[a];
                 if (action.screen == "sound")
                     continue;
                 acted = true;
+                asked_game = asked_game || !EngineCommand(action).empty();
                 const std::string command = EngineCommand(action);
                 if (tap.disabled)
                     finding(next, "screen " + action.screen + ": " + tap.key + " is drawn disabled and still sends " +
@@ -643,6 +672,36 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
                 records.push_back(record.dump());
             }
             session->AnswerAll();
+            // The flicker check: the tap's frames until they settle (Config::trace_actions, ActionTracer::kSettleSeconds).
+            // There is no game here: what the game answers to a widget action is the same model again, so a screen that
+            // shows the asked-for state at once and then the game's (unchanged) one would count as a transient that the
+            // real game does not make. Those taps are recorded, not judged: the device crawl (tools/ui_crawl) and the
+            // flows of tests/flicker_check.cpp with the game's real answers judge them.
+            std::vector<ActionTrace> traces;
+            for (double waited = 0.0; waited < 1.5 && traces.empty(); waited += 1.0 / 60.0)
+            {
+                session->Frames(1.0 / 60.0);
+                traces = (*session)->TakeActionTraces();
+            }
+            for (const ActionTrace &trace : traces)
+            {
+                Json record = {{"case", c.name}, {"tap", tap.key}, {"path", PathText(next)}, {"action", trace.action},
+                               {"before", trace.before}, {"after", trace.after}, {"frames", trace.frames}, {"transient", trace.transient},
+                               {"transient_ms", trace.transient_ms}, {"area", trace.area}, {"settle_ms", trace.settle_ms},
+                               {"details", trace.details}, {"game", asked_game}};
+                g_flicker_records.push_back(record.dump());
+                if (!trace.transient || asked_game)
+                    continue;
+                const std::string where = PathText(next);
+                const auto exemption = std::find_if(g_flicker_exemptions.begin(), g_flicker_exemptions.end(), [&](const FlickerExemption &e) {
+                    return e.case_name == c.name && where.find(e.tap) != std::string::npos;
+                });
+                const std::string line = tap.key + " (" + trace.action + ") via " + PathText(path) + ": " + TraceText(trace);
+                if (exemption != g_flicker_exemptions.end())
+                    crawl.exempted.push_back(line + "\n        exempted: " + exemption->reason);
+                else
+                    crawl.flicker.push_back(line);
+            }
             for (size_t e = errors; e < observed.errors.size(); ++e)
                 finding(next, observed.errors[e]);
             const std::string after_signature = Signature(Taps());
@@ -699,7 +758,8 @@ bool Run(const fs::path &pack, const Case &c, std::vector<std::string> &records,
     Crawl crawl;
     if (crawl_states)
         RunCrawl(pack, c, crawl, records, commands);
-    const bool ok = failures.empty() && observed.errors.empty() && broken == 0 && crawl.findings.empty() && crawl.inert.empty();
+    const bool ok = failures.empty() && observed.errors.empty() && broken == 0 && crawl.findings.empty() && crawl.inert.empty() &&
+                    crawl.flicker.empty();
     std::printf("%s %s", ok ? "PASS" : "FAIL", c.name.c_str());
     if (crawl_states)
         std::printf(" (%d state%s, %d tap%s", crawl.states, crawl.states == 1 ? "" : "s", crawl.taps, crawl.taps == 1 ? "" : "s");
@@ -718,6 +778,10 @@ bool Run(const fs::path &pack, const Case &c, std::vector<std::string> &records,
         std::printf("  crawl: %s\n", line.c_str());
     for (const std::string &line : crawl.inert)
         std::printf("  inert tap (does nothing at all): %s\n", line.c_str());
+    for (const std::string &line : crawl.flicker)
+        std::printf("  flicker: %s\n", line.c_str());
+    for (const std::string &line : crawl.exempted)
+        std::printf("  flicker (exempted): %s\n", line.c_str());
     for (const std::string &line : crawl.notes)
         std::printf("  note: %s\n", line.c_str());
     if (!ok)
@@ -730,7 +794,7 @@ bool Run(const fs::path &pack, const Case &c, std::vector<std::string> &records,
 
 int main(int argc, char **argv)
 {
-    fs::path pack, fixtures, actions_out, contract;
+    fs::path pack, fixtures, actions_out, contract, flicker_out;
     std::string only;
     bool crawl = true;
     int shard = 0, shards = 1; // --shard K/N: the cases K, K+N, …; the coverage check in shard 0 (run them in parallel)
@@ -745,6 +809,8 @@ int main(int argc, char **argv)
             only = value;
         else if (key == "--actions")
             actions_out = value;
+        else if (key == "--flicker")
+            flicker_out = value;
         else if (key == "--app-contract")
             contract = value;
         else if (key == "--crawl")
@@ -765,7 +831,7 @@ int main(int argc, char **argv)
     }
     if (pack.empty() || fixtures.empty() || argc % 2 == 0)
     {
-        std::fprintf(stderr, "usage: storm_ui_pack_check --pack DIR --fixtures DIR [--only NAME] [--crawl 0|1] [--shard K/N] [--actions FILE] [--app-contract FILE]\n");
+        std::fprintf(stderr, "usage: storm_ui_pack_check --pack DIR --fixtures DIR [--only NAME] [--crawl 0|1] [--shard K/N] [--actions FILE] [--app-contract FILE] [--flicker FILE]\n");
         return 2;
     }
     // The engine commands the application takes (engine tools/android/app_contract.json): a screen that sends
@@ -783,6 +849,17 @@ int main(int argc, char **argv)
     {
         std::fprintf(stderr, "%s: expected {cases, uncovered}\n", (fixtures / "pack-contract.json").c_str());
         return 2;
+    }
+
+    for (const Json &entry : manifest.value("flicker", Json::array()))
+    {
+        FlickerExemption exemption{entry.value("case", std::string()), entry.value("tap", std::string()), entry.value("reason", std::string())};
+        if (exemption.case_name.empty() || exemption.tap.empty() || exemption.reason.empty())
+        {
+            std::fprintf(stderr, "pack-contract.json: a flicker exemption needs case, tap and reason: %s\n", entry.dump().c_str());
+            return 2;
+        }
+        g_flicker_exemptions.push_back(std::move(exemption));
     }
 
     std::vector<Case> cases;
@@ -893,6 +970,17 @@ int main(int argc, char **argv)
         if (!out)
         {
             std::fprintf(stderr, "cannot write %s\n", actions_out.c_str());
+            return 2;
+        }
+    }
+    if (!flicker_out.empty())
+    {
+        std::ofstream out(flicker_out);
+        for (const std::string &line : g_flicker_records)
+            out << line << "\n";
+        if (!out)
+        {
+            std::fprintf(stderr, "cannot write %s\n", flicker_out.c_str());
             return 2;
         }
     }

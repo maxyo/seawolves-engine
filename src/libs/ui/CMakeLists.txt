@@ -156,6 +156,7 @@ add_library(storm_ui STATIC
     src/components.cpp
     src/behaviors.cpp
     src/touch_motion.cpp
+    src/action_trace.cpp
     src/draw_elements.cpp
     src/icons.cpp
     src/game_image.cpp
