@@ -601,7 +601,7 @@ class Shard(threading.Thread):
             # The game's migration hook runs it while the save loads (scenarios.py): files of the copy only.
             existing = os.listdir(inside(game, inventory.find_case_insensitive(game, 'PROGRAM/migrations')))
             program = inventory.find_case_insensitive(game, 'PROGRAM')
-            for relative, text in scenarios.install(self.arguments.scenario, existing).items():
+            for relative, text in scenarios.install(self.arguments.scenario, existing, trigger=False).items():
                 target = inside(game, program / relative)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(text.encode('cp1251', errors='replace'))

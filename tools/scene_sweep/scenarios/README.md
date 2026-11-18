@@ -15,7 +15,7 @@ the start save then runs:
 2. once the loaded scene is on screen the driver takes the hero there with a quest reload or a quest sea login, so the
    place is entered as the player enters it (its people, shops, doors, the enemies at sea);
 3. `Scenario_Arrived()` on arrival, then after 3 s on screen the game is saved as **`scenario-<name>`** in the start
-   save's profile (the game's `SaveEngineState`), then `Scenario_Trigger()` (run-only actions, not saved);
+   save's profile (the game's `SaveEngineState`), then `Scenario_Trigger()` (run-only actions, not saved; on devices only: the host sweep captures the saved state, its script gets no frames under a game screen);
 4. the segment unloads itself. Progress is traced as `Scenario <name>: ...` (system.log, logcat `StormEngine`), a
    failure as `Scenario <name>: FAILED <reason>`.
 

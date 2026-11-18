@@ -12,7 +12,9 @@
 //   DoQuestReloadToLocation, so the location is entered as the player enters it: its people, shops and doors)
 //   Scenario_Arrived()  once the destination is on screen: what needs the loaded location
 //   (the game is saved as "scenario-<name>" in the player's profile, with the game's own SaveEngineState)
-//   Scenario_Trigger()  after the save: what only the run needs (a screen the game opens at that point); not saved
+//   Scenario_Trigger()  after the save: what only a device run needs (a screen the game opens at that point); not
+//                       saved, and not run by the host scene sweep (its capture is the saved state: the sweep's
+//                       script gets no frames while a game screen is open)
 //
 // Then the segment unloads itself. The driver keeps its state in pchar.ScenarioTest, removed before the save; after
 // the save pchar.ScenarioTest.done says it is complete (the scene sweep's scenario:<name> scene waits for it).
@@ -20,11 +22,13 @@
 
 #define SCENARIO_SETTLE_MS	3000	// on screen this long before the save (people sit down, the HUD comes up)
 
-// Called by the generated migration file inside ApplyMigrations.
-void Scenario_Run(string name)
+// Called by the generated migration file inside ApplyMigrations; `trigger`: run Scenario_Trigger after the save.
+void Scenario_Run(string name, bool trigger)
 {
 	DeleteAttribute(pchar, "ScenarioTest");
 	pchar.ScenarioTest = name;
+	pchar.ScenarioTest.trigger = 0;
+	if (trigger) pchar.ScenarioTest.trigger = 1;
 	pchar.ScenarioTest.step = "start";
 	pchar.ScenarioTest.time = 0;
 	pchar.ScenarioTest.destination = "";
@@ -125,8 +129,9 @@ void Scenario_Frame()
 			Scenario_Stop();
 			return;
 		}
+		bool trigger = sti(pchar.ScenarioTest.trigger);
 		Scenario_Save();
-		Scenario_Trigger();
+		if (trigger) Scenario_Trigger();
 		Scenario_Stop();
 	}
 }
