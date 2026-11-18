@@ -785,6 +785,17 @@ class LandScene final : public Scene
         std::vector<const LandCommands::Item *> items;
         for (const LandCommands::Item &item : commands.items)
             items.push_back(&item);
+        // The place the hero stands in: the game leaves it out of the list, the sheet shows its tile in its
+        // slot, marked and not tappable.
+        LandCommands::Item here;
+        if (travel && !commands.here_picture.empty())
+        {
+            here.id = "here";
+            here.kind = "travel";
+            here.label = commands.here_label;
+            here.picture = commands.here_picture;
+            items.push_back(&here);
+        }
         // Each town's table lists its places in its own order and the game puts the port first
         // whenever the ship is in reach: the travel tiles go in one order of place kinds instead,
         // so a kind keeps its slot from town to town (the port, which comes and goes, last).
@@ -795,6 +806,14 @@ class LandScene final : public Scene
         for (const LandCommands::Item *entry : items)
         {
             const LandCommands::Item &item = *entry;
+            if (entry == &here)
+            {
+                rows.push_back(Json{{"id", "item-here"}, {"title", item.label}, {"icon", RowIcon(item)}, {"disabled", true}, {"pressed", false},
+                                    {"chevron", false}, {"cooldown", 0}, {"here", true}, {"sub", hud_.Text("hud.travel.here")}});
+                // A tap on it shakes the tile (the disabled button's answer, behaviors.cpp) and asks the game nothing.
+                input.On("item-here", "refused", [](const Event &) {});
+                continue;
+            }
             if (item.kind == "cancel" || (root && item.kind == "command" && IsTransition(item.source)))
                 continue; // transitions have their own button
             const std::string element = "item-" + item.id;

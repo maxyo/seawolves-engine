@@ -26,6 +26,7 @@ class BIManCommandList : public BICommandList
   protected:
 #ifdef __ANDROID__
     std::string AndroidPicture(const UsedCommand &command) const;
+    std::string AndroidPicture(int32_t texture, int32_t cell) const;
 #endif
     void Release();
 

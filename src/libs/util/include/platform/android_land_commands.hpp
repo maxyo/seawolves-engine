@@ -53,6 +53,9 @@ struct LandCommandsFrame
     // The script events of the root commands the menu would offer now (BLI_SetPossibleCommands'
     // enabled Commands), open or not: the touch HUD shows a button per group before the menu opens.
     std::vector<std::string> offered;
+    // The travel stage only: the place of the town's table the hero stands in, which the game leaves out of
+    // the list (its picture as LandCommandItem::picture, its name as the game's note); "" = none.
+    std::string herePicture, hereLabel;
     bool operator==(const LandCommandsFrame &) const = default;
 };
 // Missing presentation support is not a gameplay prohibition. The original
@@ -140,6 +143,7 @@ public:
         checkText(frame.language, 32); checkText(frame.pendingLabel, 1024);
         for (auto &item : frame.items) { checkText(item.label, 1024, true); checkText(item.source, 512); checkText(item.picture, 128); }
         for (auto &event : frame.offered) checkText(event, 128);
+        if (!frame.herePicture.empty()) { checkText(frame.herePicture, 128); checkText(frame.hereLabel, 1024, true); }
         if (frame.offered.size() > 64) { frame.offered.clear(); frame.complete = false; defect_ = "over 64 offered events: the list is dropped"; }
         if (frame.items.size() > 256 || textBytes > 24000)
         {
@@ -266,6 +270,8 @@ public:
         }
         out += "],\"offered\":[";
         for (size_t i = 0; i < frame.offered.size(); ++i) out += (i ? "," : "") + quote(frame.offered[i]);
+        out += "],\"here\":" + (frame.herePicture.empty() ? std::string("null") :
+            "{\"picture\":" + quote(frame.herePicture) + ",\"label\":" + quote(frame.hereLabel) + "}");
         const auto receiptJson = [&](const Receipt &receipt) {
             const auto &r = receipt.request;
             return "{\"serial\":" + std::to_string(receipt.serial) +
@@ -273,7 +279,7 @@ public:
                 ",\"activity\":" + std::to_string(r.activity) + ",\"id\":" + quote(r.id) +
                 ",\"accepted\":" + (receipt.accepted ? "true" : "false") + ",\"reason\":" + quote(receipt.reason) + "}";
         };
-        out += "],\"activation\":" + receiptJson(receipt_) + ",\"activations\":[";
+        out += ",\"activation\":" + receiptJson(receipt_) + ",\"activations\":[";
         for (size_t i = 0; i < receipts_.size(); ++i) out += (i ? "," : "") + receiptJson(receipts_[i]);
         return out + "]}";
     }

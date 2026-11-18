@@ -55,10 +55,14 @@ int main() {
     f.offered={"BI_FastReload","BI_TalkSelf"};s.update("closed",f);
     assert(!s.offer(request(s,"open","BI_SelfRepair"),100));
     assert(s.offer(request(s,"open","BI_FastReload"),100));{auto open=s.take(101);assert(open&&open->verb=="open"&&open->id=="BI_FastReload");}
-    assert(s.json().find(",\"offered\":[\"BI_FastReload\",\"BI_TalkSelf\"],\"activation\":")!=std::string::npos);
+    assert(s.json().find(",\"offered\":[\"BI_FastReload\",\"BI_TalkSelf\"],\"here\":null,\"activation\":")!=std::string::npos);
     f=fixture();f.items[0].picture="landtarget_slb:2";s.update("picture",f);
     assert(s.json().find("\"source\":\"BI_OutDoor\",\"picture\":\"landtarget_slb:2\"")!=std::string::npos);
     f.items[0].picture=std::string(129,'a');s.update("picture-long",f);assert(!s.frame().complete);
+    // the travel stage's place of the hero: its picture and name, or null
+    f=fixture();f.herePicture="landtarget_slb:1";f.hereLabel="Верфь";s.update("here",f);
+    assert(s.frame().complete&&s.json().find(",\"here\":{\"picture\":\"landtarget_slb:1\",\"label\":\"Верфь\"},")!=std::string::npos);
+    f.hereLabel="";s.update("here-nameless",f);assert(!s.frame().complete);
     s.update({},{});assert(!s.offer(request(s,"open"),100));
     std::cout<<"PASS: land selection acknowledgement, duplicate-caption identity, stale target/scene/activity, removed/disabled entries, cooldown, completeness, bounds, no coverage words, queue age and duplicate rejection, open into an offered command, offered list and pictures in the JSON\n";
 }

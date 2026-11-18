@@ -360,6 +360,13 @@ static void CheckConsumers()
     broken["stage"] = "dreams";
     bench.Feed("landCommands", broken);
     Expect(!commands.known && bench.LastErrorHas("unknown stage 'dreams'"), "landCommands: an unknown stage is rejected");
+    broken = State("land-commands-travel");
+    broken["here"] = Json{{"picture", "landtarget_slb:1"}};
+    bench.Feed("landCommands", broken);
+    Expect(!commands.known && bench.LastErrorHas("here is not {picture, label}"), "landCommands: the hero's place needs its picture and name");
+    broken["here"] = Json{{"picture", "landtarget_slb:1"}, {"label", "Верфь"}};
+    bench.Feed("landCommands", broken);
+    Expect(commands.known && commands.here_picture == "landtarget_slb:1" && commands.here_label == "Верфь", "landCommands: the hero's place");
     Json uncancellable = State("land-commands-travel");
     uncancellable["items"].erase(uncancellable["items"].size() - 1);
     bench.Feed("landCommands", uncancellable);

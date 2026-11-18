@@ -149,6 +149,9 @@ struct LandCommands
     } activation;
     std::vector<Activation> activations;
     std::vector<std::string> offered; // root command events the scripts enable now, open or not
+    // The travel stage's place the hero stands in (the game leaves it out of the list): its picture as
+    // Item::picture and its name; "" = none.
+    std::string here_picture, here_label;
     bool active = false, available = false, can_back = false, can_close = false;
     bool complete = false; // everything is known and drawable; otherwise the engine keeps its own menu
     std::string stage = "commands", title, selected;
@@ -221,6 +224,9 @@ struct SeaOrders
     bool known = false;
     uint64_t scene = 0, revision = 0, activity = 0;
     std::vector<std::string> offered; // root command events the scripts enable now, open or not
+    // The travel stage's place the hero stands in (the game leaves it out of the list): its picture as
+    // Item::picture and its name; "" = none.
+    std::string here_picture, here_label;
     bool available = false, active = false, can_back = false, can_close = false;
     bool complete = false; // drawable here as a whole; otherwise the engine keeps its own menu
     std::string stage = "commands", recipient, title, selected; // stage: commands, options, targets

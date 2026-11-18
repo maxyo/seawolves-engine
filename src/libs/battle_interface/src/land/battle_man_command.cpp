@@ -211,12 +211,16 @@ storm::android::LandCommandSource BIManCommandList::RefreshAndroidSource()
         const auto result = std::from_chars(value->data(), value->data() + value->size(), parsed);
         return result.ec == std::errc() && result.ptr == value->data() + value->size() && parsed >= -1;
     };
-    const auto pending = field("pendingAllowed"), reload = field("reload");
+    const auto pending = field("pendingAllowed"), reload = field("reload"), hereLabel = field("hereLabel");
     if (!index("dialog")) return missing("invalid-dialog-target");
     if (!index("officer")) return missing("invalid-officer-target");
     if (!index("body")) return missing("invalid-body-target");
     if (pending != "0" && pending != "1") return missing("invalid-pending-allowed");
     if (!reload || !storm::android::landCommandsTextValid(*reload, 1024)) return missing("invalid-reload-target");
+    // The place of the town's fast-travel table the hero stands in (-1: none): the travel stage marks its tile.
+    if (!index("herePicture") || !index("hereTexture") || (field("herePicture") == "-1") != (field("hereTexture") == "-1"))
+        return missing("invalid-here-place");
+    if (!hereLabel || !storm::android::landCommandsTextValid(*hereLabel, 1024)) return missing("invalid-here-label");
     const bool allowed = pending == "1";
     storm::android::traceLandAdapter(3, allowed ? "fresh-version-1-allowed" : "fresh-version-1-forbidden");
     return allowed ? storm::android::LandCommandSource::Ready : storm::android::LandCommandSource::Forbidden;
@@ -225,13 +229,17 @@ storm::android::LandCommandSource BIManCommandList::RefreshAndroidSource()
 // selected picture (for a travel place the place: LandTarget_SLB cell = fast_reload_table's pic).
 std::string BIManCommandList::AndroidPicture(const UsedCommand &command) const
 {
-    if (command.nTextureIndex < 0 || command.nTextureIndex >= static_cast<int32_t>(m_aTexture.size()) || command.nSelPictureIndex < 0)
+    return AndroidPicture(command.nTextureIndex, command.nSelPictureIndex);
+}
+std::string BIManCommandList::AndroidPicture(int32_t texture, int32_t cell) const
+{
+    if (texture < 0 || texture >= static_cast<int32_t>(m_aTexture.size()) || cell < 0)
         return {};
-    std::string stem = m_aTexture[command.nTextureIndex].sFileName;
+    std::string stem = m_aTexture[texture].sFileName;
     if (const auto slash = stem.find_last_of("\\/"); slash != std::string::npos) stem.erase(0, slash + 1);
     if (const auto dot = stem.find('.'); dot != std::string::npos) stem.erase(dot);
     for (auto &c : stem) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return stem + ":" + std::to_string(command.nSelPictureIndex);
+    return stem + ":" + std::to_string(cell);
 }
 void BIManCommandList::ReadAndroidOffered(std::vector<std::string> &offered) const
 {
@@ -263,6 +271,17 @@ void BIManCommandList::ReadAndroidLand(storm::android::LandCommandsFrame &frame)
                 if (const char *note = entry->GetAttribute("note")) frame.pendingLabel = note;
         }
         if (frame.pendingLabel.empty()) frame.complete = false;
+    }
+    if (frame.stage == "travel") {
+        // The script's place of the hero (AndroidLandRefresh, checked there): the game leaves it out of the
+        // travel list (CheckFastJump), the touch HUD shows its tile marked.
+        auto *meta = m_pARoot ? m_pARoot->GetAttributeClass("AndroidLand") : nullptr;
+        const int32_t cell = meta ? static_cast<int32_t>(meta->GetAttributeAsDword("herePicture", -1)) : -1;
+        if (cell >= 0) {
+            frame.herePicture = AndroidPicture(static_cast<int32_t>(meta->GetAttributeAsDword("hereTexture", -1)), cell);
+            frame.hereLabel = meta->GetAttribute("hereLabel") ? meta->GetAttribute("hereLabel") : "";
+            if (frame.herePicture.empty() || frame.hereLabel.empty()) frame.complete = false;
+        }
     }
     if (m_nCurrentCommandMode & ~(BI_COMMODE_COMMAND_SELECT | BI_COMMODE_USER_ICONS | BI_COMMODE_ABILITY_ICONS)) frame.complete = false;
     if (m_aUsedCommand.size() > 256) { frame.complete = false; return; }

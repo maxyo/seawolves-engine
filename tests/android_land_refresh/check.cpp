@@ -37,7 +37,7 @@ struct Core {std::function<void()> refresh;void Event(const char *event,const ch
 struct BIManCommandList {ATTRIBUTES *m_pARoot;std::string m_sCurrentCommandName;storm::android::LandCommandSource RefreshAndroidSource();};
 // PRODUCTION_METHODS
 using namespace storm::android;
-static void populate(ATTRIBUTES &root){auto *m=root.child("AndroidLand");m->set("dialog","-1");m->set("officer","1");m->set("body","-1");m->set("reload","");m->set("pendingAllowed","1");m->set("version","1");}
+static void populate(ATTRIBUTES &root){auto *m=root.child("AndroidLand");m->set("dialog","-1");m->set("officer","1");m->set("body","-1");m->set("reload","");m->set("pendingAllowed","1");m->set("herePicture","-1");m->set("hereTexture","-1");m->set("hereLabel","");m->set("version","1");}
 static std::string action(LandCommandsState &s,const char *verb,const char *id=""){
     return "1\t"+std::to_string(s.sceneEpoch())+"\t"+std::to_string(s.revision())+"\t"+std::to_string(s.activityGeneration())+"\t"+verb+"\t"+id;
 }
@@ -53,7 +53,7 @@ int main(){
     core.refresh=[&]{populate(root);};assert(list.RefreshAndroidSource()==LandCommandSource::Ready);
     // Native clears old metadata even if the handler disappears before its first statement.
     core.refresh={};assert(list.RefreshAndroidSource()==LandCommandSource::Missing&&!root.GetAttributeClass("AndroidLand"));
-    for(const char *missing:{"version","dialog","officer","body","reload","pendingAllowed"}){
+    for(const char *missing:{"version","dialog","officer","body","reload","pendingAllowed","herePicture","hereTexture","hereLabel"}){
         populate(root);core.refresh=[&]{populate(root);auto *m=root.GetAttributeClass("AndroidLand");m->DeleteAttributeClassX(m->GetAttributeClass(missing));};
         assert(list.RefreshAndroidSource()==LandCommandSource::Missing&&!root.GetAttributeClass("AndroidLand"));
     }
@@ -62,6 +62,14 @@ int main(){
     }
     core.refresh=[&]{populate(root);root.GetAttributeClass("AndroidLand")->set("pendingAllowed","true");};assert(list.RefreshAndroidSource()==LandCommandSource::Missing);
     core.refresh=[&]{populate(root);root.GetAttributeClass("AndroidLand")->set("reload","bad\nlocator");};assert(list.RefreshAndroidSource()==LandCommandSource::Missing);
+    // The hero's place: a picture and its texture together, or neither; its name valid text.
+    const auto here=[&](const char *picture,const char *texture,const char *label){core.refresh=[&,picture,texture,label]{populate(root);auto *m=root.GetAttributeClass("AndroidLand");
+        m->set("herePicture",picture);m->set("hereTexture",texture);m->set("hereLabel",label);};return list.RefreshAndroidSource();};
+    assert(here("1","1","Верфь")==LandCommandSource::Ready);
+    assert(here("1","-1","Верфь")==LandCommandSource::Missing&&here("-1","1","")==LandCommandSource::Missing);
+    assert(here("x","1","Верфь")==LandCommandSource::Missing&&here("1","1","bad\nname")==LandCommandSource::Missing);
+    // a place without its note (an empty label) leaves the travel stage incomplete, as an item without one does (ReadAndroidLand)
+    assert(here("1","1","")==LandCommandSource::Ready);
     // A logged error may not abort the interpreter. Even all fields plus a late
     // version1 marker are insufficient if any part of this synchronous event failed.
     core.refresh=[&]{DATA old;old.pValue=123;assert(!old.Convert(VAR_STRING));populate(root);};

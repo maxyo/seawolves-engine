@@ -556,6 +556,15 @@ class LandCommandsConsumer final : public HudConsumer
                 return "offered holds a bad command event";
             out.offered.push_back(event.get<std::string>());
         }
+        if (const auto here = state.find("here"); here != state.end() && !here->is_null())
+        {
+            const auto picture = here->is_object() ? Text(*here, "picture") : std::nullopt;
+            const auto label = here->is_object() ? Text(*here, "label") : std::nullopt;
+            if (!picture || !label || !Printable(*picture, 128, false) || !Printable(*label, 1024, false))
+                return "here is not {picture, label}";
+            out.here_picture = *picture;
+            out.here_label = *label;
+        }
         out.known = true;
         out.scene = *scene;
         out.revision = *revision;

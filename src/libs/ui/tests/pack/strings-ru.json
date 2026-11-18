@@ -28,5 +28,6 @@
  "hud.captain": "hud.captain",
  "hud.sea.ability.repair": "hud.sea.ability.repair",
  "hud.sea.ability.reload": "hud.sea.ability.reload",
- "hud.travel": "hud.travel"
+ "hud.travel": "hud.travel",
+ "hud.travel.here": "hud.travel.here"
 }

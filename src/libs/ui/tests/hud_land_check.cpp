@@ -696,6 +696,27 @@ static void CheckSheet()
         for (const Json &tile : mount.shown.sheet_props["rows"])
             icons += tile["icon"].get<std::string>() + " ";
         ExpectEqual(icons, std::string("store shipyard tavern residence usurer church lantern portoffice prison "), "the travel tiles in the same order in every town");
+        // the hero stands in the shipyard: the game leaves it out of the list, the sheet shows its tile in its slot, marked
+        Json inside = State("land-commands-travel");
+        Json kept = Json::array();
+        for (const Json &item : inside["items"])
+            if (item["picture"] != "landtarget_slb:1")
+                kept.push_back(item);
+        inside["items"] = kept;
+        inside["here"] = Json{{"picture", "landtarget_slb:1"}, {"label", "Верфь"}};
+        bench.Set("landCommands", inside);
+        const Json &marked = mount.shown.sheet_props["rows"];
+        icons.clear();
+        for (const Json &tile : marked)
+            icons += tile["icon"].get<std::string>() + " ";
+        ExpectEqual(icons, std::string("store shipyard tavern residence usurer church lantern portoffice prison port "), "the hero's place keeps its slot");
+        Expect(marked[1]["id"] == "item-here" && marked[1]["title"] == "Верфь" && marked[1]["here"] == true && marked[1]["disabled"] == true &&
+                   marked[1]["sub"] == "hud.travel.here" && marked[0].value("here", false) == false,
+               "the hero's place is marked and not tappable: " + marked[1].dump());
+        const size_t before = mount.commands.size();
+        const size_t errors = mount.errors.size();
+        bench.Press("item-here", "refused");
+        Expect(mount.commands.size() == before && mount.errors.size() == errors, "a tap on the marked tile shakes it and asks the game nothing");
         bench.Feed("landCommands", "land-commands-travel");
     }
     bench.Frame();

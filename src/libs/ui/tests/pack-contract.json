@@ -14,6 +14,8 @@
       "combat=states/combat-explore.json", "vitals=states/vitals.json", "landCommands=states/land-commands-root.json"]},
     {"name": "hud-land-travel", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-explore.json",
       "combat=states/combat-explore.json", "vitals=states/vitals.json", "landCommands=states/land-commands-travel.json"]},
+    {"name": "hud-land-travel-here", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-explore.json",
+      "combat=states/combat-explore.json", "vitals=states/vitals.json", "landCommands=states/land-commands-travel-here.json"]},
     {"name": "hud-land-melee", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-melee.json",
       "combat=states/combat-melee-reload.json", "vitals=states/vitals-status.json", "landCommands=states/land-commands-potions.json"]},
     {"name": "hud-sea", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-sailing.json",
