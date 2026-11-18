@@ -1,0 +1,25 @@
+{
+ "schemaVersion": 1,
+ "sceneEpoch": 4,
+ "activityGeneration": 2,
+ "language": "russian",
+ "mode": 0,
+ "revision": 10,
+ "available": true,
+ "active": false,
+ "complete": true,
+ "stage": "commands",
+ "pendingLabel": "",
+ "selectedItemId": "",
+ "canBack": false,
+ "canClose": false,
+ "items": [],
+ "offered": [
+  "BI_ItemsUse",
+  "BI_TalkSelf",
+  "BI_ItemsChange",
+  "BI_Alchemy",
+  "BI_MapAtlas",
+  "BI_ActivateRush"
+ ]
+}
