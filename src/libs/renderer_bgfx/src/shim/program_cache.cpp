@@ -274,10 +274,15 @@ void ProgramCache::cacheWrite(uint64_t id, const void *data, uint32_t size)
     std::lock_guard lock(mutex_);
     if (device_dir_.empty() || !data || size == 0)
         return;
-    if (size > config_.max_bytes / 4)
+    // OpenGL: one binary per program, many of them: none may take more than a quarter of the cache. Vulkan: the
+    // device's pipeline cache is the only entry (every pipeline of every scene, ~30 KB each on Adreno: 19 MB after
+    // ~640 pipelines), so it may fill the cache; refused only when it would not fit at all.
+    const uint64_t entry_limit = vulkan_ ? config_.max_bytes : config_.max_bytes / 4;
+    if (sizeof(Header) + uint64_t(size) > entry_limit) // with its header, as evict() counts it
     {
-        logf("ERROR: program cache: binary %016" PRIx64 " of %u bytes exceeds a quarter of the cache: not stored", id,
-             size);
+        logf("ERROR: program cache: %s %016" PRIx64 " of %u bytes exceeds %s (%.1f MB): not stored, it is compiled "
+             "again at the next start", vulkan_ ? "the pipeline cache" : "binary", id, size,
+             vulkan_ ? "the whole cache" : "a quarter of the cache", config_.max_bytes / 1048576.0);
         return;
     }
     if (vulkan_)

@@ -16,7 +16,9 @@ struct ProgramCacheConfig
     // fs::GetCachePath() / "ProgramCache" (Android: the app cache, emptied by the system at any time). The binaries
     // of one GPU + driver + bgfx version live in a subdirectory named by them; the others are removed.
     std::filesystem::path directory;
-    uint64_t max_bytes = 64ull << 20; // the oldest entries go above this total (ANGLE: ~0.4 MB per program)
+    // The oldest entries go above this total. OpenGL: ~0.4 MB per program under ANGLE, a few hundred programs;
+    // Vulkan: one entry, the device's pipeline cache (Adreno 830: 19 MB after ~640 pipelines of the scenes seen).
+    uint64_t max_bytes = 256ull << 20;
 };
 
 // Before the device is created. Without it (host checks) every program is linked, and that is logged.

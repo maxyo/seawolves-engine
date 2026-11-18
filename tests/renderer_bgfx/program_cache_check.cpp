@@ -233,6 +233,21 @@ bool vulkan_cache(SDL_Window *window, const fs::path &root)
     ok &= expect(max_difference(cleared.picture, cold.picture) <= 2, "cache deleted while running: the same picture");
     const Run refilled = run(window);
     ok &= expect(refilled.stats.loaded == 1, "after the deletion: the next run loads the pipeline cache");
+    // The pipeline cache is the only entry: it may take more than a quarter of the cache (the OpenGL rule per
+    // program binary). Owner 1663 (Adreno 830): 16..19 MB of 64 MB were refused at every save, so every start
+    // compiled again the ~400 pipelines added since the last stored one.
+    const uint64_t entry_bytes = fs::file_size(entries(root)[0]);
+    render::ConfigureProgramCache({root, entry_bytes * 2});
+    const Run large = run(window, [&] { fs::remove_all(root); });
+    ok &= expect(large.stats.stored >= 1 && entries(root).size() == 1,
+                 "a pipeline cache over a quarter of the cache limit: stored");
+    const Run large_warm = run(window);
+    ok &= expect(large_warm.stats.loaded == 1, "... and loaded by the next run");
+    render::ConfigureProgramCache({root, entry_bytes / 2});
+    const Run over = run(window, [&] { fs::remove_all(root); });
+    ok &= expect(over.stats.stored == 0 && (!fs::exists(root) || entries(root).empty()),
+                 "a pipeline cache larger than the whole cache limit: refused (logged), nothing stored");
+    render::ConfigureProgramCache({root, 32ull << 20});
     return ok;
 }
 
