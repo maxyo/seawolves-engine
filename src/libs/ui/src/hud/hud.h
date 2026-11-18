@@ -374,22 +374,28 @@ class Input
 
 class Hud;
 
-// The active abilities of a scene (sea: the ship abilities, land: Rush), one shared control kept
-// out of the way: the layout element "abilities" is a small button that opens the list of them,
-// even for one ability. The button (a star) shows a dot while one is ready and the fill while one runs.
-// The list is a modal sheet beside it (the pack part s-hud-abilities, placed by `place`: sea or
-// land): each ability with its icon, name and the scripts' state: ready (a tap launches it
-// through `launch`, the game's own command, and closes the list), active and recovery (the
-// seconds the scripts still count; the row only shows) and blocked (disabled, a tap toasts when
-// the game allows it: the pack's hud.ability.blocked.<id>). A tap outside or Back closes it.
-// Nothing is drawn without abilities: the button is hidden then.
-class AbilityControls
+// A picker of the HUD (the sea ammunition fan, the abilities): a button that, tapped, lays its options
+// out as ordinary HUD buttons in the layout's slots <button>-1…N (hud-layout.json), beside it. The
+// slots take the place of the buttons under them (their "replaces"): the scene leaves those out
+// while Open(). The button again, a pick, Back or kSeconds untouched fold it. An option without a
+// pick is not tappable: greyed by its props ("disabled") when it cannot be used, its tap (or the press
+// behaviour's "refused") does nothing.
+class Fan
 {
   public:
-    AbilityControls(Hud &hud, const char *place) : hud_(hud), place_(place)
+    static constexpr double kSeconds = 6.0; // an untouched picker folds by itself
+    struct Option
+    {
+        Json props;                 // the c-hud-button props of the slot (icon, label, badge, fill, disabled)
+        std::function<void()> pick; // empty: not tappable now
+    };
+    Fan(Hud &hud, std::string button) : hud_(hud), button_(std::move(button))
     {
     }
-    void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch);
+    // The button (`props`, the open look added) and, while open, the options in its slots. Without
+    // options the button stays and opens nothing. `opened` runs when a tap opens it (a scene folds
+    // its other picker there).
+    void Build(Json props, const std::vector<Option> &options, View &view, Input &input, const std::function<void()> &opened = {});
     bool Open() const
     {
         return open_;
@@ -398,16 +404,51 @@ class AbilityControls
     {
         open_ = false;
     }
-    // The back key: closes an open list (true), else leaves the key to the scene.
+    // The back key: folds an open picker (true), else leaves the key to the scene.
     bool Back();
-    // The props of one ability's row of the list (id, icon, title, state, meta, cooldown, reason).
-    Json Row(const Ability &ability);
+    // Folds the picker once its time is up (a rebuild); lowers `next` to the seconds until then.
+    void Expire(double now, double &next);
 
   private:
-    std::string Name(const Ability &ability);
     Hud &hud_;
-    const char *place_;
+    std::string button_;
     bool open_ = false;
+    double until_ = 0.0;
+};
+
+// The active abilities of a scene (sea: the ship abilities, land: Rush) behind one small button,
+// the layout element "abilities" (a star; a dot while one is ready, the fill while one runs), also
+// for one ability. A tap lays them out as HUD buttons beside it (Fan, slots abilities-1…4): ready
+// (a tap launches it through `launch`, the game's own command, and folds the row), running (its
+// fill and seconds, not tappable), recovering and blocked (the disabled look; recovering keeps its
+// fill and seconds). Nothing is drawn without abilities: the button is hidden then.
+class AbilityControls
+{
+  public:
+    explicit AbilityControls(Hud &hud) : hud_(hud), fan_(hud, "abilities")
+    {
+    }
+    void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch);
+    bool Open() const
+    {
+        return fan_.Open();
+    }
+    void Close()
+    {
+        fan_.Close();
+    }
+    bool Back()
+    {
+        return fan_.Back();
+    }
+    void Expire(double now, double &next)
+    {
+        fan_.Expire(now, next);
+    }
+
+  private:
+    Hud &hud_;
+    Fan fan_;
 };
 
 // One ported gameplay zone (land, sea, world map). The instance lives while the gameplay

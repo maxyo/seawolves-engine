@@ -456,58 +456,64 @@ static void CheckBattle()
     Expect(shown["time"]["badge"] == "×1.5" && shown["time"]["variant"] == "active", "an accelerated world: " + shown["time"].dump());
     bench.Press("time");
     Expect(mount.Last() == "gameplay:10\tTimeScaleX4", "x1.5 counts as x2: the next step is x4: " + mount.Last());
-    // The ship abilities: one small button that opens their list (hud.h AbilityControls).
+    // The ship abilities: one small button that lays them out as HUD buttons beside it (hud.h AbilityControls, Fan).
     Expect(shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true && !shown["abilities"].contains("badge") &&
-               shown["abilities"]["fill"] == 50 && shown["abilities"]["fillTone"] == "reload" && mount.shown.sheet.empty(),
+               shown["abilities"]["fill"] == 50 && shown["abilities"]["fillTone"] == "reload" && !mount.Has("abilities-1") && mount.shown.sheet.empty(),
            "the abilities button, collapsed: a dot for the ready one (no number), the fill of the running one: " + shown["abilities"].dump());
+    Expect(mount.Has("camera") && mount.Has("time"), "collapsed: the camera and time buttons are there");
     bench.Press("abilities");
-    const Json &props = mount.shown.sheet_props; // the list's rows: props["rows"] (a new node with every view)
-    Expect(mount.shown.sheet == "s-hud-abilities" && mount.shown.modal && mount.shown.sheet_props["place"] == "sea" && props["rows"].size() == 4 &&
-               shown["abilities"]["variant"] == "active" && mount.Has("fire") && mount.Has("helm"),
-           "a tap opens the list as a modal sheet; the HUD stays under it: " + mount.shown.sheet_props.dump());
-    if (props["rows"].size() == 4)
-    {
-        Expect(props["rows"][0]["id"] == "ability-ImmediateReload" && props["rows"][0]["icon"] == "reload" && props["rows"][0]["title"] == "Предварительная перезарядка" &&
-                   props["rows"][0]["state"] == "recovery" && props["rows"][0]["meta"] == "hud.ability.recovery 180\u00a0hud.ability.seconds" && props["rows"][0]["cooldown"] == 60,
-               "a recovering ability: icon, name, its seconds, the icon greyed by what is left: " + props["rows"][0].dump());
-        Expect(props["rows"][1]["icon"] == "repair" && props["rows"][1]["state"] == "blocked" && props["rows"][1]["meta"] == "hud.ability.blocked" &&
-                   props["rows"][1]["reason"] == "Неотложный ремонт: hud.ability.blocked.LightRepair",
-               "a blocked ability: the game's condition is the tap's reason: " + props["rows"][1].dump());
-        Expect(props["rows"][2]["icon"] == "perk-instantrepair" && props["rows"][2]["title"] == "Ремонт в бою" && props["rows"][2]["state"] == "ready" &&
-                   props["rows"][2]["meta"] == "hud.ability.ready" && props["rows"][2]["metaTone"] == "ok",
-               "a ready ability under the game's own name: " + props["rows"][2].dump());
-        Expect(props["rows"][3]["icon"] == "maneuver" && props["rows"][3]["state"] == "active" && props["rows"][3]["meta"] == "hud.ability.active 30\u00a0hud.ability.seconds",
-               "a running ability: its seconds: " + props["rows"][3].dump());
-    }
+    Expect(mount.Has("abilities-1") && mount.Has("abilities-2") && mount.Has("abilities-3") && mount.Has("abilities-4") && !mount.Has("abilities-5") &&
+               shown["abilities"]["variant"] == "active" && mount.shown.sheet.empty() && !mount.shown.modal && mount.shown.back,
+           "a tap lays the four abilities out as HUD buttons, no sheet; Back is the HUD's: " + shown["abilities"].dump());
+    Expect(!mount.Has("camera") && !mount.Has("time") && mount.Has("fire") && mount.Has("helm") && mount.Has("ammo") && mount.Has("context"),
+           "the row takes the place of the buttons under it (camera, time), the rest stays");
+    Expect(shown["abilities-1"]["icon"] == "reload" && shown["abilities-1"]["label"] == "Предварительная перезарядка" && shown["abilities-1"]["disabled"] == true &&
+               shown["abilities-1"]["fill"] == 40 && shown["abilities-1"]["fillTone"] == "cooldown" && shown["abilities-1"]["badge"] == "180",
+           "a recovering ability: greyed, its recovery and seconds: " + shown["abilities-1"].dump());
+    Expect(shown["abilities-2"]["icon"] == "repair" && shown["abilities-2"]["disabled"] == true && !shown["abilities-2"].contains("badge") &&
+               !shown["abilities-2"].contains("reason"),
+           "a blocked ability: greyed, no words: " + shown["abilities-2"].dump());
+    Expect(shown["abilities-3"]["icon"] == "perk-instantrepair" && shown["abilities-3"]["label"] == "Ремонт в бою" && !shown["abilities-3"].contains("disabled"),
+           "a ready ability under the game's own name: " + shown["abilities-3"].dump());
+    Expect(shown["abilities-4"]["icon"] == "maneuver" && !shown["abilities-4"].contains("disabled") && shown["abilities-4"]["fill"] == 50 &&
+               shown["abilities-4"]["fillTone"] == "reload" && shown["abilities-4"]["badge"] == "30",
+           "a running ability: its fill and seconds: " + shown["abilities-4"].dump());
     const size_t launched = mount.commands.size();
-    bench.Press("ability-LightRepair", "refused");
-    Expect(mount.commands.size() == launched && mount.shown.sheet == "s-hud-abilities", "a blocked ability launches nothing, the list stays");
-    bench.Press("ability-InstantRepair");
-    Expect(mount.Last() == "gameplay:10\tBI_InstantRepair" && mount.shown.sheet.empty() && !mount.shown.modal,
-           "a ready ability is launched through its command and the list closes: " + mount.Last());
+    const size_t errors_before = mount.errors.size();
+    bench.Press("abilities-2", "refused");
+    bench.Press("abilities-1");
+    bench.Press("abilities-4");
+    Expect(mount.commands.size() == launched && mount.Has("abilities-1") && mount.errors.size() == errors_before,
+           "blocked, recovering and running abilities launch nothing, quietly; the row stays");
+    bench.Press("abilities-3");
+    Expect(mount.Last() == "gameplay:10\tBI_InstantRepair" && !mount.Has("abilities-1") && mount.Has("camera") && mount.Has("time") && !mount.shown.back,
+           "a ready ability is launched through its command and the row folds, the buttons under it are back: " + mount.Last());
     bench.Press("abilities");
-    bench.Press("sheet", "close");
-    Expect(mount.shown.sheet.empty() && mount.commands.size() == launched + 1, "a tap outside closes the list, launching nothing");
     bench.Press("abilities");
-    Expect(bench.hud.Back(), "Back is the open list's");
+    Expect(!mount.Has("abilities-1") && mount.commands.size() == launched + 1, "a second tap on the button folds the row, launching nothing");
+    bench.Press("abilities");
+    bench.Frame(7.0);
+    Expect(!mount.Has("abilities-1") && mount.Has("camera"), "an untouched row folds by itself");
+    bench.Press("abilities");
+    Expect(bench.hud.Back(), "Back is the open row's");
     bench.Frame();
-    Expect(mount.shown.sheet.empty(), "Back closes the list");
+    Expect(!mount.Has("abilities-1"), "Back folds the row");
     Expect(!bench.hud.Back(), "… and a second Back is not the HUD's");
     bench.Press("abilities");
     bench.Press("ammo");
-    Expect(mount.Has("ammo-1") && !mount.Has("abilities") && mount.shown.sheet.empty(), "the ammunition fan takes the place of the abilities and closes their list");
+    Expect(mount.Has("ammo-1") && !mount.Has("abilities") && !mount.Has("abilities-1") && mount.Has("time"), "the ammunition fan takes the place of the abilities and folds their row");
     bench.Press("ammo");
-    Expect(!mount.Has("ammo-1") && mount.Has("abilities") && mount.shown.sheet.empty(), "folded: the abilities button is back, closed");
-    // one ability: still the button and a list of one; a command the gameplay does not bind blocks it
+    Expect(!mount.Has("ammo-1") && mount.Has("abilities") && !mount.Has("abilities-1"), "folded: the abilities button is back, folded");
+    // one ability: still the button and a row of one; a command the gameplay does not bind blocks it
     Json single = State("ship-battle");
     single["sequence"] = 99;
     single["abilities"] = Json::array({Json{{"id", "Turn180"}, {"label", "Манёвренный разворот корабля"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
     bench.Set("ship", single);
     Expect(shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true, "one ability: still the abilities button: " + shown["abilities"].dump());
     bench.Press("abilities");
-    Expect(mount.shown.sheet_props["rows"].size() == 1, "… whose list has the one ability");
-    bench.Press("ability-Turn180");
-    Expect(mount.Last() == "gameplay:10\tBI_Turn180" && mount.shown.sheet.empty(), "… and a tap on it launches it: " + mount.Last());
+    Expect(mount.Has("abilities-1") && !mount.Has("abilities-2"), "… whose row has the one ability");
+    bench.Press("abilities-1");
+    Expect(mount.Last() == "gameplay:10\tBI_Turn180" && !mount.Has("abilities-1"), "… and a tap on it launches it: " + mount.Last());
     Json unbound = State("gameplay-naval");
     unbound["revision"] = 10;
     auto &caps = unbound["capabilities"];
@@ -515,17 +521,19 @@ static void CheckBattle()
     bench.Set("gameplay", unbound);
     Expect(shown["abilities"]["cue"] == false, "an ability whose command the gameplay does not bind is blocked: no dot: " + shown["abilities"].dump());
     bench.Press("abilities");
-    Expect(mount.shown.sheet_props["rows"][0]["state"] == "blocked", "… and blocked in the list: " + mount.shown.sheet_props.dump());
-    bench.Press("sheet", "close");
+    Expect(shown["abilities-1"]["disabled"] == true, "… and greyed in the row: " + shown["abilities-1"].dump());
+    bench.Press("abilities");
+    bench.Press("abilities");
     Json none = State("ship-battle");
     none["sequence"] = 100;
     none["abilities"] = Json::array();
     bench.Set("ship", none);
-    Expect(!mount.Has("abilities"), "no ability: no button at all");
+    Expect(!mount.Has("abilities") && !mount.Has("abilities-1") && mount.Has("camera") && mount.Has("time"), "no ability: no button at all, an open row goes with it");
     bench.Set("gameplay", State("gameplay-naval"));
     Json restored = State("ship-battle");
     restored["sequence"] = 101;
     bench.Set("ship", restored);
+    Expect(!mount.Has("abilities-1"), "… and does not come back with the abilities");
 
     // The spyglass is a toggle on the left, of the game's own telescope: a tap raises it (TelescopeIn), the next tap or
     // Back lowers it (TelescopeOut); up or down is the game's channel "spyglass".

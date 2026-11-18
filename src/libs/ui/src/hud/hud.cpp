@@ -223,6 +223,66 @@ void Input::Ignore(const std::string &id, const std::string &verb)
     handlers_[id + "\n" + verb] = [](const Event &) {};
 }
 
+void Fan::Build(Json props, const std::vector<Option> &options, View &view, Input &input, const std::function<void()> &opened)
+{
+    if (options.empty())
+        open_ = false; // nothing to choose from
+    props["variant"] = open_ ? "active" : "normal";
+    view.elements[button_] = std::move(props);
+    if (options.empty())
+    {
+        input.Ignore(button_, "click");
+        return;
+    }
+    input.On(button_, "click", [this, opened](const Event &) {
+        open_ = !open_;
+        until_ = hud_.Now() + kSeconds;
+        if (open_ && opened)
+            opened();
+        hud_.Rebuild();
+    });
+    if (!open_)
+        return;
+    view.back = true; // Back folds it
+    for (size_t i = 0; i < options.size(); ++i)
+    {
+        const std::string slot = button_ + "-" + std::to_string(i + 1);
+        view.elements[slot] = options[i].props;
+        if (!options[i].pick)
+        {
+            input.Ignore(slot, ""); // a tap on it, or the disabled look's "refused": nothing to do
+            continue;
+        }
+        input.On(slot, "click", [this, pick = options[i].pick](const Event &) {
+            open_ = false;
+            pick();
+            hud_.Rebuild();
+        });
+    }
+}
+
+bool Fan::Back()
+{
+    if (!open_)
+        return false;
+    open_ = false;
+    hud_.Rebuild();
+    return true;
+}
+
+void Fan::Expire(double now, double &next)
+{
+    if (!open_)
+        return;
+    if (now >= until_)
+    {
+        open_ = false;
+        hud_.Rebuild();
+    }
+    else
+        next = std::min(next, until_ - now);
+}
+
 Hud::Hud(Mount &mount, std::span<const SceneEntry> scenes) : mount_(mount), scenes_(scenes)
 {
 }

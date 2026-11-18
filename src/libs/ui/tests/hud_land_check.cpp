@@ -1291,8 +1291,8 @@ static void CheckTalkRoles()
     std::printf("talk roles against the game's characters: %zu dialog files, %d common roles checked\n", files.size(), roles);
 }
 
-// Rush in the abilities list behind one small button (hud.h AbilityControls): only in a fight,
-// only while the scripts offer it or it runs; launched through the land menu's own command.
+// Rush behind one small button (hud.h AbilityControls): only in a fight, only while the scripts
+// offer it or it runs; a tap lays it out as a HUD button beside it; launched through the land menu's own command.
 static void CheckRush()
 {
     Bench bench;
@@ -1309,26 +1309,22 @@ static void CheckRush()
     bench.Set("landCommands", commands);
     const Json &shown = mount.shown.elements;
     Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true &&
-               !shown["abilities"].contains("badge") && mount.shown.sheet.empty(),
+               !shown["abilities"].contains("badge") && !mount.Has("abilities-1") && mount.shown.sheet.empty(),
            "fight: the collapsed abilities button with the ready dot, not a Rush button: " + shown["abilities"].dump());
-    Expect(!mount.Has("hero"), "… in the top row, in the place of the hero button (closed in a fight)");
+    Expect(!mount.Has("hero") && mount.Has("actions"), "… in the top row, in the place of the hero button (closed in a fight)");
     mount.commands.clear();
     bench.Press("abilities");
-    const Json &props = mount.shown.sheet_props; // the list's rows: props["rows"] (a new node with every view)
-    Expect(mount.shown.sheet == "s-hud-abilities" && mount.shown.modal && mount.shown.sheet_props["place"] == "land" && props["rows"].size() == 1 &&
-               props["rows"][0]["id"] == "ability-Rush" && props["rows"][0]["icon"] == "flame" && props["rows"][0]["title"] == "Тинктура Ометочтли" && props["rows"][0]["state"] == "ready" &&
-               mount.commands.empty(),
-           "a tap opens the list: Rush under the game's name, nothing launched yet: " + mount.shown.sheet_props.dump());
-    bench.Press("ability-Rush");
+    Expect(mount.Has("abilities-1") && !mount.Has("abilities-2") && shown["abilities-1"]["icon"] == "flame" && shown["abilities-1"]["label"] == "Тинктура Ометочтли" &&
+               !shown["abilities-1"].contains("disabled") && shown["abilities"]["variant"] == "active" && mount.shown.sheet.empty() && mount.commands.empty(),
+           "a tap lays Rush out beside the button under the game's name, nothing launched yet: " + shown["abilities-1"].dump());
+    Expect(!mount.Has("actions"), "… in the place of the actions button");
+    bench.Press("abilities-1");
     ExpectEqual(mount.Last(), "landcommands:1\t4\t10\t2\topen\tBI_ActivateRush", "a tap on Rush opens the land menu straight into its Rush command");
-    Expect(mount.shown.sheet.empty(), "… and the list closes");
+    Expect(!mount.Has("abilities-1"), "… and the row folds");
     bench.Press("abilities");
-    Expect(bench.hud.Back(), "Back is the open list's");
+    Expect(bench.hud.Back(), "Back is the open row's");
     bench.Frame();
-    Expect(mount.shown.sheet.empty(), "Back closes the list");
-    bench.Press("abilities");
-    bench.Press("sheet", "close");
-    Expect(mount.shown.sheet.empty(), "a tap outside closes it");
+    Expect(!mount.Has("abilities-1") && mount.Has("actions"), "Back folds the row, the actions button is back");
     vitals["abilities"][0]["state"] = "active";
     vitals["abilities"][0]["fill"] = 0.75;
     vitals["abilities"][0]["left"] = 9;
@@ -1336,18 +1332,26 @@ static void CheckRush()
     Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "reload" && shown["abilities"]["cue"] == false,
            "running: the button's fill, no dot: " + shown["abilities"].dump());
     bench.Press("abilities");
-    Expect(props["rows"][0]["meta"] == "hud.ability.active 9\u00a0hud.ability.seconds", "… its seconds in the list: " + props["rows"].dump());
+    Expect(shown["abilities-1"]["badge"] == "9" && shown["abilities-1"]["fill"] == 75 && !shown["abilities-1"].contains("disabled"),
+           "… its fill and seconds on its button: " + shown["abilities-1"].dump());
     vitals["abilities"][0]["state"] = "recovery";
     vitals["abilities"][0]["fill"] = 0.25;
     vitals["abilities"][0]["left"] = 54;
     bench.Set("vitals", vitals);
-    Expect(mount.shown.sheet == "s-hud-abilities" && props["rows"][0]["meta"] == "hud.ability.recovery 54\u00a0hud.ability.seconds" && props["rows"][0]["cooldown"] == 75,
-           "recovering: the open list follows the scripts' seconds: " + props["rows"].dump());
+    Expect(shown["abilities-1"]["badge"] == "54" && shown["abilities-1"]["fill"] == 25 && shown["abilities-1"]["fillTone"] == "cooldown" &&
+               shown["abilities-1"]["disabled"] == true,
+           "recovering: the open row follows the scripts' seconds, greyed: " + shown["abilities-1"].dump());
+    vitals["abilities"][0]["state"] = "blocked";
+    bench.Set("vitals", vitals);
+    const size_t sent = mount.commands.size(), errors_before = mount.errors.size();
+    bench.Press("abilities-1", "refused");
+    Expect(shown["abilities-1"]["disabled"] == true && !shown["abilities-1"].contains("reason") && mount.commands.size() == sent && mount.errors.size() == errors_before,
+           "blocked: greyed, no words, a tap launches nothing: " + shown["abilities-1"].dump());
     bench.Set("landCommands", State("land-commands-root"));
-    Expect(mount.shown.sheet == "s-hud-sheet", "the land menu takes the list's place");
+    Expect(mount.shown.sheet == "s-hud-sheet" && !mount.Has("abilities-1"), "the land menu takes the row's place");
     commands["revision"] = 12;
     bench.Set("landCommands", commands);
-    Expect(mount.shown.sheet.empty() && mount.Has("abilities"), "… and the list does not come back with its closing");
+    Expect(mount.shown.sheet.empty() && mount.Has("abilities") && !mount.Has("abilities-1"), "… and the row does not come back with its closing");
     vitals.erase("abilities");
     bench.Set("vitals", vitals);
     Expect(!mount.Has("abilities") && mount.Has("hero"), "nothing offered: no button, the hero button is back");

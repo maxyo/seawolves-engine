@@ -30,7 +30,6 @@ namespace
 constexpr double kIdle = 3600.0;
 constexpr double kChoiceSeconds = 1.5;   // a tapped order waits this long for the engine to select it
 constexpr double kSailSeconds = 1.5;     // the lever shows the position asked for until the sails follow
-constexpr double kFanSeconds = 6.0;      // an untouched ammunition fan folds by itself
 constexpr double kRaiseSeconds = 3.0;    // a spyglass the game has not raised / lowered by then is reported
 
 using screens::StringKey;
@@ -167,7 +166,7 @@ class SeaScene final : public Scene
         const SeaOrders &orders = states.sea_orders;
         if (orders.known && orders.active)
         {
-            fan_open_ = false;
+            ammo_.Close();
             abilities_.Close();
             if (orders.complete)
             {
@@ -234,17 +233,16 @@ class SeaScene final : public Scene
         }
         else
             walk_ = {}; // the engine stops a walk the gameplay no longer binds (android_deck_walk.hpp)
+        if (!ship || ship->abilities.empty() || spyglass_up_)
+            abilities_.Close(); // no row to lay out (the raised spyglass gives the look room)
         BuildGuns(states, ship, view, input);
-        BuildTimeScale(hud_, gameplay, ship ? ship->time_scale : -1.0, view, input);
+        if (!abilities_.Open())
+            BuildTimeScale(hud_, gameplay, ship ? ship->time_scale : -1.0, view, input); // the open abilities take its place
         BuildSpyglass(states, view, input);
-        if (fan_open_)
-        {
-            abilities_.Close();
+        if (ammo_.Open())
             return; // the fan takes the place of the buttons around the ammunition, the abilities too (hud-layout.json "replaces")
-        }
         if (spyglass_up_)
         {
-            abilities_.Close();
             // the top row and the fleet column too (Back or the button lowers the spyglass first): the target card lies there
             for (const char *id : {"ship", "pause", "orders", "fleet"}) // the card takes the fleet's place (CoverShip keeps it covered)
                 view.elements.erase(id);
@@ -253,7 +251,7 @@ class SeaScene final : public Scene
         if (ship)
             BuildAbilities(gameplay, *ship, view, input);
         BuildQuick(states.sea_quick, view, input);
-        if (gameplay.Has("Sea_CameraSwitch"))
+        if (gameplay.Has("Sea_CameraSwitch") && !abilities_.Open()) // the open abilities take its place
         {
             view.elements["camera"] = Json::object();
             input.On("camera", "click", [this](const Event &) { Control("Sea_CameraSwitch"); });
@@ -262,7 +260,7 @@ class SeaScene final : public Scene
 
     void Hidden(const States &states) override
     {
-        fan_open_ = false;
+        ammo_.Close();
         abilities_.Close();
         Uncover(states);
     }
@@ -286,7 +284,8 @@ class SeaScene final : public Scene
         };
         expire(!choice_.empty(), choice_until_, [this] { choice_.clear(); });
         expire(sail_target_ >= 0, sail_until_, [this] { sail_target_ = -1; });
-        expire(fan_open_, fan_until_, [this] { fan_open_ = false; });
+        ammo_.Expire(now, next);
+        abilities_.Expire(now, next);
         expire(asked_.has_value(), asked_until_, [this] {
             hud_.Error(std::string("sea HUD: the spyglass was asked ") + (*asked_ ? "up" : "down") + " and the game did not follow in " +
                        std::to_string(int(kRaiseSeconds)) + " s");
@@ -306,7 +305,7 @@ class SeaScene final : public Scene
         // The ammunition fan takes the quick action's place for a few seconds (the raised spyglass while it is up): the offer stays
         // the HUD's, so the engine's own icon does not flash up over the top buttons meanwhile.
         // Under the orders panel the offer waits for the panel to close; it stays the HUD's too.
-        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || fan_open_ || spyglass_up_ || shown.sheet == "s-hud-orders"));
+        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || ammo_.Open() || spyglass_up_ || shown.sheet == "s-hud-orders"));
         CoverOrders(states.sea_orders, live && shown.modal);
     }
 
@@ -327,7 +326,7 @@ class SeaScene final : public Scene
         if (orders.known && orders.active)
             hud_.Send("orders", Owner(orders) + "\tclose\t");
         choice_.clear();
-        fan_open_ = false;
+        ammo_.Close();
         abilities_.Close();
     }
 
@@ -338,7 +337,7 @@ class SeaScene final : public Scene
 
     bool Back(const States &states) override
     {
-        if (abilities_.Back())
+        if (ammo_.Back() || abilities_.Back())
             return true;
         if (spyglass_up_ && states.gameplay.Has("TelescopeOut"))
         {
@@ -528,11 +527,12 @@ class SeaScene final : public Scene
             else if (ship && loadable(i))
                 ++others;
         }
-        if (loaded < 0 || others == 0)
-            fan_open_ = false; // nothing confirmed to choose from
         if (loaded < 0)
+        {
+            ammo_.Close(); // no loaded kind known: no button
             return;
-        Json ammo = {{"icon", kAmmo[loaded].icon}, {"label", hud_.Text(kAmmo[loaded].label)}, {"variant", fan_open_ ? "active" : "normal"}};
+        }
+        Json ammo = {{"icon", kAmmo[loaded].icon}, {"label", hud_.Text(kAmmo[loaded].label)}};
         if (ship->ammo_count >= 0.0)
         {
             ammo["badge"] = Count(ship->ammo_count);
@@ -543,43 +543,21 @@ class SeaScene final : public Scene
             if (ship->ammo_count == 0.0 && others > 0)
                 ammo["countOnly"] = true;
         }
-        view.elements["ammo"] = std::move(ammo);
-        if (others == 0)
-        {
-            input.Ignore("ammo", "click");
-            return;
-        }
-        input.On("ammo", "click", [this](const Event &) {
-            fan_open_ = !fan_open_;
-            abilities_.Close();
-            fan_until_ = hud_.Now() + kFanSeconds;
-            hud_.Rebuild();
-        });
-        if (!fan_open_)
-            return;
-        // The other kinds fan out around the loaded one, in the engine's order.
-        int slot = 0;
-        for (size_t i = 0; i < std::size(kAmmo); ++i)
+        // The other kinds fan out around the loaded one, in the engine's order, each with its count;
+        // one the hold lacks is greyed with its 0. Nothing confirmed to choose from: no fan.
+        std::vector<Fan::Option> options;
+        for (size_t i = 0; others > 0 && i < std::size(kAmmo); ++i)
         {
             if (static_cast<int>(i) == loaded)
                 continue;
-            const std::string element = "ammo-" + std::to_string(++slot), control = "hk_charge" + std::to_string(i + 1);
-            // Every other kind is shown with its count; one the hold lacks is greyed with its 0.
-            Json option = {{"icon", kAmmo[i].icon}, {"label", hud_.Text(kAmmo[i].label)}, {"disabled", !loadable(i)}};
+            Fan::Option option{Json{{"icon", kAmmo[i].icon}, {"label", hud_.Text(kAmmo[i].label)}, {"disabled", !loadable(i)}}, {}};
             if (ship->ammo_counts[i] >= 0.0)
-                option["badge"] = Count(ship->ammo_counts[i]);
-            view.elements[element] = std::move(option);
-            if (!loadable(i))
-            {
-                input.Ignore(element, "click");
-                continue;
-            }
-            input.On(element, "click", [this, control](const Event &) {
-                fan_open_ = false;
-                Control(control);
-                hud_.Rebuild();
-            });
+                option.props["badge"] = Count(ship->ammo_counts[i]);
+            if (loadable(i))
+                option.pick = [this, control = "hk_charge" + std::to_string(i + 1)] { Control(control); };
+            options.push_back(std::move(option));
         }
+        ammo_.Build(std::move(ammo), options, view, input, [this] { abilities_.Close(); });
     }
 
     // The ship abilities above the guns (hud.h AbilityControls), sailing and in battle: those whose
@@ -592,10 +570,7 @@ class SeaScene final : public Scene
         for (Ability &ability : shown)
             if (ability.state == "ready" && !gameplay.Has("BI_" + ability.id))
                 ability.state = "blocked";
-        abilities_.Build(shown, view, input, [this](const Ability &ability) {
-            fan_open_ = false;
-            Control("BI_" + ability.id);
-        });
+        abilities_.Build(shown, view, input, [this](const Ability &ability) { Control("BI_" + ability.id); }); // under the open fan there is no button
     }
 
     // The spyglass, on the left where the land fight has its block (hud-layout.json): a toggle of
@@ -618,7 +593,7 @@ class SeaScene final : public Scene
         }
         view.elements["spyglass"] = Json{{"variant", spyglass_up_ ? "active" : "normal"},
                                          {"label", hud_.Text(spyglass_up_ ? StringKey("hud.sea.spyglass.lower") : StringKey("hud.sea.spyglass.raise"))}};
-        view.back = spyglass_up_; // Back lowers it
+        view.back = view.back || spyglass_up_; // Back lowers it (an open fan folds first)
         input.On("spyglass", "click", [this](const Event &) { Spyglass(!spyglass_up_); });
     }
 
@@ -626,7 +601,7 @@ class SeaScene final : public Scene
     {
         if (up)
         {
-            fan_open_ = false;
+            ammo_.Close();
             abilities_.Close();
             if (walk_.x || walk_.y)
             {
@@ -1074,10 +1049,8 @@ class SeaScene final : public Scene
     // sails
     int sail_target_ = -1;
     double sail_until_ = 0.0;
-    // ammunition fan
-    bool fan_open_ = false;
-    double fan_until_ = 0.0;
-    AbilityControls abilities_{hud_, "sea"};
+    Fan ammo_{hud_, "ammo"}; // the ammunition fan
+    AbilityControls abilities_{hud_};
     // the spyglass (BuildSpyglass)
     bool spyglass_up_ = false;      // shown raised: as asked, else as the game says
     std::optional<bool> asked_;     // asked up / down, the game has not followed yet

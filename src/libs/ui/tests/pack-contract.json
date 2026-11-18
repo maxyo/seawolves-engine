@@ -1,5 +1,5 @@
 {
-  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`, then `answer` (the model the game answers a request of the opened screen with: a shop asks for its selected row's deal); `covers` names the screens it draws that its interface does not (channel screens). `taps` = element ids tapped (a real touch on the drawn element, in order) after all that: a HUD state that a tap opens (the abilities list, the raised spyglass). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason. `flows`: taps the game answers in steps, replayed with its real answers one game frame at a time (tools/pack_check.cpp RunFlow): what the last tap shows must have no transient frame (the flicker check, src/action_trace.h). `flicker`: exemptions [{case, tap, reason}] for a transient frame the crawl finds in a tap that needs no game; each needs its reason.",
+  "about": "Cases of storm_ui_pack_check (tools/pack_check.cpp): the real UI pack drawn with the real screen and HUD adapters. Every models/*.json that is an interface model and is not used below is a case of its own. A case feeds `states` (channel=file, in order) and then its `interface`, then `answer` (the model the game answers a request of the opened screen with: a shop asks for its selected row's deal); `covers` names the screens it draws that its interface does not (channel screens). `taps` = element ids tapped (a real touch on the drawn element, in order) after all that: a HUD state that a tap opens (the abilities row, the ammunition fan, the raised spyglass). Every ported screen (screens/registry.cpp) must be covered by a case or listed in `uncovered` with the reason. `flows`: taps the game answers in steps, replayed with its real answers one game frame at a time (tools/pack_check.cpp RunFlow): what the last tap shows must have no transient frame (the flicker check, src/action_trace.h). `flicker`: exemptions [{case, tap, reason}] for a transient frame the crawl finds in a tap that needs no game; each needs its reason.",
   "cases": [
     {"name": "settings", "states": ["appSettings=models/app-settings.json"], "interface": "models/settings.json"},
     {"name": "store", "interface": "models/store.json", "answer": "models/store-deal.json"},
@@ -28,10 +28,16 @@
       "ship=states/ship-battle.json", "seaOrders=states/sea-orders-idle.json", "seaQuickAction=states/sea-quick-board.json"]},
     {"name": "hud-sea-abilities-open", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-naval.json",
       "ship=states/ship-battle.json", "seaOrders=states/sea-orders-idle.json", "seaQuickAction=states/sea-quick-board.json"], "taps": ["abilities"]},
+    {"name": "hud-sea-abilities-fold", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-naval.json",
+      "ship=states/ship-battle.json", "seaOrders=states/sea-orders-idle.json", "seaQuickAction=states/sea-quick-board.json"], "taps": ["abilities", "abilities-2", "abilities"]},
+    {"name": "hud-sea-ammo-open", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-naval.json",
+      "ship=states/ship-battle.json", "seaOrders=states/sea-orders-idle.json", "seaQuickAction=states/sea-quick-board.json"], "taps": ["ammo"]},
     {"name": "hud-land-rush", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-melee.json",
       "combat=states/combat-melee.json", "vitals=states/vitals-rush.json", "landCommands=states/land-commands-rush.json"]},
     {"name": "hud-land-rush-open", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-melee.json",
       "combat=states/combat-melee.json", "vitals=states/vitals-rush.json", "landCommands=states/land-commands-rush.json"], "taps": ["abilities"]},
+    {"name": "hud-land-rush-blocked-open", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-melee.json",
+      "combat=states/combat-melee.json", "vitals=states/vitals-rush-blocked.json", "landCommands=states/land-commands-rush.json"], "taps": ["abilities", "abilities-1"]},
     {"name": "hud-spyglass", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-sailing.json",
       "ship=states/ship.json", "spyglass=states/spyglass-ship.json"]},
     {"name": "hud-spyglass-toggle", "states": ["presentation=states/presentation-game.json", "gameplay=states/gameplay-naval.json",

@@ -181,7 +181,7 @@ class LandScene final : public Scene
         const LandCommands &commands = states.land_commands;
         if (commands.known && commands.active)
         {
-            abilities_.Close(); // the land menu (also the one Rush opens) takes the abilities list's place
+            abilities_.Close(); // the land menu (also the one Rush opens) takes the abilities row's place
             if (commands.complete)
             {
                 BuildSheet(commands, view, input);
@@ -217,12 +217,16 @@ class LandScene final : public Scene
         else
             hud_.Error("land HUD: the engine offers no analog movement (inputOwner or movementGeneration missing); no move stick");
 
+        const bool abilities = melee && states.vitals.known && !states.vitals.abilities.empty();
+        if (!abilities)
+            abilities_.Close();
         // The menu split: the actions at the top, as the sea orders; the
         // transitions under the thumb where the actions were, the boot (no transitions in a fight).
         if (commands.known && commands.available)
         {
             const auto &offered = commands.offered;
-            if (std::any_of(offered.begin(), offered.end(), [](const std::string &event) { return !IsTransition(event); }))
+            // the open abilities row takes the actions button's place (hud-layout.json "replaces")
+            if (!abilities_.Open() && std::any_of(offered.begin(), offered.end(), [](const std::string &event) { return !IsTransition(event); }))
             {
                 view.elements["actions"] = Json{{"label", hud_.Text("hud.sheet.actions")}};
                 input.On("actions", "click", [this](const Event &) { Commands("open", {}); });
@@ -252,22 +256,18 @@ class LandScene final : public Scene
             input.On("weapon", "click", [this](const Event &) { Strike("weapon", "tap"); });
         }
 
-        if (melee && states.vitals.known)
+        if (abilities)
         {
-            // Rush in the abilities list behind one small button in the top row, where the hero button
-            // is outside a fight (hud.h AbilityControls),
-            // only while the scripts offer it or it runs (land_status.hpp): launched through the land
-            // menu's own command, as its row.
+            // Rush behind one small button in the top row, where the hero button is outside a fight
+            // (hud.h AbilityControls), only while the scripts offer it or it runs (land_status.hpp):
+            // launched through the land menu's own command, as its row.
             abilities_.Build(states.vitals.abilities, view, input, [this](const Ability &ability) {
                 for (const Named &command : kAbilityCommands)
                     if (ability.id == command.key)
                         Commands("open", command.icon);
             });
-            if (view.elements.contains("abilities"))
-                view.elements.erase("hero"); // its place in the top row (hud-layout.json "replaces"): the hero sheet is closed in a fight anyway
+            view.elements.erase("hero"); // its place in the top row (hud-layout.json "replaces"): the hero sheet is closed in a fight anyway
         }
-        else
-            abilities_.Close();
         if (melee)
         {
             BuildCombat(states, ready, view, input);
@@ -284,6 +284,7 @@ class LandScene final : public Scene
         double next = kIdle;
         if (moving_ || x_ != 0 || y_ != 0)
             SyncMove(states.gameplay);
+        abilities_.Expire(now, next);
         if (!choice_.empty() && now >= choice_until_)
         {
             choice_.clear();
@@ -879,7 +880,7 @@ class LandScene final : public Scene
     }
 
     Hud &hud_;
-    AbilityControls abilities_{hud_, "land"};
+    AbilityControls abilities_{hud_};
     // movement
     bool moving_ = false;
     int x_ = 0, y_ = 0;           // the thumb now (0, 0: up)

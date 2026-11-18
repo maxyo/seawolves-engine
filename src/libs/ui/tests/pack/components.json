@@ -324,34 +324,6 @@
     }
    },
    "template": "<t-for each=\"sizes\" as=\"w\"><div class=\"panel\" style=\"left: {{ 20 + w_i * 70 }}dp; width: {{w}}dp; height: {{ w + 30 }}dp;\"></div></t-for>"
-  },
-  {
-   "tag": "s-hud-abilities",
-   "props": {
-    "title": {
-     "type": "text",
-     "default": ""
-    },
-    "place": {
-     "type": "text",
-     "default": "sea"
-    },
-    "rows": {
-     "type": "json",
-     "default": []
-    },
-    "mirrored": {
-     "type": "bool",
-     "default": false
-    }
-   },
-   "behaviors": [
-    "press"
-   ],
-   "constants": {
-    "pressRoot": false
-   },
-   "template": "<div data-action=\"close\" style=\"position: absolute; left: 0; top: 0; right: 0; bottom: 0;\"></div><t-for each=\"rows\" as=\"r\"><c-button id=\"{{r.id}}\" label=\"{{r.title}}\" disabled=\"{{ r.state == 'blocked' ? 1 : 0 }}\" style=\"position: absolute; right: 0; top: {{ r_i * 50 }}dp; width: 200dp; height: 40dp;\"/></t-for>"
   }
  ]
 }
