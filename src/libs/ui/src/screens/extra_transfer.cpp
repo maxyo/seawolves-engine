@@ -215,15 +215,18 @@ class TransferScreen final : public Screen
         const Widget *crew_exit = admitted.One("CREW_EXIT_BTN");
         const bool crew_open = admitted.One("CREW_QTY") != nullptr;
         const bool has_ships = !admitted.All("TABLE_OTHER").empty() && !admitted.All("TABLE_OTHER2").empty();
-        if (crew_open || !has_ships)
+        // The «Корабли» tab chosen from the crew window waits for the game to close that window: the models in between
+        // still have it open, so only a game without the two figure tables ends the choice.
+        if (!has_ships)
             ships_open_ = false;
+        const bool ships_shown = ships_open_ && !crew_open;
         view["tabs"] = Json::array();
         view["crew"] = Json();
         if (crew_button || has_ships)
         {
             Json tabs = Json::array({Json{{"id", "cargo"}, {"label", bindings.Text("transfer.cargo")}, {"selected", !crew_open && !ships_open_}}});
             if (crew_button)
-                tabs.push_back(Json{{"id", "crew"}, {"label", bindings.Text("transfer.crew")}, {"selected", crew_open},
+                tabs.push_back(Json{{"id", "crew"}, {"label", bindings.Text("transfer.crew")}, {"selected", crew_open && !ships_open_},
                                     {"disabled", !crew_open && !crew_button->Offers("press")}, {"reason", crew_button->unavailable_reason}});
             if (has_ships)
                 tabs.push_back(Json{{"id", "ships"}, {"label", bindings.Text("transfer.ships")}, {"selected", ships_open_}});
@@ -244,7 +247,7 @@ class TransferScreen final : public Screen
         }
         if (crew_open)
             view["crew"] = CrewView(admitted, bindings, ours, theirs);
-        view["ships"] = ships_open_ ? ShipsView(admitted, bindings, ours, theirs) : Json();
+        view["ships"] = ships_shown ? ShipsView(admitted, bindings, ours, theirs) : Json();
         view["prize"] = has_ships ? PrizeView(admitted, bindings, theirs) : Json();
 
         // The bar: captain, swap, take everything.

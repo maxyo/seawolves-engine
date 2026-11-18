@@ -1474,6 +1474,26 @@ static void Transfer(const std::string &models)
               [] {}, 96);
     router.OnEvent({"header", "tab", "0"});
     ExpectEqual(surface.Last(), prefix + "CREW_EXIT_BTN\t-1\tpress", "cargo tab closes the crew window");
+
+    // «Корабли» from the crew window (device, scenario fleet: the cargo opened instead): the game closes the crew
+    // window first, and the models until it has still show it open.
+    {
+        FakeSurface tabs_surface;
+        Router tabs_router(tabs_surface);
+        InterfaceModel crew = Load(models, "transfer-crew.json");
+        tabs_router.SetInterface(crew);
+        tabs_router.OnEvent({"header", "tab", "2"});
+        ExpectEqual(tabs_surface.Last(), prefix + "CREW_EXIT_BTN\t-1\tpress", "ships tab closes the crew window");
+        crew.revision += 1;
+        tabs_router.SetInterface(crew);
+        Expect(tabs_surface.props["tabs"][2]["selected"] == true && tabs_surface.props["ships"].is_null(),
+               "while the crew window is still open: the ships tab is chosen, the crew stays drawn");
+        InterfaceModel closed = Load(models, "transfer-loot.json");
+        closed.revision = crew.revision + 1;
+        tabs_router.SetInterface(closed);
+        Expect(tabs_surface.props["tabs"][2]["selected"] == true && !tabs_surface.props["ships"].is_null(),
+               "the crew window closed: the ships tab opens");
+    }
 }
 
 static void Alchemy(const std::string &models)
