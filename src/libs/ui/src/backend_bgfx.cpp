@@ -26,6 +26,7 @@
 #include "storm_ui/backend_bgfx.h"
 
 #include "storm_ui/ui.h"
+#include "job_rows.h"
 
 #include <RmlUi/Core.h>
 #include <RmlUi/Core/DecorationTypes.h>
@@ -1143,6 +1144,9 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
     // Releases the targets no frame asked for in `idle_frames` (logged with `why` and the bytes); returns the bytes.
     uint64_t ReleaseIdleTargets(uint32_t idle_frames, const char *why);
     uint64_t LayerBytes(const TargetSet &set) const;
+    // The texture jobs' set is as high as the queued jobs need (PlanJobs), in steps of kJobRows.
+    static constexpr int kJobRows = 128;
+    int JobRowsNeeded() const;
 
     struct PictureRef
     {
@@ -1671,19 +1675,23 @@ std::vector<std::pair<size_t, size_t>> BgfxBackendImpl::PlanJobs(Executor &plann
                 needed = true;
         it = needed ? std::next(it) : jobs_.erase(it);
     }
-    // The job buffers have the surface size. Each job is moved to its own spot in them
-    // (shelf packing), so the passes of different jobs share views.
+    // The job buffers have the surface's width and the height the queued jobs need, shelf-packed as PlaceJob packs
+    // them (rounded up to kJobRows, at most the surface's): a full-width bar's shadow (3268x248 at 3200x1440) once
+    // took 2x layers, posts and a depth/stencil of the whole surface, about 176 MB, made again for every new panel
+    // shadow after the set went idle. Each job is moved to its own spot in them (shelf packing), so the passes of
+    // different jobs share views. A set too low for the waiting jobs grows when none is placed in it.
     TargetSet &set = sets_[1];
-    if (set.width != sets_[0].width || set.height != sets_[0].height)
+    bool any_placed = false;
+    for (const Job &job : jobs_)
+        any_placed = any_placed || job.placed;
+    const int need = JobRowsNeeded();
+    if (set.width != sets_[0].width || set.height > sets_[0].height)
     {
         set.Destroy();
         set.width = sets_[0].width;
-        set.height = sets_[0].height;
+        set.height = need;
         shelf_ = {};
-        bool placed = false;
-        for (const Job &job : jobs_)
-            placed = placed || job.placed;
-        if (placed)
+        if (any_placed)
         {
             // Placed for the old size: let RmlUi render those textures again.
             jobs_.clear();
@@ -1691,9 +1699,11 @@ std::vector<std::pair<size_t, size_t>> BgfxBackendImpl::PlanJobs(Executor &plann
             return {};
         }
     }
-    bool any_placed = false;
-    for (const Job &job : jobs_)
-        any_placed = any_placed || job.placed;
+    else if (!any_placed && (set.Empty() ? set.height != need : set.height < need))
+    {
+        set.Destroy(); // nothing in it is waited for: no job is placed
+        set.height = need;
+    }
     if (!any_placed)
         shelf_ = {};
     std::vector<std::pair<size_t, size_t>> ranges;
@@ -1752,11 +1762,21 @@ std::vector<std::pair<size_t, size_t>> BgfxBackendImpl::PlanJobs(Executor &plann
     return ranges;
 }
 
+// The job buffers' height for the queued jobs, packed in PlaceJob's order and way (job_rows.h).
+int BgfxBackendImpl::JobRowsNeeded() const
+{
+    std::vector<std::pair<int, int>> extents;
+    extents.reserve(jobs_.size());
+    for (const Job &job : jobs_)
+        extents.emplace_back(job.extent.x, job.extent.y);
+    return JobBufferHeight(extents, sets_[0].width, sets_[0].height, kJobRows);
+}
+
 // Moves a job (scissors, translations) to the next free spot of the job buffers. The gap
 // keeps the half-resolution blur passes of neighbours apart.
 bool BgfxBackendImpl::PlaceJob(Job &job)
 {
-    constexpr int gap = 32;
+    constexpr int gap = kJobGap;
     const TargetSet &set = sets_[1];
     const int w = job.extent.x + gap, h = job.extent.y + gap;
     if (shelf_.x + w > set.width)

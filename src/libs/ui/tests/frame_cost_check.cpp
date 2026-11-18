@@ -11,6 +11,7 @@
 //     screen in the next frame after the model.
 //   * Touch scrolling (ScrollFling): drag 1:1, fling on the frame clock, nothing laid out.
 #include "../src/frame_renderer.h"
+#include "../src/job_rows.h"
 #include "hud_bench.h"
 
 #include <RmlUi/Core.h>
@@ -617,6 +618,22 @@ void ScrollFling(const std::string &pack)
 
 } // namespace
 
+// The texture jobs' buffers are as high as the queued jobs need (owner 1665: a full-width bar's shadow, 3268x248
+// at 3200x1440, took 2x layers, posts and a depth/stencil of the whole surface, about 176 MB, made again after
+// every idle release).
+void JobBuffers()
+{
+    using storm::ui::JobBufferHeight;
+    const std::pair<int, int> bar[] = {{3268, 248}};
+    Expect(JobBufferHeight(bar, 3200, 1440, 128) == 384, "a top bar's shadow: 248 + gap rounded up to 384 rows, not 1440");
+    const std::pair<int, int> panel[] = {{2798, 1522}};
+    Expect(JobBufferHeight(panel, 3200, 1440, 128) == 1440, "a panel taller than the surface: the surface's height");
+    const std::pair<int, int> row[] = {{1000, 200}, {1000, 300}, {1000, 100}, {1000, 100}};
+    Expect(JobBufferHeight(row, 3200, 1440, 128) == 512, "three side by side (332 high), the fourth on the next row (132): 464 -> 512");
+    Expect(JobBufferHeight({}, 3200, 1440, 128) == 128, "no job: one step");
+    Expect(JobBufferHeight(bar, 3200, 100, 128) == 100, "never above the surface");
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 3)
@@ -625,6 +642,7 @@ int main(int argc, char **argv)
         return 2;
     }
     states_directory = argv[1];
+    JobBuffers();
     FilterCache();
     DroppedFrame();
     SharedShadows();
