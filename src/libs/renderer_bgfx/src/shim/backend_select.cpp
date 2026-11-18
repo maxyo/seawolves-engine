@@ -198,10 +198,16 @@ constexpr std::array<DeniedDriver, 1> kDeniedDrivers{{
     // - Pixel 10 Pro, PowerVR D-Series DXT-48-1536, Vulkan 1.4.303, build 25.1@6794074 (0x67ab5a), Test Lab
     //   seawolves-gpu-p10pro-20261118-135909: vkCreateGraphicsPipelines VK_ERROR_UNKNOWN for vs_ff_unlit + fs_ff
     //   (alpha blend, state 0x000000400656502f) on the title screen (bgfx FATAL, the game ended).
+    // Since the FF fragment shaders discard once at their end (ff_finish.sh), both drivers create every pipeline of a
+    // full run (Test Lab seawolves-discard-p10pro-20261118-160954 and seawolves-vk-a12-20261118-163335, render_backend
+    // = Vulkan), but both stay here for what remains:
+    // - Pixel 10 Pro: Vulkan is slower than OpenGL ES on the same scene: «Низкая» 39.7 fps, GPU 23.1 ms at 1406x630,
+    //   against 60 fps at 720-900 lines on OpenGL ES (seawolves-gles-fix-p10pro-20261118-154348).
+    // - Galaxy A12: the hero's legs are still not drawn, 5-15 s per pipeline, 0.6-2.4 fps.
     {kVendorImagination, 0, 0, UINT32_MAX,
-     "Imagination PowerVR drivers fail to create the game's Vulkan pipelines (Rogue 1.13@5776728: "
-     "VK_ERROR_OUT_OF_HOST_MEMORY and corrupted geometry; D-Series 25.1@6794074: VK_ERROR_UNKNOWN; Test Lab "
-     "2026-11-18)"},
+     "Imagination PowerVR drivers run the game worse on Vulkan than on OpenGL ES (D-Series 25.1: «Низкая» GPU 23 ms "
+     "at 630 lines against 60 fps at 720-900 lines on OpenGL ES; Rogue 1.13@5776728: geometry missing, 5-15 s "
+     "pipelines; Test Lab 2026-11-18)"},
 }};
 } // namespace
 
