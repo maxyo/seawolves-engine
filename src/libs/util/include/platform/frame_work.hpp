@@ -10,8 +10,11 @@
 //
 // A window keeps the means per phase, the per-frame work for percentiles, the slowest frame with its own split and
 // its slowest entity (what a stutter was), and the classes that took the most. Work is everything but the two waits.
-// The scopes are per thread; only the thread that calls EndFrame (the game thread) is reported.
+// The scopes are per thread; only the thread that calls EndFrame (the game thread) is reported. The game thread also
+// publishes its running phase, load and entity for the stall watchdog (stall_watch.hpp).
 #pragma once
+
+#include "platform/stall_watch.hpp"
 
 #include <algorithm>
 #include <array>
@@ -125,6 +128,8 @@ inline Phase Enter(Phase phase)
     const Clock::time_point now = Clock::now();
     s.frame[static_cast<size_t>(s.current)] += std::chrono::duration_cast<std::chrono::nanoseconds>(now - s.mark).count();
     s.mark = now;
+    if (stall_watch::Publishing())
+        stall_watch::PublishPhase(static_cast<uint8_t>(phase), std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
     return std::exchange(s.current, phase);
 }
 
@@ -152,6 +157,8 @@ inline Sync EnterSync(Sync sync)
     if (s.sync != Sync::None)
         s.sync_ns[static_cast<size_t>(s.sync)] += std::chrono::duration_cast<std::chrono::nanoseconds>(now - s.sync_mark).count();
     s.sync_mark = now;
+    if (stall_watch::Publishing())
+        stall_watch::PublishSync(static_cast<uint8_t>(sync), std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
     return std::exchange(s.sync, sync);
 }
 
@@ -179,9 +186,13 @@ class EntityScope
   public:
     EntityScope(const std::type_info &type, bool realize) : type_(&type), realize_(realize), start_(Clock::now())
     {
+        if ((published_ = stall_watch::Publishing()))
+            previous_ = stall_watch::PublishEntity(type_, realize_, std::chrono::duration_cast<std::chrono::nanoseconds>(start_.time_since_epoch()).count());
     }
     ~EntityScope()
     {
+        if (published_)
+            stall_watch::RestoreEntity(previous_);
         State &s = state();
         (realize_ ? s.realize : s.execute)[type_] +=
             std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start_).count();
@@ -193,11 +204,14 @@ class EntityScope
     const std::type_info *type_;
     bool realize_;
     Clock::time_point start_;
+    bool published_ = false;
+    stall_watch::EntityState previous_{};
 };
 
 // The presented frame ends here (the game thread, after its wait for the display's slot).
 inline void EndFrame()
 {
+    stall_watch::Progress();
     State &s = state();
     Enter(s.current);
     int64_t work = 0;

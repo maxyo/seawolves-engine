@@ -21,7 +21,9 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 #include <mutex>
 #include <string>
@@ -445,6 +447,7 @@ void Context::render_frame_done(uint32_t frame)
         context.done_time_ = now;
         context.done_frame_ = frame;
     }
+    storm::platform::stall_watch::Done(frame);
     context.release_done_.notify_all();
 }
 
@@ -1073,6 +1076,7 @@ bool Context::run_frame(uint32_t flags, uint32_t *frame_number)
         frames_handed_ = true;
         hand_time_[number & 3] = before;
     }
+    storm::platform::stall_watch::Handed(number); // the render thread is busy until it finishes this frame
     release_done_.notify_all();
     if (frame_number)
         *frame_number = number;
@@ -1272,6 +1276,41 @@ void plot_frame_stats()
 
 namespace
 {
+// "<key>: <n> kB" lines of a /proc file, in MB (-1 when missing): cheap reads, no page walk (unlike smaps_rollup).
+void read_proc_mb(const char *path, std::initializer_list<std::pair<const char *, double *>> keys)
+{
+    for (const auto &[key, value] : keys)
+        *value = -1.0;
+    FILE *file = fopen(path, "r");
+    if (!file)
+        return;
+    char line[256];
+    while (fgets(line, sizeof(line), file))
+        for (const auto &[key, value] : keys)
+        {
+            const size_t length = strlen(key);
+            if (strncmp(line, key, length) == 0 && line[length] == ':')
+                *value = strtod(line + length + 1, nullptr) / 1024.0;
+        }
+    fclose(file);
+}
+
+// Every 30 s with the frame work line: the process's memory (/proc/self/status), the system's available memory
+// (/proc/meminfo: the low-memory killer's view) and the GPU memory bgfx knows (bgfx::Stats, as of the last frame), so
+// the session's memory history is in the log (the diagnostics export keeps these lines of the whole session).
+void log_memory()
+{
+    double rss = 0, anon = 0, file = 0, swap = 0, peak = 0, available = 0, total = 0;
+    read_proc_mb("/proc/self/status", {{"VmRSS", &rss}, {"RssAnon", &anon}, {"RssFile", &file}, {"VmSwap", &swap}, {"VmHWM", &peak}});
+    read_proc_mb("/proc/meminfo", {{"MemAvailable", &available}, {"MemTotal", &total}});
+    const render::PerfCounters &now = perf();
+    constexpr double kMb = 1.0 / (1024.0 * 1024.0);
+    logf("memory: rss_mb=%.0f rss_anon_mb=%.0f rss_file_mb=%.0f swap_mb=%.0f rss_peak_mb=%.0f system_available_mb=%.0f "
+         "system_total_mb=%.0f gpu_tex_mb=%.1f gpu_rt_mb=%.1f tex_shadow_mb=%.1f buf_shadow_mb=%.1f buf_gpu_mb=%.1f",
+         rss, anon, file, swap, peak, available, total, now.texture_memory * kMb, now.render_target_memory * kMb,
+         now.texture_shadow_bytes * kMb, now.buffer_shadow_bytes * kMb, now.buffer_gpu_bytes * kMb);
+}
+
 // Every 30 s, in every session: where the game thread's frames went (platform/frame_work.hpp), with the render
 // thread's submit time of the same frames. The line that says what a slow frame was when no profiler is attached.
 void log_frame_work()
@@ -1288,6 +1327,7 @@ void log_frame_work()
     const double seconds = std::chrono::duration<double>(now - window_start).count();
     window_start = now;
     totals_start = perf();
+    log_memory();
     if (window.frames == 0)
         return;
     logf("frame work: %.1f s, %u frames; %s render_submit_ms=%.2f shim_ms=%.2f draws=%.0f", seconds, window.frames,

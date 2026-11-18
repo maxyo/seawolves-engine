@@ -7,6 +7,7 @@
 
 #ifdef __ANDROID__
 #include "platform/host_hooks.hpp"
+#include "platform/stall_watch.hpp"
 #include "profiler.hpp"
 
 #include <algorithm>
@@ -260,6 +261,7 @@ void FramePacing::vk_swap_chain_destroying(void *device, uint64_t swap_chain)
 int32_t FramePacing::vk_present(void *queue, const void *present_info)
 {
     FramePacing &pacing = instance();
+    const storm::platform::stall_watch::PresentScope watched(pacing.swappy_ ? "SwappyVk_queuePresent" : "vkQueuePresentKHR");
     const auto before = Clock::now();
     VkResult result = VK_ERROR_INITIALIZATION_FAILED;
     if (pacing.swappy_)
@@ -539,6 +541,7 @@ void FramePacing::shutdown()
 bool FramePacing::present(void *display, void *surface)
 {
     FramePacing &pacing = instance();
+    const storm::platform::stall_watch::PresentScope watched(pacing.swappy_ ? "SwappyGL_swap" : "eglSwapBuffers");
     const auto before = Clock::now();
     bool presented = false;
     if (pacing.swappy_)

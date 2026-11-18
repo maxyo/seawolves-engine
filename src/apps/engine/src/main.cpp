@@ -29,6 +29,7 @@
 #include "lifecycle_diagnostics_service.hpp"
 #include "logging.hpp"
 #include "log_rotation.hpp"
+#include "stall_watchdog.hpp"
 #include <spdlog/details/os.h>
 #include "os_window.hpp"
 #include "app_events.hpp"
@@ -37,6 +38,7 @@
 #include "animation.h"
 #include "fs.h"
 #include "platform/frame_work.hpp"
+#include "platform/stall_watch.hpp"
 #include "platform/host_hooks.hpp"
 #include "profiler.hpp"
 #ifdef STORM_TRACY
@@ -309,6 +311,7 @@ void mimalloc_fun(const char *msg, void *arg)
 // GameActivity.onPause (true) / onResume (false), on the UI thread: the session marker's background state.
 extern "C" JNIEXPORT void JNICALL Java_org_stormengine_port_GameActivity_nativeLifecycle(JNIEnv *, jclass, jboolean background)
 {
+    storm::platform::stall_watch::Background(background); // SDL pauses the game thread there: no stall
     auto *marker = sessionMarker.load();
     if (!marker)
         return; // before the engine started its logs: nothing to mark
@@ -561,9 +564,13 @@ int main(int argc, char *argv[])
     bool fullscreen = false;
     bool show_borders = false;
     bool run_in_background = false;
+    // The stall watchdog's threshold (diagnostics stall_watchdog.hpp), seconds; 0 turns it off (logged). The scene
+    // sweep raises it: its sanitizer builds run several times slower.
+    double stall_seconds = 5.0;
 
     if (ini)
     {
+        stall_seconds = ini->GetFloat(nullptr, "stall_watchdog_seconds", 5.0f);
         auto bDebugWindow = ini->GetInt(nullptr, "DebugWindow", 0) == 1;
         auto bAcceleration = ini->GetInt(nullptr, "Acceleration", 0) == 1;
         if (ini->GetInt(nullptr, "logs", 1) == 0) // disable logging
@@ -780,11 +787,27 @@ int main(int argc, char *argv[])
     // Exceptions escaping an iteration (the frame, script events raised by HUD input, lifecycle
     // and window handlers, the Android adapters) are reported and end the session in order
     // instead of reaching std::terminate; see ReportFatalError.
+    // From here on the game thread is watched for stalls (diagnostics stall_watchdog.hpp): a report with what it and
+    // the render thread do, and their backtraces, when it has not come back here nor presented a frame for 5 s.
+    storm::diagnostics::StallWatchdog::Config stallConfig;
+    stallConfig.stall_seconds = stall_seconds;
+    storm::diagnostics::StallWatchdog stallWatchdog(stallConfig, [](storm::diagnostics::StallWatchdog::Level level, const std::string &line) {
+        spdlog::log(level == storm::diagnostics::StallWatchdog::Level::Error ? spdlog::level::err : spdlog::level::warn, "{}", line);
+    });
+    storm::platform::stall_watch::RegisterGameThread();
+    if (stall_seconds > 0.0)
+    {
+        spdlog::info("stall watchdog: on, reports after {:.1f} s without progress of the game or the render thread", stall_seconds);
+        stallWatchdog.Start();
+    }
+    else
+        spdlog::warn("stall watchdog: off (engine.ini stall_watchdog_seconds = 0): a hang leaves no report");
     try
     {
         while (isRunning)
         {
             STORM_PROFILE_ZONE("main loop");
+            storm::platform::stall_watch::Progress();
             if (const auto work = frameWork.lap(storm::platform::FrameWorkClock::Clock::now()))
                 storm::platform::reportFrameWork(std::chrono::duration_cast<std::chrono::nanoseconds>(*work));
 #ifdef __ANDROID__
@@ -1286,6 +1309,7 @@ int main(int argc, char *argv[])
     {
         ReportFatalError("unknown error");
     }
+    stallWatchdog.Stop(); // the shutdown below is not a frame loop
     if (fatalError)
         exitCode = EXIT_FAILURE;
 

@@ -571,6 +571,9 @@ class Shard(threading.Thread):
         settings = inventory.read_script(source / 'engine.ini')
         for key, value in (('full_screen', 0), ('screen_x', self.size[0]), ('screen_y', self.size[1]),
                            ('vsync', 0), ('show_fps', 0),
+                           # Sanitizer builds under VirtualGL run several times slower than a phone: only a real hang
+                           # is a stall here (diagnostics stall_watchdog.hpp).
+                           ('stall_watchdog_seconds', 60),
                            ('render_backend', 'vulkan' if self.arguments.render == 'vulkan' else 'gles'),
                            *((('relief_models', self.arguments.relief_models.resolve()),) if self.arguments.relief_models
                              else ())):

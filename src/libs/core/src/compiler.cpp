@@ -660,6 +660,7 @@ VDATA *COMPILER::ProcessEvent(const char *event_name)
         {
             if (!outermost)
                 return;
+            storm::platform::stall_watch::PublishEvent(nullptr);
             EventWork &work = compiler.event_work_[key];
             work.calls++;
             work.ns += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count();
@@ -667,6 +668,9 @@ VDATA *COMPILER::ProcessEvent(const char *event_name)
         }
     } timed{*this, event_code | (static_cast<uint64_t>(event_origin_) << 32), execute_depth_ == 0,
             execute_depth_ == 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}};
+    // The stall watchdog names the event the game thread is in (platform/stall_watch.hpp).
+    if (timed.outermost)
+        storm::platform::stall_watch::PublishEvent(event_name);
     // The handlers are read from the table before each call: a handler may add or drop handlers of this event.
     for (uint32_t n = 0;; n++)
     {

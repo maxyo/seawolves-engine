@@ -1,15 +1,19 @@
 #pragma once
 
+#include <atomic>
+
 namespace storm::loading
 {
 // Game-thread-only resource preparation inside the stock loader's native call.
 // This is not a simulation pause: no game frame or script dispatcher runs here.
-inline bool active = false;
+// `active` and `screen_up` are written by the game thread only; atomic for the stall watchdog's thread, which reports
+// a long frame inside a load as such (diagnostics stall_watchdog.hpp).
+inline std::atomic<bool> active = false;
 inline bool ready = false;
 inline bool first_frame = true;
 // The stock loading screen (Renderer Start/EndProgressView) is up: the scripts opened it (ReloadProgressStart) and the
 // transaction runs from their ReloadProgressEnd.
-inline bool screen_up = false;
+inline std::atomic<bool> screen_up = false;
 // Opens (true) / closes the stock loading screen, for a scene the scripts opened without it (the renderer sets it).
 inline void (*screen)(bool open) = nullptr;
 enum class Outcome { Cancel, Quit, Unavailable, Invalidated, Reentrant };
