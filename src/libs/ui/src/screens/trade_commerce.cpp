@@ -337,13 +337,16 @@ class CommerceScreen final : public Screen
             // the game's window opened after the tap (the tapped row's, or the one it chose); the
             // window still open from before the tap is not its answer
             const bool arrived = deal && (selected->row_id == hold_row_ || admitted.model->revision > hold_revision_);
-            const bool still = !arrived && !last_view_.is_null() && bindings.Now() - hold_at_ < kSelectHold;
+            // The game refused the tap (Router::Answer logged why): no window comes, the wait ends now and the
+            // screen shows the game's own selection.
+            const bool refused = !arrived && bindings.AnsweredSince(hold_floor_) == Bindings::Answers::Refused;
+            const bool still = !arrived && !refused && !last_view_.is_null() && bindings.Now() - hold_at_ < kSelectHold;
             if (still)
             {
                 holding = true;
                 bindings.RebuildAfter(hold_at_ + kSelectHold - bindings.Now());
             }
-            else if (!arrived)
+            else if (!arrived && !refused)
                 bindings.Error(std::string(columns.title) + ": the game opened no window for " + hold_row_ + " within " + std::to_string(kSelectHold) + " s; shown selected");
             if (!still)
                 hold_row_.clear();
@@ -377,13 +380,7 @@ class CommerceScreen final : public Screen
         if (!reopen_row_.empty() && !deal && admitted.model->revision > reopen_revision_)
         {
             if (money && selected && selected->row_id == reopen_row_ && hold_row_.empty() && selected->Offers("activate"))
-            {
-                hold_row_ = selected->row_id;
-                hold_at_ = bindings.Now();
-                hold_revision_ = admitted.model->revision;
-                bindings.Send(*selected, "activate", selected->row_id);
-                bindings.RebuildAfter(kSelectHold);
-            }
+                OpenRow(bindings, *selected, admitted.model->revision);
             reopen_row_.clear();
         }
         // Another ship or character: the selector moved in the model, but the game binds the new owner (refCharacter,
@@ -392,10 +389,17 @@ class CommerceScreen final : public Screen
         // run by then) or, when none comes within kSelectHold, on this one: the game's switch changed no widget, so
         // these rows are the new owner's. The row whose deal was open at the switch is opened again when the new
         // owner's list has it (by its name), else the row the game selected.
+        // A switch the game refused never comes: row taps stop waiting for it.
+        if (switching_ && bindings.AnsweredSince(switch_floor_) == Bindings::Answers::Refused)
+        {
+            switching_ = false;
+            follow_row_.reset();
+        }
         if (selected && opened_for_ != owner)
         {
             const bool switched = opened_for_.has_value();
             opened_for_ = owner;
+            switching_ = false;
             if (switched)
             {
                 settle_revision_ = admitted.model->revision;
@@ -728,6 +732,15 @@ class CommerceScreen final : public Screen
             if (index >= goods.size())
                 return;
             const Widget *row = goods[index];
+            if (switching_ || settling_)
+            {
+                // Another owner was just chosen and the game has not bound it yet: these rows are the old owner's
+                // (under the old or already the new owner's identities), so the game would refuse the tap (owner
+                // 1665). The tapped goods open once the new owner's list is in (Build), as a deal open at the switch
+                // does; the switch has closed the deal already.
+                follow_row_ = row->CellText(layout_.name);
+                return;
+            }
             if (deal && cancel && cancel->Offers("press"))
                 bindings.Send(*cancel, "press", {}, selected->row_id);
             quick_row_.clear();
@@ -735,12 +748,7 @@ class CommerceScreen final : public Screen
             if (deal && row == selected)
                 return; // a tap on the open row closes it
             if (row->Offers("activate"))
-            {
-                hold_row_ = row->row_id; // its window comes a loop after its selection (see Build)
-                hold_at_ = bindings.Now();
-                hold_revision_ = revision;
-                bindings.Send(*row, "activate", row->row_id);
-            }
+                OpenRow(bindings, *row, revision); // its window comes a loop after its selection (see Build)
             else if (row->Offers("select"))
                 bindings.Send(*row, "select", row->row_id);
         });
@@ -1007,6 +1015,7 @@ class CommerceScreen final : public Screen
         hold_row_ = row.row_id;
         hold_at_ = bindings.Now();
         hold_revision_ = revision;
+        hold_floor_ = bindings.RequestFloor();
         bindings.Send(row, "activate", row.row_id);
         bindings.RebuildAfter(kSelectHold);
     }
@@ -1032,6 +1041,8 @@ class CommerceScreen final : public Screen
             bindings.Send(*cancel, "press", {}, selected->row_id);
             follow_row_ = selected->CellText(layout_.name);
         }
+        switching_ = true; // until the selector has moved in a model (Build), the rows shown are the old owner's
+        switch_floor_ = bindings.RequestFloor();
         bindings.Send(owner, "select", owner.row_id);
     }
 
@@ -1080,7 +1091,10 @@ class CommerceScreen final : public Screen
     uint64_t reopen_revision_ = 0; // the model revision the deal was confirmed in
     double hold_at_ = 0.0;
     uint64_t hold_revision_ = 0; // the model revision the row was tapped in
+    uint64_t hold_floor_ = 0;    // the request number of the tap's activate (Bindings::AnsweredSince)
     std::optional<std::string> opened_for_; // the ship / character whose list was opened (its selected row's deal asked for)
+    bool switching_ = false;         // a switch went out and the model has not shown the new owner yet
+    uint64_t switch_floor_ = 0;      // the request number of that switch's select (Bindings::AnsweredSince)
     bool settling_ = false;          // another owner was chosen: its deal waits for the game's own switch (Build)
     uint64_t settle_revision_ = 0;   // the model the new owner came in
     double settle_at_ = 0.0;

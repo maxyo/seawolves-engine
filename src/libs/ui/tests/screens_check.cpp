@@ -448,6 +448,28 @@ static void Store(const std::string &models)
                "no window within the hold: shown selected, and said: " + (sel_surface.errors.empty() ? std::string() : sel_surface.errors.back()));
         sel_surface.errors.clear();
     }
+    {
+        // A tap the game refuses (owner 1665: "the game refused TABLE_LIST: the node did not take it", then 0.5 s
+        // later "opened no window ... shown selected"): the refusal is the answer, the wait ends at once with no
+        // error, and the game's own selection stays shown (the refused row is not shown selected).
+        FakeSurface ref_surface;
+        Router ref(ref_surface);
+        ref.SetInterface(Load(models, "store.json"));
+        AnswerAll(ref, ref_surface, true);
+        ref_surface.errors.clear();
+        ref.OnEvent({"goods", "row", "3"});
+        ExpectEqual(ref_surface.Last(), "widget:store\tTABLE_LIST\t3\tactivate@7:goods:3:ship:0", "the tapped row's deal is asked for");
+        AnswerAll(ref, ref_surface, false, "the node did not take it: 'activate@7:goods:3:ship:0' is not for tr4 now");
+        Expect(ref_surface.props["list"]["rows"][3]["selected"] != true && ref_surface.props["list"]["rows"][0]["selected"] == true,
+               "refused: the game's selection is shown at once, not the refused row: " + ref_surface.props["list"]["rows"].dump());
+        const size_t sent = ref_surface.actions.size();
+        ref_surface.now += 0.6;
+        ref.Tick();
+        Expect(ref_surface.errors.empty(), "refused: no hold error after kSelectHold: " + (ref_surface.errors.empty() ? std::string() : ref_surface.errors.back()));
+        Expect(ref_surface.actions.size() == sent, "refused: nothing is retried");
+        ref.OnEvent({"goods", "row", "2"});
+        ExpectEqual(ref_surface.Last(), "widget:store\tTABLE_LIST\t2\tactivate@7:goods:2:ship:0", "the next tap is not blocked by the refused one");
+    }
 
     // The open deal (store-deal.json: «Ядра», 200 in the hold, 1 840 in the store, 5 to buy and 3 to sell a pack of 20
     // that weighs 1 cwt; the hold is 189 / 199, the purse 1 500). The model is the game's own window mid-deal
@@ -701,6 +723,39 @@ static void Store(const std::string &models)
                    ship_surface.commands[1] == "widget:store\tSHIPS_SCROLL\t0\tselect@7:ship:0",
                "the window came: closed, then the ship switched: " + Json(ship_surface.commands).dump());
         Expect(ship_surface.errors.empty(), "no errors in the ship switch: " + Json(ship_surface.errors).dump());
+
+        // Owner 1665: a row tapped right after a switch, before the game bound the new ship (its rows are still the old
+        // ship's under the new ship's identities, so the game refuses that tap): nothing goes out; the tapped goods open
+        // from the new ship's list once it is in.
+        FakeSurface tap_surface;
+        Router tap_router(tap_surface);
+        tap_router.SetInterface(deal_on(0, 0, 40, false));
+        tap_router.SetInterface(deal_on(0, 0, 41, true));
+        tap_router.OnEvent({"header", "subject-next", ""});
+        tap_surface.commands.clear();
+        tap_router.OnEvent({"goods", "row", "1"}); // emulator: a tap right after ›, on the rows of the model before the switch
+        Expect(tap_surface.commands.empty(), "a row tapped before the switch is in the model is not sent: " + Json(tap_surface.commands).dump());
+        tap_router.SetInterface(deal_on(0, 1, 42, false));
+        tap_router.OnEvent({"goods", "row", "3"}); // the selector moved, the rows are still the old ship's: the newer tap counts
+        Expect(tap_surface.commands.empty(), "a row tapped before the game bound the new ship is not sent: " + Json(tap_surface.commands).dump());
+        InterfaceModel bound = deal_on(0, 1, 43, false);
+        // the new ship's list lacks «Картечь»: «Бомбы» (row 3 of the old list) is its row 2
+        std::erase_if(bound.widgets, [](const Widget &widget) { return widget.node == "TABLE_LIST" && widget.index == 1; });
+        for (Widget &widget : bound.widgets)
+            if (widget.node == "TABLE_LIST" && widget.index > 1)
+                widget.row_id = "goods:" + std::to_string(--widget.index) + ":ship:1";
+        tap_router.SetInterface(bound);
+        ExpectEqual(tap_surface.Last(), "widget:store\tTABLE_LIST\t2\tactivate@7:goods:2:ship:1", "the tapped goods open from the new ship's list");
+        Expect(tap_surface.errors.empty(), "no errors for a tap during the switch: " + Json(tap_surface.errors).dump());
+
+        // A switch the game refuses: row taps stop waiting for it.
+        tap_router.SetInterface(deal_on(2, 1, 44, false));
+        AnswerAll(tap_router, tap_surface, true);
+        tap_router.OnEvent({"header", "subject-prev", ""});
+        AnswerAll(tap_router, tap_surface, false, "the owner list changed");
+        tap_surface.commands.clear();
+        tap_router.OnEvent({"goods", "row", "4"});
+        ExpectEqual(tap_surface.Last(), "widget:store\tTABLE_LIST\t4\tactivate@7:goods:4:ship:1", "after a refused switch a tap goes out at once");
     }
 
     // Without its required table the store falls back to the generic layout.

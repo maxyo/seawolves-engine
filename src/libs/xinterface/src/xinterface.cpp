@@ -2845,7 +2845,9 @@ storm::mobile::ActionOutcome XINTERFACE::MobileApplyAction(storm::android::UiWid
                 return applied;
         }
     }
-        return refused("the node did not take it");
+    if (!node->mobileRefusal_.empty())
+        return Outcome{Outcome::Refused, "the node did not take it: " + node->mobileRefusal_};
+    return refused("the node did not take it");
 }
 #endif
 

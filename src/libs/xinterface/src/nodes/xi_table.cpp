@@ -1585,33 +1585,41 @@ void CXI_TABLE::MobileCollect(std::vector<MobileWidget> &widgets) const
 
 bool CXI_TABLE::MobileApply(int index, const std::string &value)
 {
-    if (index < 0 || index >= m_nLineQuantity || !m_bUse || !m_bClickable || m_bLockedNode || m_bLockStatus)
+    // Every refusal says which condition failed (logged with the action's refusal by XINTERFACE).
+    mobileRefusal_.clear();
+    const auto refuse = [this](std::string why) {
+        mobileRefusal_ = std::move(why);
         return false;
+    };
+    if (index < 0 || index >= m_nLineQuantity)
+        return refuse("row " + std::to_string(index) + " is outside the table's " + std::to_string(m_nLineQuantity) + " rows");
+    if (!m_bUse || !m_bClickable || m_bLockedNode || m_bLockStatus)
+        return refuse(std::string("the table is ") + (!m_bUse ? "not in use" : !m_bClickable ? "not clickable" : m_bLockedNode ? "locked by a window" : "lock-status"));
     auto *root = core.Entity_GetAttributeClass(g_idInterface, m_nodeName);
     const std::string key = "tr" + std::to_string(index + 1);
     auto *row = root ? root->GetAttributeClass(key.c_str()) : nullptr;
     if (!row)
-        return false;
+        return refuse("the table has no " + key);
     const auto id = storm::mobile::InterfaceTableRowId(
         storm::android::mobileScreen, m_nodeName, row, core.Entity_GetAttributeClass(g_idInterface, ""));
     const bool leased = storm::mobile::LeasedTableIdentityRequired(storm::android::mobileScreen, m_nodeName);
     if (leased && id.empty())
-        return false;
+        return refuse(key + " has no identity");
     const auto suffix = "@" + std::to_string(storm::android::mobileScreenRevision) + ":" + id;
     const bool select = (!leased && value == "select") || value == "select" + suffix;
     const bool activate = value == "activate" + suffix;
     const bool dispatch = value == "dispatch" + suffix;
     if (!select && !activate && !dispatch)
-        return false;
+        return refuse("'" + value + "' is not for " + key + " now (" + suffix.substr(1) + ")");
     if (activate || dispatch)
     {
         const int code = CheckCommandUsed(ACTION_ACTIVATE) ? ACTION_ACTIVATE : ACTION_MOUSEDBLCLICK;
         if (!CheckCommandUsed(code))
-            return false;
+            return refuse("the table has no activate command");
         if (dispatch)
         {
             if (m_nSelectIndex != index)
-                return false;
+                return refuse("row " + std::to_string(m_nSelectIndex) + " is selected, not " + std::to_string(index));
             bool stop = false;
             DoAction(code, stop, true);
             return true;

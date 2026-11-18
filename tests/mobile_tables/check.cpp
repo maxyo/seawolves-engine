@@ -93,6 +93,7 @@ struct CXI_TABLE
     struct { int top = 0, left = 0; } m_rect;
     bool m_bClickable = true, m_bLockStatus = false, m_bUse = true, m_bLockedNode = false;
     int activated = 0;
+    std::string mobileRefusal_;
     void SetTopIndexForSelect(int) {}
     void SelectLine(int row) {m_nSelectIndex = row;}
     void DoAction(int, bool &, bool) {++activated;}
@@ -298,6 +299,21 @@ int main()
         storm::android::mobileScreenRevision = 10;
         assert(!table.MobileApply(0, "dispatch@9:" + id)); // different interface lifetime
         storm::android::mobileScreenRevision = 9;
+        // Every refusal says which condition failed (XINTERFACE logs it with the action's refusal).
+        // Owner 1665: a ship switch refills the table with the new ship's goods in the game's next frame;
+        // a tap carrying the row identity of the list before the refill is refused, and says both identities.
+        item->SetAttribute("index", "44");
+        table.mobileRefusal_.clear();
+        assert(!table.MobileApply(0, "activate@9:" + id));
+        const auto now = storm::mobile::InterfaceTableRowId(screen, "TABLE_LIST", item, &commerce);
+        assert(table.mobileRefusal_ == "'activate@9:" + id + "' is not for tr1 now (9:" + now + ")");
+        item->SetAttribute("index", "42");
+        assert(!table.MobileApply(1, "activate@9:" + id) && table.mobileRefusal_ == "row 1 is outside the table's 1 rows");
+        table.m_bLockedNode = true;
+        assert(!table.MobileApply(0, "activate@9:" + id) && table.mobileRefusal_ == "the table is locked by a window");
+        table.m_bLockedNode = false;
+        table.m_nSelectIndex = 0;
+        assert(table.MobileApply(0, "dispatch@9:" + id));
     }
     goods->SetAttribute("select", "1");
     const auto quantityId=storm::mobile::InterfaceTableRowId("store", "TABLE_LIST", item, &commerce);
