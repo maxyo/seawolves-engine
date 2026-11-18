@@ -940,17 +940,24 @@ static void Commerce(const std::string &models)
         };
         FakeSurface open_surface;
         Router open_router(open_surface);
-        open_router.SetInterface(closed(1, 0));
+        // cannons.c selects its first row in its first frame: the list may come before that selection.
+        InterfaceModel unselected = closed(1, 0);
+        for (Widget &widget : unselected.widgets)
+            if (widget.node == "TABLE_LIST")
+                widget.value = "0";
+        open_router.SetInterface(unselected);
+        Expect(open_surface.commands.empty(), "cannons: nothing is asked for while no row is selected");
+        open_router.SetInterface(closed(2, 0));
         ExpectEqual(open_surface.Last(), "widget:cannons\tTABLE_LIST\t1\tactivate@7:row:1", "cannons: the selected row's deal is asked for on opening");
         InterfaceModel opened = Load(models, "cannons-deal.json");
-        opened.revision = 2;
+        opened.revision = 3;
         open_router.SetInterface(opened);
         Expect(open_surface.props["list"]["rows"][1]["selected"] == true && !open_surface.props["deal"].is_null() && open_surface.errors.empty(),
                "cannons: the selected row comes with its deal");
         open_surface.commands.clear();
-        open_router.SetInterface(closed(3, 0));
+        open_router.SetInterface(closed(4, 0));
         Expect(open_surface.commands.empty(), "cannons: a deal closed by the player stays closed");
-        open_router.SetInterface(closed(4, 1));
+        open_router.SetInterface(closed(5, 1));
         ExpectEqual(open_surface.Last(), "widget:cannons\tTABLE_LIST\t1\tactivate@7:row:1", "cannons: another ship's list opens its selected row's deal");
     }
     // contraband.c: a good without a buy price can only be sold: the pivot is the scale's right end.
@@ -2990,8 +2997,12 @@ static void Ship(const std::string &models)
     model.widgets.push_back(Make("CANNONS_CANCEL", "button", "Cancel"));
     revise();
     view = surface.props["sheet"];
-    Expect(view["title"] == "Cannons" && view["sides"].size() == 4 && view["sides"][0]["q"]["max"] == 1 && view["actions"].size() == 1,
-           "the cannons sheet: four sides, no spare guns in the hold");
+    Expect(view["title"] == "Cannons" && view["sides"].size() == 4 && view["sides"][0]["q"]["max"] == 2 && view["sides"][0]["q"]["ceiling"] == 1 &&
+               view["sides"][0]["q"]["moreReason"] == "<ship.no_guns_in_hold>" && view["actions"].size() == 1,
+           "the cannons sheet: four sides, each up to its ports, no spare guns in the hold to go further");
+    Expect(view["calibres"]["rows"].empty() && view["calibres"]["empty"] == "<ship.no_spare_guns>" &&
+               view["subtitle"] == "<ship.guns_fitted> Cannon 6 lb \xC2\xB7 <ship.caliber> <ship.up_to> 6 lb",
+           "no guns in the hold for this ship: the calibre list says so, with the ship's calibre");
     router.OnEvent({"guns-port", "change", "3"});
     ExpectEqual(surface.Last(), "widget:ship\tCANNONS_RIGHT_L\t-1\tpress", "one more gun on the port side");
     for (Widget &widget : model.widgets)
@@ -3004,6 +3015,40 @@ static void Ship(const std::string &models)
     Expect(surface.commands.size() == sent, "no press without progress");
     router.Back();
     ExpectEqual(surface.Last(), "widget:ship\tCANNONS_CANCEL\t-1\tpress", "back cancels the cannons window");
+
+    // The calibre: the guns in the hold the game lists for this ship (ship.c FillCannonsTable); a picked row is
+    // selected in the game's table and «Fit all» (CanonsSetAll) fits that type on every side.
+    FakeSurface guns_surface;
+    Router guns_router(guns_surface);
+    InterfaceModel guns = Load(models, "ship-cannons.json");
+    guns_router.SetInterface(guns);
+    view = guns_surface.props["sheet"];
+    Expect(guns_surface.errors.empty() && guns_surface.props["extras"]["rows"].empty(), "the cannons window: every widget known, no errors");
+    Expect(view["subtitle"] == "<ship.guns_fitted> Cannon 6 lb \xC2\xB7 <ship.caliber> <ship.up_to> 6 lb" && view["calibres"]["rows"].size() == 2 && view["calibres"]["label"] == "Cannons in the hold" &&
+               view["calibres"]["count"] == "Qty" && view["calibres"]["rows"][0]["cells"][0]["text"] == "Cannon 3 lb" &&
+               view["calibres"]["rows"][0]["cells"][0]["sub"] == "Range 350 \xC2\xB7 Damage x1.0 \xC2\xB7 Time 10" &&
+               view["calibres"]["rows"][0]["cells"][0]["image"]["texture"] == "atlas:GOODS/Cannon_3" && view["calibres"]["rows"][0]["cells"][1] == "8" &&
+               view["calibres"]["rows"][0]["selected"] == false,
+           "the guns in the hold with their figures under the game's headings: " + view["calibres"].dump());
+    Expect(view["actions"].size() == 3 && view["actions"][0]["id"] == "cannons-fit" && view["actions"][0]["label"] == "Fit all" &&
+               view["actions"][0]["sub"] == "Cannon 6 lb" && view["actions"][1]["id"] == "cannons-remove" && view["actions"][2]["id"] == "cannons-ok",
+           "nothing picked: «Fit all» refits the fitted type; «Remove all» and OK beside it");
+    Expect(view["sides"][3]["id"] == "guns-stern" && view["sides"][1]["q"]["value"] == 3 && view["sides"][1]["q"]["max"] == 4 &&
+               view["sides"][1]["q"]["ceiling"] == 4 && view["sides"][1]["q"]["moreReason"] == "" && view["sides"][0]["q"]["ceiling"] == 2,
+           "one spare 6 lb gun: the port side may take its fourth, the bow its second");
+    guns_router.OnEvent({"cannons-stock", "row", "0"});
+    ExpectEqual(guns_surface.Last(), "widget:ship\tCANNONS_TABLE\t0\tselect", "a picked calibre is selected in the game's table");
+    for (Widget &widget : guns.widgets)
+        if (widget.node == "CANNONS_TABLE")
+            widget.value = widget.index == 0 ? "1" : "0";
+    guns.revision += 1;
+    guns_router.SetInterface(guns);
+    view = guns_surface.props["sheet"];
+    Expect(view["calibres"]["rows"][0]["selected"] == true && view["actions"][0]["sub"] == "Cannon 3 lb", "the picked row is marked and «Fit all» names it");
+    guns_router.OnEvent({"cannons-fit", "click", ""});
+    ExpectEqual(guns_surface.Last(), "widget:ship\tCANNONS_SET_ALL\t-1\tpress", "«Fit all» is the game's button");
+    guns_router.OnEvent({"cannons-ok", "click", ""});
+    ExpectEqual(guns_surface.Last(), "widget:ship\tCANNONS_OK\t-1\tpress", "OK applies");
 }
 
 static void Journal(const std::string &)

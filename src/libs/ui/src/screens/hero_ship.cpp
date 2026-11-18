@@ -2,7 +2,8 @@
 // -ShipMorale, -ShipShares). Fills the pack screen <s-ship>: three tabs of our own over the one
 // stock screen. «Обзор»: the ship card (name with the rename quill, type and class, captain,
 // hull / crew / sails bars, «Обмен» on a companion's ship) and the game's TABLE_OTHER figures
-// on parchment; the cannons row opens the game's CANNONS_WINDOW as a sheet. «Команда»: crew
+// on parchment; the cannons row opens the game's CANNONS_WINDOW as a sheet (the calibre picked
+// from the guns in the hold, the guns per side). «Команда»: crew
 // size, the experience of the three crew groups and the morale as bars, food and upkeep,
 // «Доли команды» (PARTITION_WINDOW as a parchment dialog) and «Поднять мораль» (the game's
 // confirmation window as our dialog). «Трюм»: the goods; the open row is the game's
@@ -895,8 +896,11 @@ class ShipScreen final : public Screen
                     {"actions", actions}};
     }
 
-    // CANNONS_WINDOW: guns per side as quantity controls (one arrow press per step), the guns in
-    // the hold to fit, «remove all», «fit all» and the game's OK.
+    // CANNONS_WINDOW in two columns under the fitted type. The calibre: the guns in the hold the game offers
+    // for this ship (CANNONS_TABLE: its own filter by the ship's calibre) as a list; a picked row is selected
+    // in the game's table and «Установить всё» (CANNONS_SET_ALL, named with that type) fits it on every side,
+    // as on a PC. The sides: guns of the fitted type per side as quantity controls (one arrow press per step),
+    // up to what the hold has. Below: «Установить всё», «Снять всё» and the game's OK.
     Json CannonsView(Bindings &bindings)
     {
         const auto close = [this, &bindings](const Event &) {
@@ -905,28 +909,52 @@ class ShipScreen final : public Screen
         };
         bindings.Modal("sheet", close);
         bindings.On("sheet-close", "", close);
-        // Guns of the fitted type still in the hold: what a side may take beyond its own.
         const std::string fitted = OneLine(a_->Label("CANNONS_TEXT"));
-        int spare = 0;
-        Json stock = Json::array();
-        const std::vector<const Widget *> rows = a_->All("CANNONS_TABLE");
-        for (const Widget *row : rows)
+        int spare = 0; // guns of the fitted type still in the hold: what the sides may take beyond their own
+        std::string picked = fitted; // what «Установить всё» fits: the selected row's type, else the fitted one
+        Json rows = Json::array();
+        const std::vector<const Widget *> stock = a_->All("CANNONS_TABLE");
+        for (const Widget *row : stock)
         {
             const std::string name = Trim(row->CellText(0));
+            const std::string count = Trim(row->CellText(1));
             if (name == fitted)
-                spare = Amount(bindings, row->CellText(1), "CANNONS_TABLE count (column 1)");
-            stock.push_back(Json{{"cells", Json::array({Json{{"text", name}, {"image", PictureOf(row->cells.empty() || row->cells[0].images.empty() ? row->FirstImage() : &row->cells[0].images[0])}},
-                                                        Trim(row->CellText(1))})},
-                                 {"selected", row->value == "1"}});
+                spare = Amount(bindings, count, "CANNONS_TABLE count (column 1)");
+            if (row->value == "1")
+                picked = name;
+            // range, damage, reload: the game's columns 2..4 under their own headings
+            std::string figures;
+            for (size_t column = 2; column <= 4; ++column)
+            {
+                const std::string value = Trim(row->CellText(column));
+                if (value.empty())
+                    continue;
+                const std::string heading = column < row->column_headers.size() ? OneLine(row->column_headers[column]) : std::string();
+                figures += (figures.empty() ? "" : " \xC2\xB7 ") + (heading.empty() ? value : heading + " " + value);
+            }
+            rows.push_back(Json{{"cells", Json::array({Json{{"text", name},
+                                                            {"sub", figures},
+                                                            {"image", PictureOf(row->cells.empty() || row->cells[0].images.empty() ? row->FirstImage() : &row->cells[0].images[0])}},
+                                                       count})},
+                                {"selected", row->value == "1"}});
         }
-        bindings.On("cannons-stock", "row", [this, &bindings, rows](const Event &event) {
+        bindings.On("cannons-stock", "row", [this, &bindings, stock](const Event &event) {
             const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));
-            if (index < rows.size() && rows[index]->Offers("select"))
+            if (index < stock.size() && stock[index]->Offers("select"))
             {
                 sent_revision_ = 0;
-                Step(bindings, rows[index], "select", rows[index]->row_id);
+                Step(bindings, stock[index], "select", stock[index]->row_id);
             }
         });
+        const std::string calibre = OtherValue("sCannons");
+        const Widget *first = stock.empty() ? nullptr : stock.front();
+        const auto heading = [first](size_t column) {
+            return first && column < first->column_headers.size() ? OneLine(first->column_headers[column]) : std::string();
+        };
+        Json calibres{{"label", heading(0)},
+                      {"count", heading(1)},
+                      {"rows", rows},
+                      {"empty", bindings.Text("ship.no_spare_guns")}};
         Json sides = Json::array();
         for (const Side &side : kSides)
         {
@@ -935,10 +963,14 @@ class ShipScreen final : public Screen
             const int most = FieldAmount(bindings, ship_, side.id);
             const bool walking = intent_.kind == Intent::Guns && intent_.row == side.id;
             const bool arrows = Pressable((std::string("CANNONS_LEFT_") + side.letter).c_str()) || Pressable((std::string("CANNONS_RIGHT_") + side.letter).c_str());
+            const int room = std::max(now, most);          // the side's gun ports
+            const int reach = std::min(room, now + spare); // as far as the hold's guns of this type go
             sides.push_back(Json{{"id", std::string("guns-") + side.id},
                                  {"q", Json{{"value", walking ? intent_.target : now},
                                             {"min", 0},
-                                            {"max", std::max(now, std::min(most, now + spare))},
+                                            {"max", room},
+                                            {"ceiling", reach},
+                                            {"moreReason", reach < room ? bindings.Text("ship.no_guns_in_hold") : std::string()},
                                             {"label", bindings.Text(side.label)},
                                             {"steps", Json::array({1})},
                                             {"all", false},
@@ -955,20 +987,22 @@ class ShipScreen final : public Screen
             bindings.On(std::string("guns-") + side.id, "change", set);
             bindings.On(std::string("guns-") + side.id, "commit", set);
         }
+        // «Установить всё» names the type it fits; «Снять всё» and OK beside it
         Json actions = Json::array();
-        for (const auto &[node, id, variant] : {std::tuple{"CANNONS_REMOVE_ALL", "cannons-remove", "secondary"},
-                                                std::tuple{"CANNONS_SET_ALL", "cannons-fit", "secondary"},
+        for (const auto &[node, id, variant] : {std::tuple{"CANNONS_SET_ALL", "cannons-fit", "secondary"}, std::tuple{"CANNONS_REMOVE_ALL", "cannons-remove", "secondary"},
                                                 std::tuple{"CANNONS_OK", "cannons-ok", "primary"}})
             if (const Widget *button = a_->One(node))
+            {
                 actions.push_back(ButtonView(bindings, *button, id, variant));
-        const std::string caption = OneLine(a_->Label("CANNONS_CAPTION"));
-        const Widget *first = rows.empty() ? nullptr : rows.front();
-        return Json{{"title", caption},
-                    {"subtitle", fitted},
-                    {"image", PictureOf(a_->One("CANNONS_PIC") ? a_->One("CANNONS_PIC")->FirstImage() : nullptr)},
+                if (std::string(id) == "cannons-fit")
+                    actions.back()["sub"] = picked;
+            }
+        // the fitted type and the ship's calibre (the list holds nothing bigger)
+        const std::string limit = bindings.Text("ship.caliber") + " " + bindings.Text("ship.up_to") + " " + Trim(calibre.substr(0, calibre.find('/')));
+        return Json{{"title", OneLine(a_->Label("CANNONS_CAPTION"))},
+                    {"subtitle", fitted.empty() ? limit : bindings.Text("ship.guns_fitted") + " " + fitted + " \xC2\xB7 " + limit},
+                    {"calibres", calibres},
                     {"sides", sides},
-                    {"stockLabel", first && !first->column_headers.empty() ? OneLine(first->column_headers[0]) : std::string()},
-                    {"stock", stock},
                     {"actions", actions}};
     }
 };

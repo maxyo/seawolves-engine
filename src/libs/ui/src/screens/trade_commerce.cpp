@@ -350,12 +350,13 @@ class CommerceScreen final : public Screen
         // A shop opens, and switches ship or character, with a row selected and its amount window
         // closed (on a PC Enter or a double click opens it): that row's deal is opened as a tap
         // would, so the selected row comes with its deal. The free windows (storage, loot, chests)
-        // open on their take-all instead.
+        // open on their take-all instead. The list is decided once a row is selected: cannons.c
+        // selects its first row in its first frame, after the list was already sent.
         std::string owner;
         for (const Widget *one : admitted.All(columns.owners))
             if (one->value == "1")
                 owner = one->row_id;
-        if (opened_for_ != owner)
+        if (opened_for_ != owner && selected)
         {
             opened_for_ = owner;
             if (money && selected && !deal && selected->Offers("activate"))
