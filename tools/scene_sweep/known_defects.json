@@ -238,6 +238,48 @@
       "file": "PROGRAM/locations/init/Providence.c",
       "error": "missing model: resource\\models\\locations\\Town_SanAndres\\Town\\SanAndres_jump_patch.gm",
       "reason": "The hidden colony's town names a jump patch model the game does not ship (RESOURCE/MODELS/Locations/Town_SanAndres/Town has the day and night patches only)."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/characters/characterUtilite.c",
+      "error": "COMPILE WARNING in characters\\characterUtilite.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): EquipOfficerByItem/EquipOfficerByArtefact call GetCharacterItem(pchar) without the item (2606, 2844). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/dialogs/russian/Enc_Officer_dialog.c",
+      "error": "COMPILE WARNING in dialogs\\russian\\Enc_Officer_dialog.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): RandPhraseSimple (2 arguments) is given 3 phrases (271). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/dialogs/russian/Common_Tavern.c",
+      "error": "COMPILE WARNING in dialogs\\russian\\Common_Tavern.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): RandPhraseSimple (2 arguments) is given 3 phrases (802). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/dialogs/russian/Common_church.c",
+      "error": "COMPILE WARNING in dialogs\\russian\\Common_church.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): LinkRandPhrase (3 arguments) is given 2 phrases (556, 593). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/dialogs/russian/HouseEnc_dialog.c",
+      "error": "COMPILE WARNING in dialogs\\russian\\HouseEnc_dialog.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): NPCharRepPhrase(ref, bad, good) is called without the character (236, 260). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
+    },
+    {
+      "game": "TEHO 1.7.3",
+      "scene": "*",
+      "file": "PROGRAM/dialogs/russian/Common_Shipyard.c",
+      "error": "COMPILE WARNING in dialogs\\russian\\Common_Shipyard.c(",
+      "reason": "A call with a wrong argument count, reported when the script compiles (COMPILE WARNING, tests/script_call_arguments): GenerateShipHand is called without its character for the starting sloop (2131). The app fixes it with its script patch call-argument-count; the sweep runs the game's scripts unpatched."
     }
   ]
 }

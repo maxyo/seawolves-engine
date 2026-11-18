@@ -359,6 +359,32 @@ void COMPILER::SetWarning(const char *data_PTR, ...)
     logTrace_->warn(ErrorBuffer);
 }
 
+// The statement form of a call refuses a wrong argument count (CompileBlock, `doesnt accept`); a call inside an
+// expression was never checked (also in the original engine), and the game's scripts have such calls, so they are
+// reported and compiled as before. At run time a script function then takes its last arguments and the call ends
+// with a stack error. Functions of unloaded segments (their count is not known) and imported ones are not checked.
+void COMPILER::CheckCallArguments(const FuncInfo &fi, uint32_t func_code, uint32_t func_args)
+{
+    uint32_t declared = fi.arguments;
+    if (fi.segment_id == IMPORTED_SEGMENT_ID)
+        return;
+    if (fi.offset == INVALID_FUNC_OFFSET)
+    {
+        // an unloaded segment's function has INVALID_SEGMENT_ID (the value of INTERNAL_SEGMENT_ID, whose functions
+        // have their table index as offset); a segment's extern declaration has the segment's id
+        if (fi.segment_id == INVALID_SEGMENT_ID)
+            return;
+        declared = fi.extern_arguments;
+    }
+    else if (fi.segment_id == INTERNAL_SEGMENT_ID && IsIntFuncVarArgsNum(func_code))
+        return;
+    if (declared == func_args || bDebugExpressionRun)
+        return;
+    FindErrorSource();
+    logError_->warn("COMPILE WARNING in {}({}): function '{}' declared with {} arguments is called with {}",
+                    DebugSourceFileName, DebugSourceLine + 1, fi.name, declared, func_args);
+}
+
 void COMPILER::LoadPreprocess()
 {
     auto engine_ini = fio->OpenIniFile(core_internal.EngineIniFileName());
@@ -3167,9 +3193,38 @@ bool COMPILER::BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult
     }
 
     if (check_sp != SStack.GetDataNum() - (pVResult ? 1 : 0))
-        SetError("function '%s' stack error", call_fi.name.c_str());
+    {
+        if (call_segment_id != INTERNAL_SEGMENT_ID && call_segment_id != IMPORTED_SEGMENT_ID &&
+            arguments != call_fi.arguments)
+            SetError("function '%s' stack error: declared with %u arguments, called with %u", call_fi.name.c_str(),
+                     call_fi.arguments, arguments);
+        else
+            SetError("function '%s' stack error", call_fi.name.c_str());
+        DropStrayStackValues(check_sp, pVResult);
+    }
 
     return true;
+}
+
+// After a call that left more values than its result above `base` (a script function called with more arguments
+// than it declares: its frame starts at its own last arguments and the first ones stay behind), the values are
+// dropped and the result moved down to `base`, so the caller's expression finds its own operands under it again
+// (`"a" + RandPhraseSimple(x, y, z)` would otherwise add the result to x and leave "a" on the stack). A call that
+// took fewer values than it should (a call with too few arguments uses the caller's values) cannot be undone here;
+// the compiler reports both at compile time (CheckCallArguments).
+void COMPILER::DropStrayStackValues(uint32_t base, DATA *&result)
+{
+    const uint32_t keep = base + (result ? 1 : 0);
+    if (SStack.GetDataNum() <= keep)
+        return;
+    if (result)
+    {
+        DATA *const slot = SStack.Read(base, 0);
+        slot->SetType(UNKNOWN); // as a push does
+        slot->Copy(result);
+        result = slot;
+    }
+    SStack.InvalidateFrom(keep);
 }
 
 // `call name()` leaves 1 (the callee returned a value) or 0 in the expression register. The

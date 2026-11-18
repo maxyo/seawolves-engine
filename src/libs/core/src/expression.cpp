@@ -550,7 +550,10 @@ bool COMPILER::CompileExpression_L7(SEGMENT_DESC &Segment)
 
 
             if (sttFuncCallType == CALL_FUNCTION)
+            {
+                CheckCallArguments(fi, dwRCode, func_args);
                 CompileToken(Segment, CALL_FUNCTION, 1, (char *)&dwRCode, sizeof(uint32_t));
+            }
             else
             {
                 // code of function must be find out on the fly from variable

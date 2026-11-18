@@ -109,6 +109,8 @@ class COMPILER : public VIRTUAL_COMPILER
     void DTrace(const char *data_PTR, ...);
     void SetError(const char *data_PTR, ...);
     void SetWarning(const char *data_PTR, ...);
+    // Compile time, error log: a call in an expression whose argument count differs from the function's.
+    void CheckCallArguments(const FuncInfo &fi, uint32_t func_code, uint32_t func_args);
     bool CreateProgram(const char *file_name);
     bool AddProgramFile(const char *file_name);
 
@@ -160,6 +162,7 @@ class COMPILER : public VIRTUAL_COMPILER
     bool BC_Execute(uint32_t function_code, DATA *&pVReturnResult, const char *pDbgExpSource = nullptr);
     bool BC_CallFunction(uint32_t func_code, uint32_t &ip, DATA *&pVResult);
     void StoreDynamicCallStatus(bool returned_value);
+    void DropStrayStackValues(uint32_t base, DATA *&result);
     // Value of an integer #define of a loaded script segment; nullopt when there is none.
     std::optional<int32_t> FindIntegerDefine(const char *name);
     void FindErrorSource();
