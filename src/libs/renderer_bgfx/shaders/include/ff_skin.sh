@@ -10,12 +10,12 @@ SAMPLER2D(s_vtex, 13);
 // first texel come as instance data (i_data0.xy, one instance), so they change no uniform. `palette` is that
 // i_data0.xy: a stage input, which only main() can name in the SPIR-V build (storm_common.sh).
 
-vec4 blendedRow(vec2 palette, int row, int bone0, int bone1, float weight)
+vec4 blendedRow(vec2 palette, int row, uint bone0, uint bone1, float weight)
 {
     int base = int(palette.x);
     int texel = int(palette.y) + row;
-    return texelFetch(s_vtex, ivec2(texel, base + bone0), 0) * weight +
-           texelFetch(s_vtex, ivec2(texel, base + bone1), 0) * (1.0 - weight);
+    return texelFetch(s_vtex, ivec2(texel, base + int(bone0)), 0) * weight +
+           texelFetch(s_vtex, ivec2(texel, base + int(bone1)), 0) * (1.0 - weight);
 }
 
 // Position and normal alike, the normal with the translation included (as the CPU kernel did).

@@ -31,7 +31,8 @@ vec4 a_texcoord5 : TEXCOORD5;
 vec4 a_texcoord6 : TEXCOORD6;
 vec4 a_texcoord7 : TEXCOORD7;
 vec4 a_weight    : BLENDWEIGHT;
-ivec4 a_indices  : BLENDINDICES; // integer: bgfx binds non-normalised Uint8 with glVertexAttribIPointer
+uvec4 a_indices  : BLENDINDICES; // unsigned: bgfx binds non-normalised Uint8 as GL_UNSIGNED_BYTE (glVertexAttribIPointer)
+                                 // and VK_FORMAT_R8G8B8A8_UINT; a signed input is undefined on both (PowerVR Vulkan)
 vec3 a_tangent   : TANGENT;
 vec3 a_bitangent : BITANGENT;
 // Instance data of a GPU-skinned draw (one instance): x = its first row in the frame's bone palette texture

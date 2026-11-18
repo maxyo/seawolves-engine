@@ -68,6 +68,7 @@ import concurrent.futures
 jobs = int(os.environ.get('STORM_CHECK_JOBS', '6'))
 plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 'storm_texture_tests')], [str(build / 'perf_check')], [str(build / 'program_family_check')], [str(build / 'backend_select_check')], [str(build / 'view_schedule_check')], [str(build / 'texture_fade_check')], [str(build / 'realize_budget_check')],
          [str(build / 'renderer_bgfx' / 'storm_eac_encoder_tests')],
+         ['python3', str(here / 'vertex_input_spirv_check.py'), str(build / 'renderer_bgfx' / 'shaders-gen' / 'storm_shaders')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_core_check')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_aggregate_check')],
          [str(build / 'renderer_bgfx' / 'fx' / 'storm_fx_wave_storage_check')],
