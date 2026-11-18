@@ -12,10 +12,28 @@ are written.
   D24S8 renderbuffer complete at 2x and 4x (the extension allows the mix when the sample counts agree; probed once at
   init). Otherwise renderbuffers and the blit as upstream. The path is logged once ("BGFX offscreen MSAA: ...").
 - Discarding an MSRTT colour attachment would invalidate the resolved texture: only depth/stencil are discarded.
+- The sample count is the texture's, reset by every TextureGL::init: bgfx reuses a freed handle's TextureGL, and a
+  single-sample target made in a freed MSRTT target's slot was attached multisampled (incomplete next to its
+  single-sample depth: black 3D after «Высокая» -> «Низкая» on a Pixel 10 Pro). g_stormMsrttActive says which path
+  runs; g_stormMsrttWithoutMixedProbe is a logged override for tests/renderer_bgfx/msrtt_reuse_check.cpp only.
 diff --git a/src/renderer_gl.cpp b/src/renderer_gl.cpp
 index 61748254e..a85b7feed 100644
 --- a/src/renderer_gl.cpp
 +++ b/src/renderer_gl.cpp
+@@ -29,6 +29,13 @@ namespace bgfx { namespace gl
+ 	// thread, read by the render thread every frame.
+ 	std::atomic<float> g_stormMaxAnisotropy{0.0f};
+ 
++	// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): whether offscreen MSAA colour goes through
++	// EXT_multisampled_render_to_texture (set at init). g_stormMsrttWithoutMixedProbe is for the host check
++	// tests/renderer_bgfx/msrtt_reuse_check.cpp only: it takes MSRTT colour wherever the extension exists, without the
++	// mixed-renderbuffer probe that desktop drivers fail (logged as a test override); the game never sets it.
++	std::atomic<bool> g_stormMsrttActive{false};
++	std::atomic<bool> g_stormMsrttWithoutMixedProbe{false};
++
+ 	struct PrimInfo
+ 	{
+ 		GLenum m_type;
 @@ -2299,6 +2299,7 @@ namespace bgfx { namespace gl
  			, m_vaoSupport(false)
  			, m_samplerObjectSupport(false)
@@ -24,7 +42,7 @@ index 61748254e..a85b7feed 100644
  			, m_srgbDecodeSupport(false)
  			, m_borderColorSupport(BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGL) )
  			, m_programBinarySupport(false)
-@@ -3106,6 +3107,41 @@ namespace bgfx { namespace gl
+@@ -3106,6 +3107,47 @@ namespace bgfx { namespace gl
  
  				m_srgbDecodeSupport = s_extension[Extension::EXT_texture_sRGB_decode].m_supported;
  
@@ -41,7 +59,12 @@ index 61748254e..a85b7feed 100644
 +					&& s_extension[Extension::EXT_multisampled_render_to_texture].m_supported
 +					&& NULL != glFramebufferTexture2DMultisampleEXT
 +					;
-+				if (m_msrttSupport)
++				if (m_msrttSupport && g_stormMsrttWithoutMixedProbe.load(std::memory_order_relaxed) )
++				{
++					trace(__FILE__, __LINE__, "BGFX offscreen MSAA: TEST OVERRIDE (g_stormMsrttWithoutMixedProbe): "
++						"EXT_multisampled_render_to_texture colour without the mixed depth/stencil probe\n");
++				}
++				else if (m_msrttSupport)
 +				{
 +					for (int32_t samples = 2; samples <= bx::min<int32_t>(m_maxMsaa, 4) && m_msrttSupport; samples *= 2)
 +					{
@@ -62,6 +85,7 @@ index 61748254e..a85b7feed 100644
 +					? "renderbuffers resolved by a blit (EXT_multisampled_render_to_texture not usable, see above)"
 +					: "renderbuffers resolved by a blit (no EXT_multisampled_render_to_texture)"
 +					);
++				g_stormMsrttActive.store(m_msrttSupport, std::memory_order_relaxed);
 +
  				if (s_extension[Extension::OES_read_format].m_supported
  				&& (s_extension[Extension::IMG_read_format].m_supported	|| s_extension[Extension::EXT_read_format_bgra].m_supported) )
@@ -113,6 +137,18 @@ index 61748254e..a85b7feed 100644
  		bool m_srgbDecodeSupport;
  		bool m_borderColorSupport;
  		bool m_programBinarySupport;
+@@ -6516,6 +6584,11 @@ namespace bgfx { namespace gl
+ 		m_baseLevel = 0;
+ 		m_maxLevel  = -1;
+ 		m_immutableStorage = false;
++		// Storm Engine patch (bgfx-gl-msaa-render-to-texture.patch): bgfx keeps its TextureGL objects and hands a freed
++		// handle to the next texture. The MSRTT sample count belongs to the texture made here, not to the slot: kept, a
++		// single-sample target made in the slot of a multisampled one was attached as a 4x MSRTT colour next to its
++		// single-sample depth, an incomplete framebuffer (a black 3D scene after «Высокая» -> «Низкая» on PowerVR).
++		m_msrttSamples = 0;
+ 
+ 		const bool writeOnly    = 0 != (m_flags&BGFX_TEXTURE_RT_WRITE_ONLY);
+ 		const bool computeWrite = 0 != (m_flags&BGFX_TEXTURE_COMPUTE_WRITE );
 @@ -6599,6 +6668,22 @@ namespace bgfx { namespace gl
  			const uint32_t msaaQuality = 1 == numSamples ? 0 : bx::min<uint32_t>(s_renderGL->m_maxMsaa, numSamples);
  			const bool msaaSample = 0 != (m_flags&BGFX_TEXTURE_MSAA_SAMPLE);

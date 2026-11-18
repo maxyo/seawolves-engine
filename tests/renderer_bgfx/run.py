@@ -48,7 +48,7 @@ for source in sorted((shim / 'shaders/ports').glob('vs_port_*.sc')):
 subprocess.run(configure, check=True, stdout=subprocess.DEVNULL)
 warmth = here.parents[1] / 'tools/ccache/warmth'
 subprocess.run([str(warmth), 'begin', str(build)], check=True)
-subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'storm_eac_encoder_tests', 'perf_check', 'program_family_check', 'skinning_check', 'uniform_commit_check', 'point_sprite_check', 'point_size_spirv_check',
+subprocess.run(['cmake', '--build', str(build), '--target', 'storm_bgfx', 'storm_texture_tests', 'storm_eac_encoder_tests', 'perf_check', 'program_family_check', 'skinning_check', 'uniform_commit_check', 'msrtt_reuse_check', 'point_sprite_check', 'point_size_spirv_check',
                 'preset_switch_check', 'sea_edge_check', 'program_cache_check', 'render_thread_check', 'surface_lifecycle_check',
                 'storm_fx_core_check', 'storm_fx_aggregate_check', 'storm_fx_wave_storage_check', 'storm_fx_wave_idle_check', 'storm_fx_wave_source_check', 'ao_volume_check',
                 'storm_relief_check', 'storm_relief_device_retry_check', 'storm_relief_finalizer_check', 'storm_relief_tx_check', 'grass_vertex_check', 'coast_foam_vertex_check', 'sea_surface_vertex_check', 'cutout_caster_check', 'lamp_shadow_check', 'shadow_casters_check', 'sun_layers_check', 'sun_relight_check', 'lamp_lifetime_check', 'relief_switch_check', 'scene_readiness_check', 'scene_resources_check', 'scene_retry_check', 'scene_texture_failure_check', 'texture_format_check', 'upscale_swap_check', 'texture_fade_check', 'realize_budget_check', 'backend_select_check', 'view_schedule_check',
@@ -91,6 +91,13 @@ gpu_checks = ['skinning_check', 'uniform_commit_check', 'point_sprite_check', 'p
 # not start) fails here. Without any Vulkan device the pass is skipped, and said so.
 vulkan_env = dict(os.environ, STORM_CHECK_BACKEND='vulkan')
 vulkan_checks = [name for name in gpu_checks if name != 'uniform_commit_check']
+# msrtt_reuse_check needs EXT_multisampled_render_to_texture, which Mesa's llvmpipe lacks: with STORM_VIRTUALGL (as the
+# scene sweep and the land queue have) it runs on the host GPU through VirtualGL; otherwise it prints SKIP and why.
+msrtt_env = dict(os.environ)
+if os.environ.get('STORM_VIRTUALGL'):
+    vgl = Path(os.environ['STORM_VIRTUALGL']) / 'usr/lib'
+    msrtt_env.update(VGL_DISPLAY='egl', LD_PRELOAD=':'.join(filter(None, (str(vgl / 'libdlfaker.so'), str(vgl / 'libvglfaker.so'),
+                                                                          os.environ.get('LD_PRELOAD')))))
 SLOW = ('ao_volume_check', 'render_thread_check', 'program_cache_check', 'cutout_caster_check')
 
 
@@ -118,6 +125,7 @@ with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
     vk = {name: pool.submit(run_check, [str(build / name)], vulkan_env) for name in order if name in vulkan_checks}
     gl = {name: pool.submit(run_check, [str(build / name)]) for name in order}
     other = [(command, pool.submit(run_check, command)) for command in plain]
+    other.append(([str(build / 'msrtt_reuse_check')], pool.submit(run_check, [str(build / 'msrtt_reuse_check')], msrtt_env)))
     asan = {name: pool.submit(run_check, [str(asan_build / name)], asan_env) for name in ASAN_CHECKS}
     for command, future in other:
         if future.result().returncode != 0:

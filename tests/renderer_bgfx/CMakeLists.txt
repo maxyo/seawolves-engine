@@ -77,6 +77,14 @@ target_compile_definitions(uniform_commit_check PRIVATE NOMINMAX)
 target_compile_options(uniform_commit_check PRIVATE -fsigned-char)
 target_link_libraries(uniform_commit_check PRIVATE storm_bgfx storm_check_sdl)
 
+# msrtt_reuse_check: a single-sample target in the slot of a freed MSRTT colour target is not attached multisampled
+# (patches/bgfx-gl-msaa-render-to-texture.patch); needs EXT_multisampled_render_to_texture (run.py: VirtualGL).
+add_executable(msrtt_reuse_check msrtt_reuse_check.cpp)
+target_include_directories(msrtt_reuse_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_compile_definitions(msrtt_reuse_check PRIVATE NOMINMAX)
+target_compile_options(msrtt_reuse_check PRIVATE -fsigned-char)
+target_link_libraries(msrtt_reuse_check PRIVATE storm_bgfx storm_check_sdl)
+
 # Structural Vulkan regression runs offline: the production compiler must export AND store BuiltIn PointSize.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_custom_target(point_size_spirv_check
