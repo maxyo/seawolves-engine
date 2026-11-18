@@ -68,7 +68,7 @@ static fs::path MakePack(const fs::path &base, const fs::path &font, const std::
 
 struct Result
 {
-    std::vector<std::string> errors, actions;
+    std::vector<std::string> errors, actions, taps;
 };
 
 // Opens the captain picker with rows drawn as `row`, then taps the second candidate.
@@ -86,9 +86,12 @@ static Result Run(const fs::path &base, const fs::path &font, const fs::path &mo
     config.width = 800;
     config.height = 400;
     config.clock = [&clock] { return clock; };
+    config.log_taps = true; // the tap map of device crawls (tools/ui_crawl)
     config.on_log = [&result](LogLevel level, const std::string &line) {
         if (level == LogLevel::Error && line.rfind("screen ", 0) == 0) // the reduced pack has no strings of its own
             result.errors.push_back(line);
+        if (line.rfind("taps ", 0) == 0)
+            result.taps.push_back(line);
     };
     config.on_action = [&result](const Action &action) {
         if (action.screen == "shipyard") // the game's widgets (not the click sound, not the host's own)
@@ -148,6 +151,18 @@ int main(int argc, char **argv)
     const Result bound = Run(base, font, models, "id=\"{{o.id}}\"");
     Expect(bound.errors.empty(), "rows whose taps are mapped: no errors: " + List(bound.errors));
     Expect(bound.actions == std::vector<std::string>{"PASSENGERSLIST 1 yard@7:40:select"}, "a tap on the second candidate selects it in the game's list: " + List(bound.actions));
+
+    // The tap map (Config::log_taps): one block, a line per candidate row with the point a tap there uses, reached
+    // by that row; the row that only shows something is not in it.
+    int rows = 0, begins = 0;
+    for (const std::string &line : bound.taps)
+    {
+        begins += line.rfind("taps begin ", 0) == 0;
+        if (line.find(" shipyard c-row ") != std::string::npos && line.find(" click ") != std::string::npos)
+            rows += line.find(" reach=1 dis=0 ") != std::string::npos && line.find(" at=-") == std::string::npos;
+        Expect(line.find("\"fact") == std::string::npos, "a row with pointer-events: none is not in the tap map: " + line);
+    }
+    Expect(begins >= 1 && rows == 3, "the tap map lists the three candidate rows, reachable: " + List(bound.taps));
 
     if (failures)
     {

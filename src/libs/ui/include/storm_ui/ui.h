@@ -107,6 +107,12 @@ struct Config
     // unknown name, a missing key, an index past the end) is an error of the component's render,
     // not null; paths that may be missing say so with opt() or or() (template.h).
     bool strict_templates = false;
+    // Tap map for device crawls (tools/ui_crawl): whenever what can be tapped changed, one "taps" block in the
+    // log lists every touch region of every drawn component (screen, HUD or toast layer; element id, verb, box,
+    // the visible point a tap would use, whether a tap there reaches it, whether it must be held, a hash of its
+    // props, its text), in physical pixels. Off by default; the Android hosts turn it on with
+    // `adb shell setprop log.tag.StormUiTaps DEBUG`.
+    bool log_taps = false;
     // Optional clock in seconds, for deterministic captures.
     std::function<double()> clock;
     // Also gets every line the host logs: its errors, RmlUi's messages and every text it puts on the screen

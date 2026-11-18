@@ -15,6 +15,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <android/log.h>
+#include <sys/system_properties.h>
 #include <jni.h>
 #include <memory>
 #include <string>
@@ -195,6 +196,10 @@ JNIEXPORT jlong JNICALL Java_org_stormengine_port_StormUi_nativeCreate(JNIEnv *e
     config.on_text_request = [raw](const storm::ui::TextRequest &request) { raw->text_requests.push_back(request); };
     config.show_errors = show_errors == JNI_TRUE;
     session->log_frames = config.show_errors;
+    // Device crawls (Config::log_taps): adb shell setprop log.tag.StormUiTaps DEBUG before the screen opens.
+    char taps[PROP_VALUE_MAX] = {};
+    __system_property_get("log.tag.StormUiTaps", taps);
+    config.log_taps = std::string(taps) == "DEBUG" || std::string(taps) == "VERBOSE";
     std::string error;
     const double started = Seconds();
     bgfx::Init init;
