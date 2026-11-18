@@ -16,6 +16,7 @@ renderer=(root/'src/libs/renderer/src/renderer.cpp').read_text()
 native=(root/'src/libs/location/src/location_script_lib.cpp').read_text()
 method=extract(core,'bool CoreImpl::PrepareLoadingScene()')
 abort=extract(core,'bool CoreImpl::AbortLoadingTransaction(')
+defer=extract(core,'bool CoreImpl::DeferFrozenScene(')+'\n'+extract(core,'bool CoreImpl::LoadingSceneDeferred()')
 source=r'''
 #include <cassert>
 #include <chrono>
@@ -34,6 +35,7 @@ int scheduledStarts=0,scheduledPresents=0,scheduledEnds=0,scheduledSuspends=0;
 int waitPolls=0,waits=0,cpuEnds=0,cpuSuspends=0;bool invalidateAfterPresent=false;
 namespace storm::render {
 struct Status {bool active=true;uint64_t generation=7;std::string state,phase,detail;uint32_t textures=0,relief=0,shadows=0,failed=0;uint64_t owner=0;}; Status status;
+using SceneLoadStatus=Status;
 Status GetSceneLoadStatus(){return status;}
 void SceneLoadingTransactionFrame(){}
 bool HoldSceneReveal(){assert(prepared);return error||frames<pendingUntil;}
@@ -99,11 +101,19 @@ struct CoreImpl {
  bool AbortLoadingTransaction(storm::loading::Outcome outcome,uint64_t generation);
  void *GetService(const char*s){return std::string(s)=="renderer"?static_cast<SERVICE*>(&renderer):static_cast<SERVICE*>(&animation);}
  std::vector<int> GetEntityIds(layer_type_t){return {0,1};}
- bool IsEntityValid(int id){return id!=99;}
+ bool IsEntityValid(int id)const{return id!=99;}
+ // The owner's realize layers: in / frozen by the scripts (EntityManager::GetRealizeLayers).
+ struct RealizeLayers{uint32_t in=0,frozen=0;};
+ struct Entities{RealizeLayers owner;RealizeLayers GetRealizeLayers(uint64_t id)const{return id==5?owner:RealizeLayers{};}} entity_manager_;
+ uint64_t deferred_scene_generation_=0;
+ bool DeferFrozenScene(const storm::render::SceneLoadStatus &status);
+ bool LoadingSceneDeferred() const;
  Entity *GetEntityPointerSafe(int id){return id==2?&weather:id?&dialog:&resource;}
  void ForEachEntity(const std::function<void(Entity*)>&f){f(&resource);f(&dialog);f(&weather);}
 } core;
-struct VS_STACK{};constexpr unsigned IFUNCRESULT_OK=0,IFUNCRESULT_FAILED=1;
+struct VS_STACK{};
+DEFER
+constexpr unsigned IFUNCRESULT_OK=0,IFUNCRESULT_FAILED=1;
 METHOD
 ABORT
 RENDER_END
@@ -117,7 +127,7 @@ void reset(){
  storm::platform::loadingPlatformPump=hostPump;
  storm::platform::loadingSchedulePump=schedulePump;
  storm::render::status={true,7};renderer.progressTexture=1;
- storm::render::abandons=0;vm.aborts=0;core.Exit_flag=false;last_trace[0]=0;all_traces.clear();
+ storm::render::abandons=0;vm.aborts=0;core.entity_manager_.owner={};core.deferred_scene_generation_=0;core.Exit_flag=false;last_trace[0]=0;all_traces.clear();
 }
 // An abort: no exception, the scripts unwound once, the engine exit requested, the outcome in the log.
 bool aborted(const char *outcome,bool error){
@@ -166,9 +176,27 @@ int main(){
  assert(frames==0&&scheduledEnds==1&&cpuEnds==1&&all_traces.find("ERROR: Stock loading transaction abandoned generation=7")!=std::string::npos);
  reset();storm::render::status.owner=5;
  assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&storm::render::abandons==0&&frames>=4);
+ // Owner 1663: a world-map save quick-loaded at sea. wdmCreateWorldMap's nested ReloadProgressEnd runs while the
+ // scripts still freeze REALIZE (the sea froze it), the only layer the map draws in: the transaction waited for a
+ // picture that could never come. It is deferred (logged once), the loading screen stays up, and the next
+ // ReloadProgressEnd, after OnLoad's EngineLayersOffOn, prepares the map.
+ reset();storm::render::status.owner=5;core.entity_manager_.owner={0b10,0b10};
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&frames==0&&releases==0&&vm.aborts==0&&!core.Exit_flag);
+ assert(storm::render::status.active&&scheduledEnds==0&&!storm::loading::active);
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&frames==0&&releases==0);
+ {size_t at=all_traces.find("Stock loading transaction deferred generation=7");
+  assert(at!=std::string::npos&&all_traces.find("transaction deferred",at+30)==std::string::npos&&all_traces.find("froze (1)")!=std::string::npos);}
+ core.entity_manager_.owner.frozen=0;
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&frames>=4&&releases==1&&!storm::render::status.active);
+ // One of its realize layers draws (a location over a frozen sea): prepared at once.
+ reset();storm::render::status.owner=5;core.entity_manager_.owner={0b1010,0b1000};
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&frames>=4&&releases==1);
+ // An owner in no realize layer (SEA_AI): prepared at once.
+ reset();storm::render::status.owner=5;core.entity_manager_.owner={0,0};
+ assert(slNativeReloadProgressEnd(nullptr)==IFUNCRESULT_OK&&frames>=4&&releases==1);
 }
 '''
-source=source.replace('METHOD',method).replace('ABORT',abort).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))
+source=source.replace('METHOD',method).replace('ABORT',abort).replace('DEFER',defer).replace('RENDER_END',extract(renderer,'void Renderer::RunEnd()')).replace('END_PROGRESS',extract(renderer,'void Renderer::EndProgressView()')).replace('NATIVE',extract(native,'uint32_t slNativeReloadProgressEnd('))
 with tempfile.TemporaryDirectory(prefix='stock-transaction-') as tmp:
     p=Path(tmp);(p/'check.cpp').write_text(source)
     subprocess.run([os.environ.get('CXX','c++'),'-std=c++20','-O1','-g','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(root/'src/libs/util/include'),str(p/'check.cpp'),'-o',str(p/'check')],check=True)

@@ -55,6 +55,9 @@ class Core
     // Complete resource preparation inside the original stock loading transaction. False: the transaction was
     // aborted (cancel, quit, failure); the running scripts are unwound and the engine exits.
     virtual bool PrepareLoadingScene() { return true; }
+    // After a successful PrepareLoadingScene: the scene was not prepared because the scripts still freeze its layers
+    // (CoreImpl::DeferFrozenScene); its loading screen stays up until it is.
+    virtual bool LoadingSceneDeferred() const { return false; }
 
     virtual storm::OSWindow *GetWindow() = 0;
     // set time scale; affect on std entity functions DeltaTime parameter

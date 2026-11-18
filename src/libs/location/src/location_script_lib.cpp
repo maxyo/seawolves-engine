@@ -250,6 +250,8 @@ uint32_t slNativeReloadProgressEnd(VS_STACK *pS)
 {
     if (!core.PrepareLoadingScene())
         return IFUNCRESULT_FAILED; // the scripts are being unwound; the engine exits
+    if (core.LoadingSceneDeferred())
+        return IFUNCRESULT_OK; // a nested ReloadProgressEnd before the scripts let the scene draw: the screen stays up
     auto *rs = static_cast<VRenderer *>(core.GetService("renderer"));
     if (rs)
         rs->EndProgressView();

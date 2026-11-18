@@ -21,6 +21,13 @@ class EntityManager final
     entid_t GetEntityId(const char *name) const;
     bool IsEntityValid(entid_t id) const;
     bool IsLayerFrozen(layer_index_t index) const;
+    // The realize-type layers the entity is in (a mask of layer indices), and those of them the scripts froze
+    // (SetLayerFrozen; the engine's SetLayerHeld is not counted).
+    struct RealizeLayers
+    {
+        uint32_t in = 0, frozen = 0;
+    };
+    RealizeLayers GetRealizeLayers(entid_t id) const;
 
     void AddToLayer(layer_index_t layer_idx, entid_t entity_id, priority_t priority); // no bounds check
     void RemoveFromLayer(layer_index_t layer_idx, entid_t entity_id);                 // no bounds check

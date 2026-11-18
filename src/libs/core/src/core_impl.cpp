@@ -258,7 +258,7 @@ bool CoreImpl::Run()
     // same transaction, behind the same screen, before its first frame is executed or shown. It waits for the same
     // resources and quality products (kSceneProductBudgetMs) and logs the same ready line as every other load.
     if (!storm::loading::active && !storm::loading::screen_up && storm::loading::screen &&
-        storm::render::GetSceneLoadStatus().active)
+        storm::render::GetSceneLoadStatus().active && !DeferFrozenScene(storm::render::GetSceneLoadStatus()))
     {
         STORM_PROFILE_ZONE("load: scene opened without the loading screen");
         Trace("Stock loading transaction for a scene the scripts opened without the loading screen: prepared behind it");
@@ -325,11 +325,45 @@ bool CoreImpl::AbortLoadingTransaction(storm::loading::Outcome outcome, uint64_t
     return false;
 }
 
+bool CoreImpl::DeferFrozenScene(const storm::render::SceneLoadStatus &status)
+{
+    if (!status.active || !status.owner || !IsEntityValid(status.owner))
+        return false;
+    const auto layers = entity_manager_.GetRealizeLayers(status.owner);
+    if (layers.in == 0 || layers.frozen != layers.in)
+        return false;
+    if (deferred_scene_generation_ != status.generation)
+    {
+        // Stock OnLoad of a world-map save made at sea: wdmCreateWorldMap's own ReloadProgressEnd runs while REALIZE
+        // is still frozen by the sea (CreateSeaEnvironment); OnLoad's EngineLayersOffOn lets it draw just after, and
+        // its final ReloadProgressEnd prepares the map. Waiting here instead held the loading screen for good.
+        std::string frozen;
+        for (uint32_t index = 0; index < 32; ++index)
+            if (layers.frozen >> index & 1)
+                frozen += (frozen.empty() ? "" : ", ") + std::to_string(index);
+        Trace("Stock loading transaction deferred generation=%llu: the scene's owner is only in realize layers the "
+              "scripts froze (%s); prepared once they let it draw", static_cast<unsigned long long>(status.generation),
+              frozen.c_str());
+        deferred_scene_generation_ = status.generation;
+    }
+    return true;
+}
+
+bool CoreImpl::LoadingSceneDeferred() const
+{
+    const auto status = storm::render::GetSceneLoadStatus();
+    if (!status.active || !status.owner || !IsEntityValid(status.owner))
+        return false;
+    const auto layers = entity_manager_.GetRealizeLayers(status.owner);
+    return layers.in != 0 && layers.frozen == layers.in;
+}
+
 bool CoreImpl::PrepareLoadingScene()
 {
     const auto initial = storm::render::GetSceneLoadStatus();
     if (!initial.active) return true;
     if (storm::loading::active) return AbortLoadingTransaction(storm::loading::Outcome::Reentrant, initial.generation);
+    if (DeferFrozenScene(initial)) return true;
     storm::loading::Scope loading;
     struct CpuAdmissionReset { uint64_t generation; ~CpuAdmissionReset() { storm::render::EndSceneCpuBudget(generation); } } cpu_admission_reset{initial.generation};
     const auto loading_started = std::chrono::steady_clock::now();

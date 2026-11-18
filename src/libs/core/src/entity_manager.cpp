@@ -339,6 +339,22 @@ void EntityManager::SetLayerHeld(const layer_index_t index, const bool held)
     layers_[index].held = held;
 }
 
+EntityManager::RealizeLayers EntityManager::GetRealizeLayers(const entid_t id) const
+{
+    RealizeLayers result;
+    const auto idx = GetEntityDataIdx(id);
+    if (!EntIdxValid(idx) || entities_[idx].state != kValid)
+        return result;
+    for (layer_index_t index = 0; index < kMaxLayerNum; ++index)
+        if ((entities_[idx].mask >> index & 1) && layers_[index].type == layer_type_t::realize)
+        {
+            result.in |= 1u << index;
+            if (layers_[index].frozen)
+                result.frozen |= 1u << index;
+        }
+    return result;
+}
+
 bool EntityManager::IsLayerFrozen(const layer_index_t index) const
 {
     assert(index < kMaxLayerNum);

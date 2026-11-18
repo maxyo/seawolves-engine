@@ -4,6 +4,7 @@
 
 #include "compiler.h"
 #include "loading_transaction.hpp"
+#include "scene_load_status.hpp"
 #include "entity_manager.h"
 #include "services_list.h"
 #include "timer.h"
@@ -29,10 +30,16 @@ class CoreImpl final : public CorePrivate
     void ResetCore();
     bool Run();
     bool PrepareLoadingScene() override;
+    bool LoadingSceneDeferred() const override;
+    // The scene being prepared cannot be drawn yet: its owner is in realize layers and the scripts froze every one of
+    // them. Logged once per load; the transaction runs at a later ReloadProgressEnd or at the end of a frame, once
+    // the scripts let the scene draw (PrepareLoadingScene would otherwise wait for a picture that never comes).
+    bool DeferFrozenScene(const storm::render::SceneLoadStatus &status);
     // Logs the outcome, unwinds the running scripts (COMPILER::AbortExecution) and requests the engine exit.
     bool AbortLoadingTransaction(storm::loading::Outcome outcome, uint64_t generation);
     // PrepareLoadingScene reports a preparation without progress for this long (an ERROR line; it keeps waiting).
     static constexpr std::chrono::seconds kLoadingStall{300};
+    uint64_t deferred_scene_generation_ = 0; // the load DeferFrozenScene last reported
     bool LoadClassesTable();
 
     void ProcessExecute();
