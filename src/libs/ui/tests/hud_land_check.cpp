@@ -1292,7 +1292,7 @@ static void CheckRush()
     commands["offered"].push_back("BI_ActivateRush");
     bench.Set("landCommands", commands);
     const Json &shown = mount.shown.elements;
-    Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "actions" && shown["abilities"]["cue"] == true &&
+    Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true &&
                !shown["abilities"].contains("badge") && mount.shown.sheet.empty(),
            "fight: the collapsed abilities button with the ready dot, not a Rush button: " + shown["abilities"].dump());
     Expect(!mount.Has("hero"), "… in the top row, in the place of the hero button (closed in a fight)");

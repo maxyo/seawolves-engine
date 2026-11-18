@@ -457,7 +457,7 @@ static void CheckBattle()
     bench.Press("time");
     Expect(mount.Last() == "gameplay:10\tTimeScaleX4", "x1.5 counts as x2: the next step is x4: " + mount.Last());
     // The ship abilities: one small button that opens their list (hud.h AbilityControls).
-    Expect(shown["abilities"]["icon"] == "actions" && shown["abilities"]["cue"] == true && !shown["abilities"].contains("badge") &&
+    Expect(shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true && !shown["abilities"].contains("badge") &&
                shown["abilities"]["fill"] == 50 && shown["abilities"]["fillTone"] == "active" && mount.shown.sheet.empty(),
            "the abilities button, collapsed: a dot for the ready one (no number), the fill of the running one: " + shown["abilities"].dump());
     bench.Press("abilities");
@@ -503,7 +503,7 @@ static void CheckBattle()
     single["sequence"] = 99;
     single["abilities"] = Json::array({Json{{"id", "Turn180"}, {"label", "Манёвренный разворот корабля"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
     bench.Set("ship", single);
-    Expect(shown["abilities"]["icon"] == "actions" && shown["abilities"]["cue"] == true, "one ability: still the abilities button: " + shown["abilities"].dump());
+    Expect(shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true, "one ability: still the abilities button: " + shown["abilities"].dump());
     bench.Press("abilities");
     Expect(mount.shown.sheet_props["rows"].size() == 1, "… whose list has the one ability");
     bench.Press("ability-Turn180");

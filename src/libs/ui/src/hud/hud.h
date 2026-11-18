@@ -376,7 +376,7 @@ class Hud;
 
 // The active abilities of a scene (sea: the ship abilities, land: Rush), one shared control kept
 // out of the way: the layout element "abilities" is a small button that opens the list of them,
-// even for one ability. The button shows a dot while one is ready and the fill while one runs.
+// even for one ability. The button (a star) shows a dot while one is ready and the fill while one runs.
 // The list is a modal sheet beside it (the pack part s-hud-abilities, placed by `place`: sea or
 // land): each ability with its icon, name and the scripts' state: ready (a tap launches it
 // through `launch`, the game's own command, and closes the list), active and recovery (the

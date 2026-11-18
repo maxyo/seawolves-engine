@@ -75,7 +75,7 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
         if (ability.state == "active")
             active = std::max(active, ability.fill);
     }
-    Json button = {{"icon", "actions"}, {"label", hud_.Text("hud.ability.group")}, {"variant", open_ ? "active" : "normal"}, {"cue", ready}};
+    Json button = {{"icon", "rank"}, {"label", hud_.Text("hud.ability.group")}, {"variant", open_ ? "active" : "normal"}, {"cue", ready}};
     if (active > 0.0)
         button.update(Json{{"fill", std::lround(active * 100.0)}, {"fillTone", "active"}, {"reloading", true}});
     view.elements["abilities"] = std::move(button);
