@@ -1209,7 +1209,9 @@
    "context": {
     "node": "TABLE_SPECIAL",
     "skill": "Agility",
-    "text": "Agility: how quick you are in a fight."
+    "text": "Agility: how quick you are in a fight.",
+    "base": "7",
+    "steps": "1"
    }
   },
   {
@@ -1277,7 +1279,69 @@
    "context": {
     "node": "TABLE_SKILL_2",
     "skill": "Commerce",
-    "text": "Commerce: prices in the shops."
+    "text": "Commerce: prices in the shops.",
+    "base": "5",
+    "steps": "2"
+   }
+  },
+  {
+   "node": "ANDROID_SKILLSTEPS",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 0,
+   "enabled": false,
+   "rowId": "TABLE_SPECIAL_tr2_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SPECIAL",
+    "skill": "Agility",
+    "kind": "mangarosa",
+    "label": "",
+    "value": "1"
+   }
+  },
+  {
+   "node": "ANDROID_SKILLSTEPS",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 1,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr2_0",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Commerce",
+    "kind": "officer",
+    "label": "Jean Bart",
+    "value": "2"
+   }
+  },
+  {
+   "node": "ANDROID_SKILLSTEPS",
+   "type": "fact",
+   "label": "",
+   "value": "",
+   "index": 2,
+   "enabled": false,
+   "rowId": "TABLE_SKILL_2_tr2_1",
+   "images": [],
+   "actions": [],
+   "cells": [],
+   "context": {
+    "node": "TABLE_SKILL_2",
+    "skill": "Commerce",
+    "kind": "navy",
+    "label": "",
+    "a1": "3",
+    "a2": "63",
+    "a3": "65",
+    "value": "-2"
    }
   }
  ]

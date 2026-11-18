@@ -2301,10 +2301,11 @@ static void Hero(const std::string &models)
         for (int i = 0; i < 3; ++i)
         {
             help.OnEvent({ids[i], "row", "0"});
-            Expect(help_surface.props["dialog"]["kind"] == "message" &&
+            Expect(help_surface.props["dialog"]["kind"] == "skill" &&
                        help_surface.props["dialog"]["title"] == Row(with_help, tables[i], 0)->CellText(1) &&
-                       help_surface.props["dialog"]["text"] == "Game description.\n\nEffects from RPGDescribe.",
-                   std::string("a tap shows stock description for ") + tables[i]);
+                       help_surface.props["dialog"]["text"] == "Game description.\n\nEffects from RPGDescribe." &&
+                       help_surface.props["dialog"]["steps"].empty(),
+                   std::string("a tap shows stock description for ") + tables[i] + ", no steps without the adapter's");
             Expect(help.WantsBack(), "Back belongs to the skill help modal");
             help.Back();
             Expect(help_surface.props["dialog"].is_null(), "Back closes skill help and retains the character screen");
@@ -2316,6 +2317,55 @@ static void Hero(const std::string &models)
         help.OnEvent({"personal", "row", "0"});
         help.OnEvent({"skill-help-close", "click", ""});
         Expect(help_surface.props["dialog"].is_null(), "the explicit close action closes skill help");
+
+        // What a value is made of (android_hero.c AndroidSkillSteps): the base, the game's steps, the result. The lines
+        // must add up to the row's own value and bonus columns; when they do not, none is shown and it is an error.
+        for (int i = 0; i < 3; ++i)
+        {
+            const bool special = i == 0;
+            const Widget *row = Row(with_help, tables[i], 0);
+            const int base = ParseAmount(row->CellText(special ? 3 : 4)).value();
+            const int bonus = ParseAmount(row->CellText(special ? 2 : 3)).value_or(0);
+            for (const bool broken : {false, true})
+            {
+                FakeSurface steps_surface;
+                Router steps(steps_surface);
+                InterfaceModel with_steps = with_help;
+                for (Widget &fact : with_steps.widgets)
+                    if (fact.node == "ANDROID_SKILLHELP" && fact.context["node"] == tables[i])
+                        fact.context["base"] = std::to_string(base), fact.context["steps"] = "3";
+                // an amulet +5, a ship of too high a class (what is left of the bonus), the health line -5
+                const std::vector<std::map<std::string, std::string>> lines = {
+                    {{"kind", "item"}, {"label", "Amulet"}, {"value", "5"}},
+                    {{"kind", "navy"}, {"a1", "3"}, {"a2", "63"}, {"a3", "65"}, {"value", std::to_string(bonus + (broken ? 1 : 0))}},
+                    {{"kind", "health"}, {"a1", "3"}, {"value", "-5"}}};
+                for (size_t n = 0; n < lines.size(); ++n)
+                {
+                    Widget fact = Make("ANDROID_SKILLSTEPS", "fact", "");
+                    fact.row_id = std::string(tables[i]) + "_tr1_" + std::to_string(n);
+                    fact.context = {{"node", tables[i]}, {"skill", row->row_id}};
+                    for (const auto &[key, value] : lines[n])
+                        fact.context[key] = value;
+                    with_steps.widgets.push_back(std::move(fact));
+                }
+                steps.SetInterface(with_steps);
+                steps.OnEvent({ids[i], "row", "0"});
+                const Json shown = steps_surface.props["dialog"]["steps"];
+                if (broken)
+                {
+                    Expect(shown.empty() && steps_surface.errors.size() == 1 && steps_surface.errors[0].find("do not add up") != std::string::npos,
+                           std::string("steps that do not add up to the row are not shown and are an error: ") + tables[i]);
+                    continue;
+                }
+                const std::string minus = "−";
+                Expect(shown.size() == 5 && shown[0]["k"] == "<hero.step_base>" && shown[0]["v"] == std::to_string(base) &&
+                           shown[1]["k"] == "Amulet" && shown[1]["v"] == "+5" && shown[1]["tone"] == "ok" &&
+                           shown[2]["k"] == "<hero.step_navy>" && shown[3]["k"] == "<hero.step_health>" &&
+                           shown[3]["v"] == minus + "5" && shown[3]["tone"] == "danger" && shown[4]["k"] == "<hero.step_result>" &&
+                           shown[4]["v"] == std::to_string(base + bonus) && steps_surface.errors.empty(),
+                       std::string("base, the steps with their signs and the result: ") + tables[i] + " " + shown.dump());
+            }
+        }
     }
     // The subject list: a tap on the name lists the captain and the officers; a picked row is the same select as ›.
     Expect(view["subject"]["list"] == true && !view["subject"].contains("open"), "two subjects offer the list, closed");

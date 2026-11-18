@@ -16,7 +16,8 @@
 // step taken only from the state the engine confirmed.
 //
 // Facts the stock interface does not draw come from the interface adapter android_hero.c
-// (ANDROID_SUBJECT, ANDROID_POSTS, ANDROID_PASSENGERS, ANDROID_CANDIDATES, ANDROID_PERKS);
+// (ANDROID_SUBJECT, ANDROID_POSTS, ANDROID_PASSENGERS, ANDROID_CANDIDATES, ANDROID_PERKS; a tap on a skill row
+// shows its stock description, ANDROID_SKILLHELP, under the lines its value is made of, ANDROID_SKILLSTEPS);
 // the hidden PIRATES table is exported read-only by the engine (xinterface mobile_facts.inc).
 #include "amount.h"
 #include "hero.h"
@@ -44,7 +45,8 @@ constexpr NodeRule kNodes[] = {
     {"ANDROID_CANDIDATES", "fact"},
     {"ANDROID_PERKS", "fact"},
     {"ANDROID_PERKEDGES", "fact"}, // structured runtime prerequisite IDs (including other-group ancestors)
-    {"ANDROID_SKILLHELP", "fact"}, // stock RPGDescribe text, keyed by table and skill ID
+    {"ANDROID_SKILLHELP", "fact"}, // stock RPGDescribe text, keyed by table and skill ID; the row's base and step count
+    {"ANDROID_SKILLSTEPS", "fact"}, // what a row's value is made of: the stock computation's own steps
     {"TITLE", "heading"},
     {"CHARACTER_BIG_PICTURE", "image"},
     {"CHARACTER_NATION_PICTURE", "image"},
@@ -735,7 +737,8 @@ class HeroScreen final : public Screen
                     const std::string text = StockText(Field(fact, "text"));
                     if (text.empty())
                         break;
-                    skill_help_ = Json{{"title", Trim(source[index]->CellText(1))}, {"text", text}};
+                    skill_help_ = Json{{"title", Trim(source[index]->CellText(1))}, {"text", text},
+                                       {"steps", SkillSteps(bindings, node, *source[index], *fact)}};
                     bindings.Rebuild();
                     return;
                 }
@@ -744,6 +747,68 @@ class HeroScreen final : public Screen
                                                                                       " row " + source[index]->row_id + " (ANDROID_SKILLHELP): its tap shows nothing");
         });
         return Json{{"columns", columns}, {"rows", rows}};
+    }
+
+    // What the value of a skill table row is made of, for the c-kv of its description: the base, each step of the
+    // stock computation that changed it (the adapter's ANDROID_SKILLSTEPS, android_hero.c AndroidSkillSteps: the
+    // game's own steps, recorded while it computes the value) and the result. The lines must add up to the row's
+    // own figures, which the game wrote on its own (character_all.c FillSkillTables: the value column is the base,
+    // the bonus column "(+N)" / "(-N)" the effective value minus it); lines that do not are not shown and are an
+    // error, as is a step of a kind this screen cannot word. Empty without steps (the value is the base).
+    Json SkillSteps(Bindings &bindings, const char *node, const Widget &row, const Widget &help)
+    {
+        const bool special = std::string(node) == "TABLE_SPECIAL";
+        const std::string id = std::string(node) + " " + row.row_id;
+        const std::string count_text = Field(&help, "steps");
+        if (count_text.empty() || Field(&help, "base").empty())
+            return Json::array();
+        const int count = Amount(bindings, count_text, "ANDROID_SKILLHELP steps");
+        if (count <= 0)
+            return Json::array();
+        const int base = Amount(bindings, Field(&help, "base"), "ANDROID_SKILLHELP base");
+        const int shown = Amount(bindings, Trim(row.CellText(special ? 3 : 4)), "the skill table's value");
+        const int bonus = ParseAmount(Trim(row.CellText(special ? 2 : 3))).value_or(0);
+        const auto sign = [](int value) { return value < 0 ? "−" + std::to_string(-value) : "+" + std::to_string(value); };
+        Json items = Json::array({Json{{"k", bindings.Text("hero.step_base")}, {"v", std::to_string(base)}, {"tone", "dim"}}});
+        int sum = base, lines = 0;
+        for (const Widget *step : a_->All("ANDROID_SKILLSTEPS"))
+        {
+            if (Field(step, "node") != node || Field(step, "skill") != row.row_id)
+                continue;
+            const int value = Amount(bindings, Field(step, "value"), "ANDROID_SKILLSTEPS value");
+            const std::string kind = Field(step, "kind");
+            std::string label;
+            if (kind == "item")
+                label = Field(step, "label");
+            else if (kind == "officer")
+                label = Fill(bindings.Text("hero.step_officer"), {Field(step, "label")});
+            else if (kind == "navy")
+                label = Fill(bindings.Text("hero.step_navy"), {Field(step, "a1"), Field(step, "a2"), Field(step, "a3")});
+            else if (kind == "health")
+                label = Fill(bindings.Text("hero.step_health"), {bindings.Text("hero.health_" + Field(step, "a1"))});
+            else if (kind == "mangarosa" || kind == "curse" || kind == "drunk" || kind == "herotype" || kind == "overload" ||
+                     kind == "limit")
+                label = bindings.Text("hero.step_" + kind);
+            if (label.empty())
+            {
+                bindings.ErrorOnce("skillsteps kind " + id + " " + kind, std::string(a_->model->screen) + ": a step of " + id +
+                                                                         " of kind '" + kind + "' has no words (ANDROID_SKILLSTEPS): its lines are not shown");
+                return Json::array();
+            }
+            sum += value;
+            ++lines;
+            items.push_back(Json{{"k", label}, {"v", sign(value)}, {"tone", value < 0 ? "danger" : "ok"}});
+        }
+        if (lines != count || base != shown || sum != shown + bonus)
+        {
+            bindings.ErrorOnce("skillsteps sum " + id, std::string(a_->model->screen) + ": the steps of " + id + " do not add up to the row (base " +
+                                                           std::to_string(base) + " + " + std::to_string(lines) + " of " + std::to_string(count) +
+                                                           " steps = " + std::to_string(sum) + ", the row: " + std::to_string(shown) + " " +
+                                                           sign(bonus) + "): its lines are not shown");
+            return Json::array();
+        }
+        items.push_back(Json{{"k", bindings.Text("hero.step_result")}, {"v", std::to_string(sum)}, {"tone", bonus < 0 ? "danger" : bonus > 0 ? "ok" : ""}});
+        return items;
     }
 
     void SkillsView(Json &view, Bindings &bindings, int free_skill)
@@ -1122,7 +1187,7 @@ class HeroScreen final : public Screen
             bindings.Modal("dialog", close);
             bindings.On("dialog-close", "", close);
             bindings.On("skill-help-close", "", close);
-            return Json{{"kind", "message"}, {"title", skill_help_["title"]}, {"text", skill_help_["text"]},
+            return Json{{"kind", "skill"}, {"title", skill_help_["title"]}, {"text", skill_help_["text"]}, {"steps", skill_help_["steps"]},
                         {"actions", Json::array({Json{{"id", "skill-help-close"}, {"label", bindings.Text("common.close")}, {"variant", "primary"}}})}};
         }
         const Widget *slot = Selected("CHARACTERS_SCROLL");
