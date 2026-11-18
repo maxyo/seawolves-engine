@@ -215,6 +215,27 @@ static fs::path MakePack(const fs::path &base, const fs::path &font)
                                "<div style=\"display: block; position: absolute; left: 0; top: 150dp; width: 200dp; height: 40dp; overflow-y: auto;\">"
                                "<c-row id=\"listed\" style=\"position: relative; top: 0; width: 40dp;\" title=\"L\"/><div style=\"display: block; height: 200dp;\"></div></div>"
                                "</body></rml>");
+    // The HUD's fleet column (C-HudPlate fleet): each member is a picture inside its rings, all
+    // of them layers placed absolutely in the member; a lone member stands on its own.
+    {
+        std::string cells;
+        const auto cell = [](const std::string &id) {
+            std::string out = "<div class=\"cell\" id=\"" + id + "\">";
+            for (int ring = 0; ring < 3; ++ring)
+                out += "<ui-ring shape=\"circle\" value=\"80\" thickness=\"2\" style=\"left: " + std::to_string(3 * ring) + "dp; top: " + std::to_string(3 * ring) +
+                       "dp; width: " + std::to_string(56 - 6 * ring) + "dp; height: " + std::to_string(56 - 6 * ring) + "dp;\"/>";
+            return out + "<div class=\"pic\"></div></div>";
+        };
+        for (int i = 0; i < 3; ++i)
+            cells += cell("ship" + std::to_string(i));
+        Write(pack / "cutout-fleet.rml", "<rml><head><style>body { font-family: LatoLatin; font-size: 16dp; width: 800dp; height: 400dp; }"
+                                         " #fleet { display: flex; flex-direction: column; gap: 6dp; position: absolute; left: 10dp; top: 10dp; width: 56dp; }"
+                                         " .cell { display: block; position: relative; flex: 0 0 auto; width: 56dp; height: 56dp; }"
+                                         " #lone { position: absolute; left: 0; top: 230dp; }"
+                                         " ui-ring { display: block; position: absolute; }"
+                                         " .pic { display: block; position: absolute; left: 9dp; top: 9dp; width: 38dp; height: 38dp; background-color: #888; }"
+                                         "</style></head><body><div id=\"fleet\">" + cells + "</div>" + cell("lone") + "</body></rml>");
+    }
     // The dialogue panel's layout (C-DialoguePanel): the speech box stops 44 dp above the
     // bottom for the «Дальше ›» line, the replies (data-reserve) reach the bottom and take that
     // line's place on the final page.
@@ -654,6 +675,71 @@ int main(int argc, char **argv)
     frames(0.05);
     tap(20, 220);
     Expect(clicks.size() == 1 && clicks[0] == "small click", "without the cutout the control is back at the edge");
+
+    // The fleet column under a cutout of the left edge (x 0..30, y 100..300, its 2nd and 3rd
+    // members and the lone one): the column is laid out beside the cutout whole, so its members
+    // stay in one straight line at an even step, and every member moves as one picture: its rings
+    // stay round its picture. Moved one layer at a time, each ring stepped aside by what its own
+    // box allowed and drifted off the picture (owner, 2026-11-18).
+    Expect(host->LoadDocument("cutout-fleet.rml"), "the fleet document loads");
+    frames(0.05);
+    host->SetCutouts({Cutout{0, 100, 30, 200}});
+    frames(0.05);
+    {
+        Rml::ElementDocument *document = nullptr;
+        if (Rml::Context *context = Rml::GetContext("storm-ui"))
+            for (int i = 0; i < context->GetNumDocuments() && !document; ++i)
+                if (context->GetDocument(i)->GetElementById("fleet"))
+                    document = context->GetDocument(i);
+        Expect(document != nullptr, "the fleet document is shown");
+        // Where an element is drawn: its laid-out box plus the translations of it and its ancestors (px).
+        const auto drawn = [](Rml::Element *element) {
+            Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+            for (Rml::Element *e = element; e; e = e->GetParentNode())
+                if (const Rml::Property *property = e->GetLocalProperty(Rml::PropertyId::Transform))
+                    if (const Rml::TransformPtr transform = property->Get<Rml::TransformPtr>())
+                        for (const Rml::TransformPrimitive &primitive : transform->GetPrimitives())
+                            if (primitive.type == Rml::TransformPrimitive::TRANSLATE2D)
+                                at += Rml::Vector2f(primitive.translate_2d.values[0].number, primitive.translate_2d.values[1].number);
+            return Rml::Rectanglef::FromPositionSize(at, element->GetBox().GetSize(Rml::BoxArea::Border));
+        };
+        const auto centred = [&](const char *id) {
+            Rml::Element *cell = document ? document->GetElementById(id) : nullptr;
+            if (!cell)
+                return std::string("missing");
+            const Rml::Vector2f centre = drawn(cell).Center();
+            for (int i = 0; i < cell->GetNumChildren(); ++i)
+            {
+                const Rml::Vector2f part = drawn(cell->GetChild(i)).Center();
+                if (std::abs(part.x - centre.x) > 0.01f || std::abs(part.y - centre.y) > 0.01f)
+                    return cell->GetChild(i)->GetTagName() + " " + std::to_string(i) + " centred at " + std::to_string(part.x) + "," + std::to_string(part.y) +
+                           ", its member at " + std::to_string(centre.x) + "," + std::to_string(centre.y);
+            }
+            return std::string();
+        };
+        for (const char *id : {"ship0", "ship1", "ship2", "lone"})
+        {
+            const std::string off = centred(id);
+            Expect(off.empty(), std::string(id) + ": every ring and the picture share the member's centre (" + off + ")");
+        }
+        if (document && document->GetElementById("ship2") && document->GetElementById("lone"))
+        {
+            const Rml::Rectanglef first = drawn(document->GetElementById("ship0")), second = drawn(document->GetElementById("ship1")),
+                                  third = drawn(document->GetElementById("ship2")), lone = drawn(document->GetElementById("lone"));
+            Expect(first.Left() == 34.0f && second.Left() == 34.0f && third.Left() == 34.0f,
+                   "the whole column stands beside the cutout, in one line: lefts " + std::to_string(first.Left()) + ", " + std::to_string(second.Left()) + ", " +
+                       std::to_string(third.Left()));
+            Expect(second.Top() - first.Top() == 62.0f && third.Top() - second.Top() == 62.0f, "at its even step");
+            Expect(lone.Left() == 34.0f, "the lone member moved out whole: left " + std::to_string(lone.Left()));
+        }
+    }
+    host->SetCutouts({});
+    frames(0.05);
+    if (Rml::Context *context = Rml::GetContext("storm-ui"))
+        for (int i = 0; i < context->GetNumDocuments(); ++i)
+            if (Rml::Element *first = context->GetDocument(i)->GetElementById("ship0"))
+                Expect(first->GetAbsoluteOffset(Rml::BoxArea::Border).x == 10.0f && !first->GetLocalProperty(Rml::PropertyId::Transform),
+                       "without the cutout the column is back at the edge");
 
     // A greeting that fits beside the replies stays on one page: the replies show at once (the
     // pager measures the part of the speech box they cover, not their whole height).

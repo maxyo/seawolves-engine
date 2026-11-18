@@ -1969,8 +1969,8 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     // --- display cutouts ------------------------------------------------------------------
     // The layout runs edge to edge. After it, what must stay readable or touchable and falls
     // under a cutout is moved out by the cutout's depth from its screen edge (plus a hair), with
-    // a translate: text, icons, pictures and small controls (a component no larger than a
-    // quarter of the screen each way, moved whole). Larger components (panels, rows, lists) stay
+    // a translate: text, icons, pictures and small controls (a component, or a picture drawn as
+    // layers, no larger than a quarter of the screen each way, moved whole). Larger components (panels, rows, lists) stay
     // under the cutout; their content is looked at one by one. A transform the pack set itself is
     // not overwritten: that element counts as a container. What scrolls is never moved: the content
     // of a scrolling element passes under the cutout as it goes (a row that stepped aside while it
@@ -2114,16 +2114,20 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         // A row of several things (a header bar, a strip of tabs) under a cutout of the left or
         // right edge is laid out beside it: its content begins after the cutout and the row's own
         // layout decides who gives way. Moved one by one, its first things landed on the next
-        // ones (the back ribbon over the title, which then took its taps).
+        // ones (the back ribbon over the title, which then took its taps). A narrow column of
+        // several things along that edge (the HUD's fleet and party columns) is laid out beside it
+        // the same way, whole: moved one by one, only the members in the cutout's band stepped
+        // aside and the column went crooked.
         {
             const Rml::Style::ComputedValues &values = element->GetComputedValues();
-            const bool row = values.display() == Rml::Style::Display::Flex &&
-                             (values.flex_direction() == Rml::Style::FlexDirection::Row || values.flex_direction() == Rml::Style::FlexDirection::RowReverse);
+            const bool flex = values.display() == Rml::Style::Display::Flex;
+            const bool row = flex && (values.flex_direction() == Rml::Style::FlexDirection::Row || values.flex_direction() == Rml::Style::FlexDirection::RowReverse);
+            const bool column = flex && !row;
             int parts = 0;
-            for (int i = 0; row && i < element->GetNumChildren(); ++i)
+            for (int i = 0; flex && i < element->GetNumChildren(); ++i)
                 parts += dynamic_cast<Rml::ElementText *>(element->GetChild(i)) ? 0 : 1;
-            const float screen_height = static_cast<float>(context_->GetDimensions().y);
-            if (row && parts >= 2 && size.x > 0.0f && size.y > 0.0f && size.y <= screen_height * 0.25f)
+            const Rml::Vector2f screen(static_cast<float>(context_->GetDimensions().x), static_cast<float>(context_->GetDimensions().y));
+            if (parts >= 2 && size.x > 0.0f && size.y > 0.0f && ((row && size.y <= screen.y * 0.25f) || (column && size.x <= screen.x * 0.25f)))
             {
                 const auto ours = cutout_rows_.find(element);
                 const Rml::Vector2f added = ours != cutout_rows_.end() && ours->second.element.get() == element ? ours->second.padding : Rml::Vector2f(0.0f, 0.0f);
@@ -2146,8 +2150,11 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         bool content = false;
         if (!own_transform && size.x > 0.0f && size.y > 0.0f)
         {
+            const bool small = size.x <= screen.x * 0.25f && size.y <= screen.y * 0.25f;
             if (dynamic_cast<ComponentElement *>(element))
-                content = size.x <= screen.x * 0.25f && size.y <= screen.y * 0.25f; // a control, moved whole
+                content = small; // a control, moved whole
+            else if (small && Layered(element))
+                content = true; // one picture of layers (a fleet member: its picture inside its rings), moved whole
             else
             {
                 const Rml::String &tag = element->GetTagName();
@@ -2184,6 +2191,30 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         }
         for (int i = 0; i < element->GetNumChildren(); ++i)
             PlaceOffCutouts(element->GetChild(i), out, rows);
+    }
+
+    // True for an element drawn as layers over each other: two or more parts, every one placed
+    // absolutely in it (a fleet or party member: the picture and its rings around one centre).
+    // Moved one by one, each layer stepped aside by what its own box allowed and the rings no
+    // longer went round the picture.
+    static bool Layered(Rml::Element *element)
+    {
+        int layers = 0;
+        for (int i = 0; i < element->GetNumChildren(); ++i)
+        {
+            Rml::Element *child = element->GetChild(i);
+            if (auto *run = dynamic_cast<Rml::ElementText *>(child))
+            {
+                if (!run->GetText().empty())
+                    return false;
+                continue;
+            }
+            const Rml::Style::Position position = child->GetComputedValues().position();
+            if (position != Rml::Style::Position::Absolute && position != Rml::Style::Position::Fixed)
+                return false;
+            ++layers;
+        }
+        return layers >= 2;
     }
 
     // The cutout shift applied to `element` or to one of its ancestors (touch regions follow it).

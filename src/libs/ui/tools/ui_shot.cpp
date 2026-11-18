@@ -7,7 +7,8 @@
 //   message <target|-> <text> (a game log line, Host::GameMessage), timed (print what
 //                    each later command costs up to its finished frame),
 //                    props <element id> <json>, scroll <element id>,
-//                    bounds <CSS selector> (settled visible border boxes in dp),
+//                    bounds <CSS selector> (settled visible border boxes in dp, where they are
+//                    drawn: translations such as the move off a cutout included),
 //                    device-reset (bgfx: device loss and restore, as after a lost EGL context)
 //
 // Draws through the UI's bgfx backend on bgfx's GLES 3.0 renderer (Mesa llvmpipe, headless),
@@ -93,6 +94,42 @@ bool SavePng(const std::vector<unsigned char> &rgba, int width, int height, cons
     const bool ok = plutovg_surface_write_to_png(surface, path.c_str());
     plutovg_surface_destroy(surface);
     return ok;
+}
+
+// Where `element` is drawn: its laid-out place plus the translations of it and its ancestors
+// (the host's move off a display cutout, a translate of the pack), in px. Only translations in
+// px or dp are summed; `exact` turns false when another one (a percentage, a rotation, a
+// scale) also moves it.
+Rml::Vector2f DrawnOffset(Rml::Element *element, float density, bool &exact)
+{
+    Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+    exact = true;
+    const auto px = [&](const Rml::NumericValue &value) {
+        if (value.unit == Rml::Unit::PX)
+            return value.number;
+        if (value.unit == Rml::Unit::DP)
+            return value.number * density;
+        exact = exact && value.number == 0.0f;
+        return 0.0f;
+    };
+    for (Rml::Element *at = element; at; at = at->GetParentNode())
+    {
+        const Rml::TransformPtr &transform = at->GetComputedValues().transform();
+        if (!transform)
+            continue;
+        for (const Rml::TransformPrimitive &primitive : transform->GetPrimitives())
+        {
+            if (primitive.type == Rml::TransformPrimitive::TRANSLATEX)
+                offset.x += px(primitive.translate_x.values[0]);
+            else if (primitive.type == Rml::TransformPrimitive::TRANSLATEY)
+                offset.y += px(primitive.translate_y.values[0]);
+            else if (primitive.type == Rml::TransformPrimitive::TRANSLATE2D)
+                offset += Rml::Vector2f(px(primitive.translate_2d.values[0]), px(primitive.translate_2d.values[1]));
+            else
+                exact = false;
+        }
+    }
+    return offset;
 }
 
 std::string ReadFile(const std::string &path)
@@ -751,12 +788,13 @@ int main(int argc, char **argv)
                 {
                     if (!element->IsVisible(true))
                         continue;
-                    const auto position = element->GetAbsoluteOffset(Rml::BoxArea::Border);
+                    bool exact = true;
+                    const auto position = DrawnOffset(element, density, exact);
                     const auto size = element->GetBox().GetSize(Rml::BoxArea::Border);
-                    std::printf("bounds col=%d x=%.2f y=%.2f w=%.2f h=%.2f action=%s tip=%s\n",
+                    std::printf("bounds col=%d x=%.2f y=%.2f w=%.2f h=%.2f action=%s tip=%s%s\n",
                                 element->GetAttribute<int>("data-col", -1), position.x / density, position.y / density,
                                 size.x / density, size.y / density, element->GetAttribute<Rml::String>("data-action", "").c_str(),
-                                element->GetAttribute<Rml::String>("data-tip", "").c_str());
+                                element->GetAttribute<Rml::String>("data-tip", "").c_str(), exact ? "" : " transform=unresolved");
                 }
             }
         }
