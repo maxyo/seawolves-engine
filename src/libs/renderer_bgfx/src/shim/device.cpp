@@ -649,10 +649,10 @@ void Device::scene_complete()
     // same scene depth. Discarded, that depth was undefined and those draws were cut into blocks (the bow foam); for
     // the same reason the depth is never implicitly resolved (MSRTT). Single-sample targets are the textures the chain
     // reads: never discarded.
-    // Vulkan: bgfx resolves a multisampled texture after its render pass, from the stored attachment, so the colour
-    // discard would leave nothing to resolve: nothing is discarded there.
-    if (view_color == scene && (scene->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && !probe_placed &&
-        !Context::instance().device_info().vulkan)
+    // Vulkan: the render pass resolves the colour into its single-sample image (a resolve attachment,
+    // patches/bgfx-vulkan-resolve-in-pass.patch) and the discard makes its samples' store op DONT_CARE; the pass that
+    // runs on through several scene views takes the discard of its last one.
+    if (view_color == scene && (scene->target_flags & BGFX_TEXTURE_RT_MSAA_MASK) && !probe_placed)
         bgfx::setViewClear(view, view_clear_set | BGFX_CLEAR_DISCARD_COLOR_0, view_clear_rgba, view_clear_z,
                            view_clear_stencil);
     effects::Host::PostTargets targets;

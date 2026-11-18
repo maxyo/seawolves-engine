@@ -300,6 +300,14 @@ target_compile_definitions(buffer_pool_check PRIVATE NOMINMAX)
 target_compile_options(buffer_pool_check PRIVATE -fsigned-char)
 target_link_libraries(buffer_pool_check PRIVATE storm_bgfx storm_check_sdl)
 
+# msaa_resolve_check: on Vulkan a multisampled colour target is resolved by its render pass and a view's colour discard
+# reaches the store op of the pass it ends (patches/bgfx-vulkan-resolve-in-pass.patch).
+add_executable(msaa_resolve_check msaa_resolve_check.cpp)
+target_include_directories(msaa_resolve_check PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../src/libs/renderer_bgfx/src/shim")
+target_compile_definitions(msaa_resolve_check PRIVATE NOMINMAX)
+target_compile_options(msaa_resolve_check PRIVATE -fsigned-char)
+target_link_libraries(msaa_resolve_check PRIVATE storm_bgfx storm_check_sdl)
+
 # thumbnail_check: the save thumbnail of a background autosave (no surface): the back buffer is read from the copy of
 # the last presented frame (src/shim/device.cpp copy_frame), on OpenGL ES (an X display, like skinning_check) and Vulkan.
 add_executable(thumbnail_check thumbnail_check.cpp)

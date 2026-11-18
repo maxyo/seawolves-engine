@@ -1,0 +1,336 @@
+Vulkan: a multisampled colour render target is resolved by its render pass (a resolve attachment), and a view's
+BGFX_CLEAR_DISCARD_* is honoured for the whole render pass it ends.
+
+bgfx stored every multisampled colour attachment and resolved it after the pass with vkCmdResolveImage, which
+reads all the samples back. On a tile GPU (Adreno, Mali, PowerVR) that is the full multisampled picture written to
+memory and read again each frame: the 4x scene and the UI's 2x display-size layers. The single-sample image of
+such a texture is now a resolve attachment of the frame buffer (VkSubpassDescription::pResolveAttachments): the
+resolve happens on chip, and the samples are not written at all when the view that ends the pass discards them
+(store op DONT_CARE). FrameBufferVK::resolve() then copies nothing (TextureVK::m_resolvedInPass); the mips of an
+auto-mip target are still made. Not for a view in another format (sRGB: resolveRenderPass converts) or a layered
+attachment; a multisampled colour without a resolve attachment keeps its samples whatever the view discards.
+
+bgfx keeps one render pass open through consecutive views into the same frame buffer and rect, and took its load
+and store ops from the view that began it: a discard on the last of those views never reached the store op. The
+pass now takes the discard flags of the last view it will run (looked ahead over the sorted draws: the same frame
+buffer and rect, no blit before it; a compute dispatch inside ends the pass early, so nothing is discarded then).
+diff --git a/src/renderer_vk.cpp b/src/renderer_vk.cpp
+index 96492b1..7bd41ad 100644
+--- a/src/renderer_vk.cpp
++++ b/src/renderer_vk.cpp
+@@ -265,6 +265,14 @@ namespace bgfx { namespace vk
+ 	// thread, read by the render thread every frame.
+ 	std::atomic<float> g_stormMaxAnisotropy{0.0f};
+ 
++	// Storm (bgfx-vulkan-resolve-in-pass.patch): multisampled colour resolves done by a render pass (counted when
++	// FrameBufferVK::resolve() finds them done) and by vkCmdResolveImage after one. For the host check
++	// tests/renderer_bgfx/msaa_resolve_check.cpp.
++	std::atomic<uint32_t> g_stormResolvesInPass{0};
++	std::atomic<uint32_t> g_stormResolveCopies{0};
++	// Render passes of a texture frame buffer begun with a colour discard (their store op DONT_CARE where resolved).
++	std::atomic<uint32_t> g_stormColourDiscardPasses{0};
++
+ 	struct PrimInfo
+ 	{
+ 		VkPrimitiveTopology m_topology;
+@@ -1605,6 +1613,23 @@ VK_IMPORT_DEVICE
+ 
+ 	struct TextureVK;
+ 
++	// Storm: a multisampled colour attachment with a single-sample image (sampled after the pass) is resolved by its
++	// render pass (VkSubpassDescription::pResolveAttachments) instead of vkCmdResolveImage after it. On a tile GPU the
++	// resolve then happens on chip, and the multisampled samples need not be written to memory at all when the view
++	// discards them (BGFX_CLEAR_DISCARD_COLOR_*: store op DONT_CARE); a vkCmdResolveImage needs them stored and read
++	// back. Not for a view in another format (sRGB: resolveRenderPass converts) or a layered attachment.
++	static bool resolvesInPass(const TextureVK& _texture, const Attachment& _at)
++	{
++		return VK_NULL_HANDLE != _texture.m_singleMsaaImage
++			&& 0 != (_texture.m_aspectFlags & VK_IMAGE_ASPECT_COLOR_BIT)
++			&& VK_IMAGE_VIEW_TYPE_2D == _texture.m_type
++			&& 1 == _at.numLayers
++			&& 0 == _at.layer
++			&& 0 == _at.mip
++			&& _texture.getViewFormat(_at.flags, BGFX_ATTACHMENT_SRGB) == _texture.m_format
++			;
++	}
++
+ 	struct RendererContextVK : public RendererContextI
+ 	{
+ 		RendererContextVK()
+@@ -4312,6 +4337,14 @@ VK_IMPORT_DEVICE
+ 						  m_commandBuffer
+ 						, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+ 						);
++
++					// Storm: every render pass of this frame buffer resolves it (colours come first in m_attachment).
++					texture.m_resolvedInPass = resolvesInPass(texture, newFrameBuffer.m_attachment[ii]);
++
++					if (texture.m_resolvedInPass)
++					{
++						texture.setState(m_commandBuffer, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
++					}
+ 				}
+ 
+ 				if (isValid(newFrameBuffer.m_depth) )
+@@ -4701,7 +4734,10 @@ VK_IMPORT_DEVICE
+ 					colorAr[numColorAr].attachment = ii;
+ 					ad[numColorAr].loadOp = 0 != (_clearFlags & BGFX_CLEAR_COLOR) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+ 
+-					if (BGFX_CLEAR_NONE != (_clearFlags & (BGFX_CLEAR_DISCARD_COLOR_0 << ii) ) )
++					// Storm: a multisampled colour resolved after the pass (no resolve attachment) is read back by
++					// vkCmdResolveImage: its samples are stored whatever the view asks.
++					if (BGFX_CLEAR_NONE != (_clearFlags & (BGFX_CLEAR_DISCARD_COLOR_0 << ii) )
++					&& (VK_SAMPLE_COUNT_1_BIT == _samples || (NULL != _resolve && _resolve[ii]) ) )
+ 					{
+ 						ad[numColorAr].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+ 					}
+@@ -4840,6 +4876,7 @@ VK_IMPORT_DEVICE
+ 		{
+ 			VkFormat formats[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+ 			VkImageAspectFlags aspects[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
++			bool resolve[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
+ 			VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+ 			uint8_t depthFlags = 0;
+ 
+@@ -4848,6 +4885,7 @@ VK_IMPORT_DEVICE
+ 				const TextureVK& texture = m_textures[_attachments[ii].handle.idx];
+ 				formats[ii] = texture.getViewFormat(_attachments[ii].flags, BGFX_ATTACHMENT_SRGB);
+ 				aspects[ii] = texture.m_aspectFlags;
++				resolve[ii] = resolvesInPass(texture, _attachments[ii]);
+ 				samples = texture.m_sampler.Sample;
+ 
+ 				if (0 != (texture.m_aspectFlags & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ) )
+@@ -4856,7 +4894,7 @@ VK_IMPORT_DEVICE
+ 				}
+ 			}
+ 
+-			return getRenderPass(_num, formats, aspects, NULL, samples, _clearFlags, depthFlags, _outRenderPass, _outHashKey);
++			return getRenderPass(_num, formats, aspects, resolve, samples, _clearFlags, depthFlags, _outRenderPass, _outHashKey);
+ 		}
+ 
+ 		VkResult getRenderPass(const SwapChainVK& swapChain, uint16_t _clearFlags, ::VkRenderPass* _outRenderPass, uint32_t* _outHashKey = NULL)
+@@ -9094,10 +9132,8 @@ VK_DESTROY
+ 			ici_resolve.mipLevels = m_numMips;
+ 			ici_resolve.flags    |= cubeFlag;
+ 
+-			if (0 == (m_flags & BGFX_TEXTURE_SRGB_MUTABLE) )
+-			{
+-				ici_resolve.usage &= ~VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+-			}
++			// Storm: the single-sample image of a colour target keeps the colour attachment usage: it is the
++			// render pass's resolve attachment (resolvesInPass).
+ 
+ 			result = vkCreateImage(device, &ici_resolve, allocatorCb, &m_singleMsaaImage);
+ 			if (VK_SUCCESS != result)
+@@ -9676,6 +9712,16 @@ VK_DESTROY
+ 			{
+ 				s_renderVK->resolveDepth(_commandBuffer, *this, layer, numLayers, _mip);
+ 			}
++			else if (m_resolvedInPass && resolveFormat == m_format)
++			{
++				// Storm: the render pass resolved it already (resolvesInPass); the mips below start from its level.
++				g_stormResolvesInPass.fetch_add(1, std::memory_order_relaxed);
++				if ( (_mip + 1) < m_numMips
++				&&  0 != (_resolve & BGFX_ATTACHMENT_AUTO_GEN_MIPS) )
++				{
++					setState(_commandBuffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, true);
++				}
++			}
+ 			else if (resolveFormat != m_format)
+ 			{
+ 				resolveRenderPass(_commandBuffer, resolveFormat, layer, numLayers, _mip);
+@@ -9707,6 +9753,7 @@ VK_DESTROY
+ 					.extent    = { .width = m_width, .height = m_height, .depth = 1 },
+ 				};
+ 
++				g_stormResolveCopies.fetch_add(1, std::memory_order_relaxed);
+ 				vkCmdResolveImage(
+ 					  _commandBuffer
+ 					, m_textureImage
+@@ -10098,7 +10145,7 @@ VK_DESTROY
+ 		return VK_FORMAT_UNDEFINED != format ? format : m_format;
+ 	}
+ 
+-	VkResult TextureVK::createView(uint32_t _layer, uint32_t _numLayers, uint32_t _mip, uint32_t _numMips, VkImageViewType _type, VkImageAspectFlags _aspectMask, bool _renderTarget, ::VkImageView* _view, VkFormat _format, bool _msaa) const
++	VkResult TextureVK::createView(uint32_t _layer, uint32_t _numLayers, uint32_t _mip, uint32_t _numMips, VkImageViewType _type, VkImageAspectFlags _aspectMask, bool _renderTarget, ::VkImageView* _view, VkFormat _format, bool _msaa, bool _single) const
+ 	{
+ 		VkResult result = VK_SUCCESS;
+ 
+@@ -10125,7 +10172,7 @@ VK_DESTROY
+ 		viewInfo.sType      = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+ 		viewInfo.pNext      = NULL;
+ 		viewInfo.flags      = 0;
+-		viewInfo.image      = (VK_NULL_HANDLE != m_singleMsaaImage && !_renderTarget && !_msaa)
++		viewInfo.image      = (VK_NULL_HANDLE != m_singleMsaaImage && (_single || (!_renderTarget && !_msaa) ) )
+ 			? m_singleMsaaImage
+ 			: m_textureImage
+ 			;
+@@ -11877,6 +11924,13 @@ VK_DESTROY
+ 			{
+ 				s_renderVK->release(m_textureImageViews[ii]);
+ 			}
++
++			for (uint8_t ii = 0; ii < m_numResolve; ++ii)
++			{
++				s_renderVK->release(m_resolveImageViews[ii]);
++			}
++
++			m_numResolve = 0;
+ 		}
+ 	}
+ 
+@@ -11931,8 +11985,42 @@ VK_DESTROY
+ 			fci.pNext = NULL;
+ 			fci.flags = 0;
+ 			fci.renderPass      = m_renderPass;
+-			fci.attachmentCount = m_numTh;
+-			fci.pAttachments    = &m_textureImageViews[0];
++			// Storm: the resolve attachments follow the attachments, in colour order (getRenderPass).
++			::VkImageView views[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS * 2];
++			m_numResolve = 0;
++
++			for (uint8_t ii = 0; ii < m_numTh; ++ii)
++			{
++				views[ii] = m_textureImageViews[ii];
++			}
++
++			for (uint8_t ii = 0; ii < m_numTh; ++ii)
++			{
++				const Attachment& at = m_attachment[ii];
++				const TextureVK& texture = s_renderVK->m_textures[at.handle.idx];
++
++				if (resolvesInPass(texture, at) )
++				{
++					VK_CHECK(texture.createView(
++						  0
++						, 1
++						, 0
++						, 1
++						, VK_IMAGE_VIEW_TYPE_2D
++						, texture.m_aspectFlags
++						, true
++						, &m_resolveImageViews[m_numResolve]
++						, texture.m_format
++						, false
++						, true
++						) );
++					views[m_numTh + m_numResolve] = m_resolveImageViews[m_numResolve];
++					++m_numResolve;
++				}
++			}
++
++			fci.attachmentCount = m_numTh + m_numResolve;
++			fci.pAttachments    = views;
+ 			fci.width  = m_width;
+ 			fci.height = m_height;
+ 			fci.layers = m_attachment[0].numLayers;
+@@ -13150,9 +13238,56 @@ VK_DESTROY
+ 							&& 0 != clr.getColorSkipMask(NULL == fb.m_nwh ? fb.m_num : 1)
+ 							;
+ 
++						// Storm: a render pass goes on through the next views into the same frame buffer and rect
++						// (below), so what it may discard at its end is what the last of them discards: the discard
++						// flags of the view that begins it said nothing about the views drawn after it in the same pass.
++						uint16_t passFlags = clr.m_flags;
++
++						if (!beginRenderPass
++						&&  !profiler.m_enabled
++						&&  NULL == fb.m_nwh)
++						{
++							uint16_t discard = clr.m_flags & BGFX_CLEAR_DISCARD_MASK;
++							uint16_t last = view;
++							SortKey next;
++
++							for (int32_t jj = item; jj < numItems; ++jj)
++							{
++								const bool compute = next.decode(_render->m_sortKeys[jj], _render->m_viewRemap);
++
++								if (next.m_view != last)
++								{
++									const View& nextView = _render->view(next.m_view);
++
++									if (nextView.m_fbh.idx != fbh.idx
++									|| !nextView.m_rect.isEqual(renderView->m_rect)
++									||  bs.hasItem(next.m_view) )
++									{
++										break; // the pass ends before that view
++									}
++
++									last = next.m_view;
++									discard = nextView.m_clear.m_flags & BGFX_CLEAR_DISCARD_MASK;
++								}
++
++								if (compute)
++								{
++									discard = 0; // a compute dispatch ends the pass in the middle: keep everything
++									break;
++								}
++							}
++
++							passFlags = (clr.m_flags & ~BGFX_CLEAR_DISCARD_MASK) | discard;
++
++							if (0 != (passFlags & BGFX_CLEAR_DISCARD_COLOR_MASK) )
++							{
++								g_stormColourDiscardPasses.fetch_add(1, std::memory_order_relaxed);
++							}
++						}
++
+ 						VkRenderPass renderPass = fb.getRenderPass(partialColorClear
+-							? clr.m_flags & ~BGFX_CLEAR_COLOR
+-							: clr.m_flags
++							? passFlags & ~BGFX_CLEAR_COLOR
++							: passFlags
+ 							);
+ 
+ 						viewState.m_rect = renderView->m_rect;
+diff --git a/src/renderer_vk.h b/src/renderer_vk.h
+index 9dc1ae1..ac8cf0c 100644
+--- a/src/renderer_vk.h
++++ b/src/renderer_vk.h
+@@ -733,6 +733,7 @@ VK_DESTROY_FUNC(DescriptorSet);
+ 			, m_singleMsaaImage(VK_NULL_HANDLE)
+ 			, m_singleMsaaDeviceMem()
+ 			, m_currentSingleMsaaImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
++			, m_resolvedInPass(false)
+ 			, m_videoDecoder(NULL)
+ 		{
+ 		}
+@@ -750,7 +751,7 @@ VK_DESTROY_FUNC(DescriptorSet);
+ 		void copyBufferToTexture(VkCommandBuffer _commandBuffer, VkBuffer _stagingBuffer, uint32_t _bufferImageCopyCount, VkBufferImageCopy* _bufferImageCopy);
+ 		void setState(VkCommandBuffer _commandBuffer, VkImageLayout _newImageLayout, bool _singleMsaaImage = false);
+ 
+-		VkResult createView(uint32_t _layer, uint32_t _numLayers, uint32_t _mip, uint32_t _numMips, VkImageViewType _type, VkImageAspectFlags _aspectMask, bool _renderTarget, ::VkImageView* _view, VkFormat _format = VK_FORMAT_UNDEFINED, bool _msaa = false) const;
++		VkResult createView(uint32_t _layer, uint32_t _numLayers, uint32_t _mip, uint32_t _numMips, VkImageViewType _type, VkImageAspectFlags _aspectMask, bool _renderTarget, ::VkImageView* _view, VkFormat _format = VK_FORMAT_UNDEFINED, bool _msaa = false, bool _single = false) const;
+ 
+ 		VkFormat getViewFormat(uint32_t _flags, uint32_t _bit) const;
+ 
+@@ -781,6 +782,10 @@ VK_DESTROY_FUNC(DescriptorSet);
+ 		VkImage                  m_singleMsaaImage;
+ 		DeviceMemoryAllocationVK m_singleMsaaDeviceMem;
+ 		VkImageLayout            m_currentSingleMsaaImageLayout;
++		// Storm: the frame buffer it was last bound in resolves it in its render pass (a resolve attachment), so the
++		// single-sample image already holds the picture and resolve() copies nothing (the multisampled image may have
++		// been discarded, BGFX_CLEAR_DISCARD_COLOR_*).
++		bool                     m_resolvedInPass;
+ 
+ 		VkImageLayout m_sampledLayout;
+ 
+@@ -903,6 +908,7 @@ VK_DESTROY_FUNC(DescriptorSet);
+ 			, m_nwh(NULL)
+ 			, m_needPresent(false)
+ 			, m_needResolve(false)
++			, m_numResolve(0)
+ 			, m_framebuffer(VK_NULL_HANDLE)
+ 			, m_currentFramebuffer(VK_NULL_HANDLE)
+ 		{
+@@ -948,6 +954,10 @@ VK_DESTROY_FUNC(DescriptorSet);
+ 		bool  m_needResolve;
+ 
+ 		VkImageView   m_textureImageViews[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
++		// Storm: the single-sample images of the colour attachments resolved in the render pass (resolvesInPass), in
++		// colour attachment order, after the attachments in the VkFramebuffer.
++		VkImageView   m_resolveImageViews[BGFX_CONFIG_MAX_FRAME_BUFFER_ATTACHMENTS];
++		uint8_t       m_numResolve;
+ 		VkFramebuffer m_framebuffer;
+ 		VkRenderPass  m_renderPass;
+ 		uint32_t      m_renderPassHashKey;

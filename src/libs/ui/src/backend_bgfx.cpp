@@ -1866,7 +1866,8 @@ Executor::Executor(BgfxBackendImpl &backend, const Executor &plan, uint16_t firs
     // Tile GPUs: what the frame no longer needs is invalidated after the last view that draws into it
     // (BGFX_CLEAR_DISCARD_*, patches/bgfx-gl-framebuffer-discard.patch), so it is never written back to memory.
     // Only the main UI's layers (set 0): it redraws them from a clear every frame. The jobs' layers (set 1) keep
-    // their content across frames. A layer's multisampled colour is not needed once resolved (OpenGL ES); without MSAA the
+    // their content across frames. A layer's multisampled colour is not needed once resolved (OpenGL ES: at the view's end;
+    // Vulkan: by its render pass, patches/bgfx-vulkan-resolve-in-pass.patch); without MSAA the
     // attachment is the texture the composite samples and stays. The set's depth/stencil goes after its last view.
     std::vector<uint16_t> discard(slots.size(), BGFX_CLEAR_NONE);
     int last_layer_slot = -1;
@@ -1879,9 +1880,7 @@ Executor::Executor(BgfxBackendImpl &backend, const Executor &plan, uint16_t firs
         bool written_later = false;
         for (size_t later = s + 1; later < slots.size() && !written_later; ++later)
             written_later = slots[later].target == target;
-        // Not on Vulkan: bgfx resolves a multisampled texture there after its render pass, from the stored
-        // attachment, so the discard would leave nothing to resolve.
-        if (!written_later && b_->msaa_ > 0 && bgfx::getRendererType() != bgfx::RendererType::Vulkan)
+        if (!written_later && b_->msaa_ > 0)
             discard[s] |= BGFX_CLEAR_DISCARD_COLOR_0;
     }
     if (last_layer_slot >= 0)
