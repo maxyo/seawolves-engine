@@ -1275,8 +1275,8 @@ static void CheckTalkRoles()
     std::printf("talk roles against the game's characters: %zu dialog files, %d common roles checked\n", files.size(), roles);
 }
 
-// Rush beside the fight buttons (hud.h AbilityControls): only in a fight, only while the scripts
-// offer it or it runs; launched through the land menu's own command.
+// Rush in the abilities list behind one small button (hud.h AbilityControls): only in a fight,
+// only while the scripts offer it or it runs; launched through the land menu's own command.
 static void CheckRush()
 {
     Bench bench;
@@ -1285,35 +1285,52 @@ static void CheckRush()
     Json vitals = State("vitals");
     vitals["abilities"] = Json::array({Json{{"id", "Rush"}, {"label", "Тинктура Ометочтли"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
     bench.Set("vitals", vitals);
-    Expect(!mount.Has("abilities"), "explore: no Rush button (the actions sheet keeps its row)");
+    Expect(!mount.Has("abilities"), "explore: no abilities button (the actions sheet keeps its row)");
     bench.Feed("gameplay", "gameplay-melee");
     bench.Feed("combat", "combat-melee");
     Json commands = State("land-commands-idle");
     commands["offered"].push_back("BI_ActivateRush");
     bench.Set("landCommands", commands);
     const Json &shown = mount.shown.elements;
-    Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "flame" && shown["abilities"]["label"] == "Тинктура Ометочтли" &&
-               !shown["abilities"].contains("disabled"),
-           "fight: the Rush button under the game's name: " + shown["abilities"].dump());
+    Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "actions" && shown["abilities"]["cue"] == true &&
+               !shown["abilities"].contains("badge") && mount.shown.sheet.empty(),
+           "fight: the collapsed abilities button with the ready dot, not a Rush button: " + shown["abilities"].dump());
     mount.commands.clear();
     bench.Press("abilities");
-    ExpectEqual(mount.Last(), "landcommands:1\t4\t10\t2\topen\tBI_ActivateRush", "a tap opens the land menu straight into its Rush command");
+    const Json &props = mount.shown.sheet_props; // the list's rows: props["rows"] (a new node with every view)
+    Expect(mount.shown.sheet == "s-hud-abilities" && mount.shown.modal && mount.shown.sheet_props["place"] == "land" && props["rows"].size() == 1 &&
+               props["rows"][0]["id"] == "ability-Rush" && props["rows"][0]["icon"] == "flame" && props["rows"][0]["title"] == "Тинктура Ометочтли" && props["rows"][0]["state"] == "ready" &&
+               mount.commands.empty(),
+           "a tap opens the list: Rush under the game's name, nothing launched yet: " + mount.shown.sheet_props.dump());
+    bench.Press("ability-Rush");
+    ExpectEqual(mount.Last(), "landcommands:1\t4\t10\t2\topen\tBI_ActivateRush", "a tap on Rush opens the land menu straight into its Rush command");
+    Expect(mount.shown.sheet.empty(), "… and the list closes");
+    bench.Press("abilities");
+    Expect(bench.hud.Back(), "Back is the open list's");
+    bench.Frame();
+    Expect(mount.shown.sheet.empty(), "Back closes the list");
+    bench.Press("abilities");
+    bench.Press("sheet", "close");
+    Expect(mount.shown.sheet.empty(), "a tap outside closes it");
     vitals["abilities"][0]["state"] = "active";
     vitals["abilities"][0]["fill"] = 0.75;
     vitals["abilities"][0]["left"] = 9;
     bench.Set("vitals", vitals);
-    Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "active" && shown["abilities"]["badge"] == "9",
-           "running: what is left of it and its seconds: " + shown["abilities"].dump());
+    Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "active" && shown["abilities"]["cue"] == false,
+           "running: the button's fill, no dot: " + shown["abilities"].dump());
+    bench.Press("abilities");
+    Expect(props["rows"][0]["meta"] == "hud.ability.active 9\u00a0hud.ability.seconds", "… its seconds in the list: " + props["rows"].dump());
     vitals["abilities"][0]["state"] = "recovery";
     vitals["abilities"][0]["fill"] = 0.25;
     vitals["abilities"][0]["left"] = 54;
     bench.Set("vitals", vitals);
-    mount.commands.clear();
-    bench.Press("abilities");
-    Expect(shown["abilities"]["fillTone"] == "cooldown" && !shown["abilities"].contains("disabled") && shown["abilities"]["badge"] == "54" &&
-               bench.hud.LogLines().dump().find("Тинктура Ометочтли: hud.ability.recovery 54\u00a0hud.ability.seconds") != std::string::npos &&
-               mount.commands.empty(),
-           "recovering: fill and seconds on the plate, a tap says when it is back, no command: " + shown["abilities"].dump());
+    Expect(mount.shown.sheet == "s-hud-abilities" && props["rows"][0]["meta"] == "hud.ability.recovery 54\u00a0hud.ability.seconds" && props["rows"][0]["cooldown"] == 75,
+           "recovering: the open list follows the scripts' seconds: " + props["rows"].dump());
+    bench.Set("landCommands", State("land-commands-root"));
+    Expect(mount.shown.sheet == "s-hud-sheet", "the land menu takes the list's place");
+    commands["revision"] = 12;
+    bench.Set("landCommands", commands);
+    Expect(mount.shown.sheet.empty() && mount.Has("abilities"), "… and the list does not come back with its closing");
     vitals.erase("abilities");
     bench.Set("vitals", vitals);
     Expect(!mount.Has("abilities"), "nothing offered: no button");

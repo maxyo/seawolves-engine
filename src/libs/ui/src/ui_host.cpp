@@ -1985,12 +1985,13 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     {
         TouchMap map;
         const bool hud = hud_->Interactive();
-        map.back = !video_ && ((hud && hud_->Shown().modal) || router_->WantsBack()); // a modal HUD sheet or a screen's own modal
+        const bool modal = !video_ && ((hud && hud_->Shown().modal) || router_->WantsBack()); // a modal HUD sheet or a screen's own modal
+        map.back = modal || (!video_ && hud && hud_->Shown().back); // or a scene that takes the key without one (the raised spyglass)
         const bool was_between = between_;
         between_ = Between();
         // a document or an interface screen (also one the game opened whose model is still to
         // come), a modal HUD sheet, or nothing the player can use (Between)
-        map.everywhere = !video_ && (document_ != nullptr || map.back || opening_ != Opening::None || between_);
+        map.everywhere = !video_ && (document_ != nullptr || modal || opening_ != Opening::None || between_);
         if (!laid_out)
             regions_moved_ = true; // a host call: the next frame lays out what it changed
         if (hud && !map.everywhere && hud_document_)

@@ -262,9 +262,9 @@
     {
      "id": "abilities",
      "component": "c-button",
-     "rcss": "position: absolute; right: 16dp; bottom: 150dp; width: 52dp; height: 52dp;",
+     "rcss": "position: absolute; right: 188dp; top: 10dp; width: 48dp; height: 48dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; left: 16dp; bottom: 150dp; width: 52dp; height: 52dp;",
+     "rcssMirrored": "position: absolute; left: 188dp; top: 10dp; width: 48dp; height: 48dp;",
      "propsMirrored": {}
     }
    ]
@@ -377,10 +377,9 @@
     {
      "id": "spyglass",
      "component": "c-button",
-     "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "rcss": "position: absolute; left: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
      "props": {},
-     "behavior": "hold",
-     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "rcssMirrored": "position: absolute; right: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
      "propsMirrored": {}
     },
     {
@@ -434,41 +433,9 @@
     {
      "id": "abilities",
      "component": "c-button",
-     "rcss": "position: absolute; right: 218dp; bottom: 76dp; width: 48dp; height: 48dp;",
+     "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; left: 218dp; bottom: 76dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-1",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 322dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 322dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-2",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 270dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 270dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-3",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 218dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 218dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-4",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 166dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 166dp; bottom: 128dp; width: 48dp; height: 48dp;",
+     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "propsMirrored": {}
     }
    ]
@@ -581,10 +548,9 @@
     {
      "id": "spyglass",
      "component": "c-button",
-     "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "rcss": "position: absolute; left: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
      "props": {},
-     "behavior": "hold",
-     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
+     "rcssMirrored": "position: absolute; right: 12dp; bottom: 152dp; width: 56dp; height: 56dp;",
      "propsMirrored": {}
     },
     {
@@ -638,41 +604,9 @@
     {
      "id": "abilities",
      "component": "c-button",
-     "rcss": "position: absolute; right: 218dp; bottom: 76dp; width: 48dp; height: 48dp;",
+     "rcss": "position: absolute; right: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; left: 218dp; bottom: 76dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-1",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 322dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 322dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-2",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 270dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 270dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-3",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 218dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 218dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "propsMirrored": {}
-    },
-    {
-     "id": "ability-4",
-     "component": "c-button",
-     "rcss": "position: absolute; right: 166dp; bottom: 128dp; width: 48dp; height: 48dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; left: 166dp; bottom: 128dp; width: 48dp; height: 48dp;",
+     "rcssMirrored": "position: absolute; left: 160dp; bottom: 16dp; width: 48dp; height: 48dp;",
      "propsMirrored": {}
     }
    ]

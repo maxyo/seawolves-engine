@@ -350,6 +350,7 @@ struct View
     std::string sheet;                    // pack part over the scene ("s-hud-sheet"), "" = none
     Json sheet_props = Json::object();
     bool modal = false;                   // the sheet takes every touch and the back key
+    bool back = false;                    // the scene takes the back key without a sheet (the raised spyglass)
     bool log = false;                     // event lines are shown now (Hud::LogLines in the `log` element)
     std::string overlay;                  // pack part over the scene and under the sheet, takes no touches
     Json overlay_props = Json::object();  // (the spyglass target card, laid by the Hud over any scene)
@@ -373,21 +374,19 @@ class Input
 
 class Hud;
 
-// The active abilities of a scene (sea: the ship abilities, land: Rush), one shared control: the
-// layout element "abilities" is the ability itself while there is one, and with more a button
-// that fans them out as "ability-1"…"ability-4" for kFanSeconds (as the ammunition fan). Each
-// ability shows the scripts' state only: ready (a tap launches it through `launch`, the game's own
-// command), active (the fill is what is left of the effect, the badge its seconds; a tap says how
-// long in the event log), recovery (the fill is how far it recovered, the badge its seconds; a tap
-// says when it is back) and blocked (disabled, a tap toasts when the game allows it: the pack's
-// hud.ability.blocked.<id>).
-// Nothing is drawn without abilities: the scenes hide the control then.
+// The active abilities of a scene (sea: the ship abilities, land: Rush), one shared control kept
+// out of the way: the layout element "abilities" is a small button that opens the list of them,
+// even for one ability. The button shows a dot while one is ready and the fill while one runs.
+// The list is a modal sheet beside it (the pack part s-hud-abilities, placed by `place`: sea or
+// land): each ability with its icon, name and the scripts' state: ready (a tap launches it
+// through `launch`, the game's own command, and closes the list), active and recovery (the
+// seconds the scripts still count; the row only shows) and blocked (disabled, a tap toasts when
+// the game allows it: the pack's hud.ability.blocked.<id>). A tap outside or Back closes it.
+// Nothing is drawn without abilities: the button is hidden then.
 class AbilityControls
 {
   public:
-    static constexpr double kFanSeconds = 6.0;
-    static constexpr size_t kFanSlots = 4;
-    explicit AbilityControls(Hud &hud) : hud_(hud)
+    AbilityControls(Hud &hud, const char *place) : hud_(hud), place_(place)
     {
     }
     void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch);
@@ -399,16 +398,16 @@ class AbilityControls
     {
         open_ = false;
     }
-    // Folds the fan once its time is up (a rebuild); lowers `next` to the seconds until then.
-    void Expire(double now, double &next);
-    // The props of one ability's button (icon, label, state); shared by the slot and the fan.
-    Json Button(const Ability &ability);
+    // The back key: closes an open list (true), else leaves the key to the scene.
+    bool Back();
+    // The props of one ability's row of the list (id, icon, title, state, meta, cooldown, reason).
+    Json Row(const Ability &ability);
 
   private:
-    void Tell(const Ability &ability);
+    std::string Name(const Ability &ability);
     Hud &hud_;
+    const char *place_;
     bool open_ = false;
-    double until_ = 0.0;
 };
 
 // One ported gameplay zone (land, sea, world map). The instance lives while the gameplay

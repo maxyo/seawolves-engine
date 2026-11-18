@@ -178,6 +178,7 @@ class LandScene final : public Scene
         const LandCommands &commands = states.land_commands;
         if (commands.known && commands.active)
         {
+            abilities_.Close(); // the land menu (also the one Rush opens) takes the abilities list's place
             if (commands.complete)
             {
                 BuildSheet(commands, view, input);
@@ -250,8 +251,9 @@ class LandScene final : public Scene
 
         if (melee && states.vitals.known)
         {
-            // Rush beside the fight buttons (hud.h AbilityControls), only while the scripts offer it
-            // or it runs (land_status.hpp): launched through the land menu's own command, as its row.
+            // Rush in the abilities list behind one small button in the top row (hud.h AbilityControls),
+            // only while the scripts offer it or it runs (land_status.hpp): launched through the land
+            // menu's own command, as its row.
             abilities_.Build(states.vitals.abilities, view, input, [this](const Ability &ability) {
                 for (const Named &command : kAbilityCommands)
                     if (ability.id == command.key)
@@ -274,7 +276,6 @@ class LandScene final : public Scene
     double Tick(const States &states, double now) override
     {
         double next = kIdle;
-        abilities_.Expire(now, next);
         if (moving_ || x_ != 0 || y_ != 0)
             SyncMove(states.gameplay);
         if (!choice_.empty() && now >= choice_until_)
@@ -317,12 +318,18 @@ class LandScene final : public Scene
         hud_.Rebuild();
     }
 
+    void Hidden(const States &) override
+    {
+        abilities_.Close();
+    }
+
     void Suspended(const States &states) override
     {
         const LandCommands &commands = states.land_commands;
         if (commands.known && commands.active)
             hud_.Send("landcommands", Owner(commands) + "\tclose\t");
         choice_.clear();
+        abilities_.Close();
     }
 
     bool Holds(const States &states) const override
@@ -332,6 +339,8 @@ class LandScene final : public Scene
 
     bool Back(const States &states) override
     {
+        if (abilities_.Back())
+            return true;
         const LandCommands &commands = states.land_commands;
         if (!commands.known || !commands.active || !commands.complete)
             return false;
@@ -864,7 +873,7 @@ class LandScene final : public Scene
     }
 
     Hud &hud_;
-    AbilityControls abilities_{hud_};
+    AbilityControls abilities_{hud_, "land"};
     // movement
     bool moving_ = false;
     int x_ = 0, y_ = 0;           // the thumb now (0, 0: up)

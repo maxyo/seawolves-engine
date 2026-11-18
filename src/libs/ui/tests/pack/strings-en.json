@@ -40,5 +40,9 @@
  "hud.ability.name.InstantRepair": "hud.ability.name.InstantRepair",
  "hud.ability.name.Turn180": "hud.ability.name.Turn180",
  "hud.ability.name.Rush": "hud.ability.name.Rush",
- "hud.ability.active": "hud.ability.active"
+ "hud.ability.active": "hud.ability.active",
+ "hud.ability.ready": "hud.ability.ready",
+ "hud.ability.blocked": "hud.ability.blocked",
+ "hud.sea.spyglass.raise": "hud.sea.spyglass.raise",
+ "hud.sea.spyglass.lower": "hud.sea.spyglass.lower"
 }

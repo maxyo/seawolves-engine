@@ -54,6 +54,7 @@ struct Case
     fs::path interface;                                    // empty = none
     fs::path answer;                                       // the game's next model of it, empty = none
     std::vector<std::string> covers;                       // screens drawn besides the interface's own
+    std::vector<std::string> taps;                         // element ids tapped after it is fed (a HUD list opened)
 };
 
 // Elements the runtime marked as broken (components.cpp: an unknown prop, a failed render).
@@ -171,6 +172,31 @@ class Session
             }
         }
         Frames(settle);
+        AnswerAll();
+        if (!reopened_)
+            for (const std::string &id : case_.taps)
+                Tap(id);
+    }
+
+    // A real touch on the middle of the drawn element with this id (any document: the HUD's too).
+    void Tap(const std::string &id)
+    {
+        Rml::Element *element = nullptr;
+        for (int c = 0; c < Rml::GetNumContexts() && !element; ++c)
+            if (Rml::Context *context = Rml::GetContext(c))
+                for (int d = 0; d < context->GetNumDocuments() && !element; ++d)
+                    element = context->GetDocument(d)->GetElementById(id);
+        const Rml::Vector2f size = element ? element->GetBox().GetSize(Rml::BoxArea::Border) : Rml::Vector2f();
+        if (!element || size.x <= 0.0f || size.y <= 0.0f)
+        {
+            failures.push_back("tap " + id + ": no such element is drawn");
+            return;
+        }
+        const Rml::Vector2f at = element->GetAbsoluteOffset(Rml::BoxArea::Border) + size * 0.5f;
+        host_->Touch(TouchPhase::Down, 1, at.x, at.y, clock_);
+        Frames(1.0 / 60.0);
+        host_->Touch(TouchPhase::Up, 1, at.x, at.y, clock_);
+        Frames(0.5);
         AnswerAll();
     }
 
@@ -789,6 +815,8 @@ int main(int argc, char **argv)
         }
         for (const Json &screen : entry.value("covers", Json::array()))
             c.covers.push_back(screen.get<std::string>());
+        for (const Json &id : entry.value("taps", Json::array()))
+            c.taps.push_back(id.get<std::string>());
         cases.push_back(std::move(c));
     }
     std::vector<fs::path> models;
