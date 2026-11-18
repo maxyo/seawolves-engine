@@ -421,6 +421,11 @@ void Bindings::Rebuild()
     router_.rebuild_ = true;
 }
 
+void Bindings::Await()
+{
+    router_.awaiting_ = true;
+}
+
 void Bindings::RebuildAfter(double seconds)
 {
     const double when = router_.surface_.Now() + std::max(0.0, seconds);
@@ -724,6 +729,7 @@ void Router::BuildView()
     notices_shown_ = std::move(notices_building_);
     notices_building_.clear();
     rebuild_ = false;
+    awaiting_ = false;
     // A deadline still ahead stays (Bindings::RebuildAfter from an event handler: the build that
     // follows the event must not drop it); one that came is spent.
     if (rebuild_at_ > 0.0 && rebuild_at_ <= surface_.Now())
@@ -965,7 +971,7 @@ void Router::SubmitText(const std::string &token, const std::string &text, bool 
 
 bool Router::Answering() const
 {
-    if (!outstanding_.empty() || !waiting_.empty())
+    if ((screen_ && awaiting_) || !outstanding_.empty() || !waiting_.empty())
         return true;
     return std::any_of(answers_.begin(), answers_.end(), [](const auto &entry) { return entry.second.applied && !entry.second.model_after; });
 }

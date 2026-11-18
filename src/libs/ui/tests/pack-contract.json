@@ -87,6 +87,8 @@
      "frames": [{"answer": true, "model": "flows/store-bought-0.json"}, {"answer": true, "model": "flows/store-deal-0-bought.json"}], "after": "s-trade"},
     {"name": "store buy reopen, slow game", "interface": "models/store-deal.json", "taps": ["c-quantity#goods change #6", "c-button#primary click"],
      "frames": [{"wait": 8, "answer": true, "model": "flows/store-bought-0.json"}, {"wait": 12, "answer": true, "model": "flows/store-deal-0-bought.json"}], "after": "s-trade"},
+    {"name": "store buy reopen, window a few loops late", "interface": "models/store-deal.json", "taps": ["c-quantity#goods change #6", "c-button#primary click"],
+     "frames": [{"answer": true, "model": "flows/store-bought-0.json"}, {"answer": true, "model": "flows/store-bought-0.json"}, {"wait": 3, "model": "flows/store-deal-0-bought.json"}], "after": "s-trade"},
     {"name": "title continue", "interface": "models/title.json", "taps": ["c-button#continue click"],
      "frames": [{"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"states": ["presentation=states/presentation-menu.json"]}, {"close": true}], "after": "nothing"}
   ],

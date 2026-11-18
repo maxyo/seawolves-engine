@@ -1002,6 +1002,8 @@ class CommerceScreen final : public Screen
             else
                 bindings.Back(exit);
         });
+        if (!hold_row_.empty())
+            bindings.Await(); // the row's amount window comes in a later game frame
         if (holding)
             return last_view_;
         last_view_ = view;

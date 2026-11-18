@@ -153,6 +153,10 @@ class Bindings
     void ErrorOnce(const std::string &key, const std::string &text);
     // Local state of the screen changed: build the view again from the same model.
     void Rebuild();
+    // The game's answer to what the screen asked is not complete in this model: more of it comes in a later game frame
+    // (the store opens a row's amount window a loop after selecting it). Said by the build that knows it, for that
+    // build: the host keeps the frame on the screen meanwhile (Router::Answering, the settle gate of ui_host.cpp).
+    void Await();
     // The subject a HUD tap asked this screen to open on (hud::Hud::RequestSubject), taken once.
     std::optional<SubjectRequest> TakeSubject(const std::string &screen);
     // Builds the view again after `seconds` even if no new model comes (local state that
@@ -324,7 +328,7 @@ class Router
         return screen_ != nullptr;
     }
     // The game has not finished answering what the screen sent: a widget action it has not answered, a send that
-    // waits for its turn, or an applied answer whose model has not come yet (the host's settle gate holds the frame
+    // waits for its turn, an applied answer whose model has not come yet, or a screen that awaits more (Bindings::Await) (the host's settle gate holds the frame
     // on the screen meanwhile, ui_host.cpp).
     bool Answering() const;
     // The model the mounted screen was built from.
@@ -427,6 +431,7 @@ class Router
     const Event *current_ = nullptr;
     bool sent_in_event_ = false;
     bool rebuild_ = false;
+    bool awaiting_ = false;     // Bindings::Await in the current build
     double last_flush_ = -1.0;
     double rebuild_at_ = 0.0;   // Bindings::RebuildAfter
     double opened_at_ = 0.0;    // when the open interface was opened
