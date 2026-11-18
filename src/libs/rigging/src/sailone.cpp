@@ -7,6 +7,7 @@
 #include "core.h"
 #include "math_inlines.h"
 #include "sail.h"
+#include "sail_limit_point.hpp"
 #include "sail_normals.hpp"
 
 #include <array>
@@ -686,8 +687,8 @@ bool SAILONE::SetSail()
     {
     case SAIL_TREANGLE:
         if (ss.bYesLimitPoint)
-            ss.fDeepZ = 0.5f * GetDistanceFromPointTo3Point(ss.LimitPoint, ss.hardPoints[0], ss.hardPoints[1],
-                                                            ss.hardPoints[2]);
+            ss.fDeepZ = 0.5f * storm::rigging::SailLimitPointBulge(ss.LimitPoint, ss.hardPoints[0],
+                                                                   ss.hardPoints[1], ss.hardPoints[2]);
         else
             ss.fDeepZ = .04f + .01f * static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * sailHeight;
         ss.fDeepH = ss.fDeepZ;
@@ -700,7 +701,7 @@ bool SAILONE::SetSail()
         if (ss.bYesLimitPoint)
         {
             ss.fDeepZ =
-                GetDistanceFromPointTo3Point(ss.LimitPoint, ss.hardPoints[0], ss.hardPoints[1], ss.hardPoints[2]);
+                storm::rigging::SailLimitPointBulge(ss.LimitPoint, ss.hardPoints[0], ss.hardPoints[1], ss.hardPoints[2]);
             ss.fDeepH = sailWidth / (sailWidth + sailHeight + 0.01f) * ss.fDeepZ;
             ss.fDeepZ *= sailHeight / (sailWidth + sailHeight + 0.01f);
         }
@@ -716,7 +717,7 @@ bool SAILONE::SetSail()
         if (ss.bYesLimitPoint)
         {
             ss.fDeepZ =
-                GetDistanceFromPointTo3Point(ss.LimitPoint, ss.hardPoints[0], ss.hardPoints[1], ss.hardPoints[2]);
+                storm::rigging::SailLimitPointBulge(ss.LimitPoint, ss.hardPoints[0], ss.hardPoints[1], ss.hardPoints[2]);
             ss.fDeepH = sailWidth / (sailWidth + sailHeight + 0.01f) * ss.fDeepZ;
             ss.fDeepZ *= sailHeight / (sailWidth + sailHeight + 0.01f);
         }
@@ -2051,14 +2052,4 @@ void SAILONE::SetTurnLimits()
         m_fMinAngle = minA;
     if (maxA >= 0.f)
         m_fMaxAngle = maxA;
-}
-
-float SAILONE::GetDistanceFromPointTo3Point(const glm::vec3 &v, const glm::vec3 &vB1, const glm::vec3 &vB2,
-                                            const glm::vec3 &vB3)
-{
-    const glm::vec3 vN = storm::math::normalizeOrZero(glm::cross(vB1 - vB2, vB3 - vB2));
-    const float fD = -glm::dot(vN, vB2);
-
-    const float f = glm::dot(v, vN) + fD;
-    return f;
 }

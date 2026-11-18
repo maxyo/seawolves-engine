@@ -229,8 +229,6 @@ class SAILONE : public SAILONE_BASE
         return ss.eSailType == SAIL_TREANGLE ? 10 : 12;
     }
 
-    float GetDistanceFromPointTo3Point(const glm::vec3 &v, const glm::vec3 &vB1, const glm::vec3 &vB2, const glm::vec3 &vB3);
-
     // Wind exposure parameters
     int VertIdx; // index in array of wind vectors
     int HorzIdx;
