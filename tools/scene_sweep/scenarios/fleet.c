@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Scenario fleet: Сен-Пьер streets, opening quest finished, corvette with navigator, boatswain and a fighter, two loaded companions (ship exchange, transfer), crew pay due at the next day.
+// Scenario fleet: Сен-Пьер streets, opening quest finished, corvette with navigator, boatswain and a fighter, two loaded companions (ship exchange, transfer), the month's crew pay due right after the save (salary screen).
 #include "scenarios/scenario.c"
 
 void Scenario_Setup()
@@ -16,14 +16,16 @@ void Scenario_Setup()
 	SetCharacterGoods(first, GOOD_BALLS, 300);
 	ref second = Scenario_Companion("ScenarioLuggerCap", SHIP_LUGGER, "Mouette");
 	SetCharacterGoods(second, GOOD_RUM, 100);
-	// The month's pay is due at the next change of day (time_events.c SalaryNextDayUpdate).
-	NullCharacter.SalayPayMonth = -1;
 }
 
 void Scenario_Arrived()
 {
 }
 
+// The month's pay comes due now, as at a change of day (time_events.c SalaryNextDayUpdate opens the salary screen);
+// after the save, so the save itself starts in the streets.
 void Scenario_Trigger()
 {
+	NullCharacter.SalayPayMonth = -1;
+	SalaryNextDayUpdate();
 }

@@ -274,11 +274,12 @@ void Scenario_Unlock()
 	Scenario_Trace("opening quest lock removed");
 }
 
-// At sea off <island> (the island's first sea entry, the hero's squadron in its port's waters), entered with the
-// game's quest sea login (quests.c QuestToSeaLogin_*); groups given to Scenario_SeaGroup come along.
+// At sea off <island> (its first sea entry, at its port: under its fort's guns) or, with "", on the open sea away
+// from any island; entered with the game's quest sea login (quests.c QuestToSeaLogin_*); the enemies of
+// Scenario_Enemy come along.
 void Scenario_PlaceSea(string island)
 {
-	if (FindIsland(island) < 0)
+	if (island != "" && FindIsland(island) < 0)
 	{
 		Scenario_Fail("no island " + island);
 		return;
@@ -286,7 +287,8 @@ void Scenario_PlaceSea(string island)
 	pchar.ScenarioTest.destination = "sea";
 	pchar.ScenarioTest.destination.island = island;
 	SetCurrentTime(12, 0);
-	Scenario_Trace("destination the sea off " + island);
+	if (island == "") Scenario_Trace("destination the open sea");
+	else Scenario_Trace("destination the sea off " + island);
 }
 
 // A hostile ship (its captain id, group id) ahead of the hero at the sea login, attacking him: the game's own
@@ -314,9 +316,17 @@ void Scenario_ToSea()
 	string island = pchar.ScenarioTest.destination.island;
 	DeleteAttribute(&questToSeaLoginer, "");
 	QuestToSeaLogin_Prepare(0.0, 0.0, island);
-	QuestToSeaLogin_PrepareLoc(island, "reload", "l1", false);
-	ref seaIsland = GetIslandByID(island);
-	float heading = stf(seaIsland.reload.l1.ay);
+	float x = 0.0;
+	float z = 0.0;
+	float heading = 0.0;
+	if (island != "")
+	{
+		QuestToSeaLogin_PrepareLoc(island, "reload", "l1", false);
+		ref seaIsland = GetIslandByID(island);
+		x = stf(seaIsland.reload.l1.x);
+		z = stf(seaIsland.reload.l1.z);
+		heading = stf(seaIsland.reload.l1.ay);
+	}
 	aref enemies;
 	makearef(enemies, pchar.ScenarioTest.enemies);
 	for (int i = 0; i < GetAttributesNum(enemies); i++)
@@ -324,8 +334,8 @@ void Scenario_ToSea()
 		string group = GetAttributeName(GetAttributeN(enemies, i));
 		ref enemyGroup = Group_FindOrCreateGroup(group);
 		float distance = 400.0 + 150.0 * i;	// in cannon range (about 700 m), ahead of the hero
-		enemyGroup.Pos.x = stf(seaIsland.reload.l1.x) + distance * sin(heading);
-		enemyGroup.Pos.z = stf(seaIsland.reload.l1.z) + distance * cos(heading);
+		enemyGroup.Pos.x = x + distance * sin(heading);
+		enemyGroup.Pos.z = z + distance * cos(heading);
 		enemyGroup.Pos.ay = heading + PI;
 		QuestToSeaLogin_Add(group);
 	}
@@ -347,12 +357,16 @@ void Scenario_Flagship(int shipType, string shipName)
 void Scenario_Damage(float hull, float sails, int mastsDown, int cannonsLost)
 {
 	pchar.ship.HP = makeint(GetCharacterShipHP(pchar) * hull);
-	pchar.ship.SP = makeint(GetCharacterShipSP(pchar) * sails);
-	for (int i = 1; i <= 3; i++)
+	if (sails < 1.0) pchar.ship.SP = makeint(GetCharacterShipSP(pchar) * sails);
+	int i;
+	if (mastsDown > 0)
 	{
-		string mast = "mast" + i;
-		pchar.ship.masts.(mast) = 0;
-		if (i <= mastsDown) pchar.ship.masts.(mast) = 1;
+		for (i = 1; i <= 3; i++)
+		{
+			string mast = "mast" + i;
+			pchar.ship.masts.(mast) = 0;
+			if (i <= mastsDown) pchar.ship.masts.(mast) = 1;
+		}
 	}
 	for (i = 0; i < cannonsLost; i++)
 	{
@@ -368,4 +382,25 @@ void Scenario_Quest(string quest, int records, bool closed)
 {
 	for (int i = 1; i <= records; i++) AddQuestRecord(quest, "" + i);
 	if (closed) CloseQuestHeader(quest);
+}
+
+// The hero a step away from a person, turned to him: in reach to talk without standing on the person's own place
+// (a habitue offers his game only while the place in front of his seat is free, Habitue_dialog.c CheckFreeSitFront).
+void Scenario_FacePerson(string id, float distance)
+{
+	ref person = CharacterFromID(id);
+	float px, py, pz, hx, hy, hz;
+	GetCharacterPos(person, &px, &py, &pz);
+	GetCharacterPos(pchar, &hx, &hy, &hz);
+	float dx = hx - px;
+	float dz = hz - pz;
+	float length = sqrt(dx * dx + dz * dz);
+	if (length < 0.01)
+	{
+		dx = 1.0;
+		dz = 0.0;
+		length = 1.0;
+	}
+	TeleportCharacterToPos(pchar, px + dx / length * distance, hy, pz + dz / length * distance);
+	CharacterTurnByChr(pchar, person);
 }

@@ -41,9 +41,9 @@ the opening quest's lock the way the game does (Mishelle.c) for saves made befor
 | `gamblers` | Сен-Пьер tavern at noon, 50 000 pesos; a card player at table 1, a dice player at table 2 | tavern dialogue, cards, dice, rest (self-talk) |
 | `church` | Сен-Пьер church at noon, 20 000 pesos | priest dialogue, donation |
 | `port_office` | Сен-Пьер port office, 200 000 pesos, two companion ships | port master dialogue, leaving/taking back a ship |
-| `shipyard_repair` | Сен-Пьер shipyard, 200 000 pesos, a brig at hull 45 %, sails 40 %, a mast down, 4 cannons lost | shipyard, repair, cannons, sails and coat of arms |
-| `fleet` | Сен-Пьер streets, corvette, navigator, boatswain, fighter, two loaded companions, crew pay due next day | ship screen, ship exchange, cargo/crew transfer, salary |
-| `sea_prize` | the sea off Martinique, corvette and brig, a pirate war tartane and lugger attacking | sea battle, boarding, plunder, prize captain, transfer |
+| `shipyard_repair` | Сен-Пьер shipyard, 200 000 pesos, a brig at hull 45 %, 4 cannons lost | shipyard, repair, cannons, sails and coat of arms |
+| `fleet` | Сен-Пьер streets, corvette, navigator, boatswain, fighter, two loaded companions; the run then opens the month's pay (not saved) | ship screen, ship exchange, cargo/crew transfer, salary |
+| `sea_prize` | the open sea, corvette and brig, a pirate war tartane and lugger attacking; the run then boards the tartane (not saved) | sea battle, boarding, plunder, prize captain, transfer |
 | `maps` | Сен-Пьер streets, the best map, the atlas with six island maps, both halves of a treasure map | best map, atlas, map reading |
 | `questbook` | Сен-Пьер streets, fourteen real quests in the journal, five completed | journal, completed quests |
 

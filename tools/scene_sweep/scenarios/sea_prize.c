@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Scenario sea_prize: at sea off Martinique, opening quest finished, corvette with a companion brig and full crews, a weak pirate tartane and lugger attacking (boarding, plunder, prize, cargo/crew transfer).
+// Scenario sea_prize: on the open sea, opening quest finished, corvette with a companion brig and full crews, a weak pirate tartane and lugger attacking; the run then boards the tartane (not saved): plunder, prize, cargo/crew transfer.
 #include "scenarios/scenario.c"
 
 void Scenario_Setup()
@@ -14,13 +14,17 @@ void Scenario_Setup()
 	Scenario_Companion("ScenarioBrigCap", SHIP_BRIG, "Faucon");
 	Scenario_Enemy("ScenarioPirate1", SHIP_WAR_TARTANE, 3);
 	Scenario_Enemy("ScenarioPirate2", SHIP_LUGGER, 4);
-	Scenario_PlaceSea("Martinique");
+	// The open sea: at Сен-Пьер the fort sinks the pirates before they reach the hero.
+	Scenario_PlaceSea("");
 }
 
 void Scenario_Arrived()
 {
 }
 
+// After the save the run boards the war tartane at once, as the InstantBoarding perk does (BattleInterface.c,
+// Sea_AbordageStartNow): the deck fight, the captain's cabin, then plunder and the prize.
 void Scenario_Trigger()
 {
+	Sea_AbordageStartNow(SHIP_ABORDAGE, GetCharacterIndex("ScenarioPirate1"), true, true);
 }
