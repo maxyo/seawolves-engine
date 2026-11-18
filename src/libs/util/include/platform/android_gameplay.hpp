@@ -191,7 +191,8 @@ public:
             control != "hk_charge1" && control != "hk_charge2" &&
             control != "hk_charge3" && control != "hk_charge4" &&
             control != "TimeScaleX1" && control != "TimeScaleX2" && control != "TimeScaleX4" && control != "TimeScaleX8" &&
-            control != "BI_InstantRepair" && control != "BI_ImmediateReload") return false;
+            control != "BI_ImmediateReload" && control != "BI_LightRepair" && control != "BI_InstantRepair" &&
+            control != "BI_Turn180") return false; // the ship abilities (android_ship_abilities.hpp ShipAbilityNames)
         if (!allows(control)) return false;
         pending_.push_back({revision, std::string(control), tick});
         return true;

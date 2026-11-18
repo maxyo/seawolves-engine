@@ -937,7 +937,10 @@ int main(int argc, char *argv[])
                 }
                 else if (command.starts_with("gameplay:"))
                 {
-                    gameplayState.offer(std::string_view(command).substr(9), SDL_GetTicks());
+                    // Refused: a tap of an older gameplay revision, a control the gameplay does not bind,
+                    // or one this entry point does not carry (GameplayState::offer). Said, not dropped.
+                    if (!gameplayState.offer(std::string_view(command).substr(9), SDL_GetTicks()))
+                        __android_log_print(ANDROID_LOG_WARN, "StormInput", "refused gameplay command '%s'", command.c_str());
                 }
                 else if ((command == "back" || command == "shortcut:mainmenu") && storm::android::fullscreenVideo())
                 {

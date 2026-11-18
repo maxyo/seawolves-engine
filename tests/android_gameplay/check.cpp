@@ -105,6 +105,17 @@ int main()
     sea.capabilities = {"Sea_CameraSwitch"};
     state.update(sea);
     assert(!state.take(14));
+    // the four ship abilities go through this entry point when the gameplay binds them
+    sea.capabilities = {"BI_ImmediateReload", "BI_LightRepair", "BI_InstantRepair", "BI_Turn180"};
+    state.update(sea);
+    for (const char *ability : {"BI_ImmediateReload", "BI_LightRepair", "BI_InstantRepair", "BI_Turn180"})
+    {
+        assert(state.offer(request(ability), 14));
+        assert(state.take(14) == ability);
+    }
+    assert(!state.offer(request("BI_InstantBoarding"), 14)); // the beta-mode cheat is not carried
+    sea.capabilities = {"Sea_CameraSwitch"};
+    state.update(sea);
     assert(state.json().find("\"schemaVersion\":1") != std::string::npos);
     assert(state.json().find("\"inputOwner\":\"\"") != std::string::npos);
     sea.inputOwner = "scene:player";
