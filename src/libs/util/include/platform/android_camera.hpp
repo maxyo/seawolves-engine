@@ -6,14 +6,21 @@ namespace storm::android
 {
 // The mobile land camera (location CameraFollow::MoveCamera, LocationCamera): pure parts.
 
-// A horizontal camera drag of `counts` (ChrTurnH: touch pixels after the game's mouse
-// sensitivity, 1.0 at its default) on a surface `width` pixels wide: a drag across the whole
-// width turns the view by half a turn on any screen size and density, scaled by the setting.
+// The touch camera drag, on land (LocationCamera, Player) and at sea (SHIP_CAMERA, DECK_CAMERA): a drag
+// across the whole surface width turns the view by kDragTurnPerWidth radians (a full turn) at the default
+// camera sensitivity, on any screen size and density, directly (no inertia), at any frame rate.
+// The sensitivity is the game's mouse sensitivity («Чувствительность камеры» in the settings, option_screen
+// VMOUSE/HMOUSE_SENSITIVITY_SLIDE, persisted in the options file), applied live by PCS_CONTROLS to the drag's
+// counts: 0.5..2 of the default (controls.c SetRealMouseSensitivity), so 180..720 degrees per width.
+constexpr float kDragTurnPerWidth = 6.28318531f;
+
+// The turn (radians) of a drag of `counts` (ChrTurnH, ShipCamera_Turn_H, ...: touch pixels times the
+// sensitivity) on a surface `width` pixels wide; vertical drags pitch by the same angle per pixel.
 inline float dragYaw(float counts, float width)
 {
     if (!(width > 0.0f) || !std::isfinite(counts))
         return 0.0f;
-    return counts * 3.14159265f / width;
+    return counts * kDragTurnPerWidth / width;
 }
 
 // Critically damped motion of `value` towards `target`, settling in about `time` seconds: no overshoot,
@@ -55,6 +62,7 @@ class AutoFollow
     float stood_ = 0.0f;    // seconds he has stood (without a drag) before walking
     bool walking_ = false;
     bool held_ = false;     // a drag or swing holds following off until he stands and walks again
+    bool dragged_ = false;  // a drag (not a swing) since he last stood and walked again
     Damped rate_;           // the camera's turn rate (rad/s)
 
   public:
@@ -70,7 +78,7 @@ class AutoFollow
         walking_ = speed_ > (walking_ ? kStop : kWalk);
         if (hold)
         {
-            held_ = true;
+            held_ = dragged_ = true;
             stood_ = walked_ = 0.0f;
             rate_.reset();
             return 0.0f;
@@ -83,7 +91,7 @@ class AutoFollow
         else
         {
             if (stood_ >= kStand)
-                held_ = false; // he stood, and walks again
+                held_ = dragged_ = false; // he stood, and walks again
             stood_ = 0.0f;
             if (!held_)
                 walked_ += dt;
@@ -117,6 +125,11 @@ class AutoFollow
     {
         return held_;
     }
+    // The player has dragged since the hero last stood and walked again (a swing alone does not count).
+    bool dragged() const
+    {
+        return dragged_;
+    }
 };
 
 // Tight spaces. The follow camera keeps out of walls by pulling in towards the hero
@@ -128,14 +141,16 @@ class AutoFollow
 // front of him. It never rises above kTightPitch (about 49 degrees, an over-the-shoulder look,
 // never top-down) unless the player's own pitch is higher. With no view that good, the one with the
 // most room (a later one in that order only for kTightGain metres more). Without `swing` (the player
-// has dragged, or a swing was already made, since the hero last stood) only the camera's own heading
-// is tried.
+// has dragged since the hero last stood) only the camera's own heading is tried. A swing under way is
+// judged at the heading it goes to: a new choice starts from there and never takes it back.
 constexpr float kTightClose = 1.2f, kTightPitch = 0.85f, kTightLower = 0.35f, kTightGain = 0.2f;
 // The camera swings to the chosen side critically damped over kSwingTime seconds, never faster than
 // kSwingMax rad/s (at once on arriving in a location); it rises or lowers over kRaiseTime seconds. A
 // chosen view is kept while it has at least kTightKeep of the room wanted; the player's own pitch
 // comes back once it has kTightGain metres more than wanted. A drag stops a swing at once; a swing
-// holds AutoFollow off as a drag does, and neither swings again until the hero has stood and walks on.
+// holds AutoFollow off as a drag does. After a drag nothing swings until the hero has stood and walks on;
+// after a swing the camera swings again only when the view it went to has lost its room (the hero walked
+// on into a wall: holding it would leave the camera in his hiding distance, the view on the floor).
 constexpr float kSwingTime = 2.0f, kSwingMax = 1.0f, kRaiseTime = 0.6f, kTightKeep = 0.85f;
 
 struct TightView

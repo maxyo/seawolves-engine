@@ -193,12 +193,18 @@ void CameraFollow::MoveMobile(float dltTime)
         tightRaise = 0.0f; // room again at the player's own view (with a margin: no back and forth)
     else if (settle || (tightAge <= 0.0f && FindRadius(camay + swing.value, lc->ax + tightRaise) < (tight ? want * kTightKeep : want)))
     {
-        // Sideways only while the player has not dragged and no swing was made since the hero last stood.
-        const TightView view = tightView(lc->ax, want, settle || (!dragged && !autoFollow.held()),
-                                         [&](float yaw, float pitch) { return FindRadius(camay + yaw, pitch); });
-        swing.reset(view.yaw); // from here (a swing whose view closed ends)
+        // Sideways only while the player has not dragged since the hero last stood (a swing made since does
+        // not forbid another: its view has closed). Judged from where a swing under way goes, so a choice
+        // never takes it back (REGRESSION 1666: the view stopped half way, raised, inside the hero's hiding
+        // distance: only the floor seen).
+        const float heading = camay + swing.value;
+        const TightView view = tightView(lc->ax, want, settle || (!dragged && !autoFollow.dragged()),
+                                         [&](float yaw, float pitch) { return FindRadius(heading + yaw, pitch); });
         if (view.yaw != 0.0f)
+        {
+            swing.reset(swing.value + view.yaw);
             autoFollow.hold();
+        }
         tightRaise = view.pitch - lc->ax;
         tightAge = view.room >= want ? 0.0f : 0.5f; // none good: not every frame (the probes, a restless choice)
     }

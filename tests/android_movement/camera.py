@@ -35,10 +35,12 @@ int main(){
  const float pi=3.14159265f;
  // Standing, the stick may turn the hero any way: the camera stays (no idle recentring), never locks him.
  for(int step=0;step<720;++step){lc.chay=step*.017453292f;camera.MoveCamera(.016f);assert(camera.camay==0&&!actor.locked);}
- // A drag turns the view by all of it at any frame time; across the whole width: half a turn, scaled by the sensitivity.
- for(float dt:{.016f,.1f,1.f}){const float before=camera.camay;lc.dragAy=dragYaw(64,1280);camera.MoveCamera(dt);assert(std::fabs(camera.camay-before-pi/20)<1e-5f);}
- float total=0;for(int i=0;i<16;++i)total+=dragYaw(80,1280);assert(std::fabs(total-pi)<1e-4f);
- assert(std::fabs(dragYaw(2400,2400)-pi)<1e-5f&&std::fabs(dragYaw(1200*2.f,2400)-pi)<1e-5f&&dragYaw(5,0)==0&&dragYaw(NAN,1280)==0);
+ // A drag turns the view by all of it at any frame time; across the whole width: a full turn (kDragTurnPerWidth) at the
+ // default sensitivity, as many times that as the sensitivity (the counts carry it).
+ assert(std::fabs(kDragTurnPerWidth-2*pi)<1e-5f);
+ for(float dt:{.016f,.1f,1.f}){const float before=camera.camay;lc.dragAy=dragYaw(64,1280);camera.MoveCamera(dt);assert(std::fabs(camera.camay-before-pi/10)<1e-5f);}
+ float total=0;for(int i=0;i<16;++i)total+=dragYaw(80,1280);assert(std::fabs(total-2*pi)<1e-4f);
+ assert(std::fabs(dragYaw(2400,2400)-2*pi)<1e-5f&&std::fabs(dragYaw(1200*2.f,2400)-2*pi)<1e-5f&&dragYaw(5,0)==0&&dragYaw(NAN,1280)==0);
  lc.dragAy=0;
  // Damped: critically damped (never past the target, no oscillation), the same path at any frame rate.
  {Damped a{1},b{1};float last=1;for(int i=0;i<240;++i){a.step(0,1.f/60,.8f);assert(a.value>=-1e-6f&&a.value<=last+1e-6f);last=a.value;}
@@ -74,6 +76,12 @@ int main(){
   const float dragged=before+dragYaw(-20*19,1280);for(float y:r.yaw)assert(y<=before+1e-5f);assert(std::fabs(r.yaw.back()-dragged)<.02f);
   // ... and follows again only once he has stood (kStand) and walks on.
   walk(.016f,AutoFollow::kStand+.5f,pi/2,none,0);r=walk(.016f,4,pi/2,none);assert(r.yaw.back()>r.yaw.front()+.3f);}
+ // The sensitivity setting (0.5..2: 180..720 degrees per width): a drag across the whole width (1280 px) turns the view by
+ // exactly the setting's angle at 20, 30 and 60 fps, before following starts and while/after it turns.
+ for(float sens:{.5f,1.f,2.f})for(float dt:{1.f/60,1.f/30,1.f/20})for(float when:{0.f,3.f}){fresh();
+  const float px=1280;Run r=walk(dt,when+1.5f,pi/2,[&](float t,float d){return t>=when&&t<when+1?px*d*sens:0.f;});
+  const float perWidth=r.dragYawSum*px/(r.dragged/sens);
+  assert(r.dragged>.9f*px*sens&&std::fabs(perWidth-sens*kDragTurnPerWidth)<1e-3f);}
  // REGRESSION: the same at 30 and 60 fps (and 20): following, drag share and the result.
  {float end[3];int i=0;for(float dt:{1.f/60,1.f/30,1.f/20}){fresh();
    Run r=walk(dt,6,1.f,[&](float t,float d){return t>=2&&t<3?320*d:0.f;});
@@ -103,6 +111,14 @@ assert(std::fabs(end[0]-end[1])<.03f&&std::fabs(end[0]-end[2])<.03f);}
   for(int i=0;i<300;++i){camera.MoveCamera(.016f);if(!i)assert(camera.autoFollow.held()); // a swing holds following off
    const float w=(last-camera.camay)/.016f;assert(w>=-1e-4f&&w<=kSwingMax+1e-4f&&std::fabs(w-lastRate)<=8.f*.016f);lastRate=w;last=camera.camay;}}
  assert(std::fabs(camera.camay+1)<.01f&&camera.raised==0&&camera.camradius>=kTightClose);
+ // REGRESSION (1666, shipyard: walking towards the camera into a wall): the side it swings to closes half way (he walked on);
+ // no room above, the open way is past him. The camera swings on from where it was going (a swing made since he stood does
+ // not forbid another), never stops half way raised in his hiding distance with only the floor seen.
+ fresh();camera.wall=.5f;camera.ceiling=.4f;camera.openYaw=-1;{
+  for(int i=0;i<20;++i)camera.MoveCamera(.016f);assert(camera.swing.value<-.5f&&camera.autoFollow.held()&&!camera.autoFollow.dragged());
+  camera.openYaw=-1+pi;settle(600);
+  assert(std::fabs(camera.camay-camera.openYaw)<.3f&&camera.camradius>=kTightClose&&camera.raised==0);}
+ camera.ceiling=3;
  // A low ceiling: lower before higher; the open side still first.
  fresh();camera.wall=.5f;camera.low=2;camera.ceiling=.4f;settle(200);assert(camera.raised<-.1f&&camera.camay==0);
  // Walled in behind and at the sides, no room above: from in front of him (the cabin).
@@ -140,7 +156,7 @@ assert(std::fabs(end[0]-end[1])<.03f&&std::fabs(end[0]-end[2])<.03f);}
  // Freelook (special mode) keeps the native orbit by dAy.
  actor.fight=false;actor.locked=false;camera.camay=0;lc.chay=0;lc.isSpecialMode=true;lc.dAy=-.1f;camera.MoveCamera(.016f);assert(camera.camay<0);
  const float old=camera.camay;camera.MoveCamera(0);assert(camera.camay==old);
- std::cout<<"PASS: mobile camera: whole drag (half a turn per screen width) the same before/while/after following and at 20/30/60 fps; following eased, no jerk, held off by a drag until the hero stands and walks again; tight spaces: closer, sideways (eased), lower, a little higher (never top-down) or from the front, at once on arrival, no back and forth, never against a drag; dialogue face above the sheet; fight and freelook native\n";
+ std::cout<<"PASS: mobile camera: whole drag (a full turn per screen width, times the sensitivity 0.5..2) the same before/while/after following and at 20/30/60 fps; following eased, no jerk, held off by a drag until the hero stands and walks again; tight spaces: closer, sideways (eased), lower, a little higher (never top-down) or from the front, at once on arrival, no back and forth, never against a drag; dialogue face above the sheet; fight and freelook native\n";
 }
 '''
 with tempfile.TemporaryDirectory(prefix='storm-movement-camera-') as d:

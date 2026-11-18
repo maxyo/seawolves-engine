@@ -6,6 +6,7 @@
 #include "math_inlines.h"
 
 #ifdef __ANDROID__
+#include <platform/android_camera.hpp>
 #include <platform/android_camera_zoom.hpp>
 #endif
 
@@ -96,6 +97,18 @@ void SHIP_CAMERA::Move(float fDeltaTime)
         fDistance = 0.0f;
 
     // Rotate
+#ifdef __ANDROID__
+    // The touch drag turns and pitches the view as on land (platform/android_camera.hpp dragYaw: the same angle
+    // per screen width, scaled by the camera sensitivity), directly at any frame rate: the native turn eased
+    // towards counts per frame and moved by them times the frame time, so a drag turned less at a higher
+    // frame rate and went on after the finger stopped.
+    const auto width = static_cast<float>(core.GetWindow()->GetWindowSize().width);
+    core.Controls->GetControlState("ShipCamera_Turn_H", cs);
+    vAng.y += fInvertMouseX * storm::android::dragYaw(cs.fValue, width);
+    core.Controls->GetControlState("ShipCamera_Turn_V", cs);
+    vAng.x += fInvertMouseY * storm::android::dragYaw(cs.fValue, width);
+    fAngleXDlt = fAngleYDlt = 0.0f;
+#else
     core.Controls->GetControlState("ShipCamera_Turn_H", cs);
 
     auto fValue = fInvertMouseX * 2.0f * (cs.fValue) * fSensivityAzimuthAngle;
@@ -117,6 +130,8 @@ void SHIP_CAMERA::Move(float fDeltaTime)
         fKInert = 1.0f;
     fAngleXDlt += (fValue - fAngleXDlt) * fKInert;
     vAng.x += fSpeed * fAngleXDlt;
+
+#endif
 
     if (vAng.x < -2.0f * PI)
         vAng.x += 2.0f * PI;

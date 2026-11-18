@@ -9,6 +9,7 @@
 #include "shared/messages.h"
 
 #ifdef __ANDROID__
+#include <platform/android_camera.hpp>
 #include <platform/android_deck_walk.hpp>
 #include <platform/android_spyglass.hpp>
 #endif
@@ -87,8 +88,16 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
 
     pModel->Update();
     CONTROL_STATE cs;
+#ifdef __ANDROID__
+    // The touch drag turns and pitches the deck view as on land (platform/android_camera.hpp dragYaw: the same
+    // angle per screen width, scaled by the camera sensitivity); natively it was a fixed angle per pixel.
+    const auto width = static_cast<float>(core.GetWindow()->GetWindowSize().width);
+    core.Controls->GetControlState("DeckCamera_Turn_H", cs);
+    camera_ang.y += storm::android::dragYaw(cs.fValue, width);
+#else
     core.Controls->GetControlState("DeckCamera_Turn_H", cs);
     camera_ang.y += fSensivityAzimuthAngle * 3.0f * static_cast<float>(cs.fValue);
+#endif
 
     core.Controls->GetControlState("DeckCamera_Left", cs);
     if (cs.state == CST_ACTIVE)
@@ -99,7 +108,11 @@ void DECK_CAMERA::Move(uint32_t DeltaTime)
         camera_ang.y += fSensivityAzimuthAngle * 15.f * static_cast<float>(cs.fValue);
 
     core.Controls->GetControlState("DeckCamera_Turn_V", cs);
+#ifdef __ANDROID__
+    camera_ang.x -= storm::android::dragYaw(cs.fValue, width);
+#else
     camera_ang.x -= fSensivityHeightAngle * 3.0f * static_cast<float>(cs.fValue);
+#endif
 
     if (camera_ang.x > CAMERA_MAX_X)
         camera_ang.x = CAMERA_MAX_X;
