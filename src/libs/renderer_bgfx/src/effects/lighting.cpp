@@ -239,6 +239,14 @@ FfFamily ChooseFamily(bool lit, const FfBlocks &needs)
     return lit ? FfFamily::LitLamps : FfFamily::BakedLamps;
 }
 
+MapReaders DrawReadsMaps(const fx::Settings &settings, bool has_normal, bool character)
+{
+    const uint32_t flags = settings.lighting_flags;
+    const bool lighting = (flags & (fx::kLightingPerPixel | fx::kLightingPoint)) != 0;
+    const bool takes = has_normal && (!character || settings.character_relief != fx::CharacterRelief::Off);
+    return {takes && lighting && (flags & fx::kLightingNormalMap) != 0, takes && fx::BackgroundProductsFor(settings).gloss};
+}
+
 void Lighting::configure(const fx::Settings &settings, const fx::RendererState &state, fx::LampDepth lamp_depth)
 {
     settings_ = settings;
@@ -262,7 +270,8 @@ void Lighting::configure(const fx::Settings &settings, const fx::RendererState &
     gloss_ = products.gloss;
     // The relief's material texture (height and gloss) is uploaded when the parallax, the cavity or the gloss reads it.
     normal_maps_.configure(products.relief, settings.normal_map_size,
-                           settings.parallax != fx::ParallaxQuality::Off || settings.relief_cavity || gloss_);
+                           settings.parallax != fx::ParallaxQuality::Off || settings.relief_cavity || gloss_,
+                           settings.character_relief != fx::CharacterRelief::Off);
     normal_maps_.configure_gloss(gloss_, settings.gloss_map_size);
     find_shaders();
 }
@@ -471,9 +480,8 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     NormalMaps::Relief relief_map;
     // Characters: with Settings::character_relief, faded out on skin and hair per vertex (ff_fragment.sh ffSkin).
     const bool character = lit && material_ == Material::Character;
-    const bool character_relief = settings_.character_relief != fx::CharacterRelief::Off;
-    if ((flags_ & fx::kLightingNormalMap) && lighting_ && layout.has_normal && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE &&
-        (!character || character_relief))
+    const MapReaders reads = DrawReadsMaps(settings_, layout.has_normal, character);
+    if (reads.relief && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE)
     {
         const auto enabled_store = [&](int stage) {
             return device.s.tss[stage][D3DTSS_COLOROP] != D3DTOP_DISABLE ? shim::store_of(device.s.textures[stage]) : nullptr;
@@ -492,8 +500,7 @@ void Lighting::prepare(const shim::Device &device, const shim::LayoutInfo &layou
     fx::GlossClass gloss_class = fx::GlossClass::None;
     bool metal_mask = false; // the material's R is a metal mask (a gloss map's), not a relief's height
     shim::TexStore *gloss_store = shim::store_of(device.s.textures[0]);
-    if (gloss_ && layout.has_normal && gloss_store && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE &&
-        (!character || character_relief))
+    if (reads.gloss && gloss_store && device.s.tss[0][D3DTSS_COLOROP] != D3DTOP_DISABLE)
     {
         if (gloss_store->normal_map && gloss_store->normal_map->material_gloss != fx::GlossClass::None)
         {

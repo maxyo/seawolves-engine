@@ -1,10 +1,11 @@
-// Relief and gloss switched on while textures are loaded (effects::NormalMaps): a texture of a relief class loaded while relief
-// is off (a location entered on «Низкая») is looked up when relief is switched on (the preset raised in the same
-// location), exactly like one loaded with relief on: a colour texture without a map is requested from the generator;
-// a grey height texture gets no entry (brightness-derived normals are not used). Before the fix none was queued until the
-// location was loaded again. Gloss maps (Settings::gloss) the same: an entry at the load, requested from the
-// generator (PBRify's roughness) when gloss is switched on; a texture whose relief class has a height (stone) keeps its gloss
-// in its relief's material texture (fx::AddReliefMaterial) and has no gloss map of its own.
+// Relief and gloss maps only for what the scene draws with them (effects::NormalMaps, effects::DrawReadsMaps): a texture of a
+// relief class gets its entry when it is loaded, relief on or off, but it is looked up (and its map requested from the
+// generator) only when a draw that reads the map draws it: not at the load, not when the preset is raised, not on the
+// loading screen for a texture no draw read, never on «Низкая» or with the setting off, and not for a draw that does not
+// read it at these settings (a character with the characters' relief off). A new scene and a change of what the draws
+// read drop the queue; the preset lowered drops it too. A grey height texture gets no entry (brightness-derived normals
+// are not used). Gloss maps (Settings::gloss) the same; a texture whose relief class has a height (stone) keeps its
+// gloss in its relief's material texture (fx::AddReliefMaterial) and has no gloss map of its own.
 //
 // No GPU: the textures are shim stores filled the way Renderer::TextureLoad fills them, their game files are written
 // into a temporary game; the generator has no models (no PBRify), so a requested map ends up "missing" (counted).
@@ -147,7 +148,8 @@ int main()
     fx::WriteReliefMap(relief, old_key, old_map);
 
     effects::NormalMaps maps;
-    maps.configure(false, 512, false); // «Низкая»: relief and gloss off
+    fx::Lighting gpu_lighting;
+    maps.configure(false, 512, false, false); // «Низкая»: relief and gloss off
     maps.configure_gloss(false, 256);
     auto stone = Store(colour), bump = Store(height), brick = Store(colour), cannon = Store(colour), glass = Store(colour);
     maps.on_texture_loaded(*stone, "resource\\textures\\stone_wall.tga.tx", textures / "stone_wall.tga.tx");
@@ -162,7 +164,7 @@ int main()
         }
     auto authored = Store(rgb_normal);
     effects::NormalMaps authored_maps;
-    authored_maps.configure(false, 512, false);
+    authored_maps.configure(false, 512, false, false);
     authored_maps.on_texture_loaded(*authored, "authored_rgb_bump.tga.tx", textures / "authored_rgb_bump.tga.tx");
     expect(!authored->normal_map || authored->normal_map->relief != fx::ReliefClass::HeightMap,
            "authored RGB normal is not treated as a grey-height conversion");
@@ -177,63 +179,101 @@ int main()
            "a gloss class without relief (glass) gets a gloss entry, one with relief (stone, metal) its relief's material, "
            "height maps none");
     expect(off.gloss_unqueued == 1 && off.gloss_waiting + off.gloss_missing == 0, "no gloss map is looked up while gloss is off");
-    expect(off.unqueued == 2 && off.waiting == 0 && off.missing == 0,
-           "nothing is looked up while relief is off");
+    expect(off.unqueued == 2 && off.waiting == 0 && off.missing == 0, "nothing is looked up while relief is off");
 
-    maps.configure(true, 512, true); // the preset raised in the same location
-    const effects::NormalMaps::Stats on = Settle(maps, loaded);
-    std::printf("after the switch: unqueued %u, waiting %u, missing %u\n", on.unqueued, on.waiting, on.missing);
-    expect(on.unqueued == 0, "switching relief on looks up every texture loaded while it was off");
-    expect(on.waiting + on.missing == 2, "the colour textures are requested from the generator");
+    // «Низкая»: no draw reads a relief or a gloss map; and a draw that asked anyway would start nothing.
+    const fx::Settings low = fx::Settings::FromPreset(fx::QualityPreset::Low);
+    expect(!effects::DrawReadsMaps(low, true, false).relief && !effects::DrawReadsMaps(low, true, false).gloss &&
+               !effects::DrawReadsMaps(low, true, true).relief,
+           "«Низкая»: no draw reads the relief or the gloss");
+    maps.select(stone.get(), nullptr, gpu_lighting);
+    maps.gloss(*glass, gpu_lighting);
+    off = Settle(maps, loaded);
+    expect(off.unqueued == 2 && off.waiting + off.missing == 0 && off.gloss_unqueued == 1 &&
+               off.gloss_waiting + off.gloss_missing == 0,
+           "«Низкая» queues nothing, even for a texture a draw asks about");
+
+    maps.configure(true, 512, true, true); // the preset raised in the same location
+    effects::NormalMaps::Stats on = Settle(maps, loaded);
+    expect(on.unqueued == 2 && on.waiting + on.missing == 0,
+           "raising the preset looks nothing up by itself: no draw has read the loaded textures yet");
+    expect(maps.prepare_scene(*stone, gpu_lighting) == 0 && maps.prepare_scene(*cannon, gpu_lighting) == 0,
+           "the loading screen does not wait for a texture no draw has read");
+    on = Settle(maps, loaded);
+    expect(on.unqueued == 2 && on.waiting + on.missing == 0, "the loading screen starts nothing for textures no draw read");
+
+    // The draws of «Средняя»: the stone wall drawn lit reads its relief (requested); the cannon drawn only by a character
+    // while the characters' relief is off does not (not requested), with it on it does.
+    fx::Settings medium = fx::Settings::FromPreset(fx::QualityPreset::Medium);
+    expect(effects::DrawReadsMaps(medium, true, false).relief, "«Средняя»: a lit draw with normals reads the relief");
+    expect(!effects::DrawReadsMaps(medium, false, false).relief, "a draw without normals reads no relief");
+    const auto draw = [&](shim::TexStore &store, const fx::Settings &settings, bool character) {
+        if (effects::DrawReadsMaps(settings, true, character).relief)
+            maps.select(&store, nullptr, gpu_lighting);
+    };
+    draw(*stone, medium, false);
+    medium.character_relief = fx::CharacterRelief::Off;
+    draw(*cannon, medium, true);
+    on = Settle(maps, loaded);
+    std::printf("after the draws: unqueued %u, waiting %u, missing %u\n", on.unqueued, on.waiting, on.missing);
+    expect(stone->normal_map->state != effects::NormalMapEntry::Unqueued && on.waiting + on.missing == 1,
+           "the texture a draw reads the relief of is requested");
+    expect(cannon->normal_map->state == effects::NormalMapEntry::Unqueued,
+           "a texture whose draw does not read the relief at these settings (a character, its relief off) is not requested");
     expect(stone->normal_map->key != old_key && fx::HasReliefMap(relief, old_key),
            "the older build's map of the stone texture is not taken: its map is requested");
     {
-        fx::Lighting gpu_lighting;
         const auto pending = maps.select(stone.get(), nullptr, gpu_lighting);
         expect(!bgfx::isValid(pending.map.handle),
                "legacy generated cache never binds while the proper colour normal is unavailable");
         expect(fx::ReliefMethod(fx::ReliefClass::Stone) != fx::ReliefMethod(fx::ReliefClass::HeightMap),
                "authored height derivation and neural colour normals have separate cache provenance");
     }
+    medium.character_relief = fx::CharacterRelief::Normals;
+    draw(*cannon, medium, true);
+    on = Settle(maps, loaded);
+    expect(cannon->normal_map->state != effects::NormalMapEntry::Unqueued, "with the characters' relief on, the character draw requests it");
 
     maps.configure_gloss(true, 256);
-    const effects::NormalMaps::Stats glossy = Settle(maps, loaded);
-    bool glossy_settled = true;
-    for (shim::TexStore *store : loaded)
-        glossy_settled &= !store->gloss_map || store->gloss_map->state != effects::NormalMapEntry::Pending;
-    std::printf("after the gloss switch: unqueued %u, waiting %u, missing %u\n", glossy.gloss_unqueued, glossy.gloss_waiting,
+    effects::NormalMaps::Stats glossy = Settle(maps, loaded);
+    expect(glossy.gloss_unqueued == 1 && glossy.gloss_waiting + glossy.gloss_missing == 0,
+           "switching gloss on looks no gloss map up by itself");
+    maps.gloss(*glass, gpu_lighting);
+    glossy = Settle(maps, loaded);
+    std::printf("after the gloss draw: unqueued %u, waiting %u, missing %u\n", glossy.gloss_unqueued, glossy.gloss_waiting,
                 glossy.gloss_missing);
-    expect(glossy_settled && glossy.gloss_unqueued == 0 && glossy.gloss_waiting + glossy.gloss_missing == 1,
-           "switching gloss on requests the gloss maps of the textures loaded while it was off from the generator");
+    expect(glossy.gloss_unqueued == 0 && glossy.gloss_waiting + glossy.gloss_missing == 1,
+           "a draw that reads the gloss requests the gloss map");
 
-    // A texture loaded with relief on is looked up at once (unchanged).
+    // A texture loaded with relief on is not looked up at its load either.
     maps.on_texture_loaded(*brick, "resource\\textures\\brick_arch.tga.tx", textures / "brick_arch.tga.tx");
-    const effects::NormalMaps::Stats later = Settle(maps, {stone.get(), bump.get(), brick.get()});
-    expect(later.unqueued == 0 && later.waiting + later.missing == 3, "a texture loaded with relief on is requested at once");
+    Settle(maps, {brick.get()});
+    expect(brick->normal_map && brick->normal_map->state == effects::NormalMapEntry::Unqueued,
+           "a texture loaded with relief on is not requested until a draw reads it");
 
-    // Off and on again: nothing is requested twice, nothing is left unqueued.
-    maps.configure(false, 512, false);
-    maps.configure(true, 512, true);
-    const effects::NormalMaps::Stats again = Settle(maps, {stone.get(), bump.get(), brick.get()});
-    expect(again.unqueued == 0, "off and on again leaves nothing unqueued");
-
-    // Switched off while maps wait in the generator's queue (the preset lowered while it works, «Высокая» → «Низкая»):
-    // the queued requests are dropped (their entries Unqueued, looked up again when it is on), and a request of a
-    // product that is off is not taken. Held, so that the request stays queued.
+    // Held, so that requests stay queued: a new scene, and then the preset lowered, drop them.
     WriteTx(textures / "stone_arch.tga.tx", colour);
     auto arch = Store(colour);
-    // The generator first ends what the steps above left it (a gloss request that is still wanted would stay queued
-    // under the hold and be counted below; how long the worker takes is its budget's, two threads in play).
+    // The generator first ends what the steps above left it (how long the worker takes is its budget's).
     for (const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
          (effects::ReliefGenerator::instance().stats().requested != 0 || effects::ReliefGenerator::instance().stats().working) &&
          std::chrono::steady_clock::now() < until;)
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     effects::hold_background_work("relief_switch_check");
     maps.on_texture_loaded(*arch, "resource\\textures\\stone_arch.tga.tx", textures / "stone_arch.tga.tx");
+    maps.select(arch.get(), nullptr, gpu_lighting);
     Settle(maps, {arch.get()});
     expect(arch->normal_map && arch->normal_map->state == effects::NormalMapEntry::Waiting,
-           "a texture loaded with relief on waits in the generator's queue while the work is held");
-    maps.configure(false, 512, false);
+           "a drawn texture waits in the generator's queue while the work is held");
+    maps.begin_scene("location/Next");
+    expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued && arch->normal_map->drawn == 0,
+           "a new scene drops the previous scene's queue and forgets what was drawn");
+    expect(maps.prepare_scene(*arch, gpu_lighting) == 0 && arch->normal_map->state == effects::NormalMapEntry::Unqueued,
+           "the next scene's loading screen starts nothing for it until its draws read it");
+    maps.select(arch.get(), nullptr, gpu_lighting);
+    Settle(maps, {arch.get()});
+    expect(arch->normal_map->state == effects::NormalMapEntry::Waiting, "the new scene's draw asks again");
+    maps.configure(false, 512, false, false); // the preset lowered while it works, «Высокая» → «Низкая»
     expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued,
            "switching relief off drops its queued request: the entry is unqueued, nothing is made for it");
     effects::ReliefGenerator::instance().request(arch->normal_map, textures / "stone_arch.tga.tx");
@@ -247,10 +287,12 @@ int main()
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     std::printf("ok: nothing of relief stays queued while it is off\n");
     effects::hold_background_work(nullptr);
-    maps.configure(true, 512, true);
-    const effects::NormalMaps::Stats back = Settle(maps, {stone.get(), bump.get(), brick.get(), arch.get()});
-    expect(back.unqueued == 0 && arch->normal_map->state != effects::NormalMapEntry::Unqueued,
-           "switching relief on again requests the dropped texture");
+    maps.configure(true, 512, true, true);
+    Settle(maps, {arch.get()});
+    expect(arch->normal_map->state == effects::NormalMapEntry::Unqueued, "switching relief on again requests nothing by itself");
+    maps.select(arch.get(), nullptr, gpu_lighting);
+    Settle(maps, {arch.get()});
+    expect(arch->normal_map->state != effects::NormalMapEntry::Unqueued, "the next draw requests the dropped texture");
 
     // The stores of earlier builds go at start (the files directory's relief, the old "NormalMaps" cache).
     const std::filesystem::path files = root / "files", cache = root / "cache";

@@ -283,12 +283,6 @@ std::vector<std::filesystem::path> List(const std::filesystem::path &textures)
     return files;
 }
 
-bool Listed(const std::filesystem::path &textures, const std::filesystem::path &file)
-{
-    const std::optional<Candidate> candidate = Classify(textures, file);
-    return candidate && candidate->background;
-}
-
 namespace
 {
 // The game's ×2 of a texture (fx/upscale.hpp): its chain encoded for the device's tier, into the upscale directory.

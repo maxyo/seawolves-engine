@@ -94,7 +94,8 @@ class Upscales
     bool active() const { return enabled_; }
     bool planned() const { return !enabled_ || planned_; }
     void begin_scene();
-    // All current-location targets must exist on disk; only the budget-selected subset must be resident.
+    // Only the budget-selected subset (drawn near the camera) is requested and must be resident; an unselected one
+    // starts nothing (one requested before is waited for).
     int prepare_scene(shim::TexStore &store, uint64_t generation = 0);
     // On: the last plan (they run twice a second) found every texture it chose resident at ×2 (render::UpscaleSettled).
     bool settled() const;

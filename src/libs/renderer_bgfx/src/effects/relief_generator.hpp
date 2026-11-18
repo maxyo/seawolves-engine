@@ -1,18 +1,15 @@
 // The game's relief maps made while it runs: PBRify's models (src/libs/relief) on one worker thread in the
 // game process, into the relief directory (fx/relief_store.hpp) the game reads.
 //
-//   * A loaded colour texture of a relief class without its map, or of a gloss class without its gloss map, is requested
-//     (NormalMaps::on_texture_loaded); one preparation makes both (PBRify's normal, height and roughness networks). The
-//     requests are reselected from recent player-distance observations before each job, alternating with standalone
-//     upscales within the same 10 m band. Unobserved entries fall back to draw/load order; old-scene entries follow
-//     current-scene work. Live work ages after 16 other admissions. When its map is written the texture's entry
-//     becomes Stored: the draw reads and uploads it and the relief fades in (NormalMaps::handle).
-//   * The current place's direct neighbours (render::SetEffectsNeighbours: its exits to other locations, the port, the
-//     island's sea) are made ahead, after the place is revealed and only while no loaded request waits: the neighbour
-//     whose exit is nearest the player first, at most kNeighbourMaps new maps per place, only while relief or gloss is
-//     on (set_active), never while the device is hot
-//     (thermal.hpp device_hot) or while the networks wait for the GPU on a CPU detour. Then the worker is idle.
-//     Nothing else of the game is listed or prepared, in any state. The host's storm_relief_cli is separate.
+//   * Only a texture the current scene draws with a draw that reads its map is requested (NormalMaps::upload: the
+//     draws' own choice of relief, gloss and the characters' relief at the current settings); one preparation makes
+//     both of its maps (PBRify's normal, height and roughness networks). Nothing is made ahead or for a texture that
+//     is merely loaded. The requests are reselected from recent player-distance observations before each job,
+//     alternating with standalone ×2 upscales (chosen by their residency plan) within the same 10 m band. Unobserved
+//     entries fall back to draw order. Live work ages after 16 other admissions. When its map is written the
+//     texture's entry becomes Stored: the draw reads and uploads it and the relief fades in (NormalMaps::handle).
+//   * A new scene, or settings that change which draws read the maps, drop the queue (drop_queue): the entries go
+//     back to Unqueued and the next draws that read them ask again. When nothing is requested the worker is idle.
 //   * The worker runs at nice 10. CPU jobs take fx::CpuAdmission's share, with the ray-bake pieces: all cores after a
 //     presented opaque stock frame (a place loads), and while the game is played a quarter of the cores, at most two,
 //     one when the device is hot and none at thermal status SEVERE (thermal.hpp). The renderer's explicit hold (the
@@ -32,7 +29,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -51,17 +47,6 @@ namespace storm::effects
 {
 struct NormalMapEntry;
 struct UpscaleEntry;
-
-// New maps made ahead for one place's neighbours at most (textures that have theirs already cost nothing).
-inline constexpr uint32_t kNeighbourMaps = 24;
-
-// A direct neighbour of the current place and the textures its models use.
-struct ReliefNeighbour
-{
-    std::string name;                              // its location or island id, for the log
-    std::optional<std::array<float, 3>> position; // its exit in the current place (absolute world); none: after the others
-    std::vector<std::filesystem::path> files;      // game texture files (under ReliefSetup::textures)
-};
 
 struct ReliefSetup
 {
@@ -87,11 +72,6 @@ class ReliefGenerator
     // inference. The caller sets Waiting before enqueueing. False when
     // kUpscaleQueue requests wait already (the entry asks again later). Done: the entry becomes Stored, or Failed.
     bool request_upscale(const std::shared_ptr<UpscaleEntry> &entry);
-    // Main thread: the neighbours of `place` to make ahead (see above); replaces the previous place's, empty clears.
-    // Only the textures the game makes maps for by their name are kept (relief::Listed).
-    void set_neighbours(std::string place, std::vector<ReliefNeighbour> neighbours);
-    // Main thread: the controlled character or ship (absolute world), for the order of the neighbours.
-    void set_anchor(const std::array<float, 3> &position);
     // Main thread: the game shows the ×2 textures (Settings::upscale): the requested relief maps made from a ×2 also
     // keep it in `directory`, encoded for the tier (`bc`). No other game textures are discovered here.
     // Off also drops the queued ×2 requests (their entries Missing: the residency plan asks again when it is on) and
@@ -99,9 +79,12 @@ class ReliefGenerator
     void set_display(bool on, std::filesystem::path directory, bool bc);
     // Main thread (NormalMaps::configure / configure_gloss): whether the settings read the relief / the gloss maps
     // (fx::BackgroundProducts). Off: no request of that product is taken, the queued ones are dropped (their entries
-    // Unqueued: looked up again when it is switched on) and the texture in progress for it stops at its next stage.
-    // The current place's neighbours are made ahead only while either is on (a neighbour in progress stops too).
+    // Unqueued: looked up again when a draw reads them) and the texture in progress for it stops at its next stage.
     void set_wanted(bool relief, bool gloss);
+    // Main thread: every queued relief and gloss request is dropped (its entry Unqueued: the next draw that reads it
+    // asks again); `why` is logged with the count. A new scene, or settings that change which draws read the maps.
+    // The texture in progress ends (it was drawn a moment ago).
+    void drop_queue(const char *why);
     // Stops the worker (the texture in progress is abandoned at its next inference tile).
     void shutdown();
     // Game thread, every frame: whether a perspective 3D scene was drawn. A few frames without a scene
@@ -138,29 +121,13 @@ class ReliefGenerator
         std::filesystem::path file;
         uint64_t order = 0;
     };
-    struct NeighbourJob
-    {
-        uint64_t place = 0; // neighbours_.serial when it was taken
-        std::string neighbour;
-        std::filesystem::path file;
-    };
     struct PendingFinalize
     {
         uint64_t id = 0, key = 0;
         std::optional<uint64_t> relief_key, gloss_key;
         std::optional<Request> request;
         std::weak_ptr<UpscaleEntry> upscale;
-        std::optional<NeighbourJob> neighbour;
         bool is_upscale = false;
-    };
-    struct Neighbours
-    {
-        uint64_t serial = 0;
-        std::string place;
-        std::vector<ReliefNeighbour> list; // files still to look at
-        std::set<std::filesystem::path> taken; // looked at already (neighbours share textures)
-        uint32_t made = 0, existing = 0, skipped = 0, failed = 0, in_flight = 0;
-        bool done = true;
     };
     bool wait_finalizer(); // no admission/network lock held
     void stage(std::unique_ptr<relief::ComputedTexture> product, PendingFinalize pending);
@@ -176,11 +143,6 @@ class ReliefGenerator
     void release_models(const char *why, bool keep_policy);
     bool must_wait(); // under mutex_: the background gate (thermal.hpp), changes logged
     void prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry);
-    std::optional<NeighbourJob> next_neighbour(); // under mutex_: the nearest neighbour's next file, within the budget
-    const char *neighbour_wait();                 // under mutex_: why the neighbours wait now (logged on change); null: go
-    void neighbours_finished();                   // under mutex_: logs the place's result once nothing is left or in flight
-    void prepare_neighbour(const NeighbourJob &job);
-    void put_back(NeighbourJob job); // under mutex_: a neighbour's file taken but not made goes back to the front of its list
     bool wanted(const NormalMapEntry &entry) const; // under mutex_: its product is switched on (set_wanted)
     bool running_wanted() const; // under mutex_: the job in progress is still wanted (set_wanted, set_display)
 
@@ -200,10 +162,6 @@ class ReliefGenerator
     ReliefSetup setup_;
     std::deque<Request> requests_;
     std::deque<std::weak_ptr<UpscaleEntry>> upscales_;
-    Neighbours neighbours_;
-    bool active_ = false; // relief or gloss is wanted (set_wanted): the neighbours are made ahead
-    std::optional<std::array<float, 3>> anchor_;
-    std::string neighbour_wait_; // the logged reason
     bool display_ = false, display_bc_ = false;
     bool want_relief_ = false, want_gloss_ = false;
     std::filesystem::path display_directory_;
@@ -220,7 +178,7 @@ class ReliefGenerator
     std::unique_ptr<relief::Finalizer> inline_finalizer_; // oversized progress, only after the worker slot drains
     std::optional<PendingFinalize> finalizing_; // under mutex_: includes unconsumed completion
     uint64_t next_finalize_ = 0;
-    bool computing_ = false, computing_normal_ = false, computing_gloss_ = false, computing_neighbour_ = false; // under mutex_
+    bool computing_ = false, computing_normal_ = false, computing_gloss_ = false; // under mutex_
 
     relief::Session *running_ = nullptr; // under mutex_: the session shutdown() cancels
 };

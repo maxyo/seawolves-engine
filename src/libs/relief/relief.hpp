@@ -1,9 +1,8 @@
 // Relief maps from PBRify's normal, height and roughness models (fx/relief_model.hpp) through ncnn on the GPU or the CPU,
 // for the game's stone,
 // wood, building, plaster and ground textures, made from the player's game files into the relief directory (fx/relief_store.hpp) the game reads.
-// The game makes the maps of the textures it loads, and of its current place's neighbours, while it runs (renderer_bgfx
-// effects/relief_generator.hpp: Session, Listed); the host tool makes a whole game at once (Prepare: List, every texture,
-// Prune).
+// The game makes the maps of the textures its current scene draws with them, while it runs (renderer_bgfx
+// effects/relief_generator.hpp: Session); the host tool makes a whole game at once (Prepare: List, every texture, Prune).
 #pragma once
 
 #include "storm/fx/relief_store.hpp"
@@ -27,8 +26,6 @@ struct FinalizeResult;
 // The relief textures of a game (its RESOURCE/Textures), by name, without the characters' atlases (made only on request). Only names are read (a scan of the models for the
 // most used ones took minutes on a phone's storage, in the way of the textures on screen).
 std::vector<std::filesystem::path> List(const std::filesystem::path &textures);
-// Whether List would give this texture file (by its name only): the game's neighbour textures are filtered with it.
-bool Listed(const std::filesystem::path &textures, const std::filesystem::path &file);
 
 enum class Outcome
 {

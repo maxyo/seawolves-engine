@@ -23,25 +23,31 @@ using namespace storm;
 int main() {
     const auto dir = std::filesystem::temp_directory_path() / ("storm_scene_retry_" + std::to_string(getpid()));
     effects::ConfigureRelief({dir, dir / "sources", nullptr});
-    effects::NormalMaps maps; maps.configure(true,512,false);
+    effects::NormalMaps maps; maps.configure(true,512,false,true);
     fx::Lighting lighting;
-    effects::NormalMaps gloss_only; gloss_only.configure(false,512,true); gloss_only.configure_gloss(true,512);
+    effects::NormalMaps gloss_only; gloss_only.configure(false,512,true,true); gloss_only.configure_gloss(true,512);
     shim::TexStore gloss_store; gloss_store.normal_map = std::make_shared<effects::NormalMapEntry>();
     gloss_store.normal_map->relief = fx::ReliefClass::Stone;
     gloss_store.normal_map->state = effects::NormalMapEntry::Waiting;
     gloss_store.normal_map->material_gloss = fx::GlossClass::Stone;
+    gloss_store.normal_map->drawn = 1; // a draw of this scene read it
     bool required_inference = false;
     assert(gloss_only.prepare_scene(gloss_store,lighting,&required_inference) == 1 && required_inference); // actual gloss-only consumer
     gloss_store.normal_map->material_gloss = fx::GlossClass::None;
     assert(gloss_only.prepare_scene(gloss_store,lighting,&required_inference) == 0 && !required_inference); // disabled normal not a thermal wait
     puts("gloss-only normal-map material accounting: PASS");
     // The generator takes the products of the last configured NormalMaps (the renderer has one): relief on again.
-    maps.configure(true,512,false);
+    maps.configure(true,512,false,true);
     shim::TexStore store;
     store.normal_map = std::make_shared<effects::NormalMapEntry>();
     auto &entry = *store.normal_map;
     entry.name="scene_retry_stone"; entry.relief=fx::ReliefClass::Stone; entry.key=0x5343454e45;
     entry.state=effects::NormalMapEntry::Unqueued;
+    shim::TexStore undrawn; undrawn.normal_map = std::make_shared<effects::NormalMapEntry>();
+    undrawn.normal_map->relief=fx::ReliefClass::Stone; undrawn.normal_map->key=0x554e4452;
+    assert(maps.prepare_scene(undrawn,lighting)==0 && undrawn.normal_map->state==effects::NormalMapEntry::Unqueued);
+    puts("a scene texture no draw read is not applicable and starts nothing: PASS");
+    entry.drawn=1; // a draw of this scene read it
     puts("step: the unavailable generator reports the entry Missing"); fflush(stdout);
     while (maps.prepare_scene(store,lighting) != 2)
         std::this_thread::sleep_for(std::chrono::milliseconds(2));

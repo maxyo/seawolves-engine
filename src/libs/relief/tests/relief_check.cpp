@@ -267,11 +267,6 @@ int main(int argc, char **argv)
         WriteTx(game / "RESOURCE/Textures/Characters/Face.tga.tx", 64);
         const std::vector<std::filesystem::path> order = relief::List(game / "RESOURCE/Textures");
         CHECK(order.size() == 2 && order[0].filename() == "StoneA.tga.tx" && order[1].filename() == "StoneB.tga.tx");
-        // The game's neighbour textures are filtered by the same rule, by the name alone (no file is read).
-        CHECK(relief::Listed(game / "RESOURCE/Textures", game / "RESOURCE/Textures/StoneA.tga.tx") &&
-              relief::Listed(game / "RESOURCE/Textures", game / "RESOURCE/Textures/StoneC.tga.tx") &&
-              !relief::Listed(game / "RESOURCE/Textures", game / "RESOURCE/Textures/Characters/Face.tga.tx") &&
-              !relief::Listed(game / "RESOURCE/Textures", game / "RESOURCE/Textures/Weather/Sky.tga.tx"));
     }
     // The game's key: path, probe level (64x64 here), the stone class's method, size.
     const uint64_t key = fx::ReliefKey("locations/stonewall", probe, 64, 64, fx::ReliefMethod(fx::ReliefClass::Stone), job.map_size);

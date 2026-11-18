@@ -127,7 +127,6 @@ std::vector<std::filesystem::path> List(const std::filesystem::path&) { ++list_c
 int Prune(const std::filesystem::path&,const std::vector<std::filesystem::path>&,const std::filesystem::path&,int) {
     ++prune_calls; return 0;
 }
-bool Listed(const std::filesystem::path&,const std::filesystem::path &file) { return file.string().find("nomap")==std::string::npos; }
 
 }
 int main(int argc,char **argv) {
@@ -396,70 +395,52 @@ int main(int argc,char **argv) {
     expect(g.request_upscale(opening),"cancelled entry can be queued again");
     until([&]{return opening->state==effects::UpscaleEntry::Stored;},"retry completes in the new session");
     g.shutdown();
-    // The current place's neighbours: only their listed files, the nearest exit first (re-ranked as the player moves),
-    // after the loaded requests, never while the device is hot; then idle. Nothing outside the place and its neighbours.
+    // Only drawn textures' requests are made: nothing ahead for a new place, nothing with relief and gloss off
+    // (Низкая), and a new scene or a change of what the draws read drops the queue (the job in progress ends).
     {
-        using N=effects::ReliefNeighbour;
         const auto idle=[&]{auto s=g.stats();return !s.working && s.requested==0;};
         const auto ran=[&]{std::lock_guard lock(events_mutex);return events;};
-        reset();status=0;forecast=0.1f;hot=false;device_is_hot=true;block_job=true;configure(g);
-        g.set_anchor({0,0,0});
-        auto loaded=normal("place-loaded",3000,1);g.request(loaded,"place-loaded");
-        until([&]{return started==1;},"the place's loaded texture runs first");
-        g.set_neighbours("Town",{N{"tavern",std::array<float,3>{100,0,0},{"tavern-a","tavern-b","tavern-nomap"}},
-                                 N{"sea",std::array<float,3>{10,0,0},{"sea-a","shared-have"}},
-                                 N{"jungle",std::nullopt,{"jungle-a","shared-have","tavern-a"}}});
-        block_job=false;
-        until([&]{return loaded->state==effects::NormalMapEntry::Stored;},"loaded request completes");
-        std::this_thread::sleep_for(50ms);
-        expect(started==1,"no neighbour work while the device is hot");
-        device_is_hot=false;g.wake_.notify_all();
-        until([&]{return started>=2;},"the first neighbour texture starts once the device is cool");
-        until([&]{return started==6 && idle();},"every neighbour texture is looked at once");
-        std::this_thread::sleep_for(50ms);
-        expect(ran()==std::vector<std::string>{"N:place-loaded","N:sea-a","N:shared-have","N:tavern-a","N:tavern-b","N:jungle-a"},
-               "loaded first, then the nearest exit, unplaced last; shared textures once; unlisted never");
-        expect(started==6 && list_calls==0 && prune_calls==0,"idle after the neighbours: nothing else of the game");
-        expect(g.stats().made==5,"maps of the loaded texture and the neighbours counted (an existing one costs nothing)");
-        g.shutdown();
-        // The player moves between two files: the next file comes from the now nearest neighbour.
-        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);g.set_anchor({0,0,0});
-        g.set_neighbours("Port",{N{"near",std::array<float,3>{1,0,0},{"near-a","near-b"}},
-                                 N{"far",std::array<float,3>{50,0,0},{"far-a"}}});
-        until([&]{return started==1;},"nearest neighbour starts");
-        g.set_anchor({50,0,0});block_job=false;
-        until([&]{return started==3 && idle();},"moved neighbours complete");
-        expect(ran()==std::vector<std::string>{"N:near-a","N:far-a","N:near-b"},"neighbours re-ranked by the player's position");
-        g.shutdown();
-        // The budget: at most kNeighbourMaps new maps per place; then idle with files left.
+        // A new place (scene) and a long idle clock: the worker starts nothing that no draw requested.
         reset();status=0;forecast=0.1f;hot=false;configure(g);
-        std::vector<std::filesystem::path> many;
-        for(uint32_t i=0;i<effects::kNeighbourMaps+10;++i) many.push_back("budget-"+std::to_string(i));
-        g.set_neighbours("Fort",{N{"interior",std::nullopt,many}});
-        until([&]{return g.stats().made==effects::kNeighbourMaps && idle();},"the budget's maps are made");
+        effects::generation_focus().set_scene("Charles_town");g.frame(true);
+        { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
         std::this_thread::sleep_for(50ms);
-        expect(started==int(effects::kNeighbourMaps),"no neighbour map beyond the budget");
+        expect(started==0 && opened==0,"a new place prepares nothing ahead: no neighbour or other texture without a draw");
         g.shutdown();
-        // A new place drops the previous place's neighbours; a scene without neighbours makes none.
-        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);
-        g.set_neighbours("Old",{N{"old",std::nullopt,{"old-a","old-b","old-c"}}});
-        until([&]{return started==1;},"old place neighbour started");
-        g.set_neighbours("New",{N{"new",std::nullopt,{"new-a"}}});
-        block_job=false;
-        until([&]{return started==2 && idle();},"new place neighbours complete");
-        std::this_thread::sleep_for(50ms);
-        expect(ran()==std::vector<std::string>{"N:old-a","N:new-a"},"the previous place's remaining neighbours are dropped");
-        g.set_neighbours({},{});
-        std::this_thread::sleep_for(50ms);
-        expect(started==2,"a scene without neighbours prepares nothing");
-        g.shutdown();
-        // Relief and gloss off: neighbours wait, made once either is on again.
+        // Низкая: relief and gloss off; a request is not taken (its entry Unqueued), nothing is prepared.
         reset();status=0;forecast=0.1f;hot=false;configure(g);g.set_wanted(false,false);
-        g.set_neighbours("Off",{N{"off",std::nullopt,{"off-a"}}});
+        auto low=normal("low-preset",3100),low_gloss=normal("low-gloss",3101);low_gloss->gloss=fx::GlossClass::Glass;
+        g.request(low,low->file);g.request(low_gloss,low_gloss->file);
         std::this_thread::sleep_for(50ms);
-        expect(started==0,"no neighbour map while relief and gloss are off");
-        g.set_wanted(true,true);
-        until([&]{return started==1 && idle();},"neighbours made once relief is on");
+        expect(low->state==effects::NormalMapEntry::Unqueued && low_gloss->state==effects::NormalMapEntry::Unqueued &&
+               started==0 && opened==0 && g.stats().requested==0,"relief and gloss off (Низкая): nothing is queued or prepared");
+        g.shutdown();
+        // drop_queue: the queued requests go back to Unqueued; the job in progress ends; nothing more starts.
+        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);
+        auto drawn=normal("drawn-now",3200,1);g.request(drawn,drawn->file);
+        until([&]{return started==1;},"the drawn texture's job runs");
+        auto queued_a=normal("old-scene-a",3201),queued_b=normal("old-scene-b",3202);
+        g.request(queued_a,queued_a->file);g.request(queued_b,queued_b->file);
+        g.drop_queue("a new scene");
+        expect(queued_a->state==effects::NormalMapEntry::Unqueued && queued_b->state==effects::NormalMapEntry::Unqueued,
+               "dropped requests are unqueued (asked again when drawn)");
+        block_job=false;
+        until([&]{return drawn->state==effects::NormalMapEntry::Stored && idle();},"the job in progress ends");
+        std::this_thread::sleep_for(50ms);
+        expect(ran()==std::vector<std::string>{"N:drawn-now"},"nothing dropped is prepared");
+        g.shutdown();
+        // The preset lowered while a map is made (Высокая -> Низкая): the queue is dropped and the job stops.
+        reset();status=0;forecast=0.1f;hot=false;block_job=true;configure(g);
+        auto running=normal("lowered-running",3300,1),waiting=normal("lowered-waiting",3301);
+        g.request(running,running->file);
+        until([&]{return started==1;},"a map is being made when the preset is lowered");
+        g.request(waiting,waiting->file);
+        g.set_wanted(false,false);
+        expect(waiting->state==effects::NormalMapEntry::Unqueued,"lowering the preset drops the queued request");
+        { std::lock_guard lock(g.mutex_);expect(!g.running_wanted(),"the job in progress is no longer wanted: it stops at its next stage"); }
+        block_job=false;
+        until([&]{return idle();},"the stopped job leaves the worker");
+        expect(running->state!=effects::NormalMapEntry::Stored && started==1,"the stopped job publishes nothing and nothing else starts");
         g.shutdown();
     }
     std::puts("relief_scheduler: PASS");

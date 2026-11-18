@@ -449,14 +449,16 @@ int Upscales::prepare_scene(shim::TexStore &store, uint64_t generation)
     const int state = entry->state.load(std::memory_order_acquire);
     if (state == UpscaleEntry::Failed) return 2;
     if (state == UpscaleEntry::Unknown) look_up(entry, false);
-    else if (state == UpscaleEntry::Missing) {
+    else if (state == UpscaleEntry::Missing && entry->selected) {
+        // Only one the residency plan chose (drawn near the camera): the loading screen makes no ×2 the scene may not draw.
         entry->state = UpscaleEntry::Waiting;
         if (!ReliefGenerator::instance().request_upscale(entry)) entry->state = UpscaleEntry::Missing;
     }
     service.promote_cache(entry->cache_task);
     if (!planned_) return 1;
     if (entry->selected) return state == UpscaleEntry::Resident && bgfx::isValid(entry->handle) ? 0 : 1;
-    return state == UpscaleEntry::Stored || state == UpscaleEntry::Read || state == UpscaleEntry::Resident ? 0 : 1;
+    // Not chosen: nothing is made for it; one already requested (chosen before) is waited for.
+    return state == UpscaleEntry::Waiting || state == UpscaleEntry::Pending ? 1 : 0;
 }
 
 bool Upscales::settled() const

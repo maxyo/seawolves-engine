@@ -73,9 +73,6 @@ struct LocationLoad {
     uint64_t window_deadline = 0, window_generation = 0;
     std::vector<std::shared_ptr<NormalMapEntry>> loading_normal;
     std::vector<std::shared_ptr<UpscaleEntry>> loading_upscale;
-    // The place's neighbours (render::SetEffectsNeighbours), given to the relief generator once the place is revealed.
-    std::string neighbours_place;
-    std::vector<ReliefNeighbour> neighbours;
 };
 LocationLoad &location_load() { static LocationLoad load; return load; }
 uint64_t load_milliseconds() {
@@ -92,8 +89,8 @@ void BeginSceneResources(const char *scene, uint64_t owner)
     load.scene_work.invalidate();
     load.timing_at = 0;
     load.loading_normal.clear(); load.loading_upscale.clear();
-    load.neighbours_place.clear(); load.neighbours.clear();
-    ReliefGenerator::instance().set_neighbours({}, {}); // the previous place's neighbours are not this one's
+    // The previous scene's relief requests are dropped: this scene's draws ask for the maps they read.
+    Host::instance().lighting().normal_maps().begin_scene(scene);
     load.textures.clear(); load.failed_textures.clear(); load.fallback_textures.clear(); load.detail.clear();
     load.scene = scene ? scene : "";
     load.owner = owner;
@@ -1227,10 +1224,9 @@ void SetEffectsWorldOrigin(const std::array<float, 3> &origin)
 
 void SetEffectsPlayerPosition(const std::array<float, 3> &position, const void *owner, EffectsPlayerRole role)
 {
-    if (effects::generation_focus().set_player(position, owner,
-                                               role == EffectsPlayerRole::Ship ? effects::PlayerRole::Ship
-                                                                               : effects::PlayerRole::Character))
-        effects::ReliefGenerator::instance().set_anchor(position);
+    effects::generation_focus().set_player(position, owner,
+                                           role == EffectsPlayerRole::Ship ? effects::PlayerRole::Ship
+                                                                           : effects::PlayerRole::Character);
 }
 
 void ClearEffectsPlayerPosition(const void *owner)
@@ -1691,9 +1687,6 @@ void CompleteSceneReveal() {
         load.sealed = true;
         fx::SharedCpuAdmission().begin(0, false);
         texture::Service::instance().end_loading_cache_scope();
-        if (!load.neighbours_place.empty())
-            effects::ReliefGenerator::instance().set_neighbours(std::move(load.neighbours_place), std::move(load.neighbours));
-        load.neighbours_place.clear(); load.neighbours.clear();
     }
 }
 void AbandonSceneLoad(uint64_t generation) {
@@ -1704,18 +1697,6 @@ void AbandonSceneLoad(uint64_t generation) {
     load.sealed = true;
     fx::SharedCpuAdmission().begin(0, false);
     texture::Service::instance().end_loading_cache_scope();
-    load.neighbours_place.clear(); load.neighbours.clear();
-}
-void SetEffectsNeighbours(std::string_view place, std::vector<EffectsNeighbour> neighbours)
-{
-    auto &load = effects::location_load();
-    std::vector<effects::ReliefNeighbour> list;
-    for (EffectsNeighbour &n : neighbours)
-        list.push_back({std::move(n.name), n.position, std::move(n.files)});
-    if (load.sealed) // revealed already
-        effects::ReliefGenerator::instance().set_neighbours(std::string(place), std::move(list));
-    else
-        load.neighbours_place = place, load.neighbours = std::move(list);
 }
 bool RetrySceneResources(uint64_t generation)
 {

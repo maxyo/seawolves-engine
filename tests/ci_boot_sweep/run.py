@@ -69,8 +69,9 @@ def check_not_failures():
     for filename, line in (
             ('system.log', '[x] [system] [info] [storm-bgfx] program cache: /tmp/failtex/cache, 0 binaries (0.0 MB of 64 MB)'),
             ('stdout', '[storm-bgfx] effects: texture cache in /home/x/failed-runs/missing/invalid'),
-            ('system.log', '[x] [system] [info] [storm-bgfx] effects: relief generation: the neighbours of FortFrance_town are '
-                           'done: 3 maps made, 0 had theirs, 0 without a map, 0 failed; idle until a texture is loaded'),
+            ('system.log', '[x] [system] [info] [storm-bgfx] effects: relief generation in location/FortFrance_town: queued 3 '
+                           'relief maps (drawn with relief: stone 3) and 0 gloss maps (drawn with gloss); 0 relief and 0 '
+                           'gloss maps the draws looked up were on disk; nothing else queued'),
             ('system.log', "[x] [system] [warning] [storm-bgfx] WARNING: known game data defect: texture 'phong256_bw.gif' "
                            "requested by resource\\models\\ships\\Sloop1\\Sloop1_mast2.gm is not shipped by the game "
                            "(named by RESOURCE/MODELS/Ships/Sloop1/sloop1_mast2.gm); a base texture draws the missing-texture "

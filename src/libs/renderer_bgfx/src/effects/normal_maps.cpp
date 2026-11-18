@@ -59,27 +59,63 @@ NormalMapEntry::~NormalMapEntry()
         bgfx::destroy(material);
 }
 
-void NormalMaps::configure(bool enabled, int max_size, bool material)
+void NormalMaps::configure(bool enabled, int max_size, bool material, bool characters)
 {
-    const bool switched_on = enabled && !enabled_;
+    const bool readers = enabled != enabled_ || characters != characters_;
     const bool changed = enabled != enabled_ || max_size != max_size_ || material != material_;
     enabled_ = enabled;
     max_size_ = max_size;
     material_ = material;
-    // The generator takes no request of a product that is off, and drops its queue when it goes off;
-    // the current place's neighbours are made ahead only while either is on.
+    characters_ = characters;
+    // The generator takes no request of a product that is off, and drops its queue (and the job in progress) when it
+    // goes off.
     ReliefGenerator::instance().set_wanted(enabled_, gloss_enabled_);
+    if (readers)
+        forget_drawn("the draws that read the relief changed");
     if (!changed)
         return;
     std::erase_if(entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
     for (const std::weak_ptr<NormalMapEntry> &weak : entries_)
         if (const std::shared_ptr<NormalMapEntry> entry = weak.lock())
-        {
-            release(*entry);
-            // The textures loaded while relief was off: looked up now, as if loaded now.
-            if (switched_on && entry->state == NormalMapEntry::Unqueued)
-                look_up(entry);
-        }
+            release(*entry); // read back (or looked up) when a draw reads it again
+}
+
+void NormalMaps::forget_drawn(const char *why)
+{
+    for (auto *list : {&entries_, &gloss_entries_})
+        for (const std::weak_ptr<NormalMapEntry> &weak : *list)
+            if (const std::shared_ptr<NormalMapEntry> entry = weak.lock())
+                entry->drawn = 0;
+    ReliefGenerator::instance().drop_queue(why);
+}
+
+void NormalMaps::begin_scene(const char *scene)
+{
+    // The previous scene's line: what its draws looked up, by why (the class a draw read the relief of, or the gloss).
+    const SceneTally &t = *tally_;
+    uint32_t requested = 0, stored = 0;
+    std::string why;
+    for (size_t c = 0; c < t.relief_requested.size(); ++c)
+    {
+        requested += t.relief_requested[c];
+        stored += t.relief_stored[c];
+        if (const uint32_t n = t.relief_requested[c])
+            why += (why.empty() ? "" : ", ") + std::string(fx::ReliefClassName(static_cast<fx::ReliefClass>(c))) + " " +
+                   std::to_string(n);
+    }
+    if (!scene_.empty())
+        shim::logf("effects: relief generation in %s: queued %u relief maps (drawn with relief: %s) and %u gloss maps "
+                   "(drawn with gloss); %u relief and %u gloss maps the draws looked up were on disk; nothing else queued",
+                   scene_.c_str(), requested, why.empty() ? "none" : why.c_str(), t.gloss_requested.load(), stored,
+                   t.gloss_stored.load());
+    scene_ = scene ? scene : "";
+    tally_ = std::make_shared<SceneTally>();
+    forget_drawn("a new scene");
+}
+
+bool NormalMaps::reads(const NormalMapEntry &entry) const
+{
+    return entry.gloss != fx::GlossClass::None ? gloss_enabled_ : enabled_;
 }
 
 void NormalMaps::release(NormalMapEntry &entry)
@@ -161,9 +197,7 @@ void NormalMaps::on_texture_loaded(shim::TexStore &store, const char *path, cons
     entry->key = fx::ReliefKey(name, {probe_data->data(), probe_bytes}, static_cast<int>(pw), static_cast<int>(ph),
                                fx::ReliefMethod(verdict.relief), fx::kReliefMapSize);
     store.normal_map = entry;
-    entries_.push_back(entry);
-    if (enabled_)
-        look_up(entry);
+    entries_.push_back(entry); // looked up when a draw reads it (upload)
 }
 
 void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
@@ -171,18 +205,21 @@ void NormalMaps::look_up(const std::shared_ptr<NormalMapEntry> &entry)
     entry->state = NormalMapEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
     if (!texture::Service::instance().post_cache(entry->cache_task,
-        [entry, relief_dir = directory()] {
+        [entry, relief_dir = directory(), tally = tally_] {
         // Which map the texture takes, for the diagnostics: its key and the method it was (or will be) made with.
         const unsigned long long key = entry->key, method = fx::ReliefMethod(entry->relief);
+        const size_t c = std::min(static_cast<size_t>(entry->relief), tally->relief_requested.size() - 1);
         if (fx::HasReliefMap(relief_dir, entry->key))
         {
             shim::logf("effects: relief %s (%s): map %016llx of method %016llx", entry->name.c_str(),
                        fx::ReliefClassName(entry->relief), key, method);
+            ++tally->relief_stored[c];
             entry->state = NormalMapEntry::Stored;
             return;
         }
-        shim::logf("effects: relief %s (%s): no map %016llx of method %016llx yet: requested", entry->name.c_str(),
-                   fx::ReliefClassName(entry->relief), key, method);
+        shim::logf("effects: relief %s (%s): no map %016llx of method %016llx yet: drawn with its relief, requested",
+                   entry->name.c_str(), fx::ReliefClassName(entry->relief), key, method);
+        ++tally->relief_requested[c];
         entry->state = NormalMapEntry::Waiting; // counted in the "effects relief:" line
         ReliefGenerator::instance().request(entry, entry->file);
     })) entry->state = NormalMapEntry::Unqueued;
@@ -343,7 +380,7 @@ int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting, boo
         if (!entry) return;
         auto &service = texture::Service::instance();
         service.promote_cache(entry->cache_task);
-        const Relief map = upload(entry, lighting, size);
+        const Relief map = upload(entry, lighting, size, false);
         service.promote_cache(entry->cache_task);
         const int state = entry->state.load(std::memory_order_acquire);
         if (inference_pending && state == NormalMapEntry::Waiting) *inference_pending = true;
@@ -356,9 +393,12 @@ int NormalMaps::prepare_scene(shim::TexStore &store, fx::Lighting &lighting, boo
     };
     // Height-class gloss is carried by normal_map.material, even with normal shading disabled.
     // Match Lighting::bind's consumer rather than assuming every gloss map has a separate entry.
-    if (enabled_ || (gloss_enabled_ && store.normal_map && store.normal_map->material_gloss != fx::GlossClass::None))
+    // Only what a draw of this scene read: a texture merely loaded starts nothing on the loading screen.
+    const auto drawn = [](const std::shared_ptr<NormalMapEntry> &entry) { return entry && entry->drawn != 0; };
+    if (drawn(store.normal_map) &&
+        (enabled_ || (gloss_enabled_ && store.normal_map->material_gloss != fx::GlossClass::None)))
         prepare(store.normal_map, max_size_);
-    if (gloss_enabled_) prepare(store.gloss_map, gloss_max_size_);
+    if (gloss_enabled_ && drawn(store.gloss_map)) prepare(store.gloss_map, gloss_max_size_);
     return reload_required ? 3 : failed ? 2 : waiting ? 1 : 0;
 }
 
@@ -391,13 +431,17 @@ NormalMaps::Relief NormalMaps::gloss(shim::TexStore &store, fx::Lighting &lighti
     return store.gloss_map ? upload(store.gloss_map, lighting, gloss_max_size_) : Relief{};
 }
 
-NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &entry, fx::Lighting &lighting, int max_size)
+NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &entry, fx::Lighting &lighting, int max_size,
+                                      bool draw)
 {
     entry->wanted = true;
-    entry->drawn = frame_;
+    if (draw)
+        entry->drawn = frame_;
     switch (entry->state.load())
     {
-    case NormalMapEntry::Unqueued: // its map left the cache since it was looked up (read_stored)
+    case NormalMapEntry::Unqueued: // no draw read it yet, its request was dropped, or its map left the cache
+        if (!reads(*entry))
+            return {}; // its product is off: nothing is looked up or made for it
         if (entry->gloss != fx::GlossClass::None)
             look_up_gloss(entry);
         else
@@ -463,21 +507,19 @@ NormalMaps::Relief NormalMaps::upload(const std::shared_ptr<NormalMapEntry> &ent
 
 void NormalMaps::configure_gloss(bool enabled, int max_size)
 {
-    const bool switched_on = enabled && !gloss_enabled_;
+    const bool readers = enabled != gloss_enabled_;
     const bool changed = enabled != gloss_enabled_ || max_size != gloss_max_size_;
     gloss_enabled_ = enabled;
     gloss_max_size_ = max_size;
     ReliefGenerator::instance().set_wanted(enabled_, gloss_enabled_);
+    if (readers)
+        forget_drawn("the draws that read the gloss changed");
     if (!changed)
         return;
     std::erase_if(gloss_entries_, [](const std::weak_ptr<NormalMapEntry> &entry) { return entry.expired(); });
     for (const std::weak_ptr<NormalMapEntry> &weak : gloss_entries_)
         if (const std::shared_ptr<NormalMapEntry> entry = weak.lock())
-        {
-            release(*entry);
-            if (switched_on && entry->state == NormalMapEntry::Unqueued)
-                look_up_gloss(entry);
-        }
+            release(*entry); // read back (or looked up) when a draw reads it again
 }
 
 void NormalMaps::add_gloss(shim::TexStore &store, const std::string &name, std::span<const uint8_t> probe, uint32_t pw,
@@ -500,9 +542,7 @@ void NormalMaps::add_gloss(shim::TexStore &store, const std::string &name, std::
     entry->file = file;
     entry->key = fx::ReliefKey(name, probe, static_cast<int>(pw), static_cast<int>(ph), fx::GlossMethod(verdict.gloss), fx::kGlossMapSize);
     store.gloss_map = entry;
-    gloss_entries_.push_back(entry);
-    if (gloss_enabled_)
-        look_up_gloss(entry);
+    gloss_entries_.push_back(entry); // looked up when a draw reads it (upload)
 }
 
 void NormalMaps::look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry)
@@ -510,15 +550,17 @@ void NormalMaps::look_up_gloss(const std::shared_ptr<NormalMapEntry> &entry)
     entry->state = NormalMapEntry::Pending;
     entry->cache_task = std::make_shared<texture::CacheTask>();
     if (!texture::Service::instance().post_cache(entry->cache_task,
-        [entry, relief_dir = directory()] {
+        [entry, relief_dir = directory(), tally = tally_] {
         if (fx::HasGlossMap(relief_dir, entry->key))
         {
+            ++tally->gloss_stored;
             entry->state = NormalMapEntry::Stored;
             return;
         }
         // Made by PBRify's roughness network with the texture's relief, in the generator's queue.
-        shim::logf("effects: gloss %s (%s): no map %016llx yet: requested", entry->name.c_str(),
+        shim::logf("effects: gloss %s (%s): no map %016llx yet: drawn with its gloss, requested", entry->name.c_str(),
                    fx::GlossClassName(entry->gloss), static_cast<unsigned long long>(entry->key));
+        ++tally->gloss_requested;
         entry->state = NormalMapEntry::Waiting;
         ReliefGenerator::instance().request(entry, entry->file);
     })) entry->state = NormalMapEntry::Unqueued;
@@ -582,7 +624,7 @@ void NormalMaps::end_frame()
     logged_device_ = generator.device;
     shim::logf("effects relief: %u normal maps resident (%.1f MB, max %d px; %u with a material texture (height, gloss), %.1f MB of "
                "it); %u loaded textures waiting for their map%s; %u maps made (%.0f ms, slowest %.0f ms); %u without "
-               "a map (generation unavailable); %u loaded while relief was off; models on %s",
+               "a map (generation unavailable); %u not looked up (no draw read them); models on %s",
                now.resident, static_cast<double>(now.bytes) / 1048576.0, max_size_, now.materials,
                static_cast<double>(now.material_bytes) / 1048576.0, now.waiting,
                generator.paused.empty() ? "" : (" (paused: " + generator.paused + ")").c_str(), generator.made, generator.made_ms,
@@ -590,7 +632,7 @@ void NormalMaps::end_frame()
                generator.device.empty() ? "(not loaded)" : generator.device.c_str());
     if (!gloss_same)
         shim::logf("effects gloss: %u gloss maps resident (%.1f MB, max %d px); %u loaded textures waiting for their map; "
-                   "%u without a map (generation unavailable); %u loaded while gloss was off",
+                   "%u without a map (generation unavailable); %u not looked up (no draw read them)",
                    now.gloss_resident, static_cast<double>(now.gloss_bytes) / 1048576.0, gloss_max_size_, now.gloss_waiting,
                    now.gloss_missing, now.gloss_unqueued);
 }

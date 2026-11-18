@@ -58,7 +58,7 @@ bool HasGlossMap(const std::filesystem::path&,uint64_t key){return has(key);}
 bool HasUpscaled(const std::filesystem::path&,uint64_t key){return has(key);}
 }
 namespace storm::relief {
-bool Listed(const std::filesystem::path&,const std::filesystem::path&){return true;}
+
 struct Session::Impl {Stats stats;std::shared_ptr<std::atomic<bool>>cancel=std::make_shared<std::atomic<bool>>(false);std::function<bool(size_t)>admit;};
 Session::Session(std::unique_ptr<Impl>p):impl_(std::move(p)){}Session::~Session()=default;
 std::unique_ptr<Session>Session::Open(const Models&,int,const std::filesystem::path&,std::string&,std::function<bool()>cancelled){

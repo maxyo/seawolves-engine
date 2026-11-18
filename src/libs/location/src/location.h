@@ -9,7 +9,6 @@
 #include <cstdint>
 
 #include "locator_array.h"
-#include "place_neighbours.h"
 #include "model_array.h"
 #include "ptc_data.h"
 #include "supervisor.h"
@@ -159,7 +158,6 @@ class Location : public Entity
     bool isPause;
     bool isDebugView;
     bool geometryReported_ = false;
-    storm::location::PlaceNeighbours neighbours_; // read after the first frame, a model per frame
     bool interior_ = false; // ReportGeometry: one walks under a roof
     bool lightmapsReported_ = false;
 

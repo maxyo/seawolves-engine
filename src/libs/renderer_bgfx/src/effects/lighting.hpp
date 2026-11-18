@@ -244,6 +244,15 @@ struct WetFrame
     std::array<float, 3> sky{}; // the sky the wet surfaces reflect: the weather's fog colour (its horizon), darker at night
 };
 
+// Whether a draw reads the relief (normal) map and the gloss of its textures at these settings: `has_normal` its vertices
+// carry normals, `character` a lit character draw. Only such a draw asks NormalMaps for the maps (and so has them looked
+// up and made): a texture drawn only otherwise never gets one.
+struct MapReaders
+{
+    bool relief = false, gloss = false;
+};
+MapReaders DrawReadsMaps(const fx::Settings &settings, bool has_normal, bool character);
+
 class Lighting
 {
   public:
