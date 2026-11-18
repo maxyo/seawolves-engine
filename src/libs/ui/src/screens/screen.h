@@ -288,6 +288,8 @@ class Router
     void RebuildActive();
     // False when no screen is mounted or the event belongs to nothing bound.
     bool OnEvent(const Event &event);
+    // True when the mounted screen maps the event `id` `verb` (OnEvent would run a handler).
+    bool Maps(const std::string &id, const std::string &verb) const;
     void SubmitText(const std::string &token, const std::string &text, bool accepted);
     // True while the screen shows a modal (Bindings::Modal) or something else of its own
     // (Screen::OwnsBack): the back key is the UI's.

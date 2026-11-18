@@ -867,6 +867,11 @@ Json Router::ExtrasView(const Admission &admitted, Json rows)
     return view;
 }
 
+bool Router::Maps(const std::string &id, const std::string &verb) const
+{
+    return screen_ && (bindings_.handlers_.count(id + '\x1f' + verb) || bindings_.handlers_.count(id + '\x1f'));
+}
+
 bool Router::OnEvent(const Event &event)
 {
     if (!screen_)

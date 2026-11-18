@@ -287,6 +287,10 @@ elseif(NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(storm_ui_modals_unit PRIVATE storm_ui)
     add_test(NAME ui_modals COMMAND storm_ui_modals_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models" "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack"
         "${storm_ui_rmlui_SOURCE_DIR}/Samples/assets/LatoLatin-Regular.ttf")
+    add_executable(storm_ui_taps_unit tests/taps_check.cpp)
+    target_link_libraries(storm_ui_taps_unit PRIVATE storm_ui)
+    add_test(NAME ui_taps COMMAND storm_ui_taps_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/models" "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack"
+        "${storm_ui_rmlui_SOURCE_DIR}/Samples/assets/LatoLatin-Regular.ttf")
     add_executable(storm_ui_routing_unit tests/routing_check.cpp)
     target_link_libraries(storm_ui_routing_unit PRIVATE storm_ui)
     add_test(NAME ui_routing COMMAND storm_ui_routing_unit "${CMAKE_CURRENT_SOURCE_DIR}/tests/states" "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack")

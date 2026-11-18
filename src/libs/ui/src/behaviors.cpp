@@ -302,6 +302,27 @@ class PressBehavior final : public Behavior
             out.push_back(&self);
     }
 
+    void Taps(ComponentElement &self, std::vector<std::string> &verbs) const override
+    {
+        const auto untouchable = [](Rml::Element *element) { return element->GetComputedValues().pointer_events() == Rml::Style::PointerEvents::None; };
+        if (self.Flag("busy") || untouchable(&self))
+            return; // pointer-events: none (inherited) is a row that only shows something
+        Rml::ElementList parts;
+        self.QuerySelectorAll(parts, "[data-action]");
+        for (Rml::Element *part : parts)
+        {
+            Rml::Element *owner = part->GetParentNode();
+            while (owner && !dynamic_cast<ComponentElement *>(owner))
+                owner = owner->GetParentNode();
+            if (owner != &self || part->HasAttribute("data-disabled") || untouchable(part))
+                continue; // a nested component's own part, or one that only says why not
+            if (const std::string verb = Attr(part, "data-action", "click"); !verb.empty())
+                verbs.push_back(verb);
+        }
+        if (Truthy(self.Spec().constants.value("pressRoot", Json(true))) && !self.Flag("disabled"))
+            verbs.push_back("click");
+    }
+
     void Rebuilt(ComponentElement &self) override
     {
         // The inner tree is patched in place; a pressed part usually survives. If it was

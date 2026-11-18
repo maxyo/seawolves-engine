@@ -878,6 +878,10 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
                 UpdateContext();
         if (measured && SettleLaidOutComponents())
             Rml::Log::Message(Rml::Log::LT_ERROR, "UI: a component's measured layout does not settle (it changes on every pass)");
+        // Debug and contract hosts: what a game interface's screen draws for a tap is mapped (else the tap would be
+        // reported only when the player makes it, and do nothing).
+        if (screen_root_ && counters_.touched > 0 && (config_.show_errors || config_.strict_templates))
+            CheckTaps(screen_root_);
         delay = context_->GetNextUpdateDelay();
         // What makes the shown frame out of date: input and host calls (changed_), component
         // rebuilds that changed elements (a render equal to the shown one changes nothing),
@@ -1639,6 +1643,26 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
         changed_ = true;
     }
 
+    // Every tap the screen document offers (Behavior::Taps: id as Emit finds it, verb) is one its screen maps
+    // (Router::Maps): an unmapped one is an error, once per screen, element and verb.
+    void CheckTaps(Rml::Element *element)
+    {
+        if (auto *component = dynamic_cast<ComponentElement *>(element); component && component->HasBehaviors())
+        {
+            std::vector<std::string> verbs;
+            component->Taps(verbs);
+            std::string id;
+            for (Rml::Element *at = component; at && id.empty(); at = at->GetParentNode())
+                id = at->GetId();
+            for (const std::string &verb : verbs)
+                if (!router_->Maps(id, verb) && unmapped_taps_.insert(router_->Using() + ' ' + id + ' ' + verb).second)
+                    Error("screen " + router_->Using() + ": " + component->GetTagName() + " " + (id.empty() ? "(no id)" : id) + " " + verb +
+                          " is drawn with no mapping: a tap on it does nothing");
+        }
+        for (int i = 0; i < element->GetNumChildren(); ++i)
+            CheckTaps(element->GetChild(i));
+    }
+
     // --- Services -----------------------------------------------------------------
 
     double Now() const override
@@ -2357,6 +2381,7 @@ class HostImpl final : public Host, public Services, public screens::Surface, pu
     std::unordered_map<std::string, Json> strings_; // language code → {key: text}
     std::string language_ = "en";
     std::set<std::string> unknown_languages_, missing_strings_;
+    std::set<std::string> unmapped_taps_; // said once each: screen, element id and verb drawn with no mapping (CheckTaps)
     std::unique_ptr<screens::Router> router_;
     Rml::ElementDocument *screen_root_ = nullptr; // the screen document while a game interface is mounted
     // HUD
