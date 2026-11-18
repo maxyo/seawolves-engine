@@ -236,7 +236,8 @@ class SeaScene final : public Scene
         }
         if (ship)
             BuildAbilities(gameplay, *ship, view, input);
-        BuildQuick(states.sea_quick, view, input);
+        if (!abilities_.Open()) // the open abilities fan takes the quick action's place (hud-layout.json "replaces")
+            BuildQuick(states.sea_quick, view, input);
         if (gameplay.Has("Sea_CameraSwitch"))
         {
             view.elements["camera"] = Json::object();
@@ -290,10 +291,10 @@ class SeaScene final : public Scene
         FollowFleet(shown);
         CoverShip(states, ship, shown);
         CoverNavigator(states, ship, shown);
-        // The ammunition fan takes the quick action's place for a few seconds: the offer stays
+        // The ammunition fan (and the abilities fan) takes the quick action's place for a few seconds: the offer stays
         // the HUD's, so the engine's own icon does not flash up over the top buttons meanwhile.
         // Under the orders panel the offer waits for the panel to close; it stays the HUD's too.
-        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || fan_open_ || shown.sheet == "s-hud-orders"));
+        CoverQuick(states.sea_quick, live && (shown.elements.contains("context") || fan_open_ || abilities_.Open() || shown.sheet == "s-hud-orders"));
         CoverOrders(states.sea_orders, live && shown.modal);
     }
 

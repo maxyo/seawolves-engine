@@ -485,7 +485,9 @@ static void CheckBattle()
     bench.Press("ammo");
     Expect(!mount.Has("ammo-1") && mount.Has("abilities") && !mount.Has("ability-1"), "folded: the abilities button is back, folded");
     bench.Press("abilities");
+    Expect(!mount.Has("context") && !mount.Has("map"), "the open abilities fan takes the quick action's place");
     bench.Frame(AbilityControls::kFanSeconds + 0.5);
+    Expect(mount.Has("context"), "folded: the quick action is back");
     Expect(!mount.Has("ability-1"), "an open abilities fan folds by itself");
     // one ability: the button is that ability; a command the gameplay does not bind blocks it
     Json single = State("ship-battle");
