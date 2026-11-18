@@ -579,15 +579,19 @@ SAMPLERCUBE(s_cube2, 7);
 // free, read with the lightmap's own coordinates. x: the lightmap's stage (-1: none), y: the ratio's unit (2, 3, 4),
 // z: its weight (0 -> 1 while it fades in), w: 1 = debug view (the map holds the hour's sun visibility: grey).
 uniform vec4 u_ffTownRatio;
-vec3 ffTownRatio(vec3 lightmap, vec2 uv)
+// The ratio map's texel at the lightmap's coordinates: read once per pixel in main() (FF_TOWN_RATIO_READ), not in every
+// stage. Expanded in each of the five stages it was 15 texture reads in branches of the fixed-function fragment
+// programs, the largest the game has.
+float ffTownRatioTexel(vec2 uv)
 {
-    float e;
     if (u_ffTownRatio.y < 2.5)
-        e = texture2D(s_tex2, uv).r;
-    else if (u_ffTownRatio.y < 3.5)
-        e = texture2D(s_tex3, uv).r;
-    else
-        e = texture2D(s_tex4, uv).r;
+        return texture2D(s_tex2, uv).r;
+    if (u_ffTownRatio.y < 3.5)
+        return texture2D(s_tex3, uv).r;
+    return texture2D(s_tex4, uv).r;
+}
+vec3 ffTownRatio(vec3 lightmap, float e)
+{
     if (u_ffTownRatio.w > 0.5)
         return mix(lightmap, vec3_splat(0.125 + 0.75 * e), u_ffTownRatio.z); // MODULATE2X: 0.25..1.0 of the paint x2
     // fx/sun_relight.hpp: 3^((255 e - 127) / 127).
@@ -646,8 +650,18 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
 // and the previous one, bound at the first unit the draw leaves free, still shows by ms.z - 1.
 #define FF_FADE(tex, ms, PREV) if (ms.z > 1.0) { tex = mix(tex, PREV, ms.z - 1.0); }
 #define FF_NO_FADE(tex, ms, PREV)
-// TC: the stage's coordinates (a town lightmap's light ratio is read with them, ffTownRatio).
-#define FF_STAGE(i, SAMPLE, FADE, PREV, TC) \
+// The town ratio's texel (ffTownRatioTexel) with the coordinates of the lightmap's stage u_ffTownRatio.x; stage inputs:
+// only main() can name them in the SPIR-V build (storm_common.sh).
+#define FF_TOWN_RATIO_READ(e) \
+    float e = 1.0; \
+    if (u_ffTownRatio.x > -0.5) \
+    { \
+        float k = u_ffTownRatio.x; \
+        vec4 ttc = k < 0.5 ? v_texcoord0 : k < 1.5 ? v_texcoord1 : k < 2.5 ? v_texcoord2 : k < 3.5 ? v_texcoord3 : v_texcoord4; \
+        vec4 tms = k < 0.5 ? u_ffStage[2] : k < 1.5 ? u_ffStage[5] : k < 2.5 ? u_ffStage[8] : k < 3.5 ? u_ffStage[11] : u_ffStage[14]; \
+        e = ffTownRatioTexel(FF_UV(ttc, tms)); \
+    }
+#define FF_STAGE(i, SAMPLE, FADE, PREV) \
     if (running && float(i) < u_ffFs[3].z) \
     { \
         vec4 cs = u_ffStage[3 * i]; \
@@ -658,7 +672,7 @@ vec4 ffCombine(float op, vec4 a1, vec4 a2, vec4 a0, vec4 current, vec4 tex, vec4
         { \
             tex = SAMPLE; \
             FADE(tex, ms, PREV) \
-            if (float(i) == u_ffTownRatio.x) tex.rgb = ffTownRatio(tex.rgb, FF_UV(TC, ms)); \
+            if (float(i) == u_ffTownRatio.x) tex.rgb = ffTownRatio(tex.rgb, townTexel); \
         } \
         FF_KEEP_TEX(i, tex) \
         vec4 c = ffCombine(cs.x, FF_ARG(cs.y), FF_ARG(cs.z), FF_ARG(cs.w), current, tex, FF_DIFFUSE); \
@@ -900,12 +914,13 @@ void main()
 #endif
     vec4 current = FF_DIFFUSE;
     vec4 temp = vec4_splat(0.0);
+    FF_TOWN_RATIO_READ(townTexel)
     bool running = true;
-    FF_STAGE(0, STAGE0_SAMPLE, FF_FADE, STAGE0_PREV, v_texcoord0)
-    FF_STAGE(1, STAGE1_SAMPLE, FF_FADE, STAGE1_PREV, v_texcoord1)
-    FF_STAGE(2, STAGE2_SAMPLE, FF_NO_FADE, tex, v_texcoord2)
-    FF_STAGE(3, STAGE3_SAMPLE, FF_NO_FADE, tex, v_texcoord3)
-    FF_STAGE(4, STAGE4_SAMPLE, FF_NO_FADE, tex, v_texcoord4)
+    FF_STAGE(0, STAGE0_SAMPLE, FF_FADE, STAGE0_PREV)
+    FF_STAGE(1, STAGE1_SAMPLE, FF_FADE, STAGE1_PREV)
+    FF_STAGE(2, STAGE2_SAMPLE, FF_NO_FADE, tex)
+    FF_STAGE(3, STAGE3_SAMPLE, FF_NO_FADE, tex)
+    FF_STAGE(4, STAGE4_SAMPLE, FF_NO_FADE, tex)
 #ifdef FX_FF_DYN
     current.rgb *= fxSunGround(v_shadow.xyz, v_shadow.w);
 #endif
