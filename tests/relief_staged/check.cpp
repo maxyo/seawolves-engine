@@ -66,8 +66,8 @@ std::unique_ptr<Session>Session::Open(const Models&,int,const std::filesystem::p
  return std::unique_ptr<Session>(new Session(std::make_unique<Impl>()));}
 const Session::Stats&Session::stats()const{return impl_->stats;}
 void Session::Cancel(){*impl_->cancel=true;}
-void Session::SetGpuFree(bool){}void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>){}
-void Session::SetCpuBudget(unsigned){}void Session::ReleaseIdleModels(){}bool Session::WaitsForGpu()const{return false;}
+void Session::SetGame(std::function<bool()>,std::function<bool()>){}void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>){}
+void Session::SetCpuBudget(unsigned){}
 void Session::SetComputeAdmission(std::function<bool(size_t)>f){impl_->admit=std::move(f);}
 void Session::AccountFinalized(const FinalizeResult&r){if(r.outcome==Outcome::Prepared)++impl_->stats.prepared;}
 ComputeResult Session::ComputeFile(const std::filesystem::path&,const std::filesystem::path&file,const std::filesystem::path&,int,std::string&,const UpscaleOutput*){

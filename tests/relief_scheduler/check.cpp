@@ -18,14 +18,22 @@ namespace storm::texture { class EacEncoder {}; }
 #include <mutex>
 #include <map>
 #include <thread>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 using namespace storm;
 using namespace std::chrono_literals;
 namespace {
 std::atomic<int> status{2};
 std::atomic<float> forecast{0.95f};
 std::atomic<bool> hot{true}, block_job{false}, cancelled{false}, slow_open{false};
-std::atomic<int> opened{0}, started{0}, pause_after{0}, idle_releases{0};
-std::atomic<bool> cpu_detour{false}, device_is_hot{false};
+std::atomic<int> opened{0}, started{0}, pause_after{0};
+std::atomic<bool> gpu_usable{false}, device_is_hot{false};
+// The fake Session's device per job (G/C), the worker's nice value and CPU budget as the jobs saw them.
+std::atomic<bool> hold_gpu{false}; // a GPU job runs until the scene shows (then it yields, as the real GPU networks do)
+std::atomic<int> worker_nice{-100};
+std::atomic<unsigned> cpu_budget{0};
+std::vector<char> devices;
 std::atomic<int64_t> clock_offset{0};
 
 std::atomic<int> list_calls{0}, prune_calls{0};
@@ -49,8 +57,9 @@ void reset() {
     // Independent cases cannot inherit exact-key completed files from a prior case.
     if(!cache.empty()){std::filesystem::remove_all(cache);std::filesystem::create_directories(cache);}
     status=2; forecast=0.95f; hot=true; block_job=false; cancelled=false; slow_open=false; opened=0; started=0; pause_after=0;
-    list_calls=0; prune_calls=0; clock_offset=0; device_is_hot=false;
-    std::lock_guard lock(events_mutex); events.clear();
+    list_calls=0; prune_calls=0; clock_offset=0; device_is_hot=false; gpu_usable=false; hold_gpu=false;
+    worker_nice=-100; cpu_budget=0;
+    std::lock_guard lock(events_mutex); events.clear(); devices.clear();
 }
 relief::Outcome infer(const std::filesystem::path &file, const char *lane) {
     ++started;
@@ -94,33 +103,46 @@ bool HasReliefMap(const std::filesystem::path&,uint64_t) { return true; }
 bool HasGlossMap(const std::filesystem::path&,uint64_t) { return true; }
 }
 namespace storm::relief {
-struct Session::Impl { Stats stats; std::chrono::steady_clock::time_point since=test_now(); bool free=false; };
+struct Session::Impl { Stats stats; std::function<bool()> free, shown; };
 Session::Session(std::unique_ptr<Impl> impl):impl_(std::move(impl)) {}
 Session::~Session()=default;
 std::unique_ptr<Session> Session::Open(const Models&,int,const std::filesystem::path&,std::string&,std::function<bool()> cancel) {
     // A slow model load lasts until the worker is cancelled, so shutdown always lands during loading.
     ++opened; if (slow_open) {while(!(cancel&&cancel()))std::this_thread::sleep_for(1ms);return {};}
     if(cancel&&cancel())return {};
-    auto impl=std::make_unique<Impl>();impl->stats.gpu_possible=cpu_detour;return std::unique_ptr<Session>(new Session(std::move(impl)));
+    auto impl=std::make_unique<Impl>();impl->stats.gpu_possible=gpu_usable;return std::unique_ptr<Session>(new Session(std::move(impl)));
 }
 const Session::Stats &Session::stats() const { return impl_->stats; }
 void Session::Cancel() { cancelled=true; }
-void Session::SetGpuFree(bool value) {impl_->free=value;}
+void Session::SetGame(std::function<bool()> free,std::function<bool()> shown) {impl_->free=std::move(free);impl_->shown=std::move(shown);}
 void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
-void Session::SetCpuBudget(unsigned) {}
+void Session::SetCpuBudget(unsigned threads) {cpu_budget=threads;}
 void Session::SetComputeAdmission(std::function<bool(size_t)>) {}
 void Session::AccountFinalized(const FinalizeResult&) {}
 ComputeResult Session::ComputeFile(const std::filesystem::path&a,const std::filesystem::path&b,const std::filesystem::path&c,int d,std::string&e,const UpscaleOutput*f){return PrepareFile(a,b,c,d,e,f);}
 ComputeResult Session::ComputeUpscale(const std::filesystem::path&a,const std::filesystem::path&b,const UpscaleOutput&c,int d,std::string&e){return Upscale(a,b,c,d,e);}
 Finalizer::Finalizer()=default;Finalizer::~Finalizer()=default;
 FinalizeResult Finalizer::Run(std::unique_ptr<ComputedTexture>){std::abort();}
-void Session::ReleaseIdleModels() {++idle_releases;}
-bool Session::WaitsForGpu() const { return cpu_detour && !impl_->stats.gpu && !impl_->free && test_now()-impl_->since<std::chrono::seconds(60); }
+// The production device rule (device_choice.hpp) on the generator's live callbacks; a held GPU job yields when the
+// scene shows, as the real GPU networks do at their next submission.
+bool fake_device(Session::Impl &impl) {
+    const DeviceChoice choice=ChooseTextureDevice(impl.stats.gpu_possible,impl.shown&&impl.free,false,impl.shown&&impl.shown(),
+                                                  impl.free&&impl.free(),[]{return false;});
+    impl.stats.gpu=choice.gpu;impl.stats.device_why=choice.why;impl.stats.provider=choice.gpu?"GPU fake":"CPU fake";
+    worker_nice=getpriority(PRIO_PROCESS,static_cast<id_t>(syscall(SYS_gettid)));
+    {std::lock_guard lock(events_mutex);devices.push_back(choice.gpu?'G':'C');}
+    return choice.gpu;
+}
 Outcome Session::PrepareFile(const std::filesystem::path&,const std::filesystem::path &file,
-    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) { if(cpu_detour && !WaitsForGpu()) impl_->stats.gpu=true;
+    const std::filesystem::path&,int,std::string&,const UpscaleOutput*) {
+    if(fake_device(*impl_) && hold_gpu) {
+        ++started;{std::lock_guard lock(events_mutex);events.emplace_back("G:"+file.string());}
+        while(!impl_->shown() && !cancelled) std::this_thread::sleep_for(1ms);
+        return cancelled?Outcome::Failed:Outcome::Yielded;
+    }
     return infer(file,"N:"); }
 Outcome Session::Upscale(const std::filesystem::path&,const std::filesystem::path &file,
-    const UpscaleOutput&,int,std::string&) { auto result=infer(file,"U:");if(result==Outcome::Prepared){std::lock_guard lock(events_mutex);const uint8_t payload[]={1,2,3};expect(fx::WriteUpscaled(cache,upscale_keys.at(file.string()),payload),"fake completed upscale commits its exact production key");}return result; }
+    const UpscaleOutput&,int,std::string&) { fake_device(*impl_);auto result=infer(file,"U:");if(result==Outcome::Prepared){std::lock_guard lock(events_mutex);const uint8_t payload[]={1,2,3};expect(fx::WriteUpscaled(cache,upscale_keys.at(file.string()),payload),"fake completed upscale commits its exact production key");}return result; }
 bool ReleaseGpu() { return false; }
 // These sentinels make accidental whole-corpus discovery observable, not merely an inference count.
 std::vector<std::filesystem::path> List(const std::filesystem::path&) { ++list_calls; return {"background"}; }
@@ -137,8 +159,8 @@ int main(int argc,char **argv) {
     {
         reset();status=0;forecast=0.1f;hot=false;configure(g);
         for(int state=0;state<3;++state) {
-            if(state==1) g.frame(true); // actual gameplay, independent of quality/provider
-            if(state==2) for(int i=0;i<30;++i) g.frame(false); // loading/interface, formerly corpus eligible
+            if(state==1) g.frame(true,false); // actual gameplay, independent of quality/provider
+            if(state==2) for(int i=0;i<30;++i) g.frame(false,false); // loading/interface, formerly corpus eligible
             { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
             std::this_thread::sleep_for(30ms);
             expect(opened==0 && started==0 && list_calls==0 && prune_calls==0,
@@ -198,37 +220,75 @@ int main(int argc,char **argv) {
     }
     // Real renderer scene presence, independent of lit/baked counts or preset.
     reset();configure(g);
-    expect(!g.gpu_free(),"unobserved renderer is not assumed idle");
-    g.frame(true);
-    for (int i=0;i<29;++i) g.frame(false);
-    expect(!g.gpu_free(),"one scene frame keeps the 30-frame window busy");
-    g.frame(false);
-    expect(g.gpu_free(),"thirty scene-free frames permit GPU retry");
-    g.frame(true);
-    expect(!g.gpu_free(),"a new perspective scene becomes busy immediately");
+    expect(!g.gpu_free() && !g.scene_shown(),"unobserved renderer is neither idle nor showing a scene");
+    g.frame(true,false);
+    expect(g.scene_shown(),"a scene drawn while no place loads is shown to the player");
+    for (int i=0;i<29;++i) g.frame(false,false);
+    expect(!g.gpu_free() && !g.scene_shown(),"one scene frame keeps the 30-frame window busy; the scene no longer shows");
+    g.frame(false,false);
+    expect(g.gpu_free(),"thirty scene-free frames leave the GPU free");
+    g.frame(true,false);
+    expect(!g.gpu_free() && g.scene_shown(),"a new perspective scene takes the GPU back immediately");
+    g.frame(true,true);
+    expect(!g.scene_shown(),"a scene drawn while a place loads is under the loading cover, unseen");
+    g.frame(true,false);
+    { std::lock_guard lock(g.mutex_);clock_offset+=2; }
+    expect(g.gpu_free() && !g.scene_shown(),"no frame for a second (the game in the background): GPU free, no scene shown");
+    clock_offset=0;
     g.shutdown();configure(g);
-    expect(!g.gpu_free(),"reconfigure clears stale scene-free state");
+    expect(!g.gpu_free() && !g.scene_shown(),"reconfigure clears stale scene state");
     g.shutdown();
-    // Full production worker lifecycle: release models at10s, preserve the CPU-detour session/retry state,
-    // then resume only for a newly loaded texture. Elapsed retry time must never create automatic corpus work.
-    reset();status=0;forecast=0.5f;hot=false;cpu_detour=true;idle_releases=0;configure(g);g.frame(true);
-    auto anchor=normal("retry-anchor",91);g.request(anchor,"retry-anchor");
-    until([&]{return g.stats().made==1;},"CPU-detour anchor completes");
-    auto advance=[&](int seconds) {
-        std::lock_guard lock(g.mutex_);clock_offset+=seconds;g.wake_.notify_all();
-    };
-    advance(11);
-    until([&]{std::lock_guard lock(g.mutex_);return idle_releases>0 || !g.session_ || opened>1 || started>1;},"10-second idle deadline processed");
-    expect(idle_releases==1 && opened==1 && started==1,"idle releases inference objects without reopening or unrelated work");
-    advance(50);g.frame(true);
-    std::this_thread::sleep_for(30ms);
-    expect(started==1 && list_calls==0 && prune_calls==0,
-           "elapsed60-second provider retry never starts a corpus job");
-    expect(idle_releases==1,"the retained shell is released once per idle period, not every 10 s");
-    auto retry=normal("retry-loaded-later",92);g.request(retry,retry->file);
-    until([&]{return retry->state==effects::NormalMapEntry::Stored;},"new loaded demand resumes after model idle release");
-    expect(opened==1 && started==2 && g.session_->stats().gpu,"same policy session retains GPU retry epoch for subsequent demand");
-    g.shutdown();cpu_detour=false;clock_offset=0;
+    // The CPU's share for the relief while the game is played is bounded: a quarter of the cores, at most two, at
+    // least one (fx::CpuAdmission; heat lowers it further, thermal.hpp), and every core only under a loading picture.
+    for (unsigned cores : {1u,2u,4u,6u,8u,12u,16u,64u}) {
+        fx::CpuAdmission admission(cores);
+        const unsigned play=admission.normal_gameplay_threads();
+        expect(play>=1 && play<=2 && play<=std::max(1u,cores/4) && admission.threads()==play,
+               "gameplay relief threads: at least one, at most two, at most a quarter of the cores");
+        admission.set_gameplay_limit(1);
+        expect(admission.threads()==1,"a hot device: one thread");
+        admission.set_gameplay_limit(0);
+        expect(admission.threads()==1 && admission.gameplay_threads()==0,"thermal SEVERE: no new work admitted (a job's pool never none)");
+    }
+    // The production worker: during play only CPU jobs start, at nice 10 and the gameplay budget; with no scene the
+    // GPU; a scene that starts while a texture runs on the GPU sends it back to the queue, and it is made on the CPU.
+    reset();status=0;forecast=0.1f;hot=false;gpu_usable=true;configure(g);
+    // The game thread: a frame every 5 ms, a scene or not (frames never stop here, so the scene never goes stale).
+    std::atomic<bool> drawing{true}, pumping{true};
+    std::thread game([&]{while(pumping){g.frame(drawing,false);std::this_thread::sleep_for(5ms);}});
+    auto played=normal("played",81);g.request(played,played->file);
+    auto played_u=upscale("played-upscale",82);expect(g.request_upscale(played_u),"played x2 queued");
+    until([&]{return played->state==effects::NormalMapEntry::Stored && played_u->state==effects::UpscaleEntry::Stored;},"played jobs complete");
+    { std::lock_guard lock(events_mutex);expect(devices==std::vector<char>{'C','C'},"during play only CPU jobs start (relief and x2)"); }
+#if defined(__linux__)
+    expect(worker_nice==10,"the relief worker runs at nice 10, below the game and render threads");
+#endif
+    expect(cpu_budget>=1 && cpu_budget<=fx::SharedCpuAdmission().normal_gameplay_threads(),"the CPU job's threads are the gameplay budget");
+    drawing=false; // a menu or loading screen without a scene
+    until([&]{return g.gpu_free();},"thirty frames without a scene");
+    auto menu=normal("menu",83);g.request(menu,menu->file);
+    until([&]{return menu->state==effects::NormalMapEntry::Stored;},"no-scene job completes");
+    { std::lock_guard lock(events_mutex);expect(devices.back()=='G',"with no scene drawn the GPU job may start"); }
+    hold_gpu=true;
+    auto midway=normal("midway",84);g.request(midway,midway->file);
+    until([&]{std::lock_guard lock(events_mutex);return !events.empty() && events.back()=="G:midway";},"a texture runs on the GPU");
+    drawing=true; // the scene starts
+    until([&]{return midway->state==effects::NormalMapEntry::Stored;},"the stopped texture completes");
+    {
+        std::lock_guard lock(events_mutex);
+        expect(events.size()>=2 && events[events.size()-2]=="G:midway" && events.back()=="N:midway" &&
+               devices.size()>=2 && devices[devices.size()-2]=='G' && devices.back()=='C',
+               "a scene starting mid-GPU-job: the texture goes back to the queue and is made on the CPU");
+    }
+    expect(g.stats().made==3,"the yielded texture is made once, not counted as made or failed twice");
+    pumping=false;game.join();hold_gpu=false;
+    // Idle release: the models go after 10 s without work; new demand opens them again.
+    { std::lock_guard lock(g.mutex_);clock_offset+=11;g.wake_.notify_all(); }
+    until([&]{std::lock_guard lock(g.mutex_);return !g.session_;},"10-second idle deadline releases the models");
+    auto later=normal("later",85);g.request(later,later->file);
+    until([&]{return later->state==effects::NormalMapEntry::Stored;},"new demand after the idle release completes");
+    expect(opened==2 && list_calls==0 && prune_calls==0,"the models open again for it; no corpus work");
+    g.shutdown();clock_offset=0;
     // The file is already prepared by a preceding normal job, but thermal protection now forbids inference.
     reset();configure(g);
     auto ready=upscale("ready",101), wrong_key=upscale("not-ready",102);
@@ -402,7 +462,7 @@ int main(int argc,char **argv) {
         const auto ran=[&]{std::lock_guard lock(events_mutex);return events;};
         // A new place (scene) and a long idle clock: the worker starts nothing that no draw requested.
         reset();status=0;forecast=0.1f;hot=false;configure(g);
-        effects::generation_focus().set_scene("Charles_town");g.frame(true);
+        effects::generation_focus().set_scene("Charles_town");g.frame(true,false);
         { std::lock_guard lock(g.mutex_);clock_offset+=3600;g.wake_.notify_all(); }
         std::this_thread::sleep_for(50ms);
         expect(started==0 && opened==0,"a new place prepares nothing ahead: no neighbour or other texture without a draw");

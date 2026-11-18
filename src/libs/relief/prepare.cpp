@@ -4,7 +4,7 @@
 #include "finalizer.hpp"
 
 #include "backend.hpp"
-#include "device_retry.hpp"
+#include "device_choice.hpp"
 #include "tx_file.hpp"
 
 #include "formats.hpp"
@@ -309,46 +309,53 @@ bool WriteDisplay(const UpscaleOutput &display, uint64_t key, const std::vector<
 
 } // namespace
 
-// Which device a texture runs on, decided per texture (the GPU is the device, the CPU stands in while the
-// game's own rendering keeps the GPU busy, and the GPU is tried again):
-//   * on the GPU, a texture whose networks took 1.5 times the CPU's estimate for its texels (the probe's cost per
-//     texel), twice in a row while the game draws its scene, moves the work to the CPU;
-//   * on the CPU, the GPU is tried again for the next texture as soon as the game leaves the GPU free (a loading or an
-//     interface screen, the game in the background: SetGpuFree) or after kGpuRetrySeconds / kGpuRetryTextures, doubled
-//     after every retry that was still slow while the game drew (device_retry.hpp RetryScale); fast enough and the
-//     work goes back to the GPU;
-//   * on the CPU, only the textures that cannot wait are made (the ones on screen); the rest of the game waits for the
-//     GPU (WaitsForGpu).
-// Every switch is logged with its reason and numbers. Nothing of it is kept across sessions (the crash record is:
-// backend.hpp MarkGpuRunning).
-constexpr double kSlowFactor = 1.5;
-constexpr int kSlowInARow = 2;
-
+// Which device a texture runs on: device_choice.hpp. Each change is logged by the game (relief_generator.cpp); the
+// crash record of the GPU work is kept across sessions (backend.hpp MarkGpuRunning).
 struct Session::Impl
 {
     Models models; // owned by the caller, alive with the session
     int threads = 1;
     std::filesystem::path cache;
     bool gpu_possible = false;   // a GPU, its graphs, no crash recorded for it
-    double cpu_ms_per_texel = 0.0; // the probe's
-    double upscale_cpu_ms_per_texel = 0.0; // measured x4 cost, distinct from the normal-network probe
-    bool on_gpu = false;
-    int gpu_slow = 0;            // GPU textures in a row slower than the CPU's estimate
-    Clock::time_point cpu_since{};
-    int cpu_textures = 0;
-    int gpu_retry_failures = 0;  // GPU retries in a row, while the game drew, that were still slow (device_retry.hpp)
-    std::atomic<bool> gpu_free{false};
+    bool measured_gpu = false;   // the host tool's device (ChooseDevice)
+    bool on_gpu = false;         // the last texture's device
+    std::function<bool()> gpu_free, scene_shown; // the game's state (SetGame); empty: the host tool
     std::shared_ptr<LoadingRetry> loading_retry;
     uint64_t loading_retry_at = 0;
-    bool TakeLoadingRetry(double cpu_cost) {
+    bool TakeLoadingRetry() {
         const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
-        if (!loading_retry || !loading_retry->take(now, gpu_possible, on_gpu, cpu_cost, loading_retry_at)) return false;
+        if (!loading_retry || !loading_retry->take(now, gpu_possible, loading_retry_at)) return false;
         loading_retry_at = now;
+        return true;
+    }
+    bool Shown() const { return scene_shown && scene_shown(); }
+    // The device of the next texture (device_choice.hpp), its networks loaded: false with `failure` when they cannot be.
+    bool PickDevice(bool &use_gpu, std::string &failure)
+    {
+        const DeviceChoice choice = ChooseTextureDevice(gpu_possible, static_cast<bool>(scene_shown), measured_gpu, Shown(),
+                                                        gpu_free && gpu_free(), [this] { return TakeLoadingRetry(); });
+        use_gpu = choice.gpu;
+        if (!EnsureDevice(use_gpu, failure))
+            return false;
+        on_gpu = use_gpu;
+        stats.device_why = use_gpu == choice.gpu ? choice.why : DeviceReason::NoGpu; // its GPU networks failed to load
+        Describe();
+        return true;
+    }
+    // A GPU texture stopped because the player sees the scene: no crash, its work ended (the guard's marker goes; the
+    // GPU stays unproven until a texture completes on it).
+    bool Yielded(bool use_gpu, const std::string &name)
+    {
+        if (!use_gpu || cancelled || !Shown())
+            return false;
+        if (gpu_unproven)
+            ClearGpuRunning(cache);
+        Log("relief %s: stopped on the GPU (the player sees the game's scene): made again on the CPU", name.c_str());
         return true;
     }
     bool gpu_unproven = false; // the GPU's first texture: the crash guard's marker is written around it
     // Controlled GPU model/calibration failures in this session (EnsureDevice): the session gives up the GPU only
-    // after kGpuInitAttempts of them; before that the next GPU retry of the device policy tries again.
+    // after kGpuInitAttempts of them; before that the next texture that may take the GPU tries again.
     static constexpr int kGpuInitAttempts = 3;
     int gpu_init_failures = 0;
     std::unique_ptr<CpuRuntime> runtime; // before the networks: released after them
@@ -370,8 +377,8 @@ struct Session::Impl
             return true;
         std::lock_guard lock(networks_mutex);
         // The networks' pipelines are made on the GPU now: the crash guard's marker stays until its first texture.
-        // Idle/trim may have closed Vulkan while keeping this Session's retry state. Guard the lazy
-        // instance creation itself before evaluating Gpu(), just as the initial ChooseDevice path does.
+        // A failed load may have closed Vulkan (EnsureDevice). Guard the lazy instance creation itself before
+        // evaluating Gpu(), just as the initial ChooseDevice path does.
         MarkGpuRunning(cache, kGpuOpening);
         gpu_unproven = true;
         MarkGpuRunning(cache, GpuLabel(Gpu()));
@@ -385,9 +392,10 @@ struct Session::Impl
             if (std::unique_ptr<Network> upscale = LoadGpuNetwork(models.upscale_param, models.upscale_bin, fx::kUpscalePad, 4, error))
                 gpu_upscaler = std::make_unique<Upscaler>(std::move(upscale));
         // Lazy GPU reopen must receive the same exact job scope as already-open networks.
+        const auto yield = [this] { return Shown(); };
         for (const auto &network : gpu)
-            if (network) network->SetLoadingRetry(loading_retry);
-        if (gpu_upscaler) gpu_upscaler->SetLoadingRetry(loading_retry);
+            if (network) { network->SetLoadingRetry(loading_retry); network->SetYield(yield); }
+        if (gpu_upscaler) { gpu_upscaler->SetLoadingRetry(loading_retry); gpu_upscaler->SetYield(yield); }
         return gpu_upscaler != nullptr;
     }
     bool EnsureCpu(std::string &error)
@@ -439,8 +447,8 @@ struct Session::Impl
         if (cancelled)
             return false;
         // A controlled model-load/calibration error is not a driver crash. Preserve this texture on the CPU; a
-        // transient failure (a lazy Vulkan reopen during a retry) leaves the GPU to the device policy's next retry,
-        // repeated failures end GPU use for this session.
+        // transient failure (a lazy Vulkan reopen) leaves the GPU to the next texture that may take it, repeated
+        // failures end GPU use for this session.
         ++gpu_init_failures;
         const bool give_up = gpu_init_failures >= kGpuInitAttempts;
         Log("ERROR: relief GPU model initialization failed (%s, attempt %d of %d); %s", error.c_str(), gpu_init_failures,
@@ -460,14 +468,6 @@ struct Session::Impl
         const bool opened = EnsureCpu(error);
         Describe();
         return opened;
-    }
-    // Back on the GPU: the CPU networks' memory goes.
-    void ReleaseCpu()
-    {
-        std::lock_guard lock(networks_mutex);
-        cpu_upscaler.reset();
-        cpu = {};
-        runtime.reset();
     }
     void Describe()
     {
@@ -496,7 +496,8 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     impl->models = models;
     impl->threads = threads;
     impl->cache = cache;
-    // The starting device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network).
+    // The measured device (backend.hpp ChooseDevice: kept from before, or measured now with the normal network): the
+    // host tool's; it also learns whether the GPU works.
     for (const auto &bytes : {models.normal_param, models.normal_bin, models.height_param, models.height_bin, models.roughness_param,
                               models.roughness_bin, models.upscale_param, models.upscale_bin})
         if (bytes.empty())
@@ -508,20 +509,20 @@ std::unique_ptr<Session> Session::Open(const Models &models, int threads, const 
     // Its fixed pool must participate in the same admission as normal tiles.
     auto probe_permit = fx::SharedCpuAdmission().acquire(static_cast<unsigned>(threads), cancelled);
     if (!probe_permit) { error = "CPU probe admission cancelled"; return nullptr; }
-    const Device device = ChooseDevice(cache, models.normal_param, models.normal_bin, fx::kReliefModelPad, threads,
-                                       impl->cpu_ms_per_texel);
+    const Device device = ChooseDevice(cache, models.normal_param, models.normal_bin, fx::kReliefModelPad, threads);
     probe_permit.reset();
     impl->stats.gpu_crash = GpuCrash(cache);
     impl->gpu_possible = impl->stats.gpu_crash.empty() && Gpu().available;
     impl->stats.gpu_possible = impl->gpu_possible;
-    impl->on_gpu = device == Device::Gpu;
-    impl->cpu_since = Clock::now();
-    if (!impl->EnsureDevice(impl->on_gpu, error))
+    impl->measured_gpu = device == Device::Gpu && impl->gpu_possible;
+    // The CPU's networks now (the game's device while it is played; a failure here leaves the session unopened), the
+    // GPU's at the first texture that runs on it.
+    if (!impl->EnsureCpu(error))
     {
         Log("ERROR: %s", error.c_str());
         return nullptr;
     }
-    if (!impl->on_gpu && !impl->gpu_possible)
+    if (!impl->gpu_possible)
         ReleaseGpu(); // opened to learn the GPU, never used
     impl->Describe();
     return std::unique_ptr<Session>(new Session(std::move(impl)));
@@ -538,32 +539,13 @@ void Session::SetCpuBudget(unsigned threads)
         if (impl_->runtime)
             impl_->runtime->SetThreads(impl_->threads); // the loaded networks run with it from their next tile
     }
-    // The CPU's estimates were measured with the other pool: scaled by the thread counts until the next CPU texture
-    // measures them again (zero would let any GPU time pass as faster than the CPU).
-    const double scale = static_cast<double>(previous) / impl_->threads;
-    impl_->cpu_ms_per_texel *= scale;
-    impl_->upscale_cpu_ms_per_texel *= scale;
-    Log("relief CPU budget: %u threads (from %d); the CPU's estimate scaled to %.3f us a texel until measured again",
-        threads, previous, impl_->cpu_ms_per_texel * 1000.0);
+    Log("relief CPU budget: %u threads (from %d)", threads, previous);
 }
 
-void Session::ReleaseIdleModels()
+void Session::SetGame(std::function<bool()> gpu_free, std::function<bool()> scene_shown)
 {
-    impl_->ReleaseCpu();
-    impl_->synchronous_finalizer.reset(); // release synchronous encoder workers/scratch on idle as before
-    {
-        std::lock_guard lock(impl_->networks_mutex);
-        impl_->gpu_upscaler.reset();
-        impl_->gpu = {};
-    }
-    if (impl_->gpu_unproven)
-        ClearGpuRunning(impl_->cache);
-    impl_->gpu_unproven = false;
-}
-
-void Session::SetGpuFree(bool free)
-{
-    impl_->gpu_free = free;
+    impl_->gpu_free = std::move(gpu_free);
+    impl_->scene_shown = std::move(scene_shown);
 }
 
 void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry)
@@ -572,13 +554,6 @@ void Session::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry)
     for (const auto &network : impl_->gpu)
         if (network) network->SetLoadingRetry(impl_->loading_retry);
     if (impl_->gpu_upscaler) impl_->gpu_upscaler->SetLoadingRetry(impl_->loading_retry);
-}
-
-bool Session::WaitsForGpu() const
-{
-    return WaitForGpuRetry(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
-                           std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(), impl_->cpu_textures,
-                           impl_->gpu_retry_failures);
 }
 
 void Session::Cancel()
@@ -671,14 +646,11 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         return Outcome::Failed;
     }
     const double decode_ms = lap();
-    // The device of this texture: the GPU tried again from the CPU when the game leaves it free, or after a while.
-    const bool loading_probe = impl_->TakeLoadingRetry(impl_->cpu_ms_per_texel);
-    bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
-                                         std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
-                                     impl_->cpu_textures, impl_->gpu_retry_failures);
+    // The device of this texture: the game's state (device_choice.hpp).
+    bool use_gpu = false;
     {
         std::string error;
-        if (!impl_->EnsureDevice(use_gpu, error))
+        if (!impl_->PickDevice(use_gpu, error))
         {
             failure = error;
             Log("ERROR: no relief map for %s: %s", candidate->name.c_str(), failure.c_str());
@@ -700,6 +672,8 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
             MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
         if (!upscaler.Run(rgba, width, height, fx::UpscaleWraps(target, relief), x2, failure))
         {
+            if (impl_->Yielded(use_gpu, candidate->name))
+                return Outcome::Yielded;
             if (impl_->cancelled)
                 failure = "cancelled";
             Log("ERROR: no relief map for %s: its ×2: %s", candidate->name.c_str(), failure.c_str());
@@ -730,7 +704,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     options.max_size = fx::kGlossMapSize;
     int gw = 0, gh = 0;
     fx::NormalMapSize(width / model_scale, height / model_scale, options, gw, gh);
-    double infer_ms = 0.0, infer_texels = 0.0;
+    double infer_ms = 0.0;
     std::string per_model; // each inference: the model, its padded size, its time
     const auto run = [&](Network &model, const std::vector<float> &input, int w, int h) {
         return fx::ReliefModelRun(input, w, h, [&](const float *image, int pw, int ph, float *out) {
@@ -738,7 +712,6 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
             const bool ok = model.Infer(image, pw, ph, out, failure);
             const double ms = std::chrono::duration<double, std::milli>(Clock::now() - infer_start).count();
             infer_ms += ms;
-            infer_texels += static_cast<double>(pw) * ph;
             char part[64];
             std::snprintf(part, sizeof(part), "%s%s %dx%d %.0f ms", per_model.empty() ? "" : ", ",
                           &model == nets[0].get() ? "normal" : &model == nets[1].get() ? "height" : "roughness", pw, ph, ms);
@@ -782,67 +755,14 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
         }
     }
     impl_->stats.infer_seconds += infer_ms / 1000.0;
-    // The GPU held against the CPU's estimate for the same texels (the device's own probe).
-    if (!failed && !impl_->cancelled)
-    {
-        const double cpu_ms = impl_->cpu_ms_per_texel * infer_texels;
-        const bool known = impl_->cpu_ms_per_texel > 0.0;
-        const bool slow = known && infer_ms > kSlowFactor * cpu_ms;
-        const char *why = loading_probe ? "one measured loading-window retry" : impl_->gpu_free ? "the game leaves the GPU free" : "a while on the CPU";
-        if (use_gpu && impl_->on_gpu)
-        {
-            impl_->gpu_slow = slow && !impl_->gpu_free ? impl_->gpu_slow + 1 : 0;
-            if (impl_->gpu_slow >= kSlowInARow)
-            {
-                Log("relief device: CPU for now, only what is on screen (the game's rendering keeps the GPU busy: %s's "
-                    "networks took %.0f ms on the GPU against %.0f ms estimated on the CPU, %d in a row)",
-                    candidate->name.c_str(), infer_ms, cpu_ms, kSlowInARow);
-                impl_->on_gpu = false;
-                impl_->gpu_slow = 0;
-                impl_->cpu_since = Clock::now();
-                impl_->cpu_textures = 0;
-            }
-        }
-        else if (use_gpu)
-        {
-            // Without a CPU estimate to hold it against, the GPU is taken back only while the game leaves it free.
-            if (known ? !slow : impl_->gpu_free.load())
-            {
-                Log("relief device: GPU again (%s: %s's networks took %.0f ms on the GPU against %.0f ms estimated on "
-                    "the CPU)",
-                    why, candidate->name.c_str(), infer_ms, cpu_ms);
-                impl_->on_gpu = true;
-                impl_->gpu_retry_failures = 0;
-                impl_->ReleaseCpu();
-            }
-            else
-            {
-                if (!impl_->gpu_free && !loading_probe)
-                    ++impl_->gpu_retry_failures;
-                const int scale = RetryScale(impl_->gpu_retry_failures);
-                Log("relief device: CPU still (tried the GPU, %s: %s's networks took %.0f ms against %.0f ms "
-                    "estimated on the CPU); next GPU try while the game draws after %.0f s or %d textures, at once when "
-                    "it leaves the GPU free",
-                    why, candidate->name.c_str(), infer_ms, cpu_ms, kGpuRetrySeconds * scale, kGpuRetryTextures * scale);
-                impl_->cpu_since = Clock::now();
-                impl_->cpu_textures = 0;
-            }
-        }
-        else
-        {
-            ++impl_->cpu_textures;
-            // The CPU's own cost per texel with its current threads, measured on this texture.
-            if (infer_texels > 0.0)
-                impl_->cpu_ms_per_texel = infer_ms / infer_texels;
-        }
-        impl_->Describe();
-    }
     if (use_gpu && impl_->gpu_unproven && !failed)
     {
         ClearGpuRunning(impl_->cache);
         impl_->gpu_unproven = false;
     }
     const double model_ms = lap(); // the inputs, padding and crops around the inferences, and the inferences
+    if (failed && impl_->Yielded(use_gpu, candidate->name))
+        return Outcome::Yielded;
     if (impl_->cancelled)
     {
         // A stopped inference's error varies (and its output, if any, is not the model's).
@@ -924,19 +844,17 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
         return Outcome::Failed;
     }
     const double decode_ms = Seconds(start) * 1000.0;
-    // Standalone x2 participates in the same retry cadence as relief textures. Its CPU cost is measured
-    // separately: the normal-network probe is not a valid estimate of the x4 graph.
-    const bool loading_probe = impl_->TakeLoadingRetry(impl_->upscale_cpu_ms_per_texel);
-    bool use_gpu = loading_probe || UseGpuForTexture(impl_->gpu_possible, impl_->on_gpu, impl_->gpu_free,
-                                         std::chrono::duration<double>(Clock::now() - impl_->cpu_since).count(),
-                                     impl_->cpu_textures, impl_->gpu_retry_failures);
-    if (!impl_->EnsureDevice(use_gpu, failure))
+    // The device of this texture: the game's state (device_choice.hpp), as for the relief textures.
+    bool use_gpu = false;
+    if (!impl_->PickDevice(use_gpu, failure))
         return Outcome::Failed;
     Upscaler &upscaler = use_gpu ? *impl_->gpu_upscaler : *impl_->cpu_upscaler;
     if (use_gpu && impl_->gpu_unproven)
         MarkGpuRunning(impl_->cache, GpuLabel(Gpu()));
     if (!upscaler.Run(rgba, static_cast<int>(lw), static_cast<int>(lh), fx::UpscaleWraps(target, verdict.relief), x2, failure))
     {
+        if (impl_->Yielded(use_gpu, name))
+            return Outcome::Yielded;
         if (impl_->cancelled)
             failure = "cancelled";
         return Outcome::Failed;
@@ -947,48 +865,6 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
         impl_->gpu_unproven = false;
     }
     const double infer_ms = upscaler.infer_ms();
-    if (!impl_->cancelled)
-    {
-        if (!use_gpu)
-        {
-            impl_->upscale_cpu_ms_per_texel = infer_ms / (static_cast<double>(lw) * lh);
-            ++impl_->cpu_textures;
-        }
-        else if (impl_->on_gpu)
-        {
-            const double cpu_ms = impl_->upscale_cpu_ms_per_texel * lw * lh;
-            const bool slow = cpu_ms > 0.0 && infer_ms > kSlowFactor * cpu_ms;
-            impl_->gpu_slow = slow && !impl_->gpu_free ? impl_->gpu_slow + 1 : 0;
-            if (impl_->gpu_slow >= kSlowInARow)
-            {
-                Log("relief device: CPU for now (standalone x2 networks %.0f ms, CPU estimate %.0f ms, %d in a row)",
-                    infer_ms, cpu_ms, kSlowInARow);
-                impl_->on_gpu = false;
-                impl_->gpu_slow = 0;
-                impl_->cpu_since = Clock::now();
-                impl_->cpu_textures = 0;
-            }
-        }
-        else if (!impl_->on_gpu)
-        {
-            const double cpu_ms = impl_->upscale_cpu_ms_per_texel * lw * lh;
-            // An unmeasured x4 graph is accepted only while the GPU is free; otherwise measure the CPU first.
-            const bool faster = cpu_ms > 0.0 ? infer_ms <= kSlowFactor * cpu_ms : impl_->gpu_free.load();
-            Log("relief device: %s after standalone x2 GPU retry (%s: GPU %.0f ms, CPU estimate %.0f ms)",
-                faster ? "GPU again" : "CPU still", name.c_str(), infer_ms, cpu_ms);
-            if (faster)
-            {
-                impl_->on_gpu = true;
-                impl_->ReleaseCpu();
-            }
-            else
-            {
-                impl_->cpu_since = Clock::now();
-                impl_->cpu_textures = 0;
-            }
-        }
-        impl_->Describe();
-    }
     if (impl_->cancelled) { failure = "cancelled"; return Outcome::Failed; }
     auto product = std::make_unique<ComputedTexture>();
     product->kind = ComputedTexture::Kind::Upscale;
@@ -1381,7 +1257,7 @@ Result Prepare(const Job &job, const std::function<bool(const Progress &)> &prog
         case Outcome::Prepared: ++result.prepared; break;
         case Outcome::Existing: ++result.existing; break;
         case Outcome::Skipped: ++result.skipped; break;
-        case Outcome::Failed: ++result.failed; break;
+        case Outcome::Failed: case Outcome::Yielded: ++result.failed; break; // the host tool never yields
         }
         ++state.done;
         if (progress && progress(state))

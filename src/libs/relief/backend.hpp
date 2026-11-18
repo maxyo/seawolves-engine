@@ -30,6 +30,10 @@ class Network
     // Revocation/deadline remain shared with the renderer. This grants no inference by itself.
     virtual void SetCpuAdmission(std::function<std::shared_ptr<void>()>) {}
     virtual void SetLoadingRetry(std::shared_ptr<LoadingRetry>) {}
+    // Worker only, GPU networks: while `yield()` is true (the player sees the game's scene: device_choice.hpp) the
+    // running inference stops at its next submission with the error "yielded"; unlike Cancel the network stays usable.
+    // CPU networks ignore it.
+    virtual void SetYield(std::function<bool()>) {}
     // "CPU, 6 threads of 8 cores" / "GPU Adreno (TM) 740, Vulkan, 176 px tiles".
     virtual std::string Describe() const = 0;
 };
@@ -80,10 +84,9 @@ const char *DeviceName(Device device);
 // the faster taken; kept in `cache` (the cache root: «Очистить кэш» measures again) for this GPU, driver, model and
 // thread count. Logged with both numbers either way; no Vulkan compute device: the CPU, logged with the reason.
 // `param` / `bin`: the probe network's ncnn graph, run on both devices. A choice kept from before opens neither.
-// `cpu_ms_per_texel`: the CPU's probe time per input texel (measured now or kept with the choice), so the GPU's real
-// textures can be held against it (relief.hpp Session: the device per texture).
+// The host tool runs on it; in the game the game's state decides each texture's device (device_choice.hpp).
 Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo,
-                    int threads, double &cpu_ms_per_texel);
+                    int threads);
 
 // The crash guard of the GPU work (ChooseDevice), on the shared storm/fx/gpu_crash_guard.hpp: `cache`'s marker holds
 // GpuLabel of the GPU (kGpuOpening while Vulkan opens), written before GPU work starts and cleared after it succeeded.

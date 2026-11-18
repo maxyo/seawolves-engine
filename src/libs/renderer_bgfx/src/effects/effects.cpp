@@ -911,8 +911,9 @@ void Host::end_frame(bool scene_frame, uint32_t frame)
         if (const uint64_t released = post_.ReleaseTargets(0))
             shim::logf("effects: post chain: released %.1f MB of targets, no scene for %u frames",
                        static_cast<double>(released) / (1024.0 * 1024.0), kPostIdleFrames);
-    // The renderer sees every perspective scene draw, including unlit/low-preset geometry and the sea.
-    ReliefGenerator::instance().frame(scene_frame);
+    // The renderer sees every perspective scene draw, including unlit/low-preset geometry and the sea; a place that
+    // loads draws its scene under the loading cover, unseen.
+    ReliefGenerator::instance().frame(scene_frame, !location_load().sealed);
     // The background work's share while the game is played follows the device's heat (thermal.hpp); a place that
     // loads is not played, and takes every core as before.
     {

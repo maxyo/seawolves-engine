@@ -63,7 +63,9 @@ void ReliefGenerator::configure(ReliefSetup setup)
     std::fill(std::begin(scene_draws_), std::end(scene_draws_), false);
     scene_frame_ = 0;
     scene_quiet_ = false;
+    scene_shown_ = false;
     last_frame_us_ = 0;
+    device_logged_ = false;
     next_upscale_ = false;
     admitted_ = 0;
     next_finalize_ = 0; finalizing_.reset(); computing_ = computing_normal_ = computing_gloss_ = false;
@@ -377,11 +379,9 @@ void ReliefGenerator::run()
                 if (trim_)
                 {
                     trim_ = false;
-                    release_models("the system is low on memory", false);
+                    release_models("the system is low on memory");
                 }
                 const Clock::time_point now = Clock::now();
-                if (session_)
-                    session_->SetGpuFree(gpu_free());
                 reconcile_upscales(lock);
                 // Everything below is read again after the file checks; only these two were checked before them.
                 if (stopping_)
@@ -416,12 +416,11 @@ void ReliefGenerator::run()
                     break;
                 // Nothing else of the game, in any state: idle until a draw asks for a map.
                 Clock::time_point until = Clock::time_point::max();
-                // Once per idle period: a retained device-policy shell has nothing more to release until it works again.
-                if (session_ && !inference_released_)
+                if (session_)
                 {
                     if (now - idle_since_ >= kIdleRelease)
                     {
-                        release_models("idle", true);
+                        release_models("idle");
                         continue;
                     }
                     until = std::min(until, idle_since_ + kIdleRelease);
@@ -504,7 +503,6 @@ void ReliefGenerator::run()
         }
         std::lock_guard lock(mutex_);
         idle_since_ = Clock::now();
-        inference_released_ = false; // the job reopened what it needed
         stats_.working = false; computing_ = computing_normal_ = computing_gloss_ = false;
     }
 }
@@ -562,6 +560,8 @@ bool ReliefGenerator::open_session()
     if (stopping_)
         return false;
     stats_.device = session->stats().provider;
+    // The device of each texture follows the game's state (relief device_choice.hpp), read live on this thread.
+    session->SetGame([this] { return gpu_free(); }, [this] { return scene_shown(); });
     session_ = std::move(session);
     running_ = session_.get();
     return true;
@@ -582,8 +582,22 @@ void ReliefGenerator::prepare_request(const Request &request)
     std::string failure;
     auto computed = session_->ComputeFile(setup_.textures, request.file, setup_.directory, fx::kReliefMapSize,
                                           failure, display ? &*display : nullptr);
+    note_device();
+    if (computed.outcome == relief::Outcome::Yielded)
+    {
+        // Stopped on the GPU because the scene shows: back to the queue, for the CPU (the scene is shown now).
+        std::lock_guard lock(mutex_);
+        if (!stopping_ && entry->state == NormalMapEntry::Waiting && wanted(*entry))
+        {
+            requests_.push_front(request);
+            shim::logf("effects: relief generation: %s stopped on the GPU (the scene shows): back to the queue for the CPU",
+                       entry->name.c_str());
+        }
+        else if (entry->state == NormalMapEntry::Waiting)
+            entry->state = stopping_ ? NormalMapEntry::Missing : NormalMapEntry::Unqueued;
+        return;
+    }
     PendingFinalize pending; pending.id = ++next_finalize_; pending.key = entry->key; pending.request = request;
-    { std::lock_guard lock(mutex_); stats_.device = session_->stats().provider; }
     if (computed.product) stage(std::move(computed.product), std::move(pending));
     else {
         relief::FinalizeResult result; result.outcome = computed.outcome; result.failure = std::move(failure);
@@ -724,9 +738,10 @@ void ReliefGenerator::loading_window(uint64_t generation, uint64_t deadline_ms,
     wake_.notify_all();
 }
 
-void ReliefGenerator::frame(bool scene_drawn)
+void ReliefGenerator::frame(bool scene_drawn, bool loading)
 {
     last_frame_us_ = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
+    scene_shown_ = scene_drawn && !loading;
     scene_draws_[scene_frame_++ % std::size(scene_draws_)] = scene_drawn;
     const bool quiet = std::none_of(std::begin(scene_draws_), std::end(scene_draws_), [](bool drawn) { return drawn; }); // a loading or interface screen draws no scene (a menu over the scene still does)
     if (quiet != scene_quiet_)
@@ -736,11 +751,37 @@ void ReliefGenerator::frame(bool scene_drawn)
     scene_quiet_ = quiet;
 }
 
+namespace
+{
+// No frame for a second: the game is in the background.
+bool FramesStopped(int64_t last)
+{
+    const int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
+    return last != 0 && now - last > 1000000;
+}
+}
+
 bool ReliefGenerator::gpu_free() const
 {
-    const int64_t last = last_frame_us_;
-    const int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
-    return scene_quiet_ || (last != 0 && now - last > 1000000);
+    return scene_quiet_ || FramesStopped(last_frame_us_);
+}
+
+bool ReliefGenerator::scene_shown() const
+{
+    return scene_shown_ && !FramesStopped(last_frame_us_);
+}
+
+void ReliefGenerator::note_device()
+{
+    const relief::Session::Stats &session = session_->stats();
+    std::lock_guard lock(mutex_);
+    stats_.device = session.provider;
+    if (session.device_why == relief::DeviceReason::None || (device_logged_ && device_gpu_ == session.gpu))
+        return;
+    shim::logf("effects: relief generation now on the %s (%s): %s", session.gpu ? "GPU" : "CPU",
+               relief::DeviceReasonText(session.device_why), session.provider.c_str());
+    device_logged_ = true;
+    device_gpu_ = session.gpu;
 }
 
 void ReliefGenerator::trim()
@@ -752,29 +793,16 @@ void ReliefGenerator::trim()
     wake_.notify_all();
 }
 
-void ReliefGenerator::release_models(const char *why, bool keep_policy)
+void ReliefGenerator::release_models(const char *why)
 {
     const bool had = session_ != nullptr;
-    // Releasing a blocked CPU detour when idle must not reset its 60-second epoch or let a new session admit
-    // background CPU work. Keep its small policy shell and borrowed serialized model spans; drop inference
-    // objects (including the CPU runtime/arenas). Low memory, shutdown and reconfigure destroy the whole session,
-    // serialized models included (the retry epoch starts again).
-    const bool kept_policy = keep_policy && session_ && session_->stats().gpu_possible && !session_->stats().gpu;
-    inference_released_ = kept_policy;
-    if (kept_policy)
-        session_->ReleaseIdleModels();
-    else
-    {
-        running_ = nullptr;
-        session_.reset();
-        for (std::vector<uint8_t> &bytes : models_)
-            bytes = {};
-    }
+    running_ = nullptr;
+    session_.reset();
+    for (std::vector<uint8_t> &bytes : models_)
+        bytes = {};
     const bool gpu = relief::ReleaseGpu();
     if (had || gpu)
-        shim::logf("effects: relief generation (%s): inference objects released%s%s", why,
-                   kept_policy ? "; retry state and serialized model data kept" : "",
-                   gpu ? ", the GPU's Vulkan instance closed" : "");
+        shim::logf("effects: relief generation (%s): models released%s", why, gpu ? ", the GPU's Vulkan instance closed" : "");
 }
 
 void ReliefGenerator::prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry)
@@ -793,9 +821,22 @@ void ReliefGenerator::prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry
     std::string failure;
     auto computed = session_->ComputeUpscale(setup_.textures, entry->file, display,
         static_cast<int>(std::max(entry->width, entry->height)), failure);
+    note_device();
+    if (computed.outcome == relief::Outcome::Yielded)
+    {
+        std::lock_guard lock(mutex_); // as prepare_request
+        if (!stopping_ && display_ && entry->state == UpscaleEntry::Waiting)
+        {
+            upscales_.push_front(entry);
+            shim::logf("effects: relief generation: ×2 of %s stopped on the GPU (the scene shows): back to the queue for the CPU",
+                       entry->name.c_str());
+        }
+        else if (entry->state == UpscaleEntry::Waiting)
+            entry->state = UpscaleEntry::Missing;
+        return;
+    }
     PendingFinalize pending; pending.id = ++next_finalize_; pending.key = entry->key;
     pending.upscale = entry; pending.is_upscale = true;
-    { std::lock_guard lock(mutex_); stats_.device = session_->stats().provider; }
     if (computed.product) stage(std::move(computed.product), std::move(pending));
     else {
         relief::FinalizeResult result; result.outcome = computed.outcome; result.failure = std::move(failure);

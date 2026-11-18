@@ -5,6 +5,7 @@
 // effects/relief_generator.hpp: Session); the host tool makes a whole game at once (Prepare: List, every texture, Prune).
 #pragma once
 
+#include "device_choice.hpp"
 #include "storm/fx/relief_store.hpp"
 #include "storm/fx/upscale.hpp"
 
@@ -33,6 +34,7 @@ enum class Outcome
     Existing, // its map is there already
     Skipped,  // no prepared map for it: unknown format, too small, a grey height map (the game derives it), no rule
     Failed,   // logged with the reason
+    Yielded,  // stopped on the GPU because the player sees the game's scene (Session::SetGame): to be made again, on the CPU
 };
 
 // The model files: ncnn graphs, the same on the GPU and the CPU. All are required.
@@ -56,8 +58,9 @@ inline constexpr const char *kModelFiles[] = {"pbrify-normal.ncnn.param",    "pb
                                               "pbrify-roughness.ncnn.param", "pbrify-roughness.ncnn.bin",
                                               "pbrify-upscale.ncnn.param",   "pbrify-upscale.ncnn.bin"};
 
-// The models loaded once for many textures, on the device measured for this game (backend.hpp ChooseDevice: ncnn on
-// the GPU or the CPU; logged). One thread at a time (Cancel aside).
+// The models loaded once for many textures, ncnn on the GPU or the CPU: each texture's device follows the game's state
+// (SetGame, device_choice.hpp); the host tool's, the device measured for this machine (backend.hpp ChooseDevice;
+// logged). One thread at a time (Cancel aside).
 class Session
 {
   public:
@@ -66,7 +69,8 @@ class Session
         int prepared = 0;
         double infer_seconds = 0.0, max_texture_ms = 0.0;
         std::string provider;
-        bool gpu = false;      // the networks run on the GPU now (else on the CPU)
+        bool gpu = false;      // the last texture's networks ran on the GPU (else on the CPU)
+        DeviceReason device_why = DeviceReason::None; // why the last texture took its device
         bool gpu_possible = false; // a GPU the session may use (its graphs, no crash recorded)
         std::string gpu_crash; // the GPU (and driver) whose inference crashed a previous run, so the CPU is used; else empty
     };
@@ -99,18 +103,15 @@ class Session
     void SetComputeAdmission(std::function<bool(size_t)> admission);
     // Any thread (the game's shutdown): the texture being prepared fails at once, and every later one.
     void Cancel();
-    // Any thread: whether the game leaves the GPU free now (a loading or an interface screen, the game in the
-    // background): the GPU is tried again from the CPU (prepare.cpp, the device per texture).
-    void SetGpuFree(bool free);
-    // Worker only: one scoped job; never changes GPU-free/demotion policy.
+    // Worker only, before the first texture: the game's state, which decides each texture's device
+    // (device_choice.hpp). `scene_shown`: the player sees the game's scene (no texture starts on the GPU, and one on it
+    // stops at its next submission: Outcome::Yielded); `gpu_free`: the game leaves the GPU free. Both are called on the
+    // worker thread. Without them (the host tool) every texture runs on the device measured for this machine.
+    void SetGame(std::function<bool()> gpu_free, std::function<bool()> scene_shown);
+    // Worker only: one scoped job, the place's loading window (loading_retry.hpp).
     void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry);
-    // Worker idle/trim: release inference objects, preserving CPU retry timing/count and model spans.
-    void ReleaseIdleModels();
-    // Worker only, between textures. Reopens CPU models lazily only on a changed
-    // budget; outer device/retry state and model bytes stay alive.
+    // Worker only, between textures: the CPU networks' thread count from their next tile; nothing reloaded.
     void SetCpuBudget(unsigned threads);
-    // Background work waits during a CPU detour until the GPU is free or its bounded retry is due.
-    bool WaitsForGpu() const;
     const Stats &stats() const;
 
   private:

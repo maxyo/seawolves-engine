@@ -48,7 +48,7 @@ with tempfile.TemporaryDirectory(prefix='cpu-admission-') as tmp:
  prefix=backend[start:backend.index('        ncnn::Mat in(width, height, 3);',start)]
  prepare=(root/'src/libs/relief/prepare.cpp').read_text()
  start=prepare.index('void Session::SetCpuBudget(')
- method=prepare[start:prepare.index('\nvoid Session::ReleaseIdleModels()',start)]
+ method=prepare[start:prepare.index('\nvoid Session::SetGame(',start)]
  probe_start=prepare.index('    auto probe_permit =')
  probe_prefix=prepare[probe_start:prepare.index('    const Device device',probe_start)]
  fixture=r'''
@@ -73,7 +73,7 @@ struct CpuRun {
 };
 struct Session {
  struct Runtime {int threads=0;void SetThreads(int n){threads=n;}};
- struct Impl {int threads=1;std::unique_ptr<int> synchronous_finalizer=std::make_unique<int>();double cpu_ms_per_texel=1,upscale_cpu_ms_per_texel=2;std::mutex networks_mutex;std::unique_ptr<Runtime> runtime=std::make_unique<Runtime>();};
+ struct Impl {int threads=1;std::unique_ptr<int> synchronous_finalizer=std::make_unique<int>();std::mutex networks_mutex;std::unique_ptr<Runtime> runtime=std::make_unique<Runtime>();};
  std::unique_ptr<Impl> impl_=std::make_unique<Impl>();
  void SetCpuBudget(unsigned);
 };
@@ -96,21 +96,17 @@ int main(){
  s.SetCpuBudget(1);s.SetCpuBudget(0);
  assert(s.impl_->runtime->threads==0&&s.impl_->synchronous_finalizer.get()==finalizer&&s.impl_->threads==1);
  s.SetCpuBudget(2);
- // The loaded networks take the new count (no reload); the CPU estimates scale by the thread counts.
+ // The loaded networks take the new count (no reload).
  assert(s.impl_->runtime->threads==2&&!s.impl_->synchronous_finalizer&&s.impl_->threads==2);
- assert(s.impl_->cpu_ms_per_texel==0.5&&s.impl_->upscale_cpu_ms_per_texel==1);
  // Reopened synchronous encoder resources survive a no-op budget and are released
  // by the actual production method on the next pool-size change.
  s.impl_->synchronous_finalizer=std::make_unique<int>();finalizer=s.impl_->synchronous_finalizer.get();
- s.impl_->cpu_ms_per_texel=3;s.impl_->upscale_cpu_ms_per_texel=4;
  s.SetCpuBudget(2);
  assert(s.impl_->runtime->threads==2&&s.impl_->synchronous_finalizer.get()==finalizer);
- assert(s.impl_->cpu_ms_per_texel==3&&s.impl_->upscale_cpu_ms_per_texel==4);
  s.SetCpuBudget(1);
  assert(s.impl_->runtime->threads==1&&s.impl_->threads==1&&!s.impl_->synchronous_finalizer);
- assert(s.impl_->cpu_ms_per_texel==6&&s.impl_->upscale_cpu_ms_per_texel==8);
- s.impl_->runtime.reset();s.SetCpuBudget(4); // no CPU networks loaded: only the count and the estimates
- assert(s.impl_->threads==4&&s.impl_->cpu_ms_per_texel==1.5);
+ s.impl_->runtime.reset();s.SetCpuBudget(4); // no CPU networks loaded: only the count
+ assert(s.impl_->threads==4);
 }
 '''.replace('PREFIX',prefix).replace('METHOD',method).replace('PROBE',probe_prefix)
  source=p/'hook.cpp';source.write_text(fixture);binary=p/'hook'

@@ -10,6 +10,10 @@
 //     texture's entry becomes Stored: the draw reads and uploads it and the relief fades in (NormalMaps::handle).
 //   * A new scene, or settings that change which draws read the maps, drop the queue (drop_queue): the entries go
 //     back to Unqueued and the next draws that read them ask again. When nothing is requested the worker is idle.
+//   * The device follows the game (relief device_choice.hpp): while the player sees the game's scene only the CPU; the
+//     GPU only while the game draws no scene (a loading or an interface screen, the game in the background) or in a
+//     place's loading window. A GPU texture stops at its next submission when the scene shows, and goes back to the
+//     queue for the CPU. Each change of device is logged.
 //   * The worker runs at nice 10. CPU jobs take fx::CpuAdmission's share, with the ray-bake pieces: all cores after a
 //     presented opaque stock frame (a place loads), and while the game is played a quarter of the cores, at most two,
 //     one when the device is hot and none at thermal status SEVERE (thermal.hpp). The renderer's explicit hold (the
@@ -87,15 +91,18 @@ class ReliefGenerator
     void drop_queue(const char *why);
     // Stops the worker (the texture in progress is abandoned at its next inference tile).
     void shutdown();
-    // Game thread, every frame: whether a perspective 3D scene was drawn. A few frames without a scene
-    // (a loading or an interface screen), or no frame for a second (the game in the background), leave the GPU free:
-    // relief::Session can try the GPU again for the next required texture; this never triggers a corpus sweep.
-    void frame(bool scene_drawn);
+    // Game thread, every frame: whether a perspective 3D scene was drawn, and whether a place loads (its scene is
+    // drawn under the loading cover, unseen). A scene drawn while no place loads is shown to the player: the relief
+    // runs on the CPU, and a GPU texture stops (scene_shown). A few frames without a scene (a loading or an interface
+    // screen), or no frame for a second (the game in the background), leave the GPU free (gpu_free). Neither starts
+    // any work by itself.
+    void frame(bool scene_drawn, bool loading);
     // Game thread: exact scoped entries eligible for one bounded measured retry. Empty revokes.
     void loading_window(uint64_t generation, uint64_t deadline_ms,
                         std::vector<std::shared_ptr<NormalMapEntry>> normal,
                         std::vector<std::shared_ptr<UpscaleEntry>> upscale);
     bool gpu_free() const;
+    bool scene_shown() const; // any thread: the last frame showed the player a scene, less than a second ago
     // Any thread (the system is low on memory: render::TrimRelief): the models are released after the texture in
     // progress, and the GPU instance closed; they load again when work comes. Logged.
     void trim();
@@ -139,8 +146,8 @@ class ReliefGenerator
     void reconcile_upscales(std::unique_lock<std::mutex> &lock); // holding mutex_ (released for the file checks): publish completed files; prune expired/stale requests
     bool open_session();
     void prepare_request(const Request &request);
-    // Worker, under mutex_. keep_policy: an idle CPU detour keeps its device-policy shell (low memory does not).
-    void release_models(const char *why, bool keep_policy);
+    void release_models(const char *why); // worker, under mutex_
+    void note_device(); // worker: logs a change of the device the textures run on
     bool must_wait(); // under mutex_: the background gate (thermal.hpp), changes logged
     void prepare_upscale(const std::shared_ptr<UpscaleEntry> &entry);
     bool wanted(const NormalMapEntry &entry) const; // under mutex_: its product is switched on (set_wanted)
@@ -152,6 +159,7 @@ class ReliefGenerator
     std::atomic<bool> stopping_{false};
     std::atomic<int64_t> last_frame_us_{0};
     std::atomic<bool> scene_quiet_{false};
+    std::atomic<bool> scene_shown_{false};
     bool scene_draws_[30] = {};
     uint32_t scene_frame_ = 0;
     uint64_t loading_generation_ = 0;
@@ -168,12 +176,12 @@ class ReliefGenerator
     uint64_t order_ = 0, admitted_ = 0;
     bool next_upscale_ = false; // a live lane never waits behind the entire other queue
     std::chrono::steady_clock::time_point idle_since_{};
-    bool inference_released_ = false; // the retained shell's inference objects are released (until a job runs)
     Stats stats_;
     // Worker only.
     std::unique_ptr<relief::Session> session_;
     std::array<std::vector<uint8_t>, 8> models_; // relief::kModelFiles (checked in the .cpp); ncnn keeps no copy of the weights' bytes
     bool model_failed_ = false;
+    bool device_logged_ = false, device_gpu_ = false; // the device last logged (note_device)
     std::unique_ptr<relief::FinalizeQueue> finalizer_queue_;
     std::unique_ptr<relief::Finalizer> inline_finalizer_; // oversized progress, only after the worker slot drains
     std::optional<PendingFinalize> finalizing_; // under mutex_: includes unconsumed completion

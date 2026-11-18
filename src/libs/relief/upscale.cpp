@@ -66,6 +66,11 @@ void Upscaler::SetLoadingRetry(std::shared_ptr<LoadingRetry> retry)
     network_->SetLoadingRetry(std::move(retry));
 }
 
+void Upscaler::SetYield(std::function<bool()> yield)
+{
+    network_->SetYield(std::move(yield));
+}
+
 bool Upscaler::Run(std::span<const uint8_t> rgba, int width, int height, bool wrap, std::vector<uint8_t> &out, std::string &error)
 {
     using Clock = std::chrono::steady_clock;

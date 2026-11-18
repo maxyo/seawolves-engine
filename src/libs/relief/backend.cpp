@@ -369,7 +369,7 @@ class GpuNetwork final : public Network
             ex.set_workspace_vkallocator(blobs);
             ex.set_staging_vkallocator(staging);
             const auto submit = [&](int blob, bool timed) {
-                if (cancelled_)
+                if (cancelled_ || Yielded())
                     return false;
                 const Clock::time_point start = Clock::now();
                 ncnn::VkCompute cmd(device);
@@ -502,7 +502,7 @@ class GpuNetwork final : public Network
             if (!RunStages(tile, Stages(calibration_, std::max(iw, ih) - 2 * halo_), result, walls) || result.c != 3 ||
                 result.w != iw * scale_ || result.h != ih * scale_)
             {
-                failure = cancelled_ ? "cancelled" : "ncnn inference failed";
+                failure = cancelled_ ? "cancelled" : Yielded() ? "yielded" : "ncnn inference failed";
                 return false;
             }
             ms = 0.0; // the longest submission: what a frame of the game may wait for
@@ -611,6 +611,8 @@ class GpuNetwork final : public Network
     void Cancel() override { cancelled_ = true; }
 
     void SetLoadingRetry(std::shared_ptr<LoadingRetry> retry) override { loading_retry_ = std::move(retry); }
+    void SetYield(std::function<bool()> yield) override { yield_ = std::move(yield); }
+    bool Yielded() const { return yield_ && yield_(); }
 
     std::string Describe() const override
     {
@@ -625,6 +627,7 @@ class GpuNetwork final : public Network
     uint64_t model_id_ = storm::hash::kFnvOffset;
     bool floor_guard_logged_ = false;
     std::shared_ptr<LoadingRetry> loading_retry_;
+    std::function<bool()> yield_;
     TileRecovery recovery_;
     Calibration calibration_;
     std::string param_;
@@ -749,9 +752,8 @@ std::string GpuCrash(const std::filesystem::path &cache)
     return Guard(cache).crashed().what;
 }
 
-Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int threads, double &cpu_ms_per_texel)
+Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int threads)
 {
-    cpu_ms_per_texel = 0.0;
     // The crash guard: the marker of GPU work (MarkGpuRunning) left from the last run means the process died in it.
     // That GPU and driver take the CPU from then on (relief-gpu-crashed.txt; «Очистить кэш» clears it); a crash before
     // the GPU was known keeps Vulkan closed altogether.
@@ -796,11 +798,10 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
     const std::string key = CacheLine(gpu, param, bin, threads);
     {
         std::ifstream in(file);
-        std::string line, choice, numbers, per_texel;
+        std::string line, choice, numbers;
         if (std::getline(in, line) && line == key && std::getline(in, choice) && std::getline(in, numbers) &&
-            std::getline(in, per_texel) && (choice == "GPU" || choice == "CPU"))
+            (choice == "GPU" || choice == "CPU"))
         {
-            cpu_ms_per_texel = std::atof(per_texel.c_str());
             Log("relief device: %s (measured before on %s: %s)", choice.c_str(), gpu.name.c_str(), numbers.c_str());
             return choice == "GPU" ? Device::Gpu : Device::Cpu;
         }
@@ -848,12 +849,10 @@ Device ChooseDevice(const std::filesystem::path &cache, std::span<const uint8_t>
                   size, size, gpu_ms, gpu_first_ms, cpu_ms, threads);
     Log("relief device: %s (measured now on %s, driver %s: %s)", DeviceName(device), gpu.name.c_str(), gpu.driver.c_str(),
         numbers);
-    cpu_ms_per_texel = cpu_ms / (static_cast<double>(size) * size);
     std::filesystem::create_directories(cache, ignored);
     std::ofstream(file, std::ios::trunc) << key << "\n"
                                          << DeviceName(device) << "\n"
-                                         << numbers << "\n"
-                                         << cpu_ms_per_texel << "\n";
+                                         << numbers << "\n";
     return device;
 }
 
