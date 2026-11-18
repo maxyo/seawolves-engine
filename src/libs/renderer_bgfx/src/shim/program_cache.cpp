@@ -1,5 +1,7 @@
 #include "shim/program_cache.hpp"
 
+#include "shim/device.hpp"
+
 #include "shim/pipeline_sets.hpp"
 #include "shim/shim.hpp"
 #include "texture/core/cache.hpp"
@@ -361,9 +363,17 @@ void ProgramCache::cacheWrite(uint64_t id, const void *data, uint32_t size)
 
 void ProgramCache::fatal(const char *file, uint16_t line, bgfx::Fatal::Enum code, const char *str)
 {
-    logf("bgfx %s (%s:%u): %s", code == bgfx::Fatal::DebugCheck ? "debug check" : "FATAL", file, line, str);
-    if (code != bgfx::Fatal::DebugCheck)
-        std::abort(); // bgfx's contract: the callback must not return from a fatal error
+    if (code == bgfx::Fatal::DebugCheck)
+    {
+        logf("WARNING: bgfx debug check (%s:%u): %s", file, line, str);
+        return;
+    }
+    // At error level (error.log flushes at once, before the abort below), and on Vulkan recorded for this driver:
+    // a driver that ended the game once is not started on Vulkan again (Context::vulkan_failed).
+    logf("ERROR: bgfx FATAL (%s:%u): %s", file, line, str);
+    if (vulkan_)
+        Context::instance().vulkan_failed(std::string("bgfx FATAL: ") + str);
+    std::abort(); // bgfx's contract: the callback must not return from a fatal error
 }
 
 #ifdef STORM_TRACY

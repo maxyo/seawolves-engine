@@ -690,7 +690,7 @@ index ad3c95a..d629041 100644
  			graphicsPipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
  			graphicsPipeline.pNext = NULL;
  			graphicsPipeline.flags = 0;
-@@ -5339,83 +5708,559 @@ VK_IMPORT_DEVICE
+@@ -5339,83 +5708,560 @@ VK_IMPORT_DEVICE
  			graphicsPipeline.pColorBlendState    = &colorBlendState;
  			graphicsPipeline.pDynamicState       = &dynamicState;
  			graphicsPipeline.layout     = program.m_pipelineLayout;
@@ -838,9 +838,11 @@ index ad3c95a..d629041 100644
 +		{
 +			BGFX_FATAL(VK_SUCCESS == _job->result && VK_NULL_HANDLE != _job->pipeline
  				, Fatal::InvalidShader
- 				, "Failed to create graphics PSO! vkCreateGraphicsPipelines failed %d: %s."
+-				, "Failed to create graphics PSO! vkCreateGraphicsPipelines failed %d: %s."
 -				, result
 -				, getName(result)
++				, "Failed to create graphics PSO for %s + %s, state 0x%016llx! vkCreateGraphicsPipelines failed %d: %s."
++				, _job->vsName, _job->fsName, (unsigned long long)_job->state
 +				, _job->result
 +				, getName(_job->result)
  				);

@@ -33,7 +33,14 @@ self-test pass. Otherwise the device runs OpenGL ES; every start logs one line
 
 A process that died during the Vulkan start leaves `<cache>/RenderBackend/vulkan-running.txt`; the next start
 records it (`vulkan-crashed.txt`) and that device and driver run OpenGL ES until the driver changes or
-«Очистить кэш».
+«Очистить кэш». A bgfx FATAL on Vulkan later in the run (`ProgramCache::fatal`: an error line in error.log, then
+the abort) is recorded the same way (`Context::vulkan_failed`).
+
+`VulkanDenied` lists drivers that pass every check above and still break the game, each with its evidence: every
+Imagination (PowerVR) driver for now (Rogue 1.13@5776728 on the Galaxy A12: corrupted geometry and
+`VK_ERROR_OUT_OF_HOST_MEMORY`; D-Series 25.1@6794074 on the Pixel 10 Pro: `VK_ERROR_UNKNOWN` creating the title's
+pipelines). `auto` runs OpenGL ES there and logs the reason as a warning; `render_backend =
+vulkan` still takes Vulkan.
 
 Developer keys in engine.ini: `render_backend_self_test = fail` (tests the fallback),
 `missing_texture_look = neutral | loud` (stand-in for a failed texture; loud is the default on the host and in

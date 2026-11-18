@@ -176,15 +176,33 @@ VulkanDevice ProbeVulkan()
 namespace
 {
 // A denylist entry: a GPU vendor, optionally a device, and the driver versions [from, to] (VkPhysicalDeviceProperties,
-// the vendor's own encoding) that break the game on Vulkan, with the evidence. No entry yet: no device has been seen
-// failing. A crash on a device that is not listed is caught by the crash guard for that device and driver alone.
+// the vendor's own encoding) that break the game on Vulkan, with the evidence. A crash on a device that is not listed
+// is caught by the crash guard for that device and driver alone (and a renderer FATAL by Context::vulkan_failed).
+//
+// No capability of the device predicts these failures: the drivers listed report Vulkan 1.1 with everything
+// DecideBackend checks. They are listed by driver build, the vendor's own version number, not by phone model.
 struct DeniedDriver
 {
     uint32_t vendor_id, device_id; // device_id 0: every device of the vendor
     uint32_t driver_from, driver_to;
     const char *evidence; // "Mali-G52 r20p0: the sea's pipeline crashes (Test Lab run <id>)"
 };
-constexpr std::array<DeniedDriver, 0> kDeniedDrivers{};
+constexpr uint32_t kVendorImagination = 0x1010;
+constexpr std::array<DeniedDriver, 1> kDeniedDrivers{{
+    // Every Imagination driver seen so far fails to create the game's pipelines; two driver lines, so the vendor's
+    // whole range until a build is shown to work (then `driver_from`/`driver_to` narrow it):
+    // - Galaxy A12, PowerVR Rogue GE8320, build 1.13@5776728 (Imagination's driverVersion is the build number,
+    //   0x582558), Test Lab seawolves-loops13-s24-a12-20261118-130400: stretched triangles on the title's ships and
+    //   the hero's legs not drawn (both right on Adreno), 3.8 s for the simplest pipeline, vkCreateGraphicsPipelines
+    //   VK_ERROR_OUT_OF_HOST_MEMORY on the switch to «Средняя» (bgfx FATAL, the game ended).
+    // - Pixel 10 Pro, PowerVR D-Series DXT-48-1536, Vulkan 1.4.303, build 25.1@6794074 (0x67ab5a), Test Lab
+    //   seawolves-gpu-p10pro-20261118-135909: vkCreateGraphicsPipelines VK_ERROR_UNKNOWN for vs_ff_unlit + fs_ff
+    //   (alpha blend, state 0x000000400656502f) on the title screen (bgfx FATAL, the game ended).
+    {kVendorImagination, 0, 0, UINT32_MAX,
+     "Imagination PowerVR drivers fail to create the game's Vulkan pipelines (Rogue 1.13@5776728: "
+     "VK_ERROR_OUT_OF_HOST_MEMORY and corrupted geometry; D-Series 25.1@6794074: VK_ERROR_UNKNOWN; Test Lab "
+     "2026-11-18)"},
+}};
 } // namespace
 
 std::string VulkanDenied(const VulkanDevice &device)

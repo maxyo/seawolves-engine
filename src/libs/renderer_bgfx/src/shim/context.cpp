@@ -458,6 +458,18 @@ bool Context::wait_render_idle(std::unique_lock<std::mutex> &lock, const char *w
     return false;
 }
 
+bool Context::vulkan_failed(const std::string &why)
+{
+    std::lock_guard lock(vulkan_record_mutex_);
+    if (!vulkan_record_)
+        return false;
+    logf("ERROR: render backend: Vulkan failed the game on this driver (%s): recorded, the next start runs OpenGL ES "
+         "until the driver changes or the cache is cleared",
+         why.c_str());
+    vulkan_record_->fail(why);
+    return true;
+}
+
 bool Context::init(SDL_Window *window, uint32_t width, uint32_t height, bool vsync)
 {
     if (!window)
@@ -509,7 +521,11 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
             if (start_backend(bgfx::RendererType::Vulkan, &vulkan, width, height, &failure) && !backend_self_test(&failure))
                 stop_backend();
             if (failure.empty())
+            {
                 backend_guard_.emplace(guard);
+                std::lock_guard lock(vulkan_record_mutex_);
+                vulkan_record_.emplace(guard);
+            }
             else
             {
                 // The explicit exception to "no fallbacks": a device whose Vulkan cannot run the game still has to
@@ -539,7 +555,10 @@ bool Context::start(SDL_Window *window, uint32_t width, uint32_t height, bool vs
         // driver keeps from it, is an error line; either way the same text.
         const bool refused = !decision.vulkan && (backend_request_ == render::Backend::Vulkan || vulkan_failed ||
                                                   (backend_request_ == render::Backend::Auto && !guard.crash().empty()));
-        logf("%srender backend: %s", refused ? "ERROR: " : "", backend_choice_.line.c_str());
+        // A driver on the denylist: the documented exception (backend_select.cpp kDeniedDrivers), said as a warning.
+        const bool denied = !decision.vulkan && backend_request_ == render::Backend::Auto && vulkan.found() &&
+                            !VulkanDenied(vulkan).empty();
+        logf("%srender backend: %s", refused ? "ERROR: " : denied ? "WARNING: " : "", backend_choice_.line.c_str());
         if (decision.vulkan && !vulkan.large_points)
             logf("render backend: the Vulkan device has no largePoints: point lists (the stars) are one pixel wide");
     }
@@ -861,6 +880,10 @@ void Context::shutdown()
     if (backend_guard_)
         backend_guard_->succeed();
     backend_guard_.reset();
+    {
+        std::lock_guard lock(vulkan_record_mutex_);
+        vulkan_record_.reset();
+    }
     {
         std::lock_guard lock(release_mutex_);
         reset_unapplied_ = false; // went with bgfx

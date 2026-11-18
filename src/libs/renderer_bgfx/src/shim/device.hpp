@@ -79,6 +79,11 @@ class Context final : public render::FrameOwner
     bool async_pipelines() const { return async_pipelines_; }
     // The backend the device runs and why (render::RenderBackendChoice); empty before.
     const render::BackendChoice &backend_choice() const { return backend_choice_; }
+    // Any thread, the device on Vulkan: the driver failed the game after its start (a bgfx FATAL, ProgramCache::fatal).
+    // Logged at error and recorded for this device and driver (backend_select.hpp VulkanStartGuard), so the next
+    // start runs OpenGL ES until the driver changes or «Очистить кэш». False when nothing could be recorded (not on
+    // Vulkan, no cache directory).
+    bool vulkan_failed(const std::string &why);
     // Valid from init on.
     const DeviceInfo &device_info() const { return device_info_; }
     // Any thread: a frame handed to the render thread is not finished yet (rendered and presented).
@@ -300,6 +305,8 @@ class Context final : public render::FrameOwner
     std::filesystem::path backend_state_directory_;
     render::BackendChoice backend_choice_;
     std::optional<VulkanStartGuard> backend_guard_; // a Vulkan start not yet confirmed by presented frames
+    std::optional<VulkanStartGuard> vulkan_record_; // the running Vulkan device's record, for vulkan_failed()
+    std::mutex vulkan_record_mutex_;
     uint32_t backend_generation_ = 0;
     uint32_t backend_presented_ = 0;                // presented frames of this device
     bool fail_self_test_ = false;                   // render::FailRenderBackendSelfTest
