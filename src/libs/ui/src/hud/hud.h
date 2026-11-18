@@ -418,7 +418,8 @@ class Fan
 
 // The active abilities of a scene (sea: the ship abilities, land: Rush) behind one small button,
 // the layout element "abilities" (a star; a dot while one is ready, the fill while one runs), also
-// for one ability. A tap lays them out as HUD buttons beside it (Fan, slots abilities-1…4): ready
+// for one ability; `lead` are entries of the scene laid out before them (land: the potion), the
+// button is drawn for them alone too. A tap lays them out as HUD buttons beside it (Fan, slots abilities-1…4): ready
 // (a tap launches it through `launch`, the game's own command, and folds the row), running (its
 // fill and seconds, not tappable), recovering and blocked (the disabled look; recovering keeps its
 // fill and seconds). Nothing is drawn without abilities: the button is hidden then.
@@ -428,7 +429,8 @@ class AbilityControls
     explicit AbilityControls(Hud &hud) : hud_(hud), fan_(hud, "abilities")
     {
     }
-    void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch);
+    void Build(const std::vector<Ability> &abilities, View &view, Input &input, const std::function<void(const Ability &)> &launch,
+               std::vector<Fan::Option> lead = {});
     bool Open() const
     {
         return fan_.Open();

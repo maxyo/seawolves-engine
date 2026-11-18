@@ -32,8 +32,8 @@ static void CheckExplore()
     Expect(!mount.Has("location"), "a date alone is no location");
     bench.Feed("worldInfo", "world-info");
     Expect(mount.Has("hero") && mount.shown.elements["hero"]["disabled"] == false && mount.Has("pause") && mount.Has("move") && mount.Has("actions") &&
-               mount.Has("potion") && mount.Has("weapon") && !mount.Has("context") && !mount.Has("strike") && !mount.shown.modal,
-           "the peace set; no context without an action");
+               mount.Has("abilities") && !mount.Has("potion") && mount.Has("weapon") && !mount.Has("context") && !mount.Has("strike") && !mount.shown.modal,
+           "the peace set (the potion behind the abilities button); no context without an action");
     ExpectEqual(mount.shown.elements["weapon"]["label"].get<std::string>(), "hud.weapon.draw", "the weapon button names what it will do");
     mount.commands.clear();
     bench.Press("pause");
@@ -85,8 +85,18 @@ static void CheckExplore()
     ExpectEqual(mount.Last(), "shortcut:mainmenu", "Меню opens the menu");
     bench.Press("weapon");
     ExpectEqual(mount.Last(), "combat:2\t5\t11\t1\tweapon\ttap", "the weapon tap carries the activity, the action's generation and a sequence");
-    bench.Press("potion");
-    ExpectEqual(mount.Last(), "combat:2\t5\t12\t2\tpotion\ttap", "the sequence grows");
+    bench.Press("abilities");
+    Expect(mount.Has("abilities-1") && mount.shown.elements["abilities-1"]["icon"] == "potion" && !mount.Has("abilities-2"),
+           "outside a fight the button lays out the potion alone: " + mount.shown.elements["abilities-1"].dump());
+    Expect(mount.shown.elements["abilities-1"]["disabled"] == true && mount.shown.elements["abilities-1"]["badge"] == "0",
+           "no potion carried: greyed with its 0");
+    Json carried = State("vitals");
+    carried["potions"] = 2;
+    bench.Set("vitals", carried);
+    Expect(mount.shown.elements["abilities-1"]["disabled"] == false && mount.shown.elements["abilities-1"]["badge"] == "2", "two carried: live, with the count");
+    bench.Press("abilities-1");
+    ExpectEqual(mount.Last(), "combat:2\t5\t12\t2\tpotion\ttap", "the potion drinks, the sequence grows");
+    Expect(!mount.Has("abilities-1"), "… and the row folds");
     Expect(mount.Has("actions") && mount.Has("travel") && mount.shown.elements["travel"]["label"] == "hud.travel",
            "the menu split: the actions at the top and the transitions (the boot) in the cluster, both offered");
     bench.Press("actions");
@@ -459,7 +469,7 @@ static void CheckCombat()
     FakeMount &mount = bench.mount;
     bench.Melee();
     ExpectEqual(mount.shown.layout, "land-combat", "melee uses the combat layout");
-    Expect(mount.Has("strike") && mount.Has("block") && mount.Has("shot") && mount.Has("actions") && mount.Has("potion") && mount.Has("weapon") &&
+    Expect(mount.Has("strike") && mount.Has("block") && mount.Has("shot") && mount.Has("actions") && mount.Has("abilities") && mount.Has("weapon") &&
                !mount.Has("context") && !mount.Has("moves") && !mount.Has("dash") && !mount.Has("effects"),
            "the combat set; no wheel until the strike is held; nothing without data");
     Expect(mount.shown.elements["hero"]["disabled"] == true, "no character screen in a fight");
@@ -489,7 +499,7 @@ static void CheckCombat()
     Expect(mount.Has("moves") && mount.shown.elements["moves"]["selected"] == "centre" && mount.shown.elements["moves"]["caption"] == "hud.move.fast" &&
                mount.shown.elements["moves"]["moves"].size() == 6,
            "holding the strike opens the wheel on the fast attack");
-    Expect(mount.shown.dimmed == std::vector<std::string>({"strike", "block", "shot", "potion", "weapon"}), "the combat cluster that is shown is dimmed under the wheel");
+    Expect(mount.shown.dimmed == std::vector<std::string>({"strike", "block", "shot", "abilities", "weapon"}), "the combat cluster that is shown is dimmed under the wheel");
     bench.Press("strike", "preview", "break");
     Expect(mount.shown.elements["moves"]["selected"] == "2" && mount.shown.elements["moves"]["caption"] == "hud.move.break", "a drag picks a sector and names the move");
     bench.Press("strike", "commit", "break");
@@ -508,7 +518,7 @@ static void CheckCombat()
     const size_t sent = mount.commands.size();
     bench.Press("strike", "commit", "feint");
     Expect(mount.commands.size() == sent, "an unavailable move is not sent and nothing else is sent instead");
-    Expect(!mount.Has("shot") && !mount.Has("potion"), "no pistol and no potion action: no buttons");
+    Expect(!mount.Has("shot") && !mount.Has("abilities"), "no pistol and no potion action (nor Rush): no buttons");
 
     // reloading
     bench.Feed("combat", "combat-melee-reload");
@@ -562,7 +572,19 @@ static void CheckStatus()
         Expect(quest.size() == 1 && quest[0]["icon"] == "lock" && quest[0]["label"] == "hud.effect.cantrun",
                "effects: a quest that forbids running shows the lock");
     }
-    Expect(mount.shown.elements["potion"]["badge"] == "3" && mount.shown.elements["potion"]["fillTone"] == "active", "potion: count and the healing fill");
+    bench.Press("abilities");
+    Expect(mount.shown.elements["abilities-1"]["badge"] == "3" && mount.shown.elements["abilities-1"]["fillTone"] == "active" &&
+               mount.shown.elements["abilities-1"]["disabled"] == false,
+           "potion: count and the healing fill on its button: " + mount.shown.elements["abilities-1"].dump());
+    Json dry = State("vitals-status");
+    dry["potions"] = 0;
+    bench.Set("vitals", dry);
+    Expect(mount.shown.elements["abilities-1"]["badge"] == "0" && mount.shown.elements["abilities-1"]["disabled"] == true, "nothing to drink: greyed with its 0");
+    const size_t drank = mount.commands.size();
+    bench.Press("abilities-1", "refused");
+    Expect(mount.commands.size() == drank, "… and a tap drinks nothing");
+    bench.Feed("vitals", "vitals-status");
+    bench.Press("abilities");
     Expect(!mount.Has("dash"), "explore: no dash");
     const Json party = mount.shown.elements["party"]["officers"];
     Expect(party.size() == 3 && party[0]["name"] == "Шарль де Мор" && party[0]["texture"] == "INTERFACES/PORTRAITS/128/face_201" &&
@@ -1291,8 +1313,9 @@ static void CheckTalkRoles()
     std::printf("talk roles against the game's characters: %zu dialog files, %d common roles checked\n", files.size(), roles);
 }
 
-// Rush behind one small button (hud.h AbilityControls): only in a fight, only while the scripts
-// offer it or it runs; a tap lays it out as a HUD button beside it; launched through the land menu's own command.
+// The potion and Rush behind one button bottom right, where the potion button was (hud.h AbilityControls):
+// the potion while the gameplay offers it, Rush only in a fight while the scripts offer it or it runs; a tap
+// lays them out as HUD buttons left of it; Rush launches through the land menu's own command.
 static void CheckRush()
 {
     Bench bench;
@@ -1301,30 +1324,33 @@ static void CheckRush()
     Json vitals = State("vitals");
     vitals["abilities"] = Json::array({Json{{"id", "Rush"}, {"label", "Тинктура Ометочтли"}, {"state", "ready"}, {"fill", 0}, {"left", 0}}});
     bench.Set("vitals", vitals);
-    Expect(!mount.Has("abilities"), "explore: no abilities button (the actions sheet keeps its row)");
+    const Json &shown = mount.shown.elements;
+    Expect(mount.Has("abilities") && shown["abilities"]["cue"] == false, "explore: the button for the potion alone, no dot (Rush is a fight's): " + shown["abilities"].dump());
+    bench.Press("abilities");
+    Expect(mount.Has("abilities-1") && shown["abilities-1"]["icon"] == "potion" && !mount.Has("abilities-2"), "explore: the potion alone, no Rush");
+    bench.Press("abilities");
     bench.Feed("gameplay", "gameplay-melee");
     bench.Feed("combat", "combat-melee");
     Json commands = State("land-commands-idle");
     commands["offered"].push_back("BI_ActivateRush");
     bench.Set("landCommands", commands);
-    const Json &shown = mount.shown.elements;
     Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "rank" && shown["abilities"]["cue"] == true &&
                !shown["abilities"].contains("badge") && !mount.Has("abilities-1") && mount.shown.sheet.empty(),
-           "fight: the collapsed abilities button with the ready dot, not a Rush button: " + shown["abilities"].dump());
-    Expect(!mount.Has("hero") && mount.Has("actions"), "… in the top row, in the place of the hero button (closed in a fight)");
+           "fight: the collapsed button with the ready dot, not a Rush button: " + shown["abilities"].dump());
+    Expect(mount.Has("hero") && mount.Has("actions") && !mount.Has("potion"), "… bottom right in the potion's place: the top row keeps the hero and actions buttons");
     mount.commands.clear();
     bench.Press("abilities");
-    Expect(mount.Has("abilities-1") && !mount.Has("abilities-2") && shown["abilities-1"]["icon"] == "flame" && shown["abilities-1"]["label"] == "Тинктура Ометочтли" &&
-               !shown["abilities-1"].contains("disabled") && shown["abilities"]["variant"] == "active" && mount.shown.sheet.empty() && mount.commands.empty(),
-           "a tap lays Rush out beside the button under the game's name, nothing launched yet: " + shown["abilities-1"].dump());
-    Expect(!mount.Has("actions"), "… in the place of the actions button");
-    bench.Press("abilities-1");
+    Expect(mount.Has("abilities-1") && mount.Has("abilities-2") && !mount.Has("abilities-3") && shown["abilities-1"]["icon"] == "potion" &&
+               shown["abilities-2"]["icon"] == "flame" && shown["abilities-2"]["label"] == "Тинктура Ометочтли" && !shown["abilities-2"].contains("disabled") &&
+               shown["abilities"]["variant"] == "active" && mount.shown.sheet.empty() && mount.commands.empty(),
+           "a tap lays out the potion, then Rush under the game's name, nothing launched yet: " + shown["abilities-2"].dump());
+    bench.Press("abilities-2");
     ExpectEqual(mount.Last(), "landcommands:1\t4\t10\t2\topen\tBI_ActivateRush", "a tap on Rush opens the land menu straight into its Rush command");
     Expect(!mount.Has("abilities-1"), "… and the row folds");
     bench.Press("abilities");
     Expect(bench.hud.Back(), "Back is the open row's");
     bench.Frame();
-    Expect(!mount.Has("abilities-1") && mount.Has("actions"), "Back folds the row, the actions button is back");
+    Expect(!mount.Has("abilities-1"), "Back folds the row");
     vitals["abilities"][0]["state"] = "active";
     vitals["abilities"][0]["fill"] = 0.75;
     vitals["abilities"][0]["left"] = 9;
@@ -1332,21 +1358,21 @@ static void CheckRush()
     Expect(shown["abilities"]["fill"] == 75 && shown["abilities"]["fillTone"] == "reload" && shown["abilities"]["cue"] == false,
            "running: the button's fill, no dot: " + shown["abilities"].dump());
     bench.Press("abilities");
-    Expect(shown["abilities-1"]["badge"] == "9" && shown["abilities-1"]["fill"] == 75 && !shown["abilities-1"].contains("disabled"),
-           "… its fill and seconds on its button: " + shown["abilities-1"].dump());
+    Expect(shown["abilities-2"]["badge"] == "9" && shown["abilities-2"]["fill"] == 75 && !shown["abilities-2"].contains("disabled"),
+           "… its fill and seconds on its button: " + shown["abilities-2"].dump());
     vitals["abilities"][0]["state"] = "recovery";
     vitals["abilities"][0]["fill"] = 0.25;
     vitals["abilities"][0]["left"] = 54;
     bench.Set("vitals", vitals);
-    Expect(shown["abilities-1"]["badge"] == "54" && shown["abilities-1"]["fill"] == 25 && shown["abilities-1"]["fillTone"] == "cooldown" &&
-               shown["abilities-1"]["disabled"] == true,
-           "recovering: the open row follows the scripts' seconds, greyed: " + shown["abilities-1"].dump());
+    Expect(shown["abilities-2"]["badge"] == "54" && shown["abilities-2"]["fill"] == 25 && shown["abilities-2"]["fillTone"] == "cooldown" &&
+               shown["abilities-2"]["disabled"] == true,
+           "recovering: the open row follows the scripts' seconds, greyed: " + shown["abilities-2"].dump());
     vitals["abilities"][0]["state"] = "blocked";
     bench.Set("vitals", vitals);
     const size_t sent = mount.commands.size(), errors_before = mount.errors.size();
-    bench.Press("abilities-1", "refused");
-    Expect(shown["abilities-1"]["disabled"] == true && !shown["abilities-1"].contains("reason") && mount.commands.size() == sent && mount.errors.size() == errors_before,
-           "blocked: greyed, no words, a tap launches nothing: " + shown["abilities-1"].dump());
+    bench.Press("abilities-2", "refused");
+    Expect(shown["abilities-2"]["disabled"] == true && !shown["abilities-2"].contains("reason") && mount.commands.size() == sent && mount.errors.size() == errors_before,
+           "blocked: greyed, no words, a tap launches nothing: " + shown["abilities-2"].dump());
     bench.Set("landCommands", State("land-commands-root"));
     Expect(mount.shown.sheet == "s-hud-sheet" && !mount.Has("abilities-1"), "the land menu takes the row's place");
     commands["revision"] = 12;
@@ -1354,7 +1380,8 @@ static void CheckRush()
     Expect(mount.shown.sheet.empty() && mount.Has("abilities") && !mount.Has("abilities-1"), "… and the row does not come back with its closing");
     vitals.erase("abilities");
     bench.Set("vitals", vitals);
-    Expect(!mount.Has("abilities") && mount.Has("hero"), "nothing offered: no button, the hero button is back");
+    bench.Press("abilities");
+    Expect(mount.Has("abilities") && mount.Has("abilities-1") && !mount.Has("abilities-2"), "no Rush offered: the button stays for the potion alone");
     vitals["abilities"] = Json::array({Json{{"id", "Turn180"}, {"state", "ready"}}});
     const size_t errors = mount.errors.size();
     bench.Set("vitals", vitals);

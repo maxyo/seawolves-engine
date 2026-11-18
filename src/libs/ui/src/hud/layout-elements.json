@@ -65,7 +65,8 @@
       "hint",
       "actions",
       "travel",
-      "potion",
+      "abilities",
+      "abilities-1",
       "weapon"
     ],
     "land-combat": [
@@ -83,12 +84,12 @@
       "block",
       "shot",
       "dash",
+      "actions",
+      "weapon",
+      "moves",
       "abilities",
       "abilities-1",
-      "actions",
-      "potion",
-      "weapon",
-      "moves"
+      "abilities-2"
     ],
     "world-map": [
       "fleet",

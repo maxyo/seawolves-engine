@@ -34,5 +34,6 @@
  "hud.ability.name.Turn180": "hud.ability.name.Turn180",
  "hud.ability.name.Rush": "hud.ability.name.Rush",
  "hud.sea.spyglass.raise": "hud.sea.spyglass.raise",
- "hud.sea.spyglass.lower": "hud.sea.spyglass.lower"
+ "hud.sea.spyglass.lower": "hud.sea.spyglass.lower",
+ "hud.potion": "hud.potion"
 }

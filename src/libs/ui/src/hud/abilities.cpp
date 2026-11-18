@@ -30,17 +30,17 @@ const char *IconOf(const std::string &id)
 } // namespace
 
 void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, Input &input,
-                            const std::function<void(const Ability &)> &launch)
+                            const std::function<void(const Ability &)> &launch, std::vector<Fan::Option> lead)
 {
-    if (abilities.empty())
+    if (abilities.empty() && lead.empty())
     {
         fan_.Close(); // nothing to offer: no button at all
         return;
     }
-    // The button: a green dot when one of them can be used now, the gold fill while one runs.
+    // The button: a green dot when an ability can be used now, the gold fill while one runs.
     bool ready = false;
     double active = 0.0;
-    std::vector<Fan::Option> options;
+    std::vector<Fan::Option> options = std::move(lead);
     for (const Ability &ability : abilities)
     {
         ready = ready || ability.state == "ready";

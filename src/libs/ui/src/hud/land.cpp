@@ -217,38 +217,29 @@ class LandScene final : public Scene
         else
             hud_.Error("land HUD: the engine offers no analog movement (inputOwner or movementGeneration missing); no move stick");
 
-        const bool abilities = melee && states.vitals.known && !states.vitals.abilities.empty();
-        if (!abilities)
+        // Bottom right, where the potion button was: one button with the potion and Rush beside it
+        // (hud.h AbilityControls): the potion while the gameplay offers it, Rush in a fight while the
+        // scripts offer it or it runs (land_status.hpp).
+        const bool potion = combat.Has("potion");
+        const std::vector<Ability> rush = melee && states.vitals.known ? states.vitals.abilities : std::vector<Ability>();
+        if (!potion && rush.empty())
             abilities_.Close();
         // The menu split: the actions at the top, as the sea orders; the
         // transitions under the thumb where the actions were, the boot (no transitions in a fight).
         if (commands.known && commands.available)
         {
             const auto &offered = commands.offered;
-            // the open abilities row takes the actions button's place (hud-layout.json "replaces")
-            if (!abilities_.Open() && std::any_of(offered.begin(), offered.end(), [](const std::string &event) { return !IsTransition(event); }))
+            if (std::any_of(offered.begin(), offered.end(), [](const std::string &event) { return !IsTransition(event); }))
             {
                 view.elements["actions"] = Json{{"label", hud_.Text("hud.sheet.actions")}};
                 input.On("actions", "click", [this](const Event &) { Commands("open", {}); });
             }
-            if (!melee && std::find(offered.begin(), offered.end(), kTravelCommand) != offered.end())
+            // the open row takes the travel button's place (hud-layout.json "replaces")
+            if (!melee && !abilities_.Open() && std::find(offered.begin(), offered.end(), kTravelCommand) != offered.end())
             {
                 view.elements["travel"] = Json{{"label", hud_.Text("hud.travel")}};
                 input.On("travel", "click", [this](const Event &) { Commands("open", kTravelCommand); });
             }
-        }
-        if (combat.Has("potion"))
-        {
-            Json potion = {{"disabled", !ready}};
-            if (states.vitals.known)
-            {
-                potion["badge"] = std::to_string(states.vitals.potions);
-                // A potion still healing fills the button (V2-Land-Combat).
-                if (std::find(states.vitals.effects.begin(), states.vitals.effects.end(), "healing") != states.vitals.effects.end())
-                    potion["fill"] = 100, potion["fillTone"] = "active";
-            }
-            view.elements["potion"] = std::move(potion);
-            input.On("potion", "click", [this](const Event &) { Strike("potion", "tap"); });
         }
         if (combat.Has("weapon"))
         {
@@ -256,17 +247,31 @@ class LandScene final : public Scene
             input.On("weapon", "click", [this](const Event &) { Strike("weapon", "tap"); });
         }
 
-        if (abilities)
+        if (potion || !rush.empty())
         {
-            // Rush behind one small button in the top row, where the hero button is outside a fight
-            // (hud.h AbilityControls), only while the scripts offer it or it runs (land_status.hpp):
-            // launched through the land menu's own command, as its row.
-            abilities_.Build(states.vitals.abilities, view, input, [this](const Ability &ability) {
+            std::vector<Fan::Option> lead;
+            if (potion)
+            {
+                // The potion with the count carried, greyed with nothing to drink; a potion still
+                // healing fills it (V2-Land-Combat). A tap drinks, as the game's potion key.
+                const bool none = states.vitals.known && states.vitals.potions == 0;
+                Fan::Option drink{Json{{"icon", "potion"}, {"label", hud_.Text("hud.potion")}, {"disabled", !ready || none}}, {}};
+                if (states.vitals.known)
+                {
+                    drink.props["badge"] = std::to_string(states.vitals.potions);
+                    if (std::find(states.vitals.effects.begin(), states.vitals.effects.end(), "healing") != states.vitals.effects.end())
+                        drink.props["fill"] = 100, drink.props["fillTone"] = "active";
+                }
+                if (ready && !none)
+                    drink.pick = [this] { Strike("potion", "tap"); };
+                lead.push_back(std::move(drink));
+            }
+            // Rush launches through the land menu's own command, as its row.
+            abilities_.Build(rush, view, input, [this](const Ability &ability) {
                 for (const Named &command : kAbilityCommands)
                     if (ability.id == command.key)
                         Commands("open", command.icon);
-            });
-            view.elements.erase("hero"); // its place in the top row (hud-layout.json "replaces"): the hero sheet is closed in a fight anyway
+            }, std::move(lead));
         }
         if (melee)
         {
@@ -277,6 +282,8 @@ class LandScene final : public Scene
             DropHint(); // a button the hint has no words for: a hint of what the button did before must not stay
         else
             BuildHint(context.button ? context.hint : ready ? LockedDoorHint(states) : std::nullopt, view);
+        if (abilities_.Open())
+            view.elements.erase("hint"); // the open row takes its place (hud-layout.json "replaces"); it comes back folded
     }
 
     double Tick(const States &states, double now) override
@@ -558,7 +565,7 @@ class LandScene final : public Scene
             if (wheel_open_ && ready)
             {
                 view.elements["moves"] = Json{{"moves", moves}, {"selected", chosen}, {"caption", caption}};
-                view.dimmed = {"strike", "block", "shot", "dash", "potion", "weapon"};
+                view.dimmed = {"strike", "block", "shot", "dash", "abilities", "weapon"};
             }
         }
         if (combat.Has("block"))
