@@ -262,9 +262,9 @@
     {
      "id": "abilities",
      "component": "c-button",
-     "rcss": "position: absolute; right: 188dp; top: 10dp; width: 48dp; height: 48dp;",
+     "rcss": "position: absolute; right: 72dp; top: 10dp; width: 48dp; height: 48dp;",
      "props": {},
-     "rcssMirrored": "position: absolute; left: 188dp; top: 10dp; width: 48dp; height: 48dp;",
+     "rcssMirrored": "position: absolute; left: 72dp; top: 10dp; width: 48dp; height: 48dp;",
      "propsMirrored": {}
     }
    ]

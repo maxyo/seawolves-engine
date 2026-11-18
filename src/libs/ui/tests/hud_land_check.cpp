@@ -1295,6 +1295,7 @@ static void CheckRush()
     Expect(mount.Has("abilities") && shown["abilities"]["icon"] == "actions" && shown["abilities"]["cue"] == true &&
                !shown["abilities"].contains("badge") && mount.shown.sheet.empty(),
            "fight: the collapsed abilities button with the ready dot, not a Rush button: " + shown["abilities"].dump());
+    Expect(!mount.Has("hero"), "… in the top row, in the place of the hero button (closed in a fight)");
     mount.commands.clear();
     bench.Press("abilities");
     const Json &props = mount.shown.sheet_props; // the list's rows: props["rows"] (a new node with every view)
@@ -1333,7 +1334,7 @@ static void CheckRush()
     Expect(mount.shown.sheet.empty() && mount.Has("abilities"), "… and the list does not come back with its closing");
     vitals.erase("abilities");
     bench.Set("vitals", vitals);
-    Expect(!mount.Has("abilities"), "nothing offered: no button");
+    Expect(!mount.Has("abilities") && mount.Has("hero"), "nothing offered: no button, the hero button is back");
     vitals["abilities"] = Json::array({Json{{"id", "Turn180"}, {"state", "ready"}}});
     const size_t errors = mount.errors.size();
     bench.Set("vitals", vitals);

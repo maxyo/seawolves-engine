@@ -251,7 +251,8 @@ class LandScene final : public Scene
 
         if (melee && states.vitals.known)
         {
-            // Rush in the abilities list behind one small button in the top row (hud.h AbilityControls),
+            // Rush in the abilities list behind one small button in the top row, where the hero button
+            // is outside a fight (hud.h AbilityControls),
             // only while the scripts offer it or it runs (land_status.hpp): launched through the land
             // menu's own command, as its row.
             abilities_.Build(states.vitals.abilities, view, input, [this](const Ability &ability) {
@@ -259,6 +260,8 @@ class LandScene final : public Scene
                     if (ability.id == command.key)
                         Commands("open", command.icon);
             });
+            if (view.elements.contains("abilities"))
+                view.elements.erase("hero"); // its place in the top row (hud-layout.json "replaces"): the hero sheet is closed in a fight anyway
         }
         else
             abilities_.Close();
