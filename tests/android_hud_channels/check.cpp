@@ -496,6 +496,17 @@ void boardingMen()
     std::printf("  %-14s men from bodies x crew_per_chr, refused without a start or a crew per body\n", "boarding");
 }
 
+// The game's walk-only rule as an effect (land_status.hpp readLandStatus): its run is its walk.
+void walkOnly()
+{
+    assert(!landWalkOnlyEffect("run", "walk", false) && !landWalkOnlyEffect("run", "walk", true));
+    assert(std::string_view(landWalkOnlyEffect("walk", "walk", false)) == "overload");
+    assert(std::string_view(landWalkOnlyEffect("walk", "walk", true)) == "cantrun");
+    // No actions read (a chest, the hero not set up yet): no claim.
+    assert(!landWalkOnlyEffect("", "", false));
+    std::printf("  %-14s overload / cantrun only while the run animation is the walk\n", "walk-only");
+}
+
 // publishVitals (android_ui.hpp): the old text compare with its 100 ms throttle beside the typed one.
 void vitalsChannel()
 {
@@ -675,6 +686,7 @@ int main(int argc, char **argv)
     reloadPlaceChannel();
     vitalsChannel();
     boardingMen();
+    walkOnly();
     battleAbilities();
     std::puts("android_hud_channels: ok");
 }

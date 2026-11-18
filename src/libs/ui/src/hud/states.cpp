@@ -332,7 +332,7 @@ class VitalsConsumer final : public HudConsumer
                 if (std::string problem = ReadPicture(*found, next.picture); !problem.empty())
                     return "hero " + problem;
         }
-        static const std::set<std::string> kEffects = {"poison", "drunk", "healing"};
+        static const std::set<std::string> kEffects = {"poison", "drunk", "healing", "overload", "cantrun"};
         if (const auto effects = state.find("effects"); effects != state.end())
         {
             if (!effects->is_array())

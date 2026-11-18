@@ -165,7 +165,10 @@ class LandScene final : public Scene
                 const char *effect, *icon, *tone, *label;
             } kEffects[] = {{"poison", "skull", "danger", StringKey("hud.effect.poison")},
                             {"drunk", "rum", "effect", StringKey("hud.effect.drunk")},
-                            {"healing", "potion", "active", StringKey("hud.effect.healing")}};
+                            {"healing", "potion", "active", StringKey("hud.effect.healing")},
+                            // The game makes him walk at a full stick: the load, or a quest.
+                            {"overload", "weight", "danger", StringKey("hud.effect.overload")},
+                            {"cantrun", "lock", "effect", StringKey("hud.effect.cantrun")}};
             Json effects = Json::array();
             for (const auto &known : kEffects)
                 if (std::find(states.vitals.effects.begin(), states.vitals.effects.end(), known.effect) != states.vitals.effects.end())

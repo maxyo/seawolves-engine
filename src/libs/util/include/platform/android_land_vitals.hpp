@@ -8,6 +8,7 @@
 #include <cmath>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace storm::android
@@ -54,6 +55,15 @@ inline std::optional<LandBoarding> landBoardingMen(int oursReserve, int oursAliv
     const auto men = [](int bodies, float perBody) { return static_cast<int>(std::lround(bodies * perBody)); };
     return LandBoarding{men(std::max(0, oursReserve) + oursAlive, oursPerBody), men(std::max(0, theirsReserve) + theirsAlive, theirsPerBody),
                         men(oursStart, oursPerBody), men(theirsStart, theirsPerBody)};
+}
+// The game's walk-only rule (TEHO characters.c CheckAndSetOverloadMode): an overloaded hero, one a quest
+// forbids to run (GenQuest.CantRun) or one in the "protocusto" model gets the walk animation as his run
+// (actions.run = actions.walk), so a full stick only walks. The HUD names why: "overload" when the load is
+// the reason, "cantrun" when a quest or the model is. Nothing while his run is a run.
+inline const char *landWalkOnlyEffect(std::string_view run, std::string_view walk, bool scripted)
+{
+    if (run.empty() || run != walk) return nullptr;
+    return scripted ? "cantrun" : "overload";
 }
 struct LandVitals
 {
