@@ -455,15 +455,14 @@ static void CheckBattle()
     bench.Press("time");
     Expect(mount.Last() == "gameplay:10\tTimeScaleX4", "x1.5 counts as x2: the next step is x4: " + mount.Last());
     // The ship abilities: one button above the guns that fans the four out (hud.h AbilityControls).
-    Expect(shown["abilities"]["icon"] == "energy" && shown["abilities"]["badge"] == "1" && shown["abilities"]["fill"] == 50 &&
+    Expect(shown["abilities"]["icon"] == "actions" && shown["abilities"]["badge"] == "1" && shown["abilities"]["fill"] == 50 &&
                shown["abilities"]["fillTone"] == "active" && !mount.Has("ability-1"),
            "the abilities button: one ready, one running: " + shown["abilities"].dump());
     bench.Press("abilities");
     Expect(mount.Has("ability-1") && mount.Has("ability-4") && shown["abilities"]["variant"] == "active", "a tap fans the abilities out");
     Expect(shown["ability-1"]["icon"] == "reload" && shown["ability-1"]["fill"] == 40 && shown["ability-1"]["fillTone"] == "cooldown" &&
-               shown["ability-1"]["badge"] == "180" && shown["ability-1"]["disabled"] == true &&
-               shown["ability-1"]["reason"] == "Предварительная перезарядка: hud.ability.recovery 180 hud.ability.seconds",
-           "a recovering ability: its fill, its seconds, disabled with when it is back: " + shown["ability-1"].dump());
+               shown["ability-1"]["badge"] == "180" && !shown["ability-1"].contains("disabled"),
+           "a recovering ability: its fill and its seconds on the plate (not the disabled look): " + shown["ability-1"].dump());
     Expect(shown["ability-2"]["icon"] == "repair" && shown["ability-2"]["disabled"] == true &&
                shown["ability-2"]["reason"] == "Неотложный ремонт: hud.ability.blocked.LightRepair",
            "a blocked ability: disabled with the game's condition: " + shown["ability-2"].dump());
@@ -477,6 +476,10 @@ static void CheckBattle()
     bench.Press("ability-2");
     bench.Press("ability-4");
     Expect(mount.commands.size() == launched, "recovering, blocked and running abilities launch nothing");
+    const Json log = bench.hud.LogLines();
+    Expect(log.dump().find("Предварительная перезарядка: hud.ability.recovery 180 hud.ability.seconds") != std::string::npos &&
+               log.dump().find("Манёвренный разворот корабля: hud.ability.active 30 hud.ability.seconds") != std::string::npos,
+           "a tap on a recovering or running ability says when, in the event log: " + log.dump());
     bench.Press("ability-3");
     Expect(mount.Last() == "gameplay:10\tBI_InstantRepair" && !mount.Has("ability-1"), "a ready ability is launched through its command, the fan folds: " + mount.Last());
     bench.Press("abilities");

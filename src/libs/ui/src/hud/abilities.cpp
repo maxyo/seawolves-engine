@@ -24,7 +24,7 @@ const char *IconOf(const std::string &id)
     for (const Look &look : kLooks)
         if (id == look.id)
             return look.icon;
-    return "energy"; // unreachable: the consumers admit the ids of the table only
+    return "actions"; // unreachable: the consumers admit the ids of the table only
 }
 
 } // namespace
@@ -35,15 +35,13 @@ Json AbilityControls::Button(const Ability &ability)
     const std::string name = ability.label.empty() ? hud_.Text("hud.ability.name." + ability.id) : ability.label;
     Json button = {{"icon", IconOf(ability.id)}, {"label", name}};
     const std::string seconds = std::to_string(std::max(1, ability.left));
+    // Running and recovering keep the plate: the fill and the seconds must stay readable (the
+    // disabled look greys and halves the whole button); a tap says it in the event log instead
+    // (Tell). Blocked has nothing to read: the disabled look, its reason toasted on a tap.
     if (ability.state == "active")
         button.update(Json{{"fill", std::lround(ability.fill * 100.0)}, {"fillTone", "active"}, {"reloading", true}, {"badge", seconds}});
     else if (ability.state == "recovery")
-        button.update(Json{{"fill", std::lround(ability.fill * 100.0)},
-                           {"fillTone", "cooldown"},
-                           {"reloading", true},
-                           {"badge", seconds},
-                           {"disabled", true},
-                           {"reason", name + ": " + hud_.Text("hud.ability.recovery") + " " + seconds + " " + hud_.Text("hud.ability.seconds")}});
+        button.update(Json{{"fill", std::lround(ability.fill * 100.0)}, {"fillTone", "cooldown"}, {"reloading", true}, {"badge", seconds}});
     else if (ability.state == "blocked")
         button.update(Json{{"disabled", true}, {"reason", name + ": " + hud_.Text("hud.ability.blocked." + ability.id)}});
     return button;
@@ -60,8 +58,10 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
                 launch(ability);
                 hud_.Rebuild();
             });
+        else if (ability.state == "blocked")
+            input.Ignore(element, "click"); // disabled: the press behaviour toasts its reason
         else
-            input.Ignore(element, "click"); // the fill and the badge say it all; a disabled one toasts its reason
+            input.On(element, "click", [this, ability](const Event &) { Tell(ability); });
     };
     if (abilities.empty())
     {
@@ -84,7 +84,7 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
         if (ability.state == "active")
             active = std::max(active, ability.fill);
     }
-    Json group = {{"icon", "energy"}, {"label", hud_.Text("hud.ability.group")}, {"variant", open_ ? "active" : "normal"}};
+    Json group = {{"icon", "actions"}, {"label", hud_.Text("hud.ability.group")}, {"variant", open_ ? "active" : "normal"}};
     if (ready > 0)
         group["badge"] = std::to_string(ready);
     if (active > 0.0)
@@ -99,6 +99,17 @@ void AbilityControls::Build(const std::vector<Ability> &abilities, View &view, I
         return;
     for (size_t i = 0; i < abilities.size() && i < kFanSlots; ++i)
         bind("ability-" + std::to_string(i + 1), abilities[i]);
+}
+
+// A tap on a running or recovering ability: how long it still runs or when it is back, in the
+// scene's event log (the line the game's own messages use).
+void AbilityControls::Tell(const Ability &ability)
+{
+    const std::string name = ability.label.empty() ? hud_.Text("hud.ability.name." + ability.id) : ability.label;
+    const std::string seconds = std::to_string(std::max(1, ability.left));
+    const char *key = ability.state == "active" ? "hud.ability.active" : "hud.ability.recovery";
+    if (!hud_.Notice(name + ": " + hud_.Text(key) + " " + seconds + " " + hud_.Text("hud.ability.seconds"), "info"))
+        hud_.Log("abilities: no event log in this scene to say when " + ability.id + " is back");
 }
 
 void AbilityControls::Expire(double now, double &next)

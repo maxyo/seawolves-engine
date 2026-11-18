@@ -377,9 +377,10 @@ class Hud;
 // layout element "abilities" is the ability itself while there is one, and with more a button
 // that fans them out as "ability-1"…"ability-4" for kFanSeconds (as the ammunition fan). Each
 // ability shows the scripts' state only: ready (a tap launches it through `launch`, the game's own
-// command), active (the fill is what is left of the effect, the badge its seconds), recovery (the
-// fill is how far it recovered, the badge its seconds; disabled, a tap says when it is back) and
-// blocked (disabled, a tap says when the game allows it: the pack's hud.ability.blocked.<id>).
+// command), active (the fill is what is left of the effect, the badge its seconds; a tap says how
+// long in the event log), recovery (the fill is how far it recovered, the badge its seconds; a tap
+// says when it is back) and blocked (disabled, a tap toasts when the game allows it: the pack's
+// hud.ability.blocked.<id>).
 // Nothing is drawn without abilities: the scenes hide the control then.
 class AbilityControls
 {
@@ -404,6 +405,7 @@ class AbilityControls
     Json Button(const Ability &ability);
 
   private:
+    void Tell(const Ability &ability);
     Hud &hud_;
     bool open_ = false;
     double until_ = 0.0;

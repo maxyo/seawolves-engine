@@ -1310,9 +1310,10 @@ static void CheckRush()
     bench.Set("vitals", vitals);
     mount.commands.clear();
     bench.Press("abilities");
-    Expect(shown["abilities"]["fillTone"] == "cooldown" && shown["abilities"]["disabled"] == true && shown["abilities"]["badge"] == "54" &&
-               shown["abilities"]["reason"] == "Тинктура Ометочтли: hud.ability.recovery 54 hud.ability.seconds" && mount.commands.empty(),
-           "recovering: disabled, when it is back, no command: " + shown["abilities"].dump());
+    Expect(shown["abilities"]["fillTone"] == "cooldown" && !shown["abilities"].contains("disabled") && shown["abilities"]["badge"] == "54" &&
+               bench.hud.LogLines().dump().find("Тинктура Ометочтли: hud.ability.recovery 54 hud.ability.seconds") != std::string::npos &&
+               mount.commands.empty(),
+           "recovering: fill and seconds on the plate, a tap says when it is back, no command: " + shown["abilities"].dump());
     vitals.erase("abilities");
     bench.Set("vitals", vitals);
     Expect(!mount.Has("abilities"), "nothing offered: no button");

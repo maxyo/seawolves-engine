@@ -39,5 +39,6 @@
  "hud.ability.name.LightRepair": "hud.ability.name.LightRepair",
  "hud.ability.name.InstantRepair": "hud.ability.name.InstantRepair",
  "hud.ability.name.Turn180": "hud.ability.name.Turn180",
- "hud.ability.name.Rush": "hud.ability.name.Rush"
+ "hud.ability.name.Rush": "hud.ability.name.Rush",
+ "hud.ability.active": "hud.ability.active"
 }
