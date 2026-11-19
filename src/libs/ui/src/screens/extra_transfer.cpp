@@ -248,7 +248,7 @@ class TransferScreen final : public Screen
         if (crew_open)
             view["crew"] = CrewView(admitted, bindings, ours, theirs);
         view["ships"] = ships_shown ? ShipsView(admitted, bindings, ours, theirs) : Json();
-        view["prize"] = has_ships ? PrizeView(admitted, bindings, theirs) : Json();
+        view["prize"] = has_ships ? PrizeView(admitted, bindings, theirs, captain_alive ? Context(marker, "captain") : std::string()) : Json();
 
         // The bar: captain, swap, take everything.
         Json actions = Json::array();
@@ -438,14 +438,17 @@ class TransferScreen final : public Screen
         return Json{{"ours", side(ours, "SHIP_TYPE", "SHIP_RANK")}, {"theirs", side(theirs, "SHIP_TYPE2", "SHIP_RANK2")}, {"rows", rows}};
     }
 
-    // The other ship's card of the dock: what it is and the state it is in.
-    Json PrizeView(const Admission &admitted, Bindings &bindings, const std::string &theirs)
+    // The other ship's card of the dock: what it is, who commands it (the game's portrait MAIN_CHARACTER_PICTURE2
+    // says it there: a captain just appointed included) and the state it is in.
+    Json PrizeView(const Admission &admitted, Bindings &bindings, const std::string &theirs, const std::string &captain)
     {
         std::string sub = Trim(admitted.Label("SHIP_TYPE2"));
         if (const std::string cls = Trim(admitted.Label("SHIP_RANK2")); !cls.empty())
             sub += (sub.empty() ? "" : " \xC2\xB7 ") + bindings.Text("yard.class") + " " + cls;
         // Hull and sails as the share of whole ("2100 / 2384" → 88 %), the crew as it stands against the full one.
         Json facts = Json::array();
+        if (!captain.empty())
+            facts.push_back(Json{{"k", bindings.Text("transfer.captain")}, {"v", captain}});
         for (const char *row_id : {"Hull", "Sails", "Crew"})
         {
             const Widget *row = FigureRow(admitted, "TABLE_OTHER2", row_id);

@@ -903,7 +903,31 @@ void XINTERFACE::Realize(uint32_t)
             if (captain)
             {
                 const ATTRIBUTES *ai = captain->GetAttributeClass("chr_ai");
-                marker.context["captainAlive"] = ai && ai->GetAttributeAsFloat("hp", 0.0f) > 0.0f ? "1" : "0";
+                const bool alive = ai && ai->GetAttributeAsFloat("hp", 0.0f) > 0.0f;
+                marker.context["captainAlive"] = alive ? "1" : "0";
+                // Who commands the other ship, a captain just appointed included: the stock screen shows his portrait
+                // (MAIN_CHARACTER_PICTURE2) and his name on it; the name is the game's GetFullName, through the
+                // interface adapter android_hero.c (event AndroidCharacterName).
+                if (alive)
+                {
+                    const ATTRIBUTES *index = captain->GetAttributeClass("index");
+                    const char *value = index ? index->GetThisAttr() : nullptr;
+                    if (value && *value)
+                    {
+                        {
+                            const storm::ScriptStateReads reads;
+                            core.Event("AndroidCharacterName", "l", std::atoi(value));
+                        }
+                        auto *name = core.Entity_GetAttributeClass(g_idInterface, "AndroidCharacterName");
+                        const char *text = name ? static_cast<const char *>(name->GetThisAttr()) : nullptr;
+                        if (text)
+                            marker.context["captain"] = std::string(text);
+                        else
+                            missing += " AndroidCharacterName (interface adapter android_hero.c)";
+                    }
+                    else
+                        missing += " xi_refCharacter.index";
+                }
             }
             else
                 missing += " xi_refCharacter";

@@ -1399,6 +1399,20 @@ static void Transfer(const std::string &models)
         Expect(surface.props["ships"].is_null() && surface.props["tabs"][0]["selected"] == true, "back to the cargo");
     }
     Expect(surface.props["stats"][1]["value"] == "<transfer.no_captain>", "the captured ship has no captain");
+    {
+        // A captain commands the other ship (a companion, or an officer just appointed to the prize): his name heads
+        // its card, as the stock screen's portrait of him does (xinterface ANDROID_TRANSFER captain).
+        FakeSurface named_surface;
+        Router named_router(named_surface);
+        InterfaceModel companion = Load(models, "transfer-companion.json");
+        for (Widget &widget : companion.widgets)
+            if (widget.node == "ANDROID_TRANSFER")
+                widget.context["captain"] = "Ги Дабри";
+        named_router.SetInterface(companion);
+        const Json &prize = named_surface.props["prize"];
+        Expect(prize["facts"].size() == 4 && prize["facts"][0]["k"] == "<transfer.captain>" && prize["facts"][0]["v"] == "Ги Дабри",
+               "the other ship's card names its captain: " + prize.dump());
+    }
     Expect(surface.props["list"]["cols"][0]["label"] == "Корабль 1" && surface.props["list"]["rows"].size() > 5, "goods columns named by the ships");
     ExpectEqual(surface.props["primary"]["label"], "<transfer.take_all>", "take all the cargo");
     router.OnEvent({"primary", "click", ""});
