@@ -1,0 +1,29 @@
+{
+ "screen": "launcher",
+ "language": "russian",
+ "launcher": {
+  "phase": "setup",
+  "starting": false,
+  "files": true,
+  "library": true,
+  "hasGame": true,
+  "problem": "",
+  "installed": {
+   "name": "Корсары: Каждому своё",
+   "version": "ver. 1.7.2 (10.10.21) x64",
+   "languages": [
+    "english",
+    "russian"
+   ],
+   "defaultLanguage": "russian",
+   "bytes": 13636426547,
+   "files": 41873,
+   "patches": [],
+   "identified": true,
+   "patchSet": null,
+   "testedVersions": [
+    "ver. 1.7.3 (26.11.21) x64"
+   ]
+  }
+ }
+}

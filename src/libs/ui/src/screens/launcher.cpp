@@ -13,7 +13,10 @@
 //               belowMinimum (the phone misses the minimum requirements and the player has not closed the notice),
 //               import: {recovering, cancelling, canCancel, stage, bytes, total, files,
 //               choices: [{id, name, version, languages, defaultLanguage, bytes, files,
-//               patches, place, missing}], password: {for, retry}}}
+//               patches, place, missing, identified, patchSet, testedVersions}], password: {for, retry}}}
+//               A copy (installed or a choice) is identified by the engine's archive reader with the engine's own
+//               script patch rule: identified (its identify files were read), patchSet ({id, version} of the set
+//               that identifies it, null when none does), testedVersions (the versions the APK's sets are for).
 //   downloads: {loaded (the library was read once), sets: [{id, kind, name, state, downloaded, wanted, rate, peers, stalled,
 //               offline (the phone has no network), checked (0…1 of the hash check in state checking),
 //               networkError, error (log only), errorKind (what the player reads), discovered: ""|checking|game|none|undecided,
@@ -380,6 +383,17 @@ std::string RootDetail(Bindings &bindings, const Json &root)
     return text;
 }
 
+// The versions the script fixes were made and tested for, when this copy is none of them (no set identifies
+// it): «ver. 1.7.3 (26.11.21) x64». Empty for a copy a set identifies, one not read (installers, solid
+// archives: unknown, not untested) and when the APK has no sets. Not blocking: the copy can still be chosen
+// and played, unpatched.
+std::string UntestedVersions(const Json &root)
+{
+    if (!Flag(root, "identified") || Obj(root, "patchSet").is_object())
+        return {};
+    return Join(List(root, "testedVersions"), " / ");
+}
+
 class LauncherScreen final : public Screen
 {
   public:
@@ -532,8 +546,10 @@ class LauncherScreen final : public Screen
             bindings.On("header-back", "", [send](const Event &) { send("files-close"); });
             // The game that is there; another copy replaces it, «Удалить» (held) removes it.
             const Json &installed = Obj(state, "installed");
+            const std::string untested = installed.is_object() ? UntestedVersions(installed) : std::string();
             view["installed"] = Json{{"title", installed.is_object() ? RootName(bindings, installed) : bindings.Text("launcher.installed")},
                                      {"meta", installed.is_object() ? RootDetail(bindings, installed) : std::string()},
+                                     {"untested", untested.empty() ? std::string() : Fill(bindings.Text("launcher.root_untested"), {untested})},
                                      {"delete", bindings.Text("launcher.delete_game")}};
             bindings.On("delete-game", "", [send](const Event &) { send("delete-game"); });
         }
@@ -554,7 +570,9 @@ class LauncherScreen final : public Screen
 
   private:
     // Several game copies found (V2-Launcher-Folder as a picker of copies): a copy that lacks
-    // volumes says which and cannot be chosen; «Установить» installs the chosen one.
+    // volumes says which and cannot be chosen; a copy that is not the tested version is marked
+    // and the notice above says what that means (it can still be chosen); «Установить» installs
+    // the chosen one.
     Json Choose(Json &view, const Json &import, Bindings &bindings)
     {
         view["view"] = "choose";
@@ -573,18 +591,25 @@ class LauncherScreen final : public Screen
         }
         Json rows = Json::array();
         std::vector<std::string> ids;
+        std::string untested; // the tested versions, once a choosable copy is marked
         for (const Json &root : choices)
         {
             const bool ready = List(root, "missing").empty();
             const std::string id = Str(root, "id");
-            Json missing = ready ? Json("") : Json{{"text", Fill(bindings.Text("launcher.root_missing"), {Join(List(root, "missing"), ", ")})}, {"tone", "dim"}};
-            rows.push_back(Json{{"cells", Json::array({Json{{"text", RootName(bindings, root)}, {"icon", "load"}, {"sub", RootDetail(bindings, root)}}, missing})},
+            const std::string versions = ready ? UntestedVersions(root) : std::string();
+            Json note = !ready ? Json{{"text", Fill(bindings.Text("launcher.root_missing"), {Join(List(root, "missing"), ", ")})}, {"tone", "dim"}}
+                        : !versions.empty() ? Json{{"text", bindings.Text("launcher.root_untested_mark")}, {"tone", "gold"}}
+                                            : Json("");
+            if (!versions.empty())
+                untested = versions;
+            rows.push_back(Json{{"cells", Json::array({Json{{"text", RootName(bindings, root)}, {"icon", "load"}, {"sub", RootDetail(bindings, root)}}, note})},
                                 {"selected", id == chosen_},
                                 {"disabled", !ready}});
             ids.push_back(id);
         }
         view["choose"] = Json{{"columns", Json::array({Json{{"label", ""}, {"w", "1"}}, Json{{"label", ""}, {"w", "200px"}, {"align", "right"}}})},
                               {"rows", rows},
+                              {"untested", untested.empty() ? std::string() : Fill(bindings.Text("launcher.choose_untested"), {untested})},
                               {"primary", Json{{"label", bindings.Text("launcher.use")}, {"disabled", chosen_.empty()}}}};
         bindings.On("roots", "row", [this, &bindings, ids](const Event &event) {
             const size_t index = static_cast<size_t>(std::atoi(event.value.c_str()));

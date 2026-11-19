@@ -63,6 +63,7 @@
     {"name": "launcher-busy-recovering", "states": ["launcher=states/launcher-busy-recovering.json"], "covers": ["app:launcher"]},
     {"name": "launcher-files-describing", "states": ["launcher=states/launcher-files-describing.json"], "covers": ["app:launcher"]},
     {"name": "launcher-files", "states": ["launcher=states/launcher-files.json"], "covers": ["app:launcher"]},
+    {"name": "launcher-files-untested", "states": ["launcher=states/launcher-files-untested.json"], "covers": ["app:launcher"]},
     {"name": "launcher-ready-below-minimum", "states": ["launcher=states/launcher-ready-below-minimum.json"], "covers": ["app:launcher"]},
     {"name": "launcher-ready-notices", "states": ["launcher=states/launcher-ready-notices.json"], "covers": ["app:launcher"]},
     {"name": "launcher-ready-start-no-space", "states": ["launcher=states/launcher-ready-start-no-space.json"], "covers": ["app:launcher"]},

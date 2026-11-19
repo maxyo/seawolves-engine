@@ -3602,6 +3602,19 @@ static void Launcher()
                                                          {"defaultLanguage", "russian"}, {"bytes", 1073741824.0}, {"patches", Json::array()}}}}));
     ExpectEqual(surface.props["installed"]["title"].get<std::string>(), "Sea Dogs 1.7.3", "the installed game by its name and version");
     ExpectEqual(surface.props["installed"]["meta"].get<std::string>(), "<launcher.language.russian> · <launcher.gb>", "its languages and size");
+    ExpectEqual(surface.props["installed"]["untested"].get<std::string>(), "", "a copy not read for its version says nothing about it");
+    surface.texts["launcher.root_untested"] = "<not {1}>";
+    const Json tested = Json::array({"ver. 1.7.3 (26.11.21) x64"});
+    const auto installedCopy = [&](Json patchSet) {
+        return launcher({{"phase", "setup"}, {"library", true}, {"hasGame", true}, {"files", true},
+                         {"installed", {{"name", "Sea Dogs"}, {"version", "ver. 1.8"}, {"identified", true}, {"patchSet", std::move(patchSet)},
+                                        {"testedVersions", tested}}}});
+    };
+    router.SetState("launcher", installedCopy(nullptr));
+    ExpectEqual(surface.props["installed"]["untested"].get<std::string>(), "<not ver. 1.7.3 (26.11.21) x64>",
+                "a copy no script patch set identifies: not the tested version, named from the patch layer");
+    router.SetState("launcher", installedCopy({{"id", "teho-1.7.3-x64"}, {"version", "ver. 1.7.3 (26.11.21) x64"}}));
+    ExpectEqual(surface.props["installed"]["untested"].get<std::string>(), "", "the tested version says nothing");
     router.OnEvent({"delete-game", "click", ""});
     ExpectEqual(verb(), "APP delete-game ", "the held «Удалить» deletes the game");
     router.SetState("launcher", launcher({{"phase", "ready"}, {"library", true}, {"hasGame", true},
@@ -3692,6 +3705,29 @@ static void Launcher()
     ExpectEqual(surface.props["view"].get<std::string>(), "choose", "several copies: the picker");
     Expect(surface.props["choose"]["rows"][0]["disabled"].get<bool>() && surface.props["choose"]["rows"][1]["selected"].get<bool>(),
            "a copy without its volumes cannot be chosen; the ready one is preselected");
+    ExpectEqual(surface.props["choose"]["untested"].get<std::string>(), "", "copies not read for their version are not marked");
+    {
+        surface.texts["launcher.choose_untested"] = "<marked: not {1}>";
+        const Json tested = Json::array({"ver. 1.7.3 (26.11.21) x64"});
+        const Json set = {{"id", "teho-1.7.3-x64"}, {"version", "ver. 1.7.3 (26.11.21) x64"}};
+        router.SetState("launcher", launcher({{"phase", "busy"}, {"hasGame", false},
+                                              {"import", {{"stage", "choosing"}, {"canCancel", true},
+                                                          {"choices", {{{"id", "a"}, {"name", "A"}, {"missing", Json::array()}, {"identified", true},
+                                                                        {"patchSet", set}, {"testedVersions", tested}},
+                                                                       {{"id", "b"}, {"name", "B"}, {"missing", Json::array()}, {"identified", true},
+                                                                        {"patchSet", nullptr}, {"testedVersions", tested}},
+                                                                       {{"id", "c"}, {"name", "C"}, {"missing", Json::array()}, {"identified", false},
+                                                                        {"patchSet", nullptr}, {"testedVersions", tested}}}}}}}));
+        const Json &rows = surface.props["choose"]["rows"];
+        Expect(rows[0]["cells"][1] == Json("") && rows[2]["cells"][1] == Json(""), "the tested copy and an unread one are not marked");
+        Expect(rows[1]["cells"][1]["text"].get<std::string>() == "<launcher.root_untested_mark>" && !rows[1]["disabled"].get<bool>(),
+               "a copy no set identifies is marked and can still be chosen");
+        ExpectEqual(surface.props["choose"]["untested"].get<std::string>(), "<marked: not ver. 1.7.3 (26.11.21) x64>",
+                    "the notice above names the tested version");
+        router.OnEvent({"roots", "row", "1"});
+        router.OnEvent({"roots", "click", ""});
+        ExpectEqual(verb(), "APP choose b", "the untested copy is installed when chosen");
+    }
     router.OnEvent({"roots", "click", ""});
     ExpectEqual(verb(), "APP choose b", "use the chosen copy");
 

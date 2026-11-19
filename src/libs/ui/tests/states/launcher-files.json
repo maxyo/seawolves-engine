@@ -20,6 +20,14 @@
    "files": 41873,
    "patches": [
     "patch-1.7.3"
+   ],
+   "identified": true,
+   "patchSet": {
+    "id": "teho-1.7.3-x64",
+    "version": "ver. 1.7.3 (26.11.21) x64"
+   },
+   "testedVersions": [
+    "ver. 1.7.3 (26.11.21) x64"
    ]
   }
  }
