@@ -343,19 +343,22 @@
     {
      "id": "sail",
      "component": "c-lever",
-     "rcss": "position: absolute; right: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "rcss": "position: absolute; right: 0dp; bottom: 102dp; width: 84dp; height: 144dp;",
      "props": {
-      "mode": "steps"
+      "mode": "steps",
+      "floating": true
      },
-     "rcssMirrored": "position: absolute; left: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "rcssMirrored": "position: absolute; left: 0dp; bottom: 102dp; width: 84dp; height: 144dp;",
      "propsMirrored": {}
     },
     {
      "id": "helm",
      "component": "c-helm",
-     "rcss": "position: absolute; left: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; right: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
+     "rcss": "position: absolute; left: 0dp; bottom: 0dp; width: 280dp; height: 96dp;",
+     "props": {
+      "floating": true
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; bottom: 0dp; width: 280dp; height: 96dp;",
      "propsMirrored": {}
     },
     {
@@ -546,19 +549,22 @@
     {
      "id": "sail",
      "component": "c-lever",
-     "rcss": "position: absolute; right: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "rcss": "position: absolute; right: 0dp; bottom: 102dp; width: 84dp; height: 144dp;",
      "props": {
-      "mode": "steps"
+      "mode": "steps",
+      "floating": true
      },
-     "rcssMirrored": "position: absolute; left: 12dp; bottom: 102dp; width: 56dp; height: 144dp;",
+     "rcssMirrored": "position: absolute; left: 0dp; bottom: 102dp; width: 84dp; height: 144dp;",
      "propsMirrored": {}
     },
     {
      "id": "helm",
      "component": "c-helm",
-     "rcss": "position: absolute; left: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
-     "props": {},
-     "rcssMirrored": "position: absolute; right: 20dp; bottom: 27dp; width: 200dp; height: 64dp;",
+     "rcss": "position: absolute; left: 0dp; bottom: 0dp; width: 280dp; height: 96dp;",
+     "props": {
+      "floating": true
+     },
+     "rcssMirrored": "position: absolute; right: 0dp; bottom: 0dp; width: 280dp; height: 96dp;",
      "propsMirrored": {}
     },
     {

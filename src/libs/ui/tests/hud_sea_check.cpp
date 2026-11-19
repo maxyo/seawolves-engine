@@ -858,32 +858,57 @@ static void CheckTouches(const std::string &pack)
     run.Frame();
     run.Frame();
 
-    // The test layout (800 × 400): helm 20…220 × 309…373, fire 708…784 × 308…384, minimap disc
-    // 654…754 × 34…134, sail lever 732…788 × 154…298, context 640…704 × 226…290, the first
-    // flagship 10…62 × 10…62, then a companion every 60 dp down.
+    // The test layout (800 × 400): the helm zone 0…280 × 304…400 with the helm resting at
+    // 20…220 × 309…373, fire 708…784 × 308…384, minimap disc 654…754 × 34…134, the sail zone
+    // 716…800 × 154…298 with the lever resting at 732…788 (its knob at the top: full sails),
+    // context 640…704 × 226…290, camera 536…584 × 336…384, the first flagship 10…62 × 10…62,
+    // then a companion every 60 dp down.
     Expect(host.WantsTouch(120, 341) && host.WantsTouch(746, 346) && host.WantsTouch(704, 84) && host.WantsTouch(760, 226) && host.WantsTouch(672, 258) &&
                host.WantsTouch(36, 86),
            "helm, fire, minimap, lever, quick action and companions are the UI's");
-    Expect(!host.WantsTouch(400, 200) && !host.WantsTouch(100, 30) && !host.WantsTouch(300, 341) && !host.WantsTouch(700, 150),
-           "the open sea, the space beside the squadron and the minimap readouts are the game's");
+    Expect(host.WantsTouch(260, 390) && host.WantsTouch(4, 306) && host.WantsTouch(720, 160) && host.WantsTouch(796, 296),
+           "the whole helm and sail zones are the UI's, not just the controls");
+    Expect(!host.WantsTouch(400, 200) && !host.WantsTouch(100, 30) && !host.WantsTouch(300, 341) && !host.WantsTouch(700, 150) &&
+               !host.WantsTouch(140, 300) && !host.WantsTouch(760, 140),
+           "the open sea, the space beside the squadron and the minimap readouts, just beside the zones, are the game's");
     Expect(run.Sent("navigator:9\t3\t4\tprepare\t1\t800\t400\t704\t84\t50\t1000\t1"), "the aperture is the disc as it is laid out");
     Expect(run.Sent("shiphud:9\t2047\t3") && run.Sent("seaquick:1\t5\t31\tack\t1"), "the first drawn frame acknowledges what it shows");
 
-    // the helm under one finger, the camera free, the guns under another
-    host.Touch(TouchPhase::Down, 1, 120, 341);
-    host.Touch(TouchPhase::Move, 1, 180, 341);
-    Expect(run.Last() == "hold:9\tShip_TurnRight\t1\t85", "the helm turns the ship as far as the finger pulls it: " + run.Last());
+    // the helm under one finger, the camera free, the guns under another; the helm comes to
+    // the finger that lands anywhere in its zone, far from the knob, and turns nothing yet
+    const size_t before_helm = run.commands.size();
+    host.Touch(TouchPhase::Down, 1, 250, 385);
+    Expect(run.commands.size() == before_helm, "a thumb that only landed in the helm zone turns nothing");
+    host.Touch(TouchPhase::Move, 1, 310, 380);
+    Expect(run.Last() == "hold:9\tShip_TurnRight\t1\t85", "the helm turns the ship as far as the finger pulls it from where it landed: " + run.Last());
     Expect(!host.WantsTouch(400, 200), "a held helm leaves the sea to the camera finger");
     host.Touch(TouchPhase::Down, 2, 746, 346);
     host.Touch(TouchPhase::Up, 2, 746, 346);
     Expect(run.Last() == "gameplay:9\tShip_Fire", "a second finger fires: " + run.Last());
     run.Frame(3.0);
     Expect(run.Last() == "gameplay:9\tShip_Fire" && !run.Sent("hold:9\tShip_TurnRight\t0"), "the helm stays held through a slow frame, without a heartbeat: " + run.Last());
-    host.Touch(TouchPhase::Down, 2, 760, 226);
-    Expect(run.Last() == "sails:9\t1", "the lever under a second finger: " + run.Last());
-    host.Touch(TouchPhase::Move, 2, 760, 290);
-    Expect(run.Last() == "sails:9\t0", "… dragged down furls the sails: " + run.Last());
-    host.Touch(TouchPhase::Up, 2, 760, 290);
+    // the sail lever: a finger anywhere in its zone takes the knob where it is (full sails), even
+    // at the bottom, where the furled position rests; only a drag of half a step changes them
+    const size_t before_sails = run.commands.size();
+    host.Touch(TouchPhase::Down, 2, 724, 280);
+    Expect(run.commands.size() == before_sails, "the lever under a second finger, away from its knob: nothing changes yet");
+    host.Touch(TouchPhase::Move, 2, 724, 300);
+    Expect(run.commands.size() == before_sails, "… less than half a step down changes nothing");
+    host.Touch(TouchPhase::Move, 2, 726, 312);
+    Expect(run.Last() == "sails:9\t1", "… dragged one step down from where it landed: half sails: " + run.Last());
+    host.Touch(TouchPhase::Move, 2, 726, 360);
+    Expect(run.Last() == "sails:9\t0", "… and a step further furls the sails: " + run.Last());
+    host.Touch(TouchPhase::Move, 2, 726, 330);
+    Expect(run.Last() == "sails:9\t1", "… back up: half sails: " + run.Last());
+    const size_t sails_set = run.commands.size();
+    host.Touch(TouchPhase::Up, 2, 726, 330);
+    Expect(run.commands.size() == sails_set, "letting go of the lever keeps the sails as set");
+    run.Frame();
+    host.Touch(TouchPhase::Down, 2, 790, 160); // the top of the zone: the full sails' place, the knob is at half
+    Expect(run.commands.size() == sails_set, "the next finger takes the lever at its new position, wherever it lands");
+    host.Touch(TouchPhase::Move, 2, 790, 120);
+    Expect(run.Last() == "sails:9\t2", "… and a drag up from there sets full sails: " + run.Last());
+    host.Touch(TouchPhase::Up, 2, 790, 120);
     host.Touch(TouchPhase::Move, 1, 30, 341);
     Expect(run.Sent("hold:9\tShip_TurnRight\t0") && run.Last() == "hold:9\tShip_TurnLeft\t1\t100", "the helm goes over: " + run.Last());
 
@@ -894,6 +919,11 @@ static void CheckTouches(const std::string &pack)
     Expect(!run.Sent("hold:9\tShip_TurnLeft\t0"), "the held helm survives the change of layout");
     host.Touch(TouchPhase::Up, 1, 30, 341);
     Expect(run.Last() == "hold:10\tShip_TurnLeft\t0", "letting go straightens the helm: " + run.Last());
+    run.Frame();
+    host.Touch(TouchPhase::Down, 1, 60, 341); // on the resting helm, left of its centre: it comes to the finger again
+    host.Touch(TouchPhase::Move, 1, 63, 341);
+    Expect(run.Last() == "hold:10\tShip_TurnLeft\t0", "back at rest, the helm does not turn by where on it a finger lands: " + run.Last());
+    host.Touch(TouchPhase::Up, 1, 63, 341);
 
     // taps: minimap, quick action, companions
     run.Feed("seaQuickAction", "sea-quick-board");
@@ -910,6 +940,20 @@ static void CheckTouches(const std::string &pack)
     host.Touch(TouchPhase::Down, 1, 36, 146);
     host.Touch(TouchPhase::Up, 1, 36, 146);
     Expect(run.Last() == "orders:1\t6\t14\t2\topen\tr503_8", "a tap on the second companion: " + run.Last());
+
+    // the zones keep clear of the buttons beside them: a tap just inside a neighbour is the neighbour's
+    run.Frame();
+    const size_t before_taps = run.commands.size();
+    host.Touch(TouchPhase::Down, 1, 538, 380); // the camera, right of the helm zone
+    host.Touch(TouchPhase::Up, 1, 538, 380);
+    Expect(run.commands.size() == before_taps + 1 && run.Last() == "gameplay:10\tSea_CameraSwitch", "the camera beside the helm zone: " + run.Last());
+    host.Touch(TouchPhase::Down, 1, 712, 310); // the guns, under the sail zone
+    host.Touch(TouchPhase::Up, 1, 712, 310);
+    Expect(run.Last() == "gameplay:10\tShip_Fire", "the guns under the sail zone: " + run.Last());
+    Expect(!host.WantsTouch(710, 230) && !host.WantsTouch(290, 380), "between the quick action and the sail zone, right of the helm zone: the game's");
+    host.Touch(TouchPhase::Down, 1, 750, 130); // the minimap, above the sail zone
+    host.Touch(TouchPhase::Up, 1, 750, 130);
+    Expect(run.Last().rfind("navigator:10\t", 0) == 0, "the minimap above the sail zone: " + run.Last());
 
     // the orders panel is modal
     run.Feed("seaOrders", "sea-orders-root");
@@ -929,7 +973,8 @@ static void CheckTouches(const std::string &pack)
 }
 
 // First person on deck: the walk stick floats in the whole left part, above and beside the helm;
-// the helm and the squadron above keep their own touches (the zone lies under them).
+// the helm and the squadron above keep their own touches (the zone lies under them). The helm and
+// the sail lever stay where they rest there: their zones are off.
 static void CheckDeckTouches(const std::string &pack)
 {
     Runtime run(pack);
@@ -963,6 +1008,25 @@ static void CheckDeckTouches(const std::string &pack)
     host.Touch(TouchPhase::Down, 1, 36, 206); // the fourth ship, inside the zone
     host.Touch(TouchPhase::Up, 1, 36, 206);
     Expect(run.Last().rfind("orders:1\t", 0) == 0, "a ship of the squadron over the zone is still tapped: " + run.Last());
+
+    // the helm stays where it rests: a finger on it turns as far as it lands from the centre,
+    // and beside it, in what is the helm zone at sea, the walk stick takes the thumb
+    run.Frame();
+    Expect(host.WantsTouch(250, 385), "beside the resting helm is the walk zone");
+    host.Touch(TouchPhase::Down, 1, 60, 341);
+    Expect(run.Last() == "hold:9\tShip_TurnLeft\t1\t85", "the fixed helm turns where the finger lands on it: " + run.Last());
+    host.Touch(TouchPhase::Up, 1, 60, 341);
+    run.Frame();
+    host.Touch(TouchPhase::Down, 1, 250, 385);
+    host.Touch(TouchPhase::Move, 1, 250, 335);
+    Expect(run.Last() == "deckwalk:9\t0\t100", "a thumb beside the helm walks: " + run.Last());
+    host.Touch(TouchPhase::Up, 1, 250, 335);
+    // the sail lever too: a finger takes the position it lands on, and beside it is the camera's
+    run.Frame();
+    Expect(!host.WantsTouch(722, 200) && host.WantsTouch(760, 200), "beside the resting lever the camera looks");
+    host.Touch(TouchPhase::Down, 2, 760, 280);
+    Expect(run.Last() == "sails:9\t0", "the fixed lever takes the position under the finger: " + run.Last());
+    host.Touch(TouchPhase::Up, 2, 760, 280);
 }
 
 int main(int argc, char **argv)

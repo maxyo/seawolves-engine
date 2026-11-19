@@ -206,22 +206,25 @@ class SeaScene final : public Scene
             input.On("orders", "click", [this](const Event &) { Order("open", {}); });
         }
 
+        // The helm and the sail lever float: a thumb anywhere in their zones takes them where it
+        // lands. First person on deck they stay where they rest (the walk stick floats there).
+        const bool deck = CanWalk(gameplay);
         if (ship)
         {
             BuildMinimap(*ship, view, input);
-            BuildSails(*ship, view, input);
+            BuildSails(*ship, deck, view, input);
         }
         if (gameplay.Has("Ship_TurnLeft") || gameplay.Has("Ship_TurnRight"))
         {
-            view.elements["helm"] = Json::object();
+            view.elements["helm"] = Json{{"fixed", deck}};
             input.On("helm", "change", [this](const Event &event) { holds_.Helm(event.value, "Ship_TurnLeft", "Ship_TurnRight"); });
         }
         else
             hud_.Error("sea HUD: the engine binds no helm (Ship_TurnLeft / Ship_TurnRight) in mode " + gameplay.mode + "; no helm");
 
         // First person on deck: the floating move stick left of the guns walks, forward, back and
-        // sideways (turning is the look drag). Its zone lies under the helm and the fleet: they
-        // keep their own touches.
+        // sideways (turning is the look drag). Its zone lies under the helm (fixed there, its zone
+        // off) and the fleet: they keep their own touches.
         // The raised spyglass has no walk zone: a drag anywhere looks around (BuildSpyglass).
         if (asked_ && *asked_ == Raised(states))
             asked_.reset(); // the game did as asked
@@ -437,12 +440,12 @@ class SeaScene final : public Scene
         input.On("minimap", "zoom", [this](const Event &) { Zoom(); });
     }
 
-    void BuildSails(const Ship &ship, View &view, Input &input)
+    void BuildSails(const Ship &ship, bool deck, View &view, Input &input)
     {
         if (!ship.can_set_sails || ship.sail_state < 0.0)
             return;
         const int position = sail_target_ >= 0 ? sail_target_ : static_cast<int>(std::lround(ship.sail_state * 2.0));
-        view.elements["sail"] = Json{{"value", position}};
+        view.elements["sail"] = Json{{"value", position}, {"fixed", deck}};
         input.On("sail", "change", [this](const Event &event) { Sails(event.value); });
     }
 

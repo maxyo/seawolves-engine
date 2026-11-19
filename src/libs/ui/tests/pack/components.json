@@ -235,12 +235,28 @@
     "dir": {
      "type": "text",
      "default": ""
+    },
+    "floating": {
+     "type": "bool",
+     "default": false
+    },
+    "fixed": {
+     "type": "bool",
+     "default": false
+    },
+    "atX": {
+     "type": "number",
+     "default": 0
+    },
+    "atY": {
+     "type": "number",
+     "default": 0
     }
    },
    "behaviors": [
     "lever"
    ],
-   "template": "<div data-lever=\"{{mode}}\" data-steps=\"3\" data-knob-size=\"48\" style=\"position: absolute; left: 0; top: 0; right: 0; bottom: 0;\"></div>"
+   "template": "<div data-lever=\"{{mode}}\" data-steps=\"3\" data-knob-size=\"48\" style=\"position: absolute; width: 56dp; height: 144dp; {{ floating && !fixed && active ? 'right: ' + (12 - atX) + 'dp; top: ' + atY + 'dp;' : 'right: 12dp; top: 0dp;' }}\"></div>"
   },
   {
    "tag": "c-helm",
@@ -256,12 +272,28 @@
     "active": {
      "type": "bool",
      "default": false
+    },
+    "floating": {
+     "type": "bool",
+     "default": false
+    },
+    "fixed": {
+     "type": "bool",
+     "default": false
+    },
+    "atX": {
+     "type": "number",
+     "default": 0
+    },
+    "atY": {
+     "type": "number",
+     "default": 0
     }
    },
    "behaviors": [
     "stick"
    ],
-   "template": "<div data-stick=\"x\" data-knob-size=\"68\" style=\"width: 200dp; height: 64dp;\"></div>"
+   "template": "<div data-stick=\"x\" data-knob-size=\"68\" style=\"position: absolute; width: 200dp; height: 64dp; {{ floating && !fixed && active ? 'left: ' + atX + 'dp; top: ' + atY + 'dp;' : 'left: 20dp; bottom: 27dp;' }}\"></div>"
   },
   {
    "tag": "s-hud-orders",

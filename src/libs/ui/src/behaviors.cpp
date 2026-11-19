@@ -14,7 +14,10 @@
 //   range   data-range="prop" on the track (props min, max, step)
 //   stick   data-stick="x|xy" on the travel area, data-knob on the knob; prop `floating`:
 //           the component's box is the zone, the travel area goes under the finger (atX, atY)
-//   lever   data-lever="steps|continuous" on the rail (prop value / dir)
+//   lever   data-lever="steps|continuous" on the rail (prop value / dir); prop `floating`: the
+//           component's box is the zone, the rail moves so that its knob is under the finger (atX, atY)
+//   Both: the prop `fixed` turns a floating zone off for a while: the control takes touches
+//   only where it rests, as one that does not float.
 //   columns data-col="i" on the head and row cells of column i: every cell of a column gets
 //           the width of its widest content (the cells are laid out shrink-to-fit first,
 //           then given a common min-width), so numeric columns line up without the
@@ -616,6 +619,31 @@ class RangeBehavior final : public Behavior
     float at_ = 0.0f; // where the finger is along the track, 0…1
 };
 
+// A component whose box is a zone that takes the thumb anywhere (prop `floating`), unless the
+// zone is off for a while (prop `fixed`: the control works only where it rests).
+bool Floats(const ComponentElement &self)
+{
+    return self.Flag("floating") && !self.Flag("fixed");
+}
+
+// A zone that is off lets a finger beside its control through to what lies under it (the deck
+// walk zone): only the parts marked `attribute` are hit then.
+void ZoneTouches(ComponentElement &self, const char *attribute)
+{
+    if (!self.Flag("floating"))
+        return;
+    if (Floats(self))
+    {
+        self.RemoveProperty(Rml::PropertyId::PointerEvents);
+        return;
+    }
+    self.SetProperty(Rml::PropertyId::PointerEvents, Rml::Property(Rml::Style::PointerEvents::None));
+    std::vector<Rml::Element *> parts;
+    AllWith(&self, attribute, parts);
+    for (Rml::Element *part : parts)
+        part->SetProperty(Rml::PropertyId::PointerEvents, Rml::Property(Rml::Style::PointerEvents::Auto));
+}
+
 // Helm capsule (x only) and movement stick (x and y). Springs back on release.
 // With the prop `floating` the component's box is a zone: the stick appears under the
 // finger that lands anywhere in it and returns to its place of rest on release.
@@ -639,7 +667,7 @@ class StickBehavior final : public Behavior
         const float knob = area->GetAttribute<float>("data-knob-size", 52.0f) * self.Host().Density();
         centre_ = box.Center();
         reach_ = {std::max(1.0f, (box.Width() - knob) * 0.5f), std::max(1.0f, (box.Height() - knob) * 0.5f)};
-        if (self.Flag("floating"))
+        if (Floats(self))
         {
             // The base comes to the finger and stays there for this gesture; the template
             // places it by `atX` / `atY`, dp from the top left corner of the zone.
@@ -666,9 +694,14 @@ class StickBehavior final : public Behavior
         self.Emit("change", both_ ? "0,0" : "0");
     }
 
+    void Rebuilt(ComponentElement &self) override
+    {
+        ZoneTouches(self, "data-stick");
+    }
+
     void Regions(ComponentElement &self, std::vector<Rml::Element *> &out) const override
     {
-        if (self.Flag("floating")) // the whole box of the component is the zone the stick appears in
+        if (Floats(self)) // the whole box of the component is the zone the stick appears in
             out.push_back(&self);
         else
             AllWith(&self, "data-stick", out);
@@ -702,6 +735,9 @@ class StickBehavior final : public Behavior
 
 // Sail lever. steps: the knob snaps to one of the positions under the finger.
 // continuous: pushing up or down from where the finger landed holds SailUp / SailDown.
+// With the prop `floating` the component's box is a zone: a finger that lands anywhere in it
+// takes the knob where it is (the rail moves to put the knob under the finger, nothing changes
+// yet), a drag up or down from there moves it, and the rail returns to its place on release.
 class LeverBehavior final : public Behavior
 {
   public:
@@ -723,6 +759,16 @@ class LeverBehavior final : public Behavior
         const float knob = rail->GetAttribute<float>("data-knob-size", 48.0f) * self.Host().Density();
         top_ = box.Top() + knob * 0.5f;
         travel_ = std::max(1.0f, box.Height() - knob);
+        if (Floats(self))
+        {
+            // The rail comes to the finger with its knob where the value has it; the template
+            // shifts it by `atX` / `atY`, dp from its place of rest.
+            const double high = continuous_ ? 100.0 : static_cast<double>(steps_ - 1);
+            const float t = static_cast<float>(std::clamp(Number(self.Prop("value"), high), 0.0, high) / high);
+            const Rml::Vector2f shift = pointer.position - Rml::Vector2f(box.Center().x, top_ + (1.0f - t) * travel_);
+            top_ += shift.y;
+            self.SetProps(Json{{"atX", std::round(shift.x / self.Host().Density())}, {"atY", std::round(shift.y / self.Host().Density())}});
+        }
         Apply(self, pointer);
         return true;
     }
@@ -748,9 +794,17 @@ class LeverBehavior final : public Behavior
             self.SetProps(Json{{"active", false}});
     }
 
+    void Rebuilt(ComponentElement &self) override
+    {
+        ZoneTouches(self, "data-lever");
+    }
+
     void Regions(ComponentElement &self, std::vector<Rml::Element *> &out) const override
     {
-        AllWith(&self, "data-lever", out);
+        if (Floats(self)) // the whole box of the component is the zone that takes the knob
+            out.push_back(&self);
+        else
+            AllWith(&self, "data-lever", out);
     }
 
   private:
