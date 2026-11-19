@@ -539,11 +539,12 @@ static void CheckBattle()
     // Back lowers it (TelescopeOut); up or down is the game's channel "spyglass".
     Expect(mount.Has("spyglass") && shown["spyglass"]["variant"] == "normal" && !mount.shown.back, "the spyglass, down: " + shown["spyglass"].dump());
     bench.Press("spyglass");
-    Expect(mount.Last() == "gameplay:10\tTelescopeIn" && shown["spyglass"]["variant"] == "active" && mount.shown.back,
-           "a tap raises the spyglass, shown at once; Back is the HUD's: " + mount.Last());
-    Expect(!mount.Has("abilities") && !mount.Has("context") && !mount.Has("camera") && !mount.Has("pause") && !mount.Has("ship") && !mount.Has("fleet") && mount.Has("helm") && mount.Has("fire") && mount.Has("sail"),
-           "the raised spyglass keeps the steering and the guns, the rest gives the look room");
+    Expect(mount.Last() == "gameplay:10\tTelescopeIn" && shown["spyglass"]["variant"] == "normal" && mount.Has("abilities") && mount.Has("fleet"),
+           "a tap asks the game to raise the spyglass; the HUD waits for the game (no frame of a half-raised layout): " + mount.Last());
     bench.Feed("spyglass", "spyglass-ship");
+    Expect(shown["spyglass"]["variant"] == "active" && mount.shown.back, "raised by the game: shown raised; Back is the HUD's");
+    Expect(!mount.Has("abilities") && !mount.Has("context") && !mount.Has("camera") && !mount.Has("pause") && !mount.Has("ship") && !mount.Has("fleet") && !mount.Has("minimap") && mount.Has("helm") && mount.Has("fire") && mount.Has("sail"),
+           "the raised spyglass keeps the steering and the guns, the rest gives the look room");
     bench.Frame(kRaiseWait);
     Expect(shown["spyglass"]["variant"] == "active" && !Sent(mount, "gameplay:10\tTelescopeOut"), "raised by the game: it stays up, nothing held");
     std::string mask;
@@ -553,15 +554,15 @@ static void CheckBattle()
     const unsigned covered = mask.empty() ? 0 : std::stoul(mask.substr(mask.find('\t') + 1));
     Expect((covered & 32) != 0, "the fleet column gives way to the target card, the engine's own stays off: " + mask);
     bench.Press("spyglass");
-    Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "normal" && !mount.shown.back,
-           "the next tap lowers it: " + mount.Last());
+    Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "active",
+           "the next tap asks the game to lower it, shown up until the game lowers it: " + mount.Last());
     bench.Feed("spyglass", "spyglass-down");
     Expect(shown["spyglass"]["variant"] == "normal" && mount.Has("abilities"), "lowered by the game: the HUD is back");
     bench.Feed("spyglass", "spyglass-ship");
     Expect(shown["spyglass"]["variant"] == "active", "raised another way (the game's own key): the button follows the game");
     Expect(bench.hud.Back(), "Back is the raised spyglass's");
     bench.Frame();
-    Expect(mount.Last() == "gameplay:10\tTelescopeOut" && shown["spyglass"]["variant"] == "normal", "Back lowers it: " + mount.Last());
+    Expect(mount.Last() == "gameplay:10\tTelescopeOut", "Back lowers it: " + mount.Last());
     bench.Feed("spyglass", "spyglass-down");
     const size_t errors = mount.errors.size();
     bench.Press("spyglass");

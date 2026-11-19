@@ -226,9 +226,13 @@ class SeaScene final : public Scene
         // sideways (turning is the look drag). Its zone lies under the helm (fixed there, its zone
         // off) and the fleet: they keep their own touches.
         // The raised spyglass has no walk zone: a drag anywhere looks around (BuildSpyglass).
+        // Up or down as the game has it, never ahead of it: the overlay (hud.cpp) and the 3D view follow the game's
+        // channel, so a layout switched at the tap showed one frame that was neither the old view nor the raised one.
         if (asked_ && *asked_ == Raised(states))
             asked_.reset(); // the game did as asked
-        spyglass_up_ = asked_ ? *asked_ : Raised(states);
+        spyglass_up_ = Raised(states);
+        if (spyglass_up_)
+            ammo_.Close(); // the raised spyglass keeps the guns, not the open fan
         if (CanWalk(gameplay) && !spyglass_up_)
         {
             view.elements["walk"] = Json::object();
@@ -247,7 +251,9 @@ class SeaScene final : public Scene
         if (spyglass_up_)
         {
             // the top row and the fleet column too (Back or the button lowers the spyglass first): the target card lies there
-            for (const char *id : {"ship", "pause", "orders", "fleet"}) // the card takes the fleet's place (CoverShip keeps it covered)
+            // The minimap goes with them in the same frame: the engine reports its navigator gone only a frame after the
+            // telescope view (its captions are reported once drawn), which left the readout over the raised spyglass.
+            for (const char *id : {"ship", "pause", "orders", "fleet", "minimap"}) // the card takes the fleet's place (CoverShip keeps it covered)
                 view.elements.erase(id);
             return; // the raised spyglass keeps the steering and the guns; the rest gives the look room
         }
@@ -600,23 +606,17 @@ class SeaScene final : public Scene
         input.On("spyglass", "click", [this](const Event &) { Spyglass(!spyglass_up_); });
     }
 
+    // Asks the game; the HUD changes when the game's channel says it did (Build), in the frame its view changes too.
     void Spyglass(bool up)
     {
-        if (up)
+        if (up && (walk_.x || walk_.y))
         {
-            ammo_.Close();
-            abilities_.Close();
-            if (walk_.x || walk_.y)
-            {
-                walk_ = {}; // the walk zone goes while the spyglass is up
-                SendWalk(hud_.Current().gameplay);
-            }
+            walk_ = {}; // the walk zone goes while the spyglass is up
+            SendWalk(hud_.Current().gameplay);
         }
-        asked_ = up; // shown at once; the game's channel follows
+        asked_ = up;
         asked_until_ = hud_.Now() + kRaiseSeconds;
-        spyglass_up_ = up;
         Control(up ? "TelescopeIn" : "TelescopeOut");
-        hud_.Rebuild();
     }
 
     // A tap control: the engine runs it once, in the gameplay revision it was drawn for.
@@ -1055,7 +1055,7 @@ class SeaScene final : public Scene
     Fan ammo_{hud_, "ammo"}; // the ammunition fan
     AbilityControls abilities_{hud_};
     // the spyglass (BuildSpyglass)
-    bool spyglass_up_ = false;      // shown raised: as asked, else as the game says
+    bool spyglass_up_ = false;      // shown raised: as the game says (channel "spyglass")
     std::optional<bool> asked_;     // asked up / down, the game has not followed yet
     double asked_until_ = 0.0;      // the game must have followed by then
     // quick action
