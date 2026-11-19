@@ -32,6 +32,9 @@ template<class...T>void Log(const char*,T...){}
 TILER
 struct Actual {
  int halo_,scale_,tile_;std::atomic<bool>cancelled_{false};
+ int ceiling=1<<30; // the memory bound's tile (backend.hpp CpuNetwork::TileCeiling)
+ int TileCeiling()const{return tile_>0?std::min(tile_,ceiling):ceiling;}
+ std::string OverBound()const{return "over the memory bound";}
  int calls=0,fail_at=0,failures=0,fail_larger=0;bool unknown=false,cancel_on_failure=false,cancel_on_success=false,scratch=false;
  std::vector<std::pair<int,int>> shapes;
  bool Run(const float*in,int w,int h,float*out,std::string&error){
@@ -59,7 +62,9 @@ void EqualInner(const std::vector<float>&a,const std::vector<float>&b,int w,int 
  for(int c=0;c<3;++c)for(int y=halo*scale;y<(h-halo)*scale;++y)for(int x=halo*scale;x<(w-halo)*scale;++x){size_t i=(size_t(c)*h*scale+y)*w*scale+x;Check(a[i]==b[i],"TILED_OUTPUT_MISMATCH");}
 }
 int main(){
- Check(DefaultCpuTile(10.9)==256&&DefaultCpuTile(4)==128&&DefaultCpuTile(0)==128,"HIGH_RAM_TILE_UNBOUNDED");
+ // The memory bound's tiles: 2.5 KB a texel in 160 MB, 24 texels of halo; 64 MB at 30 KB a texel fits no tile.
+ Check(BoundedCpuTile(2.5*1024,size_t(160)<<20,24)==184&&BoundedCpuTile(30*1024,size_t(64)<<20,24)==0,"BOUND_TILE");
+ Check(BalancedTile(1024,176)==176&&BalancedTile(1024,256)==256&&BalancedTile(512,240)==176&&BalancedTile(100,256)==100,"BALANCED_TILE");
  Check(CpuAllocationFailure(kCpuOutOfMemory)&&!CpuAllocationFailure("ncnn: CPU inference failed (status -1)")&&!CpuAllocationFailure("cancelled"),"UNKNOWN_IS_OOM");
  Check(SmallerCpuTile(0,1072,560,24)==256&&SmallerCpuTile(256,112,96,24)==32&&SmallerCpuTile(32,80,80,24)==0,"RETRY_NOT_STRICTLY_SMALLER");
  for(int scale:{1,4}){
@@ -85,9 +90,15 @@ int main(){
  Check(!stopped.Infer(in.data(),w,h,out.data(),error)&&stopped.calls==0,"CANCELLED_SUBMITTED");
  Actual exhausted{halo,1,256};exhausted.fail_larger=1;
  Check(!exhausted.Infer(in.data(),w,h,out.data(),error)&&exhausted.calls<=5&&exhausted.tile_==32&&!error.empty(),"RETRY_UNBOUNDED");
+ // An image the memory bound fits no tile of: refused at once, never run, never retried.
+ Actual over{halo,1,0};over.ceiling=0;
+ Check(!over.Infer(in.data(),w,h,out.data(),error)&&over.calls==0&&error=="over the memory bound","OVER_BOUND_RUN");
+ // The bound's tile, equal tiles below it: every tile within it.
+ Actual bounded{halo,1,0};bounded.ceiling=40;
+ Check(bounded.Infer(in.data(),w,h,out.data(),error)&&std::all_of(bounded.shapes.begin(),bounded.shapes.end(),[&](auto s){return s.first-2*halo<=40&&s.second-2*halo<=40;}),"BOUND_TILE_EXCEEDED");
  Actual scratch{halo,1,0};scratch.fail_at=1;scratch.scratch=true;
  Check(scratch.Infer(in.data(),w,h,out.data(),error)&&scratch.failures==1,"SCRATCH_RETRY_FAILED");
- std::cout<<"actual CPU Infer/RunTiles allocation recovery, x1/x4 stencil equality, partial/cancel/unknown/exhaustion PASS\n";
+ std::cout<<"actual CPU Infer/RunTiles allocation recovery, x1/x4 stencil equality, partial/cancel/unknown/exhaustion, memory bound tiles PASS\n";
 }
 '''.replace('TILER',tiler).replace('INFER',infer)
 with tempfile.TemporaryDirectory(prefix='cpu-tiles-',dir=os.environ.get('TMPDIR')) as tmp:

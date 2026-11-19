@@ -4,6 +4,7 @@
 // kept in the cache root (ChooseDevice).
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <filesystem>
@@ -36,14 +37,24 @@ class Network
     virtual void SetYield(std::function<bool()>) {}
     // "CPU, 6 threads of 8 cores" / "GPU Adreno (TM) 740, Vulkan, 176 px tiles".
     virtual std::string Describe() const = 0;
+    // The largest inner tile it runs at once (the CPU's: within kCpuNetworkBytes); a caller that tiles its image itself
+    // (the upscaler) stays within it, so the network does not cut its tiles again.
+    virtual int TileCeiling() const { return 1 << 30; }
 };
+
+// The memory of a session's CPU networks (ncnn's blobs and workspace; they run one after the other): never more than
+// this held at once, all of it returned to the system after each texture (CpuRuntime::EndJob). It fits the 4 GB minimum
+// phone, where the game itself takes 0.6..0.9 GB: the tiles are sized from it (cpu_tiles.hpp), and an allocation past
+// it fails the run (the tile is lowered, logged); a texture that does not fit at the smallest tile is not made (logged).
+inline constexpr size_t kCpuNetworkBytes = size_t{160} << 20;
 
 // The CPU side of ncnn for the networks of one session (they run one after the other): its thread count and tile size.
 class CpuRuntime
 {
   public:
-    // `threads` cores (ncnn's simpleomp pool, waiting threads sleeping). `tile`: the inner texels of the networks'
-    // tiles, -1 by the RAM (the checks set one; 0 whole images). Null and `error` on failure. Logged.
+    // `threads` cores (ncnn's simpleomp pool, waiting threads sleeping). `tile`: the networks' largest inner tile, -1
+    // cpu_tiles.hpp kMaxCpuTile (the checks set one; 0 none): each run's tile is the largest within it and the memory
+    // bound. Null and `error` on failure. Logged.
     static std::unique_ptr<CpuRuntime> Open(int threads, std::string &error, int tile = -1);
     virtual ~CpuRuntime() = default;
     // An ncnn graph (.ncnn.param text, .ncnn.bin weights; both must outlive the network) on the CPU, its padding
@@ -52,6 +63,10 @@ class CpuRuntime
                                           std::string &error) = 0;
     // The thread count of its networks' next runs (the game's CPU budget changes with its phase); nothing reloaded.
     virtual void SetThreads(int threads) = 0;
+    // The most bytes its networks held at once since the last EndJob (at most kCpuNetworkBytes).
+    virtual size_t JobPeak() const = 0;
+    // After each texture: every byte its networks kept for reuse goes back to the system.
+    virtual void EndJob() = 0;
 };
 
 // The Vulkan compute device ncnn would use (its default one): created on first use, kept for the process.

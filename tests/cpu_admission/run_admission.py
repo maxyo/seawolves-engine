@@ -28,8 +28,11 @@ struct Mat {
  struct Channel{float*p;int w;float*row(int y){return p+size_t(y)*w;}};
  Channel channel(int k){return {d.data()+size_t(k)*w*h,w};}
 };
+struct Allocator {};
 struct Extractor {
  Api*api;
+ void set_blob_allocator(Allocator*){}
+ void set_workspace_allocator(Allocator*){}
  int input(const char*,const Mat&){return api->fail_input;}
  int extract(const char*,Mat&m){++api->calls;api->held_during_run=held.load();if(api->fail_run)return api->fail_run;
   m=Mat(1,1,3);for(int k=0;k<3;++k)m.d[k]=float(k+1);return 0;}
@@ -41,6 +44,8 @@ constexpr const char *kCpuOutOfMemory="ncnn: CPU inference out of memory";
 struct Actual {
  Api *api_;ncnn::Net net_{api_};int scale_=1;std::shared_ptr<const std::atomic<int>> threads_=std::make_shared<std::atomic<int>>(2);
  std::function<std::shared_ptr<void>()>cpu_admission_;
+ struct Memory : ncnn::Allocator {int runs=0;void StartRun(){++runs;}};std::shared_ptr<Memory> memory_=std::make_shared<Memory>();
+ int measured=0;void Measured(int,int){++measured;}
  BODY
 };
 std::shared_ptr<void> permit(){++held;return std::shared_ptr<void>(new int,[](void*p){delete static_cast<int*>(p);--held;});}
@@ -53,6 +58,8 @@ int main(){
  // The extraction waits for the permit, holds it while running and releases it after.
  assert(work.wait_for(std::chrono::milliseconds(50))==std::future_status::timeout&&api.calls==0);
  release.set_value();assert(work.get()&&api.calls==1&&api.held_during_run==1&&held==0&&out[2]==3);
+ // The run's memory is measured around the extraction (CpuMemory: its peak, a refused allocation).
+ assert(a.memory_->runs==1&&a.measured==1);
  // A cancelled admission never reaches ncnn.
  a.cpu_admission_=[]{return std::shared_ptr<void>{};};
  assert(!a.Run(in,1,1,out,error)&&api.calls==1&&error=="CPU admission cancelled");

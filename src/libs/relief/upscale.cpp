@@ -1,6 +1,7 @@
 #include "upscale.hpp"
 
 #include "backend.hpp"
+#include "cpu_tiles.hpp"
 #include "storm/fx/upscale.hpp"
 
 #include <algorithm>
@@ -84,11 +85,15 @@ bool Upscaler::Run(std::span<const uint8_t> rgba, int width, int height, bool wr
     const int ow = width * 2, oh = height * 2;
     out.assign(static_cast<size_t>(ow) * oh * 4, 255);
     constexpr int pad = fx::kUpscalePad;
+    // Equal tiles of at most fx::kUpscaleTile and what the network runs at once (the CPU's memory bound), so it does not
+    // cut them again (a network that fits no tile fails its first one, saying why).
+    const int ceiling = std::min(fx::kUpscaleTile, std::max(network_->TileCeiling(), kMinCpuTile));
+    const int step_x = BalancedTile(width, ceiling), step_y = BalancedTile(height, ceiling);
     std::vector<float> input, output;
-    for (int y0 = 0; y0 < height; y0 += fx::kUpscaleTile)
-        for (int x0 = 0; x0 < width; x0 += fx::kUpscaleTile)
+    for (int y0 = 0; y0 < height; y0 += step_y)
+        for (int x0 = 0; x0 < width; x0 += step_x)
         {
-            const int tw = std::min(fx::kUpscaleTile, width - x0), th = std::min(fx::kUpscaleTile, height - y0);
+            const int tw = std::min(step_x, width - x0), th = std::min(step_y, height - y0);
             // Pad from the neighbouring texels; beyond the image's edges wrapped or mirrored.
             const int pw = tw + 2 * pad, ph = th + 2 * pad;
             const size_t plane = static_cast<size_t>(pw) * ph;

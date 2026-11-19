@@ -29,8 +29,9 @@ inline constexpr uint64_t kUpscaleModelDigest = 0xa0a97f7dd9400708ull;
 // Bump when the ×2 changes in a way UpscaleMethod cannot see (padding, filters, mips, the file layout, the graph
 // pbrify-upscale.ncnn.param).
 inline constexpr uint32_t kUpscaleVersion = 3; // 3: ncnn's fp16 graph on both devices (no int8 CPU model)
-// The model's tiles (texels of the source) and their padding on every side: more than the network's receptive field
-// (21 3x3 convolutions in a row: 21 texels), so neither tiles nor a tiling texture's edges show a seam.
+// The model's largest tiles (texels of the source; smaller where the CPU's memory bound wants them: relief upscale.hpp)
+// and their padding on every side: more than the network's receptive field (21 3x3 convolutions in a row: 21 texels), so
+// neither tiles nor a tiling texture's edges show a seam.
 inline constexpr int kUpscaleTile = 256;
 inline constexpr int kUpscalePad = 24;
 

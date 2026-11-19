@@ -371,6 +371,28 @@ struct Session::Impl
     const uint64_t session = ++next_session;
 
     std::array<std::unique_ptr<Network>, 3> &Active() { return on_gpu ? gpu : cpu; }
+    // Around each texture's computation, however it ends: the CPU networks' memory goes back to the system after it.
+    struct CpuJob
+    {
+        Impl &impl;
+        ~CpuJob()
+        {
+            if (!impl.runtime)
+                return;
+            impl.stats.cpu_memory_peak = impl.runtime->JobPeak();
+            impl.runtime->EndJob();
+        }
+    };
+    // The device's description for the texture's log line; on the CPU with the networks' memory peak of this texture.
+    std::string JobProvider() const
+    {
+        if (on_gpu || !runtime)
+            return stats.provider;
+        char peak[64];
+        std::snprintf(peak, sizeof(peak), "; networks' memory peak %.0f MB",
+                      static_cast<double>(runtime->JobPeak()) / 1048576.0);
+        return stats.provider + peak;
+    }
     bool EnsureGpu(std::string &error)
     {
         if (gpu_upscaler)
@@ -584,6 +606,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     // a height: R the height normalised per region, G the gloss) and, for a texture of a gloss class without a height,
     // its own gloss map (R the metal mask, G the gloss). Each stage is timed: the log line of the texture says where the
     // time went.
+    const Impl::CpuJob job{*impl_};
     const Clock::time_point start = Clock::now();
     Clock::time_point mark = start;
     const auto lap = [&mark] {
@@ -783,7 +806,7 @@ ComputeResult Session::ComputeFile(const std::filesystem::path &textures, const 
     product->width = width; product->height = height; product->model_scale = model_scale;
     product->mw = mw; product->mh = mh; product->fw = fw; product->fh = fh; product->gw = gw; product->gh = gh;
     product->height_class = height_class; product->gloss_wanted = gloss_wanted;
-    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->stats.provider;
+    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->JobProvider();
     product->rgba = std::move(rgba); product->normal_planes = std::move(normal_planes);
     product->height_planes = std::move(height_planes); product->gloss_height = std::move(gloss_height);
     product->roughness_planes = std::move(roughness_planes); product->per_model = std::move(per_model);
@@ -798,6 +821,7 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
 {
     // The ×2 alone (fx/upscale.hpp): a texture whose maps do not come from it (larger than the map) or that has none (the
     // characters). Its class decides the padding and whether it gets one at all.
+    const Impl::CpuJob job{*impl_};
     const Clock::time_point start = Clock::now();
     std::error_code error;
     const std::string name = fx::NormalizeTexturePath(std::filesystem::relative(file, textures, error).generic_string());
@@ -873,7 +897,7 @@ ComputeResult Session::ComputeUpscale(const std::filesystem::path &textures, con
     product->width = static_cast<int>(lw); product->height = static_cast<int>(lh);
     product->rgba = std::move(x2); product->started = start;
     product->decode_ms = decode_ms; product->infer_ms = infer_ms;
-    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->stats.provider;
+    product->threads = static_cast<unsigned>(impl_->threads); product->provider = impl_->JobProvider();
     product->computed_at = Clock::now();
     return product;
 }

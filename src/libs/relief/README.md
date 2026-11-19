@@ -10,6 +10,17 @@ In the game the maps are made lazily in the background (renderer_bgfx `src/effec
 kept as a cache in `fs::GetCachePath()/relief` (on Android in the app's cache dir: «Очистить кэш» removes them and
 they are made again). A map's key holds the method and model digests, so a changed method never reuses old maps.
 
+## Memory on the CPU
+
+The CPU networks of a session hold at most `kCpuNetworkBytes` (160 MB, `backend.hpp`) at once and return all of it
+after each texture: one bounded allocator (`CpuMemory`, ncnn's allocator hook) instead of ncnn's own per-network pools,
+which kept every block until the session ended (a 1024² ×2 took 440 MB, a relief texture 1.3..1.7 GB). Each network's
+tiles are the largest that fit the bound by the bytes a texel it measured on this CPU (`cpu_tiles.hpp`; about 2.5 KB
+with fp32 storage, half with ARMv8.2 fp16 storage); the upscaler's own tiles follow (`Network::TileCeiling`), so they are
+not cut again. An allocation past the bound fails the run (ncnn's -100: a smaller tile, logged), and a texture that fits
+no tile is not made (logged, unusable). The runtime's log line names the bound, each texture's line its peak. Check:
+`storm_relief_check <models> --memory` (tests/renderer_bgfx/run.py).
+
 ## Host use
 
 ```sh

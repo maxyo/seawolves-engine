@@ -73,6 +73,7 @@ class Session
         DeviceReason device_why = DeviceReason::None; // why the last texture took its device
         bool gpu_possible = false; // a GPU the session may use (its graphs, no crash recorded)
         std::string gpu_crash; // the GPU (and driver) whose inference crashed a previous run, so the CPU is used; else empty
+        size_t cpu_memory_peak = 0; // the last texture's CPU networks' memory peak, bytes (backend.hpp kCpuNetworkBytes)
     };
     // `threads`: the CPU's inference threads; 0 = every core. `cache`: where the device choice is kept (the cache
     // root's relief directory). Null and `error` on failure.

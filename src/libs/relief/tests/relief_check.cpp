@@ -1,7 +1,7 @@
 // Host check of the relief preparation with the real PBRify models (storm_relief_core): a small synthetic game,
 // prepared (a stone texture's relief with its material, a window glass's own gloss map), marked complete, keyed as the game
 // keys it, resumed without work, stale maps pruned, cancelled; the neural ×2 (the upscaler, the maps of a small texture
-// made from its ×2 and the ×2 kept for the game, a character's ×2 alone).
+// made from its ×2 and the ×2 kept for the game, a character's ×2 alone). With --memory: the CPU networks' memory bound.
 #include "relief.hpp"
 
 #include "backend.hpp"
@@ -12,8 +12,11 @@
 #include "storm/fx/height_map.hpp"
 #include "storm/fx/relief_store.hpp"
 
+#include <malloc.h>
 #include <unistd.h>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -21,6 +24,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -61,6 +65,77 @@ std::vector<uint8_t> WriteTx(const std::filesystem::path &path, int size)
     std::filesystem::create_directories(path.parent_path());
     std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char *>(file.data()), static_cast<std::streamsize>(file.size()));
     return probe;
+}
+
+long RssAnonKb()
+{
+    std::ifstream status("/proc/self/status");
+    for (std::string line; std::getline(status, line);)
+        if (line.rfind("RssAnon:", 0) == 0)
+            return std::atol(line.c_str() + 8);
+    return -1;
+}
+
+// The CPU networks' memory bound (backend.hpp kCpuNetworkBytes) on the game's largest jobs, each a session's first on the
+// CPU (the game's device while the player sees the scene): a 1024 x 1024 character's ×2 alone, a 1024 x 1024 stone
+// texture's relief (three networks) and a 256 x 256 one's (its maps made from its ×2). Before the bound one ×2 took 440 MB
+// and one relief texture 1.3..1.7 GB (ncnn's per-network pools, kept until the session ended). Each job: the networks'
+// peak (the allocator's) within the bound, the process's anonymous memory within the bound and the job's own buffers
+// (images, planes, the finalization), and back down after it. glibc returns large blocks at once here, as Android's
+// allocator does (its dynamic threshold would otherwise keep freed blocks resident).
+int CheckMemory(const std::filesystem::path &root, const storm::relief::Models &models)
+{
+    using namespace storm;
+    mallopt(M_MMAP_THRESHOLD, 1 << 20);
+    constexpr long kJobBuffersKb = 64 << 10;
+    const std::filesystem::path textures = root / "RESOURCE/Textures";
+    WriteTx(textures / "Characters/Large.tga.tx", 1024);
+    WriteTx(textures / "Locations/StoneLarge.tga.tx", 1024);
+    WriteTx(textures / "Locations/StoneSmall.tga.tx", 256);
+    struct Case { const char *file; bool x2_only; };
+    for (const Case &c : {Case{"Characters/Large.tga.tx", true}, Case{"Locations/StoneLarge.tga.tx", false},
+                          Case{"Locations/StoneSmall.tga.tx", false}})
+    {
+        std::string error;
+        const std::unique_ptr<relief::Session> session = relief::Session::Open(models, 4, root / "device", error);
+        CHECK(session);
+        if (!session)
+            continue;
+        session->SetGame([] { return false; }, [] { return true; });
+        const relief::UpscaleOutput display{root / "upscale", false};
+        const long before = RssAnonKb();
+        std::atomic<bool> done{false};
+        std::atomic<long> peak{before};
+        std::thread sampler([&] {
+            while (!done)
+            {
+                peak = std::max(peak.load(), RssAnonKb());
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+            }
+        });
+        const auto start = std::chrono::steady_clock::now();
+        std::string failure;
+        const relief::Outcome outcome =
+            c.x2_only ? session->Upscale(textures, textures / c.file, display, 0, failure)
+                      : session->PrepareFile(textures, textures / c.file, root / "relief", fx::kReliefMapSize, failure,
+                                             &display);
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        done = true;
+        sampler.join();
+        const long after = RssAnonKb();
+        const size_t networks = session->stats().cpu_memory_peak;
+        std::printf("memory: %s %s on %s: networks' peak %.0f MB of %zu, anonymous memory +%ld MB at most (bound %zu + %ld "
+                    "MB), +%ld MB after, %.0f ms\n",
+                    c.file, c.x2_only ? "×2" : "relief", session->stats().provider.c_str(), double(networks) / 1048576.0,
+                    relief::kCpuNetworkBytes >> 20, (peak - before) >> 10, relief::kCpuNetworkBytes >> 20, kJobBuffersKb >> 10,
+                    (after - before) >> 10, ms);
+        CHECK(outcome == relief::Outcome::Prepared && !session->stats().gpu);
+        CHECK(networks > 0 && networks <= relief::kCpuNetworkBytes);
+        CHECK(before > 0 && peak - before <= static_cast<long>(relief::kCpuNetworkBytes >> 10) + kJobBuffersKb);
+        CHECK(after - before <= 16 << 10);
+    }
+    std::printf("memory checks: %d failures\n", failures);
+    return failures ? 1 : 0;
 }
 
 // Pruning validates cache ownership without inference or loading model files.
@@ -199,7 +274,7 @@ int main(int argc, char **argv)
     }
     if (argc < 2)
     {
-        std::printf("usage: %s <model dir>\n", argv[0]);
+        std::printf("usage: %s <model dir> [--memory]\n", argv[0]);
         return 2;
     }
     const auto read = [&](const char *name) {
@@ -214,6 +289,13 @@ int main(int argc, char **argv)
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / ("storm_relief_check-" + std::to_string(getpid()));
     std::filesystem::remove_all(root);
+    if (argc == 3 && std::strcmp(argv[2], "--memory") == 0)
+    {
+        const int status = CheckMemory(root, all);
+        std::filesystem::remove_all(root);
+        relief::ReleaseGpu();
+        return status;
+    }
     CheckDemandPrune(root / "demand-prune");
     const std::filesystem::path textures = root / "RESOURCE/Textures", output = root / "relief";
     const std::vector<uint8_t> probe = WriteTx(textures / "Locations/StoneWall.tga.tx", 128);
@@ -437,11 +519,12 @@ int main(int argc, char **argv)
     }
     else
         std::printf("no GPU check: %s\n", relief::Gpu().why.c_str());
-    // The CPU in tiles (a device with little RAM): the same output as the whole image (the halo covers what the network
-    // sees); not to the bit: ncnn picks its convolution kernels by the blob's size, so only rounding differs.
+    // The CPU in tiles (smaller tiles than the memory bound allows): the same output as the whole image (the halo covers
+    // what the network sees); not to the bit: ncnn picks its convolution kernels by the blob's size, so only rounding
+    // differs. 160 texels fit the bound whole (backend.hpp kCpuNetworkBytes; fp32 storage's bytes a texel).
     {
         std::string error;
-        const int size = 200 + 2 * fx::kReliefModelPad;
+        const int size = 160 + 2 * fx::kReliefModelPad;
         std::vector<float> image(static_cast<size_t>(size) * size * 3);
         for (size_t i = 0; i < image.size(); ++i)
             image[i] = static_cast<float>((i * 2654435761u) % 1000u) / 1000.0f;
@@ -458,7 +541,9 @@ int main(int argc, char **argv)
                     const size_t i = (static_cast<size_t>(c) * size + y) * size + x;
                     worst = std::max(worst, static_cast<double>(std::fabs(pa[i] - pb[i])));
                 }
-        std::printf("CPU tiles of 64 against the whole image: at most %.2g apart (%s)\n", worst, b ? b->Describe().c_str() : "-");
+        std::printf("CPU tiles of 64 against the whole image: at most %.2g apart (%s; %s)\n", worst,
+                    b ? b->Describe().c_str() : "-", a ? a->Describe().c_str() : "-");
+        CHECK(a && a->TileCeiling() >= 160);
         CHECK(worst < 1.0 / 4096.0);
     }
     // The crash guard (backend.hpp MarkGpuRunning): a marker left behind by a run that died in the GPU's driver.

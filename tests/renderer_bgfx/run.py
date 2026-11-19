@@ -79,6 +79,8 @@ plain = [[str(build / 'lamp_lifetime_check')], [str(build / 'renderer_bgfx' / 's
          ['ctest', '--test-dir', str(build), '--output-on-failure', '--no-tests=error',
           '-R', '^(scene_(post_handoff|nested_progress|hidden_work|stock_(transaction|scheduler|progress|progress_rate|consumers)))_check$'],
          [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text()],
+         # The CPU networks' memory bound on the game's largest ×2 and relief jobs (relief backend.hpp kCpuNetworkBytes).
+         [str(build / 'relief' / 'storm_relief_check'), (build / 'relief_models_path.txt').read_text(), '--memory'],
          [str(build / 'relief' / 'storm_relief_device_choice_check'), str(build / 'device-choice-fixture')],
          [str(build / 'relief' / 'storm_relief_finalizer_check'), str(build / 'finalizer-fixture')],
          [str(build / 'relief' / 'storm_relief_tx_check'), str(build / 'tx-fixture')]]
@@ -154,5 +156,5 @@ for name, done in failures:
     print(f'--- {name}: exit {done.returncode}\n{done.stdout[-6000:]}', flush=True)
 if failures:
     raise SystemExit('FAIL: ' + ', '.join(name for name, _ in failures))
-print('PASS: storm_bgfx builds; storm_texture_tests; perf_check; program_family_check; backend_select_check; view_schedule_check; fx core_check; relief_switch_check; relief_check; relief_device_choice_check; relief_finalizer_check; relief_tx_check; '
+print('PASS: storm_bgfx builds; storm_texture_tests; perf_check; program_family_check; backend_select_check; view_schedule_check; fx core_check; relief_switch_check; relief_check; relief_check --memory; relief_device_choice_check; relief_finalizer_check; relief_tx_check; '
       f'on OpenGL ES: {" ".join(gpu_checks)}; under ASan: {" ".join(ASAN_CHECKS)}; on Vulkan ({vulkan}): {" ".join(vulkan_checks)}', flush=True)

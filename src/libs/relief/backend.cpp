@@ -23,9 +23,9 @@
 #include <mutex>
 #include <new>
 #include <thread>
+#include <unordered_map>
+#include <utility>
 #include <vector>
-
-#include <unistd.h>
 
 namespace storm::relief
 {
@@ -109,38 +109,160 @@ bool RunTiles(const float *image, int width, int height, float *planes, int halo
     return true;
 }
 
-// Bound activations on every device, independently of physical RAM: a single convolution's activations at a whole
-// 560-texel image are hundreds of MB, more than a phone may have free.
-struct CpuLimits
+// The memory of a session's CPU networks (ncnn::Allocator, the library's hook for its blobs and workspace; ncnn's own
+// per-network pools keep every block they ever held until the network goes, and one per network and graph made 0.9..1.3
+// GB on a relief texture). Freed blocks are kept for the next layers and tiles of the same texture (a new block costs its
+// page faults: twice the inference time), never more than `limit` bytes held at once (kept blocks go back to the system
+// first; past it the allocation fails, ncnn's -100), and all go back after each texture (Release).
+class CpuMemory final : public ncnn::Allocator
 {
-    double ram_gb = 0.0;
-    int tile = 0; // inner texels of a tile; 0: the whole image at once
+  public:
+    explicit CpuMemory(size_t limit) : limit_(limit) {}
+    ~CpuMemory() override { Release(); }
+
+    void *fastMalloc(size_t size) override
+    {
+        std::lock_guard lock(mutex_);
+        // The smallest kept block that fits and is at most a third larger: a big block taken by a small blob would make
+        // the next big one a new block.
+        auto best = kept_.end();
+        for (auto it = kept_.begin(); it != kept_.end(); ++it)
+            if (it->first >= size && it->first - size <= it->first / 4 &&
+                (best == kept_.end() || it->first < best->first))
+                best = it;
+        if (best != kept_.end())
+        {
+            void *ptr = best->second;
+            Lend(ptr, best->first);
+            kept_.erase(best);
+            return ptr;
+        }
+        while (held_ + size > limit_ && !kept_.empty())
+        {
+            const auto largest = std::max_element(kept_.begin(), kept_.end());
+            ncnn::fastFree(largest->second);
+            held_ -= largest->first;
+            kept_.erase(largest);
+        }
+        if (held_ + size > limit_)
+        {
+            refused_ = std::max(refused_, live_ + size); // what the run needed at least
+            return nullptr;
+        }
+        void *ptr = ncnn::fastMalloc(size);
+        if (!ptr)
+            return nullptr;
+        held_ += size;
+        held_peak_ = std::max(held_peak_, held_);
+        Lend(ptr, size);
+        return ptr;
+    }
+
+    void fastFree(void *ptr) override
+    {
+        if (!ptr)
+            return;
+        std::lock_guard lock(mutex_);
+        const auto it = lent_.find(ptr);
+        kept_.emplace_back(it->second, ptr);
+        live_ -= it->second;
+        lent_.erase(it);
+    }
+
+    // Before a run: its peak of blocks in use and what a refused allocation needed start again.
+    void StartRun()
+    {
+        std::lock_guard lock(mutex_);
+        live_peak_ = live_;
+        refused_ = 0;
+    }
+    // After a run: the most bytes in use at once, and at least what it needed when an allocation was refused (0: none).
+    std::pair<size_t, size_t> Run() const
+    {
+        std::lock_guard lock(mutex_);
+        return {live_peak_, refused_};
+    }
+    size_t HeldPeak() const
+    {
+        std::lock_guard lock(mutex_);
+        return held_peak_;
+    }
+    // Between textures (no run going): every kept block back to the system.
+    void Release()
+    {
+        std::lock_guard lock(mutex_);
+        for (const auto &[size, ptr] : kept_)
+            ncnn::fastFree(ptr);
+        kept_.clear();
+        held_ = live_;
+        held_peak_ = held_;
+    }
+
+  private:
+    void Lend(void *ptr, size_t size)
+    {
+        lent_.emplace(ptr, size);
+        live_ += size;
+        live_peak_ = std::max(live_peak_, live_);
+    }
+
+    mutable std::mutex mutex_;
+    const size_t limit_;
+    std::vector<std::pair<size_t, void *>> kept_;
+    std::unordered_map<void *, size_t> lent_;
+    size_t held_ = 0, held_peak_ = 0, live_ = 0, live_peak_ = 0, refused_ = 0;
 };
 
-const CpuLimits &Limits()
+// The bytes a texel each graph needed on this process's CPU (CpuMemory's peak of a run over its padded texels), for every
+// session after the run that measured it: by the FNV-1a of the graph's weights.
+class CpuCosts
 {
-    static const CpuLimits limits = [] {
-        CpuLimits l;
-        const long pages = sysconf(_SC_PHYS_PAGES), page = sysconf(_SC_PAGE_SIZE);
-        l.ram_gb = pages > 0 && page > 0 ? static_cast<double>(pages) * static_cast<double>(page) / 1073741824.0 : 0.0;
-        l.tile = DefaultCpuTile(l.ram_gb);
-        return l;
-    }();
-    return limits;
-}
+  public:
+    static double Get(uint64_t graph)
+    {
+        std::lock_guard lock(mutex());
+        const auto it = costs().find(graph);
+        return it == costs().end() ? kInitialCpuBytesPerTexel : it->second;
+    }
+    // True when it is the graph's first measurement or a larger one.
+    static bool Raise(uint64_t graph, double bytes_per_texel)
+    {
+        std::lock_guard lock(mutex());
+        const auto [it, added] = costs().emplace(graph, bytes_per_texel);
+        if (!added && it->second >= bytes_per_texel)
+            return false;
+        it->second = bytes_per_texel;
+        return true;
+    }
+
+  private:
+    static std::mutex &mutex()
+    {
+        static std::mutex m;
+        return m;
+    }
+    static std::unordered_map<uint64_t, double> &costs()
+    {
+        static std::unordered_map<uint64_t, double> c;
+        return c;
+    }
+};
 
 // One ncnn graph on the CPU (the same fp16-weight graph the GPU runs; ncnn's NEON / fp16 kernels on arm64), its
-// threads ncnn's simpleomp pool (cmake/ncnn.cmake: waiting threads sleep). The image runs in tiles of `tile` inner
-// texels (CpuLimits), so a Cancel stops between tiles.
+// threads ncnn's simpleomp pool (cmake/ncnn.cmake: waiting threads sleep), its memory the runtime's CpuMemory. The image
+// runs in equal tiles, the largest within the memory bound by the graph's measured bytes a texel (cpu_tiles.hpp), so a
+// Cancel also stops between tiles.
 class CpuNetwork final : public Network
 {
   public:
-    CpuNetwork(std::shared_ptr<const std::atomic<int>> threads, int halo, int scale, int tile)
-        : threads_(std::move(threads)), halo_(halo), scale_(scale), tile_(tile)
+    CpuNetwork(std::shared_ptr<const std::atomic<int>> threads, std::shared_ptr<CpuMemory> memory, int halo, int scale,
+               int tile)
+        : threads_(std::move(threads)), memory_(std::move(memory)), halo_(halo), scale_(scale), tile_(tile)
     {
         net_.opt.use_vulkan_compute = false;
         net_.opt.num_threads = threads_->load();
-        net_.opt.lightmode = true; // intermediate blobs freed as soon as they are consumed
+        net_.opt.lightmode = true;                 // intermediate blobs freed as soon as they are consumed
+        net_.opt.use_local_pool_allocator = false; // CpuMemory instead, set on each extractor
     }
 
     bool Open(std::span<const uint8_t> param, std::span<const uint8_t> bin, std::string &error)
@@ -150,6 +272,7 @@ class CpuNetwork final : public Network
             error = "ncnn could not load the network for the CPU (a damaged graph?)";
             return false;
         }
+        graph_ = storm::hash::fnv1a(bin.data(), bin.size(), storm::hash::kFnvOffset);
         return true;
     }
 
@@ -160,12 +283,19 @@ class CpuNetwork final : public Network
         for (unsigned attempt = 0;; ++attempt)
         {
             if (cancelled_) { error = "cancelled"; return false; }
+            const int ceiling = TileCeiling();
+            if (ceiling == 0)
+            {
+                error = OverBound();
+                return false;
+            }
+            int tile = BalancedTile(std::max(width, height) - 2 * halo_, ceiling);
             bool allocation_failure = false;
             try
             {
-                const bool ok = tile_ == 0 || (width - 2 * halo_ <= tile_ && height - 2 * halo_ <= tile_)
+                const bool ok = width - 2 * halo_ <= tile && height - 2 * halo_ <= tile
                     ? Run(image, width, height, planes, error)
-                    : RunTiles(image, width, height, planes, halo_, scale_, tile_, cancelled_, error,
+                    : RunTiles(image, width, height, planes, halo_, scale_, tile, cancelled_, error,
                         [&](const float *in, int w, int h, float *out, double &) { return Run(in, w, h, out, error); });
                 if (ok) {
                     if (cancelled_) { error = "cancelled"; return false; }
@@ -179,10 +309,10 @@ class CpuNetwork final : public Network
                 allocation_failure = true;
             }
             if (cancelled_ || !allocation_failure || attempt >= 4) return false;
-            const int next = SmallerCpuTile(tile_, width, height, halo_);
+            const int next = SmallerCpuTile(ceiling, width, height, halo_);
             if (!next) return false;
             Log("relief CPU allocation retry: image=%dx%d scale=%d halo=%d old=%d new=%d attempt=%u "
-                "(same model/output; restarting all tiles): %s", width, height, scale_, halo_, tile_, next,
+                "(same model/output; restarting all tiles): %s", width, height, scale_, halo_, tile, next,
                 attempt + 1, error.c_str());
             tile_ = next; // keep the learned bound for subsequent images on this network
             error.clear();
@@ -204,8 +334,15 @@ class CpuNetwork final : public Network
                             static_cast<size_t>(width) * sizeof(float));
         ncnn::Mat out;
         net_.opt.num_threads = threads_->load(); // the runtime's current budget (SetThreads): the run's own, no reload
-        ncnn::Extractor ex = net_.create_extractor();
-        const int status = ex.input("in0", in) != 0 ? -1 : ex.extract("out0", out);
+        memory_->StartRun();
+        int status = -1;
+        {
+            ncnn::Extractor ex = net_.create_extractor();
+            ex.set_blob_allocator(memory_.get());
+            ex.set_workspace_allocator(memory_.get());
+            status = ex.input("in0", in) != 0 ? -1 : ex.extract("out0", out);
+        }
+        Measured(width, height);
         if (status == -100) { error = kCpuOutOfMemory; return false; } // ncnn's "allocation failed" from any layer
         const int ow = width * scale_, oh = height * scale_;
         if (status != 0 || out.c != 3 || out.w != ow || out.h != oh)
@@ -222,17 +359,48 @@ class CpuNetwork final : public Network
 
     void Cancel() override { cancelled_ = true; }
 
+    int TileCeiling() const override
+    {
+        const int bound = BoundedCpuTile(CpuCosts::Get(graph_), kCpuNetworkBytes, halo_);
+        return tile_ > 0 ? std::min(tile_, bound) : bound;
+    }
+
     std::string Describe() const override
     {
         return "CPU (ncnn), " + std::to_string(threads_->load()) + " threads of " +
-               std::to_string(std::thread::hardware_concurrency()) + " cores" +
-               (tile_ ? ", tiles of " + std::to_string(tile_) + " + " + std::to_string(halo_) + " texels" : "");
+               std::to_string(std::thread::hardware_concurrency()) + " cores, tiles of up to " +
+               std::to_string(TileCeiling()) + " + " + std::to_string(halo_) + " texels within " +
+               std::to_string(kCpuNetworkBytes >> 20) + " MB";
     }
 
   private:
+    // A run's bytes a texel, from runs of at least 128 x 128 texels (smaller ones carry ncnn's fixed buffers per texel)
+    // or a refused one (what it needed at least): the graph's tiles from then on.
+    void Measured(int width, int height)
+    {
+        const auto [peak, refused] = memory_->Run();
+        const double texels = static_cast<double>(width) * height;
+        if (refused == 0 && texels < 128.0 * 128.0)
+            return;
+        const double cost = static_cast<double>(std::max(peak, refused)) / texels;
+        if (CpuCosts::Raise(graph_, cost))
+            Log("relief CPU network %016llx: %.2f KB a texel measured at %dx%d%s: tiles of up to %d + %d texels within "
+                "%zu MB", static_cast<unsigned long long>(graph_), cost / 1024.0, width, height,
+                refused ? " (an allocation past the bound refused)" : "", TileCeiling(), halo_, kCpuNetworkBytes >> 20);
+    }
+    std::string OverBound() const
+    {
+        char text[192];
+        std::snprintf(text, sizeof(text), "the CPU network needs %.2f KB a texel: not even a %d-texel tile fits the %zu MB "
+                      "memory bound", CpuCosts::Get(graph_) / 1024.0, kMinCpuTile, kCpuNetworkBytes >> 20);
+        return text;
+    }
+
     std::function<std::shared_ptr<void>()> cpu_admission_;
     std::shared_ptr<const std::atomic<int>> threads_;
+    std::shared_ptr<CpuMemory> memory_;
     int halo_, scale_, tile_;
+    uint64_t graph_ = 0;
     std::atomic<bool> cancelled_{false};
     std::string param_;
     ncnn::Net net_;
@@ -241,7 +409,9 @@ class CpuNetwork final : public Network
 class NcnnCpuRuntime final : public CpuRuntime
 {
   public:
-    NcnnCpuRuntime(int threads, int tile) : threads_(std::make_shared<std::atomic<int>>(threads)), tile_(tile)
+    NcnnCpuRuntime(int threads, int tile)
+        : threads_(std::make_shared<std::atomic<int>>(threads)), memory_(std::make_shared<CpuMemory>(kCpuNetworkBytes)),
+          tile_(tile)
     {
         // fp16 weights either way; the arithmetic in fp16 where the CPU has it (ARMv8.2 FP16), else in fp32.
 #if defined(__aarch64__)
@@ -249,8 +419,9 @@ class NcnnCpuRuntime final : public CpuRuntime
 #else
         const char *arithmetic = "fp32";
 #endif
-        Log("relief CPU runtime: ncnn, %d threads, %s arithmetic, %.1f GB of RAM: %s", threads, arithmetic,
-            Limits().ram_gb, tile_ ? ("tiles of " + std::to_string(tile_) + " texels").c_str() : "whole images");
+        Log("relief CPU runtime: ncnn, %d threads, %s arithmetic: the networks' memory within %zu MB, tiles of up to %s "
+            "texels by its bytes a texel", threads, arithmetic, kCpuNetworkBytes >> 20,
+            tile_ ? std::to_string(tile_).c_str() : "any");
     }
 
     void SetThreads(int threads) override { threads_->store(threads); }
@@ -258,14 +429,18 @@ class NcnnCpuRuntime final : public CpuRuntime
     std::unique_ptr<Network> Load(std::span<const uint8_t> param, std::span<const uint8_t> bin, int halo, int scale,
                                   std::string &error) override
     {
-        auto network = std::make_unique<CpuNetwork>(threads_, halo, scale, tile_);
+        auto network = std::make_unique<CpuNetwork>(threads_, memory_, halo, scale, tile_);
         if (!network->Open(param, bin, error))
             return nullptr;
         return network;
     }
 
+    size_t JobPeak() const override { return memory_->HeldPeak(); }
+    void EndJob() override { memory_->Release(); }
+
   private:
     std::shared_ptr<std::atomic<int>> threads_; // shared with its networks: read at each run
+    std::shared_ptr<CpuMemory> memory_;         // shared with its networks: they run one after the other
     int tile_;
 };
 
@@ -655,7 +830,7 @@ std::unique_ptr<CpuRuntime> CpuRuntime::Open(int threads, std::string &error, in
         error = "no CPU threads for the relief networks";
         return nullptr;
     }
-    return std::make_unique<NcnnCpuRuntime>(threads, tile < 0 ? Limits().tile : tile);
+    return std::make_unique<NcnnCpuRuntime>(threads, tile < 0 ? kMaxCpuTile : tile);
 }
 
 namespace

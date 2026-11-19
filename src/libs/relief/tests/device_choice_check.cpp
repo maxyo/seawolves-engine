@@ -44,6 +44,8 @@ class Runtime final: public storm::relief::CpuRuntime {
   return std::make_unique<Model>(false,scale);
  }
  void SetThreads(int) override {}
+ size_t JobPeak() const override {return 0;}
+ void EndJob() override {}
 };
 void write_tx(const std::filesystem::path &p) {
  constexpr int size=64;const int32_t head[]={0,size,size,7,21,size*size*4};
