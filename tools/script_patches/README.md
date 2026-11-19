@@ -50,7 +50,11 @@ and patched, so a target the overlay replaces is a damaged layer (`applyLayer` t
 - **Set selection.** A set applies when all its `identify` files match. No
   matching set: nothing is patched and the log says so; other games and
   versions are not told about fixes that were never meant for them. Two
-  matching sets: damaged layer.
+  matching sets: damaged layer. The rule is one function,
+  `script_patches::identify`: `applyLayer` calls it at start-up and the
+  launcher's archive reader (`android/archive`, discovery) calls it on every
+  game copy it finds, so the launcher's «not the tested version» line and the
+  engine's choice of set can never disagree.
 - **Base mismatch** (a target missing or not the expected sha256): that fix is
   not applied, and neither is any fix sharing a script with it, so a fix never
   half-applies. The player's files are used unchanged. Each unapplied fix is

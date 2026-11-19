@@ -312,6 +312,23 @@ void checkSetSelection(const fs::path &root)
     write(g.layer / "sets/test-copy/index.txt", index);
     CHECK(throwsLayerError([&] { g.apply(); }, "both identify this game"));
 
+    // The selection rule itself, as the launcher's archive reader calls it without a resource index.
+    Fixture k(root / "identify");
+    const auto sets = loadLayer(k.layer);
+    CHECK(identifyKeys(sets) == std::vector<std::string>{"program/version.h"});
+    std::vector<std::string> asked;
+    const auto byHash = [&](const std::string &hash) {
+        return [&asked, hash](const std::string &key) { asked.push_back(key); return hash; };
+    };
+    const Set *matched = identify(sets, byHash(sha256(kIdentity)));
+    CHECK(matched && matched->id == "test-1.0" && matched->version == "1.0");
+    CHECK(asked == std::vector<std::string>{"program/version.h"});
+    CHECK(identify(sets, byHash("")) == nullptr); // the copy lacks the file
+    CHECK(identify(sets, byHash(sha256("other"))) == nullptr);
+    const auto both = loadLayer(g.layer);
+    CHECK(identifyKeys(both) == std::vector<std::string>{"program/version.h"}); // each key once
+    CHECK(throwsLayerError([&] { identify(both, byHash(sha256(kIdentity))); }, "both identify this game"));
+
     Fixture h(root / "absent");
     fs::remove_all(h.layer);
     const auto absent = h.apply();

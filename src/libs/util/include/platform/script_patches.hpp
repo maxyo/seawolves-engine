@@ -536,6 +536,38 @@ inline std::vector<Set> loadLayer(const fs::path &layer)
     return sets;
 }
 
+// The game files (resource keys) the sets identify their game by, each once, sorted. A reader
+// that identifies a game copy without the engine (the launcher's archive reader,
+// android/archive/discovery.cpp) reads exactly these.
+inline std::vector<std::string> identifyKeys(const std::vector<Set> &sets)
+{
+    std::set<std::string> keys;
+    for (const auto &set : sets)
+        for (const auto &probe : set.identify)
+            keys.insert(probe.first);
+    return {keys.begin(), keys.end()};
+}
+
+// The one rule that selects the set for a game copy, shared by applyLayer and the launcher's archive
+// reader so that both always agree. `hashOf(key)` is the sha256 of the copy's file with that resource
+// key, "" when the copy has no such file. A set matches when all its identify files match; no match is
+// nullptr (the game runs unpatched); two matching sets are a broken layer (LayerError).
+template <class HashOf> const Set *identify(const std::vector<Set> &sets, HashOf &&hashOf)
+{
+    const Set *selected = nullptr;
+    for (const auto &set : sets)
+    {
+        const bool matches = std::all_of(set.identify.begin(), set.identify.end(),
+                                         [&](const auto &probe) { return hashOf(probe.first) == probe.second; });
+        if (!matches)
+            continue;
+        if (selected)
+            throw LayerError("patch sets " + selected->id + " and " + set.id + " both identify this game");
+        selected = &set;
+    }
+    return selected;
+}
+
 // `paths` the resource index (key -> file), `overlaid` the keys of it the UI overlay replaces.
 // Selects the set that identifies the player's game, patches what it can into `derived` and
 // redirects `paths` there (memoryPath). Returns what happened; throws LayerError when the layer
@@ -568,18 +600,7 @@ inline Report applyLayer(const fs::path &layer, std::unordered_map<std::string, 
         return hashes.emplace(key, std::move(hash)).first->second;
     };
 
-    const Set *selected = nullptr;
-    for (const auto &set : sets)
-    {
-        const bool matches = std::all_of(set.identify.begin(), set.identify.end(), [&](const auto &probe) {
-            return playerHash(probe.first) == probe.second;
-        });
-        if (!matches)
-            continue;
-        if (selected)
-            throw LayerError("patch sets " + selected->id + " and " + set.id + " both identify this game");
-        selected = &set;
-    }
+    const Set *selected = identify(sets, playerHash);
     if (!selected)
     {
         report.info.push_back("no script patch set identifies this game (" + std::to_string(sets.size()) +
