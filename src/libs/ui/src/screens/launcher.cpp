@@ -22,7 +22,9 @@
 //               (the app's DownloadLibraryState defines states, verbs and candidates)
 //   about:     {app: {version, code, flavor, appCommit, engineCommit, appSource,
 //               engineSource, renderBackend (after the game's first start)}, notices: [<file>], open: {file, text, truncated},
-//               saves: [{key, name, date}] (the save picker is open; newest first)}
+//               saves: [{key, name, date}] (the save picker is open; newest first),
+//               restore: {busy} | {conflict: {names, total}} | {result: {key, args}} (app SaveRestore; key: done, done_many,
+//               partial, not_save, damaged, unsafe, no_space, picker_unavailable, failed)}
 // What the player does goes back as Action{node "APP", verb, value} (text fields:
 // node "PASSWORD" / "MAGNET", verb "edit"); the global back without a ← binding is
 // Action{verb "back"}. The Android host is UiScreenActivity and its subclasses.
@@ -1139,15 +1141,28 @@ class AboutScreen final : public Screen
         bindings.On("header-back", "", [this, &bindings, open, picking = saves.is_array()](const Event &) {
             bindings.Send(command_, open.is_object() ? "license-close" : picking ? "save-close" : "back");
         });
+        // «Восстановить сохранение» runs on in the host: its question or result shows over whatever part of the
+        // screen is open when it arrives.
+        const Json &restore = Obj(state, "restore");
+        view["dialog"] = RestoreDialog(restore, bindings);
         if (saves.is_array())
         {
             // «Отправить сохранение»: the player's saves, newest first; the host zips the picked
-            // one and offers it to the share sheet (app SaveExport).
+            // one and offers it to the share sheet (app SaveExport). «Все сохранения» heads the list
+            // when there is more than one: every save in one archive of the same format (a new phone).
             Json rows = Json::array();
+            if (saves.size() > 1)
+            {
+                rows.push_back(Json{{"id", "save-all"},
+                                    {"title", bindings.Text("about.share_all_saves")},
+                                    {"meta", Fill(bindings.Text("about.saves_count"), {std::to_string(saves.size())})},
+                                    {"icon", "archive"}});
+                bindings.On("save-all", "", [this, &bindings](const Event &) { bindings.Send(command_, "share-all-saves"); });
+            }
             for (const Json &save : saves)
             {
                 const std::string id = "save-" + std::to_string(rows.size()), key = Str(save, "key");
-                rows.push_back(Json{{"id", id}, {"title", Str(save, "name")}, {"meta", Str(save, "date")}});
+                rows.push_back(Json{{"id", id}, {"title", Str(save, "name")}, {"meta", Str(save, "date")}, {"icon", "save"}});
                 bindings.On(id, "", [this, &bindings, key](const Event &) { bindings.Send(command_, "share-save", key); });
             }
             view["title"] = bindings.Text("about.share_save");
@@ -1219,6 +1234,15 @@ class AboutScreen final : public Screen
         bindings.On("share-log", "", [this, &bindings](const Event &) { bindings.Send(command_, "share-log"); });
         view["shareSave"] = Json{{"id", "save-list"}, {"title", bindings.Text("about.share_save")}};
         bindings.On("save-list", "", [this, &bindings](const Event &) { bindings.Send(command_, "save-list"); });
+        // «Восстановить сохранение»: the host opens the system file picker and restores the picked archive
+        // or save file (app SaveRestore); its question and result come back as `restore` (RestoreDialog).
+        const bool restoring = Flag(restore, "busy");
+        view["restoreSave"] = Json{{"id", "save-restore"}, {"title", bindings.Text("about.restore_save")},
+                                   {"meta", restoring ? bindings.Text("about.restore.busy") : ""}};
+        bindings.On("save-restore", "", [this, &bindings, restoring](const Event &) {
+            if (!restoring)
+                bindings.Send(command_, "restore-pick");
+        });
         view["saves"] = nullptr;
         view["note"] = bindings.Text("about.note");
         view["noticesTitle"] = bindings.Text("about.notices");
@@ -1250,6 +1274,72 @@ class AboutScreen final : public Screen
     }
 
   private:
+    // The restore's question (a save of that name is already there: replace / keep both / cancel) or its
+    // result; null while there is neither.
+    Json RestoreDialog(const Json &restore, Bindings &bindings)
+    {
+        const Json &conflict = Obj(restore, "conflict");
+        if (conflict.is_object())
+        {
+            const Json &names = List(conflict, "names");
+            const size_t total = static_cast<size_t>(Num(conflict, "total"));
+            std::string title, text;
+            if (names.size() == 1 && total == 1)
+                title = Fill(bindings.Text("about.restore.conflict_one"), {names[0].is_string() ? names[0].get<std::string>() : ""});
+            else
+            {
+                title = Fill(bindings.Text("about.restore.conflict_many"), {std::to_string(names.size()), std::to_string(total)});
+                for (size_t i = 0; i < names.size() && i < 4; ++i)
+                    text += (text.empty() ? "" : ", ") + (names[i].is_string() ? names[i].get<std::string>() : "");
+                if (names.size() > 4)
+                    text += ", …";
+            }
+            bindings.On("restore-cancel", "", [this, &bindings](const Event &) { bindings.Send(command_, "restore-cancel"); });
+            bindings.On("restore-replace", "", [this, &bindings](const Event &) { bindings.Send(command_, "restore-replace"); });
+            bindings.On("restore-keep", "", [this, &bindings](const Event &) { bindings.Send(command_, "restore-keep"); });
+            bindings.Modal("restore", [this, &bindings](const Event &) { bindings.Send(command_, "restore-cancel"); });
+            return Json{{"icon", "save"},
+                        {"title", title},
+                        {"text", text},
+                        {"actions", Json::array({Json{{"id", "restore-cancel"}, {"label", bindings.Text("common.cancel")}, {"variant", "quiet"}},
+                                                 Json{{"id", "restore-replace"}, {"label", bindings.Text("about.restore.replace")}, {"variant", "danger"}},
+                                                 Json{{"id", "restore-keep"}, {"label", bindings.Text("about.restore.keep_both")}, {"variant", "primary"}}})}};
+        }
+        const Json &result = Obj(restore, "result");
+        if (!result.is_object())
+            return nullptr;
+        // The reasons the host gives (app SaveArchive.Refused, AboutScreen), each with its words.
+        static const char *const kResults[] = {StringKey("about.restore.done"),     StringKey("about.restore.done_many"),
+                                               StringKey("about.restore.partial"),  StringKey("about.restore.not_save"),
+                                               StringKey("about.restore.damaged"),  StringKey("about.restore.unsafe"),
+                                               StringKey("about.restore.no_space"), StringKey("about.restore.picker_unavailable"),
+                                               StringKey("about.restore.failed")};
+        const std::string key = "about.restore." + Str(result, "key");
+        std::vector<std::string> args;
+        for (const Json &arg : List(result, "args"))
+            args.push_back(arg.is_string() ? arg.get<std::string>() : arg.is_number() ? std::to_string(static_cast<long long>(arg.get<double>())) : "");
+        std::string text;
+        for (const char *known : kResults)
+            if (key == known)
+                text = bindings.Text(key);
+        if (text.empty())
+        {
+            bindings.Error("about: unknown restore result " + key);
+            text = bindings.Text("about.restore.failed");
+        }
+        text = Fill(text, {args.size() > 0 ? args[0] : "", args.size() > 1 ? args[1] : ""});
+        const bool done = key == "about.restore.done" || key == "about.restore.done_many";
+        bindings.Shown(done ? "ok" : "danger", text);
+        bindings.On("restore-close", "", [this, &bindings](const Event &) { bindings.Send(command_, "restore-close"); });
+        bindings.Modal("restore", [this, &bindings](const Event &) { bindings.Send(command_, "restore-close"); });
+        return Json{{"icon", done ? "save" : "warning"},
+                    {"title", bindings.Text(key == "about.restore.done_many" ? "about.restore.done_many_title"
+                                            : done                        ? "about.restore.done_title"
+                                                                          : "about.restore.failed_title")},
+                    {"text", text},
+                    {"actions", Json::array({Json{{"id", "restore-close"}, {"label", bindings.Text("common.close")}, {"variant", "primary"}}})}};
+    }
+
     Widget command_ = AppCommand();
 };
 

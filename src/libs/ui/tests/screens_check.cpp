@@ -3726,16 +3726,69 @@ static void Launcher()
     router.SetState("launcher", aboutWithSaves(Json::array({Json{{"key", "Player/Map save"}, {"name", "Map save"}, {"date", "14.11.2026 12:00"}},
                                                             Json{{"key", "Player/Old"}, {"name", "Old"}, {"date", "01.11.2026 09:30"}}})));
     ExpectEqual(surface.props["title"].get<std::string>(), "<about.share_save>", "the save picker has its own title");
-    Expect(surface.props["saves"]["rows"].size() == 2 && surface.props["saves"]["rows"][0]["title"].get<std::string>() == "Map save" &&
-               surface.props["saves"]["rows"][0]["meta"].get<std::string>() == "14.11.2026 12:00",
+    Expect(surface.props["saves"]["rows"].size() == 3, "several saves: «Все сохранения» heads the list");
+    ExpectEqual(surface.props["saves"]["rows"][0]["title"].get<std::string>(), "<about.share_all_saves>", "the all-saves row");
+    router.OnEvent({"save-all", "click", ""});
+    ExpectEqual(verb(), "APP share-all-saves ", "every save goes to the host's share sheet in one archive");
+    Expect(surface.props["saves"]["rows"][1]["title"].get<std::string>() == "Map save" &&
+               surface.props["saves"]["rows"][1]["meta"].get<std::string>() == "14.11.2026 12:00",
            "a save row: name and date, in the host's order");
-    router.OnEvent({"save-1", "click", ""});
+    router.OnEvent({"save-2", "click", ""});
     ExpectEqual(verb(), "APP share-save Player/Old", "the picked save goes to the host's share sheet");
     router.OnEvent({"header-back", "click", ""});
     ExpectEqual(verb(), "APP save-close ", "← closes the picker, not the screen");
     router.SetState("launcher", aboutWithSaves(Json::array()));
     Expect(surface.props["saves"]["rows"].empty() && surface.props["saves"]["empty"].get<std::string>() == "<about.saves_empty>",
            "no saves: the empty state");
+    router.SetState("launcher", aboutWithSaves(Json::array({Json{{"key", "Player/Only"}, {"name", "Only"}, {"date", "14.11.2026 12:00"}}})));
+    Expect(surface.props["saves"]["rows"].size() == 1 && surface.props["saves"]["rows"][0]["title"].get<std::string>() == "Only",
+           "one save: no «Все сохранения» row");
+
+    // «Восстановить сохранение»: the row asks the host for the picker; its question and result are dialogs.
+    const auto aboutRestoring = [](Json restore) {
+        return Json{{"screen", "about"}, {"language", "english"}, {"about", {{"app", Json::object()}, {"notices", Json::array()}, {"restore", restore}}}};
+    };
+    router.SetState("launcher", aboutRestoring(Json::object()));
+    ExpectEqual(surface.props["restoreSave"]["title"].get<std::string>(), "<about.restore_save>", "«Восстановить сохранение» row");
+    Expect(surface.props["dialog"].is_null(), "no restore dialog before a file is picked");
+    router.OnEvent({"save-restore", "click", ""});
+    ExpectEqual(verb(), "APP restore-pick ", "the host opens the file picker");
+    router.SetState("launcher", aboutRestoring(Json{{"busy", true}}));
+    ExpectEqual(surface.props["restoreSave"]["meta"].get<std::string>(), "<about.restore.busy>", "a restore in progress shows on its row");
+    const size_t sentBusy = surface.actions.size();
+    router.OnEvent({"save-restore", "click", ""});
+    Expect(surface.actions.size() == sentBusy, "no second picker while a restore runs");
+    router.SetState("launcher", aboutRestoring(Json{{"conflict", {{"names", Json::array({"Old"})}, {"total", 1}}}}));
+    ExpectEqual(surface.props["dialog"]["title"].get<std::string>(), "<about.restore.conflict_one>", "one save already there: its name");
+    {
+        std::string ids;
+        for (const Json &action : surface.props["dialog"]["actions"])
+            ids += action["id"].get<std::string>() + "|" + action["label"].get<std::string>() + ";";
+        ExpectEqual(ids, "restore-cancel|<common.cancel>;restore-replace|<about.restore.replace>;restore-keep|<about.restore.keep_both>;",
+                    "cancel, replace, keep both");
+    }
+    router.OnEvent({"restore-replace", "click", ""});
+    ExpectEqual(verb(), "APP restore-replace ", "replace");
+    router.OnEvent({"restore-keep", "click", ""});
+    ExpectEqual(verb(), "APP restore-keep ", "keep both");
+    router.OnEvent({"restore", "dismiss", ""});
+    ExpectEqual(verb(), "APP restore-cancel ", "the scrim cancels the question");
+    router.SetState("launcher", aboutRestoring(Json{{"conflict", {{"names", Json::array({"A", "B", "C", "D", "E"})}, {"total", 9}}}}));
+    Expect(surface.props["dialog"]["title"].get<std::string>() == "<about.restore.conflict_many>" &&
+               surface.props["dialog"]["text"].get<std::string>() == "A, B, C, D, …",
+           "several saves already there: how many, the first names");
+    router.SetState("launcher", aboutRestoring(Json{{"result", {{"key", "no_space"}, {"args", Json::array({12})}}}}));
+    Expect(surface.props["dialog"]["title"].get<std::string>() == "<about.restore.failed_title>" &&
+               surface.props["dialog"]["text"].get<std::string>() == "<about.restore.no_space>",
+           "a refusal: its reason");
+    router.OnEvent({"restore-close", "click", ""});
+    ExpectEqual(verb(), "APP restore-close ", "the result closes");
+    router.SetState("launcher", aboutRestoring(Json{{"result", {{"key", "done"}, {"args", Json::array({"Old (2)"})}}}}));
+    ExpectEqual(surface.props["dialog"]["title"].get<std::string>(), "<about.restore.done_title>", "the restored save");
+    const size_t restoreErrors = surface.errors.size();
+    router.SetState("launcher", aboutRestoring(Json{{"result", {{"key", "mystery"}, {"args", Json::array()}}}}));
+    Expect(surface.props["dialog"]["text"].get<std::string>() == "<about.restore.failed>" && surface.errors.size() > restoreErrors,
+           "a result without our words is an error and reads as the general failure");
 
     const size_t errors = surface.errors.size();
     router.SetState("launcher", Json{{"screen", "nowhere"}});

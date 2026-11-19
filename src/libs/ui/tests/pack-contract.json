@@ -86,7 +86,11 @@
     {"name": "about-license", "states": ["launcher=states/about-license.json"], "covers": ["app:about"]},
     {"name": "about-main", "states": ["launcher=states/about-main.json"], "covers": ["app:about"]},
     {"name": "about-saves-empty", "states": ["launcher=states/about-saves-empty.json"], "covers": ["app:about"]},
-    {"name": "about-saves", "states": ["launcher=states/about-saves.json"], "covers": ["app:about"]}
+    {"name": "about-saves", "states": ["launcher=states/about-saves.json"], "covers": ["app:about"]},
+    {"name": "about-restore-conflict", "states": ["launcher=states/about-restore-conflict.json"], "covers": ["app:about"]},
+    {"name": "about-restore-conflict-many", "states": ["launcher=states/about-restore-conflict-many.json"], "covers": ["app:about"]},
+    {"name": "about-restore-error", "states": ["launcher=states/about-restore-error.json"], "covers": ["app:about"]},
+    {"name": "about-restore-done", "states": ["launcher=states/about-restore-done.json"], "covers": ["app:about"]}
   ],
   "uncovered": {},
   "flows": [

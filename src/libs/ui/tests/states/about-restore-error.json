@@ -1,0 +1,57 @@
+{
+ "screen": "about",
+ "language": "russian",
+ "about": {
+  "app": {
+   "version": "1.0.0b1",
+   "code": 10000,
+   "flavor": "github",
+   "appCommit": "4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c3b5d7f9a",
+   "engineCommit": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+   "appSource": "https://github.com/maxyo/seawolves-android/tree/4f2a9c1e7b3d5a6f8e0c2b4d6a8f0e1c3b5d7f9a",
+   "engineSource": "https://github.com/maxyo/seawolves-engine/tree/9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d",
+   "renderBackend": "Vulkan"
+  },
+  "notices": [
+   "archive-boost_1_90_0.txt",
+   "archive-bzip2-1.0.8.txt",
+   "archive-innoextract-1.9.txt",
+   "archive-libarchive-3.8.10.txt",
+   "archive-xz-5.8.4.txt",
+   "archive-zlib-1.3.2.txt",
+   "bgfx-BSD-2-Clause.txt",
+   "Boost-BSL-1.0.txt",
+   "fast_float-LICENSE-APACHE",
+   "fast_float-LICENSE-MIT",
+   "FFmpeg-configure.txt",
+   "FFmpeg-LGPL-2.1.txt",
+   "FidelityFX-FSR-MIT.txt",
+   "fmt-LICENSE.rst",
+   "font-MarckScript-OFL.txt",
+   "font-MarckScript-SOURCE.txt",
+   "GLM-MIT.txt",
+   "libtorrent-BSD-3-Clause.txt",
+   "mimalloc-LICENSE",
+   "miniaudio-storm-patch.txt",
+   "miniaudio.txt",
+   "ncnn-BSD-3-Clause.txt",
+   "NDK-toolchain-NOTICE.txt",
+   "OpenSSL-Apache-2.0.txt",
+   "PBRify-CC0-1.0.txt",
+   "PBRify-PROVENANCE.txt",
+   "script-patches.txt",
+   "SDL.txt",
+   "spdlog-LICENSE",
+   "stb_vorbis.txt",
+   "storm-GPLv3.txt",
+   "Tracy-BSD-3-Clause.txt",
+   "ui-RmlUi-MIT.txt"
+  ],
+  "restore": {
+   "result": {
+    "key": "unsafe",
+    "args": []
+   }
+  }
+ }
+}
