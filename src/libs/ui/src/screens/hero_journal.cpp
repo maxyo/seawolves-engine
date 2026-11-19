@@ -329,6 +329,22 @@ class JournalScreen final : public Screen
             else
                 bindings.Back(nullptr);
         });
+        // While the screen walks to an entry (back to the titles, the tab that holds it, then its text) the game
+        // answers step by step over several frames: the view of this opening before the walk stays on the screen
+        // until the entry is open, instead of each step's titles without a text.
+        if (admitted.model->opening != kept_opening_)
+        {
+            kept_ = Json();
+            kept_opening_ = admitted.model->opening;
+        }
+        const bool walking = !intent_.row.empty() || (!pending_open_.empty() && !text_open_);
+        if (walking)
+        {
+            bindings.Await();
+            if (!kept_.is_null())
+                return kept_;
+        }
+        kept_ = view;
         return view;
     }
 
@@ -368,6 +384,8 @@ class JournalScreen final : public Screen
     std::map<std::string, std::vector<Title>> titles_; // by the game's tab
     Intent intent_;
     std::string pending_open_; // opened, not yet shown by the engine
+    Json kept_;                  // the view on the screen, kept while a walk to an entry is under way
+    uint64_t kept_opening_ = 0;  // the opening of the interface it belongs to
 
     void Go(Bindings &bindings, const std::string &button)
     {

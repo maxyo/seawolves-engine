@@ -3516,6 +3516,8 @@ static void Journal(const std::string &)
     router.SetInterface(model);
     ExpectEqual(surface.Last(), "widget:questbook\tQUEST_TITLE\t0\topen@8:burden", "then open it");
     Expect(surface.commands.size() == sent + 2, "two steps");
+    Expect(surface.props["entry"].is_object() && surface.props["entry"]["title"] == "Debts",
+           "meanwhile the open text stays on the screen, not the titles of the step between: " + surface.props["entry"].dump());
 
     text.revision = model.revision + 1;
     router.SetInterface(text);
@@ -3554,6 +3556,7 @@ static void Journal(const std::string &)
         completed.widgets.push_back(closed);
         toast_router.SetInterface(completed);
         ExpectEqual(toast_surface.Last(), "widget:questbook\tQUEST_TITLE\t0\topen@8:closed", "… and opened there");
+        Expect(toast_surface.props["list"].size() == 2, "the walk keeps the first view of the journal until the entry is open");
     }
 }
 
