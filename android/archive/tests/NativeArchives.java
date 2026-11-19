@@ -7,7 +7,8 @@ import java.io.*;
 public final class NativeArchives {
  static {System.loadLibrary("storm_archive");}
  interface Progress {boolean onProgress(int stage,String path,long bytes,long total,long files);}
- static native String[] discover(String source,String scratch,String password,long[] limits,Progress progress);
+ static native String[] discover(String source,String scratch,String password,String layer,long[] limits,Progress progress);
+ static native String[] patchLayer(String layer);
  static native String[] extractRoot(String source,String scratch,String password,String id,String staging,long[] limits,Progress progress);
  static final long[] LIMITS={64L<<30,4L<<30,400000,3600,32L<<30,3,100,1<<20};
  static void require(boolean ok,String what){if(!ok)throw new AssertionError(what);}
@@ -24,12 +25,22 @@ public final class NativeArchives {
      zip.putNextEntry(new ZipEntry("Корсары/"+file));zip.write(file.getBytes(StandardCharsets.UTF_8));zip.closeEntry();
     }
    }
-   String[] info=discover(source.toString(),scratch.toString(),null,new long[]{1,2,3},null);
+   String[] info=discover(source.toString(),scratch.toString(),null,null,new long[]{1,2,3},null);
    require(info[0].equals("6")&&info.length==4,"Invalid limits are explicit: "+info[0]);
    final boolean[] reading={false};
-   info=discover(source.toString(),scratch.toString(),null,LIMITS,(stage,path,bytes,total,files)->{reading[0]|=stage==1;return false;});
+   info=discover(source.toString(),scratch.toString(),null,null,LIMITS,(stage,path,bytes,total,files)->{reading[0]|=stage==1;return false;});
    require(info[0].equals("0"),"discover: "+info[2]);require(reading[0],"Reading stage reported");
    require(info[3].contains("\"root\":\"Корсары/\"")&&info[3].contains("игра-🚢.zip"),"Discovery UTF-16 round trip: "+info[3]);
+   require(info[3].contains("\"identified\":false,\"patch_set\":null")&&info[3].contains("\"patch_sets\":null"),"No layer: nothing identified: "+info[3]);
+   // A layer path (UTF-16 round trip): the set's identify file is missing from this copy, so no set identifies it.
+   Path layer=root.resolve("слой-🚢"),set=layer.resolve("sets/s-1");Files.createDirectories(set);
+   Files.writeString(set.resolve("index.txt"),"storm-script-patches\t1\nset\ts-1\tИгра 🚢\t1.0\nidentify\tPROGRAM/v.h\t"+"0".repeat(64)+"\n");
+   String[] sets=patchLayer(layer.toString());
+   require(sets[0].equals("0")&&sets[3].contains("\"game\":\"Игра 🚢\"")&&sets[3].contains("\"identify\":[\"program/v.h\"]"),"patchLayer: "+String.join("|",sets));
+   try(var files=Files.list(scratch)){require(files.count()==0,"Scratch empty after a plain archive");}
+   info=discover(source.toString(),scratch.toString(),null,layer.toString(),LIMITS,null);
+   require(info[0].equals("0")&&info[3].contains("\"identified\":true,\"patch_set\":null")&&info[3].contains("\"version\":\"1.0\""),"Identified without a match: "+info[3]);
+   require(discover(source.toString(),scratch.toString(),null,root.resolve("absent").toString(),LIMITS,null)[0].equals("1"),"Absent layer is an IO failure");
    String id=field(info[3],"id");
    info=extractRoot(source.toString(),scratch.toString(),null,id,out.toString(),LIMITS,(stage,path,bytes,total,files)->files>=1);
    require(info[0].equals("7"),"Callback true cancels: "+info[0]);

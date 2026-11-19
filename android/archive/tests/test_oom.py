@@ -33,7 +33,7 @@ def load(path):
     callback=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_char_p,C.c_uint64,C.c_uint64)
     lib.storm_archive_extract.argtypes=[C.c_char_p,C.c_char_p,C.c_void_p,callback,C.c_void_p,C.c_char_p,C.c_size_t]
     staged=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_int,C.c_char_p,C.c_uint64,C.c_uint64,C.c_uint64)
-    lib.storm_archive_discover.argtypes=[C.c_char_p,C.c_char_p,C.c_char_p,C.c_void_p,staged,C.c_void_p,C.POINTER(C.c_void_p),C.c_char_p,C.c_size_t]
+    lib.storm_archive_discover.argtypes=[C.c_char_p,C.c_char_p,C.c_char_p,C.c_char_p,C.c_void_p,staged,C.c_void_p,C.POINTER(C.c_void_p),C.c_char_p,C.c_size_t]
     lib.storm_archive_test_fault(0,0,0)  # Initialize loader/TLS before arming.
     return lib,callback
 
@@ -53,7 +53,7 @@ def child(args):
             with tempfile.TemporaryDirectory(prefix='storm-oom-source-') as source, tempfile.TemporaryDirectory(prefix='storm-oom-scratch-') as scratch:
                 shutil.copy(args.input,Path(source)/args.input.name)
                 data=C.c_void_p();progress=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_int,C.c_char_p,C.c_uint64,C.c_uint64,C.c_uint64)()
-                code=lib.storm_archive_discover(os.fsencode(source),os.fsencode(scratch),None,None,progress,None,C.byref(data),error,len(error))
+                code=lib.storm_archive_discover(os.fsencode(source),os.fsencode(scratch),None,None,None,progress,None,C.byref(data),error,len(error))
                 if code==0 and b'"candidates":[]' in C.string_at(data):code=-1
                 lib.storm_archive_free(data)
         else:

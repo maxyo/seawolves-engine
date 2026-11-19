@@ -28,7 +28,8 @@ Class `org.stormengine.port.NativeArchives`, `System.loadLibrary("storm_archive"
 
 ```java
 static native String[] discover(String source, String emptyScratch, String passwordOrNull,
-                                long[] limits, Progress callbackOrNull);
+                                String patchLayerOrNull, long[] limits, Progress callbackOrNull);
+static native String[] patchLayer(String patchLayer);
 static native String[] extractRoot(String source, String scratch, String passwordOrNull,
                                    String rootId, String emptyPrivateStaging,
                                    long[] limits, Progress callbackOrNull);
@@ -72,7 +73,10 @@ levels (members written to `scratch/<n>/`). Each root is a separate candidate; r
  "candidates":[{"id":"…","kind":"archive","format":"zip","location":["download.zip","repack.7z"],
    "root":"Game/","title":"…","version":"…","languages":["english","russian"],
    "default_language":"russian","file_count":46418,"unpacked_bytes":12734518486,
-   "patch_markers":["Patch_1.3_readme.txt"],"ready":true,"missing_volumes":[]}],
+   "patch_markers":["Patch_1.3_readme.txt"],"ready":true,"missing_volumes":[],
+   "identified":true,"patch_set":{"id":"teho-1.7.3-x64","version":"ver. 1.7.3 (26.11.21) x64"}}],
+ "patch_sets":[{"id":"teho-1.7.3-x64","game":"…","version":"ver. 1.7.3 (26.11.21) x64",
+   "identify":["program/_lsc_on_off.h"]}],
  "issues":[{"location":["menu.exe"],"status":3,"error":"…","missing_volumes":[]}],
  "partial_roots":[{"location":["half.zip"],"root":"Game/","has_engine_ini":false,
    "has_program":true,"has_resource":true}],
@@ -81,6 +85,24 @@ levels (members written to `scratch/<n>/`). Each root is a separate candidate; r
 
 `kind` is `folder`, `archive` or `inno`; an Inno root with missing volumes is `ready:false` and names them.
 `file_count`/`unpacked_bytes` are exactly what `extractRoot` writes.
+
+**Script patch identification.** `patchLayer` is the engine's script patch layer directory (Android:
+`<filesDir>/script-patches/current`, engine `src/libs/util/include/platform/script_patches.hpp`,
+`tools/script_patches/README.md`). Discovery loads it as the engine does and identifies every copy with the
+engine's own rule, `script_patches::identify`, over the copy's identify files (whole files up to 1 MiB, keyed
+as the engine's resource index keys the installed file): the launcher's verdict and the set the engine
+applies at start-up cannot differ. Per candidate, `identified` says the identify files were read (loose
+folders and random-access archives: ZIP, ISO, CAB) and `patch_set` is the set that identifies the copy, or
+`null` when no set does (the game would run unpatched). Copies inside installers and solid archives (7z, RAR,
+tar) are not read before extraction: `identified:false`, `patch_set:null` (unknown, not "untested"); an
+identify file over 1 MiB is unknown as well. `patch_sets` lists the layer's sets (what the launcher names as
+the tested versions). A `null` layer means the caller does not identify copies (the archive host checks, and
+the app's download-library check «does this set hold a game»): every candidate is `identified:false` and
+`patch_sets` is `null`. A layer path that is not a directory fails with status 1, a damaged layer (or two
+sets identifying one copy) with status 5; neither is ever reported as "no set".
+
+`patchLayer(path)` returns `[status, "", error, {"patch_sets":[…]}]` (the same entries) for a caller that
+copies a copy's identify files itself before discovery (the app's picked-folder import).
 
 ### extractRoot
 

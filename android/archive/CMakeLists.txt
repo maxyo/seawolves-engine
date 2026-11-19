@@ -32,6 +32,9 @@ target_include_directories(storm_inno PUBLIC "${I}/src" "${CMAKE_CURRENT_BINARY_
 target_link_libraries(storm_inno PRIVATE storm_boost)
 add_library(storm_archive SHARED archive.cpp discovery.cpp manifest.cpp memory.cpp libarchive_backend.cpp inno_backend.cpp)
 target_include_directories(storm_archive PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+# The engine's header-only script patch layer (platform/script_patches.hpp): copies are identified
+# with the engine's own rule.
+target_include_directories(storm_archive PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../src/libs/util/include")
 target_link_libraries(storm_archive PRIVATE storm_inno storm_boost
  "${P}/lib/libarchive.a" "${P}/lib/liblzma.a" "${P}/lib/libbz2.a" "${P}/lib/libz.a")
 target_link_options(storm_archive PRIVATE "-Wl,--no-undefined" "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map" "-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=strdup" "-Wl,-z,max-page-size=16384")

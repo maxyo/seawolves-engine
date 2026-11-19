@@ -78,15 +78,16 @@ template<class F> jobjectArray boundary(JNIEnv *env,F f) {
 // Results are [status, "", error, json]; json is the discovery document or a
 // failure description (encrypted / no space), or empty.
 extern "C" JNIEXPORT jobjectArray JNICALL
-Java_org_stormengine_port_NativeArchives_discover(JNIEnv *env,jclass,jstring source,jstring scratch,jstring password,jlongArray bounds,jobject cb) {
+Java_org_stormengine_port_NativeArchives_discover(JNIEnv *env,jclass,jstring source,jstring scratch,jstring password,jstring layer,jlongArray bounds,jobject cb) {
  return boundary(env,[&]()->jobjectArray{
   Text src(env,source),tmp(env,scratch);if(env->ExceptionCheck())return nullptr;
   std::unique_ptr<Text> secret(password?new Text(env,password):nullptr);if(env->ExceptionCheck())return nullptr;
+  std::unique_ptr<Text> patches(layer?new Text(env,layer):nullptr);if(env->ExceptionCheck())return nullptr;
   storm_archive_source_limits limits{};
   if(!bounds||!source_limits(env,bounds,limits))return env->ExceptionCheck()?nullptr:result(env,STORM_ARCHIVE_LIMIT,"","Expected eight positive source limits","");
   Callback progress_callback;if(!callback(env,cb,progress_callback))return nullptr;
   char error[2048]{};char *raw=nullptr;
-  int code=storm_archive_discover(src.data(),tmp.data(),secret?secret->data():nullptr,&limits,progress,&progress_callback,&raw,error,sizeof(error));
+  int code=storm_archive_discover(src.data(),tmp.data(),secret?secret->data():nullptr,patches?patches->data():nullptr,&limits,progress,&progress_callback,&raw,error,sizeof(error));
   std::unique_ptr<char,decltype(&storm_archive_free)> json(raw,storm_archive_free);
   if(env->ExceptionCheck())return nullptr;
   return result(env,code,"",error,json?json.get():"");
@@ -104,6 +105,17 @@ Java_org_stormengine_port_NativeArchives_extractRoot(JNIEnv *env,jclass,jstring 
   int code=storm_archive_extract_root(src.data(),tmp.data(),secret?secret->data():nullptr,root.data(),out.data(),&limits,progress,&progress_callback,&raw,error,sizeof(error));
   std::unique_ptr<char,decltype(&storm_archive_free)> json(raw,storm_archive_free);
   if(env->ExceptionCheck())return nullptr;
+  return result(env,code,"",error,json?json.get():"");
+ });
+}
+// [status, "", error, json]: the sets of a script patch layer (storm_archive_patch_layer).
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_org_stormengine_port_NativeArchives_patchLayer(JNIEnv *env,jclass,jstring layer) {
+ return boundary(env,[&]()->jobjectArray{
+  Text path(env,layer);if(env->ExceptionCheck())return nullptr;
+  char error[2048]{};char *raw=nullptr;
+  int code=storm_archive_patch_layer(layer?path.data():nullptr,&raw,error,sizeof(error));
+  std::unique_ptr<char,decltype(&storm_archive_free)> json(raw,storm_archive_free);
   return result(env,code,"",error,json?json.get():"");
  });
 }

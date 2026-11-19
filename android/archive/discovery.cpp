@@ -3,6 +3,7 @@
 // extraction of exactly one chosen root. Nothing found in a source is ever run.
 #include "internal.hpp"
 #include "memory.hpp"
+#include "platform/script_patches.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <climits>
@@ -19,6 +20,7 @@ namespace storm_archive {
 namespace {
 constexpr size_t kHead=32774;              // ISO 9660 descriptor magic ends at 32774.
 constexpr uint64_t kMetadataBytes=256*1024; // Version header / language.ini.
+constexpr uint64_t kIdentifyBytes=1024*1024; // A file a script patch set identifies its game by (whole file).
 constexpr size_t kMaxRoots=4096, kMaxCandidates=64, kMaxIssues=256, kMaxPartial=8;
 constexpr uint64_t kMaxDepth=3;
 
@@ -93,19 +95,24 @@ bool patch_marker(const std::string &name) {
  return false;
 }
 
+// A member of a root that a script patch set identifies its game by.
+struct Probe {std::string member;uint64_t size;};
 struct RootStats {
  bool engine=false,program=false,resource=false;
  uint64_t files=0,bytes=0;
  std::set<std::string> languages;
  std::string version_member,language_member;
+ std::map<std::string,Probe> probes; // resource key (as installed) -> member
  bool complete()const{return engine&&program&&resource&&files;}
 };
 // Groups the members of one listing (folder, archive or installer) by every
 // prefix that is directly followed by a game anchor. Only prefixes holding
 // engine.ini, PROGRAM/ and RESOURCE/ together are game roots.
 struct Catalog {
+ const std::set<std::string> *identify; // resource keys the script patch sets identify a game by (null: not identifying)
  std::map<std::string,RootStats> roots;
  std::map<std::string,std::vector<std::string>> markers;
+ explicit Catalog(const std::set<std::string> *keys):identify(keys){}
  void add(const std::vector<std::string> &parts,uint64_t size) {
   for(size_t i=0;i<parts.size();++i) {
    auto kind=anchor_at(parts,i);if(kind==NO_ANCHOR)continue;
@@ -115,8 +122,11 @@ struct Catalog {
     found=roots.emplace(prefix,RootStats{}).first;
    }
    auto &root=found->second;
-   if(root_output(parts,i).empty())continue;
+   auto output=root_output(parts,i);
+   if(output.empty())continue;
    ++root.files;root.bytes+=size;
+   // Keyed as the engine's resource index keys the installed file (storm::android::resourceKey).
+   if(identify&&identify->count(lower_path(output)))root.probes[lower_path(output)]={normal(parts),size};
    root.engine|=kind==ENGINE_INI;root.program|=kind==PROGRAM_DIR;root.resource|=kind==RESOURCE_DIR;
    size_t rest=parts.size()-i;
    if(kind==RESOURCE_DIR&&rest>=4&&lower_path(parts[i+1])=="ini"&&lower_path(parts[i+2])=="texts") {
@@ -145,6 +155,10 @@ struct Candidate {
  std::vector<std::string> location,markers,missing;
  std::set<std::string> languages;
  uint64_t files=0,bytes=0;
+ // Script patch identification: `identified` once every identify file of the copy was read
+ // (or is absent from it); patch_set the set that identifies the copy, null when none does.
+ bool identified=false;
+ const storm::script_patches::Set *patch_set=nullptr;
 };
 struct Issue {std::vector<std::string> location;int status;std::string error;std::vector<std::string> missing;};
 struct Partial {std::vector<std::string> location;std::string root;bool engine,program,resource;};
@@ -172,9 +186,9 @@ void read_head(const std::string &path,std::string &head) {
  while(got<kHead){auto n=read(fd.value,&head[got],kHead-got);if(n<0&&errno==EINTR)continue;if(n<0)throw Failure(STORM_ARCHIVE_IO,"Cannot read "+basename_of(path));if(!n)break;got+=n;}
  head.resize(got);
 }
-std::string read_small(const std::string &path) {
+std::string read_small(const std::string &path,uint64_t limit=kMetadataBytes) {
  Fd fd(open(path.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW));if(fd.value<0)return {};
- std::string text(kMetadataBytes,'\0');size_t got=0;
+ std::string text(limit,'\0');size_t got=0;
  while(got<text.size()){auto n=read(fd.value,&text[got],text.size()-got);if(n<0&&errno==EINTR)continue;if(n<=0)break;got+=n;}
  text.resize(got);return text;
 }
@@ -242,6 +256,25 @@ bool known_unsupported_archive(const std::string &name) {
  return listed.count(ext)!=0;
 }
 
+// The script patch layer (engine platform/script_patches.hpp), loaded as the engine loads it.
+std::vector<storm::script_patches::Set> load_patch_layer(const char *layer) {
+ struct stat st{};
+ if(!*layer||stat(layer,&st)<0||!S_ISDIR(st.st_mode))throw Failure(STORM_ARCHIVE_IO,std::string("No script patch layer at ")+layer);
+ try{return storm::script_patches::loadLayer(layer);}
+ catch(const storm::script_patches::LayerError &e){throw Failure(STORM_ARCHIVE_INVALID,std::string("Damaged script patch layer: ")+e.what());}
+}
+// [{"id","game","version","identify":[resource keys]}], in the layer's order.
+std::string patch_sets_json(const std::vector<storm::script_patches::Set> &sets) {
+ std::string out="[";
+ for(size_t i=0;i<sets.size();++i) {
+  const auto &set=sets[i];if(i)out+=',';
+  out+="{\"id\":"+json_quote(set.id)+",\"game\":"+json_quote(set.game)+",\"version\":"+json_quote(set.version)+",\"identify\":[";
+  for(size_t k=0;k<set.identify.size();++k){if(k)out+=',';out+=json_quote(set.identify[k].first);}
+  out+="]}";
+ }
+ return out+"]";
+}
+
 struct Session {
  std::string only; // A single source file inside source (declared first: set while resolving source).
  std::string source,scratch;
@@ -252,6 +285,11 @@ struct Session {
  std::vector<Partial> partials;
  unsigned serial=0;uint64_t scratch_bytes=0;
  std::string failure_json;
+ // The script patch layer the copies are identified against (load_layer); none: not identifying.
+ bool identifying=false;
+ std::string layer_failure;
+ std::vector<storm::script_patches::Set> sets;
+ std::set<std::string> identify_keys;
 
  static std::string directory(const char *path,const char *what) {
   if(!path||!*path)throw Failure(STORM_ARCHIVE_IO,std::string("Missing ")+what+" directory");
@@ -286,6 +324,34 @@ struct Session {
   if(password)budget.password=password;
  }
  std::string base_path(char base)const{return base=='s'?source:scratch;}
+ // NULL: the caller does not identify copies. Otherwise the layer directory must exist.
+ void load_layer(const char *layer) {
+  if(!layer)return;
+  sets=load_patch_layer(layer);
+  for(const auto &key:storm::script_patches::identifyKeys(sets))identify_keys.insert(key);
+  identifying=true;
+ }
+ const std::set<std::string> *probing()const{return identifying?&identify_keys:nullptr;}
+ // The engine's own rule (script_patches::identify) on the copy's identify files. `read(member, text)`
+ // returns the member's whole content; a probe it cannot read leaves the copy unidentified.
+ template<class Read> void identify(Candidate &c,const RootStats &root,Read read) {
+  if(!identifying)return;
+  std::map<std::string,std::string> hashes; // "" when the copy has no such file, as the engine hashes a missing file
+  for(const auto &key:identify_keys) {
+   auto probe=root.probes.find(key);
+   if(probe==root.probes.end()){hashes[key]="";continue;}
+   std::string text;
+   if(probe->second.size>kIdentifyBytes||!read(probe->second.member,text)||text.size()!=probe->second.size)return;
+   hashes[key]=storm::script_patches::sha256(text);
+  }
+  try{c.patch_set=storm::script_patches::identify(sets,[&](const std::string &key){return hashes.at(key);});}
+  catch(const storm::script_patches::LayerError &e) {
+   // Fails the whole discovery (discover()), never one container's issue: the engine would refuse this layer too.
+   if(layer_failure.empty())layer_failure=std::string("Damaged script patch layer: ")+e.what();
+   throw Failure(STORM_ARCHIVE_INVALID,layer_failure);
+  }
+  c.identified=true;
+ }
  void issue(const std::vector<std::string> &location,int status,const std::string &error,std::vector<std::string> missing={}) {
   if(issues.size()<kMaxIssues)issues.push_back({location,status,error,std::move(missing)});
  }
@@ -359,7 +425,7 @@ struct Session {
   const bool single=base=='s'&&dir_rel.empty()&&!only.empty();
   auto files=single?listing(dir):walk(dir,chain);
   // Loose game roots.
-  Catalog catalog;
+  Catalog catalog(probing());
   for(const auto &f:files) {
    if(single)break;
    try {catalog.add(path_parts(f.rel),f.size);}
@@ -370,6 +436,7 @@ struct Session {
    auto c=candidate("folder","folder",base,dir_rel,chain,prefix,root,catalog);
    apply_metadata(c,root.version_member.empty()?"":read_small(child(dir,root.version_member)),
                   root.language_member.empty()?"":read_small(child(dir,root.language_member)));
+   identify(c,root,[&](const std::string &member,std::string &text){text=read_small(child(dir,member),kIdentifyBytes+1);return true;});
    candidates.push_back(std::move(c));
   }
   add_partials(catalog,chain);
@@ -429,7 +496,7 @@ struct Session {
    auto listing=inno_listing(path);
    if(listing.files.size()>budget.limits.max_entries-std::min(budget.entries,budget.limits.max_entries))throw Failure(STORM_ARCHIVE_LIMIT,"Too many installer entries");
    budget.entries+=listing.files.size();
-   Catalog catalog;
+   Catalog catalog(nullptr); // An installer's files are not read before extraction: its copies stay unidentified.
    for(const auto &[file,size]:listing.files)catalog.add(path_parts(file),size);
    std::vector<std::string> missing;
    for(const auto &v:listing.volumes)if(!exists_regular(child(dirname_of(path),v)))missing.push_back(v);
@@ -480,6 +547,7 @@ struct Session {
  struct ReadVisitor:ArchiveVisitor {
   Session &session;
   std::map<std::string,std::string> metadata;   // member -> text
+  std::set<std::string> probes;                 // metadata members read whole up to kIdentifyBytes
   std::set<std::string> nested;                 // members to sniff
   std::string spill_dir;                        // relative to scratch, created lazily
   uint64_t remaining=0;                         // upper bound of bytes still to spill
@@ -488,7 +556,7 @@ struct Session {
   explicit ReadVisitor(Session &s):session(s){}
   bool entry(const std::string &raw,uint64_t declared)override {
    current=normal(path_parts(raw));size=declared;written=0;head.clear();
-   reading_metadata=metadata.count(current)&&declared<=kMetadataBytes;
+   reading_metadata=metadata.count(current)&&declared<=(probes.count(current)?kIdentifyBytes:kMetadataBytes);
    sniffing=nested.count(current)!=0;
    if(sniffing)remaining-=std::min(remaining,declared);
    return reading_metadata||sniffing;
@@ -556,7 +624,7 @@ struct Session {
   try {
    std::string head;read_head(volumes.front(),head);format=format_of(head);
    budget.stage=STORM_ARCHIVE_STAGE_READING;budget.check(rel);
-   Catalog catalog;std::vector<Member> members;
+   Catalog catalog(probing());std::vector<Member> members;
    ListVisitor list(catalog,members);format=archive_walk(volumes,budget,list);
    // Bomb guard on declared sizes before anything is decoded or written.
    uint64_t input=budget.container_input,declared=0;
@@ -570,7 +638,11 @@ struct Session {
    for(const auto &[prefix,root]:catalog.roots) {
     if(!root.complete())continue;
     found.emplace_back(prefix,&root);
-    if(random_access){if(!root.version_member.empty())reader.metadata[root.version_member];if(!root.language_member.empty())reader.metadata[root.language_member];}
+    if(random_access) {
+     if(!root.version_member.empty())reader.metadata[root.version_member];
+     if(!root.language_member.empty())reader.metadata[root.language_member];
+     for(const auto &[key,probe]:root.probes){reader.metadata[probe.member];reader.probes.insert(probe.member);}
+    }
    }
    for(const auto &m:members)if(m.size&&!catalog.inside_complete(m.path)){reader.nested.insert(m.path);reader.remaining+=m.size;}
    budget.stage_total=reader.remaining;
@@ -579,6 +651,9 @@ struct Session {
    for(const auto &[prefix,root]:found) {
     auto c=candidate("archive",format,base,rel,location,prefix,*root,catalog);
     apply_metadata(c,root->version_member.empty()?"":reader.metadata[root->version_member],root->language_member.empty()?"":reader.metadata[root->language_member]);
+    // Solid formats (7z, RAR, tar) are not read for metadata: their copies stay unidentified.
+    if(random_access)identify(c,*root,[&](const std::string &member,std::string &text){
+     auto read=reader.metadata.find(member);if(read==reader.metadata.end())return false;text=read->second;return true;});
     candidates.push_back(std::move(c));
    }
    add_partials(catalog,location);
@@ -603,7 +678,10 @@ struct Session {
   return last.substr(0,start)+number+last.substr(end+1);
  }
 
- void discover() {scan('s',"",{},0);if(allocation_failed())throw std::bad_alloc();}
+ void discover() {
+  scan('s',"",{},0);if(allocation_failed())throw std::bad_alloc();
+  if(!layer_failure.empty())throw Failure(STORM_ARCHIVE_INVALID,layer_failure);
+ }
  std::string json()const {
   std::ostringstream out;out.exceptions(std::ios::badbit|std::ios::failbit);
   auto list=[&](const auto &values){out<<'[';bool first=true;for(const auto &v:values){if(!first)out<<',';first=false;out<<json_quote(v);}out<<']';};
@@ -616,9 +694,14 @@ struct Session {
       <<",\"languages\":";list(c.languages);
    out<<",\"default_language\":"<<json_quote(c.language)<<",\"file_count\":"<<c.files<<",\"unpacked_bytes\":"<<c.bytes
       <<",\"patch_markers\":";list(c.markers);
-   out<<",\"ready\":"<<(c.missing.empty()?"true":"false")<<",\"missing_volumes\":";list(c.missing);out<<'}';
+   out<<",\"ready\":"<<(c.missing.empty()?"true":"false")<<",\"missing_volumes\":";list(c.missing);
+   out<<",\"identified\":"<<(c.identified?"true":"false")<<",\"patch_set\":";
+   if(c.patch_set)out<<"{\"id\":"<<json_quote(c.patch_set->id)<<",\"version\":"<<json_quote(c.patch_set->version)<<'}';else out<<"null";
+   out<<'}';
   }
-  out<<"],\"issues\":[";
+  out<<"],\"patch_sets\":";
+  if(identifying)out<<patch_sets_json(sets);else out<<"null";
+  out<<",\"issues\":[";
   for(size_t i=0;i<issues.size();++i) {
    const auto &e=issues[i];if(i)out<<',';
    out<<"{\"location\":";list(e.location);out<<",\"status\":"<<e.status<<",\"error\":"<<json_quote(e.error)<<",\"missing_volumes\":";list(e.missing);out<<'}';
@@ -711,10 +794,11 @@ template<class F> int boundary(char **json,char *error,size_t cap,F f) {
 }
 }
 }
-extern "C" int storm_archive_discover(const char *source,const char *scratch,const char *password,const storm_archive_source_limits *limits,
- storm_archive_stage_progress progress,void *userdata,char **json,char *error,size_t cap) {
+extern "C" int storm_archive_discover(const char *source,const char *scratch,const char *password,const char *patch_layer,
+ const storm_archive_source_limits *limits,storm_archive_stage_progress progress,void *userdata,char **json,char *error,size_t cap) {
  return storm_archive::boundary(json,error,cap,[&](std::string &failure){
   storm_archive::Session session(source,scratch,password,limits,progress,userdata);
+  session.load_layer(patch_layer);
   {
    // Discovery owns the scratch layout: it must start empty.
    std::unique_ptr<DIR,int(*)(DIR*)> dir(opendir(session.scratch.c_str()),closedir);
@@ -733,5 +817,11 @@ extern "C" int storm_archive_extract_root(const char *source,const char *scratch
   if(!staging)throw storm_archive::Failure(STORM_ARCHIVE_IO,"Missing staging directory");
   storm_archive::Session session(source,scratch,password,limits,progress,userdata);
   try{session.extract(id,staging);}catch(...){failure=session.failure_json;throw;}
+ });
+}
+extern "C" int storm_archive_patch_layer(const char *layer,char **json,char *error,size_t cap) {
+ return storm_archive::boundary(json,error,cap,[&](std::string &){
+  if(!layer)throw storm_archive::Failure(STORM_ARCHIVE_IO,"Missing script patch layer");
+  *json=storm_archive::result_json("{\"patch_sets\":"+storm_archive::patch_sets_json(storm_archive::load_patch_layer(layer))+"}");
  });
 }

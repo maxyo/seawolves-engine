@@ -11,6 +11,7 @@ Fixtures are generated in temporary directories; 7z is needed for 7z/split/encry
 import argparse
 import binascii
 import ctypes as C
+import hashlib
 import io
 import json
 import os
@@ -35,8 +36,9 @@ class Limits(C.Structure):
 
 
 Progress = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_int, C.c_char_p, C.c_uint64, C.c_uint64, C.c_uint64)
-lib.storm_archive_discover.argtypes = [C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(Limits), Progress, C.c_void_p,
+lib.storm_archive_discover.argtypes = [C.c_char_p, C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(Limits), Progress, C.c_void_p,
                                        C.POINTER(C.c_void_p), C.c_char_p, C.c_size_t]
+lib.storm_archive_patch_layer.argtypes = [C.c_char_p, C.POINTER(C.c_void_p), C.c_char_p, C.c_size_t]
 lib.storm_archive_extract_root.argtypes = [C.c_char_p, C.c_char_p, C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(Limits),
                                            Progress, C.c_void_p, C.POINTER(C.c_void_p), C.c_char_p, C.c_size_t]
 lib.storm_archive_free.argtypes = [C.c_void_p]
@@ -108,11 +110,12 @@ class Discovery(unittest.TestCase):
         defaults.update(values)
         return Limits(**defaults)
 
-    def discover(self, password=None, limits=None, progress=None, source=None):
+    def discover(self, password=None, limits=None, progress=None, source=None, layer=None):
         data, error = C.c_void_p(), C.create_string_buffer(2048)
         cb = Progress(progress) if progress else Progress()
         code = lib.storm_archive_discover(str(source or self.source).encode(), str(self.scratch).encode(),
-                                          password.encode() if password else None, C.byref(limits or self.limits()),
+                                          password.encode() if password else None,
+                                          str(layer).encode() if layer is not None else None, C.byref(limits or self.limits()),
                                           cb, None, C.byref(data), error, len(error))
         document = json.loads(C.string_at(data).decode()) if data.value else None
         lib.storm_archive_free(data)
@@ -162,6 +165,98 @@ class Discovery(unittest.TestCase):
         self.assertTrue(c['ready'])
         self.assertEqual(list(self.scratch.iterdir()), [], 'A plain archive needs no scratch')
         self.assert_installed(c)
+
+    def patch_layer(self, *sets):
+        """A script patch layer (engine platform/script_patches.hpp) with sets identifying by PROGRAM/_LSC_on_off.h."""
+        layer = self.work / 'layer'
+        for set_id, version, header in sets:
+            directory = layer / 'sets' / set_id
+            directory.mkdir(parents=True)
+            (directory / 'index.txt').write_text(
+                f'storm-script-patches\t1\nset\t{set_id}\tTest Game\t{version}\n'
+                f'identify\tPROGRAM/_LSC_on_off.h\t{hashlib.sha256(header).hexdigest()}\n')
+        layer.mkdir(exist_ok=True)
+        return layer
+
+    def test_copies_are_identified_with_the_engine_rule(self):
+        layer = self.patch_layer(('test-1.7.3', 'ver. 1.7.3 (26.11.21) x64', VERSION_HEADER))
+        files = game('Tested/', 't')
+        files.update(game('Other/', 'o', {'Other/PROGRAM/_LSC_on_off.h': VERSION_HEADER + b'// 1.7.4\n'}))
+        lacking = game('Lacking/', 'l')
+        del lacking['Lacking/PROGRAM/_LSC_on_off.h']
+        files.update(lacking)
+        # Resource keys are case-insensitive, as the engine's index is.
+        files.update({k.replace('Large/PROGRAM/_LSC_on_off.h', 'Large/program/_lsc_ON_OFF.h'): v for k, v in game(
+            'Large/', 'g', {'Large/PROGRAM/_LSC_on_off.h': VERSION_HEADER}).items()})
+        write_zip(self.source / 'copies.zip', files)
+        tree(self.source / 'Folder', game('', 'f', {'PROGRAM/_LSC_on_off.h': b'#define VERSION_NUMBER2 "ver. 1.8"\n'}))
+        document = self.found(layer=layer)
+        self.assertEqual(document['patch_sets'], [{'id': 'test-1.7.3', 'game': 'Test Game', 'version': 'ver. 1.7.3 (26.11.21) x64',
+                                                   'identify': ['program/_lsc_on_off.h']}])
+        roots = {c['root']: c for c in document['candidates']}
+        tested = {'id': 'test-1.7.3', 'version': 'ver. 1.7.3 (26.11.21) x64'}
+        self.assertEqual({r: (c['identified'], c['patch_set']) for r, c in roots.items()},
+                         {'Tested/': (True, tested), 'Large/': (True, tested), 'Other/': (True, None),
+                          'Lacking/': (True, None), 'Folder/': (True, None)})
+        # Without a layer nothing is identified (the archive host checks; the app always passes one).
+        shutil.rmtree(self.scratch)
+        self.scratch.mkdir()
+        document = self.found()
+        self.assertIsNone(document['patch_sets'])
+        self.assertEqual({(c['identified'], c['patch_set']) for c in document['candidates']}, {(False, None)})
+
+    def test_identify_file_is_read_whole(self):
+        # Larger than the version header the reader takes otherwise (256 KiB); random, so no archive-bomb ratio.
+        big = VERSION_HEADER + b'//' + os.urandom(200000).hex().encode() + b'\n'
+        layer = self.patch_layer(('big', '2', big))
+        write_zip(self.source / 'big.zip', game('Big/', 'b', {'Big/PROGRAM/_LSC_on_off.h': big}))
+        tree(self.source / 'Loose', game('', 'f', {'PROGRAM/_LSC_on_off.h': big}))
+        write_zip(self.source / 'huge.zip', game('Huge/', 'h', {'Huge/PROGRAM/_LSC_on_off.h': os.urandom(1 << 20).hex().encode()}))
+        roots = {c['root']: c for c in self.found(layer=layer)['candidates']}
+        self.assertEqual(roots['Big/']['patch_set'], {'id': 'big', 'version': '2'})
+        self.assertEqual(roots['Loose/']['patch_set'], {'id': 'big', 'version': '2'})
+        # Larger than the reader takes (1 MiB): not identified, never "no set".
+        self.assertEqual((roots['Huge/']['identified'], roots['Huge/']['patch_set']), (False, None))
+
+    @unittest.skipUnless(HAVE_7Z, '7z fixture generator unavailable')
+    def test_solid_archive_copies_stay_unidentified(self):
+        layer = self.patch_layer(('test-1.7.3', 'v', VERSION_HEADER))
+        content = self.work / 'content'
+        tree(content, game('', 's'))
+        seven(self.source / 'game.7z', content)
+        c = self.found(layer=layer)['candidates'][0]
+        self.assertEqual((c['identified'], c['patch_set']), (False, None))
+
+    def test_patch_layer_errors_are_loud(self):
+        write_zip(self.source / 'game.zip', game('Game/'))
+        code, _, error = self.discover(layer=self.work / 'absent')
+        self.assertEqual(code, 1, error)
+        self.assertIn('No script patch layer', error)
+        layer = self.patch_layer(('one', '1', VERSION_HEADER), ('two', '2', VERSION_HEADER))
+        code, _, error = self.discover(layer=layer)
+        self.assertEqual(code, 5, error)
+        self.assertIn('both identify this game', error)
+        (layer / 'sets/two/index.txt').write_text('not an index\n')
+        code, _, error = self.discover(layer=layer)
+        self.assertEqual(code, 5, error)
+        self.assertIn('Damaged script patch layer', error)
+
+    def test_patch_layer_listing(self):
+        def listing(path):
+            data, error = C.c_void_p(), C.create_string_buffer(2048)
+            code = lib.storm_archive_patch_layer(str(path).encode(), C.byref(data), error, len(error))
+            document = json.loads(C.string_at(data).decode()) if data.value else None
+            lib.storm_archive_free(data)
+            return code, document, error.value.decode()
+        layer = self.patch_layer(('b-set', '2', b'b'), ('a-set', '1', b'a'))
+        code, document, error = listing(layer)
+        self.assertEqual(code, 0, error)
+        self.assertEqual([(s['id'], s['version'], s['identify']) for s in document['patch_sets']],
+                         [('a-set', '1', ['program/_lsc_on_off.h']), ('b-set', '2', ['program/_lsc_on_off.h'])])
+        empty = self.work / 'empty-layer'
+        empty.mkdir()
+        self.assertEqual(listing(empty)[:2], (0, {'patch_sets': []}))
+        self.assertEqual(listing(self.work / 'absent')[0], 1)
 
     def test_two_copies_in_one_archive(self):
         files = game('Original/', 'o')
@@ -352,7 +447,7 @@ class Discovery(unittest.TestCase):
         (self.scratch / 'left-over').write_bytes(b'x')
         self.assertEqual(self.discover()[0], 5)
         data, error = C.c_void_p(), C.create_string_buffer(2048)
-        code = lib.storm_archive_discover(str(self.source).encode(), str(self.source / 'inside').encode(), None,
+        code = lib.storm_archive_discover(str(self.source).encode(), str(self.source / 'inside').encode(), None, None,
                                           C.byref(self.limits()), Progress(), None, C.byref(data), error, len(error))
         self.assertNotEqual(code, 0)
 
