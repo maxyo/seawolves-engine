@@ -1,6 +1,7 @@
 // The widget actions of one interface frame against the store's scripts (interface/store.c):
-// XINTERFACE's event list (pushed at its head by MSG_INTERFACE_SET_EVENT, run from its head in
-// the next Execute) and the two handlers a re-selection reaches. Selecting row A, then row B
+// XINTERFACE's event list (pushed at its head by MSG_INTERFACE_SET_EVENT, run from its head) and
+// the two handlers a re-selection reaches. The events an action queued run before the next action
+// is applied (XINTERFACE::DoControl), so the whole batch is answered in the frame it arrived in. Selecting row A, then row B
 // sends QTY_CANCEL_BUTTON press (A's deal) and TABLE_LIST activate (B) in one batch.
 #include "mobile_action_frame.hpp"
 
@@ -61,11 +62,21 @@ struct Interface
     {
         events = new Event{name, events};
     }
-    // XINTERFACE's frame: the widget actions (DoControl), then the queued events (Execute).
-    void Frame(bool gated)
+    void RunEvents()
     {
-        const storm::mobile::ActionFrame frame(events);
-        while (!actions.empty() && (!gated || frame.Open(events)))
+        while (events)
+        {
+            Event *event = events;
+            events = event->next;
+            store.Run(event->name);
+            delete event;
+        }
+    }
+    // XINTERFACE's frame: the widget actions (DoControl), each one's queued events right after it (`each`), else
+    // all of them together afterwards (the next Execute).
+    void Frame(bool each)
+    {
+        while (!actions.empty())
         {
             const std::string action = actions.front();
             actions.pop_front();
@@ -76,26 +87,21 @@ struct Interface
                 store.selected = std::stoi(action.substr(4)); // SelectLine, at once
                 Queue("ShowItemInfo");                        // activate,event:ShowItemInfo
             }
+            if (each)
+                RunEvents();
         }
-        while (events)
-        {
-            Event *event = events;
-            events = event->next;
-            store.Run(event->name);
-            delete event;
-        }
+        RunEvents();
     }
 };
 
-void Reselect(Interface &game, bool gated)
+void Reselect(Interface &game, bool each)
 {
     game.actions = {"row:0"};
-    game.Frame(gated);
+    game.Frame(each);
     assert(game.store.open && game.store.deal && game.store.row == 0);
     game.store.amount = 40; // the player sets an amount on A
     game.actions = {"cancel", "row:1"}; // trade_commerce.cpp: close A's deal, open B
-    game.Frame(gated);
-    game.Frame(gated);
+    game.Frame(each); // one frame answers both
 }
 
 } // namespace
@@ -118,7 +124,6 @@ int main()
         {
             game.store.amount = 7;
             game.actions = {"cancel", "row:" + std::to_string(row)};
-            game.Frame(true);
             game.Frame(true);
             assert(game.store.open && game.store.deal && game.store.row == row && game.store.amount == 0);
         }
@@ -153,6 +158,6 @@ int main()
         assert(clicks == 1);
     }
     std::puts("PASS the touch UI's widget actions never click: a re-selection and a 50-step drag are silent");
-    std::puts("PASS store re-selection: one script event per frame keeps the store open, the next row's deal starts at 0");
+    std::puts("PASS store re-selection: each action's script event before the next action keeps the store open, in one frame, the next row's deal starts at 0");
     return 0;
 }

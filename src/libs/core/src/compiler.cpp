@@ -5337,6 +5337,14 @@ void COMPILER::SaveAttributesData(ATTRIBUTES *pRoot)
     }
 }
 
+bool COMPILER::EventPosted(const char *name)
+{
+    for (uint32_t n = 0; n < EventMsg.GetClassesNum(); n++)
+        if (const S_EVENTMSG *event = EventMsg.Read(n); event && !event->bInvalide && event->pEventName && storm::iEquals(event->pEventName, name))
+            return true;
+    return false;
+}
+
 void COMPILER::AddPostEvent(S_EVENTMSG *pEM)
 {
     if (pEM->pMessageClass)

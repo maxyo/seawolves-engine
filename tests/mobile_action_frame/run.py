@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Widget actions that queue script events run one per frame (mobile_action_frame.hpp), checked against the store's scripts."""
+"""The script events a widget action queued run before the next action is applied (mobile_action_frame.hpp), checked against the store's scripts."""
 import os
 from pathlib import Path
 import subprocess

@@ -48,9 +48,6 @@ namespace
 {
 
 constexpr const char *kTag = "StormUi";
-// Interface screens close one menu a frame before they open the next: the interface is kept
-// over a gap this short, so the game does not flash between them.
-constexpr uint32_t kCloseGraceMs = 150;
 // Frame owner client order: after the renderer's own clients.
 constexpr int kClientOrder = 1000;
 
@@ -154,7 +151,7 @@ class EngineUi
         screen_ = screen;
         if (!screen.empty())
         {
-            close_at_ = 0;
+            closing_ = false;
             presentation_.screen = screen;
             PublishPresentation();
             // Its model comes once the interface has loaded, seconds later at times: the UI
@@ -163,9 +160,15 @@ class EngineUi
                 host_->ExpectInterface();
             return;
         }
-        close_at_ = SDL_GetTicks() + kCloseGraceMs;
-        if (close_at_ == 0)
-            close_at_ = 1;
+        // Interface screens close one menu some frames before they open the next: the closed one stays until the
+        // game says nothing follows it (InterfaceGone), so the game does not flash between them.
+        closing_ = true;
+    }
+
+    void InterfaceGone()
+    {
+        if (closing_)
+            CloseNow();
     }
 
     void Interface(storm::ui::InterfaceModel &&model)
@@ -206,12 +209,11 @@ class EngineUi
     void Loading(bool active)
     {
         // A load starts (the loading picture comes next, then the game thread blocks in it): no menu follows the one
-        // that just closed, so it goes now instead of after its grace, which the blocked loop would only see after
-        // the load's first frames (the title over the loading picture after «Продолжить»).
-        if (active && close_at_)
+        // that just closed, so it goes now, not when the blocked loop comes round again after the load's first
+        // frames (the title over the loading picture after «Продолжить»).
+        if (active && closing_)
         {
-            __android_log_print(ANDROID_LOG_INFO, kTag, "interface closed at the start of a load (not after its %u ms grace)",
-                                kCloseGraceMs);
+            __android_log_print(ANDROID_LOG_INFO, kTag, "interface closed at the start of a load");
             CloseNow();
         }
         Set(presentation_.loading, active);
@@ -229,15 +231,15 @@ class EngineUi
         Set(presentation_.location_load, blocks);
     }
 
-    // The closed screen's grace is over (Tick) or a load starts (Loading): the interface goes.
+    // Nothing follows the closed screen (InterfaceGone) or a load starts (Loading): the interface goes.
     void CloseNow()
     {
-        close_at_ = 0;
+        closing_ = false;
         interface_.reset();
         if (host_)
             host_->CloseInterface();
         PublishInterfaceActive();
-        presentation_.screen.clear(); // after the same grace: a menu that follows at once keeps it
+        presentation_.screen.clear(); // only now: a menu that follows the closed one keeps it
         PublishPresentation();
     }
 
@@ -254,8 +256,6 @@ class EngineUi
         ++loop_;
         if (!host_ && !failed_)
             Start();
-        if (close_at_ && static_cast<int32_t>(SDL_GetTicks() - close_at_) >= 0)
-            CloseNow();
         std::vector<Step> work;
         std::optional<bool> live;
         {
@@ -755,7 +755,7 @@ class EngineUi
     std::string presented_;
     std::optional<bool> live_; // from the platform thread, guarded by inbox_mutex_
     std::optional<storm::ui::InterfaceModel> interface_; // the open interface's newest model (replayed to a new host)
-    uint32_t close_at_ = 0; // SDL ticks; 0 = no close pending
+    bool closing_ = false; // the game closed its interface; the UI still draws it (InterfaceGone)
     std::atomic<bool> interface_active_{false};
     std::vector<std::string> commands_;
     bool in_action_ = false; // inside OnAction: answers wait for the next Tick
@@ -792,6 +792,11 @@ void state(std::string_view channel, std::string json)
 void screen(const std::string &screen, uint64_t revision, double release_ms, double load_ms)
 {
     EngineUi::Get().Screen(screen, revision, release_ms, load_ms);
+}
+
+void interfaceGone()
+{
+    EngineUi::Get().InterfaceGone();
 }
 
 void interfaceModel(storm::ui::InterfaceModel &&model)

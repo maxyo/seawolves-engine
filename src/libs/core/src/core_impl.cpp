@@ -683,6 +683,11 @@ uint32_t CoreImpl::PostEvent(const char *Event_name, uint32_t post_time, const c
     return 0;
 }
 
+bool CoreImpl::EventPosted(const char *Event_name)
+{
+    return Compiler->EventPosted(Event_name);
+}
+
 VDATA *CoreImpl::Event(const std::string_view &event_name)
 {
     MESSAGE message;

@@ -245,6 +245,8 @@ class XINTERFACE : public XINTERFACE_BASE
     // control function
     CINODE *GetActivingNode(CINODE *findRoot);
     void DoControl();
+    void RunNodeEvents();
+    void MobileInterfaceGone();
     bool SetCurNode(CINODE *pNod);
     // mouse function
     void MouseMove();

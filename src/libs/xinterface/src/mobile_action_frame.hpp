@@ -18,29 +18,16 @@ struct ActionOutcome
     std::string reason;
 };
 
-// One player action per interface frame, as the mouse delivers them. A node raises its script
-// event through XINTERFACE's event list, which the next Execute runs newest first, so two
-// actions applied in one frame ran their scripts in reverse. In the store, closing the open
-// deal (QTY_CANCEL_BUTTON: exitCancel) and opening the next row (TABLE_LIST: ShowItemInfo)
-// ran as ShowItemInfo, which closed the deal, and then exitCancel, which with no deal open
-// leaves the store. An edit box's text and the event that reads it are the same case (the
-// trade's "0" then "277"). Once an action has queued a script event, the rest of the queue
-// waits for the next frame, after that event has run.
-class ActionFrame
-{
-  public:
-    explicit ActionFrame(const void *events) : before_(events)
-    {
-    }
-    // True while no action of this frame has queued a script event (`events`: the list head now).
-    bool Open(const void *events) const
-    {
-        return events == before_;
-    }
-
-  private:
-    const void *before_;
-};
+// The touch UI's widget actions of one interface frame (XINTERFACE::DoControl) are applied in the
+// order the player made them, and the script event an action queued runs before the next action
+// is applied. A node raises its script event through XINTERFACE's event list, which Execute runs
+// newest first, so two actions applied one after the other with their events left for the next
+// Execute ran their scripts in reverse: in the store, closing the open deal (QTY_CANCEL_BUTTON:
+// exitCancel) and opening the next row (TABLE_LIST: ShowItemInfo) ran as ShowItemInfo, which
+// closed the deal, and then exitCancel, which with no deal open leaves the store. An edit box's
+// text and the event that reads it are the same case (the trade's "0" then "277"). Running each
+// action's events at once keeps the order and answers the tap in the frame it arrived in: the
+// model that frame publishes shows its result (tests/mobile_action_frame).
 
 // The interface's click (the scripts' ISOUND_EVENT on a node's first press) belongs to the
 // player's gesture: the touch UI asks for it when a press starts on an interactive element

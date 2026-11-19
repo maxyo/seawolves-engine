@@ -23,6 +23,11 @@ void state(std::string_view channel, std::string json);
 // opening says how long the game took to make it: releasing the old interface and loading
 // the new one's INI with its nodes (milliseconds, logged with the opening).
 void screen(const std::string &screen, uint64_t revision, double release_ms = 0.0, double load_ms = 0.0);
+// The interface that closed is followed by no other: the UI drops it now. Until this is said (or another interface
+// opens, or a load starts) the UI keeps drawing the closed one: the scripts close one menu some frames before they
+// open the next, and the game must not flash between them. Said every frame while no interface is open and none
+// is scheduled (xinterface); a state of the game, not a time.
+void interfaceGone();
 // The interface model of the open screen (xinterface), in the frame it changed; the newest
 // replaces older ones. Taken as the struct itself: nothing is serialised.
 void interfaceModel(storm::ui::InterfaceModel &&model);

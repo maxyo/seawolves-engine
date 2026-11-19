@@ -398,7 +398,7 @@ void XINTERFACE::Execute(uint32_t)
         return;
     IncrementGameTime(Delta_Time);
     if (!m_bUse)
-        return;
+        return MobileInterfaceGone();
 
     if (m_bBlindUp)
         m_fBlindFactor += m_fBlindSpeed * Delta_Time;
@@ -415,21 +415,12 @@ void XINTERFACE::Execute(uint32_t)
         m_bBlindUp = true;
     }
 
-    while (m_pEvents != nullptr)
-    {
-        core.Event(m_pEvents->sEventName, "ls", m_pEvents->nCommandIndex, m_pEvents->sNodeName);
-        if (m_pEvents != nullptr)
-        {
-            auto *const pE = m_pEvents;
-            m_pEvents = m_pEvents->next;
-            delete pE;
-        }
-    }
+    RunNodeEvents();
 #ifdef __ANDROID__
     MobileFlushAnswers(); // the touch UI's actions that queued these events: their results are in place
 #endif
     if (!m_bUse)
-        return;
+        return MobileInterfaceGone();
 
     if (m_nPressDelay > 0)
     {
@@ -2851,6 +2842,33 @@ storm::mobile::ActionOutcome XINTERFACE::MobileApplyAction(storm::android::UiWid
 }
 #endif
 
+// No interface is open. The touch UI still draws the one that closed until it hears that no other follows: the
+// scripts open the next section or menu some frames after they closed the last (interface.c ILaunchAfterFrame:
+// the posted event LaunchIAfterFrame counts frames down and then launches it). Without that event posted nothing
+// follows, and the UI shows the game again in this frame.
+void XINTERFACE::MobileInterfaceGone()
+{
+#ifdef __ANDROID__
+    if (!m_bUse && !core.EventPosted("LaunchIAfterFrame"))
+        storm::android::ui::interfaceGone();
+#endif
+}
+
+// The script events the nodes queued (MSG_INTERFACE_SET_EVENT), newest first.
+void XINTERFACE::RunNodeEvents()
+{
+    while (m_pEvents != nullptr)
+    {
+        core.Event(m_pEvents->sEventName, "ls", m_pEvents->nCommandIndex, m_pEvents->sNodeName);
+        if (m_pEvents != nullptr)
+        {
+            auto *const pE = m_pEvents;
+            m_pEvents = m_pEvents->next;
+            delete pE;
+        }
+    }
+}
+
 void XINTERFACE::DoControl()
 {
     int32_t nExitKey;
@@ -2880,9 +2898,10 @@ void XINTERFACE::DoControl()
             MobileAnswer(request, {}, true);
         }
     }
-    // Actions that queued a script event end this frame's share (mobile_action_frame.hpp).
-    const storm::mobile::ActionFrame frame(m_pEvents);
-    while (!storm::android::uiWidgetActions.empty() && m_bUse && frame.Open(m_pEvents))
+    // The touch UI's actions of this frame, in the order the player made them. The script events an action queued
+    // run before the next action is applied and before this frame's model goes out (mobile_action_frame.hpp): the
+    // UI draws the game's answer in the frame of the tap. The scripts' own posted events keep their time.
+    while (!storm::android::uiWidgetActions.empty() && m_bUse)
     {
         auto action = storm::android::uiWidgetActions.front();
         storm::android::uiWidgetActions.pop_front();
@@ -2899,7 +2918,13 @@ void XINTERFACE::DoControl()
         const auto outcome = MobileApplyAction(action);
         if (outcome.state == storm::mobile::ActionOutcome::Refused)
             spdlog::info("UI action {} {}[{}] '{}' refused: {}", action.screen, action.node, action.index, action.value, outcome.reason);
-        MobileAnswer(action.request, outcome, m_pEvents != eventsBefore);
+        const bool queued = m_pEvents != eventsBefore;
+        MobileAnswer(action.request, outcome, queued);
+        if (queued)
+        {
+            RunNodeEvents();
+            MobileFlushAnswers();
+        }
     }
     if (!m_bUse) return;
 #endif

@@ -104,6 +104,8 @@ class Core
     }
     virtual VDATA *Event(const std::string_view &event_name, MESSAGE &message) = 0;
     virtual uint32_t PostEvent(const char *Event_name, uint32_t post_time, const char *Format, ...) = 0;
+    // True while an event of this name posted with PostEvent has not run yet.
+    virtual bool EventPosted(const char *Event_name) = 0;
 
     virtual void *GetSaveData(const char *file_name, int32_t &data_size) = 0;
 
