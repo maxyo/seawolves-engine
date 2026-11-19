@@ -45,7 +45,7 @@ the opening quest's lock the way the game does (Mishelle.c) for saves made befor
 | `fleet` | Сен-Пьер streets, corvette, navigator, boatswain, fighter, two loaded companions; the run then opens the month's pay (not saved) | ship screen, ship exchange, cargo/crew transfer, salary |
 | `sea_prize` | the open sea, corvette and brig, a pirate war tartane and lugger attacking; the run then boards the tartane (not saved) | sea battle, boarding, plunder, prize captain, transfer |
 | `maps` | Сен-Пьер streets, the best map, the atlas with six island maps, both halves of a treasure map | best map, atlas, map reading |
-| `questbook` | Сен-Пьер streets, fourteen real quests in the journal, five completed | journal, completed quests |
+| `questbook` | Сен-Пьер streets, fourteen real quests in the journal, five completed; the run then closes one more with a record (not saved) | journal, completed quests, a «Logbook Update» line leading to the completed tab |
 | `overload` | Сен-Пьер streets, the hero over his carrying limit (whisky casks), totem_06 in the bag, not worn | walk-only gait, items screen (wearing the totem lifts the rule) |
 
 A new scenario: copy one, keep its `// Scenario <name>: <state>` line (`list` prints it) and define the three hooks.

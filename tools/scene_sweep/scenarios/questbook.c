@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Scenario questbook: Сен-Пьер streets with fourteen real quests in the journal, five of them completed.
+// Scenario questbook: Сен-Пьер streets with fourteen real quests in the journal, five of them completed; the run then closes one more with a record (its «Logbook Update» line leads to the completed tab).
 #include "scenarios/scenario.c"
 
 void Scenario_Setup()
@@ -25,6 +25,10 @@ void Scenario_Arrived()
 {
 }
 
+// As most FalseTrace records do: the record that ends a quest closes it, so its «Новая запись в судовом журнале!»
+// line opens the journal on a quest that is on the completed tab.
 void Scenario_Trigger()
 {
+	AddQuestRecord("Consumption", "3");
+	CloseQuestHeader("Consumption");
 }
