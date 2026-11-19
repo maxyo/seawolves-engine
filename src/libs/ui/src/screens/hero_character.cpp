@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <map>
+#include <optional>
 
 namespace storm::ui::screens
 {
@@ -658,6 +659,30 @@ class HeroScreen final : public Screen
         return card;
     }
 
+    // The bonus column of a skill table row, as character_all.c FillSkillTables writes it: "" when the value the game
+    // uses is the base, else "(+N)" / "(-N)", that value minus the base (GetCharacterSPECIAL for TABLE_SPECIAL,
+    // GetSummonSkillFromName for the skills: items, health, officers, the navigation penalty). Any other text is an
+    // error and nullopt: the row then has no total and no breakdown.
+    std::optional<int> StockBonus(Bindings &bindings, const char *node, const Widget &row, bool special) const
+    {
+        const std::string text = Trim(row.CellText(special ? 2 : 3));
+        if (text.empty())
+            return 0;
+        // "(" sign digits ")", N > 0 without leading zeros: the game writes diff only when it is not 0
+        const bool shaped = text.size() >= 4 && text.front() == '(' && text.back() == ')' && (text[1] == '+' || text[1] == '-') &&
+                            text[2] >= '1' && text[2] <= '9' &&
+                            std::all_of(text.begin() + 2, text.end() - 1, [](char c) { return c >= '0' && c <= '9'; });
+        const std::optional<int> amount = shaped ? ParseAmount(std::string_view(text).substr(2, text.size() - 3)) : std::nullopt;
+        if (!amount)
+        {
+            bindings.ErrorOnce(std::string("skill bonus ") + node + " " + row.row_id,
+                               std::string(a_->model->screen) + ": the bonus of " + node + " row " + row.row_id + " is '" + text +
+                                   "', not the game's \"(+N)\" / \"(-N)\": the row shows its base, without the total or its breakdown");
+            return std::nullopt;
+        }
+        return text[1] == '-' ? -*amount : *amount;
+    }
+
     // One skill table (PIRATES, personal, ship) for a c-table.
     Json SkillTable(Bindings &bindings, const char *node, const std::string &id, const std::string &heading, bool points,
                     bool special)
@@ -676,18 +701,12 @@ class HeroScreen final : public Screen
         std::vector<const Widget *> source = a_->All(node);
         for (const Widget *row : source)
         {
-            // TABLE_SKILL_n: icon, name, experience %, bonus, value; TABLE_SPECIAL: letter, name, bonus, value.
-            const int value_col = special ? 3 : 4;
+            // TABLE_SKILL_n: icon, name, experience %, bonus, base; TABLE_SPECIAL: letter, name, bonus, base.
             // The game names blade and gun skills by pairs ("Рапиры/Шпаги"): the first word fits
             // the column (mockup V2-Hero-Skills).
             const std::string full = Trim(row->CellText(1));
             const std::string name = special || full.find('/') == std::string::npos ? full : Trim(full.substr(0, full.find('/')));
-            const std::string bonus = Trim(row->CellText(special ? 2 : 3));
-            const std::string value = Trim(row->CellText(value_col));
-            const std::string tone = bonus.find('-') != std::string::npos   ? "danger"
-                                     : bonus.find('+') != std::string::npos ? "ok"
-                                     : special                              ? ""
-                                                                            : "gold";
+            const std::string base = Trim(row->CellText(special ? 3 : 4));
             // A name that does not fit wraps to two lines and steps down (ui-clamp min-size).
             Json first{{"text", name}, {"lines", 2}};
             if (!special && !points && *hero::SkillIcon(row->row_id))
@@ -695,9 +714,10 @@ class HeroScreen final : public Screen
             Json cells = Json::array({first});
             if (points)
             {
+                // Points raise the base: while they are spent the row shows it.
                 const int added = added_.count(row->row_id) ? added_[row->row_id] : 0;
                 const bool may_down = added > 0 || (special && a_->One("GAME_ACCEPT"));
-                cells.push_back(Json{{"text", value}, {"arrows", true}, {"noLeft", !may_down}, {"tone", added > 0 ? "ok" : "gold"}, {"bold", true}});
+                cells.push_back(Json{{"text", base}, {"arrows", true}, {"noLeft", !may_down}, {"tone", added > 0 ? "ok" : "gold"}, {"bold", true}});
             }
             else
             {
@@ -707,7 +727,11 @@ class HeroScreen final : public Screen
                 if (!special)
                     cells.push_back(Json{{"bar", experience.empty() ? 100 : std::clamp(Amount(bindings, experience, "the skill table's experience (column 2)"), 0, 100)},
                                          {"barKind", "xp"}, {"text", ""}});
-                Json last{{"text", value}, {"bold", true}};
+                // The value the game uses (base + bonus, the result of the row's breakdown), green above the base, red
+                // below it.
+                const std::optional<int> bonus = StockBonus(bindings, node, *row, special);
+                Json last{{"text", bonus ? std::to_string(Amount(bindings, base, "the skill table's value") + *bonus) : base}, {"bold", true}};
+                const std::string tone = bonus && *bonus < 0 ? "danger" : bonus && *bonus > 0 ? "ok" : special ? "" : "gold";
                 if (!tone.empty())
                     last["tone"] = tone;
                 cells.push_back(last);
@@ -751,10 +775,11 @@ class HeroScreen final : public Screen
 
     // What the value of a skill table row is made of, for the c-kv of its description: the base, each step of the
     // stock computation that changed it (the adapter's ANDROID_SKILLSTEPS, android_hero.c AndroidSkillSteps: the
-    // game's own steps, recorded while it computes the value) and the result. The lines must add up to the row's
-    // own figures, which the game wrote on its own (character_all.c FillSkillTables: the value column is the base,
-    // the bonus column "(+N)" / "(-N)" the effective value minus it); lines that do not are not shown and are an
-    // error, as is a step of a kind this screen cannot word. Empty without steps (the value is the base).
+    // game's own steps, recorded while it computes the value) and the result, the total the table row shows. The
+    // lines must add up to the row's own figures, which the game wrote on its own (character_all.c FillSkillTables:
+    // the value column is the base, the bonus column the effective value minus it, StockBonus); lines that do not
+    // are not shown and are an error, as is a step of a kind this screen cannot word. Empty without steps (the
+    // value is the base).
     Json SkillSteps(Bindings &bindings, const char *node, const Widget &row, const Widget &help)
     {
         const bool special = std::string(node) == "TABLE_SPECIAL";
@@ -766,8 +791,11 @@ class HeroScreen final : public Screen
         if (count <= 0)
             return Json::array();
         const int base = Amount(bindings, Field(&help, "base"), "ANDROID_SKILLHELP base");
-        const int shown = Amount(bindings, Trim(row.CellText(special ? 3 : 4)), "the skill table's value");
-        const int bonus = ParseAmount(Trim(row.CellText(special ? 2 : 3))).value_or(0);
+        const int row_base = Amount(bindings, Trim(row.CellText(special ? 3 : 4)), "the skill table's value");
+        const std::optional<int> stock_bonus = StockBonus(bindings, node, row, special);
+        if (!stock_bonus)
+            return Json::array();
+        const int bonus = *stock_bonus;
         const auto sign = [](int value) { return value < 0 ? "−" + std::to_string(-value) : "+" + std::to_string(value); };
         Json items = Json::array({Json{{"k", bindings.Text("hero.step_base")}, {"v", std::to_string(base)}, {"tone", "dim"}}});
         int sum = base, lines = 0;
@@ -799,11 +827,11 @@ class HeroScreen final : public Screen
             ++lines;
             items.push_back(Json{{"k", label}, {"v", sign(value)}, {"tone", value < 0 ? "danger" : "ok"}});
         }
-        if (lines != count || base != shown || sum != shown + bonus)
+        if (lines != count || base != row_base || sum != row_base + bonus)
         {
             bindings.ErrorOnce("skillsteps sum " + id, std::string(a_->model->screen) + ": the steps of " + id + " do not add up to the row (base " +
                                                            std::to_string(base) + " + " + std::to_string(lines) + " of " + std::to_string(count) +
-                                                           " steps = " + std::to_string(sum) + ", the row: " + std::to_string(shown) + " " +
+                                                           " steps = " + std::to_string(sum) + ", the row: " + std::to_string(row_base) + " " +
                                                            sign(bonus) + "): its lines are not shown");
             return Json::array();
         }

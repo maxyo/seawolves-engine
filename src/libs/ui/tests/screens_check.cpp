@@ -2273,7 +2273,56 @@ static void Hero(const std::string &models)
                view["card"]["health"]["value"] == 75 && view["card"]["health"]["text"] == "90" && view["card"]["free"] == "2" &&
                view["card"]["lines"][0]["v"] == "excellent" && view["card"]["lines"][1]["v"] == "63 / 100",
            "the identity rail from TABLE_OTHER and the adapter");
-    Expect(view["special"]["rows"].size() == 2 && view["special"]["rows"][1]["cells"][1]["tone"] == "ok", "the read-only PIRATES column");
+    Expect(view["special"]["rows"].size() == 2 && view["special"]["rows"][0]["cells"][1]["text"] == "5" &&
+               !view["special"]["rows"][0]["cells"][1].contains("tone") && view["special"]["rows"][1]["cells"][1]["text"] == "8" &&
+               view["special"]["rows"][1]["cells"][1]["tone"] == "ok",
+           "the read-only PIRATES column: the value the game uses (Agility base 7 (+1) = 8, green): " + view["special"].dump());
+    {
+        // Without points to spend every table shows the value the game uses, base + the stock bonus column, and the
+        // breakdown of a row ends on that same figure.
+        InterfaceModel spent = model;
+        for (Widget &widget : spent.widgets)
+            if (widget.node == "FREE_SKILL")
+                widget.label = "";
+        std::erase_if(spent.widgets, [](const Widget &widget) { return widget.node == "ANDROID_SKILLHELP"; });
+        Widget fact = Make("ANDROID_SKILLHELP", "fact", "");
+        fact.row_id = "TABLE_SKILL_1_tr2";
+        fact.context = {{"node", "TABLE_SKILL_1"}, {"skill", Row(spent, "TABLE_SKILL_1", 1)->row_id}, {"text", "Blades."},
+                        {"base", "3"}, {"steps", "1"}};
+        spent.widgets.push_back(std::move(fact));
+        Widget step = Make("ANDROID_SKILLSTEPS", "fact", "");
+        step.row_id = "TABLE_SKILL_1_tr2_0";
+        step.context = {{"node", "TABLE_SKILL_1"}, {"skill", Row(spent, "TABLE_SKILL_1", 1)->row_id}, {"kind", "navy"},
+                        {"a1", "3"}, {"a2", "63"}, {"a3", "65"}, {"value", "-2"}};
+        spent.widgets.push_back(std::move(step));
+        FakeSurface totals_surface;
+        Router totals(totals_surface);
+        totals.SetInterface(spent);
+        const Json personal = totals_surface.props["personal"]["rows"];
+        Expect(totals_surface.props["points"] == false && personal[0]["cells"][2]["text"] == "12" && personal[0]["cells"][2]["tone"] == "gold" &&
+                   personal[1]["cells"][2]["text"] == "1" && personal[1]["cells"][2]["tone"] == "danger" &&
+                   totals_surface.props["ship"]["rows"][0]["cells"][2]["text"] == "11" && totals_surface.errors.empty(),
+               "the skills show base + bonus (Rapiers 3 (-2) = 1, red; no bonus: the base, gold): " + totals_surface.props["personal"].dump());
+        totals.OnEvent({"personal", "row", "1"});
+        const Json steps = totals_surface.props["dialog"]["steps"];
+        Expect(steps.size() == 3 && steps[2]["k"] == "<hero.step_result>" && steps[2]["v"] == personal[1]["cells"][2]["text"] &&
+                   totals_surface.errors.empty(),
+               "the breakdown's result is the row's figure: " + steps.dump());
+
+        // A bonus cell of another shape is not guessed at: the row shows its base, untinted, and it is an error.
+        for (const char *odd : {"+1", "(+0)", "(1)", "(+1", "(+x)"})
+        {
+            InterfaceModel malformed = spent;
+            Row(malformed, "TABLE_SPECIAL", 1)->cells[2].text = odd;
+            FakeSurface odd_surface;
+            Router odd_router(odd_surface);
+            odd_router.SetInterface(malformed);
+            const Json &cell = odd_surface.props["special"]["rows"][1]["cells"][1];
+            Expect(cell["text"] == "7" && !cell.contains("tone") && odd_surface.errors.size() == 1 &&
+                       odd_surface.errors[0].find("not the game's") != std::string::npos,
+                   std::string("a malformed bonus '") + odd + "' shows the base and is reported");
+        }
+    }
     Expect(view["points"] == true && view["personal"]["rows"][0]["cells"][1]["arrows"] == true &&
                view["personal"]["rows"][0]["cells"][1]["noLeft"] == true,
            "free points: ‹ › on the skills, ‹ only for points added in this visit");
