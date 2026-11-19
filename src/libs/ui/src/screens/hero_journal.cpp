@@ -10,6 +10,7 @@
 #include "hero.h"
 
 #include <algorithm>
+#include <cctype>
 #include <map>
 
 namespace storm::ui::screens
@@ -40,6 +41,16 @@ constexpr NodeRule kNodes[] = {
 };
 
 constexpr double kStepTimeout = 3.0;
+
+// A quest id as the game compares it: attribute names are case-insensitive, and the titles' ids come from the
+// attribute names of pchar.QuestInfo, some in lower case ("falsetrace") while a «Logbook Update» line names the
+// quest as the script wrote it (AddQuestRecord("FalseTrace", …)). Quest ids are ASCII.
+bool SameQuest(const std::string &a, const std::string &b)
+{
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](unsigned char x, unsigned char y) {
+               return std::tolower(x) == std::tolower(y);
+           });
+}
 
 // The tabs whose titles are journal entries (QUEST_TITLE), where an entry asked for by name is looked for.
 constexpr const char *kEntryTabs[] = {"TABBTN_QUEST", "TABBTN_QUESTARJ", "TABBTN_INFO"};
@@ -392,7 +403,7 @@ class JournalScreen final : public Screen
             return;
         }
         for (const Widget *row : a_->All("QUEST_TITLE"))
-            if (row->type == "choice" && row->row_id == intent_.row && row->Offers("open"))
+            if (row->type == "choice" && SameQuest(row->row_id, intent_.row) && row->Offers("open"))
             {
                 sent_revision_ = revision_;
                 bindings.Send(*row, "open", row->row_id);

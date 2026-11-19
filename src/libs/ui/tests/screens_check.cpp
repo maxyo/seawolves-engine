@@ -3537,7 +3537,7 @@ static void Journal(const std::string &)
         SubjectMount mount;
         storm::ui::hud::Hud hud(mount);
         toast_router.AttachHud(&hud);
-        hud.RequestSubject({"journal", -1, -1, "", "closed"});
+        hud.RequestSubject({"journal", -1, -1, "", "Closed"}); // as the script names it; the title's id is the lower-case attribute name
         InterfaceModel active = model;
         active.revision = 100;
         toast_router.SetInterface(active);
