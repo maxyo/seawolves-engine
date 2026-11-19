@@ -230,6 +230,41 @@ void Bindings::Modal(const std::string &id, Handler cancel)
     handlers_[id + '\x1f' + "back"] = std::move(cancel);
 }
 
+void Bindings::Predict(const std::string &id, const std::string &verb, Prediction predict)
+{
+    predictions_[id + '\x1f' + verb] = std::move(predict);
+}
+
+bool Bindings::Patch(Json &view, const std::string &id, const char *key, const Json &value)
+{
+    bool found = false;
+    if (view.is_object())
+    {
+        if (const auto own = view.find("id"); own != view.end() && own->is_string() && own->get_ref<const std::string &>() == id)
+        {
+            view[key] = value;
+            found = true;
+        }
+        for (auto &[name, child] : view.items())
+            if (child.is_structured())
+                found = Patch(child, id, key, value) || found;
+    }
+    else if (view.is_array())
+        for (Json &child : view)
+            if (child.is_structured())
+                found = Patch(child, id, key, value) || found;
+    return found;
+}
+
+void Bindings::SelectOnly(Json &entries, size_t chosen)
+{
+    if (!entries.is_array() || chosen >= entries.size())
+        return;
+    for (size_t i = 0; i < entries.size(); ++i)
+        if (entries[i].is_object())
+            entries[i]["selected"] = i == chosen;
+}
+
 void Bindings::Ignore(const std::string &id, const std::string &verb)
 {
     On(id, verb, [](const Event &) {});
@@ -530,11 +565,13 @@ void Router::CloseOnDefect(const std::string &line, bool logged)
         surface_.Error(line);
     // Nothing of the failed build stays: its bindings may point into state the throw left half made.
     bindings_.handlers_.clear();
+    bindings_.predictions_.clear();
     modals_.clear();
     screen_.reset();
     using_.clear();
     waiting_.clear();
     pending_.clear();
+    predicting_.clear();
     edit_token_.clear();
     edit_handler_ = nullptr;
     extras_open_ = false;
@@ -646,6 +683,7 @@ void Router::SetInterface(const InterfaceModel &model)
         reading_title_.clear();
         reading_text_.clear();
         pending_.clear();
+        predicting_.clear();
         waiting_.clear();
         outstanding_.clear();
         edit_token_.clear();
@@ -667,6 +705,7 @@ void Router::CloseInterface()
     bindings_.handlers_.clear();
     modals_.clear();
     pending_.clear();
+    predicting_.clear();
     waiting_.clear();
     outstanding_.clear();
     edit_token_.clear();
@@ -735,6 +774,7 @@ void Router::BuildView()
     if (rebuild_at_ > 0.0 && rebuild_at_ <= surface_.Now())
         rebuild_at_ = 0.0;
     bindings_.handlers_.clear();
+    bindings_.predictions_.clear();
     modals_.clear();
     // The ported screen registered for the id draws it when the model passes its admission.
     // If its REQUIRED nodes are missing or mistyped once the first model settled, the screen
@@ -801,7 +841,78 @@ void Router::BuildView()
     Json rows = view.contains("more") ? view["more"] : Json::array();
     view.erase("more");
     view["extras"] = ExtrasView(admitted, std::move(rows));
+    Predict(view);
     surface_.Show(screen_->Component(), view);
+}
+
+bool Router::AnsweredFrom(uint64_t floor) const
+{
+    if (awaiting_ || !waiting_.empty() || outstanding_.lower_bound(floor) != outstanding_.end())
+        return false;
+    for (auto it = answers_.lower_bound(floor); it != answers_.end(); ++it)
+        if (it->second.applied && !it->second.model_after)
+            return false;
+    return true;
+}
+
+namespace
+{
+// Where two views first differ, as a path ("rows/3/selected"), for the correction's log line.
+std::string FirstDifference(const Json &predicted, const Json &game, const std::string &path)
+{
+    if (predicted.type() == game.type() && predicted.is_object())
+    {
+        for (const auto &[key, value] : predicted.items())
+            if (!game.contains(key))
+                return path + "/" + key + ": predicted " + value.dump() + ", the game has none";
+            else if (value != game[key])
+                return FirstDifference(value, game[key], path + "/" + key);
+        for (const auto &[key, value] : game.items())
+            if (!predicted.contains(key))
+                return path + "/" + key + ": predicted none, the game has " + value.dump();
+    }
+    if (predicted.type() == game.type() && predicted.is_array() && predicted.size() == game.size())
+        for (size_t i = 0; i < predicted.size(); ++i)
+            if (predicted[i] != game[i])
+                return FirstDifference(predicted[i], game[i], path + "/" + std::to_string(i));
+    std::string was = predicted.dump(), is = game.dump();
+    if (was.size() > 120)
+        was = was.substr(0, 120) + "…";
+    if (is.size() > 120)
+        is = is.substr(0, 120) + "…";
+    return path + ": predicted " + was + ", the game has " + is;
+}
+} // namespace
+
+void Router::Predict(Json &view)
+{
+    for (auto it = predicting_.begin(); it != predicting_.end();)
+    {
+        Json predicted = view;
+        try
+        {
+            it->predict(it->event, predicted);
+        }
+        catch (const std::exception &error)
+        {
+            surface_.Error("screen " + using_ + ": the prediction of " + it->event.id + " " + it->event.verb + " threw (" + error.what() +
+                           "); the game's state is shown");
+            it = predicting_.erase(it);
+            continue;
+        }
+        if (!AnsweredFrom(it->floor))
+        {
+            view = std::move(predicted); // the game is still answering: its steps do not change what was predicted
+            ++it;
+            continue;
+        }
+        // The game has answered: its state is shown, and it must be what was drawn at the tap.
+        if (predicted != view)
+            surface_.Error("UI prediction corrected: screen " + using_ + " " + it->event.id + " " + it->event.verb + " " + it->event.value +
+                           ": the game answered otherwise after " + std::to_string(int((surface_.Now() - it->since) * 1000.0)) + " ms; " +
+                           FirstDifference(predicted, view, ""));
+        it = predicting_.erase(it);
+    }
 }
 
 Json Router::ExtrasView(const Admission &admitted, Json rows)
@@ -896,6 +1007,10 @@ bool Router::OnEvent(const Event &event)
         return false;
     }
     const Bindings::Handler handler = found->second; // a rebuild replaces the table
+    Bindings::Prediction predict;
+    if (const auto predicted = bindings_.predictions_.find(event.id + '\x1f' + event.verb); predicted != bindings_.predictions_.end())
+        predict = predicted->second;
+    const uint64_t floor = next_request_ + 1;
     current_ = &event;
     sent_in_event_ = false;
     if (!Guarded("the handler of " + event.id + " " + event.verb, [&] { handler(event); }))
@@ -908,6 +1023,14 @@ bool Router::OnEvent(const Event &event)
             extras_open_ = false;
         const bool answers = MarkOpen(event.id, event.value);
         pending_.push_back({event.id, event.value, model_.revision, surface_.Now() + (answers ? kAnswerSeconds : kPendingSeconds), answers});
+        rebuild_ = true;
+    }
+    // What the tap leads to is drawn now (the build below); the game's answer to what the handler sent ends it. A
+    // handler that asked the game nothing predicted nothing: the screen's own state is the result already.
+    if (predict && screen_ && (next_request_ >= floor || !waiting_.empty()))
+    {
+        predicting_.push_back({event, std::move(predict), floor, surface_.Now()});
+        ++predicted_count_;
         rebuild_ = true;
     }
     if (rebuild_ && screen_)

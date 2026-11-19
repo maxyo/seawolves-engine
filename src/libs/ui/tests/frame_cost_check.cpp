@@ -284,9 +284,8 @@ void SteadyRuntime(const std::string &pack)
 }
 
 // The tap budget, in frames: the press shows in the next drawn frame, the action leaves in
-// the touch call itself, and the engine's answer (the interface model) shows once one game
-// frame passed without a change after it arrived (the settle gate: an answer that comes in
-// steps is drawn whole, ui_host.cpp), in the second frame after it. Nothing else waits.
+// the touch call itself, and the engine's answer (the interface model) shows in the next
+// drawn frame after it arrives. Nothing in the UI waits a further frame, a timer or a reply.
 void TapLatency(const std::string &pack)
 {
     Runtime runtime(pack);
@@ -307,13 +306,9 @@ void TapLatency(const std::string &pack)
     std::ifstream file(states_directory + "/../models/game-menu.json", std::ios::binary);
     const std::string model{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     Expect(runtime.host->SetInterface(model), "the engine's answer (the game menu model) is accepted");
-    const uint64_t shown = runtime.host->LastFrameStats().number;
-    Expect(!runtime.host->Prepare(delay) && delay <= 1.0 / 60.0, "the answer waits for the next game frame (settle gate), which it asks for");
+    Expect(runtime.host->Prepare(delay), "the model asks for a frame at once");
     runtime.Frame();
-    Expect(runtime.host->LastFrameStats().number == shown, "the game frame that saw the answer arrive keeps the frame on the screen");
-    runtime.Frame();
-    Expect(runtime.host->LastFrameStats().number == shown + 1 && runtime.host->InterfaceActive(),
-           "the next game frame, with nothing changed, draws the screen");
+    Expect(runtime.host->InterfaceActive(), "the next frame shows the screen");
     // A new screen: its document, the clamped text re-cut for the widths it got, the HUD hidden.
     Expect(runtime.host->LastFrameStats().layout_passes <= 3, "a new screen costs at most three layout passes");
     runtime.host->SetInterface(model); // the same revision again
@@ -339,8 +334,6 @@ void HeldFrame(const std::string &pack)
     Expect(runtime.host->SetInterface(model), "the game menu model is accepted");
 
     runtime.backend.hold = 2;
-    runtime.Frame();
-    Expect(runtime.host->LastFrameStats().number == shown, "the switch waits for a game frame in which it stands still (settle gate)");
     runtime.Frame();
     Expect(runtime.host->LastFrameStats().number == shown, "a held frame is not a frame shown");
     Expect(runtime.host->Prepare(delay) && delay == 0.0, "the host asks for the frame again at once");

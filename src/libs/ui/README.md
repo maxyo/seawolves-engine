@@ -71,15 +71,17 @@ Debuggable Android builds log frame costs every 5 s (logcat tag `StormUiFrames`)
   `filter: drop-shadow` on icons.
 - The host draws only when `Host::Prepare` reports the frame out of date; a frame is shown only when its
   textures are ready. `tests/frame_cost_check.cpp` holds the frame-cost rules.
-- Settle before present: after a tap on a game screen that asks the game for something (and after a screen
-  switch the game makes) the frame on the screen stays until the game's answer settled: it reacted, answered
-  every widget action, and one game frame passed without a change. The pressed control stays drawn pressed
-  meanwhile; at most 180 ms once the game answered, 600 ms while it has not (then what is there is drawn, with
-  its busy mark, and logged "UI settle: … drawn after N ms although …"). A touch that goes down ends it.
+- Nothing delays a present: the host never keeps a frame on the screen for the game's answer, and no timer
+  stands between a tap and what it shows. A tap's result that needs no decision of the game is drawn in the frame
+  of the tap (`screens::Bindings::Predict`, src/screens/README.md); the game's answer confirms it, or corrects it
+  with an error line "UI prediction corrected: …". The engine answers a widget action in the frame it arrived in
+  (xinterface runs the action's script events before that frame's model goes out). Flicker is prevented at its
+  cause: a screen does not draw a state it knows to be a step of the game's answer (a model rule, never a time).
 - Flicker check (`src/action_trace.h`, `Config::trace_actions`, on in debug builds and device crawls): every
   action's presented frames are recorded until they settle; a frame that differs from both the start and the
-  settled state is logged "UI flicker: …" (after the settle gate's cap: "UI slow answer: …"). The pack contract
-  fails on one in a tap that needs no game and in `flows` (`tests/pack-contract.json`: taps with the game's real
+  settled state is logged "UI flicker: …". Every line says when the screen first changed ("first change in frame N,
+  +X ms") and, for a predicted action, "predicted" or "LATE" (its result was not in the tap's own frame, a warning). The pack contract
+  fails on a late predicted tap anywhere, on a transient frame in a tap that needs no game and in `flows` (`tests/pack-contract.json`: taps with the game's real
   answers frame by frame); `tools/ui_crawl` reports each tap's and ranks a crawl's (`ui_crawl.py flicker DIR`).
 
 ## Licence boundary

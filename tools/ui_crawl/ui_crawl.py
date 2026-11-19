@@ -19,11 +19,14 @@ errors logged meanwhile (StormUi errors such as "no mapping", missing icons, scr
   ui_crawl.py -s emulator-5906 swipe X1,Y1 X2,Y2              drag (scroll), then the map
   ui_crawl.py -s emulator-5906 wait REGEX [--timeout S]   until the screen name matches
   ui_crawl.py flicker DIR...                              every tap of the crawls in DIR/crawl.jsonl that showed a
-        transient frame, ranked by how visible it was (time on the screen x share of the screen)
+        transient frame, ranked by how visible it was (time on the screen x share of the screen), and every
+        predicted tap whose result came late
 
 The flicker check (storm_ui Config::trace_actions, on with the tap map and in debug builds): each tap's report carries
 the host's "UI flicker" lines (frames that showed neither the state before the tap nor the one it settled in) and
-"UI action" lines (the tap settled without one); `tap` and `crawl` print them, crawl.jsonl keeps them.
+"UI action" lines (the tap settled without one), with the tap's latency: the frame and time of the first change, and
+for an action its screen predicts whether the result was in the tap's own frame; `tap` and `crawl` print them,
+crawl.jsonl keeps them.
 
 Set the property before the app starts:  adb shell setprop log.tag.StormUiTaps DEBUG
 Taps change the game: crawl on a throwaway device or emulator overlay (emulator -read-only).
@@ -44,8 +47,8 @@ LINE = re.compile(r'^(?P<where>\S+) (?P<tag>\S+) (?P<id>\S+) (?P<verb>\S+) box=(
 PROBLEM = re.compile(r'no mapping|missing icon|is drawn with no mapping|script error|COMPILE ERROR|Undefined|'
                      r'not found|threw|failed|FATAL|crash', re.I)
 # The flicker check's lines (storm_ui action_trace.cpp DescribeTrace).
-TRACE = re.compile(r'UI (?P<kind>flicker|action|slow answer): (?P<action>.*?): (?:(?P<transient>\d+) transient frames, (?P<ms>[\d.]+) ms, '
-                   r'(?P<area>[\d.]+)% of the screen(?:, drawn after the settle cap)?|no transient frames) \((?P<before>\S+(?: \S+)?) -> (?P<after>.*?), settled in '
+TRACE = re.compile(r'UI (?P<kind>flicker|action): (?P<action>.*?): (?:(?P<transient>\d+) transient frames, (?P<ms>[\d.]+) ms, '
+                   r'(?P<area>[\d.]+)% of the screen|no transient frames) \((?P<before>\S+(?: \S+)?) -> (?P<after>.*?), settled in '
                    r'(?P<settle>[\d.]+) ms, (?P<frames>\d+) frames(?P<flags>[^)]*)\)(?P<details>.*)$')
 NOISE = re.compile(r'frame pacing: the display stayed|force finish cuj|hid_init threw|Failed to open rendernode|Choreographer|OpenGLRenderer|EGL_emulation|goldfish|gralloc|ashmem|libprocessgroup|BpBinder|'
                    r'chatty|HostConnection|vulkan|AudioTrack|AudioFlinger|ziparchive|nativeloader', re.I)
@@ -160,14 +163,19 @@ def traces(lines, pids):
         parts = raw.split(None, 6)
         if len(parts) < 7 or (pids and parts[2] not in pids):
             continue
-        at = next((i for i in (parts[6].find(k) for k in ('UI flicker: ', 'UI action: ', 'UI slow answer: ')) if i >= 0), -1)
+        at = next((i for i in (parts[6].find(k) for k in ('UI flicker: ', 'UI action: ')) if i >= 0), -1)
         match = TRACE.match(parts[6][at:].strip()) if at >= 0 else None
         if not match:
             continue
-        out.append({'action': match['action'], 'slow': match['kind'] == 'slow answer', 'transient': int(match['transient'] or 0), 'ms': float(match['ms'] or 0),
+        # After the head: "; first change in frame N, +X ms[; predicted | ; LATE: …]", then " | " and the transient frames.
+        latency, _, details = match['details'].partition(' | ')
+        first = re.search(r'first change in frame (\d+), \+([\d.]+) ms', latency)
+        out.append({'action': match['action'], 'transient': int(match['transient'] or 0), 'ms': float(match['ms'] or 0),
                     'area': float(match['area'] or 0) / 100.0, 'before': match['before'], 'after': match['after'],
                     'settle_ms': float(match['settle']), 'frames': int(match['frames']), 'flags': match['flags'].strip(', '),
-                    'details': [d.strip() for d in match['details'].split(' | ') if d.strip()]})
+                    'feedback_frame': int(first[1]) if first else 0, 'feedback_ms': float(first[2]) if first else 0.0,
+                    'predicted': '; predicted' in latency or '; LATE' in latency, 'late': '; LATE' in latency,
+                    'details': [d.strip() for d in details.split(' | ') if d.strip()]})
     return out
 
 
@@ -285,9 +293,13 @@ def report(result):
     for line in result['problems'][:8]:
         print('       ' + line[:220])
     for trace in result.get('traces', []):
+        # The tap's latency: when the screen first changed and when it showed the settled state.
+        print('       %s: first change frame %d +%.0f ms, settled +%.0f ms%s' % (
+            trace['action'], trace.get('feedback_frame', 0), trace.get('feedback_ms', 0.0), trace['settle_ms'],
+            ' LATE (predicted, not in the tap\'s frame)' if trace.get('late') else ' (predicted)' if trace.get('predicted') else ''))
         if trace['transient']:
-            print('       %s %s: %d frames, %.0f ms, %.0f%% of the screen' % ('SLOW ANSWER' if trace.get('slow') else 'FLICKER', trace['action'],
-                                                                         trace['transient'], trace['ms'], trace['area'] * 100))
+            print('       FLICKER %s: %d frames, %.0f ms, %.0f%% of the screen' % (trace['action'], trace['transient'], trace['ms'],
+                                                                             trace['area'] * 100))
             for detail in trace['details'][:4]:
                 print('         ' + detail[:200])
 
@@ -303,19 +315,20 @@ def flicker_list(dirs):
             result = json.loads(line)
             for trace in result.get('traces', []):
                 rows.append((result, trace))
-    flickering = [(r, t) for r, t in rows if t['transient'] and not t.get('slow')]
-    slow = [(r, t) for r, t in rows if t['transient'] and t.get('slow')]
+    flickering = [(r, t) for r, t in rows if t['transient']]
+    late = [(r, t) for r, t in rows if t.get('late')]
     flickering.sort(key=lambda rt: -(rt[1]['ms'] * max(rt[1]['area'], 0.01)))
-    print('%d taps traced, %d with transient frames, %d slow answers (drawn after the settle cap)' % (len(rows), len(flickering), len(slow)))
+    print('%d taps traced, %d with transient frames, %d predicted taps whose result was not in the tap\'s frame' %
+          (len(rows), len(flickering), len(late)))
     for result, trace in flickering:
         print('%5.0f ms %3.0f%% %d fr  %-14s %-28s %s' % (trace['ms'], trace['area'] * 100, trace['transient'], result['before'][:14],
                                                        result['tapped'][:28], trace['action']))
         for detail in trace['details'][:3]:
             print('                         ' + detail[:180])
-    for result, trace in slow:
-        print('slow %5.0f ms %3.0f%% %d fr  %-14s %-28s %s' % (trace['ms'], trace['area'] * 100, trace['transient'], result['before'][:14],
-                                                            result['tapped'][:28], trace['action']))
-    return 1 if flickering else 0
+    for result, trace in late:
+        print('late  frame %d +%.0f ms  %-14s %-28s %s' % (trace['feedback_frame'], trace['feedback_ms'], result['before'][:14],
+                                                         result['tapped'][:28], trace['action']))
+    return 1 if flickering or late else 0
 
 
 def crawl(device, args, each=None):

@@ -207,6 +207,13 @@ class ItemsScreen final : public Screen
             intent_ = {};
             Step(bindings, button, "press");
         });
+        // The tapped category is drawn chosen in the tap's frame; its list comes with the game's answer.
+        bindings.Predict("item-tabs", "select", [](const Event &event, Json &predicted) {
+            if (!predicted.contains("tabs"))
+                return;
+            for (Json &tab : predicted["tabs"])
+                tab["selected"] = tab.value("id", std::string()) == event.value;
+        });
 
         // The list.
         std::vector<const Widget *> shown;
@@ -248,6 +255,11 @@ class ItemsScreen final : public Screen
             if (row->value == "1")
                 return;
             Start(bindings, intent);
+        });
+        // The tapped item is drawn selected in the tap's frame; its parchment comes with the game's answer.
+        bindings.Predict("items", "row", [](const Event &event, Json &predicted) {
+            if (predicted.contains("rows"))
+                Bindings::SelectOnly(predicted["rows"], static_cast<size_t>(std::atoi(event.value.c_str())));
         });
 
         // The selected item. With a slot chosen the parchment speaks for that slot only: the item it holds or

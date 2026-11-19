@@ -156,6 +156,10 @@ class LandScene final : public Scene
         const bool melee = gameplay.mode == "melee";
         const bool ready = Ready(states);
         view.layout = melee ? "land-combat" : "land";
+        // The stick's events are the scene's whether or not this view shows the stick: a finger that was on it when
+        // the command sheet opened lifts later, and that release (the stick back at rest) must stop the hero.
+        if (gameplay.analog_movement)
+            input.On("move", "change", [this](const Event &event) { Stick(event.value); });
 
         if (states.vitals.known)
         {
@@ -210,10 +214,7 @@ class LandScene final : public Scene
         input.On("pause", "click", [this](const Event &) { hud_.Send("shortcut", "mainmenu"); });
 
         if (gameplay.analog_movement)
-        {
             view.elements["move"] = Json::object();
-            input.On("move", "change", [this](const Event &event) { Stick(event.value); });
-        }
         else
             hud_.Error("land HUD: the engine offers no analog movement (inputOwner or movementGeneration missing); no move stick");
 

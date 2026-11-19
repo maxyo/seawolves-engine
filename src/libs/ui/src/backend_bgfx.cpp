@@ -789,10 +789,6 @@ class BgfxBackendImpl final : public BgfxBackend, public Rml::RenderInterface
         open_layers_.clear();
     }
     void EndFrame() override;
-    void ReplayShown() override
-    {
-        Submit(shown_main_, shown_clear_, false);
-    }
     bool FrameHeld() const override
     {
         return held_frames_ > 0;

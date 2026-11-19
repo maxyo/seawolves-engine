@@ -611,7 +611,9 @@ void Hud::Refresh()
         dialogue_since_ = -1.0;
     else if (dialogue_since_ < 0.0)
         dialogue_since_ = now;
-    const bool dialogue = shown.dialogue && now - dialogue_since_ >= kDialogueWait;
+    // A HUD that is not on the screen (an interface covered it and closed into the dialogue) is not brought back
+    // for those frames: it would flash between the interface and the panel.
+    const bool dialogue = shown.dialogue && (!visible_ || now - dialogue_since_ >= kDialogueWait);
     const bool free = shown.known && shown.screen.empty() && !shown.loading && !dialogue && !interface_ && !InTransition(now);
     const bool full = free && (scene_ || spyglass) && !shown.cinematic;
     if (!free)

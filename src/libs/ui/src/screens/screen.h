@@ -96,8 +96,27 @@ class Bindings
     // Events of `id` with this verb are expected and need no action (drag progress, …).
     // An event that is neither bound nor ignored is reported as an error.
     void Ignore(const std::string &id, const std::string &verb);
+    // True when this build bound a handler for exactly `id` `verb` (On, Ignore, Forward).
+    bool Bound(const std::string &id, const std::string &verb) const
+    {
+        return handlers_.count(id + '\x1f' + verb) > 0;
+    }
     // An event of `id` sends this verb of the widget to the engine.
     void Forward(const std::string &id, const Widget &widget, const std::string &verb);
+    // Local feedback: what the event `id` `verb` leads to without a decision of the game (the tapped row selected, a
+    // tab switched, a toggle moved) is drawn in the frame of the tap, not when the game has answered. `predict`
+    // changes the view (the props Build returned) to that result. It is applied to the view at once and to every
+    // view built until the game has answered what the event's handler sent, so the steps the game takes meanwhile
+    // do not change what is drawn; the game's view after its answer is then compared with the prediction, and when
+    // the game decided otherwise the screen shows the game's state and the correction is logged ("UI prediction
+    // corrected", an error line). Only for an event whose handler sends a widget action (its answer ends the
+    // prediction); a view must not predict what the game may refuse silently. Default: an event is not predicted.
+    using Prediction = std::function<void(const Event &, Json &view)>;
+    void Predict(const std::string &id, const std::string &verb, Prediction predict);
+    // For predictions. Patch: sets `key` of every object in the view whose "id" is `id`; false when there is none.
+    // SelectOnly: the entry `chosen` of a list of {selected} entries (rows, tabs) is the selected one, no other.
+    static bool Patch(Json &view, const std::string &id, const char *key, const Json &value);
+    static void SelectOnly(Json &entries, size_t chosen);
     // The view shows the modal `id` (a c-dialog, or a sheet with a scrim of its own): declared in
     // every Build that shows it, the topmost last. Every modal goes through here, so all of them
     // answer the scrim and the back key the same way: `cancel` is the modal's way back without
@@ -155,7 +174,8 @@ class Bindings
     void Rebuild();
     // The game's answer to what the screen asked is not complete in this model: more of it comes in a later game frame
     // (the store opens a row's amount window a loop after selecting it). Said by the build that knows it, for that
-    // build: the host keeps the frame on the screen meanwhile (Router::Answering, the settle gate of ui_host.cpp).
+    // build: a prediction (Predict) stays until then, and the flicker check does not take the action for settled
+    // (Router::Answering).
     void Await();
     // The subject a HUD tap asked this screen to open on (hud::Hud::RequestSubject), taken once.
     std::optional<SubjectRequest> TakeSubject(const std::string &screen);
@@ -193,6 +213,7 @@ class Bindings
     }
     Router &router_;
     std::unordered_map<std::string, Handler> handlers_;
+    std::unordered_map<std::string, Prediction> predictions_; // by "<id>\x1f<verb>", of the view on the screen
 };
 
 class Screen
@@ -328,9 +349,15 @@ class Router
         return screen_ != nullptr;
     }
     // The game has not finished answering what the screen sent: a widget action it has not answered, a send that
-    // waits for its turn, an applied answer whose model has not come yet, or a screen that awaits more (Bindings::Await) (the host's settle gate holds the frame
-    // on the screen meanwhile, ui_host.cpp).
+    // waits for its turn, an applied answer whose model has not come yet, or a screen that awaits more
+    // (Bindings::Await). The flicker check does not take an action for settled meanwhile.
     bool Answering() const;
+    // How many events were predicted so far (Bindings::Predict): the host tells the flicker check which actions
+    // must show their feedback in the frame of the tap.
+    uint64_t Predicted() const
+    {
+        return predicted_count_;
+    }
     // The model the mounted screen was built from.
     const InterfaceModel &Model() const
     {
@@ -396,6 +423,18 @@ class Router
     void BuildView();
     void Emit(Action action);
     bool MarkOpen(const std::string &id, const std::string &value) const;
+    // A predicted event whose answer from the game is still to come (Bindings::Predict).
+    struct Predicting
+    {
+        Event event;
+        Bindings::Prediction predict;
+        uint64_t floor = 0; // the first widget action its handler sent
+        double since = 0.0;
+    };
+    // The game has answered every widget action sent from `floor` on, and the model after the answers is here.
+    bool AnsweredFrom(uint64_t floor) const;
+    // Applies the open predictions to `view`; those the game has answered are compared with it and end.
+    void Predict(Json &view);
     Json ExtrasView(const Admission &admitted, Json rows);
     Action Make(const Widget &widget, const std::string &verb, const std::string &value, const std::string &guard) const;
 
@@ -410,6 +449,8 @@ class Router
     std::vector<std::pair<std::string, Bindings::Handler>> modals_; // Bindings::Modal of the view shown, topmost last
     std::vector<std::unique_ptr<StateConsumer>> consumers_;
     std::vector<PendingMark> pending_;
+    std::vector<Predicting> predicting_;
+    uint64_t predicted_count_ = 0;
     std::vector<Waiting> waiting_;
     uint64_t next_request_ = 0;
     std::map<uint64_t, Request> outstanding_;

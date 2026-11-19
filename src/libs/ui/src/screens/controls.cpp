@@ -568,6 +568,8 @@ void ControlRows(Bindings &bindings, std::span<const Widget *const> widgets, con
                     if (chosen < group.size() && group[chosen]->Offers("toggle"))
                         bindings.Send(*group[chosen], "toggle", "1");
                 });
+                // The chosen option is drawn chosen in the tap's frame (the game's answer confirms it).
+                bindings.Predict(id, "change", [id](const Event &event, Json &view) { Bindings::Patch(view, id, "selected", std::atoi(event.value.c_str())); });
                 rows.push_back(Json{{"kind", "segment"},  {"id", id},          {"label", label},
                                     {"options", options}, {"selected", selected}, {"disabled", !usable},
                                     {"reason", widget->unavailable_reason}});
@@ -590,6 +592,8 @@ void ControlRows(Bindings &bindings, std::span<const Widget *const> widgets, con
         else if (widget->type == "check")
         {
             bindings.On(id, "change", [&bindings, widget](const Event &event) { bindings.Send(*widget, "toggle", event.value == "1" ? "1" : "0"); });
+            // The switch is drawn where the finger put it in the tap's frame (the game's answer confirms it).
+            bindings.Predict(id, "change", [id](const Event &event, Json &view) { Bindings::Patch(view, id, "on", event.value == "1"); });
             rows.push_back(Json{{"kind", "toggle"},
                                 {"id", id},
                                 {"label", widget->label},

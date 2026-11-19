@@ -90,6 +90,29 @@ Verbs and what the engine receives (`EngineCommand`, queue line
   binding and a state channel without a consumer are error lines and, with `Config::show_errors`,
   toasts.
 
+## Answering a tap at once
+
+Nothing in the UI waits before it draws: no frame is held for the game, and no timer stands between a tap and its
+result. Three rules keep that free of flicker:
+
+- **Predict what needs no decision of the game.** `bindings.Predict(id, verb, [](const Event &, Json &view) {…})`
+  next to the `On` of the same event: the function changes the view to what the tap leads to (the tapped row
+  selected, the switch moved; `Bindings::Patch`, `Bindings::SelectOnly`). The router draws it in the frame of the
+  tap and keeps it over every view built until the game has answered what the handler sent (and the screen no
+  longer `Await`s), then compares it with the game's view: a difference is the error line "UI prediction
+  corrected: …" and the game's state is shown. Capture values only (the function outlives the model it was
+  declared for), and predict only what the game cannot quietly decide otherwise. An event without `Predict` is
+  not predicted. Predicted today: the toggles and segments of `ControlRows` (settings, the generic layout,
+  «Прочее»), the items screen's rows and category tabs.
+- **Do not draw a step.** A model the screen knows to be a step of the game's answer (the store's row selected
+  before its amount window, a confirmed deal closed before it reopens) is not drawn: the build returns the view
+  it had (`trade_commerce.cpp` `holding`) and says `bindings.Await()`. A rule about models, never about time; a
+  timeout there only reports a game that never completed the step.
+- **The busy mark is feedback.** `bindings.Pending(id)` marks the pressed control busy in the tap's frame.
+
+The flicker check (`../action_trace.h`) judges every tap; its lines carry the tap's latency, and a predicted tap
+whose result is not in the tap's own frame is reported ("LATE"), in the pack contract a failure.
+
 ## UI strings
 
 Screens never contain player text of their own. Texts the game sends pass through; everything

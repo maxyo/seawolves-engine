@@ -34,10 +34,11 @@ uint64_t Mix(uint64_t hash, uint64_t value)
 }
 
 // Interaction feedback: a press part held down or shaken (behaviors.cpp), a modal that refuses a tap beside it
-// (ComponentElement::Refuse): what the finger does, not what the screen says.
+// (ComponentElement::Refuse), a press that was taken and waits for the game (the busy mark of a press part, the
+// pack's .busy and its .spinner): what the finger does, not what the screen says.
 bool Feedback(const std::string &name)
 {
-    return name == "pressed" || name == "shake" || name == "refused";
+    return name == "pressed" || name == "shake" || name == "refused" || name == "busy";
 }
 
 std::string Clip(std::string text, size_t most)
@@ -55,7 +56,9 @@ struct Walk
     std::vector<FrameContent::Part> &out;
     Rml::Rectanglef viewport;
 
-    void Element(Rml::Element *element, uint64_t parent, int index, Rml::Rectanglef clip, float opacity)
+    // `busy`: inside a press part that shows its busy mark (the mark moves the part's label aside: how the things
+    // in it look meanwhile is feedback, as the mark is; Part::feedback).
+    void Element(Rml::Element *element, uint64_t parent, int index, Rml::Rectanglef clip, float opacity, bool busy = false)
     {
         if (!element->IsVisible())
             return;
@@ -87,7 +90,7 @@ struct Walk
         for (const auto &[name, value] : element->GetAttributes())
             // Not content: data-at, where the runtime placed a list's scroll fade (draw_elements.cpp
             // ScrollEdgesChanged): it moves with the scroll.
-            if (name != "class" && name != "id" && name != "data-at")
+            if (name != "class" && name != "id" && name != "data-at" && name != "busy")
                 attributes += Mix(Mix(kOffset, name), value.Get<Rml::String>());
         content = Mix(content, attributes);
         // Where it sits in its parent and how big it is, to 3 px: a knob or a panel that jumps for a frame is flicker
@@ -115,7 +118,7 @@ struct Walk
             label += "." + name;
         if (!text.empty())
             label += " '" + Clip(text, 40) + "'";
-        out.push_back({key, content, box, std::move(label)});
+        out.push_back({key, content, box, std::move(label), busy});
 
         // What a box clips (overflow other than visible), its children are seen only inside it.
         if (values.overflow_x() != Rml::Style::Overflow::Visible || values.overflow_y() != Rml::Style::Overflow::Visible)
@@ -127,8 +130,11 @@ struct Walk
                 return;
         }
         const int count = element->GetNumChildren();
-        for (int i = 0; i < count; ++i)
-            Element(element->GetChild(i), key, i, clip, opacity);
+        busy = busy || element->IsClassSet("busy");
+        // The busy mark itself is no part, and takes no place among its siblings (their keys stay what they were).
+        for (int i = 0, place = 0; i < count; ++i)
+            if (Rml::Element *child = element->GetChild(i); !child->IsClassSet("spinner"))
+                Element(child, key, place++, clip, opacity, busy);
     }
 };
 
@@ -184,7 +190,7 @@ std::optional<ActionTrace> ActionTracer::Begin(std::string what, FrameContent st
 {
     std::optional<ActionTrace> previous = active_ ? Finish(true) : std::nullopt;
     active_ = true;
-    capped_ = false;
+    predicted_ = false;
     what_ = std::move(what);
     event_.clear();
     width_ = width;
@@ -231,7 +237,8 @@ std::optional<ActionTrace> ActionTracer::Finish(bool interrupted)
     active_ = false;
     ActionTrace trace = Analyse(event_.empty() ? what_ : event_, frames_, width_, height_);
     trace.interrupted = interrupted;
-    trace.capped = capped_;
+    trace.predicted = predicted_;
+    trace.late = predicted_ && trace.feedback_frame > 1;
     frames_.clear();
     return trace;
 }
@@ -253,6 +260,12 @@ ActionTrace ActionTracer::Analyse(const std::string &action, const std::vector<F
     trace.after = frames.back().shown;
     // The settled state is shown from the first frame that has its content.
     trace.settle_ms = (end.time - frames.front().time) * 1000.0;
+    for (size_t f = 1; f < frames.size() && !trace.feedback_frame; ++f)
+        if (frames[f].hash != frames.front().hash)
+        {
+            trace.feedback_frame = int(f);
+            trace.feedback_ms = (frames[f].time - frames.front().time) * 1000.0;
+        }
     if (seen.size() < 3)
         return trace;
 
@@ -293,6 +306,8 @@ ActionTrace ActionTracer::Analyse(const std::string &action, const std::vector<F
                 continue;
             // Where it is seen: in this frame, or where the start or the end has it.
             const FrameContent::Part *part = box_of(*seen[f], key);
+            if (part && part->feedback)
+                continue; // inside a busy press part: the press's own feedback
             const FrameContent::Part *other = part ? nullptr : box_of(end, key);
             if (!part && !other)
                 other = box_of(start, key);
@@ -325,11 +340,7 @@ ActionTrace ActionTracer::Analyse(const std::string &action, const std::vector<F
 std::string DescribeTrace(const ActionTrace &trace)
 {
     char head[1024];
-    if (trace.transient && trace.capped)
-        std::snprintf(head, sizeof head, "UI slow answer: %s: %d transient frames, %.0f ms, %.0f%% of the screen, drawn after the settle cap (%s -> %s, settled in %.0f ms, %d frames%s%s)",
-                      trace.action.c_str(), trace.transient, trace.transient_ms, trace.area * 100.0, trace.before.c_str(), trace.after.c_str(),
-                      trace.settle_ms, trace.frames, trace.interrupted ? ", interrupted" : "", trace.unsettled ? ", unsettled" : "");
-    else if (trace.transient)
+    if (trace.transient)
         std::snprintf(head, sizeof head, "UI flicker: %s: %d transient frames, %.0f ms, %.0f%% of the screen (%s -> %s, settled in %.0f ms, %d frames%s%s)",
                       trace.action.c_str(), trace.transient, trace.transient_ms, trace.area * 100.0, trace.before.c_str(), trace.after.c_str(),
                       trace.settle_ms, trace.frames, trace.interrupted ? ", interrupted" : "", trace.unsettled ? ", unsettled" : "");
@@ -338,6 +349,13 @@ std::string DescribeTrace(const ActionTrace &trace)
                       trace.before.c_str(), trace.after.c_str(), trace.settle_ms, trace.frames, trace.interrupted ? ", interrupted" : "",
                       trace.unsettled ? ", unsettled" : "");
     std::string line = head;
+    // The latency of the action: when the screen first answered, and whether a predicted result was in the tap's frame.
+    char answer[160] = "";
+    if (trace.feedback_frame)
+        std::snprintf(answer, sizeof answer, "; first change in frame %d, +%.0f ms", trace.feedback_frame, trace.feedback_ms);
+    line += answer;
+    if (trace.predicted)
+        line += trace.late ? "; LATE: its predicted result was not drawn in the tap's frame" : "; predicted";
     for (const std::string &detail : trace.details)
         line += " | " + detail;
     return line;

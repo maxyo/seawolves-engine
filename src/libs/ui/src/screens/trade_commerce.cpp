@@ -380,7 +380,12 @@ class CommerceScreen final : public Screen
         if (!reopen_row_.empty() && !deal && admitted.model->revision > reopen_revision_)
         {
             if (money && selected && selected->row_id == reopen_row_ && hold_row_.empty() && selected->Offers("activate"))
+            {
                 OpenRow(bindings, *selected, admitted.model->revision);
+                // This model (the row selected, its window closed) is a step of the game's answer to the confirmed
+                // deal, not a state to draw: the deal's view stays until the reopened window replaces it.
+                holding = !last_view_.is_null();
+            }
             reopen_row_.clear();
         }
         // Another ship or character: the selector moved in the model, but the game binds the new owner (refCharacter,
@@ -1005,7 +1010,16 @@ class CommerceScreen final : public Screen
         if (!hold_row_.empty())
             bindings.Await(); // the row's amount window comes in a later game frame
         if (holding)
+        {
+            // The view kept is the one before the game's step. What it shows of a deal this model has closed (the
+            // amount control, its description, the deal's button) takes no input until the game's next model: the
+            // game has no window to apply it to.
+            if (!deal)
+                for (const auto &[id, verb] : {std::pair{"goods", "info"}, std::pair{"goods", "change"}, std::pair{"goods", "commit"}, std::pair{"primary", ""}})
+                    if (!bindings.Bound(id, verb))
+                        bindings.Ignore(id, verb);
             return last_view_;
+        }
         last_view_ = view;
         return view;
     }

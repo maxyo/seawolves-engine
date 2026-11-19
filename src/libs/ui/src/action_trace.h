@@ -10,8 +10,10 @@
 // screen they changed say how visible each was (Host log "UI flicker", ActionTrace in ui.h).
 //
 // Elements that change on more than kLiveChanges frames of one action (a running timer, a meter) are
-// live content, not flicker, and are left out. Content includes each box's place in its parent and its size (3 px). Interaction feedback (the pressed and shake classes of a
-// press part) is not content.
+// live content, not flicker, and are left out. Content includes each box's place in its parent and its size (3 px).
+// Interaction feedback is not content: the pressed and shake classes of a press part, and its busy mark (the
+// class, the spinner, and how the part's inside looks while the mark is shown): the press was taken and waits
+// for the game.
 #pragma once
 
 #include "storm_ui/ui.h"
@@ -38,6 +40,7 @@ struct FrameContent
         uint64_t content = 0; // tag, classes, attributes (not style), text
         Rml::Rectanglef box;  // on the screen, clipped by the boxes that clip it (physical pixels)
         std::string label;    // "tag#id 'text'" for the report
+        bool feedback = false; // inside a press part that shows its busy mark: interaction feedback, not judged
     };
     std::vector<Part> parts; // sorted by key
     std::string shown;       // FrameStats::shown of the frame
@@ -63,14 +66,21 @@ class ActionTracer
     std::optional<ActionTrace> Begin(std::string what, FrameContent start, float width, float height);
     // The event the action caused, for its name ("goods row", "header-back click"); the first one names it.
     void Named(const std::string &event);
-    // The host stopped holding the frame for the game's answer before it settled (ActionTrace::capped).
-    void Capped()
+    // The screen predicted the action's result: its own frame must show it (ActionTrace::late).
+    void Predicted()
     {
-        capped_ = capped_ || active_;
+        predicted_ = predicted_ || active_;
     }
     bool Active() const
     {
         return active_;
+    }
+    // The action is not one to judge (a HUD control held and moved: the game's live states are what changes on
+    // the screen then, not an answer to a tap).
+    void Drop()
+    {
+        active_ = false;
+        frames_.clear();
     }
     // A frame was presented while an action is open.
     void Presented(FrameContent frame);
@@ -86,7 +96,7 @@ class ActionTracer
 
   private:
     bool active_ = false;
-    bool capped_ = false;
+    bool predicted_ = false;
     std::string what_;
     std::string event_;
     std::vector<FrameContent> frames_;

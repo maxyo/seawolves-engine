@@ -222,6 +222,62 @@ static void Commands()
     ExpectEqual(EngineCommand(plain), "", "an action of a plain document is no engine command");
 }
 
+// Local feedback (Bindings::Predict): the result of a tap that needs no decision of the game is in the view the
+// tap's own event builds; the game's steps before its answer do not change it; the game's answer confirms it, or
+// corrects it with an error line.
+static void Predictions(const std::string &models)
+{
+    FakeSurface surface;
+    Router router(surface);
+    InterfaceModel model = Load(models, "generic-settings.json");
+    router.SetInterface(model);
+    const auto toggle = [&]() -> const Json & { return surface.props["left"][0]["rows"][0]; };
+    const std::string id = toggle()["id"];
+    const auto game_sets = [&](const char *value) {
+        for (Widget &widget : model.widgets)
+            if (widget.node == "CHECK_OPTIONS" && widget.index == 0)
+                widget.value = value;
+        ++model.revision;
+        router.SetInterface(model);
+    };
+    Expect(toggle()["on"] == true && router.Predicted() == 0, "the toggle is on, nothing predicted yet");
+
+    router.OnEvent({id, "change", "0"});
+    Expect(router.Predicted() == 1 && toggle()["on"] == false, "the tap's own build shows the toggle off, before any answer");
+    Expect(router.Answering(), "the game is asked all the same");
+    ++model.revision;
+    router.SetInterface(model); // a step of the game that does not answer the tap: the toggle is still on there
+    Expect(toggle()["on"] == false && surface.errors.empty(), "the game's steps before its answer do not change what was predicted");
+    AnswerAll(router, surface, true);
+    game_sets("0");
+    Expect(toggle()["on"] == false && surface.errors.empty() && !router.Answering(), "the game's answer confirms it: nothing changes, nothing is logged");
+
+    router.OnEvent({id, "change", "1"});
+    Expect(toggle()["on"] == true, "the next tap is predicted too");
+    AnswerAll(router, surface, true);
+    ++model.revision;
+    router.SetInterface(model); // the game answered and left the option off
+    Expect(toggle()["on"] == false, "the game decided otherwise: its state is shown");
+    Expect(surface.errors.size() == 1 && surface.errors[0].find("UI prediction corrected: screen generic " + id + " change 1") == 0 &&
+               surface.errors[0].find("/on: predicted true, the game has false") != std::string::npos,
+           "and the correction is an error line that says what differed: " + (surface.errors.empty() ? std::string("none") : surface.errors[0]));
+    surface.errors.clear();
+
+    router.OnEvent({id, "change", "1"});
+    Expect(toggle()["on"] == true, "predicted again");
+    AnswerAll(router, surface, false, "locked");
+    Expect(toggle()["on"] == false && surface.errors.size() == 1 && surface.errors[0].find("UI prediction corrected") == 0,
+           "a refusal corrects the prediction at once, loudly");
+    surface.errors.clear();
+
+    // An event whose handler asks the game nothing predicts nothing (the screen's own state is its result).
+    Json view = Json{{"rows", Json::array({Json{{"id", "a"}, {"selected", true}}, Json{{"id", "b"}, {"selected", false}}})}};
+    Bindings::SelectOnly(view["rows"], 1);
+    Expect(view["rows"][0]["selected"] == false && view["rows"][1]["selected"] == true, "SelectOnly moves the selection");
+    Expect(Bindings::Patch(view, "a", "on", true) && view["rows"][0]["on"] == true && !Bindings::Patch(view, "nobody", "on", true),
+           "Patch sets the field of the object with that id, and says when there is none");
+}
+
 static void Generic(const std::string &models)
 {
     FakeSurface surface;
@@ -4123,6 +4179,7 @@ int main(int argc, char **argv)
     Roles();
     Commands();
     Generic(models);
+    Predictions(models);
     Store(models);
     Commerce(models);
     Crew(models);

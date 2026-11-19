@@ -701,7 +701,7 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
             // real game does not make. Those taps are recorded, not judged: the device crawl (tools/ui_crawl) and the
             // flows of pack-contract.json "flows" (RunFlow), with the game's real answers, judge them.
             // The crawl moves on at its own pace (a screen's timed work must not run out between its taps): the tap's
-            // frames so far, past the settle gate's cap, are its trace.
+            // frames so far are its trace.
             for (const ActionTrace &trace : (*session)->TakeActionTraces(true))
             {
                 Json record = {{"case", c.name}, {"tap", tap.key}, {"path", PathText(next)}, {"action", trace.action},
@@ -709,6 +709,11 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
                                {"transient_ms", trace.transient_ms}, {"area", trace.area}, {"settle_ms", trace.settle_ms},
                                {"details", trace.details}, {"game", asked_game}};
                 g_flicker_records.push_back(record.dump());
+                // The latency rule holds with or without a game: what a screen predicts is drawn in the tap's frame.
+                if (trace.late)
+                    crawl.flicker.push_back(tap.key + " (" + trace.action + ") via " + PathText(path) +
+                                            ": late feedback, the predicted result was first drawn in frame " +
+                                            std::to_string(trace.feedback_frame) + " after the tap");
                 if (!trace.transient || asked_game)
                     continue;
                 const std::string where = PathText(next);
@@ -721,8 +726,10 @@ void RunCrawl(const fs::path &pack, const Case &c, Crawl &crawl, std::vector<std
                 else
                     crawl.flicker.push_back(line);
             }
+            // No game here either for a prediction: the same model again "corrects" it. The flows judge predictions.
             for (size_t e = errors; e < observed.errors.size(); ++e)
-                finding(next, observed.errors[e]);
+                if (!(asked_game && observed.errors[e].find("UI prediction corrected") != std::string::npos))
+                    finding(next, observed.errors[e]);
             const std::string after_signature = Signature(Taps());
             const bool moved = after_signature != signature;
             if (tap.disabled)
@@ -828,6 +835,7 @@ struct FlowStep
 struct Flow
 {
     std::string name, after;
+    bool predicted = false; // the judged tap must be predicted by its screen: its result in the tap's own frame
     Case base;
     std::vector<std::string> taps;
     std::vector<FlowStep> steps;
@@ -895,11 +903,18 @@ bool RunFlow(const fs::path &pack, const Flow &flow)
         problems.push_back("error: " + error);
     if (judged && judged->transient)
         problems.push_back("flicker: " + TraceText(*judged));
+    // The latency rule: what a screen predicts is drawn in the frame of the tap.
+    if (judged && flow.predicted && !judged->predicted)
+        problems.push_back("the tap is not predicted by its screen (Bindings::Predict): its result waits for the game");
+    if (judged && (judged->late || (flow.predicted && judged->feedback_frame != 1)))
+        problems.push_back("late feedback: the first change was drawn in frame " + std::to_string(judged->feedback_frame) +
+                           " after the tap, not in the tap's own frame");
     if (judged && !flow.after.empty() && judged->after.find(flow.after) == std::string::npos)
         problems.push_back("settled in '" + judged->after + "', not in '" + flow.after + "'");
     std::printf("%s flow %s", problems.empty() ? "PASS" : "FAIL", flow.name.c_str());
     if (judged)
-        std::printf(" (%s -> %s in %.0f ms, %d frames)", judged->before.c_str(), judged->after.c_str(), judged->settle_ms, judged->frames);
+        std::printf(" (%s -> %s in %.0f ms, %d frames; first change in frame %d%s)", judged->before.c_str(), judged->after.c_str(),
+                    judged->settle_ms, judged->frames, judged->feedback_frame, judged->predicted ? ", predicted" : "");
     std::printf("\n");
     for (const std::string &line : problems)
         std::printf("  %s\n", line.c_str());
@@ -1072,6 +1087,7 @@ int main(int argc, char **argv)
         Flow flow;
         flow.name = entry.value("name", std::string());
         flow.after = entry.value("after", std::string());
+        flow.predicted = entry.value("predicted", false);
         flow.base.name = "flow " + flow.name;
         if (entry.contains("interface"))
             flow.base.interface = fixtures / entry["interface"].get<std::string>();

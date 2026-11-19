@@ -183,11 +183,16 @@ struct ActionTrace
     double transient_ms = 0.0; // how long those were on the screen
     double area = 0.0;      // the largest share of the screen (0..1) one transient frame changed
     double settle_ms = 0.0; // from the action to the settled frame
+    // The first presented frame that showed something else than the start: which frame after the action (1 = the
+    // action's own frame, 0 = none changed anything) and when.
+    int feedback_frame = 0;
+    double feedback_ms = 0.0;
+    // The screen predicted the action's result (screens::Bindings::Predict): it must be drawn in the action's own
+    // frame. `late`: the first change came in a later frame (feedback_frame > 1).
+    bool predicted = false;
+    bool late = false;
     bool interrupted = false; // another action began before it settled (its last frame is taken as the settled one)
     bool unsettled = false;   // still changing after ActionTracer::kMaxSeconds
-    // The game took longer than the host's settle gate waits (ui_host.cpp kSettleCap): what it showed then was drawn
-    // as it came, the pressed control busy. Its transient frames are a slow answer, not a defect of the UI.
-    bool capped = false;
     // One line per transient frame: when, for how long, how much, what it showed ("+40 ms 33 ms 52%: s-saves save_load#4.1:
     // c-header#header 'Загрузка' …").
     std::vector<std::string> details;
