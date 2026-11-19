@@ -3514,6 +3514,33 @@ static void Journal(const std::string &)
 
     router.OnEvent({"section-stats", "click", ""});
     ExpectEqual(surface.Last(), "widget:questbook\tTABBTN_STATISTIC\t-1\tpress", "a section presses its game tab");
+
+    // A «Logbook Update» line of the record that closed its quest (AddQuestRecord + CloseQuestHeader, owner 1663
+    // diagnostics: FalseTrace): the journal opens on the active tab, the quest is on the completed one.
+    {
+        FakeSurface toast_surface;
+        Router toast_router(toast_surface);
+        SubjectMount mount;
+        storm::ui::hud::Hud hud(mount);
+        toast_router.AttachHud(&hud);
+        hud.RequestSubject({"journal", -1, -1, "", "closed"});
+        InterfaceModel active = model;
+        active.revision = 100;
+        toast_router.SetInterface(active);
+        ExpectEqual(toast_surface.Last(), "widget:questbook\tTABBTN_QUESTARJ\t-1\tpress", "an entry not on the active tab: the completed tab is looked at");
+        InterfaceModel completed = active;
+        completed.revision += 1;
+        completed.widgets.erase(std::remove_if(completed.widgets.begin(), completed.widgets.end(), [](const Widget &w) { return w.node == "QUEST_TITLE"; }), completed.widgets.end());
+        for (Widget &w : completed.widgets)
+            if (w.node.rfind("TABBTN_", 0) == 0)
+                w.value = w.node == "TABBTN_QUESTARJ" ? "1" : "0";
+        Widget closed = Make("QUEST_TITLE", "choice", "Closed", {"open"});
+        closed.index = 0;
+        closed.row_id = "closed";
+        completed.widgets.push_back(closed);
+        toast_router.SetInterface(completed);
+        ExpectEqual(toast_surface.Last(), "widget:questbook\tQUEST_TITLE\t0\topen@8:closed", "… and opened there");
+    }
 }
 
 // The application's own screens on the "launcher" channel: views, texts by key, verbs back.

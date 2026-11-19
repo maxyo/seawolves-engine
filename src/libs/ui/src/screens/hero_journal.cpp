@@ -9,6 +9,7 @@
 // script's ProcessCancelExit turns into "back to the titles"), then opens it.
 #include "hero.h"
 
+#include <algorithm>
 #include <map>
 
 namespace storm::ui::screens
@@ -39,6 +40,9 @@ constexpr NodeRule kNodes[] = {
 };
 
 constexpr double kStepTimeout = 3.0;
+
+// The tabs whose titles are journal entries (QUEST_TITLE), where an entry asked for by name is looked for.
+constexpr const char *kEntryTabs[] = {"TABBTN_QUEST", "TABBTN_QUESTARJ", "TABBTN_INFO"};
 
 // The game's tabs by section.
 struct Tab
@@ -339,6 +343,7 @@ class JournalScreen final : public Screen
     {
         std::string row; // the entry to open; empty: none
         double since = 0.0;
+        std::vector<std::string> looked; // the game's tabs whose titles did not hold it
     };
 
     Admission admission_;
@@ -395,7 +400,24 @@ class JournalScreen final : public Screen
                 intent_ = {};
                 return;
             }
-        bindings.Error("questbook: entry " + intent_.row + " is not among the titles of this tab; the list stays");
+        // A «Logbook Update» line names its quest, not the tab: the record that closes a quest moves it to the
+        // completed ones (AddQuestRecord + CloseQuestHeader), a document record is on the documents tab. Look there.
+        std::string active;
+        for (const char *tab : kEntryTabs)
+            if (const Widget *button = a_->One(tab); button && button->value == "1")
+                active = tab;
+        if (!active.empty() && std::find(intent_.looked.begin(), intent_.looked.end(), active) == intent_.looked.end())
+            intent_.looked.push_back(active);
+        for (const char *tab : kEntryTabs)
+            if (std::find(intent_.looked.begin(), intent_.looked.end(), tab) == intent_.looked.end())
+                if (const Widget *button = a_->One(tab); button && button->Offers("press"))
+                {
+                    sent_revision_ = revision_;
+                    intent_.since = bindings.Now();
+                    bindings.Send(*button, "press");
+                    return;
+                }
+        bindings.Error("questbook: entry " + intent_.row + " is on none of the tabs of quests and documents; the list stays");
         intent_ = {};
     }
 };
